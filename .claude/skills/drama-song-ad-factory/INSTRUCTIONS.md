@@ -109,6 +109,13 @@ style difference.
 
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
 
+**Asking the six intake questions (H9).** Build them with
+`python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
+show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
+run each argv without a shell). Never type them free hand or send them as one
+line: one block per question, one numbered option per line, a blank line
+between questions. See `references/choice-card-spec.md` section 2.1.
+
 Shared with the OpenClaw twin. Field rules:
 `references/choice-card-spec.md`; human price snapshot:
 `references/price-menu.md`.

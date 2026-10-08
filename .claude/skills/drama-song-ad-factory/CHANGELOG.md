@@ -1,5 +1,15 @@
 # Changelog: drama-song-ad-factory
 
+## [2.4.6] - 2026-10-08 - H9 readable intake card
+
+- New `scripts/core/choice_card/intake_card/` (same module as the OpenClaw
+  copy): the six intake questions, one block per question, one numbered option
+  per line, RECOMMENDED marked, blank line between questions, closing "how to
+  answer" line; plain text; split under Telegram's limit; exact
+  `openclaw message send` argv and Bot API body.
+- `factory.py card` prints the raw card; intake `question_message` uses the
+  same layout. Test: `choice_card/intake_card/test_intake_card_h9.py`.
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
