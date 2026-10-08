@@ -97,6 +97,8 @@ if [ "$MODE" = "ci" ]; then
   block "Keychain token retrievable (CI runner has no login keychain; required on a real provisioned Mac)"
 elif security find-generic-password -a "9router-api-token" -s "BlackCEO-999" -w >/dev/null 2>&1; then
   passes=$((passes+1)); echo "PASS  Keychain token retrievable"
+elif [ -s "$HOME/.9router/gateway-key" ]; then
+  passes=$((passes+1)); echo "PASS  Token retrievable from ~/.9router/gateway-key (Keychain locked/headless fallback)"
 else
   failures=$((failures+1)); echo "FAIL  Keychain token retrievable"
 fi

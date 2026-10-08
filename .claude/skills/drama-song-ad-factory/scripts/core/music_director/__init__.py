@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import ending_qc
 import music_qc
 import suno_recipe
 import protected_names
@@ -108,7 +109,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
-                           style_id=None, client_text=None):
+                           style_id=None, client_text=None, length_s=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -119,7 +120,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     protected name or rewrite a packet line. ``packet_lines=None`` keeps the
     old behavior (packet binding happens upstream in lyric QC).
     """
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text)  # G12
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
     errors = []
     if packet_lines is not None:
         if protected:  # H7 sheet check (tolerates [Verse] tags); else F7 words check
@@ -128,6 +129,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
             errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
+    if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
+        lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
     ver = _checked_version(version)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(GENERATE_CATALOG_ID),

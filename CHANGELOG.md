@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
+
+- fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card
+- fix/headless-NHL001: nine-router-setup 1.29.0: locked Keychain (SSH/fleet installs) falls back to ~/.9router/gateway-key (mode 600) instead of aborting rc=36; 9Router guards auto-resolve the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes
+
+- fix/partI-I1: drama-song-ad-factory 2.7.7: captions spell-checked, exact website asked at intake and kept verbatim
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos
 - fix/sunorecipe-SNR001: drama-song-ad-factory 2.7.2: G12 Suno song recipe is the default for every Suno music style (core/suno_recipe); only Velvet Voiceover is exempt
 - fix/partH-H9: drama-song-ad-factory H9 readable six-question intake card (skill 2.6.11)
@@ -49,6 +55,14 @@
 - fix/partH-H3: Merge origin/main into fix/partH-H3; bump skill to 2.7.1; keep H8 smp no_echo/spoken_share; combine F7+H7 in music_director; keep H9 card CLI (merge 63f97d3b0cc9)
 - fix/sunorecipe-SNR001: G12: Suno song recipe is the default for every Suno music style (drama-song-ad-factory 2.7.2) (merge 7b5d72eae421)
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos (merge e71a6ede72bd)
+- fix/partI-I5: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), drama-song-ad-factory 2.7.3 (merge 4f64488f6bad)
+- fix/partI-I6: drama-song-ad-factory I6: character library (save approved character, reuse via Use a saved character?); v2.7.4 (merge 020b98110d14)
+- fix/partI-I2: Merge origin/main; renumber I2 to 2.7.5 (I6 took 2.7.4) (merge 933b79feff35)
+- fix/partI-I7: Merge origin/main; renumber I7 to 2.7.6 (I2 took 2.7.5) (merge 24a4483bac5c)
+- fix/partI-I1: Merge origin/main; renumber I1 to 2.7.7 (I7 took 2.7.6) (merge 7b35987dd4f2)
+- fix/headless-NHL001: Merge origin/main into fix/headless-NHL001 (changelog conflict) (merge de835cfc9649)
+- fix/partI-I3: I3: merge main, renumber skill to 2.7.8 (merge 9608ecd8bfff)
+- fix/hook-HK001: I8: renumber changelog headers to 2.7.9 (merge e1563a2aa191)
 
 ## [hook-skill] — 2026-10-06
 
