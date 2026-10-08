@@ -1,0 +1,51 @@
+name: drama-song-tests
+
+# Skill 75 (drama-song-ad-factory) CI: every scripts/core test_*.py under a
+# fresh empty HOME (manual 02 B6), numpy so the singing-detector suite really
+# runs, the F17 and B6 static checks, the layout parity test and the W4 proof run.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/skills/drama-song-ad-factory/**'
+      - '.github/workflows/drama-song-tests.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/drama-song-ad-factory/**'
+      - '.github/workflows/drama-song-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  drama-song:
+    runs-on: ubuntu-latest
+    env:
+      SKILL: .claude/skills/drama-song-ad-factory
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install numpy (singing-detector suite skips itself without it)
+        run: python3 -m pip install --quiet numpy pytest
+      - name: Static checks (F17 no local ASR, B6 operator-path leak)
+        run: |
+          bash "$SKILL/scripts/qc-no-local-asr.sh"
+          bash "$SKILL/scripts/qc-operator-path-leak.sh"
+      - name: Every scripts/core test_*.py under a fresh empty HOME
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          while IFS= read -r t; do
+            h="$(mktemp -d)"
+            if ! (HOME="$h" python3 "$t"); then echo "FAIL (empty HOME): $t"; rc=1; fi
+          done < <(find "$SKILL/scripts/core" -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
+          [ "$rc" -eq 0 ]
+      - name: Skill tests + layout parity test (empty HOME)
+        run: HOME="$(mktemp -d)" python3 -m pytest -q "$SKILL/tests"
+      - name: W4 proof run (19 stages, zero network, zero spend)
+        run: HOME="$(mktemp -d)" python3 "$SKILL/scripts/proof_run/run_proof.py"
