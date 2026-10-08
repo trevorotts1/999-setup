@@ -81,6 +81,12 @@
 - feat/skill75-orchestrate-only-no-silent-failure: skill 75: main window orchestrates only; no silent failure (loud_failure + receipt failures/warnings) (merge b0dece628d78)
 - unit/G8-999-guard: G8 port: sung_vocal_guard measured-path + audio-only share gate (review G1) (merge 0f2cbaa1f019)
 - feat/lipsync-doubled-image-gate: drama-song-ad-factory: double the lip-sync (6-8 clips of 4-6 s per 60 s ad) and add the lip-sync image gate (merge f9f2baee4d19)
+- feat/port-song-length-formula-recipe-v2: feat(drama-song-ad-factory): port song recipe v2, length formula, song dispatcher from onboarding #1681 (merge 014c1110dcf9)
+- docs/skill75-kie-rate-limit: docs(skill 75): add KIE rate limit reference (20 per 10s, 429 not queued) (merge 1b7110caac25)
+- unit/F14-999-video-model-lock: Merge origin/main into unit/F14-999-video-model-lock; rebump 2.7.21 (merge 7497cc13f586)
+- feat/skill75-load-governor: skill 75: KIE limiter charges only new generation requests; polls use a separate gentle limiter; 429 resubmits (merge 33c257db30c2)
+- unit/F15-999: Merge F14-999 into F15-999: keep both sides' content (merge 80d8a8000c42)
+- fix/mgb005-integration: drama-song-ad-factory 2.7.21: song_dispatch through the load governor, VERSION/SKILL agreement (merge 049a4c49b1f4)
 
 ## [hook-skill] — 2026-10-06
 
