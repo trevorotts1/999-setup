@@ -31,6 +31,7 @@
 - fix/ninefix-NFX001-link-skills: fix(setup-macos): NFX001 B4 resolve own dir via NINE_SETUP_SCRIPT_DIR/BASH_SOURCE, not caller $0 (merge 40d958767be6)
 - fix/kiefix-KEF001-999: fix(models): KEF001 retire deepseek-v4-pro for deepseek-v4.1-flash in nine-router-setup, launcher defaults, docs; add grep guard test (merge 17d17c90ff2d)
 - fix/partH-H14: fix(drama-song): H14 delivery folder carries the finished song as MP3 320 + WAV (+ instrumental), listed in receipt and README, QC song_files check (merge 66ab89f8ec36)
+- fix/partH-H2: Merge origin/main into fix/partH-H2 (keep H14 changelog, skill v2.6.2) (merge 70177ece7ea3)
 
 ## [hook-skill] — 2026-10-06
 
