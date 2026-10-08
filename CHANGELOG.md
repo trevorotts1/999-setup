@@ -43,6 +43,7 @@
 - fix/partH-H4: Merge main into fix/partH-H4; renumber skill to 2.6.9 (merge 37c6e518b1a9)
 - fix/partH-H7: changelog: correct onboarding version reference (merge c24fb3ee8020)
 - fix/partH-H9: Merge origin/main into fix/partH-H9 (merge 7c34518ce7dc)
+- fix/partH-H9-changelog-markers: Fix: remove merge conflict markers from root CHANGELOG.md left by H9 merge (merge b40854e61227)
 
 ## [hook-skill] — 2026-10-06
 
