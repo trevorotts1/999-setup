@@ -1,5 +1,14 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.17] - 2026-10-08 - Spoken share cut to 20-25%, singing judged against voice time (SPK001)
+
+Owner order (Trevor, 2026-10-08): "Okay, let's go to your recommendation that cut it to about 20-25%." Why: Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40% of runtime plus a music-only intro and end card left at most about 50% for singing, never the 55-60% goal). Six chapter songs came back 15-30% sung.
+
+- `core/spoken_share` (the one G10 constants set): `SPOKEN_TARGET_PCT` 45 -> 22.5 (band 20-25); redo edges `SPOKEN_MIN_PCT` / `SPOKEN_MAX_PCT` 12.5 / 32.5 (target -/+ 10, reporting only, no absolute floor); `SUNG_TARGET_PCT` = 77.5 (75-80), now a share of VOICE time; new `LYRIC_SPOKEN_WORD_PCT` = (15, 18). New `sung_of_voice_pct`, `check_sung_of_voice` (sung / (sung + spoken), rap counts as spoken, intro / gaps / end card never counted), `spoken_word_budget`, `check_spoken_word_budget`; `check_plan` also judges sung-of-voice.
+- `final_assembler/sung_vocal_guard`: sung coverage is sung / (sung + spoken) from the 12.4 timing map (`spoken_section_ids` names the spoken sections); default target 77.5; new `sung_voice_seconds_from_timing`. Only other hard reject stays: no sung stretch of 6 s.
+- `lyric_writer.spoken_word_budget`: spoken lines budgeted at about 15-18% of the lyric words. `suno_recipe.score_take` judges sung-of-voice and passes the spoken-share flag through. `music_styles` share rule text, `spoken_share_card_docs` card line and docs wording, `intake_book` spoken-share menu range, SKILL.md, choice-card spec and QC checklist carry the new numbers.
+- Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a 10 s intro plus 5 s end card is not penalized. Same rule in onboarding skill 75 (PR fix/spoken25-SPK001, built on bandfix PR 1655).
+
 ## [2.7.16] - 2026-10-08 - Port onboarding skill 75 core into 999 (999-port)
 
 Four port commits from onboarding 75-drama-song-ad-factory (origin/main 1c5d829f), merged onto main. Where the port and main overlapped, main wins (BND001 band, H3 30 fps, LPC001 lip-sync close-up); the port's own additions stay.

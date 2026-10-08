@@ -1,5 +1,5 @@
-"""spoken_share package: the D15 spoken-share retarget (45% target, 40-55
-band, every length and every style, first real singing targeted at 15% of runtime).
+"""spoken_share package: the D15 spoken-share retarget (22.5% target, 20-25,
+5/10 band, every length and every style, first real singing targeted at 15% of runtime).
 Stdlib only, no network, no spend."""
 from .spoken_share import (  # noqa: F401
     ACCEPT_PTS,
@@ -29,6 +29,11 @@ from .spoken_share import (  # noqa: F401
     SPOKEN_STYLE_DELIVERIES,
     SPOKEN_TARGET_PCT,
     SUNG_TARGET_PCT,
+    LYRIC_SPOKEN_WORD_PCT,
+    check_sung_of_voice,
+    check_spoken_word_budget,
+    spoken_word_budget,
+    sung_of_voice_pct,
     TARGET,
     TOOL_NAME,
     TOOL_VERSION,
@@ -76,6 +81,11 @@ __all__ = [
     "SPOKEN_STYLE_DELIVERIES",
     "SPOKEN_TARGET_PCT",
     "SUNG_TARGET_PCT",
+    "LYRIC_SPOKEN_WORD_PCT",
+    "check_sung_of_voice",
+    "check_spoken_word_budget",
+    "spoken_word_budget",
+    "sung_of_voice_pct",
     "TARGET",
     "TOOL_NAME",
     "TOOL_VERSION",
