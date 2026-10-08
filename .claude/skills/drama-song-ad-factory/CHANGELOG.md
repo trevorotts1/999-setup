@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.16] - 2026-10-08 - Port onboarding skill 75 core into 999 (999-port)
+
+Four port commits from onboarding 75-drama-song-ad-factory (origin/main 1c5d829f), merged onto main. Where the port and main overlapped, main wins (BND001 band, H3 30 fps, LPC001 lip-sync close-up); the port's own additions stay.
+
+- Ported: `final_assembler` E2-E7/M7 pieces main lacked, `shot_planner` E2/E4 (shot beats, no-reuse), `kie_dispatch` submit/wait/save + modality budgets + resolver zero-settle evidence, `smp/initial_questions`, and operator paths removed from 6 core files.
+- Tests: `final_assembler/conftest.py` supplies the `tmp_root` fixture so `test_assemble_timeout_default_and_override`, `test_gate_wiring` and `test_marker_validation` run under pytest as well as as scripts.
+
 ## [2.7.15] - 2026-10-08 - Calibrated sung detector (G3, W-G-003)
 
 - Added `core/singing_detector/` (detector, `__init__`, self-test): measures sung seconds per second and per line from the isolated vocal stem (pitch stability, voicing continuity, note alignment; ffmpeg + numpy, no ASR, no spend, load guard). Every share carries `source: measured`, never computed from section labels. Calibrated on the bsw sung lines and O3 spoken lines. Test: `scripts/core/singing_detector/test_singing_detector.py`. Same detector ships in onboarding skill 75 v2.8.1 (PR 1656).
