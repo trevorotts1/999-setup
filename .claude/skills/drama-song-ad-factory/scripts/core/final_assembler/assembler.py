@@ -100,13 +100,6 @@ MIN_SHOT_S = 1.5
 BEAT_CUT_MIN_SHOT_S = 1.0
 
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
-# H13: a cross-fade into a lip-sync clip ends at least this long before
-# the clip's first word; a gap inside one line longer than LONG_GAP_S is
-# held on the speaking face (no cut-away inside the line window).
-FADE_WORD_MARGIN_S = 0.1
-LONG_GAP_S = 0.5
-FADE_COVERS_FIRST_WORD = "FADE_COVERS_FIRST_WORD"
-LONG_GAP_CUTAWAY = "LONG_GAP_CUTAWAY"
 
 # --- F8: last line before the end card (manual Part F F8) --------------------
 # The ad's final sung/spoken line must end before the end card begins.
@@ -123,6 +116,13 @@ LAST_LINE_OVER_ENDCARD = "LAST_LINE_OVER_ENDCARD"
 DEFAULT_TRANSITION = "fade"
 TRANSITION_DURATION = 0.4
 HARD_CUT_UNMARKED = "HARD_CUT_UNMARKED"
+# H13: a cross-fade into a lip-sync clip ends at least this long before
+# the clip's first word; a gap inside one line longer than LONG_GAP_S is
+# held on the speaking face (no cut-away inside the line window).
+FADE_WORD_MARGIN_S = 0.1
+LONG_GAP_S = 0.5
+FADE_COVERS_FIRST_WORD = "FADE_COVERS_FIRST_WORD"
+LONG_GAP_CUTAWAY = "LONG_GAP_CUTAWAY"
 
 # --- M7 bounding: processor share + wall-clock cap (manual 02 M7, Part D) ----
 #
@@ -312,6 +312,57 @@ def motion_f12_gate(plan):
     import shot_planner.motion_score as ms
     return ms.gate_clips(plan["segments"])
 
+def _h5_core():
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.timestamp_plan as tp
+    return tp
+
+
+def _h5_stretch(seg):
+    return _h5_core().stretch_of(seg)
+
+
+def h5_gates(plan):
+    """Part H H5: no slow motion above 1.15x (SLOWMO_OVER_LIMIT) and, when
+    the timeline carries line windows and segments name the line they show,
+    every picture matches the line heard in its window
+    (PICTURE_LINE_MISMATCH). Returns (_fail or None, evidence rows)."""
+    tp = _h5_core()
+    segs = plan["segments"]
+    rows = tp.check_stretch(segs)
+    ev = {"stretch": rows}
+    bad = [r for r in rows if not r["ok"]]
+    if bad:
+        return _fail(tp.SLOWMO, next_action=(
+            "segment(s) %s are slowed above %.2fx; generate the picture at "
+            "the shot window's length instead of stretching it"
+            % (",".join(str(r["index"]) for r in bad), tp.MAX_SLOWMO)),
+            evidence=ev), ev
+    if plan.get("lines") and any(s.get("shows_line_ids") for s in segs):
+        fps = plan["fps"]
+        shots = [{"shot_id": "seg%d" % i,
+                  "song_start": s["offset_frames"] / fps,
+                  "song_end": (s["offset_frames"] + s["frames"]) / fps,
+                  "shows_line_ids": s.get("shows_line_ids", [])}
+                 for i, s in enumerate(segs)]
+        try:
+            gate = tp.pictures_match_gate(shots, [
+                {"line_id": l["line_id"], "start": l["start_s"],
+                 "end": l["end_s"], "text": l.get("text", "")}
+                for l in plan["lines"]])
+        except (KeyError, TypeError, AttributeError, tp.PlanError) as exc:
+            return _fail("TIMELINE_BAD_LINES", next_action=str(exc),
+                         evidence=ev), ev
+        ev["pictures_match"] = gate
+        if gate["outcome"] != "ok":
+            return _fail(gate["reason_code"], next_action=(
+                "pictures do not match the words in " + ",".join(gate["mismatches"])),
+                evidence=ev), ev
+    return None, ev
+
+
 def lipsync_gate(plan):
     """E6 final edit QC: lip-sync coverage on the planned timeline.
 
@@ -331,6 +382,50 @@ def lipsync_gate(plan):
         return None
     return _fail(res["reason_code"], next_action=res["detail"],
                  evidence=res["evidence"])
+
+def face_speaks_gate(plan):
+    """Part H H4 final edit QC: every shot where a face is visibly speaking
+    is a lip-sync clip of that character's own line, and lip-sync coverage
+    sits in the target band.
+
+    Opt-in by data: runs only when the timeline "lines" carry "speaker"
+    (otherwise None, nothing to judge). Then every segment must declare
+    "faces_on_screen" (optional "speaking_faces"); a missing declaration
+    fails closed FACE_DATA_MISSING. Returns the _fail receipt or None; the
+    shot table (shot / time / line / lip-sync) rides in evidence.
+    """
+    lines = [l for l in (plan.get("lines") or []) if l.get("speaker")]
+    if not lines:
+        return None
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    from shot_planner import face_speaks as fs
+    fps, shots = plan["fps"], []
+    for i, s in enumerate(plan["segments"]):
+        if not isinstance(s.get("faces_on_screen"), list):
+            return _fail("FACE_DATA_MISSING",
+                         next_action="segments[%d] must declare "
+                         "faces_on_screen when lines carry speakers" % i,
+                         evidence={})
+        start = s["offset_frames"] / fps
+        shots.append({"shot_id": s.get("shot_id") or "seg%d" % i,
+                      "start": start, "end": start + s["frames"] / fps,
+                      "faces_on_screen": s["faces_on_screen"],
+                      "speaking_faces": s.get("speaking_faces"),
+                      "lip_sync_line_ids": s.get("lip_sync_line_ids")})
+    res = fs.check_face_speaks(shots, plan["lines"])
+    if not res["pass"]:
+        return _fail(res["reason_code"], next_action=res["detail"],
+                     evidence={"speaking_face_rows": res["rows"]})
+    marked = [s for s in plan["segments"] if s.get("lip_sync_line_ids")]
+    band = fs.check_coverage_band(plan["total_dur"], sum(
+        s["snapped_dur"] for s in marked), len(marked))
+    if not band["pass"]:
+        return _fail(band["reason_code"],
+                     next_action="lip-sync coverage is below the target band "
+                     "(manual Part H H4)", evidence=band["evidence"])
+    return None
 
 # F9 frame-text check: sampled frames per lip-sync clip, extractor stub
 # default (OCR optional; register_extractor installs it). No ffmpeg needed
@@ -529,112 +624,6 @@ def _seg_transition(tl, seg):
     return t
 
 
-def face_speaks_gate(plan):
-    """Part H H4 final edit QC: every shot where a face is visibly speaking
-    is a lip-sync clip of that character's own line, and lip-sync coverage
-    sits in the target band.
-
-    Opt-in by data: runs only when the timeline "lines" carry "speaker"
-    (otherwise None, nothing to judge). Then every segment must declare
-    "faces_on_screen" (optional "speaking_faces"); a missing declaration
-    fails closed FACE_DATA_MISSING. Returns the _fail receipt or None; the
-    shot table (shot / time / line / lip-sync) rides in evidence.
-    """
-    lines = [l for l in (plan.get("lines") or []) if l.get("speaker")]
-    if not lines:
-        return None
-    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if core_dir not in sys.path:
-        sys.path.insert(0, core_dir)
-    from shot_planner import face_speaks as fs
-    fps, shots = plan["fps"], []
-    for i, s in enumerate(plan["segments"]):
-        if not isinstance(s.get("faces_on_screen"), list):
-            return _fail("FACE_DATA_MISSING",
-                         next_action="segments[%d] must declare "
-                         "faces_on_screen when lines carry speakers" % i,
-                         evidence={})
-        start = s["offset_frames"] / fps
-        shots.append({"shot_id": s.get("shot_id") or "seg%d" % i,
-                      "start": start, "end": start + s["frames"] / fps,
-                      "faces_on_screen": s["faces_on_screen"],
-                      "speaking_faces": s.get("speaking_faces"),
-                      "lip_sync_line_ids": s.get("lip_sync_line_ids")})
-    res = fs.check_face_speaks(shots, plan["lines"])
-    if not res["pass"]:
-        return _fail(res["reason_code"], next_action=res["detail"],
-                     evidence={"speaking_face_rows": res["rows"]})
-    marked = [s for s in plan["segments"] if s.get("lip_sync_line_ids")]
-    band = fs.check_coverage_band(plan["total_dur"], sum(
-        s["snapped_dur"] for s in marked), len(marked))
-    if not band["pass"]:
-        return _fail(band["reason_code"],
-                     next_action="lip-sync coverage is below the target band "
-                     "(manual Part H H4)", evidence=band["evidence"])
-    return None
-
-# F9 frame-text check: sampled frames per lip-sync clip, extractor stub
-# default (OCR optional; register_extractor installs it). No ffmpeg needed
-# on the stub path, so dry runs and tests run it too -- the done-when is
-# "a frame check runs on every lip-sync clip and the receipt shows it".
-try:                                    # F9 sibling module (this package)
-    from .frame_text import GARBLED_TEXT_FRAME, clip_rows as _frame_rows
-except ImportError:                     # direct script run from this dir
-    from frame_text import (            # type: ignore
-        GARBLED_TEXT_FRAME, clip_rows as _frame_rows)
-
-
-def _h5_core():
-    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if core_dir not in sys.path:
-        sys.path.insert(0, core_dir)
-    import shot_planner.timestamp_plan as tp
-    return tp
-
-
-def _h5_stretch(seg):
-    return _h5_core().stretch_of(seg)
-
-
-def h5_gates(plan):
-    """Part H H5: no slow motion above 1.15x (SLOWMO_OVER_LIMIT) and, when
-    the timeline carries line windows and segments name the line they show,
-    every picture matches the line heard in its window
-    (PICTURE_LINE_MISMATCH). Returns (_fail or None, evidence rows)."""
-    tp = _h5_core()
-    segs = plan["segments"]
-    rows = tp.check_stretch(segs)
-    ev = {"stretch": rows}
-    bad = [r for r in rows if not r["ok"]]
-    if bad:
-        return _fail(tp.SLOWMO, next_action=(
-            "segment(s) %s are slowed above %.2fx; generate the picture at "
-            "the shot window's length instead of stretching it"
-            % (",".join(str(r["index"]) for r in bad), tp.MAX_SLOWMO)),
-            evidence=ev), ev
-    if plan.get("lines") and any(s.get("shows_line_ids") for s in segs):
-        fps = plan["fps"]
-        shots = [{"shot_id": "seg%d" % i,
-                  "song_start": s["offset_frames"] / fps,
-                  "song_end": (s["offset_frames"] + s["frames"]) / fps,
-                  "shows_line_ids": s.get("shows_line_ids", [])}
-                 for i, s in enumerate(segs)]
-        try:
-            gate = tp.pictures_match_gate(shots, [
-                {"line_id": l["line_id"], "start": l["start_s"],
-                 "end": l["end_s"], "text": l.get("text", "")}
-                for l in plan["lines"]])
-        except (KeyError, TypeError, AttributeError, tp.PlanError) as exc:
-            return _fail("TIMELINE_BAD_LINES", next_action=str(exc),
-                         evidence=ev), ev
-        ev["pictures_match"] = gate
-        if gate["outcome"] != "ok":
-            return _fail(gate["reason_code"], next_action=(
-                "pictures do not match the words in " + ",".join(gate["mismatches"])),
-                evidence=ev), ev
-    return None, ev
-
-
 def plan_timeline(tl, base_dir=".", probe=None):
     """Pure frame plan: snap durations once, accumulate integer frames.
 
@@ -695,9 +684,7 @@ def plan_timeline(tl, base_dir=".", probe=None):
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
                 "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")),
-                "hold": bool(s.get("hold")), **rec,
-                # Part H H5: slow-motion factor + the line this picture shows
-                "stretch": round(_h5_stretch({**s, "dur": dur}), 3)}
+                "hold": bool(s.get("hold")), **rec}
         if fw is not None:
             item["first_word_s"] = float(fw)
         # Part F F12: the timeline's per-segment motion_score (the
@@ -707,10 +694,13 @@ def plan_timeline(tl, base_dir=".", probe=None):
             item["motion_score"] = s["motion_score"]
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
+            if isinstance(s.get("lip_lead_s"), (int, float)):
+                item["lip_lead_s"] = float(s["lip_lead_s"])   # Part H H1
+        # Part H H5: slow-motion factor (shown s / source s, or 1/speed) and
+        # the line this picture shows ride the plan for the two gates below.
+        item["stretch"] = round(_h5_stretch({**s, "dur": dur}), 3)
         if s.get("shows_line_ids"):
             item["shows_line_ids"] = list(s["shows_line_ids"])
-        if isinstance(s.get("lip_lead_s"), (int, float)):   # Part H H1
-            item["lip_lead_s"] = float(s["lip_lead_s"])
         # Part H H4: who is on screen / visibly speaking, for the face gate.
         for k in ("shot_id", "faces_on_screen", "speaking_faces"):
             if s.get(k) is not None:
@@ -807,6 +797,49 @@ def _last_line_over_detail(plan):
             if float(ln["end_s"]) > ec]
 
 
+# --- H13: cross-fades vs words ------------------------------------------------
+
+
+def check_fade_before_first_word(plan):
+    """H13 gate: the fade into a clip ends FADE_WORD_MARGIN_S before its
+    first word. Returns [] or [FADE_COVERS_FIRST_WORD]."""
+    eps = 1e-6
+    for s in plan["segments"]:
+        fw = s.get("first_word_s")
+        if fw is not None and s.get("xfade_dur", 0) > 0 \
+                and s["xfade_dur"] + FADE_WORD_MARGIN_S > fw + eps:
+            return [FADE_COVERS_FIRST_WORD]
+    return []
+
+
+def check_long_gap_hold(plan):
+    """H13 gate: a line with an internal word gap above LONG_GAP_S must sit
+    wholly inside the fully-opaque span of ONE lip-sync segment (held on
+    the speaking face). Lines carry optional words [{start_s, end_s}].
+    Returns [] or [LONG_GAP_CUTAWAY]."""
+    fps, segs = plan["fps"], plan["segments"]
+    spans = []
+    for i, s in enumerate(segs):
+        nxt = segs[i + 1].get("xfade_frames", 0) if i + 1 < len(segs) else 0
+        a = (s["offset_frames"] + s.get("xfade_frames", 0)) / fps
+        b = (s["offset_frames"] + s["frames"] - nxt) / fps
+        spans.append((a, b, s))
+    for ln in plan.get("lines") or []:
+        w = ln.get("words") or []
+        if not any(w[k + 1]["start_s"] - w[k]["end_s"] > LONG_GAP_S
+                   for k in range(len(w) - 1)):
+            continue
+        held = any(
+            s.get("lip_sync") or s.get("lip_sync_line_ids")
+            for a, b, s in spans
+            if a - 1e-6 <= ln["start_s"] and ln["end_s"] <= b + 1e-6
+            and (not s.get("lip_sync_line_ids")
+                 or ln["line_id"] in s["lip_sync_line_ids"]))
+        if not held:
+            return [LONG_GAP_CUTAWAY]
+    return []
+
+
 # --- Part E E5: lip-sync clips stay whole (atomic) --------------------------
 #
 # A lip-sync clip carries one sung line's mouth motion, aligned to that
@@ -866,6 +899,36 @@ def _timing_lines(tl):
     return lines
 
 
+def validate_lipsync_placement(plan, tl):
+    """Part H H1 gate: a lip-sync clip sits at its line's real Suno start
+    minus its lead-in (segment key "lip_lead_s", written by the lip stage),
+    within one frame -- never re-timed. Segments without "lip_lead_s" are
+    not checked (legacy timelines). Raises ValueError LIPSYNC_RETIMED.
+    Returns the checked count."""
+    fps, n = plan["fps"], 0
+    starts = {ln["line_id"]: float(ln["start"])
+              for sec in (tl.get("timing") or {}).get("sections", [])
+              for ln in sec.get("lyrics", [])}
+    for s in plan["segments"]:
+        lids = s.get("lip_sync_line_ids")
+        if not lids or "lip_lead_s" not in s:
+            continue
+        if lids[0] not in starts:
+            raise ValueError("LIPSYNC_WINDOW_UNKNOWN: lip-sync line %r "
+                             "missing from the timing map" % (lids[0],))
+        want = starts[lids[0]] - s["lip_lead_s"]
+        got = s["offset_frames"] / fps
+        if abs(got - want) > 1 / fps + 1e-9:
+            raise ValueError(
+                "LIPSYNC_RETIMED: %r placed at %.3fs but line %r starts at "
+                "%.3fs with %.2fs lead-in (want %.3fs); a lip-sync clip is "
+                "placed at its real Suno timestamp, never re-timed (Part H "
+                "H1)" % (s["src"], got, lids[0], starts[lids[0]],
+                         s["lip_lead_s"], want))
+        n += 1
+    return n
+
+
 def validate_lipsync_atomic(plan, tl=None):
     """Part E E5 gate: lip-sync clips may not be split or trimmed.
 
@@ -912,79 +975,6 @@ def validate_lipsync_atomic(plan, tl=None):
                     "E E5)" % (s["src"], s["snapped_dur"], sorted(lids)))
     checked = sum(1 for s in segs if s.get("lip_sync_line_ids"))
     return checked
-
-
-# --- H13: cross-fades vs words ------------------------------------------------
-
-
-def check_fade_before_first_word(plan):
-    """H13 gate: the fade into a clip ends FADE_WORD_MARGIN_S before its
-    first word. Returns [] or [FADE_COVERS_FIRST_WORD]."""
-    eps = 1e-6
-    for s in plan["segments"]:
-        fw = s.get("first_word_s")
-        if fw is not None and s.get("xfade_dur", 0) > 0 \
-                and s["xfade_dur"] + FADE_WORD_MARGIN_S > fw + eps:
-            return [FADE_COVERS_FIRST_WORD]
-    return []
-
-
-def check_long_gap_hold(plan):
-    """H13 gate: a line with an internal word gap above LONG_GAP_S must sit
-    wholly inside the fully-opaque span of ONE lip-sync segment (held on
-    the speaking face). Lines carry optional words [{start_s, end_s}].
-    Returns [] or [LONG_GAP_CUTAWAY]."""
-    fps, segs = plan["fps"], plan["segments"]
-    spans = []
-    for i, s in enumerate(segs):
-        nxt = segs[i + 1].get("xfade_frames", 0) if i + 1 < len(segs) else 0
-        a = (s["offset_frames"] + s.get("xfade_frames", 0)) / fps
-        b = (s["offset_frames"] + s["frames"] - nxt) / fps
-        spans.append((a, b, s))
-    for ln in plan.get("lines") or []:
-        w = ln.get("words") or []
-        if not any(w[k + 1]["start_s"] - w[k]["end_s"] > LONG_GAP_S
-                   for k in range(len(w) - 1)):
-            continue
-        held = any(
-            s.get("lip_sync") or s.get("lip_sync_line_ids")
-            for a, b, s in spans
-            if a - 1e-6 <= ln["start_s"] and ln["end_s"] <= b + 1e-6
-            and (not s.get("lip_sync_line_ids")
-                 or ln["line_id"] in s["lip_sync_line_ids"]))
-        if not held:
-            return [LONG_GAP_CUTAWAY]
-    return []
-
-
-def validate_lipsync_placement(plan, tl):
-    """Part H H1 gate: a lip-sync clip sits at its line's real Suno start
-    minus its lead-in (segment key "lip_lead_s", written by the lip stage),
-    within one frame -- never re-timed. Segments without "lip_lead_s" are
-    not checked (legacy timelines). Raises ValueError LIPSYNC_RETIMED.
-    Returns the checked count."""
-    fps, n = plan["fps"], 0
-    starts = {ln["line_id"]: float(ln["start"])
-              for sec in (tl.get("timing") or {}).get("sections", [])
-              for ln in sec.get("lyrics", [])}
-    for s in plan["segments"]:
-        lids = s.get("lip_sync_line_ids")
-        if not lids or "lip_lead_s" not in s:
-            continue
-        if lids[0] not in starts:
-            raise ValueError("LIPSYNC_WINDOW_UNKNOWN: lip-sync line %r "
-                             "missing from the timing map" % (lids[0],))
-        want = starts[lids[0]] - s["lip_lead_s"]
-        got = s["offset_frames"] / fps
-        if abs(got - want) > 1 / fps + 1e-9:
-            raise ValueError(
-                "LIPSYNC_RETIMED: %r placed at %.3fs but line %r starts at "
-                "%.3fs with %.2fs lead-in (want %.3fs); a lip-sync clip is "
-                "placed at its real Suno timestamp, never re-timed (Part H "
-                "H1)" % (s["src"], got, lids[0], starts[lids[0]],
-                         s["lip_lead_s"], want))
-        n += 1
-    return n
 
 
 def build_argv(plan, output, ffmpeg="ffmpeg"):
@@ -1191,14 +1181,14 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # path runs, at assembly validation. Render only a plan that passes.
     try:
         validate_lipsync_atomic(plan, tl)
+        validate_lipsync_placement(plan, tl)
     except ValueError as exc:
         msg = str(exc)
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
-    try:
-        validate_lipsync_placement(plan, tl)     # Part H H1
-    except ValueError as exc:
-        msg = str(exc)
-        return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    # Part H H5: slow motion cap + pictures-match-words, before any spend.
+    h5_fail, _h5_ev = h5_gates(plan)
+    if h5_fail:
+        return h5_fail
     # Part I I4: the master (and its end card) ends by chosen length - 2 s.
     # chosen_length_s comes from the caller or the timeline; absent = not
     # checked here (qc_gate still demands it at final_edit).
@@ -1232,6 +1222,15 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                                   "before the end card starts (manual "
                                   "Part F F8)"),
                      evidence={"over": _last_line_over_detail(plan)})
+    # H13: fades finish before the first word; long in-line gaps are held.
+    for gate, why in (
+            (check_fade_before_first_word, "shorten the fade or add "
+             "pre-roll so it ends 0.1 s before the first word (H13)"),
+            (check_long_gap_hold, "hold the speaking face through the "
+             "gap; do not cut away inside one line (H13)")):
+        bad = gate(plan)
+        if bad:
+            return _fail(bad[0], next_action=why, evidence={})
     # Part F F12: clips must move. Every planned clip carries its motion
     # score in the receipt; a near-still clip fails before any render spend
     # (CLIP_LOW_MOTION). Scored rows come from the timeline segments
@@ -1252,19 +1251,6 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
             plan.get("height", DEFAULT_HEIGHT))
-    # H13: fades finish before the first word; long in-line gaps are held.
-    for gate, why in (
-            (check_fade_before_first_word, "shorten the fade or add "
-             "pre-roll so it ends 0.1 s before the first word (H13)"),
-            (check_long_gap_hold, "hold the speaking face through the "
-             "gap; do not cut away inside one line (H13)")):
-        bad = gate(plan)
-        if bad:
-            return _fail(bad[0], next_action=why, evidence={})
-    # Part H H5: slow motion cap + pictures-match-words, before any spend.
-    h5_fail, h5_ev = h5_gates(plan)
-    if h5_fail:
-        return h5_fail
     argv = build_argv(plan, output, ffmpeg)
     # E6 lip-sync coverage result rides in every receipt; only a FAIL
     # blocks the render. The dry-run receipt exists for exactly this.
@@ -1288,14 +1274,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "evidence": {"argv": argv, "plan": plan,
                             "timeout_s": timeout, "lipsync": cov,
                             "frame_text": frows,
-                            "motion": motion, "h5": h5_ev},
+                            "motion": motion, "h5": _h5_ev},
                "state_version": 0}
-        try:
-            _attach_evidence(out, detector_result, target, takes, verdict,
-                             planned)
-        except ValueError as exc:
-            return _fail("DISHONEST_SUNG_PCT", next_action=str(exc),
-                         evidence={"detector_result": detector_result})
         blocked = next((b for b in (cov, face, ffail) if b is not None), None)
         if blocked is not None:  # blocked before spend, but evidence stays
             out["outcome"] = "error"
@@ -1303,6 +1283,12 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             out["next_action"] = blocked["next_action"]
             out.setdefault("evidence", {}).setdefault("gate_evidence", {})
             out["evidence"]["gate_evidence"] = blocked["evidence"]
+        try:
+            _attach_evidence(out, detector_result, target, takes, verdict,
+                             planned)
+        except ValueError as exc:
+            return _fail("DISHONEST_SUNG_PCT", next_action=str(exc),
+                         evidence={"detector_result": detector_result})
         return out
     for blocked in (cov, face, ffail):   # gate FAILs: no render spend (17.5)
         if blocked is not None:
@@ -1328,7 +1314,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             "timeout_s": timeout,
             # F12: every clip's motion score rides in the receipt
             # (scored before the render; flagged clips never reached here).
-            "motion": motion, "h5": h5_ev}
+            "motion": motion, "h5": _h5_ev}
     # Part E E1(5) final QC gate: a master above 2% duplicated frames
     # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
     # accepted dup source is source fps == timeline fps; with the E1
@@ -1429,6 +1415,11 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--chosen-length-s", type=float, default=None,
                     help="I4: chosen video length; master must be <= this - 2")
+    ap.add_argument("--ffmpeg", default="ffmpeg")
+    ap.add_argument("--ffprobe", default="ffprobe")
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="render cap in seconds; default: lane_size.py "
+                         "or Part D max(600, 2 x output s x 1080p factor)")
     ap.add_argument("--detector-result", default=None,
                     help="path to the G3 singing-detector result JSON; "
                          "the only legal source of a receipt sung %% (G5)")
@@ -1442,11 +1433,6 @@ def main(argv=None):
     ap.add_argument("--verdict", default=None,
                     help="path to a target_engine verdict JSON; supplies "
                          "target, rounds used and the selected take")
-    ap.add_argument("--ffmpeg", default="ffmpeg")
-    ap.add_argument("--ffprobe", default="ffprobe")
-    ap.add_argument("--timeout", type=int, default=None,
-                    help="render cap in seconds; default: lane_size.py "
-                         "or Part D max(600, 2 x output s x 1080p factor)")
     args = ap.parse_args(argv)
     if not shutil.which(args.ffmpeg) or not shutil.which(args.ffprobe):
         print(json.dumps(_fail("PREREQ_MISSING",
