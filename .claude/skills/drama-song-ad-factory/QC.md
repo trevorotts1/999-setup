@@ -45,11 +45,22 @@
   pass). `lip_gate/event_sync.py` is an ADVISORY measure recorded in the receipt as
   `advisory_event_sync`; it never gates and never triggers a redo.
 - At most 2 paid `kling/ai-avatar-standard` jobs per segment, every name variant
-  counted. Try 2 only on a hard defect (a FAIL, or a defect a person saw) and only with
-  a changed input. After that the best take is kept: receipt row `KEPT_BEST_OF_2 (tN)`
+  counted. Try 2 only on a person's call (a defects file or `person_verdict` "DEFECT") and only with
+  a changed input, never on a checker verdict. After that the best take is kept: receipt row `KEPT_BEST_OF_2 (tN)`
   with verdict, numbers, flag, jobs used and a mouth-strip path; `lip_gate.qc_check`
   accepts that row. A third job, or a second job with the same input, is a QC failure.
   InfiniTalk is a manual backup only, never automatic.
+- Lip-sync process (LSP001, Trevor approved 2026-10-08), what QC checks: (1) reuse first:
+  a segment with a usable take on disk has no new paid job in the ledger; (2) a sung line
+  the checker cannot confirm is tagged `KEPT_BEST (UNDETERMINED, sung)`, a borderline
+  spoken line is kept and flagged; (3) every UNDETERMINED or flagged row carries a
+  mouth-strip path (`<delivery folder>/mouth-strips/<segment>.png`) and the receipt lists
+  them for a person; (4) every second paid job traces to a person-marked defect, a
+  changed input and fewer than 2 prior jobs; (5) clips are trimmed to audio length, placed
+  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, conformed
+  by dropping frames (no minterpolate) through `load_governor`; (6) rows list the take
+  kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
+  `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung
 direct-response story -> storyboard -> clip generation -> assembly ->
