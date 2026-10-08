@@ -1,5 +1,14 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.19] - 2026-10-08 - Sung detector no longer reads gap-free speech as sung (singing_detector 2.0.0)
+
+Measured bug (detector check 1536): a sung share built on the density of pitched voice read fully spoken audio as sung (macOS say Samantha 100% sung, 10 of 13 say voices 74-100%, a rap control 91.7%). Real Suno sung hooks read 96% sung and real Suno spoken lines read spoken, so the old numbers looked fine on stems with natural pauses.
+
+- `core/singing_detector` 1.0.0 -> 2.0.0, same public interface (`detect_track`, `share_for_stem`, `score_stem_window`, `score_window`, `calibrate`, same receipt keys, same `METHOD` name). A window is sung only when the voice behaves like a melody on a scale: steady-note share of voiced time >= 0.45, pitch-class concentration of the note pitches >= 0.70 (tuning-free; speech glides through every pitch), note-to-note intervals within 0.22 semitone of whole semitones (speech about 0.25), and enough notes per second. Pitched-voice density alone can no longer decide. Sustained-note share (notes held 250 ms or more) and the old note range are reported, not gated. Window 8 s, a second counts sung when half or more of its windows vote sung (a sung neighbour no longer paints the next spoken line sung).
+- Control table, now a test (`core/singing_detector/test_singing_detector.py`, fixtures are a few seconds each in `fixtures/`, plus 13 macOS `say` voices generated in the test): every spoken control <= 15% sung, every sung control >= 85% sung. Result: 13 say voices, 5 Suno spoken lines, 6 Gemini TTS lines and an O3a spoken stem all 0% sung; Chanel hook lines (5) and BSW hook lines (3) all 100% sung. Before (same clips): 9 of the 13 say voices were 33-94% sung and 3 Gemini TTS lines were 100% sung.
+- Band logic (`spoken_share`, `sung_vocal_guard`) is untouched; both read the 12.4 timing map, not audio density.
+- The factory's local `singcheck.py` (v60-tools, outside this repo) got a `singcheck-v2.py` next to it that calls this detector with the same CLI.
+
 ## [2.7.18] - 2026-10-08 - Re-sync shared core and references from onboarding main (W3-A-U1)
 
 Packaging parity with onboarding main `ac8a43fd4` (`75-drama-song-ad-factory`), done file by file instead of a wholesale mirror. Rule: a 999 file is replaced only when its bytes equal an older onboarding-main version (onboarding is strictly newer); every 999 file that carries a newer 999-only fix (H6/H8 band engine, I-series intake and master length, spoken_share, sung_vocal_guard, lip-sync close-up, singing_detector) is kept. `installer-registration/package_core.py` was not run in mirror mode because it would overwrite those fixes.
