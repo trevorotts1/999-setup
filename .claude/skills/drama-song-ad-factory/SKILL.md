@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.20
+version: 2.7.21
 ---
 
 # Drama Song Ad Factory
@@ -28,6 +28,28 @@ Route elsewhere when the assignment is:
 - a single landing / funnel page -> `blackceo-signature-page`
 - an OpenClaw department run -> the OpenClaw `drama-song-ad-factory` skill
   (same core, OpenClaw runtime)
+
+## Main window orchestrates only; nothing fails silently (operator rule)
+
+When this skill runs in Claude Code or claude-nine, the MAIN window only
+operates and orchestrates. ALL work is done by VISIBLE workflows and agents.
+Things that are wrong, broken or not working are NEVER allowed to fail
+silently.
+
+- The main session never does hands-on work: no media generation, no file
+  edits, no renders, no hand-run pipeline commands. It launches a visible
+  workflow (the Workflow tool) or named agents (shown in /workflows), reads
+  their verdicts, and reports them. The user chooses the agents and models;
+  the skill never names or forces a model of its own.
+- A workflow or agent that is wrong, broken or not working is reported by
+  name, with its error, in the same message. Never retry quietly, never skip
+  the step, never substitute a result.
+- Every failed or skipped gate lands in the final receipt as a named
+  `failures` entry (the run becomes `outcome: error`). The only fail-soft
+  paths are the documented ones (for example a Command Center board that is
+  unreachable); those still print a `WARNING <CODE>: ...` line and sit in the
+  receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
+  `tests/test_loud_failure.py`.
 
 ## Start here: the enforced flow
 
@@ -210,8 +232,7 @@ times. The Velvet Voiceover version is exempt.
   per line, product words pronunciation-tested, truthfulness preserved.
 - The song is the master timeline; lip-sync is applied to selected lines
   only (owner decision D10, superseded 2026-10-07): the pain peak, the
-  product line, the call to action and the chorus hook - three to four lines,
-  about 15 to 20 seconds, chosen by the factory and listed on the approval
+  product line, the call to action and the chorus hook, DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4 to 6 seconds (30 to 40 seconds, was 15 to 20), scaled linearly with the ad length, no clip over 6 seconds (`core/lipsync_clips.py`); clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so the cost roughly doubles and a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`). Chosen by the factory and listed on the approval
   card. Every other shot stays exactly as the video model made it, and the
   song remains narrator / internal voice while characters act. The version 1
   rule this replaces read "no lip-sync by default"; it is kept here only so
@@ -269,11 +290,18 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 - **Per-character voice packs:** no two characters share a voice, in any look
   or music style.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
-  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
-  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
-  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
-  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
-  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
+  includes one lip-sync close-up per speaking/singing character. It is MADE from the
+  template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate
+  (`lip_gate/image_gate.py`) before any paid lip-sync job: face looking straight at the
+  camera; head-and-shoulders, portrait 9:16, face about 35-40% of the frame height
+  (accepted 30-45%); mouth closed or slightly parted, neutral, no big toothy smile; nothing
+  over the mouth or jaw (hand, microphone, hair, hat brim); soft even light, no hard shadow
+  across the mouth, background separated from the head; the same 3D character as the
+  storyboard reference; sharp, at least 1080x1920, never cropped out of a wide shot. A
+  picture that fails any point, or cannot be measured, is refused LOUDLY with every reason
+  and no paid job runs (`lip_gate.run_gate(..., source_image=, image_check=)` raises
+  `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
+  source image. QC: its mouth region must be
   sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
@@ -338,6 +366,29 @@ modules (`final_assembler/assembler.py` and its siblings). A run folder with its
 own ffmpeg or caption script, or a master whose receipt lacks
 `produced_by.module` and a matching `master_sha256`, fails QC
 (`final_assembler/master_provenance.py`).
+
+## Model and agent choice: the user's choice wins
+
+This skill never picks, forces or recommends a model, an alias or an agent.
+
+- Workflows, subagents and checkers run on the model the session is already
+  using, or on an alias the user has configured and chosen. A model or alias
+  the user did not choose is never added, pinned or fallen back to.
+- If the build needs a model, alias or agent that is not configured on this
+  box, stop and tell the user in plain words which one is missing, then let
+  the user pick. Never silently swap in a different one, and never name a
+  model the user has not set up.
+- If the user names a model or agent, use exactly that one.
+
+## Main window: orchestrate only, all work visible, no silent failure
+
+- The main window only operates and orchestrates. It does not do the build
+  work itself; every piece of work runs in a visible workflow or visible
+  agent that the user can watch.
+- A workflow, agent or model that is wrong, broken or not working is never
+  allowed to fail silently. Report it right away, in plain words, with what
+  broke and what was trying to run. Do not retry quietly, skip the step,
+  swap to another model, or carry on as if it worked.
 
 ## Runtime modes
 

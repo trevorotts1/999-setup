@@ -121,3 +121,25 @@ value is never printed). `kie_dispatch` reads the adapter mode with Skill 74
 and tells the client generation is not switched on for this box. Set
 `KIE_LIVE_ADAPTER_PATH` only when the adapter sits outside every location
 the dispatcher searches.
+
+## Main window orchestrates only; nothing fails silently
+
+When this skill runs in Claude Code or claude-nine, the MAIN window only
+operates and orchestrates. ALL work is done by VISIBLE workflows and agents.
+Things that are wrong, broken or not working are NEVER allowed to fail
+silently.
+
+- The main session never does hands-on work: no media generation, no file
+  edits, no renders, no hand-run pipeline commands. It launches a visible
+  workflow (the Workflow tool) or named agents (shown in /workflows), reads
+  their verdicts, and reports them. The user chooses the agents and models;
+  the skill never names or forces a model of its own.
+- A workflow or agent that is wrong, broken or not working is reported by
+  name, with its error, in the same message. Never retry quietly, never skip
+  the step, never substitute a result.
+- Every failed or skipped gate lands in the final receipt as a named
+  `failures` entry (the run becomes `outcome: error`). The only fail-soft
+  paths are the documented ones (for example a Command Center board that is
+  unreachable); those still print a `WARNING <CODE>: ...` line and sit in the
+  receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
+  `tests/test_loud_failure.py`.

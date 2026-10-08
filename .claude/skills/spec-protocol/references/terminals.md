@@ -295,7 +295,7 @@ pins its own model. Use the spelling the Capacity Ledger names for this seat.)
 
 ```
 cd ~/Projects/<project-slug>
-claude --model fable --effort high --name qc \
+claude --model <the-model-the-client-chose> --effort high --name qc \
   "Read LOOPS/<review-gate-loop>.md and run it. \
 That file tells you exactly what to do, step by step."
 # This checks the work and fixes what is not good enough.

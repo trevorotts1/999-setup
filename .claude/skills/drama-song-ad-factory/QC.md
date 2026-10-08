@@ -1,5 +1,15 @@
 # QC Checklist: Drama Song Ad Factory (Skill 75)
 
+## Lip-sync doubled and the source-picture gate (owner order 2026-10-08)
+
+- Coverage: 30-40 s and 6-8 clips of 4-6 s in a 60 s ad, scaled linearly with
+  length (`shot_planner/face_speaks.py`, `final_assembler/lipsync_coverage.py`,
+  numbers in `core/lipsync_clips.py`); below the band fails
+  `LIPSYNC_COVERAGE_BELOW_BAND` / `LIPSYNC_COVERAGE_SHORT`.
+- Every lip-sync source picture passes `lip_gate.image_gate` before any paid
+  job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that
+  could not be made is a refusal, never a pass.
+
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung
 direct-response story -> storyboard -> clip generation -> assembly ->

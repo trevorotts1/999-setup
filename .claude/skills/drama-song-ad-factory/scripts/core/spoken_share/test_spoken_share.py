@@ -11,9 +11,8 @@ Proves, stdlib only and with zero paid calls:
   3. The old 40-70 band and the old per-length targets are gone from the
      length engine surface (music_styles reads its numbers from here) and
      the old table names are not re-exported.
-  4. First real singing is a TARGET of 15% of runtime judged with the owner's
-     5/10 band (accept / flag / redo) -- enforced by the planner-side rule,
-     and by check_plan together with the band.
+  4. The first sung line must start within about 10 seconds -- enforced by
+     the planner-side rule, and by check_plan together with the band.
   5. Malformed input raises (caller bug); an out-of-band share is a FAIL
      verdict, never an exception.
   6. Hygiene: the package is stdlib only, no network, no provider/paid
@@ -144,13 +143,13 @@ RAP = [
     {"delivery": "rap", "seconds": 7.5},
     {"delivery": "sung", "seconds": 77.5},
 ]
-m = SS.measure_share(RAP)
+m = SS.measure_share(RAP, "planned")
 check("rap-counted-in-measure", abs(m["share"] - 0.225) < 1e-9, m)
 check("rap-flag", m["rap_counts_as_spoken"] is True, m)
 check("rap-style-set", SS.SPOKEN_STYLE_DELIVERIES == frozenset({"spoken", "rap"}),
       sorted(SS.SPOKEN_STYLE_DELIVERIES))
 check("sung-never-spoken",
-      SS.measure_share([{"delivery": "sung", "seconds": 10.0}])
+      SS.measure_share([{"delivery": "sung", "seconds": 10.0}], "planned")
       ["spoken_style_seconds"] == 0.0)
 check("is-spoken-style-rap", SS.is_spoken_style("rap") is True)
 check("is-spoken-style-spoken", SS.is_spoken_style("Spoken ") is True)
@@ -184,114 +183,84 @@ check("refusal-text-when-fail",
 
 # share must agree with the timing measurement, or fail closed.
 check("share-vs-segments-mismatch-fail",
-      SS.check_share(0.50, RAP)["verdict"] == "FAIL",
-      SS.check_share(0.50, RAP)["reasons"])
+      SS.check_share(0.50, RAP, "planned")["verdict"] == "FAIL",
+      SS.check_share(0.50, RAP, "planned")["reasons"])
 check("matching-share-and-segments-pass",
-      SS.check_share(round(m["share"], 6), RAP)["verdict"] == "PASS",
-      SS.check_share(round(m["share"], 6), RAP))
+      SS.check_share(round(m["share"], 6), RAP, "planned")["verdict"] == "PASS",
+      SS.check_share(round(m["share"], 6), RAP, "planned"))
 
-# ------------------------------------------- 5. first real singing, 15% target
-check("first-sung-target-is-15", SS.FIRST_SUNG_TARGET_PCT == 15,
-      SS.FIRST_SUNG_TARGET_PCT)
-check("old-fixed-seconds-label-check-is-gone",
+# ------------------------------------- 5. first real singing, 15% target
+check("first-sung-target-is-15", SS.FIRST_SUNG_TARGET_PCT == 15)
+check("old-fixed-seconds-check-is-gone",
       not hasattr(SS, "FIRST_SUNG_WITHIN_SECONDS"))
-check("owner-band-is-5-and-10",
-      (SS.TARGET_ACCEPT_PCT, SS.TARGET_FLAG_PCT) == (5, 10))
-for gap, want in ((0, "ACCEPT"), (5, "ACCEPT"), (5.5, "FLAG"), (10, "FLAG"),
-                  (10.5, "REDO"), (40, "REDO")):
-    check("judge-gap-%s" % gap,
-          SS.judge_gap(15 + gap, 15)["band"] == want, SS.judge_gap(15 + gap, 15))
-    check("judge-gap-below-%s" % gap,
-          SS.judge_gap(15 - min(gap, 15), 15)["band"]
-          == SS.judge_gap(15 + min(gap, 15), 15)["band"])
+check("g10-one-constants-set",
+      (SS.TARGET_ACCEPT_PCT, SS.TARGET_FLAG_PCT, SS.REAL_SINGING_STRETCH_S)
+      == (SS.ACCEPT_PTS, SS.FLAG_PTS, SS.NO_REAL_SINGING_STRETCH_S))
 
 
-def at100(first):
-    return at(first, 100.0)
-
-
-def at(first, total=60.0):
+def at(first, total=100.0):
     return SS.check_first_sung([
         {"delivery": "spoken", "start": 0.0, "end": first},
         {"delivery": "sung", "start": first, "end": total}])
 
 
-# 60 s ad: target 9 s; accept 6-12 s; flag 3-6 s and 12-15 s; redo outside.
-check("hook-at-9s-accept", at(9)["band"] == "ACCEPT", at(9))
-check("hook-at-6s-accept", at(6)["band"] == "ACCEPT", at(6))
-check("hook-at-12s-accept", at(12)["band"] == "ACCEPT", at(12))
-check("hook-at-13s-flag-pass", at(13)["band"] == "FLAG"
-      and at(13)["verdict"] == "PASS" and at(13)["flags"], at(13))
-check("hook-at-4s-flag", at(4)["band"] == "FLAG", at(4))
-check("hook-at-16s-redo", at(16)["band"] == "REDO"
-      and at(16)["verdict"] == "FAIL", at(16))
-check("hook-at-0s-redo (no spoken opener at all)",
-      at(0.5)["verdict"] == "FAIL", at(0.5))
-check("late-reason-says-redo",
-      any("redo" in x for x in at(16)["reasons"]), at(16)["reasons"])
-check("basis-is-reported", at(9)["basis"] == "planned"
-      and SS.check_first_sung([{"delivery": "sung", "seconds": 60.0}],
-                              "measured")["basis"] == "measured")
+# 100 s ad: target 15 s. 18% accept, 22% flag (7 pts), 27% redo (12 pts).
+check("first-sung-15-accept", at(15)["verdict"] == "PASS", at(15))
+check("first-sung-18-percent-accept",
+      at(18)["verdict"] == "PASS" and at(18)["band"] == "ACCEPT", at(18))
+check("first-sung-20-percent-accept-edge", at(20)["verdict"] == "PASS")
+f22 = at(22)
+check("first-sung-22-percent-flag",
+      f22["verdict"] == "FLAG" and f22["flags"] and not f22["reasons"], f22)
+f27 = at(27)
+check("first-sung-27-percent-redo",
+      f27["verdict"] == "FAIL" and any("redo" in x for x in f27["reasons"]),
+      f27)
+check("first-sung-10-percent-accept-early-edge", at(10)["verdict"] == "PASS")
+check("first-sung-at-zero-redo", at(0.5)["verdict"] == "FAIL")
+check("basis-is-reported", at(15)["basis"] == "planned"
+      and SS.check_first_sung(
+          SS.segments_from_sung_stretches([(0.0, 60.0)], 60.0),
+          "measured")["basis"] == "measured")
 no_sung = [{"delivery": "spoken", "seconds": 60.0}]
 check("no-sung-fail", SS.check_first_sung(no_sung)["verdict"] == "FAIL",
       SS.check_first_sung(no_sung))
-
-# A 3-second sung blip is not "real singing" (needs a 6 s stretch).
 blip = [{"delivery": "sung", "start": 5.0, "end": 8.0},
         {"delivery": "spoken", "start": 8.0, "end": 60.0}]
 check("short-sung-blip-is-not-real-singing",
       SS.check_first_sung(blip)["verdict"] == "FAIL"
       and SS.check_first_sung(blip)["first_sung_start_s"] is None)
-
-# Kiesett v3: 60 s, 3.3% sung (2 s) -> no real singing -> FAIL.
-# Measured on the stem via the detector's stretches.
+# A 3 s blip first, then a real stretch: the first REAL singing is judged.
+blip_then_real = [{"delivery": "spoken", "start": 0.0, "end": 5.0},
+                  {"delivery": "sung", "start": 5.0, "end": 8.0},
+                  {"delivery": "spoken", "start": 8.0, "end": 15.0},
+                  {"delivery": "sung", "start": 15.0, "end": 60.0}]
+check("first-real-singing-skips-blip",
+      SS.check_first_sung(blip_then_real)["first_sung_start_s"] == 15.0)
 kies = SS.segments_from_sung_stretches([(41.0, 43.0)], 60.0)
-k = SS.check_first_sung(kies, "measured")
-check("kiesett-v3-fails", k["verdict"] == "FAIL" and k["band"] == "REDO", k)
-# Same track once the first sung stretch is a real one at 42 s: late, REDO.
-k2 = SS.check_first_sung(SS.segments_from_sung_stretches([(42.0, 60.0)], 60.0),
+check("measured-2s-sung-is-redo",
+      SS.check_first_sung(kies, "measured")["verdict"] == "FAIL")
+ok = SS.check_first_sung(SS.segments_from_sung_stretches([(9.0, 60.0)], 60.0),
                          "measured")
-check("late-real-singing-fails", k2["verdict"] == "FAIL", k2)
-# A sheet whose measured hook opens at 8 s after a short spoken opener passes.
-ok = SS.check_first_sung(SS.segments_from_sung_stretches([(8.0, 60.0)], 60.0),
-                         "measured")
-check("hook-at-8s-passes", ok["verdict"] == "PASS" and ok["band"] == "ACCEPT",
-      ok)
-
-# The lyric-sheet builder steers: which way, how far.
+check("measured-hook-at-9s-accept", ok["verdict"] == "PASS", ok)
 st = SS.steer_first_sung([{"delivery": "spoken", "seconds": 30.0},
                           {"delivery": "sung", "seconds": 30.0}])
 check("steer-shorten-opener", st["action"] == "shorten_opener"
       and st["move_by_s"] == -21.0 and st["target_s"] == 9.0, st)
-st = SS.steer_first_sung([{"delivery": "spoken", "seconds": 8.0},
-                          {"delivery": "sung", "seconds": 52.0}])
+st = SS.steer_first_sung([{"delivery": "spoken", "seconds": 9.0},
+                          {"delivery": "sung", "seconds": 51.0}])
 check("steer-keep", st["action"] == "keep", st)
-st = SS.steer_first_sung(no_sung)
-check("steer-add-hook", st["action"] == "add_sung_hook", st)
-
-# Trevor's band on a 100 s ad (target 15 s): 18% accept, 22% flag, 27% redo.
-check("first-sung-18-percent-accept",
-      at100(18)["band"] == "ACCEPT" and at100(18)["verdict"] == "PASS")
-f22 = at100(22)
-check("first-sung-22-percent-flag",
-      f22["band"] == "FLAG" and f22["verdict"] == "PASS" and f22["flags"], f22)
-check("first-sung-27-percent-redo",
-      at100(27)["band"] == "REDO" and at100(27)["verdict"] == "FAIL")
-check("g10-one-constants-set",
-      (SS.TARGET_ACCEPT_PCT, SS.TARGET_FLAG_PCT, SS.REAL_SINGING_STRETCH_S)
-      == (SS.ACCEPT_PTS, SS.FLAG_PTS, SS.NO_REAL_SINGING_STRETCH_S)
-      and SS.SUNG_TARGET_PCT == 100 - SS.SPOKEN_TARGET_PCT)
-check("judge-gap-pair-carries-verdict",
-      SS.judge_gap(50, 60) == {"gap_pts": 10.0, "verdict": "FLAG",
-                               "band": "FLAG"})
+check("steer-add-hook",
+      SS.steer_first_sung(no_sung)["action"] == "add_sung_hook")
 
 # check_plan enforces BOTH halves: band and first-sung rule.
-# 90 s cut on the target: 6 s spoken + 14.25 s rap = 20.25 s spoken-style
-# (22.5%), the sung line opens at 6 s, the second sung block closes it out.
+# 90 s cut on the target: 13.5 s spoken + 6.75 s rap = 20.25 s spoken-style
+# (22.5%), the sung line opens at 13.5 s (15%), the second sung block closes
+# it out (sung 69.75 s of 90 s voice = 77.5%).
 good = [
-    {"delivery": "spoken", "start": 0.0, "end": 6.0},
-    {"delivery": "sung", "start": 6.0, "end": 12.0},
-    {"delivery": "rap", "start": 12.0, "end": 26.25},
+    {"delivery": "spoken", "start": 0.0, "end": 13.5},
+    {"delivery": "sung", "start": 13.5, "end": 19.5},
+    {"delivery": "rap", "start": 19.5, "end": 26.25},
     {"delivery": "sung", "start": 26.25, "end": 90.0},
 ]
 p = SS.check_plan(90, good)
@@ -299,10 +268,7 @@ check("plan-in-band-pass", p["share_check"]["verdict"] == "PASS",
       p["share_check"])
 check("plan-first-sung-pass", p["first_sung"]["verdict"] == "PASS",
       p["first_sung"])
-check("plan-pass", p["verdict"] in ("PASS", "FLAG") and not p["reasons"],
-      p["reasons"])
-check("plan-flag-carried (6 s of 90 = 6.7%, 8.3 points off)",
-      p["first_sung"]["band"] == "FLAG" and len(p["flags"]) == 1, p["flags"])
+check("plan-pass", p["verdict"] == "PASS", p["reasons"])
 check("plan-refusal-empty", SS.plan_refusal(90, good) == "")
 
 late_plan = [
@@ -345,19 +311,6 @@ check("h8-share-30-flag-carries-flag",
       f30["verdict"] == "FLAG" and len(f30["flags"]) == 1, f30)
 check("h8-share-34-redo", SS.check_share(0.34)["verdict"] == "FAIL")
 check("h8-flag-never-refuses", SS.refusal(0.30) == "")
-# first-sung (H6 target): 60 s ad, target 9 s (15%); 12 s = 5 pts accept, 14 s = 8.3 flag, 17 s redo, 2 s (too early) redo
-def ad(first):
-    return [{"delivery": "spoken", "start": 0.0, "end": first},
-            {"delivery": "sung", "start": first, "end": 60.0}]
-check("h8-first-sung-12-accept",
-      SS.check_first_sung(ad(12))["band"] == "ACCEPT")
-fs = SS.check_first_sung(ad(14))
-check("h8-first-sung-14-flag",
-      fs["verdict"] == "PASS" and fs["band"] == "FLAG" and fs["flags"], fs)
-check("h8-first-sung-17-redo",
-      SS.check_first_sung(ad(17))["verdict"] == "FAIL")
-check("h8-first-sung-too-early-redo",
-      SS.check_first_sung(ad(2))["verdict"] == "FAIL")
 # THE singing rule: only a missing 6 s sung stretch is a hard reject.
 short = [{"delivery": "spoken", "start": 0.0, "end": 20.0},
          {"delivery": "sung", "start": 20.0, "end": 25.0},
@@ -418,26 +371,28 @@ def voice(pct, lead=0.0, tail=0.0):
 
 # Sung of VOICE time (target 77.5): 76 accept, 69 flag, 60 redo.
 check("spk001-voice-76-accept",
-      SS.check_sung_of_voice(voice(76))["verdict"] == "PASS")
-v69 = SS.check_sung_of_voice(voice(69))
+      SS.check_sung_of_voice(voice(76), basis="planned")["verdict"]
+      == "PASS")
+v69 = SS.check_sung_of_voice(voice(69), basis="planned")
 check("spk001-voice-69-flag",
       v69["verdict"] == "FLAG" and len(v69["flags"]) == 1, v69)
-v60 = SS.check_sung_of_voice(voice(60))
+v60 = SS.check_sung_of_voice(voice(60), basis="planned")
 check("spk001-voice-60-redo",
       v60["verdict"] == "FAIL" and v60["reasons"], v60)
 # A 10 s music-only intro and a 5 s end card are not penalized.
 bare, framed = voice(76), voice(76, lead=10.0)
 check("spk001-intro-and-end-card-not-penalized",
-      SS.check_sung_of_voice(framed)["sung_of_voice_pct"]
-      == SS.check_sung_of_voice(bare)["sung_of_voice_pct"] == 76.0
-      and SS.check_sung_of_voice(framed)["verdict"] == "PASS"
-      and SS.check_plan(55, framed + [], "measured")["sung_of_voice"]
+      SS.check_sung_of_voice(framed, basis="planned")["sung_of_voice_pct"]
+      == SS.check_sung_of_voice(bare, basis="planned")["sung_of_voice_pct"]
+      == 76.0
+      and SS.check_sung_of_voice(framed, basis="planned")["verdict"] == "PASS"
+      and SS.check_plan(55, framed + [], "planned")["sung_of_voice"]
       ["verdict"] == "PASS")
 check("spk001-voice-direct-seconds",
       SS.check_sung_of_voice(sung_s=31.0, spoken_s=9.0)["sung_of_voice_pct"]
       == 77.5)
 check("spk001-card-target-overrides-default",
-      SS.check_sung_of_voice(voice(60), target_pct=60)["verdict"] == "PASS")
+      SS.check_sung_of_voice(voice(60), target_pct=60, basis="planned")["verdict"] == "PASS")
 check("spk001-no-voice-raises",
       raises(lambda: SS.sung_of_voice_pct(0, 0), SS.SpokenShareError)
       is not None)
@@ -516,6 +471,109 @@ for path in MODULE_FILES:
     check("no-operator-path-" + base, "/Users/" not in text, "/Users/")
 
 print()
+# ------------------------------------------- 7. G8: audio, never labels
+O3_LABELS = [
+    {"delivery": "spoken", "start": 0.0, "end": 40.0},
+    {"delivery": "sung", "start": 40.0, "end": 140.0},
+    {"delivery": "spoken", "start": 140.0, "end": 147.0},
+]
+e = raises(lambda: SS.measure_share(O3_LABELS), SS.SpokenShareError)
+check("g8-label-segments-refused",
+      e is not None and e.code == "LABELS_NOT_MEASURED"
+      and "labels, not measured" in str(e), e)
+e = raises(lambda: SS.check_share(0.54, O3_LABELS), SS.SpokenShareError)
+check("g8-check-share-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+e = raises(lambda: SS.check_sung_of_voice(O3_LABELS), SS.SpokenShareError)
+check("g8-check-sung-of-voice-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+e = raises(lambda: SS.check_first_sung(O3_LABELS, "measured"),
+           SS.SpokenShareError)
+check("g8-first-sung-measured-basis-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+e = raises(lambda: SS.check_plan(147, O3_LABELS, "measured"),
+           SS.SpokenShareError)
+check("g8-check-plan-measured-basis-refuses-labels",
+      e is not None and e.code == "LABELS_NOT_MEASURED", e)
+check("g8-segment-basis-labels",
+      SS.segment_basis(O3_LABELS) == "planned", SS.segment_basis(O3_LABELS))
+check("g8-planned-declared-not-measured",
+      SS.measure_share(O3_LABELS, "planned")["share_source"] == "planned")
+
+# the detector's own output (segments_from_sung_stretches stamps
+# source="measured" + detector + stem id) is accepted, and an all-spoken
+# stem reads as NO singing -- never as a share of record.
+DETECTOR = SS.segments_from_sung_stretches([], 147.0,
+                                           detector_version="2.0.0",
+                                           stem_id="vocal")
+check("g8-detector-segments-stamp-measured",
+      SS.segment_basis(DETECTOR) == "measured"
+      and DETECTOR[0]["source"] == "measured"
+      and DETECTOR[0]["detector"] == "singing_detector"
+      and DETECTOR[0]["detector_version"] == "2.0.0"
+      and DETECTOR[0]["stem_id"] == "vocal", DETECTOR[0])
+m = SS.measure_share(DETECTOR)
+check("g8-detector-output-accepted", m["basis"] == "measured"
+      and m["share_source"] == "measured"
+      and m["stem_id"] == "vocal" and m["detector_version"] == "2.0.0", m)
+check("g8-o3-measured-no-singing",
+      m["sung_seconds"] == 0.0
+      and SS.check_real_singing(DETECTOR)["verdict"] == "FAIL", m)
+
+# reference stem: 55.9 s sung / 147 s runtime -> sung-or-rapped of runtime
+REF = SS.segments_from_sung_stretches([(40.0, 95.9)], 147.0,
+                                      detector_version="2.0.0",
+                                      stem_id="vocal")
+mr = SS.measure_share(REF)
+pct_sung_or_rapped = (mr["sung_seconds"] + mr["rap_seconds"]) \
+    / mr["total_seconds"] * 100.0
+check("g8-reference-measured-share-within-5-of-37-8",
+      abs(pct_sung_or_rapped - 37.8) <= 5.0,
+      round(pct_sung_or_rapped, 2))
+check("g8-reference-source-measured",
+      mr["share_source"] == "measured" and REF[0]["source"] == "measured", mr)
+
+# music_styles carries the same gate
+try:
+    import music_styles as MS2
+    e = raises(lambda: MS2.measure_share(O3_LABELS), MS2.MusicStyleError)
+    check("g8-music-styles-refuses-labels",
+          e is not None and e.code == "LABELS_NOT_MEASURED", e)
+    e = raises(lambda: MS2.check_share("soul-ballad", 60, 0.54, O3_LABELS),
+               MS2.MusicStyleError)
+    check("g8-music-styles-check-share-refuses-labels",
+          e is not None and e.code == "LABELS_NOT_MEASURED", e)
+except Exception as _e:  # noqa: BLE001
+    check("g8-music-styles-gate", False, "%s: %s" % (type(_e).__name__, _e))
+
+# sung_vocal_guard: measured segments are the primary evidence, labels refused
+try:
+    from final_assembler import sung_vocal_guard as SVG
+    lab = SVG.check_sung_vocal(segments=O3_LABELS)
+    check("g8-guard-refuses-label-segments",
+          lab["outcome"] == "UNAVAILABLE"
+          and lab["reason_code"] == "LABELS_NOT_MEASURED", lab)
+    got = SVG.check_sung_vocal(segments=DETECTOR)
+    check("g8-guard-measured-primary-reports-no-singing",
+          got["evidence_path"] == "measured_segments"
+          and got["share_basis"] == "measured"
+          and got["outcome"] == "FAIL"
+          and got["reason_code"] == "VOCAL_MISSING"
+          and got["sung_coverage"] == 0.0, got)
+    got2 = SVG.check_sung_vocal(segments=REF, target=0.4)
+    check("g8-guard-measured-share-judged-by-band",
+          got2["evidence_path"] == "measured_segments"
+          and got2["share_basis"] == "measured"
+          and got2["outcome"] == "PASS"
+          and abs(got2["sung_coverage"] - 55.9 / (55.9 + 91.1)) < 0.02, got2)
+    bad = SVG.check_sung_vocal(segments=REF, target=0.6)
+    check("g8-guard-measured-gap-over-10-is-redo",
+          bad["outcome"] == "FAIL" and bad["reason_code"] == "SUNG_COVERAGE_LOW"
+          and bad["share_basis"] == "measured", bad)
+except Exception as _e:  # noqa: BLE001
+    check("g8-guard-gate", False, "%s: %s" % (type(_e).__name__, _e))
+
+
 if FAILS:
     print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
     sys.exit(1)

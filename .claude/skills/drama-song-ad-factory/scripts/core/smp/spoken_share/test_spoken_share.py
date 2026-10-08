@@ -76,7 +76,7 @@ def seg(delivery, seconds, start=None):
 
 
 def in_band_ad():
-    """22.5% spoken-style, 77.5% sung of voice, first real singing at 15% of runtime -- all targets exact."""
+    """22.5% spoken-style, 77.5% sung of voice, first sung at 15.0s (15%) -- all targets exact."""
     return [
         seg("spoken", 15, 0.0),
         seg("sung", 55, 15.0),
@@ -166,15 +166,15 @@ class ConstantsTests(unittest.TestCase):
 class MeasurementTests(unittest.TestCase):
     def test_spoken_and_rap_both_count_sung_does_not(self):
         lines = [seg("spoken", 10), seg("rap", 5), seg("sung", 80)]
-        self.assertEqual(M.measure_share(lines)["spoken_style_seconds"], 15.0)
+        self.assertEqual(M.measure_share(lines, "planned")["spoken_style_seconds"], 15.0)
 
     def test_share_is_a_percent_of_runtime_at_one_decimal(self):
         lines, _duration = in_band_ad()
-        self.assertEqual(M.measure_share(lines)["share_pct"], 22.5)
+        self.assertEqual(M.measure_share(lines, "planned")["share_pct"], 22.5)
         self.assertEqual(M.measure_share(
-            [seg("spoken", 1), seg("sung", 3)])["share_pct"], 25.0)
+            [seg("spoken", 1), seg("sung", 3)], "planned")["share_pct"], 25.0)
         self.assertEqual(M.measure_share(
-            [seg("spoken", 1), seg("sung", 2)])["share_pct"], 33.3)
+            [seg("spoken", 1), seg("sung", 2)], "planned")["share_pct"], 33.3)
 
     def test_fail_closed_measurements(self):
         with self.assertRaises(M.SpokenShareError) as ctx:
@@ -213,11 +213,11 @@ class FirstSungTests(unittest.TestCase):
         self.assertIsNone(out["first_sung_start_s"])
 
     def test_first_sung_is_the_earliest_sung_start(self):
-        lines = [seg("sung", 10, 3.0), seg("sung", 5, 40.0),
-                 seg("spoken", 45, 45.0)]
+        lines = [seg("spoken", 9, 0.0), seg("sung", 10, 9.0),
+                 seg("sung", 6, 40.0), seg("spoken", 35, 46.0)]
         out = M.check_first_sung(lines)
         self.assertEqual(out["verdict"], "PASS", out["reasons"])
-        self.assertEqual(out["first_sung_start_s"], 3.0)
+        self.assertEqual(out["first_sung_start_s"], 9.0)
 
     def test_start_falls_back_to_the_running_cursor(self):
         out = M.check_first_sung([seg("spoken", 9), seg("sung", 51)])
@@ -233,7 +233,7 @@ class FirstSungTests(unittest.TestCase):
         self.assertEqual(at(12)["band"], "ACCEPT")   # 20%
         self.assertEqual(at(3)["band"], "FLAG")      # 5%, 10 pts off
         self.assertEqual(at(15)["band"], "FLAG")     # 25%, 10 pts off
-        self.assertEqual(at(15)["verdict"], "PASS")
+        self.assertEqual(at(15)["verdict"], "FLAG")
         self.assertTrue(at(15)["flags"])
         self.assertEqual(at(18)["band"], "REDO")     # 30%, 15 pts off
         self.assertEqual(at(18)["verdict"], "FAIL")
@@ -262,26 +262,26 @@ class ShareCheckTests(unittest.TestCase):
     def test_band_boundaries_are_inclusive(self):
         self.assertEqual(M.check_share(0.175)["verdict"], "PASS")
         self.assertEqual(M.check_share(0.275)["verdict"], "PASS")
-        self.assertEqual(M.check_share(0.325)["verdict"], "FLAG")
+        self.assertEqual(M.check_share(0.325)["verdict"], "FLAG")   # H8 band
 
     def test_below_the_floor_fails(self):
         out = M.check_share(0.10)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
-        self.assertIn("past 10: redo", out["reasons"][0])
+        self.assertIn("redo", out["reasons"][0])
 
     def test_above_the_ceiling_fails(self):
         out = M.check_share(0.40)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
-        self.assertIn("past 10: redo", out["reasons"][0])
+        self.assertIn("redo", out["reasons"][0])
 
     def test_rag_is_counted_so_a_rap_heavy_ad_is_not_under_the_floor(self):
         # 5 spoken + 15 rap + 5 spoken = 25% spoken-style: in band
         lines = [seg("spoken", 5, 0.0), seg("sung", 40, 5.0),
                  seg("rap", 15, 45.0), seg("spoken", 5, 60.0),
                  seg("sung", 35, 65.0)]
-        measured = M.measure_share(lines)
+        measured = M.measure_share(lines, "planned")
         self.assertEqual(measured["spoken_style_seconds"], 25.0)
         self.assertEqual(measured["share_pct"], 25.0)
         self.assertEqual(M.check_share(measured["share"])["verdict"], "PASS")
@@ -289,10 +289,10 @@ class ShareCheckTests(unittest.TestCase):
         no_rap = [lines[0], lines[1],
                   {"delivery": "sung", "seconds": 15, "start": 45},
                   lines[3], lines[4]]
-        below = M.check_share(M.measure_share(no_rap)["share"])
+        below = M.check_share(M.measure_share(no_rap, "planned")["share"])
         self.assertEqual(below["verdict"], "FAIL")
-        self.assertTrue(any("past 10" in r
-                            for r in below["reasons"]), below["reasons"])
+        self.assertTrue(any("redo" in r for r in below["reasons"]),
+                        below["reasons"])
 
     def test_refusal_text_is_compact_and_empty_when_passing(self):
         self.assertEqual(M.refusal(0.225), "")

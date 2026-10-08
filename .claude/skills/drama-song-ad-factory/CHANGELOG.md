@@ -1,6 +1,19 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.20] - 2026-10-08 - F14 video model lock ported from onboarding main
+## [Unreleased] - Doubled lip-sync and the lip-sync image gate (owner order 2026-10-08)
+
+Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
+
+- A 60 s ad carries 6-8 lip-sync clips of 4-6 s (30-40 s, was 15-20 s), scaled linearly, no clip
+  over 6 s. New `core/lipsync_clips.py` is the one source; `face_speaks` (band + planner: sung
+  hooks, spoken opener and closing first) and `lipsync_coverage` (E6) follow it.
+- `lipsync_clips.check_budget` refuses loudly past the cap; the price card refuses a clip over 6 s.
+- Lip-sync image gate `lip_sync/lip_gate/image_gate.py` runs before any paid job (`run_gate` now
+  requires `source_image` and `image_check`); prompt template `closeup_prompt()`.
+- Tests: `test_lipsync_clips.py`, `lip_gate/test_image_gate.py`, `extensions/test_lipsync_cap.py`;
+  H2, H4, E6, F8, F9 tests updated.
+
+## [2.7.21] - 2026-10-08 - F14 video model lock ported from onboarding main
 
 Video jobs are locked to the choice-card model: only models on references/price-menu.md dispatch (seedance-1.5-pro refused), a different menu model is VIDEO_MODEL_MISMATCH, no lock is VIDEO_MODEL_LOCK_MISSING fail-closed, and a definite submit error is VIDEO_MODEL_DOWN with no automatic fallback. New core/kie_dispatch/model_lock.py plus scripts/qc-no-direct-kie.sh; dispatch runs the gate before any ledger row.
 

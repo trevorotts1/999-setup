@@ -48,3 +48,5 @@ leaving plain `claude` unchanged.
     DeepSeek Direct provider. DeepSeek Direct and Agnes keys are otherwise optional; a
     missing key omits that provider from every combo.
 18. **Setup never overwrites a combo that already exists** unless `--update-combos` is given.
+
+19. **Main window orchestrates only; nothing fails silently.** In Claude Code or `claude-nine`, the main session only operates and orchestrates. ALL work is done by visible workflows and agents (Workflow tool, named agents shown in /workflows). Anything wrong, broken or not working is NEVER allowed to fail silently: report it by name with its error, and carry it in the final receipt (skill 75: `failures` / `warnings`).
