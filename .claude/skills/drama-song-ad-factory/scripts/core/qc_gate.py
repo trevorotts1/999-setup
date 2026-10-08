@@ -36,7 +36,7 @@ COMPATIBLE = {"1.0.0"}
 VERDICTS = frozenset({"PASS", "FAIL", "UNAVAILABLE"})
 CHECKS = frozenset({
     "export", "timeline", "lyrics", "timing", "audio", "text_product",
-    "continuity", "creative", "song", "storyboard", "video", "final_edit",
+    "continuity", "creative", "song", "storyboard", "video", "final_edit", "song_files",
     # G7 (Trevor order 1140): the 7-question delivery checklist rides on
     # the Final edit QC gate as one more independent record (check_id
     # "delivery-checklist", checker scripts/core/delivery_checklist/).
