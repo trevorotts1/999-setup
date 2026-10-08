@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.3] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
+
+- New `scripts/core/ending_qc/` (same module and test as OpenClaw skill 75 v2.6.1): every sung
+  song request gets an `[Outro]`, a `[Resolve on final chord]` tag and resolved-ending style
+  words (`music_director.build_generate_request`); `check_ending` measures the last 2 s of the
+  master (level decays, last word not cut, picture fades to the end card, 4-5 s end card done by
+  target length minus 2 s). Test: `python3 scripts/core/ending_qc/test_ending_qc.py`.
+
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
