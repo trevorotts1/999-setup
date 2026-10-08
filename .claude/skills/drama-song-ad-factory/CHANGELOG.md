@@ -1,5 +1,14 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.3] - 2026-10-08 - I2 scenes must match the song and the faces
+
+- New `scripts/core/scene_match/` (same module and test as OpenClaw skill 75): each shot carries
+  line, meaning, place and action, face emotion at storyboard time; after clips exist, sampled
+  frames are checked against them (off-topic scene or a smile under a pain line fails) and only
+  the failing shots are regenerated.
+- Adds `scripts/core/face_emotion/` (Part G G6), which `scene_match` builds on.
+- `SKILL.md` gains the "Scenes must match the song and the faces" section.
+
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
