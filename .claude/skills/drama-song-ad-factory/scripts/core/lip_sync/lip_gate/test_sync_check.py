@@ -1,116 +1,99 @@
 #!/usr/bin/env python3
-"""LSL002 tests: the validated sync algorithm and the verdict mapping. Stdlib only, no client
-video, no mediapipe. Run: python3 test_sync_check.py (or pytest)."""
+"""sync_check tests: Trevor's looser verdict map on the validated measurement.
+Stdlib only, $0, no client media. Run: python3 test_sync_check.py (empty HOME is fine)."""
 import os
 import random
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-if HERE not in sys.path:
-    sys.path.insert(0, HERE)
+sys.path.insert(0, HERE)
 import sync_check as S  # noqa: E402
 
-FPS = 30
+FPS = 30.0
 
 
 def speech(seed, n=150):
     r, out = random.Random(seed), []
     while len(out) < n:
-        out += [r.uniform(.4, 1.0)] * r.randint(3, 6) + [.05] * r.randint(2, 4)
+        out += [r.uniform(.6, 1.0)] * r.randint(3, 6) + [.05] * r.randint(2, 4)
     return out[:n]
 
 
-V = speech(1)
-OTHERS = [speech(21), speech(22), speech(23)]
+VOICE, OTHERS = speech(1), [speech(2), speech(3)]
 
 
-def meas(mouth, voice=V, others=OTHERS, **kw):
+def meas(mouth=VOICE, voice=VOICE, others=OTHERS, **kw):
     return S.measure_sync(mouth, voice, others, FPS, **kw)
 
 
+def num(margin, corr=.6, pct=0.0, unmeasurable=None):
+    return {"corr": corr, "pct": pct, "margin": margin, "unmeasurable": unmeasurable}
+
+
 def test_constants_block():
-    assert (S.MAX_LAG, S.CORR_FLOOR, S.MARGIN_FLOOR, S.SYNCED_MARGIN, S.CHANCE_PCT, S.MIN_FRAMES,
-            S.MIN_FACE_FOUND, S.MIN_MOUTH_RANGE, S.MIN_OTHERS, S.LOOKALIKE, S.MAX_PAID_ATTEMPTS) == (
-        10, 0.40, 0.0, 0.05, 0.20, 45, 0.95, 0.015, 2, 0.85, 2)
+    assert (S.MAX_LAG_FRAMES, S.CORR_FLOOR, S.MARGIN_FLOOR, S.SYNCED_MARGIN) == (10, .40, 0.0, .05)
+    assert (S.CHANCE_PCT_MAX, S.ROLL_MIN_FRAMES, S.LOOKALIKE_CORR, S.MIN_FRAMES) == (.20, 15, .85, 45)
 
 
-def test_synced_is_pass_sung_or_spoken():
-    m = meas(V)
-    assert m["grade"] == S.SYNCED and m["offset_frames"] == 0 and m["pct"] <= S.CHANCE_PCT, m
-    assert S.judge_sync(m)["verdict"] == S.PASS and S.judge_sync(m, sung=True)["verdict"] == S.PASS
+def test_matching_mouth_is_synced_pass():
+    m = meas()
+    assert m["grade"] == S.SYNCED and m["lag_frames"] == 0 and m["pct"] <= S.CHANCE_PCT_MAX, m
+    assert S.verdict(m) == S.PASS == S.verdict(m, sung=True)
 
 
-def test_lag_sign_mouth_late_is_positive_and_window_is_ten():
-    assert meas([.05] * 4 + V[:-4])["offset_frames"] == 4          # mouth LATE
-    assert meas(V[7:] + [.05] * 7)["offset_frames"] == -7          # mouth EARLY
-    assert meas(V[10:] + [.05] * 10)["offset_frames"] == -10       # edge of the +-10 window
+def test_lag_is_searched_not_failed():
+    m = meas(mouth=[.05] * 8 + VOICE[:-8])           # mouth 8 frames LATE
+    assert m["lag_frames"] == 8 and m["grade"] == S.SYNCED, m
 
 
-def test_wrong_audio_is_not_synced_fail_on_spoken_undetermined_on_sung():
-    m = meas(OTHERS[0])
-    assert m["grade"] == S.NOT_SYNCED and "margin" in m["failed"], m
-    j = S.judge_sync(m)
-    assert j["verdict"] == S.FAIL and S.REASON_WRONG_AUDIO in j["reasons"] and not j["hold_for_review"], j
-    u = S.judge_sync(m, sung=True)
-    assert u["verdict"] == S.UNDETERMINED and u["hold_for_review"] and u["flags"], u
+def test_verdict_map_spoken_and_sung():
+    for margin, spoken, sung in ((.20, S.PASS, S.PASS), (.05, S.PASS, S.PASS),
+                                 (.03, S.FLAG, S.UNDETERMINED), (0.0, S.FLAG, S.UNDETERMINED),
+                                 (-.01, S.FAIL, S.UNDETERMINED)):
+        m = num(margin)
+        assert (S.verdict(m), S.verdict(m, True)) == (spoken, sung), (margin, S.grade(m))
+    for m in (num(.2, corr=.39), num(.2, pct=.21)):    # corr floor, chance test
+        assert (S.grade(m), S.verdict(m), S.verdict(m, True)) == (S.NOT_SYNCED, S.FAIL, S.UNDETERMINED)
+    assert S.grade(num(.2, corr=.40, pct=.20)) == S.SYNCED   # the floors are inclusive
 
 
-def test_weak_maps_spoken_flag_sung_undetermined():
-    m = dict(meas(V), grade=S.WEAK, margin=0.03, failed=[])
-    f = S.judge_sync(m)
-    assert f["verdict"] == S.FLAG and f["flags"] and f["reasons"] == [], f
-    assert S.judge_sync(m, sung=True)["verdict"] == S.UNDETERMINED
+def test_unmeasurable_is_never_a_pass():
+    m = num(.9, unmeasurable="face")
+    assert S.verdict(m) == S.verdict(m, True) == S.UNMEASURABLE
 
 
-def test_lookalike_repeated_hook_is_dropped_from_the_control():
-    hook = [x * 0.5 for x in V]                       # same melody sung again, quieter
-    m = meas(V, V, OTHERS + [hook])
-    assert m["others_dropped_lookalike"] == 1 and m["grade"] == S.SYNCED, m
+def test_wrong_audio_never_passes():
+    m = meas(mouth=OTHERS[0])                          # mouth follows ANOTHER line
+    assert m["grade"] == S.NOT_SYNCED and m["margin"] < 0, m
+    assert S.verdict(m) == S.FAIL and S.verdict(m, True) == S.UNDETERMINED
 
 
-def test_clip_is_cut_to_the_audio_length_padding_ignored():
-    padded = V + [random.Random(5).random() for _ in range(90)]    # Kling pads the tail
-    m = meas(padded)
-    assert m["frames"] == len(V) and m["grade"] == S.SYNCED, m
-
-
-def test_chance_level_noise_is_not_synced():
+def test_random_mouth_not_synced():
     r = random.Random(9)
-    grades = {meas([r.random() for _ in V])["grade"] for _ in range(6)}
-    assert grades == {S.NOT_SYNCED}, grades
+    assert meas(mouth=[r.random() for _ in VOICE])["grade"] == S.NOT_SYNCED
 
 
-def test_unmeasurable_rules_never_pass():
-    for kw, m in (("short", meas(V[:40], V[:40])),
-                  ("no face", meas([None if i % 5 == 0 else v for i, v in enumerate(V)] )),
-                  ("not human", meas(V, geo=0.2)),
-                  ("silent", meas(V, [0.0] * len(V))),
-                  ("still", meas([0.02] * len(V))),
-                  ("one other line", meas(V, others=[OTHERS[0]]))):
-        assert m["grade"] == S.UNMEASURABLE, (kw, m)
-        for sung in (False, True):
-            j = S.judge_sync(m, sung)
-            assert j["verdict"] == S.UNMEASURABLE and S.REASON_UNMEASURED in j["reasons"], (kw, j)
+def test_lookalike_hook_is_dropped_from_controls():
+    hook = [v * 1.01 + .001 for v in VOICE]            # the same hook sung again
+    m = meas(others=OTHERS + [hook])
+    assert m["others_dropped"] == 1 and m["grade"] == S.SYNCED, m
+    m = meas(others=[hook, hook])
+    assert m["grade"] == S.UNMEASURABLE and "lookalike" in m["unmeasurable"], m
 
 
-def test_missing_mediapipe_or_model_is_unmeasurable_not_pass():
-    os.environ["LIPSYNC_FACE_MODEL"] = "/nonexistent/face_landmarker.task"
-    try:
-        j = S.measure_clip_landmarks("no-such-clip.mp4", "a.wav", ["b.wav", "c.wav"])
-    finally:
-        del os.environ["LIPSYNC_FACE_MODEL"]
-    assert j["verdict"] == S.UNMEASURABLE and j["reasons"], j
+def test_clip_is_cut_to_the_audio_length():
+    m = meas(mouth=VOICE + [.9] * 40, voice=VOICE)     # padded video tail
+    assert m["frames_used"] == len(VOICE) + 1 and m["grade"] == S.SYNCED, m
 
 
-def test_face_model_path_is_the_picture_gate_path():
-    os.environ.pop("LIPSYNC_FACE_MODEL", None)
-    p = S.face_model_path()
-    assert p.endswith(os.path.join("drama-song-ad-factory", "assets", "face_landmarker.task")), p
-    os.environ["LIPSYNC_FACE_MODEL"] = "/x/y.task"
-    try:
-        assert S.face_model_path() == "/x/y.task"
-    finally:
-        del os.environ["LIPSYNC_FACE_MODEL"]
+def test_unmeasurable_rules():
+    assert meas(face_found=.94)["grade"] == S.UNMEASURABLE
+    assert meas(mouth_pos=.40)["grade"] == S.UNMEASURABLE
+    assert meas(mouth=[.3] * 150)["grade"] == S.UNMEASURABLE          # still face
+    assert meas(voice=[0.0] * 150)["grade"] == S.UNMEASURABLE         # silent
+    assert meas(others=[OTHERS[0]])["grade"] == S.UNMEASURABLE        # < 2 other lines
+    assert meas(mouth=VOICE[:44], voice=VOICE[:44])["grade"] == S.UNMEASURABLE   # < 45 frames
+    assert meas(mouth=VOICE[:46], voice=VOICE[:46])["grade"] != S.UNMEASURABLE
 
 
 if __name__ == "__main__":

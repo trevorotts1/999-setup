@@ -1,18 +1,5 @@
 # QC Checklist: Drama Song Ad Factory (Skill 75)
 
-## Lip-sync sync check: validated algorithm, looser verdicts (LSL002, 2026-10-08)
-
-- `lip_gate/sync_check.py` is the fixer window's validated checker (lag +-10 frames, clip cut to the
-  audio length, chance test by rolled audio, repeated-hook lines dropped from the wrong-audio control;
-  corr floor 0.40, margin floor 0, SYNCED at margin >= 0.05, minimum 45 frames).
-- Verdicts: SYNCED = PASS. WEAK = ACCEPT_WITH_FLAG (used, flag in the receipt). NOT_SYNCED on a
-  SPOKEN line = FAIL. On a SUNG line WEAK or NOT_SYNCED = UNDETERMINED: held for a person to look at
-  a mouth strip, NO automatic paid redo. UNMEASURABLE (no face model, still face, short clip, silent
-  audio, fewer than 2 other lines) is reported and never a pass.
-- At most 2 paid lip-sync jobs per segment, then keep the best-measured take.
-- Controls are re-proved by `lip_gate/calibrate_sync.py` (approved spoken PASS, approved sung flagged or
-  undetermined, wrong audio never PASS, still face not PASS). Re-run it after any threshold change.
-
 ## Lip-sync doubled and the source-picture gate (owner order 2026-10-08)
 
 - Coverage: 30-40 s and 6-8 clips of 4-6 s in a 60 s ad, scaled linearly with
@@ -22,6 +9,16 @@
 - Every lip-sync source picture passes `lip_gate.image_gate` before any paid
   job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that
   could not be made is a refusal, never a pass.
+
+- Lip-sync sync check (looser, sung-aware, LSL002): `lip_gate.measure_file` / `judge`
+  run the validated `sync_check` measurement (mouth vs voice, lag +-10 frames, clip cut
+  to the audio length, chance test by rolls, repeated-hook lines dropped, corr floor
+  0.40, margin floor 0). SYNCED = PASS; WEAK = ACCEPT_WITH_FLAG (used, flag in the
+  receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
+  are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
+  redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
+  `person_verdict: PASS` on the row. 2-try cap: `run_gate` never makes a third paid
+  job. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
 
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung

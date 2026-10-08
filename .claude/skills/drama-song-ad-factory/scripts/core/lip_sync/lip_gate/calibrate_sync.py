@@ -1,81 +1,112 @@
 #!/usr/bin/env python3
-"""calibrate_sync.py: re-run the control calibration for the sync check (read-only on the client files).
+"""calibrate_sync.py: print the control table for the sync check (read-only).
 
-Needs the client controls and a python with mediapipe + opencv (the fixer tool venv). The unit tests do NOT.
-
-  LIPSYNC_FACE_MODEL=.../face_landmarker.task \\
-  ~/drama-song-factory-build/run/lipsync-check/venv/bin/python calibrate_sync.py
-
-Controls (exit 1 if any fails):
-  approved SPOKEN Kiesett HO1, HO2, HO3 and LeAnne CUb, CUc with their own audio -> PASS
-  approved SUNG LeAnne CUa with its own audio                                     -> ACCEPT_WITH_FLAG or UNDETERMINED (never FAIL)
-  wrong audio (every other line, both sets)                                       -> never PASS
-  still face (first frame held, real audio)                                       -> not PASS
-Prints the control table that goes in the PR. Other lines for a clip = the other lines of its own set.
+Known-good controls the verdict map must reproduce:
+  approved SPOKEN clips with their own audio  -> PASS
+  approved SUNG clips with their own audio    -> ACCEPT_WITH_FLAG or UNDETERMINED (never FAIL)
+  cartoon / non-human faces                   -> UNMEASURABLE
+  any clip with WRONG audio                   -> never PASS
+  one frame held still, real audio            -> never PASS
+Usage (needs mediapipe + opencv + the face model, e.g. the fixer venv):
+  python3 calibrate_sync.py CLIPS.json
+CLIPS.json = {"label": {"clip": "a.mp4", "audio": "a.wav", "kind": "spoken|sung|cartoon",
+                        "set": "group name"}, ...}
+`set` groups the lines of one chapter: the other lines of the set are the control for
+each clip. Give at least 3 entries per set. The client clips are NOT in this repo and
+the unit tests never need them. Exit 1 when any control is wrong.
 """
 import json
 import os
-import subprocess
 import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import sync_check as SC        # noqa: E402
-
-BUILD = os.path.expanduser("~/drama-song-factory-build")
-os.environ.setdefault("LIPSYNC_FACE_MODEL", BUILD + "/run/lipsync-check/face_landmarker.task")
-KIE = BUILD + "/qualification/stopstale-kiesett-ep01/redo-v4-20261008/lip"
-DOL = BUILD + "/qualification/wuhs-leanne-soft-life/redo-v4-20261008/lip"
-man = json.load(open(KIE + "/LIP-MANIFEST.json"))
-# set -> {id: audio}; clips -> {id: (set, clip, kind)}. ST1/ST2 are cartoon clips: audio only.
-AUDIO = {"KIE": {i: "%s/%s.mp3" % (KIE, i) for i in man}, "DOL": {i: "%s/%s.wav" % (DOL, i) for i in ("CUa", "CUb", "CUc")}}
-CLIPS = {"KIE-" + i: ("KIE", i, KIE + "/" + man[i]["clip"], "spoken") for i in ("HO1", "HO2", "HO3")}
-CLIPS.update({"DOL-" + i: ("DOL", i, "%s/FINAL-%s.mp4" % (DOL, i), "sung" if i == "CUa" else "spoken") for i in ("CUa", "CUb", "CUc")})
+import lip_gate as G  # noqa: E402
+import mouth_landmarks as ML  # noqa: E402
+import sync_check as SC  # noqa: E402
 
 
-def main():
-    rows, samples = {}, {}
-    aud = lambda p: samples.setdefault(p, SC.read_audio(p))      # noqa: E731
-    mouth = {k: SC.read_mouth(v[2]) for k, v in CLIPS.items()}
-    out, bad = [], 0
+def table(spec):
+    series, envs = {}, {}
 
-    def run(case, clip_id, audio_path, others, want):
+    def env(path, fps):
+        k = (path, fps)
+        if k not in envs:
+            envs[k] = G.envelope(path, fps=fps)
+        return envs[k]
+
+    def measure(clip, audio, others):
+        if clip not in series:
+            series[clip] = ML.mouth_series(clip)
+        s = series[clip]
+        filled, why = ML.usable(s)
+        if why:
+            return SC.unmeasurable(why)
+        f = s["fps"]
+        return SC.measure_sync(filled, env(audio, f), [env(o, f) for o in others],
+                               f, s["face_found"], s["mouth_pos"])
+
+    rows, bad = [], 0
+
+    def row(case, kind, want, clip, audio, others, sung):
         nonlocal bad
-        fps, rws = mouth[clip_id]
-        kind = CLIPS[clip_id][3]
-        m = SC.measure_features(fps, rws, aud(audio_path), [aud(o) for o in others])
-        j = SC.judge_sync(m, kind == "sung")
-        ok = want(j["verdict"])
+        j = G.judge(measure(clip, audio, others), sung)
+        ok = j["verdict"] in want
         bad += not ok
-        out.append((ok, case, kind, j))
-    for cid, (st, i, clip, kind) in CLIPS.items():
-        own = AUDIO[st][i]
-        want = (lambda v: v == SC.PASS) if kind == "spoken" else (lambda v: v in (SC.FLAG, SC.UNDETERMINED))
-        run("%s own audio (approved %s)" % (cid, kind), cid, own, [p for p in AUDIO[st].values() if p != own], want)
-        for st2, d in AUDIO.items():
-            for j2, p in d.items():
-                if p != own:
-                    run("%s + audio %s-%s" % (cid, st2, j2), cid, p, [q for q in AUDIO[st].values() if q != p], lambda v: v != SC.PASS)
-    for cid in ("KIE-HO1", "DOL-CUc"):                              # still face, real audio
-        st, i, clip, kind = CLIPS[cid]
+        rows.append("| %-34s | %-8s | %-26s | %-16s | %-10s | %5.2f | %3d | %5.2f | %6.3f | %s |" % (
+            case, kind, "/".join(want), j["verdict"], j["grade"], j["corr"], j["lag_frames"],
+            j["pct"], j["margin"], "OK" if ok else "BAD"))
+
+    ids = list(spec)
+    for i in ids:
+        s = spec[i]
+        mates = [spec[k]["audio"] for k in ids
+                 if k != i and spec[k].get("set") == s.get("set")]
+        kind = s.get("kind", "spoken")
+        want = {"spoken": (G.PASS,), "sung": (G.FLAG, G.UNDETERMINED, G.PASS),
+                "cartoon": (G.UNMEASURABLE,)}[kind]
+        row("%s own audio" % i, kind, want, s["clip"], s["audio"], mates, kind == "sung")
+    for i in ids:
+        if spec[i].get("kind") == "cartoon":
+            continue
+        for j in ids:
+            if i == j:
+                continue
+            own_set = [spec[k]["audio"] for k in ids if spec[k].get("set") == spec[i].get("set")]
+            others = [a for a in own_set if a != spec[j]["audio"]]
+            row("%s + WRONG audio %s" % (i, j), "wrong", (G.FAIL, G.FLAG, G.UNDETERMINED,
+                                                           G.UNMEASURABLE),
+                spec[i]["clip"], spec[j]["audio"], others, spec[i].get("kind") == "sung")
+    # one frame held for the whole clip, real audio (ffmpeg through the load governor)
+    for i in ids:
+        if spec[i].get("kind") == "cartoon":
+            continue
         d = tempfile.mkdtemp()
-        png, still = d + "/f.png", d + "/still.mp4"
-        own = AUDIO[st][i]
-        SC._LG.run_ffmpeg(["ffmpeg", "-v", "error", "-y", "-i", clip, "-frames:v", "1", png], "calib-still")
-        SC._LG.run_ffmpeg(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "30", "-i", png, "-t", "3.5",
-                           "-c:v", "libx264", "-pix_fmt", "yuv420p", still], "calib-still")
-        mouth[cid + "-still"] = SC.read_mouth(still)
-        CLIPS[cid + "-still"] = (st, i, still, kind)
-        run("%s STILL face + real audio" % cid, cid + "-still", own, [p for p in AUDIO[st].values() if p != own], lambda v: v != SC.PASS)
-    print("%-4s %-40s %-6s %-11s %-17s %5s %4s %5s %6s %6s" % ("", "case", "kind", "grade", "verdict", "corr", "lag", "pct", "margin", "range"))
-    for ok, case, kind, j in out:
-        f = lambda k, fmt: (fmt % j[k]) if j.get(k) is not None else "-"    # noqa: E731
-        print("%-4s %-40s %-6s %-11s %-17s %5s %4s %5s %6s %6s" % ("OK" if ok else "BAD", case, kind, j["grade"], j["verdict"],
-              f("corr", "%.2f"), f("offset_frames", "%d"), f("pct", "%.2f"), f("margin", "%.3f"), f("mouth_range", "%.3f")))
-    print("CALIBRATION", "PASS" if not bad else "FAIL (%d wrong)" % bad)
-    return 1 if bad else 0
+        png, still = os.path.join(d, "f.png"), os.path.join(d, "still.mp4")
+        for argv in (["ffmpeg", "-v", "error", "-y", "-i", spec[i]["clip"], "-frames:v", "1", png],
+                     ["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "30", "-i", png,
+                      "-i", spec[i]["audio"], "-t", "3.5", "-c:v", "libx264", "-pix_fmt",
+                      "yuv420p", "-c:a", "aac", "-shortest", still]):
+            G._run_raw(argv)
+        mates = [spec[k]["audio"] for k in ids
+                 if k != i and spec[k].get("set") == spec[i].get("set")]
+        row("STILL face (%s frame 0) + real audio" % i, "still", (G.FAIL, G.FLAG, G.UNDETERMINED,
+                                                                    G.UNMEASURABLE),
+            still, spec[i]["audio"], mates, spec[i].get("kind") == "sung")
+    print("| case | kind | want | verdict | grade | corr | lag | chance pct | margin | ok |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
+    print("\n".join(rows))
+    # hard rule: wrong audio and a still face are never PASS
+    passed = [r for r in rows if ("WRONG" in r or "STILL" in r) and "| PASS " in r]
+    for r in passed:
+        print("BAD (never PASS):", r)
+    bad += len(passed)
+    print("CONTROLS", "PASS" if not bad else "FAIL (%d wrong)" % bad)
+    return bad
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if len(sys.argv) != 2:
+        sys.exit(__doc__)
+    sys.exit(1 if table(json.load(open(sys.argv[1]))) else 0)

@@ -319,24 +319,22 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
   source image. QC: its mouth region must be
   sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
+- **Lip-sync sync check (owner order 2026-10-08, looser):** `lip_sync/lip_gate`
+  measures mouth opening (mediapipe face landmarks, through the load governor) against
+  the voice with the validated `sync_check` algorithm. Verdicts: PASS (SYNCED);
+  ACCEPT_WITH_FLAG (WEAK: accepted and used, note in the receipt); FAIL (NOT_SYNCED on
+  a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
+  person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
+  no face model, cartoon face, silent audio, too short) is reported, never a pass. At
+  most 2 paid lip-sync jobs per segment, then the best-measured take is kept.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)
-  as a manual backup only (it is not an automatic third try); **Volcengine is dropped**. Tight close-ups only. The lip-sync
+  as backup; **Volcengine is dropped**. Tight close-ups only. The lip-sync
   input contains only the on-screen speaker's line: never a narrator, never
   another character, never a mixed vocal stem. Narrator, phone, voicemail
   and laptop voices may play as voice-over but are never lip-synced onto a
   person.
-- **Lip-sync sync check (LSL002, Trevor 2026-10-08, looser):** every lip-sync clip is
-  measured by `lip_sync/lip_gate/sync_check.py` (the validated fixer algorithm; mediapipe face
-  landmarks, heavy work in `load_governor.heavy_slot`; the face model is the same file as the
-  picture gate: `$LIPSYNC_FACE_MODEL` or `assets/face_landmarker.task`). Verdicts: **PASS** (SYNCED);
-  **ACCEPT_WITH_FLAG** (WEAK on a spoken line: used, flag written in the receipt); **FAIL**
-  (NOT_SYNCED on a SPOKEN line); **UNDETERMINED** (WEAK or NOT_SYNCED on a SUNG line: held for a
-  person to look at a mouth strip, NO automatic paid redo); **UNMEASURABLE** (reported, never a
-  pass). **2-try rule:** at most 2 paid lip-sync jobs per segment, then keep the best-measured take;
-  only a spoken FAIL earns the second job; the automatic third (InfiniTalk A/B) try is gone.
-  Cut-offs live in `sync_check.py` and are re-proved by `calibrate_sync.py`.
 - **Speaker contract:** the person visible while a line plays is the one
   speaking it, or the voice's source device. QC checks the picture for every
   spoken line, and measures pitch against the character's gender range with
