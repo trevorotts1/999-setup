@@ -10,6 +10,16 @@
   job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that
   could not be made is a refusal, never a pass.
 
+- Lip-sync sync check (looser, sung-aware, LSL002): `lip_gate.measure_file` / `judge`
+  run the validated `sync_check` measurement (mouth vs voice, lag +-10 frames, clip cut
+  to the audio length, chance test by rolls, repeated-hook lines dropped, corr floor
+  0.40, margin floor 0). SYNCED = PASS; WEAK = ACCEPT_WITH_FLAG (used, flag in the
+  receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
+  are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
+  redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
+  `person_verdict: PASS` on the row. 2-try cap: `run_gate` never makes a third paid
+  job. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
+
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung
 direct-response story -> storyboard -> clip generation -> assembly ->
