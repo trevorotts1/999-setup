@@ -2,7 +2,7 @@ name: check-docs-fresh
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
     tags: ['v*', 'nine-router-setup-v*']
     paths:
       - 'README.md'
@@ -19,6 +19,10 @@ on:
       - '.claude/skills/*/VERSION'
       - 'scripts/check-docs-fresh.sh'
       - 'scripts/test-check-docs-fresh.sh'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   docs-fresh:

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- ci/CIO002: push triggers are main-only (a PR branch no longer runs every check twice, once on push and once on pull_request) and every workflow has a per-PR concurrency group that cancels superseded pull_request runs only (never main)
 - fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
 
 - fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card

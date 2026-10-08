@@ -2,7 +2,7 @@ name: hook-skill-tests
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - '.claude/skills/hook-skill/**'
       - '.github/workflows/hook-skill-tests.yml'
@@ -10,6 +10,10 @@ on:
     paths:
       - '.claude/skills/hook-skill/**'
       - '.github/workflows/hook-skill-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   hook-skill:
