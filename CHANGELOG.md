@@ -37,6 +37,7 @@
 - fix/partH-H12: Merge remote-tracking branch 'origin/main' into fix/partH-H12 (merge 648dcf64b8d4)
 - fix/partH-H11: Merge origin/main into fix/partH-H11; skill 2.6.5 (merge 007cc3f06247)
 - fix/partH-H5: Merge origin/main into fix/partH-H5 (H11/H12), skill v2.6.6 (merge 255131a0eac4)
+- fix/partH-H8: Merge origin/main into fix/partH-H8 (H8 now skill v2.6.7) (merge 1252ac45bfbd)
 
 ## [hook-skill] — 2026-10-06
 
