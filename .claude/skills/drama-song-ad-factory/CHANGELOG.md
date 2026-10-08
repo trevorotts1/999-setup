@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.4] - 2026-10-08 - I8 sung hook and repeat formula
+## [2.7.9] - 2026-10-08 - I8 sung hook and repeat formula
 
 - New `scripts/core/sung_hook/` (same module and test as OpenClaw skill 75 v2.6.7). Every sung
   style gets ONE hook (4-10 words, client's own words), sung `clamp(1 + floor(L / 25), 2, 12)`

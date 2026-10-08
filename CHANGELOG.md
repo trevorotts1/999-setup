@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- fix/hook-HK001: drama-song-ad-factory 2.7.4: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
+- fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
 
 - fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card
 - fix/headless-NHL001: nine-router-setup 1.29.0: locked Keychain (SSH/fleet installs) falls back to ~/.9router/gateway-key (mode 600) instead of aborting rc=36; 9Router guards auto-resolve the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes
