@@ -232,8 +232,7 @@ times. The Velvet Voiceover version is exempt.
   per line, product words pronunciation-tested, truthfulness preserved.
 - The song is the master timeline; lip-sync is applied to selected lines
   only (owner decision D10, superseded 2026-10-07): the pain peak, the
-  product line, the call to action and the chorus hook - three to four lines,
-  about 15 to 20 seconds, chosen by the factory and listed on the approval
+  product line, the call to action and the chorus hook, DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4 to 6 seconds (30 to 40 seconds, was 15 to 20), scaled linearly with the ad length, no clip over 6 seconds (`core/lipsync_clips.py`); clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so the cost roughly doubles and a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`). Chosen by the factory and listed on the approval
   card. Every other shot stays exactly as the video model made it, and the
   song remains narrator / internal voice while characters act. The version 1
   rule this replaces read "no lip-sync by default"; it is kept here only so
@@ -291,11 +290,18 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 - **Per-character voice packs:** no two characters share a voice, in any look
   or music style.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
-  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
-  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
-  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
-  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
-  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
+  includes one lip-sync close-up per speaking/singing character. It is MADE from the
+  template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate
+  (`lip_gate/image_gate.py`) before any paid lip-sync job: face looking straight at the
+  camera; head-and-shoulders, portrait 9:16, face about 35-40% of the frame height
+  (accepted 30-45%); mouth closed or slightly parted, neutral, no big toothy smile; nothing
+  over the mouth or jaw (hand, microphone, hair, hat brim); soft even light, no hard shadow
+  across the mouth, background separated from the head; the same 3D character as the
+  storyboard reference; sharp, at least 1080x1920, never cropped out of a wide shot. A
+  picture that fails any point, or cannot be measured, is refused LOUDLY with every reason
+  and no paid job runs (`lip_gate.run_gate(..., source_image=, image_check=)` raises
+  `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
+  source image. QC: its mouth region must be
   sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
