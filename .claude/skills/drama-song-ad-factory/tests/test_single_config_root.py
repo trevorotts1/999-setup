@@ -52,6 +52,16 @@ def flat(text):
     return " ".join(text.split())
 
 
+def norm(text):
+    """README claim matching: markdown backticks stripped, case-insensitive.
+
+    READMEs write `code` spans around product names (`claude-nine` shares this
+    root), so exact-case substring equality against the README text is the
+    wrong comparison. Compare the claim, not its formatting.
+    """
+    return flat(text.replace("`", "")).casefold()
+
+
 def check(name, ok, detail=""):
     print(f"{'ok' if ok else 'FAIL'}: {name}" + (f" ({detail})" if detail and not ok else ""))
     if not ok:
@@ -163,14 +173,13 @@ def main():
         check(
             "claude-nine adapter: shares the same Claude config root",
             nine_ad.is_file()
-            and "shares the same Claude config root"
-            in flat(nine_ad.read_text(encoding="utf-8")),
+            and "shares the same claude config root" in norm(nine_ad.read_text(encoding="utf-8")),
         )
         if code_ad.is_file():
-            ad = flat(code_ad.read_text(encoding="utf-8"))
+            ad = norm(code_ad.read_text(encoding="utf-8"))
             check(
                 "claude-code adapter: one install, no second skills root",
-                "Claude-Nine shares this root" in ad
+                "claude-nine shares this root" in ad
                 and "never create a second skills root" in ad,
             )
         else:
@@ -303,10 +312,9 @@ def main():
             count_skill_dirs(nine_root) == 0 and not nine_root.exists(),
         )
     finally:
-        if not FAILS:
-            shutil.rmtree(tmp, ignore_errors=True)
-        else:
-            print(f"fixture kept for inspection: {tmp}")
+        # Always drop the /tmp fixture. Check names (printed above) carry the
+        # failure signal; a leftover fixture is debris, not evidence.
+        shutil.rmtree(tmp, ignore_errors=True)
 
     if FAILS:
         print(f"\n{len(FAILS)} FAILED: " + ", ".join(FAILS))
