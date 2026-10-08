@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.4.6] - 2026-10-08 - H9 readable intake card
+## [2.6.4] - 2026-10-08 - H9 readable intake card
 
 - New `scripts/core/choice_card/intake_card/` (same module as the OpenClaw
   copy): the six intake questions, one block per question, one numbered option
@@ -9,6 +9,22 @@
   `openclaw message send` argv and Bot API body.
 - `factory.py card` prints the raw card; intake `question_message` uses the
   same layout. Test: `choice_card/intake_card/test_intake_card_h9.py`.
+
+## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
+
+`final_assembler`: per-segment `first_word_s` shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY. Test `scripts/core/final_assembler/test_fade_words_h13.py`.
+
+## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
+
+Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
+measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
+>= 0.25 above a wrong-audio control, no frozen face > 0.75 s); regenerate with
+better input, then a one-time single-line InfiniTalk A/B keeping whichever
+measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
+
+## [2.4.6] - 2026-10-08 - H14 song files in every delivery
+
+- Core `delivery_variants/song_files.py` (shared with the OpenClaw copy): MP3 320 kbps + WAV of the full mix named after the ad, plus the instrumental pair if one exists, listed in `delivery-receipt.json` and `README.md`; `song_files` QC check fails a delivery missing them. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
 
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
