@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.4.6] - 2026-10-08 - H8: one singing rule, one tolerance band
+## [2.6.6] - 2026-10-08 - H8: one singing rule, one tolerance band
 
 `scripts/core/spoken_share/` (the constants module) now holds the single
 singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
@@ -10,6 +10,39 @@ within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
 Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
 lip-sync coverage modules are not in this distribution yet; they pick the
 band up when they are ported.
+
+## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
+
+Ships the final QC gate 4 delivery checklist (`scripts/core/delivery_checklist/`,
+`references/QC-CHECKLIST-BEFORE-DELIVERY.md`, `delivery_checklist` check in
+`qc_gate.py` and `qc-schema.json`), byte-identical to the onboarding copy
+(skill 75 v2.6.1). 11 measured questions: the G7 seven plus Q8 lip-sync
+measured (H2 numbers), Q9 first-sung % (H6), Q10 pictures match words (H5),
+Q11 every numeric goal judged by Trevor's band (within 5 accept; over 5 to 10
+accept with a flag shown in the receipt; over 10 redo).
+
+## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
+  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
+  run whose master has no matching skill receipt or whose run folder holds an
+  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
+
+## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
+
+`final_assembler`: per-segment `first_word_s` shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY. Test `scripts/core/final_assembler/test_fade_words_h13.py`.
+
+## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
+
+Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
+measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
+>= 0.25 above a wrong-audio control, no frozen face > 0.75 s); regenerate with
+better input, then a one-time single-line InfiniTalk A/B keeping whichever
+measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
+
+## [2.4.6] - 2026-10-08 - H14 song files in every delivery
+
+- Core `delivery_variants/song_files.py` (shared with the OpenClaw copy): MP3 320 kbps + WAV of the full mix named after the ad, plus the instrumental pair if one exists, listed in `delivery-receipt.json` and `README.md`; `song_files` QC check fails a delivery missing them. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
 
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 

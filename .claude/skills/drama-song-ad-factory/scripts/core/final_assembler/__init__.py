@@ -10,8 +10,14 @@ from .assembler import (
     load_timeline,
     plan_timeline,
 )
+from .master_provenance import (
+    check_master_provenance,
+    to_qc_record as master_provenance_qc_record,
+)
 
 __all__ = [
+    "check_master_provenance",
+    "master_provenance_qc_record",
     "EXIT",
     "SCHEMA_VERSION",
     "TIMELINE_SCHEMA",

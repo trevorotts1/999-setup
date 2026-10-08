@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.4.6
+version: 2.6.6
 ---
 
 # Drama Song Ad Factory
@@ -214,6 +214,14 @@ returns `tool-unavailable` / `module-unavailable` with an actionable error
 instead of a silent substitution. Model/role selection for agent work is
 resolved by the live runtime rules of the current mode, never by a hardcoded
 table in this skill.
+
+## No hand-written pipeline scripts (Part H H12)
+
+Assembly, lip-sync placement and captions run only through the skill's own
+modules (`final_assembler/assembler.py` and its siblings). A run folder with its
+own ffmpeg or caption script, or a master whose receipt lacks
+`produced_by.module` and a matching `master_sha256`, fails QC
+(`final_assembler/master_provenance.py`).
 
 ## Runtime modes
 

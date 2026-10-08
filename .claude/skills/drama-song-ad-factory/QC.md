@@ -67,6 +67,9 @@ it advances. Standard library only; no credential value is ever printed.
       `tool-unavailable`; unset credential -> 4 `credential-missing`
       (presence only, value never echoed); reference outside root -> 4;
       reference missing -> 1; untrusted schema -> 1 `schema-untrusted`.
+- [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
+      `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
+      `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
@@ -104,6 +107,13 @@ schema violation all refuse the stage (exit 5).
 - [ ] Every production run publishes its `acceptance-profile.json` BEFORE
       generation; a campaign target may deviate only with a documented
       alternative recorded in the profile.
+
+### 5.1 Master provenance (Part H H12)
+
+Run `check_master_provenance(<run folder>, <master>)` from
+`final_assembler/master_provenance.py` and record it as the `final_edit`
+check. FAIL when the master has no assembler receipt, or any run-folder script
+calls ffmpeg or writes captions.
 
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
