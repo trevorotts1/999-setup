@@ -43,7 +43,11 @@ fall back to a static provider path. Helper installation is registered separatel
 3. Run the repository's normal skill link step for bundled skills, or link this
    folder yourself into the shared config-root `skills/` directory if you manage
    links manually. One link serves both runtimes.
-4. Run the smoke tests (below). An install is not complete until they pass
+4. Lip-sync picture gate (required before any lip-sync job; without it every job is
+   refused): `python3 -m pip install mediapipe opencv-python-headless numpy`, then
+   `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (downloads Google's
+   face_landmarker.task, verifies its pinned sha256, places it in `assets/`).
+5. Run the smoke tests (below). An install is not complete until they pass
    (directive 5.3).
 
 ## Verification (required before first paid work)

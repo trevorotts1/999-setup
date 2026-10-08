@@ -32,8 +32,9 @@ What evaluate() does per question, measured from the receipt only:
   1 SUNG      -- receipt singing detector numbers on the vocal stem
                  (sung_pct / spoken_pct present, sung style required).
                  Sung share must be > 0 for a sung ad. Detector field
-                 (receipt.detector) must name the stem-based detector --
-                 labels/section names are never evidence (G5).
+                 (receipt.detector) must name core/singing_detector (G3,
+                 any separator form); labels/section names and any
+                 share_source other than "measured" are never evidence.
   2 ON TARGET -- every share and the length within CHECKLIST_TOLERANCE_PCT
                  (5.0) points of its target in the receipt.
   3 WORDS     -- receipt word coverage: words_present / words_total == 100%
@@ -96,11 +97,13 @@ CHECKLIST_TOLERANCE_PCT = 5.0       # Q2 / Q11 clean-accept limit
 CHECKLIST_REDO_PCT = 10.0           # Q2 / Q11 redo line
 BAND_ACCEPT, BAND_FLAG, BAND_REDO = "ACCEPT", "ACCEPT_WITH_FLAG", "REDO"
 
-#: Q8 lip-sync gate: the H2 measured numbers (report 05, order 1225).
-LIPSYNC_MAX_OFFSET_S = 0.05         # mouth-vs-voice offset
-LIPSYNC_MIN_CORR = 0.55             # mouth/voice envelope correlation
-LIPSYNC_MIN_CONTROL_GAP = 0.25      # above the wrong-audio control
-LIPSYNC_MAX_FROZEN_S = 0.75         # longest frozen face
+#: Q8 lip-sync gate: the sync_check verdicts (LSL002) under Trevor's two-try
+#: keep-best rule (2026-10-08). The numbers live in lip_sync/lip_gate/sync_check.py.
+LIPSYNC_OK_VERDICTS = ("PASS", "ACCEPT_WITH_FLAG")
+LIPSYNC_HELD_VERDICTS = ("UNDETERMINED", "UNMEASURABLE")   # a person looked at the strip
+LIPSYNC_ALL_VERDICTS = LIPSYNC_OK_VERDICTS + LIPSYNC_HELD_VERDICTS + ("FAIL",)
+LIPSYNC_KEPT = "KEPT_BEST_OF_2"
+LIPSYNC_MAX_JOBS = 2
 #: Q9: first real singing (vocal stem) target, share of runtime (H6).
 FIRST_SUNG_TARGET_PCT = 15.0
 #: Q10: no slow-motion above this speed-down factor (H5).
@@ -242,6 +245,18 @@ def _source_named(ans, codes, q):
     codes.append("%s:%s answer names no source" % (CHECKLIST_NO_MEASUREMENT, q))
     return None
 
+def _is_singing_detector(name):
+    """G3: the sung share must come from core/singing_detector.
+
+    Normalizes separators, so "singing-detector(vocal-stem)",
+    "singing_detector" and "singing detector v2" all count; "section
+    labels", "verse/chorus time" and bare "manual" do not.
+    """
+    if not isinstance(name, str):
+        return False
+    return "singingdetector" in "".join(ch for ch in name.lower()
+                                        if ch.isalnum())
+
 
 # ------------------------------------------------------------------ Q1 SUNG
 def _q1_sung(receipt, ans, codes, details):
@@ -259,6 +274,18 @@ def _q1_sung(receipt, ans, codes, details):
     if not isinstance(detector, str) or not detector.strip():
         codes.append("%s:SUNG detector (vocal-stem) not named"
                      % CHECKLIST_NO_MEASUREMENT)
+        return False
+    if not _is_singing_detector(detector):
+        # G3: a named-but-wrong instrument (labels, ears, "manual") is the
+        # fake-number path; only core/singing_detector measures sung share.
+        codes.append("%s:SUNG detector %r is not the singing detector"
+                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
+        return False
+    share_source = ans.get("share_source") or receipt.get("share_source")
+    if isinstance(share_source, str) and share_source.strip() \
+            and share_source.strip().lower() != "measured":
+        codes.append("%s:SUNG share_source=%s (need measured)"
+                     % (CHECKLIST_NO_MEASUREMENT, share_source.strip()))
         return False
     is_sung_style = isinstance(style, str) and \
         style.strip().lower() in ("sung", "all_suno", "all-suno", "suno")
@@ -633,51 +660,47 @@ def _q7_honest(receipt, ans, codes, details):
 
 # --------------------------------------------------------- Q8 LIP-SYNC
 def _q8_lip_sync(receipt, ans, codes, details):
-    """Every lip-sync clip passes the H2 measured gate; numbers shown."""
+    """Every lip-sync clip carries its lip_gate verdict and numbers. PASS and
+    ACCEPT_WITH_FLAG clips pass. UNDETERMINED / UNMEASURABLE (a sung line) pass
+    only after a person looked at the mouth strip (person_verdict PASS). A FAIL
+    take passes only as a flagged KEPT_BEST_OF_2 row (2 tries used at most, best
+    take kept, mouth-strip path shown). No clip is ever rejected for a
+    correlation number alone."""
     clips = ans.get("clips")
     src = _source_named(ans, codes, "LIP_SYNC")
     if not isinstance(clips, list) or not clips:
-        codes.append("%s:LIP_SYNC no per-clip offset/correlation list"
+        codes.append("%s:LIP_SYNC no per-clip lip_gate verdict list"
                      % CHECKLIST_NO_MEASUREMENT)
         return False
     ok = src is not None
-    worst_off, worst_corr = 0.0, 1.0
+    flagged = []
     for i, c in enumerate(clips):
         cid = c.get("clip", "clip-%d" % (i + 1)) if isinstance(c, dict) \
             else "clip-%d" % (i + 1)
-        vals = {k: _num(c.get(k)) if isinstance(c, dict) else None
-                for k in ("offset_s", "correlation", "control_correlation",
-                          "frozen_s")}
-        missing = [k for k, v in vals.items() if v is None]
-        if missing:
-            codes.append("%s:LIP_SYNC %s missing %s"
-                         % (CHECKLIST_NO_MEASUREMENT, cid, "/".join(missing)))
+        c = c if isinstance(c, dict) else {}
+        verdict = c.get("lip_verdict")
+        if verdict not in LIPSYNC_ALL_VERDICTS or _num(c.get("corr")) is None:
+            codes.append("%s:LIP_SYNC %s missing lip_verdict/corr"
+                         % (CHECKLIST_NO_MEASUREMENT, cid))
             ok = False
             continue
         bad = []
-        if abs(vals["offset_s"]) > LIPSYNC_MAX_OFFSET_S + 1e-9:
-            bad.append("offset %.3fs > %.2fs" % (vals["offset_s"],
-                                                 LIPSYNC_MAX_OFFSET_S))
-        if vals["correlation"] < LIPSYNC_MIN_CORR:
-            bad.append("corr %.2f < %.2f" % (vals["correlation"],
-                                              LIPSYNC_MIN_CORR))
-        if vals["correlation"] - vals["control_correlation"] \
-                < LIPSYNC_MIN_CONTROL_GAP - 1e-9:
-            bad.append("only %.2f above wrong-audio control (need %.2f)" % (
-                vals["correlation"] - vals["control_correlation"],
-                LIPSYNC_MIN_CONTROL_GAP))
-        if vals["frozen_s"] > LIPSYNC_MAX_FROZEN_S + 1e-9:
-            bad.append("frozen face %.2fs > %.2fs" % (vals["frozen_s"],
-                                                      LIPSYNC_MAX_FROZEN_S))
+        kept = c.get("verdict") == LIPSYNC_KEPT
+        if verdict != "PASS":
+            flagged.append(cid)
+        if verdict in LIPSYNC_HELD_VERDICTS and c.get("person_verdict") != "PASS" \
+                and not (kept and c.get("flag") and c.get("mouth_strip")):
+            bad.append("%s and no person_verdict PASS on the mouth strip" % verdict)
+        if verdict == "FAIL" and not (kept and c.get("flag") and c.get("mouth_strip")):
+            bad.append("FAIL and not a flagged %s row with a mouth strip" % LIPSYNC_KEPT)
+        if (c.get("jobs_total") or c.get("jobs_used") or 0) > LIPSYNC_MAX_JOBS:
+            bad.append("more than %d paid jobs on one segment" % LIPSYNC_MAX_JOBS)
         if bad:
             codes.append("%s:LIP_SYNC %s %s" % (CHECKLIST_LIPSYNC_FAILED, cid,
                                                   ", ".join(bad)))
             ok = False
-        worst_off = max(worst_off, abs(vals["offset_s"]))
-        worst_corr = min(worst_corr, vals["correlation"])
     details["lipsync_clips"] = len(clips)
-    details["lipsync_worst_offset_s"] = worst_off
-    details["lipsync_worst_corr"] = worst_corr
+    details["lipsync_flagged"] = flagged
     return ok
 
 
@@ -696,6 +719,12 @@ def _q9_first_sung(receipt, ans, codes, details):
     if not (isinstance(detector, str) and detector.strip()):
         codes.append("%s:FIRST_SUNG detector (vocal-stem) not named"
                      % CHECKLIST_NO_MEASUREMENT)
+        return False
+    if not _is_singing_detector(detector):
+        # G3: first-sung position is measured on the vocal stem by
+        # core/singing_detector, never read off section labels.
+        codes.append("%s:FIRST_SUNG detector %r is not the singing detector"
+                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
         return False
     delta = abs(got - want)
     details["first_sung_pct"] = got
@@ -916,9 +945,8 @@ def _measurement_line(q, ans, qdetails):
                 vm.get("mismatches", 0)))
         return ", ".join(parts)
     if q == "LIP_SYNC":
-        return "%d clip(s), worst offset %.3fs, worst corr %.2f" % (
-            d.get("lipsync_clips", 0), d.get("lipsync_worst_offset_s", 0.0),
-            d.get("lipsync_worst_corr", 0.0))
+        return "%d clip(s), %d flagged (ACCEPT_WITH_FLAG / held / kept best of 2)" % (
+            d.get("lipsync_clips", 0), len(d.get("lipsync_flagged", [])))
     if q == "FIRST_SUNG":
         return "first real singing at %.1f%% of runtime (%s)%s" % (
             d.get("first_sung_pct", 0.0), d.get("first_sung_band", ""),
