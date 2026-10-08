@@ -1911,7 +1911,7 @@ def selftest():
     check("journal sha256 differing from the file (edited after journaling) is not done", compute(plan, doc, attempts=A1, records=rr, proof=P())["done"] == [])
     rr = R(); rr["W0-01"] = {(u_, "A9", s_) for (u_, a_, s_) in rr["W0-01"]}
     check("journal record under another attempt_id is not done", compute(plan, doc, attempts=A1, records=rr, proof=P())["done"] == [])
-    for b_, r_ in (("claude-opus-4-5", "opus"), ("anthropic/claude-opus-4-5-20251101", "OPUS"), ("ds/deepseek-flash", "deepseek-v4-pro"), ("gpt-5", "openai/GPT-4o"), ("zz-model-7", "ZZ_MODEL 8")):
+    for b_, r_ in (("claude-opus-4-5", "opus"), ("anthropic/claude-opus-4-5-20251101", "OPUS"), ("ds/deepseek-flash", "deepseek-v4.1-flash"), ("gpt-5", "openai/GPT-4o"), ("zz-model-7", "ZZ_MODEL 8")):
         _verdict(proj, "W0-01", builder=b_, reviewer=r_)
         check("same model family under two names is not done: %r vs %r" % (b_, r_), model_family(b_) == model_family(r_) and compute(plan, doc, attempts=A1, records=R(), proof=P())["done"] == [], (model_family(b_), model_family(r_)))
     check("model_family normalizes vendor prefix, version, date, case", model_family("anthropic/claude-opus-4-5-20251101") == "opus" and model_family("Claude-3-5-Sonnet-20241022") == "sonnet" and model_family("ollama/glm-5.3:cloud") == "glm" and model_family("opus") != model_family("sonnet"))

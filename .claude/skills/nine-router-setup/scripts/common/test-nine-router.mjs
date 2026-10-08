@@ -55,7 +55,7 @@ async function main() {
   if (!skipDs) {
     const ds = await client.chat("ds/deepseek-v4-flash", { maxTokens: 16, prompt: "ok" });
     check("DeepSeek Flash route", ds.status === 200, `HTTP ${ds.status}`);
-    const dsPro = await client.chat("ds/deepseek-v4-pro", { maxTokens: 16, prompt: "ok" });
+    const dsPro = await client.chat("ds/deepseek-v4.1-flash", { maxTokens: 16, prompt: "ok" });
     check("DeepSeek Pro route", dsPro.status === 200, `HTTP ${dsPro.status}`);
   } else {
     console.log("SKIP  DeepSeek lane (SKIP_DEEPSEEK=1)");

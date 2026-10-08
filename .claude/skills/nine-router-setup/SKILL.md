@@ -142,7 +142,7 @@ Homebrew-managed environment that satisfies the requirements.
 Using the authenticated management API and the shared helpers under `scripts/common/`:
 
 - **DeepSeek Direct** (native provider, slug `deepseek`): import `DEEPSEEK_API_KEY`; require
-  `deepseek-v4-flash` and `deepseek-v4-pro` from `https://api.deepseek.com/models`.
+  `deepseek-v4-flash` and `deepseek-v4.1-flash` from `https://api.deepseek.com/models`.
 - **Ollama Cloud** (native provider, slug `ollama`): import `OLLAMA_API_KEY`; query
   `https://ollama.com/api/tags` and require `glm-5.2`, `kimi-k2.6`, `minimax-m3`,
   `gemma4:31b` (plus `deepseek-v4.1-flash` only when the override is enabled). Use the
@@ -169,7 +169,7 @@ Create two additional custom OpenAI-compatible nodes using the same `DEEPSEEK_AP
 - **DS Light**: prefix `ds-light`, baseUrl `https://api.deepseek.com/anthropic`, thinking
   OFF, default `deepseek-v4-flash`
 - **DS Max**: prefix `ds-max`, baseUrl `https://api.deepseek.com/anthropic`, thinking
-  MAX, default `deepseek-v4-pro`
+  MAX, default `deepseek-v4.1-flash`
 
 These give the routing matrix explicit thinking control per tier instead of relying on
 the 9Router `(max)` suffix mechanism.
@@ -189,7 +189,7 @@ The routing matrix this skill wires:
 | Alias | Provider | Model | Thinking |
 |-------|----------|-------|----------|
 | Fable | DeepSeek Direct | ds/deepseek-v4-flash | Max |
-| Opus | DS Max | ds-max/deepseek-v4-pro | Max |
+| Opus | DS Max | ds-max/deepseek-v4.1-flash | Max |
 | Sonnet | DeepSeek Direct | ds/deepseek-v4-flash | Max |
 | Haiku | DS Light | ds-light/deepseek-v4-flash | Off |
 | Subagents | DeepSeek Direct | ds/deepseek-v4-flash | Max |
@@ -200,7 +200,7 @@ The routing matrix this skill wires:
 - Create/update `blackceo-fable-fallback` and `blackceo-opus-fallback` (DeepSeek first,
   Agnes second) — fallback strategy via settings `comboStrategies`.
 - Create/update `blackceo-fusion` — panels `ds/deepseek-v4-flash`, `ollama/glm-5.2`,
-  `ollama/kimi-k2.6`; judge `ds/deepseek-v4-pro`; strategy `fusion` via settings
+  `ollama/kimi-k2.6`; judge `ds/deepseek-v4.1-flash`; strategy `fusion` via settings
   `comboStrategies["blackceo-fusion"] = {fallbackStrategy: "fusion", judgeModel: ...}`.
 - Inspect the installed version's `comboStrategies` schema before writing (see
   `references/nine-router-api.md`).
@@ -222,7 +222,7 @@ The routing matrix this skill wires:
 - Routed-session env: `ANTHROPIC_BASE_URL=http://localhost:20128/v1`,
   `ANTHROPIC_AUTH_TOKEN=<local router key>`, the four alias pins
   (`ANTHROPIC_DEFAULT_FABLE_MODEL` = `ds/deepseek-v4-flash(max)`,
-  `ANTHROPIC_DEFAULT_OPUS_MODEL` = `ds-max/deepseek-v4-pro`,
+  `ANTHROPIC_DEFAULT_OPUS_MODEL` = `ds-max/deepseek-v4.1-flash`,
   `ANTHROPIC_DEFAULT_SONNET_MODEL` = `ds/deepseek-v4-flash(max)`,
   `ANTHROPIC_DEFAULT_HAIKU_MODEL` = `ds-light/deepseek-v4-flash`),
   `CLAUDE_CODE_SUBAGENT_MODEL` = `ds/deepseek-v4-flash(max)`,
@@ -396,7 +396,7 @@ OpenRouter (optional): OK (via <free model>) | skipped - no OPENROUTER_API_KEY f
 
 Claude routes:
 Fable/Subagents -> DeepSeek V4 Flash (max)
-Opus -> DeepSeek V4 Pro via DS Max (max)
+Opus -> DeepSeek V4.1 Flash via DS Max (max)
 Sonnet -> DeepSeek V4 Flash (max)
 Haiku -> DeepSeek V4 Flash via DS Light (off)
 
@@ -405,7 +405,7 @@ DeepSeek -> Agnes 2.5 Flash: OK
 
 Fusion:
 DeepSeek Flash + GLM 5.2 + Kimi K2.6
-Judge -> DeepSeek V4 Pro
+Judge -> DeepSeek V4.1 Flash
 Status: OK
 
 Ollama plan: Pro

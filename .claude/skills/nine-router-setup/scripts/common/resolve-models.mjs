@@ -8,7 +8,7 @@ const OLLAMA_TAGS_URL = "https://ollama.com/api/tags";
 const AGNES_BASE = "https://apihub.agnes-ai.com/v1";
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
-export const REQUIRED_DEEPSEEK = ["deepseek-v4-flash", "deepseek-v4-pro"];
+export const REQUIRED_DEEPSEEK = ["deepseek-v4-flash", "deepseek-v4.1-flash"];
 export const REQUIRED_OLLAMA = ["glm-5.2", "kimi-k2.6", "minimax-m3", "gemma4:31b"];
 export const OLLAMA_0731 = "deepseek-v4.1-flash";
 export const REQUIRED_AGNES = ["agnes-2.5-flash"];
