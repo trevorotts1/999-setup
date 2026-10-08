@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.21] - 2026-10-08 - Batch MGB005: song recipe v2, load governor, F14, F15, KIE rate limit reference
+
+Landed together by merge-train: #67 song recipe v2, song length formula and song dispatcher; #68 KIE rate limit reference; #69 F14 video model lock; #70 load governor; #71 F15 choice card gate. Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted), with a test. Fixes the version mismatch (VERSION said 2.7.19 while SKILL.md said 2.7.20): VERSION, SKILL.md and this changelog now agree on 2.7.21. F14 and F15 were merged by hand (both sides kept) in the test stubs.
+
 ## [Unreleased] - Doubled lip-sync and the lip-sync image gate (owner order 2026-10-08)
 
 Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
