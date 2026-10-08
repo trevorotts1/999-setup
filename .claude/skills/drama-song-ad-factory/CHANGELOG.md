@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.15] - 2026-10-08 - Calibrated sung detector (G3, W-G-003)
+
+- Added `core/singing_detector/` (detector, `__init__`, self-test): measures sung seconds per second and per line from the isolated vocal stem (pitch stability, voicing continuity, note alignment; ffmpeg + numpy, no ASR, no spend, load guard). Every share carries `source: measured`, never computed from section labels. Calibrated on the bsw sung lines and O3 spoken lines. Test: `scripts/core/singing_detector/test_singing_detector.py`. Same detector ships in onboarding skill 75 v2.8.1 (PR 1656).
+
 ## [2.7.14] - 2026-10-08 - Sung share judged only by Trevor's band, no absolute floor (BND001)
 
 Owner order (Trevor, 2026-10-08): "It's not an absolute 55% or 20% ... within about 5 percentage points" and "Once you get past 10%, it's got to be redone."
