@@ -1,5 +1,15 @@
 # Changelog: drama-song-ad-factory
 
+## [2.4.6] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
+
+Ships the final QC gate 4 delivery checklist (`scripts/core/delivery_checklist/`,
+`references/QC-CHECKLIST-BEFORE-DELIVERY.md`, `delivery_checklist` check in
+`qc_gate.py` and `qc-schema.json`), byte-identical to the onboarding copy
+(skill 75 v2.6.1). 11 measured questions: the G7 seven plus Q8 lip-sync
+measured (H2 numbers), Q9 first-sung % (H6), Q10 pictures match words (H5),
+Q11 every numeric goal judged by Trevor's band (within 5 accept; over 5 to 10
+accept with a flag shown in the receipt; over 10 redo).
+
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
 `VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
