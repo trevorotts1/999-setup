@@ -1,21 +1,29 @@
 # Stage runbook
 
-`factory.py next --run-dir <dir>` reads this table: the first cell is the stage id (same order as
-`batch_mode/batch.py` STAGES), the second is the command (in backticks, run from the skill root),
-the third is what the stage produces. `$RUN` is the run folder, `$RUN_ID` the run id.
-After the command passes its QC gate, run `next` again.
+Source: manual 02 B1 step 4; stage ids are `batch_mode/batch.py:112-125` STAGES. One
+row per stage: the exact command to run for that stage and what it produces. The
+`factory.py next` subcommand returns these rows; the agent loops next -> run -> register -> next.
+
+Run each command from this skill's root (`.claude/skills/drama-song-ad-factory/`). Substitute
+`$RUN` (the run dir), `$RUN_ID` and the `<...>` placeholders before running.
 
 | stage id | command | produces |
 |---|---|---|
-| research | `python3 scripts/core/research_engine/research.py --brief "$RUN/brief.json" --outdir "$RUN" --run-id "$RUN_ID"` | research/ and brief/ folders |
-| creative-strategy | `python3 scripts/core/story_arc/story_arc.py --story "$RUN/creative/story.json"` | validated twelve-beat story arc |
-| script-lyrics | `python3 scripts/core/lyric_writer/lyric_writer.py --lyrics "$RUN/lyrics/lyrics.json" --brief "$RUN/brief.json"` | checked sung lyrics |
-| music | `python3 scripts/core/audio_c3/lyric_timing.py` | word timings for the approved track |
-| continuity-bible | `python3 scripts/core/character_library/character_library.py --client-dir "$RUN/client" list` | approved characters and style bible |
-| storyboard | `python3 scripts/core/shot_planner/speaker_check/speaker_check.py` | shot plan with on-screen speaker check |
-| image-keyframes | `python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --run-id "$RUN_ID"` | keyframe images through Skill 74 |
-| video-generation | `python3 scripts/core/video_router/video_router.py --request "$RUN/video/request.json"` | routed video clip requests |
-| qc-retakes | `python3 scripts/core/retake_manager/retake_manager.py --request "$RUN/qc/retake-request.json"` | targeted retake plan |
-| assembly | `python3 scripts/core/final_assembler/assembler.py "$RUN/assembly/timeline.json" "$RUN/assembly/master.mp4"` | assembled master |
-| final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc` | independent QC gate record |
-| delivery | `python3 scripts/core/delivery_checklist/delivery_checklist.py check --receipt "$RUN/delivery/receipt.json"` | delivery checklist verdict |
+| research | `python3 scripts/core/research_engine/research.py --brief "$RUN/brief.json" --outdir "$RUN"` | `research/{market,audience,competitors}.md` + `evidence.json` with every claim source-cited. |
+| creative-strategy | `python3 scripts/core/story_arc/story_arc.py --story "$RUN/creative/story.json"` | Validated twelve-beat story arc (agent authors `creative/story.json`; missing beats fail). |
+| script-lyrics | `python3 scripts/core/lyric_writer/lyric_writer.py --lyrics "$RUN/creative/lyrics.json" --brief "$RUN/brief.json"` | Sung lyric script passing sung-copy rules (first-person, pronunciation, CTA). |
+| music | `python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <suno-model-id> --request "$RUN/music/req.json" --save-dir "$RUN/music" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key suno --attempt-id a1 --cost 0` | Suno song master and timing map for the approved lyrics, on a reserved ledger attempt. |
+| continuity-bible | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage continuity-bible --records "$RUN/continuity/qc-records.json" --makers "$RUN/continuity/makers.json" --required <required-checks>` | Stage gate over the agent-authored Character DNA + product DNA + style bible records (`character_continuity/`, `product_style_bible/` are import-only libraries). |
+| storyboard | `python3 scripts/core/shot_planner/speaker_check/speaker_check.py check --env "$RUN/storyboard/shot-list.json"` | Speaker-visible shot list bound to lyric timing; fail-closed before storyboard approval (planner binding via `shot_planner.shot_planner.bind_plan`, import-only). |
+| image-keyframes | `python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <image-model-id> --request "$RUN/generation/req.json" --save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key keyframes --attempt-id a1 --cost 0` | Keyframe images for every planned shot, delivered only after `final_assembler`-independent QC records exist. |
+| video-generation | `python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <video-model-id> --request "$RUN/generation/req.json" --save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key video --attempt-id a1 --cost 0` | Per-shot video clips on reserved KIE attempts (model id from `video_router`). |
+| qc-retakes | `python3 scripts/core/retake_manager/retake_manager.py --request "$RUN/qc/retake-request.json"` | Targeted retake plan naming only failed units, capped at 2 attempts per unit. |
+| assembly | `python3 scripts/core/final_assembler/assembler.py "$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"` | Frame-exact ffmpeg master render of `blackceo.timeline/v1`. |
+| final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes). |
+| delivery | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage delivery --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only). |
+
+Song files (H14): before the delivery gate, build the audio-only deliverables with `delivery_variants.build_song_files(mix, $DELIVERY, <ad name>, instrumental)` then `write_song_docs($DELIVERY, rows)` (MP3 320 kbps + WAV named after the ad, plus the instrumental pair if one exists; both listed in `delivery-receipt.json` and `README.md`). Gate it with a `song_files` QC record (`python3 scripts/core/delivery_variants/song_files.py check $DELIVERY <ad name>`, exit 5 = a song file is missing); include `song_files` in the delivery `--required` list.
+
+Note: `music`, `image-keyframes` and `video-generation` share one command shape (the
+Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.
+Video model ids come from `python3 scripts/core/video_router/video_router.py --request <request.json>`.

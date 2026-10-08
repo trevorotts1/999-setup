@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.21
+version: 2.7.22
 ---
 
 # Drama Song Ad Factory
@@ -376,6 +376,23 @@ returns `tool-unavailable` / `module-unavailable` with an actionable error
 instead of a silent substitution. Model/role selection for agent work is
 resolved by the live runtime rules of the current mode, never by a hardcoded
 table in this skill.
+
+## Captions and protected names (Part H, H7)
+
+Captions are the approved lyric sheet's own words, timed by the Suno
+timestamps. Speech-to-text is never a caption text source. Character and
+brand names (for example Stale, Stop Stale) are protected words:
+
+- When the lyric sheet is BUILT, the lyric writer may not change a protected
+  name or rewrite a packet line (`core/protected_names.py::check_sheet`,
+  called by `lyric_writer.validate_lyrics` and by
+  `music_director.build_generate_request(packet_lines=..., protected=...)`,
+  so no Suno request is built from a bad sheet).
+- The words check rejects a take where Suno sang a protected name wrong
+  (`music_qc.check_song_qc(..., protected=...)`).
+- Build captions with `protected_names.build_captions(sheet, aligned_words)`;
+  QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
+  protected=...)`): "the house went still" for "Stale" is a FAIL.
 
 ## No hand-written pipeline scripts (Part H H12)
 

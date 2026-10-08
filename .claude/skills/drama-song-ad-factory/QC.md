@@ -108,6 +108,7 @@ schema violation all refuse the stage (exit 5).
 | Targeted repair | 17.7 | failing check only | gate returns `repair_scope` naming only the failed `check_id`s; repair runs with new attempt ids; approved assets stand; repair cost travels through the ledger `repair-cap`, and once the configured budget is spent the run PARKS - never an unbounded retry loop |
 | Acceptance profile + UNAVAILABLE | 17.8 | `timing` (profile-bound) | `--profile acceptance-profile.json --expect-profile <version>` matches or the gate refuses `PROFILE_MISMATCH`; UNAVAILABLE on any required check = `UNAVAILABLE_MANDATORY`, never PASS; a `timing` record carries `timing_detail` {sample_ref, confidence, annotation_method} plus median/p95/critical ms against profile thresholds (100/250/100 ms baseline); export 1080p30 H.264+AAC 48 kHz, A/V duration delta <= 1 frame, lyric coverage 100% critical / >= 98% overall, loudness -14 LUFS +/-1 and true peak <= -1 dBTP, CTA hold >= 3 s reviewed at 360 px width; threshold changes require a documented decision before the affected run |
 | Claims / narrative integrity | 17.9 | `creative` + `text_product` | factual product claims carry evidence refs from the brief into the QC record; fictional/simulated narrative is distinguished from real testimonials; original assets and provenance preserved; resemblance or third-party spend anecdotes are never reported as effectiveness evidence |
+| Protected names + captions (H7) | 17.2, 17.5 | `lyrics`, `song`, `text_product` | the sheet keeps every protected name (character/brand) and every packet line verbatim (`PROTECTED_NAME_CHANGED`, `PACKET_LINE_REWRITTEN`); no take where a protected name was sung wrong (`PROTECTED_NAME_SUNG_WRONG`); caption text equals the approved sheet word for word and was never speech-to-text (`CAPTION_MISMATCH`, `CAPTION_SOURCE_NOT_SHEET`); "still" for "Stale" fails |
 
 - [ ] Critical checks (`lyrics`, `text_product` by default, overridable via
       `--critical`) produce `critical_failures` on any FAIL/UNAVAILABLE, and
@@ -122,8 +123,10 @@ schema violation all refuse the stage (exit 5).
 
 Run `check_master_provenance(<run folder>, <master>)` from
 `final_assembler/master_provenance.py` and record it as the `final_edit`
-check. FAIL when the master has no assembler receipt, or any run-folder script
-calls ffmpeg or writes captions.
+check. FAIL when the master has no assembler receipt (`produced_by.module`,
+`master_sha256`), or any run-folder script calls ffmpeg or writes captions.
+Builders call the skill's assembler, lip-sync and caption modules, never
+their own scripts.
 
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
@@ -163,6 +166,36 @@ A maker never signs its own gate: the final verdict for any production
 stage comes from an independent reviewer, and this document is never used
 to self-approve a run.
 
+## Part H H4: speaking faces and lip-sync coverage
+
+- Run `shot_planner.face_speaks.check_face_speaks(shots, lines)`: it lists every
+  shot where a face is visibly speaking (shot / time / line / lip-sync). Any
+  speaking face that is not a lip-sync clip of that character's own line fails
+  `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
+  `LIPSYNC_WRONG_FACE`.
+- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: 30-40 s
+  and 6-8 clips of 4-6 s in a 60 s ad (doubled 2026-10-08), scaled linearly with
+  length, with a 5-point grace; below the band or under the clip count fails
+  `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
+  lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
+- Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
+  paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
+  measurement that could not be made is a refusal, never a pass.
+
+## Clean ending (I5)
+
+The last 2 s of the master must not stop abruptly: audio level decays, the last sung word
+is not cut, the picture fades to the end card, and the end card (4-5 s) ends by target
+length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).
+
 ## I1: caption spelling and website
 
-Every caption word must be a real word or a protected word (names, brands, the client's website). An unknown word fails with the word shown (`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for the exact address; it must appear verbatim in the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+Every caption word must be a real word or a protected word (names, brands, the
+client's website). An unknown word fails with the word shown
+(`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
+the exact address; it is stored as a protected word and must appear verbatim in
+the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+
+## H10 voice fits the character on screen (Part H)
+
+Run `qc_voice_match/line_voice_fit.py` (`enforce`) before assembly. Each line is measured inside the vocal stem (median pitch of its voiced frames) against the declared voice band of the character whose face is shown. Distance outside the band, as a percent of the nearest edge: up to 5 accept; over 5 up to 10 accept with a flag in the receipt; over 10 is `VOICE_FACE_MISMATCH` and that take is regenerated (never keep the closest). The receipt carries `median_hz`, `band_hz`, `deviation_pct` and every attempt per line. A line still failing after the regeneration rounds rejects the run.
