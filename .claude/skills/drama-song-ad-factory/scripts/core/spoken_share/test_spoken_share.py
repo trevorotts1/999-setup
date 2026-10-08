@@ -201,6 +201,10 @@ for gap, want in ((0, "ACCEPT"), (5, "ACCEPT"), (5.5, "FLAG"), (10, "FLAG"),
           == SS.judge_gap(15 + min(gap, 15), 15)["band"])
 
 
+def at100(first):
+    return at(first, 100.0)
+
+
 def at(first, total=60.0):
     return SS.check_first_sung([
         {"delivery": "spoken", "start": 0.0, "end": first},
@@ -259,6 +263,22 @@ st = SS.steer_first_sung([{"delivery": "spoken", "seconds": 8.0},
 check("steer-keep", st["action"] == "keep", st)
 st = SS.steer_first_sung(no_sung)
 check("steer-add-hook", st["action"] == "add_sung_hook", st)
+
+# Trevor's band on a 100 s ad (target 15 s): 18% accept, 22% flag, 27% redo.
+check("first-sung-18-percent-accept",
+      at100(18)["band"] == "ACCEPT" and at100(18)["verdict"] == "PASS")
+f22 = at100(22)
+check("first-sung-22-percent-flag",
+      f22["band"] == "FLAG" and f22["verdict"] == "PASS" and f22["flags"], f22)
+check("first-sung-27-percent-redo",
+      at100(27)["band"] == "REDO" and at100(27)["verdict"] == "FAIL")
+check("g10-one-constants-set",
+      (SS.TARGET_ACCEPT_PCT, SS.TARGET_FLAG_PCT, SS.REAL_SINGING_STRETCH_S)
+      == (SS.ACCEPT_PTS, SS.FLAG_PTS, SS.NO_REAL_SINGING_STRETCH_S)
+      and SS.SUNG_TARGET_PCT == 100 - SS.SPOKEN_TARGET_PCT)
+check("judge-gap-pair-carries-verdict",
+      SS.judge_gap(50, 60) == {"gap_pts": 10.0, "verdict": "FLAG",
+                               "band": "FLAG"})
 
 # check_plan enforces BOTH halves: band and first-sung rule.
 # 90 s cut on the target: 6 s spoken + 34.5 s rap = 40.5 s spoken-style

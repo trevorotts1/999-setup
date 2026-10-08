@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.14] - 2026-10-08 - Sung share judged only by Trevor's band, no absolute floor (BND001)
+
+Owner order (Trevor, 2026-10-08): "It's not an absolute 55% or 20% ... within about 5 percentage points" and "Once you get past 10%, it's got to be redone."
+
+- `final_assembler/sung_vocal_guard`: the hard 70% floor (`MIN_SUNG_COVERAGE`) is removed. Sung share is judged ONLY against the ad's own sung target (`target=`, or `sung_target` / `sung_target_pct` on the choice card; default `spoken_share.SUNG_TARGET_PCT` = 100 - spoken target = 55): within 5 points accept, over 5 up to 10 accept with a flag, over 10 redo (`SUNG_COVERAGE_LOW`). The only other hard reject is H8's: no sung stretch of 6 s (`VOCAL_MISSING`).
+- `core/spoken_share`: the G10 constants block is the one set (`TARGET_ACCEPT_PCT` / `TARGET_FLAG_PCT` / `REAL_SINGING_STRETCH_S` are the same numbers as `ACCEPT_PTS` / `FLAG_PTS` / `NO_REAL_SINGING_STRETCH_S`); adds `SUNG_TARGET_PCT`; `judge_gap(measured, target)` also returns `verdict`.
+- Tests: 50 vs target 60 flag, 48 vs 60 redo, 57 vs 60 accept, no floor, no 6 s sung stretch redo, first sung at 18% accept / 22% flag / 27% redo. Same rule ships in onboarding skill 75 v2.8.1.
+
 ## [2.7.13] - 2026-10-08 - Lip-sync close-up in every reference set (LPC001)
 
 Owner order (Trevor, 2026-10-08): "make sure you create a close-up one where their lips can

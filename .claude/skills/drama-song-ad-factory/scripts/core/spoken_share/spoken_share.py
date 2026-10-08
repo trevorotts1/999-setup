@@ -50,14 +50,17 @@ FIRST_SUNG_TARGET_PCT = 15
 #: Owner's target rule (2026-10-08 12:30), for every numeric goal: within
 #: ACCEPT points = accept; over that up to FLAG points = accept WITH A FLAG
 #: in the receipt; over FLAG points = REDO (never keep the closest).
-# ponytail: Part G's G10 constants module owns these two when it lands; this
-# is the single definition until then, so there is nothing to duplicate.
-TARGET_ACCEPT_PCT = 5
-TARGET_FLAG_PCT = 10
+# G10: this block is the ONE constants set for targets and the band (Trevor,
+# 2026-10-08: "It's not an absolute 55% or 20% ... within about 5 percentage
+# points"). No check keeps its own tolerance and NO check keeps an absolute floor.
+#: (TARGET_ACCEPT_PCT / TARGET_FLAG_PCT / REAL_SINGING_STRETCH_S are the same
+#: numbers as ACCEPT_PTS / FLAG_PTS / NO_REAL_SINGING_STRETCH_S below.)
 
-#: A take has real singing only with a sung stretch this long (Part G
-#: detector rule); a shorter sung blip is not "first real singing".
-REAL_SINGING_STRETCH_S = 6.0
+#: Default sung share of runtime for an ad whose choice card / plan names no
+#: target of its own (the ad's own target always wins, see sung_vocal_guard).
+#: Everything not spoken-style is sung, so it is 100 - the spoken target (45).
+SUNG_TARGET_PCT = 100 - SPOKEN_TARGET_PCT
+
 #: Sung segments closer than this are one stretch.
 _STRETCH_GAP_S = 1.0
 
@@ -84,6 +87,9 @@ VERDICT_FAIL = "FAIL"    # past FLAG_PTS: REDO (never keep the closest)
 #: The only hard reject when singing was chosen: no real singing, i.e. no
 #: sung stretch this long (seconds). Same number as the singing detector's.
 NO_REAL_SINGING_STRETCH_S = 6.0
+TARGET_ACCEPT_PCT = ACCEPT_PTS
+TARGET_FLAG_PCT = FLAG_PTS
+REAL_SINGING_STRETCH_S = NO_REAL_SINGING_STRETCH_S
 #: Sung segments closer together than this are one stretch.
 SUNG_STRETCH_JOIN_S = 0.25
 
@@ -93,15 +99,15 @@ def judge_gap(gap_points, target_pct=None):
 
     ``judge_gap(gap_points)`` -> VERDICT_PASS | VERDICT_FLAG | VERDICT_FAIL
     for a gap in percentage points (sign ignored).
-    ``judge_gap(measured_pct, target_pct)`` -> {"gap_pts", "band"} with the
+    ``judge_gap(measured_pct, target_pct)`` -> {"gap_pts", "verdict", "band"} with the
     band ACCEPT | FLAG | REDO, for the target engine (first real singing).
     """
     if target_pct is not None:
         gap = round(abs(float(gap_points) - float(target_pct)), 6)
-        return {"gap_pts": gap,
-                "band": (BAND_ACCEPT if gap <= TARGET_ACCEPT_PCT
-                         else BAND_FLAG if gap <= TARGET_FLAG_PCT
-                         else BAND_REDO)}
+        v = judge_gap(gap)
+        return {"gap_pts": gap, "verdict": v,
+                "band": {VERDICT_PASS: BAND_ACCEPT, VERDICT_FLAG: BAND_FLAG,
+                         VERDICT_FAIL: BAND_REDO}[v]}
     gap = round(abs(float(gap_points)), 6)
     if gap <= ACCEPT_PTS:
         return VERDICT_PASS
@@ -584,6 +590,7 @@ __all__ = [
     "SPOKEN_MIN_PCT",
     "SPOKEN_STYLE_DELIVERIES",
     "SPOKEN_TARGET_PCT",
+    "SUNG_TARGET_PCT",
     "TARGET",
     "TOOL_NAME",
     "TOOL_VERSION",
