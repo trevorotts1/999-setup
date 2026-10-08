@@ -1,5 +1,14 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.6] - 2026-10-08 - I7 intake asked one question at a time
+
+- `intake_card.conversation(replies)` and `factory.py card --step --reply ...` (same module and
+  test as OpenClaw skill 75 v2.6.6): each message holds one question, a one-sentence why,
+  numbered options one per line, the RECOMMENDED option with its reason, then waits. After the
+  sixth answer, a recap and a request for "yes"; a line number reopens just that question.
+- `INSTRUCTIONS.md` and `references/choice-card-spec.md` section 2.2 tell claude-nine to ask
+  this way. Test: `scripts/core/choice_card/intake_card/test_intake_step_i7.py`.
+
 ## [2.7.5] - 2026-10-08 - I2 scenes must match the song and the faces
 
 - New `scripts/core/scene_match/` (same module and test as OpenClaw skill 75): each shot carries
