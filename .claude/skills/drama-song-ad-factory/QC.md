@@ -6,11 +6,14 @@
   length (`shot_planner/face_speaks.py`, `final_assembler/lipsync_coverage.py`,
   numbers in `core/lipsync_clips.py`); below the band fails
   `LIPSYNC_COVERAGE_BELOW_BAND` / `LIPSYNC_COVERAGE_SHORT`.
-- Every lip-sync source picture passes `lip_gate.image_gate` before any paid
-  job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that
+- Every lip-sync source picture passes `lip_gate.image_gate` before the first paid
+  job (its close-up numbers are `picture_gate`'s, one rule set; `image_gate`
+  delegates to it and adds size at least 720x1280, nothing over the mouth, light,
+  same character); a refusal
+  lists every `LIPSYNC_IMAGE_*` reason and a measurement that
   could not be made is a refusal, never a pass.
 - LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
-  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar or infinitalk job without a
+  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
   PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
   flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
   (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
@@ -31,9 +34,22 @@
   receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
   are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
   redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
-  `person_verdict: PASS` on the row. 2-try cap: `run_gate` never makes a third paid
-  job. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
+  `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
 
+## H4: lip-sync verdicts and the two-try keep-best rule (2026-10-08)
+
+- The sync gate is `lip_gate` over `sync_check` (calibrated on real controls with
+  `lip_sync/lip_gate/calibrate_sync.py`). Verdicts: PASS, ACCEPT_WITH_FLAG, FAIL (a
+  spoken line only), UNDETERMINED (a sung line that is WEAK or NOT_SYNCED: held for a
+  person with the mouth strip, never an automatic redo), UNMEASURABLE (reported, never a
+  pass). `lip_gate/event_sync.py` is an ADVISORY measure recorded in the receipt as
+  `advisory_event_sync`; it never gates and never triggers a redo.
+- At most 2 paid `kling/ai-avatar-standard` jobs per segment, every name variant
+  counted. Try 2 only on a hard defect (a FAIL, or a defect a person saw) and only with
+  a changed input. After that the best take is kept: receipt row `KEPT_BEST_OF_2 (tN)`
+  with verdict, numbers, flag, jobs used and a mouth-strip path; `lip_gate.qc_check`
+  accepts that row. A third job, or a second job with the same input, is a QC failure.
+  InfiniTalk is a manual backup only, never automatic.
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung
 direct-response story -> storyboard -> clip generation -> assembly ->

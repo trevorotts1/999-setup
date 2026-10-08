@@ -48,8 +48,6 @@ MAKERS = {dc.CHECK_ID: "final_assembler/1.0.0",
 # gate 4 "Final" required list with the G7 checker on it (the wiring the
 # run's Final edit QC uses from now on)
 FINAL_GATE_REQUIRED = ["final_edit", "delivery_checklist"]
-# Part I I4: final_edit needs the master length (60 s video, 58 s master)
-GOOD_MASTER = {"chosen_length_s": 60, "measured_s": 58}
 
 
 def final_edit_record(run=RUN, stage=STAGE, verdict="PASS"):
@@ -101,11 +99,11 @@ def full_answered_receipt():
         "HONEST_RECEIPT": {"measured_fields": 14, "unmeasured_fields": 0,
                            "source_measured_fields": "receipt audit",
                            "source_unmeasured_fields": "receipt audit"},
-        "LIP_SYNC": {"source": "lipsync_gate(H2) envelope xcorr", "clips": [
-            {"clip": "ls1", "offset_s": 0.02, "correlation": 0.71,
-             "control_correlation": 0.20, "frozen_s": 0.3},
-            {"clip": "ls2", "offset_s": -0.04, "correlation": 0.60,
-             "control_correlation": 0.30, "frozen_s": 0.0},
+        "LIP_SYNC": {"source": "lip_gate.sync_check (calibrated)", "clips": [
+            {"clip": "ls1", "lip_verdict": "PASS", "corr": 0.71, "margin": 0.2,
+             "verdict": "PASS", "jobs_total": 1},
+            {"clip": "ls2", "lip_verdict": "ACCEPT_WITH_FLAG", "corr": 0.5,
+             "margin": 0.02, "verdict": "ACCEPT_WITH_FLAG", "jobs_total": 1},
         ]},
         "FIRST_SUNG": {"source": "singing-detector vocal stem",
                        "detector": "singing-detector(vocal-stem)",
@@ -193,8 +191,7 @@ class G7DoneWhen(unittest.TestCase):
         # final_edit record passes, so the FAIL is the checklist alone
         rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED,
-                                master=GOOD_MASTER)
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(gate["gate"], "FAIL")
         self.assertEqual(gate["repair_scope"], [dc.CHECK_ID])
         self.assertNotEqual(gate["gate"], "BLOCKED")
@@ -260,6 +257,39 @@ class G7DoneWhen(unittest.TestCase):
         self.assertFalse(res["pass"])
         self.assertIn("SUNG", res["repair_scope"])
 
+    # ---- G3-WIRE: sung claims flow through core/singing_detector --------
+    def test_q1_detector_must_be_the_singing_detector(self):
+        """A named-but-wrong instrument (labels) is the fake-number path."""
+        for bad in ("section labels", "verse/chorus time", "manual listen",
+                    "vocal-stem astats"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"]["detector"] = bad
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], bad)
+            self.assertIn("SUNG", res["repair_scope"], bad)
+
+    def test_q1_accepts_every_singing_detector_spelling(self):
+        for good in ("singing_detector", "singing-detector(vocal-stem)",
+                     "singing detector v2.0.0", "SingingDetector"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"]["detector"] = good
+            res = dc.evaluate(receipt)
+            self.assertTrue(res["pass"], (good, res["detail"]))
+
+    def test_q1_share_source_must_be_measured(self):
+        receipt = full_answered_receipt()
+        receipt["SUNG"]["share_source"] = "planned"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_q9_detector_must_be_the_singing_detector(self):
+        receipt = full_answered_receipt()
+        receipt["FIRST_SUNG"]["detector"] = "section labels"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("FIRST_SUNG", res["repair_scope"])
+
     def test_music_broken_fails(self):
         receipt = full_answered_receipt()
         receipt["VOICE_MUSIC"]["music_gaps_s"] = 2.5
@@ -275,22 +305,33 @@ class G7DoneWhen(unittest.TestCase):
             dc.evaluate(None)
 
     # ---- H11: Q8-Q11 --------------------------------------------------
-    def test_h11_q8_shifted_clip_fails_good_passes(self):
+    def test_h11_q8_flagged_passes_unflagged_fail_does_not(self):
         receipt = full_answered_receipt()
-        self.assertTrue(dc.evaluate(receipt)["pass"])
-        receipt["LIP_SYNC"]["clips"][1]["offset_s"] = 0.20     # shifted
+        self.assertTrue(dc.evaluate(receipt)["pass"])      # PASS + ACCEPT_WITH_FLAG
+        clips = receipt["LIP_SYNC"]["clips"]
+        clips[1].update(lip_verdict="FAIL", verdict="FAIL_REPLACE")
         res = dc.evaluate(receipt)
         self.assertEqual(res["repair_scope"], ["LIP_SYNC"])
         self.assertIn("ls2", res["detail"])
-        self.assertIn("0.200s", res["detail"])
+        clips[1].update(verdict="KEPT_BEST_OF_2", flag="FAIL kept", jobs_total=2,
+                        mouth_strip="ls2-strip.png")       # flagged keep-best
+        self.assertTrue(dc.evaluate(receipt)["pass"])
 
-    def test_h11_q8_control_gap_and_frozen_face_fail(self):
-        for k, v in (("control_correlation", 0.50), ("frozen_s", 1.0),
-                     ("correlation", 0.40)):
+    def test_h11_q8_no_offset_or_corr_rule_and_gaps_fail(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0].update(offset_s=0.20, corr=0.1)
+        self.assertTrue(dc.evaluate(receipt)["pass"], "no correlation or offset rule")
+        for mutate in (lambda c: c.pop("lip_verdict"), lambda c: c.pop("corr"),
+                       lambda c: c.update(jobs_total=3),
+                       lambda c: c.update(lip_verdict="UNDETERMINED"),
+                       lambda c: c.update(lip_verdict="UNMEASURABLE")):
             receipt = full_answered_receipt()
-            receipt["LIP_SYNC"]["clips"][0][k] = v
-            self.assertEqual(dc.evaluate(receipt)["repair_scope"],
-                             ["LIP_SYNC"], k)
+            mutate(receipt["LIP_SYNC"]["clips"][1])
+            self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+        receipt = full_answered_receipt()                  # a person looked: fine
+        receipt["LIP_SYNC"]["clips"][1].update(lip_verdict="UNDETERMINED",
+                                               person_verdict="PASS")
+        self.assertTrue(dc.evaluate(receipt)["pass"])
 
     def test_h11_q9_first_sung_band(self):
         for pct, want in ((10.0, "ACCEPT"), (20.0, "ACCEPT"),
@@ -358,8 +399,7 @@ class G7DoneWhen(unittest.TestCase):
         err = qc_gate.validate_record(rec)
         self.assertIsNone(err, err)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED,
-                                master=GOOD_MASTER)
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(gate["gate"], "PASS", gate["failures"])
 
     def test_final_edit_gate_4_requires_the_checklist(self):
@@ -379,8 +419,7 @@ class G7DoneWhen(unittest.TestCase):
         res = dc.evaluate(receipt)
         rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED,
-                                master=GOOD_MASTER)
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(gate["gate"], "FAIL")
         self.assertIn(dc.CHECK_ID, gate["repair_scope"])
 
@@ -390,8 +429,7 @@ class G7DoneWhen(unittest.TestCase):
         makers = {dc.CHECK_ID: REVIEWER["identity"],
                   "final-edit-e2e": "final_qc/1.0.0"}
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                makers, FINAL_GATE_REQUIRED,
-                                master=GOOD_MASTER)
+                                makers, FINAL_GATE_REQUIRED)
         self.assertEqual(gate["gate"], "BLOCKED")
         codes = {f["code"] for f in gate["failures"]}
         self.assertIn("MAKER_SELF_REVIEW", codes)

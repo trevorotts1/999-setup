@@ -263,7 +263,7 @@ times. The Velvet Voiceover version is exempt.
   per line, product words pronunciation-tested, truthfulness preserved.
 - The song is the master timeline; lip-sync is applied to selected lines
   only (owner decision D10, superseded 2026-10-07): the pain peak, the
-  product line, the call to action and the chorus hook, DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4 to 6 seconds (30 to 40 seconds, was 15 to 20), scaled linearly with the ad length, no clip over 6 seconds (`core/lipsync_clips.py`); clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so the cost roughly doubles and a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`). Chosen by the factory and listed on the approval
+  product line, the call to action and the chorus hook, DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4 to 6 seconds (30 to 40 seconds, was 15 to 20), scaled linearly with the ad length, no clip over 6 seconds (`core/lipsync_clips.py`); clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so the cost roughly doubles and a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`, priced at the worst case of 2 tries per clip, `lipsync_clips.MAX_TRIES`). Chosen by the factory and listed on the approval
   card. Every other shot stays exactly as the video model made it, and the
   song remains narrator / internal voice while characters act. The version 1
   rule this replaces read "no lip-sync by default"; it is kept here only so
@@ -320,20 +320,6 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   all-Suno rule.
 - **Per-character voice packs:** no two characters share a voice, in any look
   or music style.
-- **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
-  includes one lip-sync close-up per speaking/singing character. It is MADE from the
-  template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate
-  (`lip_gate/image_gate.py`) before any paid lip-sync job: face looking straight at the
-  camera; head-and-shoulders, portrait 9:16, face about 35-40% of the frame height
-  (accepted 30-45%); mouth closed or slightly parted, neutral, no big toothy smile; nothing
-  over the mouth or jaw (hand, microphone, hair, hat brim); soft even light, no hard shadow
-  across the mouth, background separated from the head; the same 3D character as the
-  storyboard reference; sharp, at least 1080x1920, never cropped out of a wide shot. A
-  picture that fails any point, or cannot be measured, is refused LOUDLY with every reason
-  and no paid job runs (`lip_gate.run_gate(..., source_image=, image_check=)` raises
-  `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
-  source image. QC: its mouth region must be
-  sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
 - **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** the
   30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect Daughter close-up
   (34%, teeth, roll -7.8) went to paid lip-sync unmeasured. Now
@@ -353,8 +339,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   for a FAIL a crop cannot fix, then refuse. Smile and teeth never trigger a regeneration.
   Every picture tried gets a receipt (`<dir>/.lipgate/<sha256>.json`). `upload_measured()`
   uploads the exact measured bytes (hashed at upload time, refused on mismatch) and returns
-  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any `ai-avatar` or
-  `infinitalk` job with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
+  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any `ai-avatar` job (or a manual
+  `infinitalk` job) with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
   has a PASS or ACCEPT_WITH_FLAG receipt for its exact bytes and `input.image_url` is that
   bound upload. The locked lip-sync model `kling/ai-avatar-standard` passes the F14 video
   lock (it is not a menu video model) and goes to this gate. No receipt, FAIL, changed
@@ -369,13 +355,40 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
   person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
   no face model, cartoon face, silent audio, too short) is reported, never a pass. At
-  most 2 paid lip-sync jobs per segment, then the best-measured take is kept.
-- **Lip-sync model order (decision 33):** Kling avatar
-  (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
-  that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)
-  as backup; **Volcengine is dropped**. Tight close-ups only. The lip-sync
-  input contains only the on-screen speaker's line: never a narrator, never
-  another character, never a mixed vocal stem. Narrator, phone, voicemail
+  most 2 paid lip-sync jobs per segment, then the best-measured take is kept
+  (`KEPT_BEST_OF_2`, below). Controls: `lip_gate/calibrate_sync.py` (read-only, real
+  clips). `lip_gate/event_sync.py` is an ADVISORY extra measure recorded in the receipt
+  row as `advisory_event_sync`; it never gates and never triggers a redo.
+- **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
+  includes one lip-sync close-up per speaking/singing character, MADE from the template
+  `lip_gate.closeup_prompt()` (chest-up portrait 9:16, face about 30-40% of the frame
+  height, straight at the camera, lips relaxed and very slightly parted) and CHECKED before
+  any paid lip-sync job by `lip_gate/image_gate.py`, which holds NO close-up thresholds of
+  its own: `picture_gate.check_numbers` judges the numbers (ONE rule set, the picture-gate
+  bullet above). `image_gate` adds only: at least 720x1280 and 9:16, nothing over the mouth
+  or jaw, no hard shadow across the mouth, soft even light, background separated from the
+  head, same 3D character as the storyboard, no upscaled picture. A picture that fails or
+  cannot be measured is refused LOUDLY with every reason and no paid job runs
+  (`lip_gate.run_gate(..., source_image=, image_check=)` raises `LipsyncImageRefused`).
+  Once a take exists, a picture-gate number alone is never a reason for a new paid job.
+- **Lip-sync model and the two-try rule (decision 33; Trevor 2026-10-08, "only allow 2 try twice per thing it creates after that it goes with whatever is the best one"):** Kling avatar
+  (`kling/ai-avatar-standard`) is THE lip-sync model (Trevor: clearly the best option) - a front-facing close-up image plus
+  that character's own isolated line, cut from the LEAD-VOCAL STEM (never the mix) on phrase boundaries
+  from the Suno word timestamps (`lipsync_clips.choose_window`) with 0.30 s lead-in and 0.20 s tail from try 1
+  (placed with `stem_offset.cut_plan`). The prompt says SINGS on sung lines and SAYS on spoken ones, one emotion,
+  minimal head movement, steady camera (`lip_gate.kling_prompt`). **At most 2 paid Kling jobs per segment,
+  every name variant of the segment counted; the code refuses a 3rd** (`lip_gate.run_gate`, `segment_key`).
+  Try 2 runs ONLY on a hard defect (a FAIL on a spoken line, frozen or garbled face, text across the chest,
+  hand over the mouth, wrong face), never on ACCEPT_WITH_FLAG, UNDETERMINED or UNMEASURABLE, and ONLY with a changed input (the next-best
+  window); an identical resubmit is refused. After the tries the best-measured take is kept and the receipt says
+  `KEPT_BEST_OF_2 (tN)` with the verdict, the numbers, the flag and an 8-frame mouth strip. Every paid call goes through
+  `load_governor.kie_request(generation=True)`; the landmark extraction goes through `heavy_slot`. The price card is worst case
+  seconds x the Skill 74 rate x 2 tries. **Sync is measured by `sync_check`** (the calibrated gate, sync-check bullet above); `event_sync` is advisory only.
+  InfiniTalk (`infinitalk/from-audio`) is a MANUAL backup only: never called by the code, never on by default.
+  **Volcengine is dropped**.
+  Tight close-ups only. The lip-sync
+  input contains only the on-screen speaker's line: never a narrator,
+  never another character, never a mixed vocal stem. Narrator, phone, voicemail
   and laptop voices may play as voice-over but are never lip-synced onto a
   person.
 - **Speaker contract:** the person visible while a line plays is the one
