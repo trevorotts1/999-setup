@@ -26,6 +26,9 @@ import qc_gate as G                                      # noqa: E402
 import final_assembler.assembler as A                    # noqa: E402
 from final_assembler import master_provenance as M      # noqa: E402
 
+# I4 (commit 85854ba): final_edit now requires the measured master length; a valid one keeps
+# this test about provenance only.
+MASTER_OK = {"chosen_length_s": 60, "measured_s": 57}
 REV = {"identity": "qc-bot", "session": "s1", "authority": "qc"}
 
 
@@ -108,12 +111,12 @@ class T(unittest.TestCase):
         res = self.check(scripts={"edit/final.py": "ffmpeg"})
         rec = M.to_qc_record(res, "run1", "final", REV)
         out = G.evaluate("run1", "final", [rec], {"master-provenance": "builder"},
-                         ["final_edit"])
+                         ["final_edit"], master=MASTER_OK)
         self.assertEqual(out["gate"], "FAIL")
         ok = M.to_qc_record({"pass": True, "evidence": {"summary": "ok"}},
                             "run1", "final", REV)
         out = G.evaluate("run1", "final", [ok], {"master-provenance": "builder"},
-                         ["final_edit"])
+                         ["final_edit"], master=MASTER_OK)
         self.assertEqual(out["gate"], "PASS")
 
 

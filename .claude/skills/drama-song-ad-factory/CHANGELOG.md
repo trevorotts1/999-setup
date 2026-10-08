@@ -1,5 +1,23 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.12] - 2026-10-08 - Red suites repaired (R75001)
+
+Five skill 75 suites failed on a clean main. Causes and fixes:
+
+- `audio_c3/test_lyric_timing_f17.py`: the scan it calls, `scripts/qc-no-local-asr.sh`, was never
+  committed (the F17 test arrived in e6690bf without it). Added the script: exit 2 and name the file
+  when a run folder or the core imports `whisper` / `openai_whisper`, or imports `faster_whisper`
+  anywhere but `audio_c3/lyric_timing.py`.
+- `intake_preflight/test_factory_next.py`: `factory.py next` reads `references/stage-runbook.md`,
+  which was never committed. Added the 12-row runbook (same stage order as `batch_mode` STAGES).
+- `kie_dispatch/test_all_at_once_f5.py`: SKILL.md never carried the F5 rule the test and the
+  `submit_all_ready` docstring cite. Added the "Submit all ready jobs at once" section.
+- `tests/test_launcher_plain_claude.py`: compared the repo core with the operator Mac's
+  `~/.claude-nine` install. It now compares the core each repo adapter resolves.
+- `tests/test_master_provenance_h12.py`: Part I I4 (85854ba) made `qc_gate.evaluate` require the
+  measured master length when `final_edit` is required, so the fixture returned BLOCKED, not FAIL.
+  The test now passes a valid master (60 s chosen, 57 s measured); the provenance rule is unchanged.
+
 ## [2.7.11] - 2026-10-08 - Part H H6 first real singing is a measured 15% target
 
 Same change as onboarding Skill 75 v2.6.5: `core/spoken_share` replaces the

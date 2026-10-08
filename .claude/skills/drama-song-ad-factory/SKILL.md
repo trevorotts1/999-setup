@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.11
+version: 2.7.12
 ---
 
 # Drama Song Ad Factory
@@ -284,6 +284,14 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 - **Command Center:** one deliverable per ad, one Kanban card per ad and one
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
+
+## Submit all ready jobs at once (Part F F5)
+
+Independent KIE jobs go out together. `kie_dispatch.submit_all_ready(jobs)` submits all ready jobs in
+one pass (17 ready clips means 17 at once) and names every job it excluded as not ready, with the
+reason. Never run a "test batch first" unless the owner orders one. Only a provider cap the caller
+passes as `max_concurrency` limits the pass, and the receipt names that cap. The stage order stays
+reference images, then keyframes, then clips; the single clips pass is the last one.
 
 ## Provider policy (KIE first, not KIE lock-in)
 

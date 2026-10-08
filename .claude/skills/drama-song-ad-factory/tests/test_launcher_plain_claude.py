@@ -168,18 +168,15 @@ def main():
         check("claude-nine README documents the same control entrypoint",
               "control entrypoint" in flat(nine))
 
-    # Installed claude-nine root, when present, must carry the same core.
-    nine_root = Path.home() / ".claude-nine" / "skills" / "drama-song-ad-factory"
-    nine_factory = nine_root / CORE_REL
-    if nine_factory.is_file() and FACTORY.is_file():
-        h1 = hashlib.sha256(FACTORY.read_bytes()).hexdigest()
-        h2 = hashlib.sha256(nine_factory.read_bytes()).hexdigest()
-        check("installed claude-nine root core is byte-identical", h1 == h2,
-              f"repo={h1[:12]} nine={h2[:12]}")
-    else:
-        SKIPPED.append("installed ~/.claude-nine skill copy absent")
-        print(f"UNDETERMINED: installed claude-nine skill root not on this machine: "
-              f"{nine_root} (not a pass — record as undetermined)")
+    # Repo copy only (never ~/.claude-nine: that is the operator Mac's install and
+    # drifts with each deploy). The core each adapter resolves must be byte-identical.
+    digests = {}
+    for adapter in ("claude-code", "claude-nine"):
+        f = (ADAPTERS / adapter / ".." / ".." / CORE_REL).resolve()
+        digests[adapter] = hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+    check("claude-nine and claude-code adapters resolve a byte-identical repo core",
+          digests["claude-code"] is not None and digests["claude-code"] == digests["claude-nine"],
+          str({k: (v or "missing")[:12] for k, v in digests.items()}))
 
     if SKIPPED:
         print(f"SKIPPED: {len(SKIPPED)} check(s): " + "; ".join(SKIPPED))
