@@ -73,6 +73,7 @@
 - fix/bandfix-BND001: BND001: sung share judged only by Trevor's band, no absolute floor; G10 constants; drama-song-ad-factory 2.7.14 (merge 487429c7b3ee)
 - fix/partG-G3: G3: calibrated sung detector (core/singing_detector); drama-song-ad-factory 2.7.15 (merge cee36a4f26c3)
 - batch/999-port: Merge origin/main into batch/999-port; rebump to 2.7.16 (merge b57f6341c79f)
+- fix/spoken25-SPK001: SPK001: spoken share 20-25%, singing judged against voice time (77.5); G10 constants; drama-song-ad-factory 2.7.17 (merge 22b4e12fc6b2)
 
 ## [hook-skill] — 2026-10-06
 
