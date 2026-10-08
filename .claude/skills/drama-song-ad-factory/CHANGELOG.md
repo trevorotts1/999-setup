@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.4.6] - 2026-10-08 - Part H H1 lip-sync stem offset
+## [2.6.4] - 2026-10-08 - Part H H1 lip-sync stem offset
 
 - New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
   measures the vocal-stem vs full-mix offset (offset > 0 = stem LATE;
@@ -11,6 +11,22 @@
   gate `LIPSYNC_RETIMED` (`validate_lipsync_placement`) runs in `assemble()`.
 - Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
   `final_assembler/test_lipsync_placement_h1.py`.
+
+## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
+
+`final_assembler`: per-segment `first_word_s` shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY. Test `scripts/core/final_assembler/test_fade_words_h13.py`.
+
+## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
+
+Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
+measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
+>= 0.25 above a wrong-audio control, no frozen face > 0.75 s); regenerate with
+better input, then a one-time single-line InfiniTalk A/B keeping whichever
+measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
+
+## [2.4.6] - 2026-10-08 - H14 song files in every delivery
+
+- Core `delivery_variants/song_files.py` (shared with the OpenClaw copy): MP3 320 kbps + WAV of the full mix named after the ad, plus the instrumental pair if one exists, listed in `delivery-receipt.json` and `README.md`; `song_files` QC check fails a delivery missing them. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
 
 ## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
 
