@@ -9,12 +9,16 @@
 - Every lip-sync source picture passes `lip_gate.image_gate` before any paid
   job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that
   could not be made is a refusal, never a pass.
-- LPG001: the measured close-up gate is enforced IN the dispatcher
-  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job without a PASS
-  `picture_gate` receipt (sha256 of the exact image, numbers recorded) is rejected
-  `LIPSYNC_PICTURE_NOT_GATED` before the ledger. QC fails a run whose close-up receipt is
-  missing, FAIL, or measured outside: face 35-45% of frame, |roll| <= 5, smile <= 0.50,
-  jawOpen <= 0.15, lip gap <= 1.0% of face, one face. mediapipe missing = refused.
+- LPG001/LPG002: the measured close-up gate is enforced IN the dispatcher
+  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar or infinitalk job without a
+  PASS `picture_gate` receipt (sha256 of the exact image, numbers recorded), or whose
+  `input.image_url` is not the bound upload of those exact bytes
+  (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
+  ledger. QC fails a run whose close-up receipt is missing, FAIL, or measured outside: one
+  face, face height >= 35% of frame (no upper limit), |roll| <= 5 deg, yaw <= 0.12,
+  smile <= 0.60, jawOpen <= 0.15, lip gap <= 1.0% of face height, sharpness >= 100.
+  mediapipe or the pinned face model missing = refused (install:
+  `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
 
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung

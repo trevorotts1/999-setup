@@ -6,9 +6,9 @@ blendshapes measures the picture; nothing here guesses. If mediapipe, OpenCV
 or the face model is missing, `measure()` raises PictureGateUnavailable and the
 caller REFUSES (never a silent pass).
 
-Face model: set LIPSYNC_FACE_MODEL, or put face_landmarker.task in
-<skill>/assets/ (Google float16 model, not committed). Heavy local work runs
-inside load_governor.heavy_slot.
+Face model: <skill>/assets/face_landmarker.task (or LIPSYNC_FACE_MODEL),
+installed by install_face_model.py (Google float16 model, sha256 pinned, not
+committed). Heavy local work runs inside load_governor.heavy_slot.
 """
 from __future__ import annotations
 
@@ -20,8 +20,13 @@ if _gcore not in _gsys.path:
     _gsys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
 
+try:
+    from . import install_face_model as _IM
+except ImportError:
+    import install_face_model as _IM
+
 MODEL_ENV = "LIPSYNC_FACE_MODEL"
-MODEL_NAME = "face_landmarker.task"
+MODEL_NAME = _IM.MODEL_NAME
 
 
 class PictureGateUnavailable(Exception):
@@ -29,14 +34,13 @@ class PictureGateUnavailable(Exception):
 
 
 def model_path():
-    p = os.environ.get(MODEL_ENV)
-    if not p:
-        p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "..", "..", "..", "..", "assets", MODEL_NAME)
-    p = os.path.abspath(p)
-    if not os.path.isfile(p):
+    """The face model, verified against the pinned sha256. A missing or wrong
+    file refuses and names the install command."""
+    p = os.path.abspath(os.environ.get(MODEL_ENV) or _IM.DEFAULT_DEST)
+    if not _IM.is_good(p):
         raise PictureGateUnavailable(
-            "face model not found at %s (set %s)" % (p, MODEL_ENV))
+            "face model missing or not the pinned file at %s; install it with: %s"
+            % (p, _IM.INSTALL_COMMAND))
     return p
 
 
@@ -46,7 +50,8 @@ def _deps():
         from mediapipe.tasks.python import vision, BaseOptions
     except Exception as exc:                      # ImportError and friends
         raise PictureGateUnavailable(
-            "mediapipe/opencv/numpy not importable: %s: %s"
+            "mediapipe/opencv/numpy not importable: %s: %s; install with: "
+            "python3 -m pip install mediapipe opencv-python-headless numpy"
             % (type(exc).__name__, exc))
     return cv2, np, mp, vision, BaseOptions
 
@@ -95,7 +100,7 @@ def measure(path):
     return out
 
 
-def crop_to_face(path, out_path, target_pct=38.0):
+def crop_to_face(path, out_path, target_pct):
     """Free local 9:16 crop centred on the face so the face is ~target_pct of
     the frame height. Returns out_path, or None when the source cannot hold
     such a crop (never pads or invents pixels)."""

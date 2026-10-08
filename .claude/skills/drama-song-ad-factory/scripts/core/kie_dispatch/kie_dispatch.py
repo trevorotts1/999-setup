@@ -114,11 +114,13 @@ def card_gate_refusal(request):
 
 
 def lipsync_picture_refusal(model, request):
-    """LPG001 hard block: a kling/ai-avatar (lip-sync) job needs a PASS picture-
-    gate receipt for the exact bytes (sha256) of request["lipsync_image_path"].
-    -> None (not lip-sync, or receipt PASS) else the refusal text. Fail-closed:
-    a missing path, receipt, or an unimportable gate is a refusal."""
-    if "ai-avatar" not in str(model or "").lower():
+    """LPG001/LPG002 hard block: a lip-sync job (kling ai-avatar, infinitalk)
+    needs a PASS picture-gate receipt for the exact bytes (sha256) of
+    request["lipsync_image_path"], AND request["input"]["image_url"] must be the
+    upload of those exact bytes (picture_gate.upload_measured).
+    -> None (not lip-sync, or all bound) else the refusal text. Fail-closed:
+    a missing path, receipt, binding, or an unimportable gate is a refusal."""
+    if not any(c in str(model or "").lower() for c in ("ai-avatar", "infinitalk")):
         return None
     req = request if isinstance(request, dict) else {}
     try:
@@ -128,6 +130,9 @@ def lipsync_picture_refusal(model, request):
         import picture_gate as _PG
         _PG.require_receipt(req.get("lipsync_image_path"),
                             req.get("lipsync_receipt_dir"))
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        _PG.require_upload_bound(req["lipsync_image_path"], inp.get("image_url"),
+                                 req.get("lipsync_receipt_dir"))
     except Exception as exc:                                # noqa: BLE001
         return str(exc) or type(exc).__name__
     return None

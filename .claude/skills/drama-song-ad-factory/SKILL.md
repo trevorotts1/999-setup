@@ -319,19 +319,27 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses it as its
   source image. QC: its mouth region must be
   sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
-- **Close-up picture gate, enforced in the dispatcher (LPG001, 2026-10-08):** the 30-Day
-  Reset close-up (face 28% of frame, smile) and the Perfect Daughter close-up (34%, teeth,
-  roll -7.8) went to paid lip-sync unmeasured. Now `lip_gate/picture_gate.gate_picture()`
-  MEASURES every close-up with mediapipe FaceLandmarker (face height 35-45% of frame, roll
-  and yaw, smile, jawOpen, teeth, sharpness, exactly one face), crops a too-small face
-  locally for free and re-measures, then (only if smile/teeth/tilt fail) regenerates it
-  (gpt-image-2 image-to-image from the 3D character, "neutral expression, lips closed,
-  facing camera, head level"; paid, counts against the author's cap, max 2). Every picture
-  tried gets a receipt (`<dir>/.lipgate/<sha256>.json`: numbers + PASS/FAIL).
-  `kie_dispatch.dispatch` REFUSES any `ai-avatar` (Kling lip-sync) job with
+- **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002, 2026-10-08):** the
+  30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect Daughter close-up
+  (34%, teeth, roll -7.8) went to paid lip-sync unmeasured. Now
+  `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
+  FaceLandmarker. One rule set (the constants block at the top of `picture_gate.py`, same
+  names in the onboarding repo): exactly one face; face height >= 35% of frame (no upper
+  limit); |roll| <= 5 deg; yaw <= 0.12; smile <= 0.60; jawOpen <= 0.15; lip gap <= 1.0% of
+  face height (teeth); sharpness >= 100. Auto-fix: ONE free local crop for a small face,
+  then at most 2 paid regenerations for smile/teeth/tilt (`make_regenerate()`: gpt-image-2
+  image-to-image from the 3D character, "neutral expression, lips closed, facing camera,
+  head level", dispatched through `kie_dispatch` so it reserves against the author's cap and
+  the ledger and rides `load_governor.kie_request`), then refuse. Every picture tried gets
+  a receipt (`<dir>/.lipgate/<sha256>.json`). `upload_measured()` uploads the exact measured
+  bytes (hashed at upload time, refused on mismatch) and returns the URL for
+  `input.image_url`. `kie_dispatch.dispatch` REFUSES any `ai-avatar` or `infinitalk` job with
   `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]` has a PASS receipt for
-  its exact bytes. No receipt, FAIL, changed file, or mediapipe/face model missing
-  (`LIPSYNC_FACE_MODEL` or `assets/face_landmarker.task`) = refused, never a silent pass.
+  its exact bytes and `input.image_url` is that bound upload. No receipt, FAIL, changed
+  file, or mediapipe / face model missing = refused, never a silent pass. Install the model:
+  `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (sha256-pinned, from
+  Google's official bucket, to `assets/face_landmarker.task`); mediapipe is declared in
+  `PREREQS.json` (`python-mediapipe`, `face-landmarker-model`).
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)

@@ -12,7 +12,7 @@
       "check": {"command": "python3"},
       "severity": "required",
       "when": "always",
-      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages. Verify: python3 --version. If missing, install Python 3 from python.org or your package manager (macOS: brew install python3) and re-run."
+      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only; the one exception is the lip-sync picture gate, which needs the python-mediapipe entry below. Verify: python3 --version. If missing, install Python 3 from python.org or your package manager (macOS: brew install python3) and re-run."
     },
     {
       "id": "tool-ffmpeg",
@@ -23,6 +23,8 @@
       "when": "assembly-export",
       "satisfy": "FFmpeg must be on PATH: clip stitching, voiceover mux and the -14 LUFS finish ride FFmpeg. Verify: ffmpeg -version. If missing, install it (macOS: brew install ffmpeg) and re-run. Request it explicitly with preflight --require-tool ffmpeg so absence surfaces as tool-unavailable instead of a late failure."
     },
+    {"id": "python-mediapipe", "type": "python-package", "label": "mediapipe + opencv + numpy for the lip-sync picture gate", "check": {"pythonImports": ["mediapipe", "cv2", "numpy"]}, "severity": "required", "when": "lip-sync", "satisfy": "The lip-sync picture gate (lip_gate/picture_gate.py) MEASURES every close-up with mediapipe; without it every lip-sync job is refused. Install: python3 -m pip install mediapipe opencv-python-headless numpy (Windows: py -m pip install mediapipe opencv-python-headless numpy). Verify: python3 -c \"import mediapipe, cv2, numpy\"."},
+    {"id": "face-landmarker-model", "type": "file", "label": "mediapipe face_landmarker.task (sha256-pinned)", "check": {"file": "assets/face_landmarker.task", "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"}, "severity": "required", "when": "lip-sync", "satisfy": "The picture gate looks for assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) and refuses every lip-sync job without the pinned file. From this skill folder run: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (Windows: py scripts\\core\\lip_sync\\lip_gate\\install_face_model.py). It downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256, and places it. Re-running with a good file is a no-op; a hash mismatch exits 1 and places nothing."},
     {
       "id": "kie-api-key",
       "type": "credential",
