@@ -191,11 +191,19 @@ def main(argv=None):
                     help="text: raw card for the Claude Code chat. "
                          "openclaw-json / telegram-json: one send payload per message.")
     ap.add_argument("--target", default="", help="Telegram chat id (send formats)")
+    ap.add_argument("--client-dir", default="",
+                    help="Client data folder: add 'Use a saved character?' when characters are saved (I6).")
     a = ap.parse_args(argv)
+    qs = list(QUESTIONS)
+    if a.client_dir:
+        from character_library import character_library as _cl
+        sq = _cl.saved_character_question(a.client_dir)
+        if sq:
+            qs.insert(0, sq)
     if a.format == "text":
-        sys.stdout.write(render_card() + "\n")      # raw newlines, no JSON escaping
+        sys.stdout.write(render_card(qs) + "\n")      # raw newlines, no JSON escaping
         return 0
-    msgs = render_messages()
+    msgs = render_messages(qs)
     if a.format == "openclaw-json":
         out = [openclaw_send_argv(a.target, m) for m in msgs]
     else:
