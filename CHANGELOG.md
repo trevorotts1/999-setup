@@ -74,6 +74,7 @@
 - fix/partG-G3: G3: calibrated sung detector (core/singing_detector); drama-song-ad-factory 2.7.15 (merge cee36a4f26c3)
 - batch/999-port: Merge origin/main into batch/999-port; rebump to 2.7.16 (merge b57f6341c79f)
 - fix/spoken25-SPK001: SPK001: spoken share 20-25%, singing judged against voice time (77.5); G10 constants; drama-song-ad-factory 2.7.17 (merge 22b4e12fc6b2)
+- fix/w3a-u1-sync-core: Merge origin/main into fix/w3a-u1-sync-core; drop target_engine (needs spoken25), rebump 2.7.18 (merge 9dcabe4892a6)
 
 ## [hook-skill] — 2026-10-06
 
