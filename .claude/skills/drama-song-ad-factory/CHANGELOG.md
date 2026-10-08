@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.8] - 2026-10-08 - I3 storyboard pictures
+
+- Same change as OpenClaw skill 75 v2.6.1: per main character a reference set (front,
+  three-quarter, side, neutral, sad-tired, happy-relieved) plus one keyframe picture per
+  shot per shape; the cost estimate counts them and the choice card shows an Images line.
+  Test: `scripts/core/catalog_calculator/test_image_plan_i3.py`.
+
 ## [2.7.7] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
 
 - `core/protected_names.py` gains `check_spelling` (every caption word is a real word or a protected

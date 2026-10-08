@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card
 - fix/headless-NHL001: nine-router-setup 1.29.0: locked Keychain (SSH/fleet installs) falls back to ~/.9router/gateway-key (mode 600) instead of aborting rc=36; 9Router guards auto-resolve the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes
 
 - fix/partI-I1: drama-song-ad-factory 2.7.7: captions spell-checked, exact website asked at intake and kept verbatim
