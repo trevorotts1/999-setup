@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.3] - 2026-10-08 - I3 storyboard pictures
+
+- Same change as OpenClaw skill 75 v2.6.1: per main character a reference set (front,
+  three-quarter, side, neutral, sad-tired, happy-relieved) plus one keyframe picture per
+  shot per shape; the cost estimate counts them and the choice card shows an Images line.
+  Test: `scripts/core/catalog_calculator/test_image_plan_i3.py`.
+
 ## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
