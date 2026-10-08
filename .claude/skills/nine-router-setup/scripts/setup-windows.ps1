@@ -1002,7 +1002,7 @@ console.log('set');
     # only if the report lacks them (it never should after a successful configure run).
     $r = $report.resolvedRoutes
     $rFable   = if ($r.fable)   { $r.fable }   else { 'ds/deepseek-v4-flash(max)' }
-    $rOpus    = if ($r.opus)    { $r.opus }    else { 'ds-max/deepseek-v4-pro(max)' }
+    $rOpus    = if ($r.opus)    { $r.opus }    else { 'ds-max/deepseek-v4.1-flash(max)' }
     $rSonnet  = if ($r.sonnet)  { $r.sonnet }  else { 'ds/deepseek-v4-flash(max)' }
     $rHaiku   = if ($r.haiku)   { $r.haiku }   else { 'ds-light/deepseek-v4-flash' }
     $rVision  = if ($r.vision)  { $r.vision }  else { 'ollama/kimi-k2.6' }

@@ -9,7 +9,7 @@
 //     "statePath": "/abs/path/router-session.json",   // caller resolves platform path
 //     "routes": {
 //       "fable": "ds/deepseek-v4-flash(max)",
-//       "opus": "ds-max/deepseek-v4-pro(max)",
+//       "opus": "ds-max/deepseek-v4.1-flash(max)",
 //       "sonnet": "ds/deepseek-v4-flash(max)",
 //       "haiku": "ds-light/deepseek-v4-flash",
 //       "subagent": "ds/deepseek-v4-flash(max)",

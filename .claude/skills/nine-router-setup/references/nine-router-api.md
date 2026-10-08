@@ -98,7 +98,7 @@ audio) and keeps `pdf`/`video` disabled.
   "comboStrategies": {
     "blackceo-fusion": {
       "fallbackStrategy": "fusion",
-      "judgeModel": "ds/deepseek-v4-pro",
+      "judgeModel": "ds/deepseek-v4.1-flash",
       "fusionTuning": { "minPanel": 2, "stragglerGraceMs": 8000, "panelHardTimeoutMs": 90000 }
     }
   }
@@ -282,7 +282,7 @@ sqlite3 -header ~/.9router/db/data.sqlite \
 **Required registers per provider:**
 - Agnes AI: `agnes-2.5-flash`, `agnes-2.5-pro`
 - DS Light: `deepseek-v4-flash`
-- DS Max: `deepseek-v4-pro`
+- DS Max: `deepseek-v4.1-flash`
 
 **TRAP — compact JSON:** The value must use `separators=(",", ":")` — no spaces.
 A space between `:` and the value (`{"key": "value"}`) still parses, but a

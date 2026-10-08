@@ -5,7 +5,7 @@
 | Role / feature | Provider | Model | Thinking | Notes |
 |---|---|---|---|---|
 | Fable / subagents | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Also set `CLAUDE_CODE_SUBAGENT_MODEL` |
-| Opus | DS Max (custom) | `ds-max/deepseek-v4-pro` | Max | Custom node forces max |
+| Opus | DS Max (custom) | `ds-max/deepseek-v4.1-flash` | Max | Custom node forces max |
 | Sonnet | DeepSeek Direct | `ds/deepseek-v4-flash` | Max | Swarm builder |
 | Haiku | DS Light (custom) | `ds-light/deepseek-v4-flash` | Off | Cheap reads |
 | Haiku fallback | Agnes AI | `agnes/agnes-2.5-flash` | Provider-supported | OpenAI-compatible |
@@ -33,14 +33,14 @@ Model IDs required from the live catalog (`https://api.deepseek.com/models`):
 
 ```text
 deepseek-v4-flash
-deepseek-v4-pro
+deepseek-v4.1-flash
 ```
 
 If either is absent, stop that provider configuration with a precise error — never silently
 substitute an older DeepSeek model.
 
 9Router's registry (verified 0.5.45) exposes the alias `ds` (and `deepseek`) and a
-`deepseek-v4-pro-max` variant that maps upstream to `deepseek-v4-pro`. Resolve and
+`deepseek-v4.1-flash-max` variant that maps upstream to `deepseek-v4.1-flash`. Resolve and
 smoke-test the installed version rather than assuming the syntax.
 
 ### Ollama Cloud
@@ -87,7 +87,7 @@ Two custom OpenAI-compatible nodes for deterministic thinking control:
 
 ```text
 DS Light:  prefix=ds-light,  baseUrl=https://api.deepseek.com/anthropic, model=deepseek-v4-flash, thinking=off
-DS Max:    prefix=ds-max,    baseUrl=https://api.deepseek.com/anthropic, model=deepseek-v4-pro,  thinking=max
+DS Max:    prefix=ds-max,    baseUrl=https://api.deepseek.com/anthropic, model=deepseek-v4.1-flash,  thinking=max
 ```
 
 These exist because the 9Router `(max)` suffix mechanism (`stripThinkingSuffix`/`applyThinking`) is parsed per-route and is not verified — a custom node with explicit provider-level thinking wiring is deterministic. DS Light gives Haiku fast reads without thinking overhead; DS Max ensures Opus always gets max reasoning.
@@ -122,7 +122,7 @@ that is reported as an error — and even then it never blocks DeepSeek/Ollama/A
 
 ## The DeepSeek Flash 0731 correction
 
-- `deepseek-v4-flash` and `deepseek-v4-pro` are **DeepSeek Direct** API model IDs.
+- `deepseek-v4-flash` and `deepseek-v4.1-flash` are **DeepSeek Direct** API model IDs.
 - `deepseek-v4.1-flash` is an **Ollama Cloud** catalog ID, not a documented DeepSeek
   Direct model.
 
@@ -205,7 +205,7 @@ model to the default Fusion panel on Pro.
 
 ### DeepSeek context window (fix #37, corrected 2026-09-23)
 
-DeepSeek V4 Flash and V4 Pro (`deepseek-v4-flash`, `deepseek-v4-pro`) have a
+DeepSeek V4 Flash and V4 Pro (`deepseek-v4-flash`, `deepseek-v4.1-flash`) have a
 **1,000,000-token context window** per DeepSeek's own documentation. That is the value
 this setup uses: `CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000` in `~/.claude-nine/settings.json`.
 
@@ -243,11 +243,11 @@ codes as the catalog fix.
 
 ```text
 blackceo-fable-fallback:  ds/deepseek-v4-flash(max) → agnes/agnes-2.5-flash
-blackceo-opus-fallback:   ds-max/deepseek-v4-pro(max) → agnes/agnes-2.5-flash
+blackceo-opus-fallback:   ds-max/deepseek-v4.1-flash(max) → agnes/agnes-2.5-flash
 blackceo-haiku-fallback:  ds-light/deepseek-v4-flash → agnes/agnes-2.5-flash
 blackceo-fusion:
   Panels: ds/deepseek-v4-flash(max), ollama/glm-5.2(max), ollama/kimi-k2.6
-  Judge: ds-max/deepseek-v4-pro(max)
+  Judge: ds-max/deepseek-v4.1-flash(max)
 ```
 
 Fallback activates on real upstream failure conditions (timeout, 429, upstream 5xx) where

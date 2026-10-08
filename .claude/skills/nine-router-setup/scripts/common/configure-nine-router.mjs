@@ -355,12 +355,12 @@ async function main() {
 
   // Assert each lane's model is present in the resolved catalog (defense in depth).
   const has = (list, id) => Array.isArray(list) && list.includes(id);
-  const dsIds = resolved.deepseek || ["deepseek-v4-flash", "deepseek-v4-pro"];
+  const dsIds = resolved.deepseek || ["deepseek-v4-flash", "deepseek-v4.1-flash"];
   const olIds = resolved.ollama || ["glm-5.2", "kimi-k2.6", "minimax-m3", "gemma4:31b"];
   const agIds = resolved.agnes || ["agnes-2.5-flash"];
 
-  if (!has(dsIds, "deepseek-v4-flash") || !has(dsIds, "deepseek-v4-pro")) {
-    err("live DeepSeek catalog does not contain deepseek-v4-flash / deepseek-v4-pro");
+  if (!has(dsIds, "deepseek-v4-flash") || !has(dsIds, "deepseek-v4.1-flash")) {
+    err("live DeepSeek catalog does not contain deepseek-v4-flash / deepseek-v4.1-flash");
   }
   if (!has(olIds, "glm-5.2") || !has(olIds, "kimi-k2.6")) {
     err("live Ollama catalog does not contain glm-5.2 / kimi-k2.6");
@@ -442,8 +442,8 @@ async function main() {
   // Model-string notation (two documented mechanisms, deliberately):
   //   ds/deepseek-v4-flash(max)   - "(max)" is 9Router's thinking-effort suffix,
   //                                 parsed by stripThinkingSuffix/applyThinking.
-  //   ds/deepseek-v4-pro-max      - "pro-max" is a registry model variant that
-  //                                 maps upstream to deepseek-v4-pro. This is the
+  //   ds/deepseek-v4.1-flash-max      - the max variant is a registry model variant that
+  //                                 maps upstream to deepseek-v4.1-flash. This is the
   //                                 verified 9Router form for the Pro/Max lane.
   // Subagent must ALSO be the max route (spec: CLAUDE_CODE_SUBAGENT_MODEL = Flash
   // max), not the plain model — an unmetered subagent lane silently loses max.
@@ -459,7 +459,7 @@ async function main() {
   const dsLightFlash = `${dsLightPrefix}/deepseek-v4-flash`; // no (max) — thinking OFF
   const dsMaxFlash = `${dsMaxPrefix}/deepseek-v4-flash(max)`; // DS Max = Flash + max
   const dsFlashMax = `${dsPrefix}/deepseek-v4-flash(max)`;
-  const dsProMax = `${dsPrefix}/deepseek-v4-pro-max`;
+  const dsProMax = `${dsPrefix}/deepseek-v4.1-flash-max`;
   const olGlm = `${olPrefix}/glm-5.2`;
   const olKimi = `${olPrefix}/kimi-k2.6`;
   const agFlash = `${agPrefix}/agnes-2.5-flash`;
