@@ -1,8 +1,8 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.3] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
+## [2.6.5] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
 
-Same change as onboarding Skill 75 v2.6.3: `scripts/core/shot_planner/face_speaks.py`
+Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
 lists every shot where a face is visibly speaking and fails
 `FACE_SPEAKS_NO_LIPSYNC` unless it is a lip-sync clip of that character's own
 line; `plan_lipsync_lines` picks lines to reach the 15-20 s lip-sync target (5-point
@@ -10,6 +10,25 @@ grace) and `check_coverage_band` measures it. Test:
 `shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
 ships with the onboarding core; this copy's assembler predates Part E, so it
 lands with the next core resync.
+
+## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
+  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
+  run whose master has no matching skill receipt or whose run folder holds an
+  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
+
+## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
+
+`final_assembler`: per-segment `first_word_s` shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY. Test `scripts/core/final_assembler/test_fade_words_h13.py`.
+
+## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
+
+Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
+measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
+>= 0.25 above a wrong-audio control, no frozen face > 0.75 s); regenerate with
+better input, then a one-time single-line InfiniTalk A/B keeping whichever
+measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
 
 ## [2.4.6] - 2026-10-08 - H14 song files in every delivery
 
