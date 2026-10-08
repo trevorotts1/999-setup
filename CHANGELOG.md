@@ -27,6 +27,7 @@
 - fix/w1-e-u1-prereqs-honest: W1-E-U1: make 999 drama-song PREREQS honest for Claude Code (manual M3) (merge 4067c84202b1)
 - fix/w1-e-u2-single-config-root: 999 W1-E-U2: test_single_config_root compare adapter claim case-insensitively with backticks stripped + always clean /tmp fixture (merge 3fe06cd635d9)
 - fix/w1-e-u3-version-link: unit/W1-E-U3-version-link: 999 VERSION 1.0.0 -> 2.4.5, packaged_from c73637ddf (manual M5) (merge d81e45ab5047)
+- fix/ninefix-NFX001-link-skills: fix(setup-macos): NFX001 B4 resolve own dir via NINE_SETUP_SCRIPT_DIR/BASH_SOURCE, not caller $0 (merge 56433af059ef)
 
 ## [hook-skill] — 2026-10-06
 
