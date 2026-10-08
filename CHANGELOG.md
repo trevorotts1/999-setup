@@ -33,6 +33,8 @@
 - fix/partH-H14: fix(drama-song): H14 delivery folder carries the finished song as MP3 320 + WAV (+ instrumental), listed in receipt and README, QC song_files check (merge 66ab89f8ec36)
 - fix/partH-H2: Merge origin/main into fix/partH-H2 (keep H14 changelog, skill v2.6.2) (merge 70177ece7ea3)
 - fix/partH-H13: fix(skill75 H13): cross-fades finish before the first word; long gaps held on the speaking face (2.6.3) (merge e77d4b320704)
+- fix/partH-H12: Merge remote-tracking branch 'origin/main' into fix/partH-H12 (merge 648dcf64b8d4)
+- fix/partH-H11: Merge origin/main into fix/partH-H11; skill 2.6.5 (merge 007cc3f06247)
 
 ## [hook-skill] — 2026-10-06
 

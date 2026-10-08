@@ -35,6 +35,13 @@ import shutil
 import subprocess
 import sys
 
+# H12: receipt provenance stamp (same package).
+try:
+    from . import master_provenance
+except ImportError:                     # direct-script fallback
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import master_provenance  # noqa: E402
+
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
@@ -435,7 +442,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "ASSEMBLED",
                "next_action": "QC per directive 17.5 (independent reviewer)",
-               "evidence": evid, "state_version": 0}
+               "evidence": evid, "state_version": 0,
+               # H12: QC fails any master this receipt does not vouch for.
+               "produced_by": master_provenance.producer_stamp(),
+               "master_sha256": master_provenance.sha256_file(output)}
     try:
         with open(str(output) + ".receipt.json", "w",
                   encoding="utf-8") as fh:

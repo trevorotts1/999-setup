@@ -1,11 +1,28 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.4] - 2026-10-08 - Part H H5: pictures match the words
+## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
 
 - New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,
   `pictures_match_gate`, `check_stretch`); the assembler blocks slow motion
   above 1.15x and picture/line mismatches before any render.
 - INSTRUCTIONS.md section 6b: stage order audio, timestamps, plan, pictures.
+
+## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
+
+Ships the final QC gate 4 delivery checklist (`scripts/core/delivery_checklist/`,
+`references/QC-CHECKLIST-BEFORE-DELIVERY.md`, `delivery_checklist` check in
+`qc_gate.py` and `qc-schema.json`), byte-identical to the onboarding copy
+(skill 75 v2.6.1). 11 measured questions: the G7 seven plus Q8 lip-sync
+measured (H2 numbers), Q9 first-sung % (H6), Q10 pictures match words (H5),
+Q11 every numeric goal judged by Trevor's band (within 5 accept; over 5 to 10
+accept with a flag shown in the receipt; over 10 redo).
+
+## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
+  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
+  run whose master has no matching skill receipt or whose run folder holds an
+  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
 
 ## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
 
