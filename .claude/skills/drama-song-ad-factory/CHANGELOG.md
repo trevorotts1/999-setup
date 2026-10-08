@@ -1,5 +1,18 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.13] - 2026-10-08 - Lip-sync close-up in every reference set (LPC001)
+
+Owner order (Trevor, 2026-10-08): "make sure you create a close-up one where their lips can
+clearly be seen, because when you're doing the lip sync, they really like that."
+
+- `catalog_calculator.image_plan`: reference set is now 7 per character (3 angles, 3
+  expressions, 1 `lipsync-closeup`); the image count and cost estimate include it.
+- `lip_gate.run_gate(source_image=)`: Kling avatar attempts and the InfiniTalk A/B all take the
+  close-up as their source image. `lip_gate.check_reference_set`: a set with no close-up, or a
+  close-up whose mouth is not clear (injected detection), fails.
+- SKILL.md rule; tests `lip_sync/lip_gate/test_lipsync_closeup.py` (mocked, $0) and updated
+  `catalog_calculator/test_image_plan_i3.py`.
+
 ## [2.7.12] - 2026-10-08 - Red suites repaired (R75001)
 
 Five skill 75 suites failed on a clean main. Causes and fixes:
