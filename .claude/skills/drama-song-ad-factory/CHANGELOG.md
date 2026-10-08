@@ -23,6 +23,10 @@ Port of onboarding main `b9ced148c` (manual Part F F15, Critical, owner order 20
 - Docs: `references/price-menu.md` gains the 2-minute table computed from the SAME published rates the 90 s rows use (per-second x120, Veo 15 clips, Gemini 12 clips, keyframes per shot, one $0.06 Suno generation, both shapes double, 20% retakes); `references/choice-card-spec.md` carries the 2-minute option and the directive 24.3 note; `INSTRUCTIONS.md` gains the F15 gate paragraph and the 2-minute length, hand-ported into 999's numbered-list layout (the patch hunks rejected on context drift, not on already-applied content).
 - Tests: `test_card_gate_f15.py` (59 checks, taken from onboarding main so the I1 website field and the package import match 999's intake); `test_kie_dispatch.py` gains the F15 refusal case and every stub run carries the stamped receipt; the F5, F10 and F6 suites carry the receipt the way onboarding main does (plus its detail-tuple formatting fix in the F6 check helper). F15 applied file-by-file onto 999 main - 999's newer I-series intake/master-length work and the F4/F5/F6/F10/G8/lip-sync gates already on main are kept; F14 model_lock is not part of this port (separate unit).
 
+## [2.7.21] - 2026-10-08 - F14 video model lock ported from onboarding main
+
+Video jobs are locked to the choice-card model: only models on references/price-menu.md dispatch (seedance-1.5-pro refused), a different menu model is VIDEO_MODEL_MISMATCH, no lock is VIDEO_MODEL_LOCK_MISSING fail-closed, and a definite submit error is VIDEO_MODEL_DOWN with no automatic fallback. New core/kie_dispatch/model_lock.py plus scripts/qc-no-direct-kie.sh; dispatch runs the gate before any ledger row.
+
 ## [2.7.19] - 2026-10-08 - Sung detector no longer reads gap-free speech as sung (singing_detector 2.0.0)
 
 Measured bug (detector check 1536): a sung share built on the density of pitched voice read fully spoken audio as sung (macOS say Samantha 100% sung, 10 of 13 say voices 74-100%, a rap control 91.7%). Real Suno sung hooks read 96% sung and real Suno spoken lines read spoken, so the old numbers looked fine on stems with natural pauses.
