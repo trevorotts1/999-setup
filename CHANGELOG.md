@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/partH-H8: drama-song-ad-factory 2.4.6: one singing rule (no 6-second sung stretch = the only hard reject) and Trevor's 5/10 point band in core/spoken_share
 - unit/W3-03-U1-package-modules: drama-song-factory A1B-U1: reconcile packaged core with canonical (portable profile path) (merge cbea5aa2e3df)
 - unit/W3-03-U3-plain-claude-launcher: drama-song-factory W3-03-U3: plain Claude Code launcher README + test fixture (merge b92d523fed53)
 - unit/W3-03-U5-helper-deps: W3-03-U5: helper dependency install with pinned versions/hashes + preflight gate (merge 468f6c284301)
@@ -36,6 +37,8 @@
 - fix/partH-H12: Merge remote-tracking branch 'origin/main' into fix/partH-H12 (merge 648dcf64b8d4)
 - fix/partH-H11: Merge origin/main into fix/partH-H11; skill 2.6.5 (merge 007cc3f06247)
 - fix/partH-H5: Merge origin/main into fix/partH-H5 (H11/H12), skill v2.6.6 (merge 255131a0eac4)
+- fix/partH-H8: Merge origin/main into fix/partH-H8 (H8 now skill v2.6.7) (merge 1252ac45bfbd)
+- fix/partH-H1: Merge origin/main into fix/partH-H1 (rebump skill) (merge 233404c6eacf)
 
 ## [hook-skill] — 2026-10-06
 

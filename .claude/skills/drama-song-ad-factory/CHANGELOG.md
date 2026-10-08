@@ -1,6 +1,6 @@
 # Changelog: drama-song-ad-factory
 
-## [2.6.6] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
+## [2.6.9] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
 
 `scripts/core/` synced from the onboarding H3 core (commit 4685158b7); the H13 fade-vs-words
 and H12 master-provenance code in `final_assembler/assembler.py` and the H2
@@ -11,7 +11,30 @@ lip_gate, H14 song_files, qc_gate.py and qc-schema.json changes are kept.
   mpdecimate duplicate check (2% cap, `hold` exempt); master duplicate gate
   now measures the rendered file. See the onboarding CHANGELOG v2.6.1.
 - `SKILL.md` frame-rate rule added (E1 wording updated); `VERSION` and
-  frontmatter `version:` 2.6.5 -> 2.6.6 (follows onboarding `skill-version.txt`).
+  frontmatter `version:` 2.6.8 -> 2.6.9 (follows onboarding `skill-version.txt`).
+
+## [2.6.8] - 2026-10-08 - Part H H1 lip-sync stem offset
+
+- New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
+  measures the vocal-stem vs full-mix offset (offset > 0 = stem LATE;
+  Kiesett +0.066 s) and cuts/places lip-sync clips compensated, at the
+  line's real Suno timestamp, never re-timed. Same files as onboarding
+  skill 75 v2.6.1.
+- `final_assembler`: plan carries `lip_sync_line_ids` / `lip_lead_s`; new
+  gate `LIPSYNC_RETIMED` (`validate_lipsync_placement`) runs in `assemble()`.
+- Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
+  `final_assembler/test_lipsync_placement_h1.py`.
+
+## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
+
+`scripts/core/spoken_share/` (the constants module) now holds the single
+singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
+singing was chosen) and Trevor's band (`ACCEPT_PTS=5`, `FLAG_PTS=10`):
+within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
+`check_share`, `check_first_sung` and `check_plan` use it and return `flags`.
+Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
+lip-sync coverage modules are not in this distribution yet; they pick the
+band up when they are ported.
 
 ## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
 
