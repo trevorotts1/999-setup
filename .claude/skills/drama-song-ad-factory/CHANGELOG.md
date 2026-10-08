@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.4] - 2026-10-08 - I8 sung hook and repeat formula
+
+- New `scripts/core/sung_hook/` (same module and test as OpenClaw skill 75 v2.6.7). Every sung
+  style gets ONE hook (4-10 words, client's own words), sung `clamp(1 + floor(L / 25), 2, 12)`
+  times, first by 15% of runtime, last near the end. `suno_recipe` takes `length_s` and enforces
+  the count; `suno_recipe.score_take` measures sung hooks (accept / accept with flag / regenerate).
+  Velvet Voiceover is exempt. `SKILL.md` gains the "Sung hook" section.
+
 ## [2.7.3] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
 
 - New `scripts/core/ending_qc/` (same module and test as OpenClaw skill 75 v2.6.1): every sung

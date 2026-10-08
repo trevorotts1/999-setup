@@ -109,7 +109,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
-                           style_id=None, client_text=None):
+                           style_id=None, client_text=None, length_s=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -120,7 +120,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     protected name or rewrite a packet line. ``packet_lines=None`` keeps the
     old behavior (packet binding happens upstream in lyric QC).
     """
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text)  # G12
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
     errors = []
     if packet_lines is not None:
         if protected:  # H7 sheet check (tolerates [Verse] tags); else F7 words check
