@@ -17,6 +17,10 @@ Port of onboarding main 3aff3fa1 (skill v2.8.4), per `15-SKILL75-999-PARITY.md`.
   - `INSTRUCTIONS.md` and `references/price-menu.md`: checked against onboarding, no content gap (999's INSTRUCTIONS is its own layout; price-menu is byte-identical).
   - VERSION and SKILL.md frontmatter: 2.7.21 to 2.7.22.
 
+### Batch MGB007 (landed together with merge-train.sh)
+
+PRs #73 (looser sung-aware lip-sync sync check, onboarding #1698), #74-#79 and #81-#83 (PAR001 ports), #80 (W3-A-999 target_engine, F14 loud path, H12 provenance), #84 (F18 caption and lyric QC use F17 measured word timing), #85 (G4-WIRE target engine 5/10 band). `target_engine` and `music_director/__init__` take the onboarding main bytes. Still open against onboarding main (ef25a17d1): 999 #72 (picture gate), #86 and onboarding #1697, #1698, #1699, and the G3-WIRE sung-claim gate port.
+
 ## [2.7.21] - 2026-10-08 - Batch MGB005: song recipe v2, load governor, F14, F15, KIE rate limit reference
 
 Landed together by merge-train: #67 song recipe v2, song length formula and song dispatcher; #68 KIE rate limit reference; #69 F14 video model lock; #70 load governor; #71 F15 choice card gate. Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted), with a test. Fixes the version mismatch (VERSION said 2.7.19 while SKILL.md said 2.7.20): VERSION, SKILL.md and this changelog now agree on 2.7.21. F14 and F15 were merged by hand (both sides kept) in the test stubs.
