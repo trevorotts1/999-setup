@@ -34,9 +34,15 @@ from .lipsync_coverage import (
     check_lipsync_coverage,
     to_qc_record,
 )
+from .master_provenance import (
+    check_master_provenance,
+    to_qc_record as master_provenance_qc_record,
+)
 
 __all__ = [
     "DEFAULT_TRANSITION",
+    "check_master_provenance",
+    "master_provenance_qc_record",
     "EXIT",
     "FRAME_TEXT_TOOL_NAME",
     "FRAME_TEXT_TOOL_VERSION",
