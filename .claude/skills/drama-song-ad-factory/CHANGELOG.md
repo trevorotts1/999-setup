@@ -1,11 +1,30 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.6] - 2026-10-08 - I3 storyboard pictures
+## [2.7.8] - 2026-10-08 - I3 storyboard pictures
 
 - Same change as OpenClaw skill 75 v2.6.1: per main character a reference set (front,
   three-quarter, side, neutral, sad-tired, happy-relieved) plus one keyframe picture per
   shot per shape; the cost estimate counts them and the choice card shows an Images line.
   Test: `scripts/core/catalog_calculator/test_image_plan_i3.py`.
+
+## [2.7.7] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
+
+- `core/protected_names.py` gains `check_spelling` (every caption word is a real word or a protected
+  word; unknown word fails `CAPTION_MISSPELLED` with the word shown) and `check_website` (the exact
+  address verbatim in lyrics, captions and end card). Bundled `core/english_words.txt.gz`.
+- `delivery_variants.checks.check_captions` runs the spelling check.
+- Intake asks "What is the exact website address you want people to go to?" when the ad sends people
+  to a website; stored as `website` and as a protected word.
+- Test: `core/test_caption_spelling_i1.py` (same module and test as OpenClaw skill 75 v2.6.5).
+
+## [2.7.6] - 2026-10-08 - I7 intake asked one question at a time
+
+- `intake_card.conversation(replies)` and `factory.py card --step --reply ...` (same module and
+  test as OpenClaw skill 75 v2.6.6): each message holds one question, a one-sentence why,
+  numbered options one per line, the RECOMMENDED option with its reason, then waits. After the
+  sixth answer, a recap and a request for "yes"; a line number reopens just that question.
+- `INSTRUCTIONS.md` and `references/choice-card-spec.md` section 2.2 tell claude-nine to ask
+  this way. Test: `scripts/core/choice_card/intake_card/test_intake_step_i7.py`.
 
 ## [2.7.5] - 2026-10-08 - I2 scenes must match the song and the faces
 
