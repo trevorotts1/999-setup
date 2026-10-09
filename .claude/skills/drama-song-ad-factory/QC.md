@@ -21,67 +21,6 @@ Check on every run:
 - The rise is earned: pain gets real screen time, the turn names the product
   as the key, the rise is never rushed.
 
-## Lip-sync doubled and the source-picture gate (owner order 2026-10-08)
-
-- Coverage: 30-40 s and 6-8 clips of 4-6 s in a 60 s ad, scaled linearly with
-  length (`shot_planner/face_speaks.py`, `final_assembler/lipsync_coverage.py`,
-  numbers in `core/lipsync_clips.py`); below the band fails
-  `LIPSYNC_COVERAGE_BELOW_BAND` / `LIPSYNC_COVERAGE_SHORT`.
-- Every lip-sync source picture passes `lip_gate.image_gate` before the first paid
-  job (its close-up numbers are `picture_gate`'s, one rule set; `image_gate`
-  delegates to it and adds size at least 720x1280, nothing over the mouth, light,
-  same character); a refusal
-  lists every `LIPSYNC_IMAGE_*` reason and a measurement that
-  could not be made is a refusal, never a pass.
-- LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
-  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
-  PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
-  flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
-  (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
-  ledger. FAIL = clear problems only: face count not 1, face height < 20% of frame,
-  |roll| > 20 deg, |yaw| > 0.25 (side profile), jawOpen > 0.30, sharpness < 60. Smile,
-  teeth, a face under 25%, |roll| > 5, |yaw| > 0.12 and sharpness < 100 are FLAGS
-  (ACCEPT_WITH_FLAG), never a failure and never a paid regeneration. QC fails a run whose
-  close-up receipt is missing or FAIL. mediapipe or the pinned face model missing =
-  refused (install: `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
-- LPG003 F14: the locked lip-sync model `kling/ai-avatar-standard` is not a menu video
-  model; `dispatch` lets it past the F14 video lock and holds it to the picture gate
-  instead. Every other off-menu video model is still `MODEL_NOT_ON_MENU`.
-
-- Lip-sync sync check (looser, sung-aware, LSL002): `lip_gate.measure_file` / `judge`
-  run the validated `sync_check` measurement (mouth vs voice, lag +-10 frames, clip cut
-  to the audio length, chance test by rolls, repeated-hook lines dropped, corr floor
-  0.40, margin floor 0). SYNCED = PASS; WEAK = ACCEPT_WITH_FLAG (used, flag in the
-  receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
-  are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
-  redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
-  `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
-
-## H4: lip-sync verdicts and the two-try keep-best rule (2026-10-08)
-
-- The sync gate is `lip_gate` over `sync_check` (calibrated on real controls with
-  `lip_sync/lip_gate/calibrate_sync.py`). Verdicts: PASS, ACCEPT_WITH_FLAG, FAIL (a
-  spoken line only), UNDETERMINED (a sung line that is WEAK or NOT_SYNCED: held for a
-  person with the mouth strip, never an automatic redo), UNMEASURABLE (reported, never a
-  pass). `lip_gate/event_sync.py` is an ADVISORY measure recorded in the receipt as
-  `advisory_event_sync`; it never gates and never triggers a redo.
-- At most 2 paid `kling/ai-avatar-standard` jobs per segment, every name variant
-  counted. Try 2 only on a person's call (a defects file or `person_verdict` "DEFECT") and only with
-  a changed input, never on a checker verdict. After that the best take is kept: receipt row `KEPT_BEST_OF_2 (tN)`
-  with verdict, numbers, flag, jobs used and a mouth-strip path; `lip_gate.qc_check`
-  accepts that row. A third job, or a second job with the same input, is a QC failure.
-  InfiniTalk is a manual backup only, never automatic.
-- Lip-sync process (LSP001, Trevor approved 2026-10-08), what QC checks: (1) reuse first:
-  a segment with a usable take on disk has no new paid job in the ledger; (2) a sung line
-  the checker cannot confirm is tagged `KEPT_BEST (UNDETERMINED, sung)`, a borderline
-  spoken line is kept and flagged; (3) every UNDETERMINED or flagged row carries a
-  mouth-strip path (`<delivery folder>/mouth-strips/<segment>.png`) and the receipt lists
-  them for a person; (4) every second paid job traces to a person-marked defect, a
-  changed input and fewer than 2 prior jobs; (5) clips are trimmed to audio length, placed
-  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, conformed
-  by dropping frames (no minterpolate) through `load_governor`; (6) rows list the take
-  kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
-  `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
 ## Prompt templates, bands and the prompt_compliance gate (U15i)
 
 The docs and the code must agree on what a paid prompt is. This section is the
@@ -127,7 +66,7 @@ it advances. Standard library only; no credential value is ever printed.
 ## 2. Installation Checks
 - [ ] Skill folder exists and contains `SKILL.md`, `EXAMPLES.md`, `QC.md`,
       `DEPENDENCY-MANIFEST.md`, `THIRD_PARTY_NOTICES.md`, `skill-version.txt`,
-      `references/`, `scripts/core/`, `tests/`, `test-fixtures/`.
+      `references/`, `scripts/core/`, `tests/`.
 - [ ] `scripts/core/contracts/` contains `campaign-schema.json`,
       `artifact-schema.json`, `qc-schema.json` and all parse as valid JSON;
       `qc-schema.json` verdict enum is exactly PASS / FAIL / UNAVAILABLE and
@@ -185,6 +124,24 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Caption file (DEL-10): the delivery folder holds `10 - Captions.srt`, built from the measured
+      caption cues (`caption_timing.captions` -> `delivery_variants.export_captions_srt`); no measured
+      cues writes no file (no clock is ever invented). `python3 scripts/core/delivery_variants/caption_srt.py
+      check <delivery dir>` exits 0, and exits 5 when the file is missing or not valid SRT.
+      Run: `python3 scripts/core/delivery_variants/test_caption_srt_del10.py`.
+
+- [ ] Package items (DEL-13, REQUIRED): the delivery folder carries all 12 numbered package items of
+      `scripts/core/delivery_package` (three audio versions plus note, character bible plus image bible,
+      script, storyboard, clean and captioned video, 60 and 90 second clips, ready-to-post kit, cover
+      thumbnail, lyric sheet, SRT, character images, welcome sheet), each one opening: `delivery_checklist`
+      Q12 `PACKAGE_COMPLETE` fails the run and names every missing item.
+
+- [ ] Three audio versions (DEL-01): the same delivery folder holds `01 - Full Song.mp3`,
+      `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (320 kbps each, from the run's own mix,
+      instrumental and vocal stem) plus `00 - About These Audio Files.txt`, the short plain-English
+      note on how the three differ; all listed in `delivery-receipt.json` and `README.md`;
+      `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` exits 0, and exits 5
+      when a version or the note is missing. A missing source is a refusal, never a two-version delivery.
 - [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
       (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
       clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
@@ -195,6 +152,14 @@ it advances. Standard library only; no credential value is ever printed.
       `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
       master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
       resolution and banner link. A missing file is a `BatchZipError`.
+- [ ] Storyboard grid PDF (DEL-04, REQUIRED): the delivery folder holds `04-storyboard.pdf` — every approved
+      scene picture in a grid with its shot number and timecode, the lyric line it plays over and what
+      happens, in song order. `storyboard_grid.deliver(<run dir>, <delivery folder>)` reads
+      `storyboard/gate.json` and refuses `STORYBOARD_NOT_APPROVED` without it; a missing still or an
+      incomplete card passes through `storyboard_director.approval_package`'s own refusal. Every drawn size
+      is >= 12 pt and the text carries no model or tool name, dollar amount or income promise
+      (`storyboard_grid.forbidden_text`, `CLIENT_TEXT_FORBIDDEN`).
+      Run: `python3 scripts/core/storyboard_grid/test_storyboard_grid.py`.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
@@ -205,6 +170,10 @@ it advances. Standard library only; no credential value is ever printed.
       -> `STALE_SEQ`; `recover` returns POLL plans with
       "no job re-dispatched"; unknown run -> exit 1 `NO_SUCH_RUN`.
 - [ ] EXAMPLES.md command list contains ONLY these implemented commands.
+
+TODO (U4): FU-U4 adds intake modes (`--brief-file`, `--packet-file`,
+`PACKET_REQUIRED_IN_CONCEPT_MODE`); refresh the functional checks above when it
+lands.
 
 ## 5. Section 17 Evidence Gates (the production QC contract)
 Every row below is a directive section 17 gate. Verdicts are recorded as
@@ -295,8 +264,50 @@ to self-approve a run.
   `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
   lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
-  paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
-  measurement that could not be made is a refusal, never a pass.
+  paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
+  refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be
+  made is a refusal, never a pass.
+- LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
+  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
+  PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
+  flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
+  (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
+  ledger. FAIL = clear problems only: face count not 1, face height < 20% of frame,
+  |roll| > 20 deg, |yaw| > 0.25 (side profile), jawOpen > 0.30, sharpness < 60. Smile,
+  teeth, a face under 25%, |roll| > 5, |yaw| > 0.12 and sharpness < 100 are FLAGS
+  (ACCEPT_WITH_FLAG), never a failure and never a paid regeneration. QC fails a run whose
+  close-up receipt is missing or FAIL. mediapipe or the pinned face model missing =
+  refused (install: `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
+- LPG003 F14: the locked lip-sync model `kling/ai-avatar-standard` is not a menu video
+  model; `dispatch` lets it past the F14 video lock and holds it to the picture gate
+  instead. Every other off-menu video model is still `MODEL_NOT_ON_MENU`.
+
+- Lip-sync sync check (looser, sung-aware, LSL002): `lip_gate.measure_file` / `judge`
+  run the validated `sync_check` measurement (mouth vs voice, lag +-10 frames, clip cut
+  to the audio length, chance test by rolls, repeated-hook lines dropped, corr floor
+  0.40, margin floor 0). SYNCED = PASS; WEAK = ACCEPT_WITH_FLAG (used, flag in the
+  receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
+  are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
+  redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
+  `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
+  `lip_gate/event_sync.py` is ADVISORY (`advisory_event_sync` in the row), never gating.
+- Two-try rule (Trevor 2026-10-08): at most 2 paid `kling/ai-avatar-standard` jobs per
+  segment, every name variant counted; try 2 only on a person's call (a defects file or
+  `person_verdict` "DEFECT") with a changed input, never on a checker verdict; then the
+  best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag and
+  mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
+  segment with more than 2 jobs. InfiniTalk is a manual backup only, never automatic.
+- Lip-sync process (LSP001, Trevor approved 2026-10-08), what QC checks: (1) reuse first:
+  a segment with a usable take on disk has no new paid job in the ledger; (2) a sung line
+  the checker cannot confirm is tagged `KEPT_BEST (UNDETERMINED, sung)`, a borderline
+  spoken line is kept and flagged; (3) every UNDETERMINED or flagged row carries a
+  mouth-strip path (`<delivery folder>/mouth-strips/<segment>.png`) and the receipt lists
+  them for a person; (4) every second paid job traces to a person-marked defect, a
+  changed input and fewer than 2 prior jobs; (5) clips are trimmed to audio length, placed
+  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, conformed
+  by dropping frames (no minterpolate) through `load_governor`; (6) rows list the take
+  kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
+  `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
 
 ## Clean ending (I5)
 
@@ -318,9 +329,24 @@ Run `qc_voice_match/line_voice_fit.py` (`enforce`) before assembly. Each line is
 
 ## Lyric sheet, request limits, captions and books (U12; what main checks)
 
+TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (per-style spoken bands) and FU-U9 (burned-caption readback) land.
+
 - **One tag grammar.** The sheet is parsed once (`suno_recipe`); a lyric line under an unclassifiable tag is `UNTAGGED_LYRIC_LINES`. Rap is counted in the word budget and allowed only for a rap style (R&B Flow). A character tag whose gender disagrees with the cast record is `VOICE_TAG_MISMATCH`; one that cannot be checked is `VOICE_TAG_UNCHECKED`.
 - **Request limits.** `PROMPT_OVER_CAP` (field, characters, cap, source, status) for Suno lyrics 5,000, style 1,000 (measured after the ending is appended), title 80, `negativeTags` 1,000 (UNVERIFIED), and for every video and avatar prompt at dispatch; `PROMPT_LIMIT_UNAVAILABLE` when a paid job has no limit table. Nothing is truncated.
 - **Captions early.** `LYRIC_MISSPELLED` before any Suno payload; `ONSCREEN_TEXT_NOT_CHECKED` before any keyframe or video; the Script gate requires a `spelling_grammar` record. Captions burn the display spelling ("Girl, I got you"), not the performance spelling ("you-u").
 - **Captions at the end: UNMEASURED on main.** Reading the burned text back off the frames (FU-U9) is not built. Report delivery caption text as checked against the approved sheet only.
 - **Book campaigns.** The shots stage requires a PASS `book_orientation` record (`BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`, `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`; UNAVAILABLE never advances; the checker must pass its calibration pair). `BOOK_SHOT_NOT_CONTRACTED` for a book video job with no start frame from the cover file. FU-U11 (open branch) adds `BOOK_BLANK_PAGES` and `BOOK_PLAN_NOT_APPROVED`; refresh this line when it lands.
-- **Per-style spoken bands.** FU-U3 (landed in 2.7.31 via PR #120) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
+- **Per-style spoken bands.** FU-U3 (open pull request) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
+
+## No blur fill (DEL-14)
+
+Blur fill is never used. Full height comes from crop-in of the source frame
+only: uniform scale to cover nine-by-sixteen, then a centred crop on the
+lip-sync subject. QC refuses the deliverable when the height came from a fill
+— an edge-sampled or gaussian-blurred backdrop, a blurred mask, a duplicated
+blurred strip, a letterbox bar or a stretched picture. The refused shot is
+redone by the crop-in re-lip-sync path and re-checked; a filled frame is never
+waived through, and a PASS record for the no_blur_fill check that names a
+blur fill is refused as FILL_CLAIM_MEASURED. Proof lives in the canonical
+build tree's `tests/test_no_blur_fill/`: a blur-fill render fails red, the
+crop-in render passes, and the refusal gates fire.

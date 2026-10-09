@@ -1,141 +1,245 @@
-# Changelog: drama-song-ad-factory
+# Changelog - drama-song-ad-factory (Skill 75)
+
+## [2.7.39] - 2026-10-09 - Batch PKG roll-up (pairs with openclaw-onboarding v27.1.0, skill 75 v2.9.15)
+
+Released as one batch. Units: FU-DEL-01 three audio versions and note (#165); FU-DEL-02 character bible PDF and image bible (#163); FU-DEL-03 script PDF (#162); FU-DEL-04 storyboard grid PDF (#157); FU-DEL-05 video twice, captioned and clean (#160); FU-DEL-06 60 and 90 second clips (#164); FU-DEL-07 ready-to-post kit (#161); FU-DEL-08 cover image (#159); FU-DEL-09 lyric sheet PDF (#154); FU-DEL-10 caption file (#155); FU-DEL-11 character images (#153); FU-DEL-12 welcome sheet and package list (#156); FU-DEL-13 delivery folder contract and the 12-item hard gate (#158); FU-DEL-14-U2 no-blur-fill refusal gates (#166); unit/PKG-05-U1 full height by crop-in; unit/PKG-07-U1 camera vocabulary data file (byte-identical with onboarding).
+
+Twin sync (same method as 2.7.38): scripts/core and the shared references (CLIENT-GUIDE.md, choice-card-spec.md, price-menu.md) copied byte for byte from the onboarding batch so the two distributions carry zero drift. That brings in the shared code of onboarding units that have no 999 branch: PKG-05-U3 (core/no_blur_fill and the no_blur_fill check in qc_gate.py) and PKG-06 (catalog_calculator storyboard picture budget with storyboard-config.json, price and choice card wording). The 999 docs half of PKG-05-U3 (unit/PKG-10-U1: the "No blur fill" sections in SKILL.md and QC.md, byte-identical with the onboarding copy) is included in this batch; the 999 test halves of those units are not.
+
+## [2.7.39] - 2026-10-09 - FU-DEL-11: character images as separate full-resolution delivery files
+
+- New `scripts/core/character_images/` package: every character picture reaches the delivery folder as its OWN full-resolution file (`11-character-<slug>-<view>.<ext>` — close-up, side profile, three-quarter, full standing), byte-for-byte `shutil.copyfile` from an existing `character_library` record. No generation, no crop, no resize, no re-encode, no contact sheet; the page screenshots are untouched.
+- View selection, in order of trust: an explicit `views` mapping on the record, else the whole view words in the reference file's own name (`close-up.png`, `side.png`, `three-quarter.png`, `standing.png`, `lipsync-closeup.png`). One file never claims two views.
+- Fail closed: a missing view names exactly the missing views and leaves the delivery folder untouched (the whole plan is computed before any write); the same for NO_CHARACTERS, SOURCE_MISSING, BAD_IMAGE and DUPLICATE_SLUG. Receipt rows carry source basename + bytes, never an absolute path.
+- New `test_character_images_del11.py` (14 unit tests). `scripts/core/character_images/` is byte-identical to the openclaw-onboarding copy (skill 75 v2.9.14).
+
+## [2.7.39] - 2026-10-09 - FU-DEL-09: the lyric sheet PDF
+
+- New `scripts/core/lyric_sheet/`: the run's approved `creative/script.json` rendered into the delivery folder as `09 - Lyric Sheet.pdf`. Section headings come from the song's own tags — one break per block, in song order — the approved title and lines print verbatim, and nothing on the page is under 12 pt. Bright page: white paper, near-black ink, gold eyebrow and rule, a footer on every page.
+- Stdlib-only PDF writer (this core is stdlib-only), deterministic bytes: no date and no random id, so the same approved sheet renders identical every run.
+- Refuses fail-closed: `MONEY_ON_PAGE` (chrome wording), `TOOL_NAME_ON_PAGE` (a tool or model name reaching the page), `SCRIPT_MISSING` / `SCRIPT_UNREADABLE` / `EMPTY_SHEET`. A lyrics-only run reuses `lyric_writer.lyric_structure.parse_sheet`, so both approved inputs give the same section structure.
+- Page law: `c.need(74.0)` before each heading keeps the section header and its first line up together, so a page break never lands between a section heading and its body and no heading is orphaned at the foot of a page. Section order, heading sequence and the 12 pt floor are held by the 17 unit tests in `test_lyric_sheet.py`.
+- Shared core stays byte-identical to the OpenClaw copy (`tests/test_parity_layout.py`, tree sha256 match). VERSION and SKILL.md frontmatter: 2.7.39.
+
+## [2.7.39] - 2026-10-09 - DEL-10: caption file (.srt) in the delivery folder
+
+- New `delivery_variants/caption_srt.py`: a finished run exports its caption file into the delivery folder as `10 - Captions.srt` (slot `FILE_NUMBER`, one constant to renumber), built from the measured caption cues by `captions_burn.build_srt` — the same builder the caption burn uses, so the exported file and the burned captions cannot drift. No measured cues is a refusal receipt and NO file (F18: no clock is ever invented); the text is parsed back before it is written, so what lands is valid SRT by construction. `check_captions_srt` / `python3 scripts/core/delivery_variants/caption_srt.py check <dir>` fails a missing, empty or broken file (exit 5). `delivery_variants` exports `export_captions_srt` / `check_captions_srt` / `parse_srt` / `srt_file_name`. Test: `scripts/core/delivery_variants/test_caption_srt_del10.py` (22 tests over fixture `fixtures/caption_srt_del10.json`: generic sample sheet, measured word timings, golden SRT bytes; structure re-checked by the test's own parser). Docs: `references/stage-runbook.md` + the QC.md checklist. Version: onboarding `skill-version.txt` + SKILL.md frontmatter v2.9.13 -> v2.9.14 (G3 gates a skill-content change on that bump); the 999 copy bumps its own VERSION train 2.7.38 -> 2.7.39 with its SKILL.md frontmatter (its CI has no such gate, but its parity-contract re-sync procedure requires the bump).
+
+## [2.7.39] - 2026-10-09 - DEL-12 one-page welcome sheet + the canonical 12-item package list
+
+- `scripts/core/delivery_package/package_items.py`: `PACKAGE_ITEMS` / `PACKAGE_FILES` -- the canonical numbered file-name list for all 12 package items (01..12), ONE shared constant. Every file name is exact, carries its own item number and is unique; `delivery_checklist` re-exports it and gains `missing_package_files(delivery_dir)`, so the delivery gate and the printed page read one list instead of two.
+- `scripts/core/delivery_package/welcome_sheet.py`: the one-page client WELCOME SHEET PDF built from that constant -- stdlib PDF 1.4 writer, base-14 Helvetica, US Letter single page, deterministic bytes, 13 pt body type, hard 12 pt floor (`MIN_PDF_POINT_SIZE`), title, gold rule, then every file with its number badge and one sentence on what it is for.
+- New `scripts/core/delivery_package/test_welcome_sheet_del12.py` (11 tests): one page, all 20 file names and all 12 numbers present, no type below 12 pt, no client/model/tool name, no price or income claim, byte-identical rebuild, checklist shares the same objects.
+- Shared `delivery_package/` and `delivery_checklist/` content byte-identical to the openclaw-onboarding twin (v2.9.14), verified with cmp. Version bump per repo convention: VERSION 2.7.38 -> 2.7.39 with the matching SKILL.md frontmatter stamp (`tests/test_parity_layout.py` asserts it).
+
+## [2.7.39] - 2026-10-09 - DEL-04: the storyboard delivered as one grid PDF
+
+- New `scripts/core/storyboard_grid/`: the approved storyboard becomes `04-storyboard.pdf` in the run's delivery folder — a page grid of the scene pictures, each captioned with shot number and timecode, the lyric line it plays over and what happens, in song order. Built only from the run's approval records (`storyboard/gate.json`, `contracts.json`, `stills.json`, `shot-list.json`); a run never approved refuses `STORYBOARD_NOT_APPROVED`.
+- New `scripts/core/pdf_kit/`: the shared stdlib PDF writer every DEL document composes with — base-14 Helvetica with real AFM widths, PNG alpha composited onto white, JPEG embedded unchanged, and a **12 pt floor that refuses `FONT_TOO_SMALL`** rather than drawing small.
+- `forbidden_text()` refuses a model/tool name, a dollar amount or an income promise before a byte is written (`CLIENT_TEXT_FORBIDDEN`).
+- `references/stage-runbook.md` and `QC.md` carry the wiring. Shared `scripts/` and `references/` files are byte-identical to the onboarding copy (verified with `cmp`). VERSION and SKILL.md frontmatter: 2.7.38 to 2.7.39.
+
+## [2.7.39] - 2026-10-09 - FU-DEL-13 delivery folder contract (Q12 gate)
+
+- `scripts/core/delivery_package/`: the client delivery folder contract -- 12 numbered package items, exact file names, and what "opens" means per kind (PDF header, SRT cue block, non-empty media, image directory). `packaging.package_run(run_dir, out_dir)` is the one packaging call: it discovers each item's `produce_delivery()` component, writes the canonical numbered files, and verifies the folder. Fail closed: `COMPONENT_MISSING` (naming every item still owed, before any write), `COMPONENT_FAILED`, `PACKAGE_INCOMPLETE`.
+- `delivery_checklist` gains Q12 `PACKAGE_COMPLETE` (`CHECKLIST_PACKAGE_INCOMPLETE`): the receipt names the delivery folder and Q12 reads it -- all 12 items present and opening, one missing item fails the run and is named. The gate is hard; the 11 human checklist questions are unchanged.
+- New `test_delivery_package_e2e.py`: one fixture run through the packaging entry point. While a sibling DEL-01..DEL-12 producer is not in the branch base it SKIPs with the full list of items still owed (never a fabricated green); a raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
+- Shared core byte-identical to the onboarding copy (v2.9.14).
+
+## [2.7.39] - 2026-10-09 - DEL-08: one cover image (thumbnail) per delivery folder
+
+- New `scripts/core/delivery_variants/cover_image.py`: at the end of the run, build the ONE cover image into the delivery folder — frame from the approved storyboard stills (`storyboard/stills.json`, gated by `approval_runner.gate_open`, face-visible shot first), title from the approved script (`creative/script.json`, brief title as fallback, never invented). One ffmpeg pass through `load_governor.run_ffmpeg` writes `<safe ad name>-cover.png` (default 1280x720, 16:9), title inside the title-safe inset via `drawtext=textfile=` with `expansion=none` (data, never filter syntax). A build whose ffmpeg has no drawtext refuses `COVER_DRAWTEXT_UNAVAILABLE`.
+- `check_cover_image` is the delivery QC gate (measured IHDR pixels, matching sha256, README listing; the row's own claim never passes). `qc_gate` gains the `cover_image` check; the stage runbook gains the run row. Exactly one cover thumbnail per delivery folder.
+- Local runner variable named `runner_fn` (not `launch`) so the onboarding agent-browser headless-only guard does not false-positive on the bare `launch(` token; shared scripts/core and references stay byte-identical with openclaw-onboarding 75-drama-song-ad-factory v2.9.14. VERSION and SKILL.md frontmatter: 2.7.38 to 2.7.39.
+
+## [2.7.39] - 2026-10-09 - FU-DEL-05: the delivery folder ships the video twice — captioned and clean
+
+- New `scripts/core/delivery_variants/video_delivery.py`: one delivery folder per run carries TWO numbered files — `1 - <Ad> - Ad (captioned).mp4` and `2 - <Ad> - Ad (clean, no captions).mp4`. Both are rendered from the ONE caption site (`final_assembler/captions_burn`): the captioned cut burns that plan, the clean cut is the same plan with `style.enabled` False, so neither variant invents its own words or look.
+- Nothing is called delivered until `delivery_audio.check_delivery_audio()` has passed it (AAC-LC, 48 kHz, faststart, not silent). A refused file is deleted and the step raises `DELIVERY_AUDIO_REFUSED`, fail closed — a half-delivered pair is never handed over.
+- `check_video_delivery()` is the QC row (PASS / FAIL / UNAVAILABLE, same contract as `song_files`) and `write_video_docs()` lists both files in `delivery-receipt.json` and `README.md`. The caption SRT rides in the receipt, not as a third file.
+- `qc_gate` now requires `video_delivery` on the delivery gate; `final_assembler/captions_burn` grew the off plan the clean cut renders.
+- VERSION and SKILL.md frontmatter: 2.7.39. Shared `scripts/core` stays byte-identical to the openclaw-onboarding copy.
+
+## [2.7.39] - 2026-10-09 - DEL-07 ready-to-post kit
+
+- `scripts/core/ready_post_kit/` builds the READY-TO-POST KIT a client posts from: `07 - Ready-to-Post Kit.pdf` plus `07 - Ready-to-Post Kit.json`, written into the ad's delivery folder. It carries which version to post where (every delivered file plus the cutdowns `clip_cutdown.clips_for(length)` schedules), the link (brief aliases -> a URL in the offer -> the `Banner link` line `batch_zip` publishes), a caption and suggested hashtags for YouTube, Instagram, TikTok and Facebook, and the YouTube block done properly: title <= 100 characters, description with the link and hashtags, tags <= 500 characters, counts shown. Bright page, every glyph >= 12 pt (enforced in the layout as `KIT_FONT_FLOOR` and read back out of the finished PDF by the test). Reuses `clip_cutdown`, `batch_zip`, `delivery_checklist`, `character_library`, the storyboard gate, the script-approval record, the card answers and the approved caption words; never re-implements them. Fail closed by name: `KIT_NO_LINK`, `KIT_STORYBOARD_NOT_APPROVED`, `KIT_NO_SCRIPT`, `KIT_DELIVERY_RECEIPT_MISSING`, `KIT_CHECKLIST_FAILED` (a measured "no"), `KIT_BANNED_TEXT` (a tool or model name, a dollar amount or an income promise anywhere in the copy). Contract: `references/ready-post-kit.md`; proof: `scripts/core/ready_post_kit/test_ready_post_kit.py` (19 cases). `scripts/core` stays byte-identical to the openclaw-onboarding 75-drama-song-ad-factory copy (cmp-verified, 426/426 shared files).
 
 ## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
 
-Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
+All notable changes to this skill are documented here. The version of
+record is `skill-version.txt` (kept in agreement with the `SKILL.md`
+frontmatter `version:` field).
 
-- `delivery_audio.check_delivery_audio()` now requires AAC-LC, 48 kHz and faststart (moov before mdat), not only AAC and non-silent. New codes `DELIVERY_AUDIO_NOT_48K` and `DELIVERY_NOT_FASTSTART`; new `require_delivery_audio()` raises `DeliveryAudioRefused` (fail closed).
-- Every code path that writes a client-delivered video now calls the gate on its output: the final assembler master (already gated), `clip_cutdown.run_clips` (a refused clip is deleted and the run stops with `CLIP_AUDIO_REFUSED`), `batch_zip.build_batch_zip` (captioned ad and clean master, `DELIVERY_AUDIO_REFUSED`, no zip written) and `delivery_checklist.delivery_battery` (already gated).
-- `clip_cutdown.build_argv` uses `AUDIO_OUT_ARGS` + `FASTSTART_ARGS` instead of bare `-c:a aac`.
-- 999 copy of `scripts/core` and three reference docs synced byte-for-byte to openclaw-onboarding main (intake card, 9-question card and count-built example, and every other diverged shared file).
-- New `scripts/core/test_delivery_gate_paths.py`: one MP3-refused test per delivery path plus 44.1 kHz and non-faststart refusals.
+---
 
-## [2.7.36] - 2026-10-09 - Train 2.7.36: #125 + #126 + #136 + #139 + #140 + #141 + #142 + #143 + #144 + #145 + #146
+## [2.7.39] - 2026-10-09 - DEL-01: three audio versions + plain-English note in the delivery folder
 
-Landed together by merge train: #136 style questions with sample links, #139 four video models each priced, #140 storyboard approval shows both card and still, #141 SONG APPROVAL (3 labelled versions), #142 intro message, #143 SCRIPT APPROVAL, #144 client guide, #145 AI MODELS question, #146 test temp-dir isolation, #125 song style contract (ae193a55), #126 hook placement (d17a078c). #141 and #143 are at their final heads (7bbb1848, 5ee8c812): card Yes records the chat id and the confirmed recap writes card-answers.json. The card is now nine questions (ten with a saved character, which is question 2 after AI MODELS): AI MODELS, LENGTH, MUSIC STYLE, VIDEO STYLE, VIDEO MODEL, BUDGET, STORYBOARD APPROVAL, SONG APPROVAL, SCRIPT APPROVAL. Interaction fixes: song_choices validates requests with the delivered length; the cinematic-strings R&B Flow clause no longer says slow (#125 refuses slow in upbeat styles); test sheets put a verse before the first hook and carry a hook_plan (#126); `_parse` tolerates the list-valued model question, `card_render` maps the FU-LENGTH-CLIPS labels to the canonical length, the SONG APPROVAL price row now also lifts the Total line, `_priced` finds the length question by id, the recap labels read "Video model" and "AI Models", and `conversation(..., run_dir=, target=)` is keyword-only for the run arguments. VERSION and SKILL.md frontmatter: 2.7.36.
+- The delivery folder now ships the song three clearly-labelled ways, all from EXISTING pipeline output (the finished mix, the instrumental the run made, the vocal stem saved for every take; nothing re-synthesised): `delivery_variants.build_audio_versions(mix, delivery_dir, instrumental, vocal_stem)` encodes `01 - Full Song.mp3`, `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (MP3 320 kbps each) and writes `00 - About These Audio Files.txt`, the short plain-English note on how the three differ; `write_version_docs` lists them in `delivery-receipt.json` and `README.md` (merge, never clobber). Every source is required -- a missing mix, instrumental or vocal stem raises `ValueError`, never a two-version delivery dressed up as three.
+- `check_audio_versions` / `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` fails a missing version, a missing note, or anything unlisted in the receipt or README (exit 5). The check is registered as `audio_versions` in `qc_gate.CHECKS` so the delivery gate can require it. `delivery_variants` exports `build_audio_versions` / `check_audio_versions` / `write_version_docs` / `version_note_text` / `expected_version_files` / `version_file_name` / `DELIVERY_VERSIONS` / `VERSION_NOTE_NAME`.
+- Test: `scripts/core/delivery_variants/test_audio_versions_del01.py` (13 tests: the three numbered MP3s and note, fail-closed on a missing/empty source, the note is plain English with no model/tool names or dollar amounts, one table drives labels/note/QC so they cannot drift, missing file/unlisted/rewrite-once/bitrate/duration/receipt-shape, and the `qc_gate.CHECKS` registration). Skill version v2.9.14.
 
+## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
+
+- Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
+- `check_delivery_audio()` now enforces what the order says: AAC-LC, 48 kHz, moov before mdat (faststart), and not silent. New codes `DELIVERY_AUDIO_NOT_48K` and `DELIVERY_NOT_FASTSTART`; new `require_delivery_audio()` raises `DeliveryAudioRefused`.
+- `clip_cutdown.build_argv` used a bare `-c:a aac`; it now uses `AUDIO_OUT_ARGS` + `FASTSTART_ARGS`.
+- New `test_delivery_gate_paths.py` (one MP3-audio refusal test per delivery path) (shared core is now byte-identical to the 999 copy v2.7.38; `delivery_fixture.py` removed, tests build their own fixtures).
+
+## v2.9.12 - 2026-10-09 - Batch MGB022 follow-up
+
+- FU-AAC-FINAL-MUX (#1785) plus the question-count wording fix: the intake card closing example ("1, 1, ...") is now built from the real question list (9, or 10 with a saved character) and the docstrings, help text and choice-card-spec say nine. New test `test_closing_example_answer_count_matches_question_count`.
+
+## v2.9.11 - 2026-10-09 - Batch MGB021 roll-up
+
+- FU-U3, FU-RNBFLOW-SONG, FU-HOOK-PLACEMENT, FU-U11, U15g, FU-ONE-SPEND-QUESTION, FU-STYLE-QUESTIONS, FU-VIDEO-MODEL-CHOICES, FU-STORYBOARD-SHOWS-BOTH, FU-SONG-APPROVAL, FU-SCRIPT-APPROVAL, FU-CLIENT-GUIDE, FU-AI-MODELS-QUESTION and FU-TEST-TMP-ISOLATION land together. The intake card is AI MODELS, LENGTH, MUSIC STYLE, VIDEO STYLE, VIDEO MODEL, BUDGET, STORYBOARD APPROVAL, SONG APPROVAL, SCRIPT APPROVAL (nine questions; ten with a saved character, which sits second).
+- Integration fixes: the video model price follows the LENGTH answer by question id (not position); song-choices requests carry the style and hook plan to the judge; the client's own lines are checked before the recipe guard.
+
+## Unreleased
+
+- **U12: docs in lockstep with the code.** SKILL.md gains the tag-grammar /
+  style-plan / voice-tag / per-style-band bullets in the Suno recipe, the
+  "Request and prompt limits" section, the early-captions paragraph (with
+  FU-U9 named as NOT built) and the book-orientation bullets (FU-U11, open
+  branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is
+  brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6
+  seconds); `references/choice-card-spec.md` gains 2.3 (options come from the
+  registry; the fit card FU-U4 is not built) and the machine-checked
+  "Offered lengths (seconds): 60, 90, 120, 180, 300, 600." line. SKILL.md
+  closes with a "Sections marked TODO" block naming FU-U3, FU-U4, FU-U9 and
+  FU-U11 as the sections to refresh when those land. New test
+  `scripts/core/prompt_templates/test_docs_u12.py`.
+
+## Unreleased - FU-U4: client lines are a contract; the STOP card lists only real options
+
+- Client lines are a contract: concept mode requires `packet_lines` (`PACKET_REQUIRED_IN_CONCEPT_MODE`) in `lyric_writer` and `music_director`, and a missing client line is refused NAMING its id instead of being invented. New `choice_card/intake_card` fit card plus `factory` card `--fit` (exit 2, one row per style), registry-only options (no option invented at the card), an intake mode flag, and intake notices for sfx, echo voice, length-not-offered and fps. The STOP card lists only options the registry actually offers. Spec `references/choice-card-spec.md` section 2.3. New test `scripts/core/choice_card/intake_card/test_fit_card_u4.py`.
+
+## Unreleased - FU-U3: bands per music style; rap is its own delivery; silence is not speech
+
+- Per-style bands under the SAME locked 5/10 band: `spoken_share.STYLE_TARGETS` holds Soul Ballad and Soul Rise at exactly 22.5 runtime spoken / 77.5 sung-of-voice; R&B Flow's target is the documented default flagged as a TREVOR-DECISION ITEM in plan 18 section 9 item 1 -- the share planned from the approved sheet (the U2 plan's word counts at the style's measured rates), not a new number invented here -- and sung-of-voice on a rap sheet is recorded, not gated (hook content, not a planned share); the 6 s sung stretch and the hook count stay hard. `measure_share(segments, style_id=...)` reports rap separately for a rap style and counts plain spoken against its target; `segments_from_sung_stretches(voiced=)` turns music-only time into a fourth delivery `none` that counts in runtime and never in voice time (a music-only gap no longer counts as spoken); the rap-versus-speech split is measured word timestamps x the sheet's delivery labels, recorded as basis `aligned`, never `measured`. `song_dispatch.judge_take` / `run_takes` and `suno_recipe.score_take` carry `style_id` (+ `plan`) through validate and judge. New test `scripts/core/spoken_share/test_style_bands_u3.py` with the g1b segment fixture from SONG-RECEIPT (fails on the base tree: `voiced=` did not exist).
+
+## v2.9.9 - 2026-10-09 - FU-SAVED-CHARACTER-QUESTION
+
+- The saved-character intake question now reads "Do you want to create a new character for this ad, or use one you've used before?" with "You have N character(s) saved with us." and numbered options: "Create a new character (recommended)" first, then "Use <Name> - <description>" for each saved character. With no saved characters nothing is asked; one line says a new character will be created and saved for next time. Same recap ("Character: new" / "Character: <Name> (saved)") and same effect of each answer. Test: `character_library/test_saved_character_question.py`.
+
+## v2.9.9 - 2026-10-09 - FU-LENGTH-CLIPS: clearer length question; 3 minutes now comes with 60s and 90s clips
+
+- New `core/clip_cutdown`: the 3, 5 and 10 minute ads cut an automatic 60-second and 90-second clip (whole lines, at most L-2 s, hook placement kept, never into the end card; FFmpeg only, free). Before this the card promised clips for 5 and 10 minutes but no code cut them.
+- The LENGTH question is now a full question ("How long do you want your ad to be? ...") with numbered options that say what the client gets; 3 minutes now comes with the clips; the recap reads "Length: 3 minutes + 60s and 90s clips". The Clips card row lists clips for 3 minutes and says they are included in the price.
+- Docs (SKILL.md, INSTRUCTIONS.md, choice-card-spec.md, price-menu.md, stage-runbook.md) now agree with the code.
+
+## v2.9.9 - 2026-10-09 - FU-INTRO-MESSAGE
+
+- Every new interactive run opens with a short one-time intro of what the factory makes, sent as its own message before question 1 (`factory.py card --step --run-state-file`); never on resume, recap, batch or CLI-only paths.
+
+---
+## v2.9.10 - 2026-10-09 - FU-HOOK-PLACEMENT + FU-RNBFLOW-SONG
+
+- **FU-HOOK-PLACEMENT: the hook is the payoff, never the opener** (Trevor 2026-10-09: "THE HOOK HAS TO MAKE SENSE AND BE PLACED CORRECTLY"). New `core/sung_hook/hook_placement.py`. (1) Build-up, always on: before the first hook the sheet carries a verse, plus a pre-chorus/build where the style's section plan has one and the length plan has pre-choruses; checked in `suno_recipe.prepare`/`build_request`, `guard_request` and `check_payload`. (2) Story sense, always on: the `hook_plan` (`{"true_at_beat": beat}`, shape in SKILL.md) names the U16 beat where the hook's words become true (never the opening beat); the gate MEASURES each hook block's planned position (words before it at the style's rates, as a share of the sheet, mapped onto the arc) and fails a first hook before that beat, whatever beats a plan claims (`plan_for` writes the measured beats as a receipt). The count is `hook_placement.hook_target`: `sung_hook.hook_count` for the length, reduced to what fits after that beat starts. `music_director.build_generate_request(true_at_beat=...)` emits the plan and carries it as `_hook_plan`; `song_dispatch.run_takes` moves it into the judge's plan and never sends it to KIE. (3) After Suno, always on: `song_dispatch.judge_take` gate `hook_placement` fails a take where Suno added hook blocks, moved a hook earlier, sang the first hook inside the build-up window or before the beat's start second. (4) No gate switches itself off: a missing style, length, sheet, `hook_plan` or `true_at_beat` is a FAIL reading `UNMEASURED: <field>`. (5) The Suno style text says "Sing the sections in the order written; the song never opens with the hook: build up through the verse first". `sung_hook.measure` strips Suno's inline section headers before reading words. Replays: v1 sheet with its honest plan (true at the turn) FAILS (first hook at 16% of the song; 6 hooks where 3 fit); a built-up sheet with its first hook about a quarter in, true at the turn, FAILS; v2 sheet FAILS (hook before any verse); v2 take g2a FAILS (9 hook blocks against 6, added at 13.6 s, 46.3 s, 94.8 s; first hook at 8.9 s inside the 17.7 s window); v1 take FAILS at the turn (first hook sung at 23.8 s, the turn starts at 84.6 s).
+- **FU-RNBFLOW-SONG: every sheet and returned song held to its music style's own definition** (new `core/song_contract`): every chorus is the hook plus at least one other real line; the sung sections the length plan calls for are present (R&B Flow's verses are rap); the planned sung share of voice is a per-style floor (Soul Ballad and Soul Rise 77.5%, so a Soul sheet may be almost all sung; R&B Flow the share its own length plan holds after its rap budget); rap blocks are cued "rhythmic rap on the beat", never conversational; an upbeat style never asks for "slow"; a spoken outro says "no melody". Run by `suno_recipe.guard_request`, `song_dispatch.validate_request` and gate `song_contract` in `judge_take`.
+- **Golden sheets**: all six pass `guard_request` (recipe + hook placement + contract), `song_contract` and `music_director.build_generate_request` at their delivered length: every Hook block carries a second real line, R&B Flow rap cues say "rhythmic rap on the beat", no "slow" in an R&B Flow sung block. Each names the beat where its hook ("You can rest and still rise") pays off, `the_turn` when the book arrives (60 s: `lowest_point`, since two hooks cannot fit after the turn starts), carries `hook_target` hooks (2/2/3/4/6/11 at 60/90/120/180/300/600 s) with the build-up and the product passage before the first hook, fits its delivered length, and FAILS the story-beat check if its first hook is moved up. `song_contract/test_song_contract.py` and `sung_hook/test_no_skip_and_goldens.py` run all six.
+- **No gate switches itself off, and the director measures every style by its own rule**: `guard_request` with no `style_id` refuses a sheet with sung or rap sections (`UNMEASURED: style_id`); `check_payload` with no `music_style` is `UNMEASURED: music_style`; `check_returned`/`judge_take` FAIL a `true_at_beat` that is not a beat or is the opening beat, as `check_story` does. The director's words-fit check holds the sung share to the style's own floor (`words_fit.style_sung_target_pct`, the one copy `song_contract.sung_target` reads), and its spelling check reads a held vowel ("re-est", "lo-ook", "mi-ine") as its word while real misspellings are still refused; "n't" contractions join the dictionary extras.
 - **FU-U11: book printed pages, the plan hash, the card block and the excerpt seam.** `book_shot.check_pages` / `check_pages_sequence` add the calibrated printed-vs-white page test (`BOOK_BLANK_PAGES`): a page of real body text has no empty grid cell, a white page does (both re-measured from the shipped fixture generator: printed ink 0.1640 with 0 empty cells, white ink 0.0031 with 40 of 48; a page carrying only a caption line sits in the same empty-cell band by design and needs its own fixture to reproduce), and more than one blank page among the sampled open frames fails. `plan_spec` / `plan_sha256` / `plan_card_rows` hash the approved plan and render the card rows; the prompt wording itself lives in the `references/prompt-templates/models/minimax-h3.json` fragments `PRINTED_PAGES`, `BOOK_CLOSED` and `BOOK_OPEN_MOTION`, read by `prompt_templates` (U15b) — this unit authors no prompt wording, it MEASURES the rendered frames. `kie_dispatch.book_shot_refusal` now ACTIVATES the plan-hash requirement U10 shipped dormant — a book video job with no `book_plan_sha256`, or one whose hash does not match the approved plan, is refused `BOOK_PLAN_NOT_APPROVED`. `intake_book` takes an OPTIONAL `excerpt_lines` (client-supplied only, max 3, provenance "provided", spelling-checked with the caption gate's dictionary; it adds no question). Both card faces carry the Book shots APPROVAL BLOCK — approvals and notices only, never a new choice. The excerpt reaches the render as DATA through the single named U9 hook `final_assembler.captions_burn.overlay_excerpt`; no second burn module and no OCR binding was added, and while U9's artifact is absent the call site reports PENDING rather than burning. New test `scripts/core/book_shot/test_book_pages_d1.py` proves all four D1 cases (white fails / printed passes, no-plan refused, changed plan refused until re-approved, excerpt never in the video prompt).
+## v2.9.9 - 2026-10-09 - FU-VIDEO-MODEL-CHOICES: four video models, each with a price for your chosen length
+
+- The VIDEO MODEL intake question now lists four models with H3 first and RECOMMENDED: MiniMax H3, Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1. Each line carries one plain descriptor and "about $X" for the length the client already chose (same formula as the card: video + one keyframe per shot + one song, +20% redo allowance). The recap reads `Video model: Seedance 2.5 - about $68.40`. Seedance is ByteDance's video model (Seedream is image only). Seedance 2.0 Fast is not offered (clip range unconfirmed, not on the price menu); Mini is the lite tier.
+- One price for the question and the final card: `card_render.price_envelope` prices the chosen model from the rates table at the resolution the factory renders (H3 768P, Seedance 2.5 720p, Mini 720p, Veo 3.1 Fast 720p), with keyframes, character reference pictures, the song and the 20% redo allowance; the question quotes that exact total. Skill 74 `price` (highest tier) is unchanged for other skills.
+- The client's pick is stored in run state at intake (`intake_card.conversation(..., state_store, run_id)`), read by the card's Video model row and by `kie_dispatch`, which submits that model's provider id and resolution (`video_models.request_for_run`, `apply_locked_choice`).
+- One rates table with source URL and date: `scripts/core/choice_card/video_models/video_model_rates.json`.
+- `prompt_limits.MARKET_ALIASES`: the market id `veo-3-1` is held to the dedicated `veo3_fast` catalog entry; before this, a Veo 3.1 dispatch refused `PROMPT_LIMIT_NO_CATALOG`.
+- New test `scripts/core/choice_card/video_models/test_video_models.py` (13 checks: question = card total for 4 models x 60 s / 3 min, pick -> card row and payload, payload tests run through `kie_dispatch.dispatch` with a fake Skill 74; zero paid calls).
+## v2.9.9 - 2026-10-09 - Storyboard approval shows each shot's card and its still
+
+- FU-STORYBOARD-SHOWS-BOTH: new `storyboard_director/approval_package.py` builds the approval message with the written card and the still image for every shot, in order; stills come before approval and video after it; approve opens the video gate; a shot edit regenerates and re-sends only that shot. Documented in SKILL.md, choice-card-spec.md and stage-runbook.md.
+- Wired into the live run: `storyboard_director/approval_runner.py:run` (via `factory.py storyboard`) sends the message plus each still through `openclaw message send`, records the video stage WAITING_APPROVAL, applies GO / `shot N: change ...`, auto-approves on No, and `factory.py next` withholds the video command until approved. End-to-end test: `test_approval_runner.py`.
+## v2.9.9 - 2026-10-09 - FU-SONG-APPROVAL: hear and pick the song before any video
+
+- New intake question 7 of 7, SONG APPROVAL ("Do you want to hear and pick the song before any video is made?"). The card, recap and "number of a line to change it" carry it; the count is now 7 (8 with the saved-character question).
+- On Yes the song stage makes three arrangement variants of the same lyric sheet in parallel (`scripts/core/song_choices/`, data table `variants.json`), each judged by `song_dispatch`, a failed one regenerated once then reported; delivered as `SONG-CHOICES/N - LABEL (description).mp3` with title tags and `README.txt`.
+- The gate: `factory.py next` and `kie_dispatch` refuse picture timing, image, video and lip-sync work with `SONG_PICK_MISSING` until the client's pick is recorded; a missing or changed pick never defaults. On No nothing changes.
+- The card price adds the two extra song generations (`Song picks` row).
+- Tests: `song_choices/test_song_choices_fu_song.py`; the H9 and I6 card tests move to 7 and 8.
+- Wiring: the confirmed recap writes the SONG APPROVAL answer to the run (`intake_card.conversation(..., run_dir=)` / `factory.py card --step --run-dir` -> `song_choices.record_card_answer`), so Yes turns the gate on without a manual step; a recap change replaces it, a resume keeps it once versions exist. `deliver_choices(..., target=)` / `send_choices` send the message plus the three files in order through `openclaw_send_argv` (`--media`, same `openclaw message send` path as the card). Tests: `song_choices/test_song_wire_fu_song2.py`.
+
+---
+## v2.9.10 - 2026-10-09 - FU-SCRIPT-APPROVAL (wired)
+
 - New card question SCRIPT APPROVAL (last question): the client can read and approve the story and song lyrics before the song is made. Yes sends the script and pauses before any song generation; edits are applied, re-checked and re-sent; missing approval fails closed (`SCRIPT_NOT_APPROVED`) in `kie_dispatch.dispatch` and `song_dispatch.run_takes`. No: unchanged.
 - Wired, nothing is called by hand: `factory.py next` runs `script_approval.stage.run_stage` when `music` is next and the card answer is Yes (checks, `request_approval`, send through `openclaw message send` or back to the chat, run recorded as waiting, outcome `waiting`). New `factory.py script-reply` carries the client's answer (`approve` or an edit that is re-checked and re-sent). Resume stays waiting and never re-sends a delivered script. The dispatch gates read the record from the run folder (`record_near`, `run_dir=`).
-- New `scripts/core/script_approval/` with `test_script_approval.py` and `test_script_wiring.py`. No version bump.
+- New `scripts/core/script_approval/` with `test_script_approval.py` and `test_script_wiring.py`.
+## v2.9.9 - 2026-10-09 - Client guide
+
+- FU-CLIENT-GUIDE: added references/CLIENT-GUIDE.md (opening, checklist, every question with examples and prep). Docs only.
+## v2.9.9 - 2026-10-09 - FU-AI-MODELS-QUESTION
+
 - New first intake question, AI MODELS: which AI builds the video and which checks the work. OpenRouter is recommended (faster), Ollama is allowed, unknown names are refused politely, and the checker must differ from the builder.
 - Honest scope: the run still uses the session's own model. The answer is recorded as `ai_models` in the approved intake summary, as a preference for the operator.
 - The card now has seven questions (eight with a saved character, which comes second). Tests: `choice_card/intake_card/test_ai_models.py`; card-count checks in `test_intake_card_h9.py`, `test_intake_step_i7.py`, `test_character_library_i6.py` updated.
 
-## [2.7.35] - 2026-10-09 - Train 2.7.35: #134 + #135 + #137 + #138 + #130 + #123
+## v2.9.10 - 2026-10-09 - FU-AAC-FINAL-MUX
 
-Landed together by merge train: #134 saved-character question, #135 one spend question on the card, #137 audience question, #138 length question and clips for 3, 5 and 10 minutes, #130 FU-U11 book pages / plan hash / card block / excerpt seam, #123 skill 75 parity. Clashes resolved keeping both sides' intent: #137 asked a spending question that #135 removes (the audience wording is kept, the spend question stays gone); #130's card block now follows #134's closing line (`_closing`); #138 clips text replaces the 5 and 10 minute only text. Three existing tests were updated to the merged card (saved with us wording, BUDGET answered with a dollar amount, closing line via `_closing`). PR #142 left out: pushed less than 10 minutes before the train and its check was still running. VERSION and SKILL.md frontmatter: 2.7.34 to 2.7.35.
+- Every delivered video is AAC-LC 48 kHz 256k with +faststart (QuickTime played MP3-in-MP4 silent): new core/delivery_audio.py shared argv constants plus a delivery gate (refuses non-aac or silent audio) wired into final_assembler.assemble and delivery_checklist.delivery_battery(video_path=).
 
-## [2.7.34] - 2026-10-09 - Train 2.7.34: #124 + #133
+---
 
-Landed together by merge train: #124 FU-U4 (client lines are a contract; the STOP card lists only real options; fit card, `fit_card`, `card --fit`), #133 U12 choice-card-spec gap fills (STL voice guard, voice-match QC, planner card, fit-card TODO). Neither PR carried an Unreleased entry; this one is written by the train. One clash, spec text only: both PRs rewrote `references/choice-card-spec.md` section 2.3. #133's section 2.3 described the fit card as not built and carried a TODO to rewrite it when #124 landed; #124 is in this train, so the #124 text is kept and the stale #133 paragraph and its TODO line are dropped. All other #133 changes are kept. VERSION and SKILL.md frontmatter: 2.7.33 to 2.7.34.
+## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
-## [2.7.33] - 2026-10-09 - Train 2.7.33: #128 + #129 + #131 + #132
+- FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
+- sfx-f4: the U15 fail-first guards no longer call sys.exit at module level, so one failing guard cannot raise INTERNALERROR across the whole test tree.
+- `prompt_templates.book_fragments(spec, st, frag)` is the ONE wording home for a book prompt: it reads `BOOK_CLOSED`, `BOOK_OPEN_MOTION` and `PRINTED_PAGES` from `models/minimax-h3.json` and returns the `book`/`pages` sections both assemblers (`assemble_h3`, `assemble_kling_video`) `.update()`. A shot type that declares `required_blocks_when_book` (product-book) now REFUSES `BOOK_FRAGMENTS_REQUIRED` when the spec does not carry the block, when `book=` is a value the assembler does not know (`closed`/`open` only) or when an open book has no `pages: texture` block — previously such a spec assembled with NO contract wording and PASSed the band. Non-book shot types are untouched.
+- Kling no longer scales or trims the fixed `book`/`pages` fragments (`section_scale` 0.38 and `_KLING_TRIM_ORDER` cut the U10 contract sentences in half; design `never_trim` lists `book` and `pages`). The fragments now arrive whole on the Kling path.
+- New test `scripts/core/prompt_templates/test_prompt_book_fragments_u15g.py` (26 checks; the (a) refusal checks fail on the base tree).
 
-Landed together by merge train: #128 cast-sweep voice_casting docstring, #129 FU-U9 captions_burn.overlay_excerpt, #131 U12 per-style spoken paragraph and TODO block, #132 U15g book and printed-page prompt fragments one home. PR #130 (FU-U11) was dropped from this train: its test_book_pages_d1.py asserts that captions_burn.py does not exist, which fails once #129 lands (4 checks). VERSION and SKILL.md frontmatter: 2.7.32 to 2.7.33.
+## v2.9.7 - 2026-10-09 - load-governor test no longer sleeps
 
-- **U12 narrative follow-up after 2.7.32.** The spoken-target paragraph in
-  SKILL.md now reads the band numbers per style since FU-U3 landed
-  (`STYLE_TARGETS`, the fourth delivery `none` never counted as spoken), and
-  SKILL.md closes with a "Sections marked TODO" block naming FU-U4, FU-U9 and
-  FU-U11 as the sections to refresh when those land.
+- `test_load_governor.py` resets the poll limiter after the fake-clock poll checks. They left it near 1003 s, so the later real-clock polls slept until the machine had been up that long (about 464 s on a fresh CI runner). No check was weakened.
 
-## [2.7.32] - 2026-10-09 - Batch MGB017: #122 + #127
+## v2.9.6 - 2026-10-09 - Batch MGB015 roll-up
 
-Landed together by merge train: #122 U12 docs and SOP in lockstep with the code, #127 load-governor test no longer sleeps about 7 minutes on a fresh runner (test-only). VERSION and SKILL.md frontmatter: 2.7.31 to 2.7.32.
+One version for the MGB015 units: FU-U2 (style-aware length plan), FU-U8 (captions caught early), FU-U15i (docs in lockstep with the prompt). FU-U2 x the scaled CTA cap: a rap style keeps the fixed OUTRO_MAX_WORDS cap and the unspent allowance becomes the rap budget (matches 999 v2.7.29).
 
-- **U12: docs and the onboarding SOP in lockstep with the code.** SKILL.md gains "Request and prompt limits", the tag-grammar / style-plan / voice-tag bullets in the Suno recipe, the early-captions paragraph (with FU-U9 named as NOT built) and the book-orientation bullets; choice-card-spec gains 2.3 (options come from the registry; the fit card FU-U4 is not built), a machine-checked "Offered lengths" line, the book language and orientation text and the Book shots block (FU-U11, open branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6 seconds). Sections that describe open branches (FU-U4 PR #124, FU-U11 `unit/FU-U11`, FU-U9 no branch) say so and are refreshed when those land; FU-U3 landed in 2.7.31 and was refreshed here. New test `scripts/core/prompt_templates/test_docs_u12.py`.
-- **TODO(FU-U3): DONE in this unit** — SKILL.md and QC.md now read "landed in 2.7.31 via PR #120", not "open pull request".
-- **TODO(FU-U4):** choice-card-spec 2.3 rewritten when PR #124 (`unit/FU-U4`) lands.
-- **TODO(FU-U11):** refresh the Book shots block / book-orientation sections when `unit/FU-U11` lands.
-- **TODO(FU-U9):** captions read-back off frames — no branch yet; QC.md and SKILL.md say NOT built.
+### FU-U2: style-aware length plan and words fit
 
-## [2.7.31] - 2026-10-09 - Batch MGB016: #120 + #121
-
-Landed together by merge train: #120 FU-U3 bands per music style (rap is its own band), #121 docs: fix check-docs-fresh failures (repo-level, no skill change). VERSION and SKILL.md frontmatter: 2.7.30 to 2.7.31.
-
-### FU-U3: bands per music style; rap is its own delivery; silence is not speech
-
-- Per-style bands under the SAME locked 5/10 band: `spoken_share.STYLE_TARGETS` holds Soul Ballad and Soul Rise at exactly 22.5 runtime spoken / 77.5 sung-of-voice; R&B Flow's target is the documented default flagged as a TREVOR-DECISION ITEM in plan 18 section 9 item 1 -- the share planned from the approved sheet (the U2 plan's word counts at the style's measured rates), not a new number invented here -- and sung-of-voice on a rap sheet is recorded, not gated (hook content, not a planned share); the 6 s sung stretch and the hook count stay hard. `measure_share(segments, style_id=...)` reports rap separately for a rap style and counts plain spoken against its target; `segments_from_sung_stretches(voiced=)` turns music-only time into a fourth delivery `none` that counts in runtime and never in voice time (a music-only gap no longer counts as spoken); the rap-versus-speech split is measured word timestamps x the sheet's delivery labels, recorded as basis `aligned`, never `measured`. `song_dispatch.judge_take` / `run_takes` and `suno_recipe.score_take` carry `style_id` (+ `plan`) through validate and judge. New test `scripts/core/spoken_share/test_style_bands_u3.py` with the g1b segment fixture from SONG-RECEIPT (fails on the base tree: `voiced=` did not exist).
-
-## [2.7.30] - 2026-10-09 - Batch MGB014: #118 + #119
-
-Landed together by merge train: #118 FU-U8 captions caught early, #119 U15i docs in lockstep with the prompt. VERSION and SKILL.md frontmatter: 2.7.29 to 2.7.30.
-
-### FU-U8: captions caught early
-
-Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
+- Style-aware length plan and words fit: `length_formula.plan(L, spoken_share_pct=None, style_id=None)` gives a rap style (R&B Flow, from the style's own `deliveries` in `core/music_styles`) a rap budget for the verses by splitting the D15 spoken-STYLE allowance with the [Intro]/[Outro] spoken block caps, at the calibrated `core/words_fit` rate, and returns `words {spoken, rap, sung}` plus `rap_s`; `words_fit.STYLE_RATES` is keyed by STYLE ID with `rates_for()` normalizing through `music_styles.style()` and `CARD_LENGTHS_S` now re-exports `music_styles.OFFERED_LENGTHS_S` (one copy, gain 120 s); `music_director.build_generate_request` passes `style_id` into `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet` passes it into `plan`; Soul Ballad and Soul Rise plans are BYTE-IDENTICAL (65 words at L=60). New test `scripts/core/length_formula/test_style_plan_u2.py`.
+### FU-U8: captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags)
 
 - Every string that reaches the screen is now caught before a paid call: `_tokens()` maps U+2019/U+2018 and NFKC-normalises ("could’ve" is one word, not "could"+"ve"); the new `display_text()` turns performance spelling into the caption ("Girl, I got you-u" burns as "Girl, I got you", a wordless vocalise makes no cue) and `build_captions`/`check_captions` use it; `check_lyrics_spelling` refuses a misspelled lyric word with `LYRIC_MISSPELLED` inside `music_director.build_generate_request` BEFORE the recipe guard and any payload; `check_confusables` FLAGS the two confusions a token proves wrong (never a fix); `intake.client_typo_question` sends a client typo BACK AS ONE QUESTION ("Your storyboard says 'kitchan'...") and never rewrites the client's words; `kie_dispatch.onscreen_text_refusal` refuses `ONSCREEN_TEXT_NOT_CHECKED` a keyframe/video whose on-screen text is not in the checked receipt; and `qc_gate` requires a `spelling_grammar` record at the Script stage (new `required_checks`, schema enum, contract updated). New test `scripts/core/test_captions_early_u8.py` (24 checks; 18 fail on the base tree).
 
-### U15i
-- U15i (docs in lockstep with the template system; last unit of the U15 set): `SKILL.md` gains the "Prompt templates" section (data under `references/prompt-templates/`, the assembler `scripts/core/prompt_templates/`, the H3 band 5,000-6,800 with hard max 7,000, the prompt receipt, `PROMPT_NOT_TEMPLATED`, the `prompt_compliance` gate) and the Suno recipe and lip-sync bullets now point at it. `references/choice-card-spec.md` 3.1 names `references/prompt-templates/length-classes.json` as the ONE length table (its list equals the table's keys) and 3.3 points at `looks/` and `modes/`. `references/style-bibles/realism-cinematic.md` keeps the recipe as the source of the `realism` mode, moves the Chanel identity into a "worked example" heading, deletes the nine "(Restated for emphasis.)" duplicate blocks, and states the camera as per shot. `QC.md` carries the bands, the receipt, `PROMPT_NOT_TEMPLATED` and the required `prompt_compliance` record. New doc test `prompt_templates/test_docs_u15i.py`. Same change as onboarding Skill 75. No version bump in this unit (999 has no skill-version.txt).
+## v2.9.5 - 2026-10-09 - Batch MGB012 roll-up
 
-## [2.7.29] - 2026-10-09 - Batch MGB013: #115 + #116 + #117 + #114
+One version for the MGB012 units: FU-U1 (pytest-clean rap-aware tag grammar test), FU-U7 (video/avatar prompt caps at the caller), FU-U15e (Kling avatar template), FU-U15d (Suno V6 templates per style and per length), FU-U15b (H3 assembler and the 5,000-6,800 band), FU-U15f (Kling as the card's video model), U15h (length classes, product seconds, lanes in one table; prompt compliance), and FU-U5 (voice tags come from the cast). Merge notes: suno_recipe is the union of FU-U1's tag grammar and rap rule with FU-U15d's data-driven styles; bible.compile_visual_prompt keeps FU-U10's own-motion kinds on the image path next to U15b's video path; qc_gate.evaluate takes both campaign_type and ledger_jobs. Entries follow.
 
-Landed together by merge train: #115 U15f Kling as the card's video model, #116 U15h length classes / product seconds / lanes, #117 FU-U2 style-aware length plan, #114 FU-U5 voice tags from the cast. VERSION and SKILL.md frontmatter: 2.7.28 to 2.7.29.
+- FU-U1: `test_tag_grammar_u1.py` is now pytest-clean. `test_b_lyric_gate_counts_rap_in_the_budget` took the sheet as a required argument, so under pytest it ran standalone with no sheet and errored `fixture 'sheet' not found`. It now defaults to `None` and builds the sheet from the fixture itself; a parse failure still fails the check loudly (never a skip). Script mode is unchanged.
 
-### U15f
-- U15f (Kling as the card's video model, design 3.5): `prompt_templates.assemble_kling_video` builds a Kling prompt in H3's section order scaled by `models/kling-video.json`'s `section_scale` (0.38, per-section budgets `kling_section_limits()` derived from H3's own table, never a second one), aims it into the manifest band (1,800-2,500; hard max 3,072 omni VERIFIED, 2,500 for 3.0/video UNVERIFIED, 2,500 for 2.5 turbo VERIFIED), and differs from H3 in exactly the three ways the design names: the camera is PLAIN WORDS after the subject's motion (no bracket group anywhere), the look is the mode's `kling_block`, and the negatives STAY IN the prompt (no `negative_prompt` field). `check_kling` refuses `KLING_BRACKET_SYNTAX`, `KLING_OVER_HARD_MAX`, banned phrases, duplicate sentences and run-on 8-grams, and flags under-floor `KLING_BELOW_FLOOR`; `band_cap` prints each cap's VERIFIED/UNVERIFIED provenance and never promotes one. The six golden specs re-assembled for `kling-3.0-omni/image-to-video` land at 1,842-2,183, PASS. New test `scripts/core/prompt_templates/test_prompt_templates_u15f.py` (fails on the base tree: no `assemble_kling_video`). Parity: core files byte-identical with the onboarding tree.
+- FU-U15d: Suno V6 templates per style and per length (references/prompt-templates/music/*.json, models/suno-v6.json); suno_recipe reads style lead, cues and gender words from data, not constants; no-voice sections render as a tag only; caps are measured last.
 
-### U15h
-- U15h (length classes, product seconds and lanes in ONE table; prompt compliance at final QC): `references/prompt-templates/length-classes.json` is CORRECTED so every row equals the code (`length_formula.plan`, `lipsync_clips.budget`, `shot_planner.plan_generation_count` = ceil(D/4), lanes via `lane_planner` when the module is on the tree, the 10-15% product band). The U15a port had drifted at 180/300/600 s (spoken share 16.9/10.1/5.0% before U15d's CTA scale landed; rows now 22.5%) and at 600 s the song plan is `1 base + 3 extends`. `prompt_templates.length_class(L)` is the one reader: it computes the row and raises `PROMPT_LENGTH_CLASS_DRIFT` naming each drifted field, so a stale table can never be read silently. `length_formula.class_check`, `lipsync_clips.class_check` and `shot_planner.class_check` cross-check their own module against the table (never a second formula). `qc_gate` requires a `prompt_compliance` record at final QC: `prompt_compliance_rows`/`prompt_compliance_record` build one row per paid ledger job matched to its receipt (logical_key+attempt_id, else request_digest, else prompt_sha256; REFUSE/TRIM receipts never count), and `evaluate(..., ledger_jobs=[...])` requires the check. `check_product_seconds` proves the shot plan's product seconds fall inside 10-15% of D. New `prompt_templates/test_length_classes_u15h.py`. Same change as onboarding Skill 75. No version bump in this unit (999 has no skill-version.txt).
+- FU-U15e: Kling avatar template (prompt_templates.assemble_kling_avatar / check_kling_avatar): who from the look's mode, three sentences, one emotion.
 
-### FU-U2
-- Style-aware length plan and words fit: `length_formula.plan(L, spoken_share_pct=None, style_id=None)` gives a rap style (R&B Flow, from the style's own `deliveries` in `core/music_styles`) a rap budget for the verses by splitting the D15 spoken-STYLE allowance with the [Intro]/[Outro] spoken block caps, at the calibrated `core/words_fit` rate, and returns `words {spoken, rap, sung}` plus `rap_s`; `words_fit.STYLE_RATES` is keyed by STYLE ID with `rates_for()` normalizing through `music_styles.style()` and `CARD_LENGTHS_S` now re-exports `music_styles.OFFERED_LENGTHS_S` (one copy, gain 120 s); `music_director.build_generate_request` passes `style_id` into `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet` passes it into `plan`; Soul Ballad and Soul Rise plans are BYTE-IDENTICAL (65 words at L=60). New test `scripts/core/length_formula/test_style_plan_u2.py`.
+- Caller-side guards in `kie_dispatch.dispatch`: the FINAL video/avatar payload is measured against the U6 table (`prompt_limits.check_request`) before any other gate, so an over-cap prompt is refused `PROMPT_OVER_CAP` (field, chars, cap, source, status; never truncated) and a paid video/avatar job on an install without the table refuses `PROMPT_LIMIT_UNAVAILABLE`; nothing is reserved, nothing reaches Skill 74, and the ok receipt carries the measured `prompt_caps` rows. Table gains only what the catalogs lack for video: Hailuo family prefix 2,000, `kling-2.6/image-to-video` 2,500, and the Kling 2.5 Turbo `negative_prompt` 2,500 the catalog does not declare. New test `kie_dispatch/test_prompt_cap_u7.py` (fails on the base tree; 5/5 after).
 
-- Train integration (MGB013): `length_formula.plan` keeps the fixed 30-word [Outro] cap for a rap style only, so FU-U2's rap budget survives the 2026-10-09 scaled-CTA change (non-rap plans stay main's); `test_style_plan_u2.py` L150/L300 regression digests updated to main's scaled-CTA plans (L60 digests unchanged).
-
-### FU-U5
-- **FU-U5: voice tags come from the cast.** `suno_recipe.check_voice_tags(sheet_text, cast_genders)` refuses a sheet whose voice tag gender disagrees with the cast record (`VOICE_TAG_MISMATCH`, naming both sides) and refuses a character tag whose gender cannot be checked at all (`VOICE_TAG_UNCHECKED`, fail closed); `suno_recipe.guard_request` takes `cast_genders=` and refuses at that seam, and `protected_names.cast_genders(brief)` builds the map from `brief.characters[].gender`. Brackets that name no cast character ([Hook], [Intro], [End]) are never judged; no cast record means the check is off, exactly as today. 2026-10-08 One-Check Chanel as the LIVE cast record has it (the 2026-10-08 voice recast, CAST.md): the BOX COWORKER bracket tagged "Female voice" against a cast that says man is now refused; the desk neighbour "Female" and the manager "Male" tags match the live cast and pass. The plan unit row's own acceptance is also asserted on the pre-recast (plan-time) cast, where the desk neighbour tagged "Female" against a cast that says man is refused. All Suno is unchanged: one `vocal_gender`, same KIE params, no new voice option. Test: `scripts/core/suno_recipe/test_voice_tags_u5.py` (5 of 6 blocks fail on the base tree: no `parse_voice_tags` / `check_voice_tags`, `guard_request` has no `cast_genders`). Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
-
-## [2.7.28] - 2026-10-09 - Batch MGB011: #108 + #102 + #105 + #110 + #106 + #113 + #109 + #111 + #112
-
-Landed together by merge train: #108 qc-kie-docs-host, #102 FU-U6 Suno request limits, #105 FU-U15a template data layer, #110 FU-U7 video/avatar prompt caps, #106 FU-U1 rap-aware tag grammar, #113 adapter parity (skill 74), #109 FU-U15e Kling avatar template, #111 FU-U15d Suno templates, #112 FU-U15b H3 assembler.
-
-### FU-U15a: prompt template data layer, loader and caps reader
-- New `references/prompt-templates/` (52 files): `20-prompt-templates/` ported as data — README, `manifest.json`, `length-classes.json`, 4 models, 5 modes, 5 looks, 6 shot types, 3 music styles, 15 fixtures.
-- New `scripts/core/prompt_templates/` with `load()` and `caps()`. `caps()` reads the catalogs (67-kie-video, 68-kie-audio) through FU-U6's `prompt_limits` first and the manifest only for what the catalogs lack (the Kling avatar row, UNVERIFIED 2500); no second caps table. H3 image-to-video prompt cap 7000 VERIFIED from the 67 catalog; every look x mode x shot type resolves, each mode block carries its record's key phrases (realism: the five `RECIPE_REQUIRED_PHRASES`).
-- New test `scripts/core/prompt_templates/test_prompt_templates_u15.py` (fails on the base tree: the module is absent). No version bump.
-### FU-U6: Suno request limits, fail closed, measured last
-- New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
-- `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
-- `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
-- New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built). Parity: core files byte-identical with the onboarding tree.
-### FU-U7: video/avatar prompt caps enforced at the call site, fail closed
-- `kie_dispatch.dispatch` now runs the U6 `prompt_limits.check_request` over the FINAL payload before any other gate: an over-cap field is refused `PROMPT_OVER_CAP` (field, chars, cap, source, status; nothing reserved, nothing sent, never truncated) and a paid video/avatar job with no importable limit table is refused `PROMPT_LIMIT_UNAVAILABLE`; the ok receipt carries the measured `prompt_caps` rows; `prompt_limits.py` gains the file-17 video/avatar caps (Hailuo family 2,000, Kling 2.6 i2v 2,500, Kling 2.5 Turbo negative_prompt 2,500) and the 999 installer layout in its catalog walk. New test `kie_dispatch/test_prompt_cap_u7.py`.
-### qc-kie-docs-host: F14 scanner exempts the docs host only
-- `scripts/qc-no-direct-kie.sh`: the endpoint pattern `(https?://)?(api\.)?kie\.ai` matched a bare `docs.kie.ai` host, so the KIE documentation provenance URLs in `scripts/core/prompt_limits.py` (added by FU-U6) were reported as direct-KIE calls and the check exited 2 on a clean tree. The scan now extracts each host occurrence (`grep -oE`) and drops exactly the `docs.kie.ai` host — the exemption is decided per OCCURRENCE, so a line carrying both a docs URL and a real api URL still fails on the api record (a line-level `grep -v` would discard the whole line and let the real call escape). Every other host still bites: `api.kie.ai`, any other subdomain including ones nobody has thought of yet, and bare `kie.ai`. No filename exemption: a real direct call added to `prompt_limits.py` later is still caught.
-- New test `scripts/core/kie_dispatch/test_qc_docs_host.py` (fails on the base tree: the docs fixture exits 2). Covers the docs citation passing, the api call still failing by name, the mixed one-line docs+api case failing per occurrence, unknown subdomains and bare `kie.ai` failing, and the real core tree staying clean. Existing `test_model_lock_f14.py::test_qc_no_direct_kie` regression stays green. Parity: the scanner is byte-identical with the onboarding tree.
-### FU-U1: test_tag_grammar_u1.py collects and passes under pytest
-- `scripts/core/suno_recipe/test_tag_grammar_u1.py` line 84: the file is dual-mode — in script mode `main()` passes test_a's return into `test_b_lyric_gate_counts_rap_in_the_budget(sheet)`, but pytest calls test_b standalone and never receives that return, so pytest read `sheet` as a fixture name and errored `fixture 'sheet' not found` (the whole unit was uncollectable, which is why #106 was held out of the 2.7.27 batch). test_b now takes `sheet=None` and, when it is None, builds it in-test from the existing `load_fixture()` + `R.parse_lyrics()` (a parse failure reports through `check()` and leaves the sheet None); the existing `if sheet is None:` guard still fails loudly, so a failed build is never a silent skip. `main()` and every assertion are unchanged.
-
-### FU-U15b: H3 assembler, the 5,000-6,800 band, receipts
 
 - U15b (H3 assembler, band of record 5,000-6,800): `prompt_templates.assemble_h3/check/expand/receipt` build every MiniMax H3 prompt from the template layers plus the shot spec's facts, guard the owner band (under 5,000 = FLAG then `H3_THIN_SPEC`, never padding; over 6,800 = TRIM; over 7,000 = REFUSE `H3_OVER_HARD_MAX`), and write a prompt receipt (sha256 + template version + section char map). The six golden specs assemble to 5,578-6,740. `shot_planner.prompt_spec_for` writes the facts (`shot["prompt_spec"]`); `kie_dispatch` refuses `PROMPT_NOT_TEMPLATED` when the prompt's sha256 has no receipt or the receipt says REFUSE/TRIM, and re-measures the final payload cap just before spend. The video prompt path carries no square-bracket markers and no generic `[MOTION]` line (`bible.compile_visual_prompt(video=True)`, the three style bibles' `compile_prompt(video=True)`); `assert_compiled` accepts a matching receipt. New `shot-types/villain.json` carries the U16 villain guidance into the assembler. `music_styles` soul-ballad base text ends with a period.
 
-### FU-U15e: Kling avatar template
+- U15f (Kling as the card's video model, design 3.5): `prompt_templates.assemble_kling_video` builds a Kling prompt in H3's section order scaled by `models/kling-video.json`'s `section_scale` (0.38, per-section budgets `kling_section_limits()` derived from H3's own table, never a second one), aims it into the manifest band (1,800-2,500; hard max 3,072 omni VERIFIED, 2,500 for 3.0/video UNVERIFIED, 2,500 for 2.5 turbo VERIFIED), and differs from H3 in exactly the three ways the design names: the camera is PLAIN WORDS after the subject's motion (no bracket group anywhere), the look is the mode's `kling_block`, and the negatives STAY IN the prompt (no `negative_prompt` field). `check_kling` refuses `KLING_BRACKET_SYNTAX`, `KLING_OVER_HARD_MAX`, banned phrases, duplicate sentences and run-on 8-grams, and flags under-floor `KLING_BELOW_FLOOR`; `band_cap` prints each cap's VERIFIED/UNVERIFIED provenance and never promotes one. The six golden specs re-assembled for `kling-3.0-omni/image-to-video` land at 1,842-2,183, PASS. New test `scripts/core/prompt_templates/test_prompt_templates_u15f.py` (fails on the base tree: no `assemble_kling_video`).
 
-- `prompt_templates.assemble_kling_avatar` / `check_kling_avatar`: the lip-sync prompt is three sentences with one emotion, the `who` descriptor read from the look's mode (`kling_who`), never a hard-coded look; sketch-ink and golden-realism refuse lip-sync. Lip-gate and image-gate updated (`test_lip_gate_u15e.py`).
+- U15i (docs in lockstep with the template system; last unit of the U15 set): `SKILL.md` gains the "Prompt templates" section (data under `references/prompt-templates/`, the assembler `scripts/core/prompt_templates/`, the H3 band 5,000-6,800 with hard max 7,000, the prompt receipt, `PROMPT_NOT_TEMPLATED`, the `prompt_compliance` gate) and the Suno recipe and lip-sync bullets now point at it. `references/choice-card-spec.md` 3.1 names `references/prompt-templates/length-classes.json` as the ONE length table (its list equals the table's keys) and 3.3 points at `looks/` and `modes/`. `references/style-bibles/realism-cinematic.md` keeps the recipe as the source of the `realism` mode, moves the Chanel identity into a "worked example" heading, deletes the nine "(Restated for emphasis.)" duplicate blocks, and states the camera as per shot. `QC.md` carries the bands, the receipt, `PROMPT_NOT_TEMPLATED` and the required `prompt_compliance` record. ONB SOP `DS-5`/`DS-6` point at the same files. New doc test `prompt_templates/test_docs_u15i.py` (fails on the base tree: no "Prompt templates" section, the restated duplicates still present, the card's 3.3 with no `looks/`).
 
-### FU-U15d: Suno templates per style and per length
 
-- `suno_recipe` reads the style parts, cue strings, gender words and negative tags from `references/prompt-templates/music/*.json` and `models/suno-v6.json` (data, not constants); no-voice sections render as a tag only; product-share and payload checks added; caps measured last.
+- U15h (length classes, product seconds and lanes in ONE table; prompt compliance at final QC): `references/prompt-templates/length-classes.json` is CORRECTED so every row equals the code (`length_formula.plan`, `lipsync_clips.budget`, `shot_planner.plan_generation_count` = ceil(D/4), lanes via `lane_planner` when the module is on the tree, the 10-15% product band). The U15a port had drifted at 180/300/600 s (spoken share 16.9/10.1/5.0% before U15d's CTA scale landed; rows now 22.5%) and at 600 s the song plan is `1 base + 3 extends`. `prompt_templates.length_class(L)` is the one reader: it computes the row and raises `PROMPT_LENGTH_CLASS_DRIFT` naming each drifted field, so a stale table can never be read silently. `length_formula.class_check`, `lipsync_clips.class_check` and `shot_planner.class_check` cross-check their own module against the table (never a second formula). `qc_gate` requires a `prompt_compliance` record at final QC: `prompt_compliance_rows`/`prompt_compliance_record` build one row per paid ledger job matched to its receipt (logical_key+attempt_id, else request_digest, else prompt_sha256; REFUSE/TRIM receipts never count), and `evaluate(..., ledger_jobs=[...])` requires the check. `check_product_seconds` proves the shot plan's product seconds fall inside 10-15% of D. New `prompt_templates/test_length_classes_u15h.py`.
 
-### adapter-parity-m8-h7 (skill 74 only)
+- **FU-U5: voice tags come from the cast.** `suno_recipe.check_voice_tags(sheet_text, cast_genders)` refuses a sheet whose voice tag gender disagrees with the cast record (`VOICE_TAG_MISMATCH`, naming both sides) and refuses a character tag whose gender cannot be checked at all (`VOICE_TAG_UNCHECKED`, fail closed); `suno_recipe.guard_request` takes `cast_genders=` and refuses at that seam, and `protected_names.cast_genders(brief)` builds the map from `brief.characters[].gender`. Brackets that name no cast character ([Hook], [Intro], [End]) are never judged; no cast record means the check is off, exactly as today. 2026-10-08 One-Check Chanel as the LIVE cast record has it (the 2026-10-08 voice recast, CAST.md): the BOX COWORKER bracket tagged "Female voice" against a cast that says man is now refused; the desk neighbour "Female" and the manager "Male" tags match the live cast and pass. The plan unit row's own acceptance is also asserted on the pre-recast (plan-time) cast, where the desk neighbour tagged "Female" against a cast that says man is refused. All Suno is unchanged: one `vocal_gender`, same KIE params, no new voice option. Test: `scripts/core/suno_recipe/test_voice_tags_u5.py` (5 of 6 blocks fail on the base tree: no `parse_voice_tags` / `check_voice_tags`, `guard_request` has no `cast_genders`).
+## v2.9.4 - 2026-10-09 - Batch MGB010 roll-up
 
-- `74-kie-live-adapter`: shadow-mode and adapter parity changes (see `installer-registration/helpers/74-kie-live-adapter/CHANGELOG.md`); no skill 75 code change.
+One version for the MGB010 units: TESTHYG-75 (skill 75 tests pytest-collectable and green in one process), FU-U14 (song mp3 part of every deliverable), FU-U10 (book orientation contract), FU-U6 (Suno request limits, fail closed), FU-U15a (template data layer), FU-U16 (story doctrine: villain, pain, rise), U15c (owner prompt band) and qc-kie-docs-host (F14 scanner exempts the docs host only). FU-U1 (rap-aware tag grammar) was held out: its test_tag_grammar_u1.py is not pytest-clean. Entries follow.
 
-## [2.7.27] - 2026-10-09 - Batch MGB010b: #104 + #96 + #103 + #107
+## v2.9.3 - 2026-10-09 - Batch MGB009 roll-up
 
-Landed together by merge train: #104 (drama-song-tests installs ffmpeg + opencv + tesseract, loop stdin-safe), #96 W-G-008 minute-lanes, #103 FU-U16 story doctrine (villain, pain, rise), #107 U15c owner prompt band (prompt_band_chars over the 80/95 rule). Not included: #102 FU-U6 (prompt_limits.py:41 trips qc-no-direct-kie.sh, failing test_model_lock_f14.py in the empty-HOME loop), #105 FU-U15a (stacked on #102), #106 FU-U1 (test_tag_grammar_u1.py:84 pytest fixture error).
+One version for four units that each carried v2.9.2: W-G-003-amend (singing detector aligned to Appendix A), W-G-008 (parallel minute-lanes for ads 120 s and up), W-F-U2 (whole-track retakes only, PARTIAL_SUNO_JOB gate) and FU-U13 (story arc rule and product-connection target). Their entries follow unchanged.
 
-### W-G-008: parallel minute-lanes for ads 120 s and up
+## v2.9.2 - 2026-10-09 - W-G-008: parallel minute-lanes for ads 120 s and up
 
 Owner order (Trevor, 2026-10-08): "this type of intelligence should be built
 into skill 75 for all video 2 minutes and up". Reference run wf_9134d15e-b8e
-(the fixer split a 3-minute ad into parallel minute-lanes). Onboarding partner:
-skill 75 v2.9.1 (same core, byte-identical).
+(the fixer split a 3-minute ad into parallel minute-lanes).
 - **`scripts/core/lane_planner.py` (new).** Below 120 s of song NOTHING
   changes: one lane, today's flow. At 120 s and up, `plan_lanes(shots,
   song_length_s)` cuts the shot list into N = ceil(L / 60) lanes of about 60 s,
@@ -166,14 +270,11 @@ skill 75 v2.9.1 (same core, byte-identical).
   a fake clock with a 429 resubmitted; a ledger-known tag is polled, a
   finished file reused). Boundary battery: 119 stays 1, 120 splits, 179 stays
   3, 180 stays 3.
-- Docs: SKILL.md "Parallel minute-lanes" section; `references/stage-runbook.md`
-  lane note.
+- Docs: SKILL.md "Parallel minute-lanes" section; the pipeline SOP
+  (`23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md`
+  DS-7 step 6) + `_index.json` content manifest restamp.
 
-## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
-
-Landed together by merge-train: #101 (drama-song-tests collection, lyric_structure import path), #97 (whole-track retakes), #98 (story arc + product connection), #99 (song mp3 in every deliverable), #100 (book orientation contract). #96 (W-G-008) not included: CONFLICTING, being rebased.
-
-### FU-U13: story arc rule + product-connection target
+## v2.9.2 - 2026-10-08 - FU-U13: story arc rule + product-connection target
 
 Trevor's order: never forget to connect the product to the story, and spend at
 least 10-15% of the time connecting the dots to the product and promoting it -
@@ -193,403 +294,457 @@ a target, not a hard cap.
   receipt/checklist output with the measured seconds and percent. Outside the
   band is FLAG, never a blocker by itself, never a repair directive.
 - Docs: SKILL.md, references/choice-card-spec.md, references/stage-runbook.md,
-  QC.md (SOP lives in the onboarding distribution only).
+  QC.md, and the onboarding-only SOP
+  (23-ai-workforce-blueprint/.../SOP--drama-song-ad-pipeline.md).
 - Test: `scripts/core/length_formula/test_story_arc_u13.py`.
+## v2.9.4 (included) - FU-U6: Suno request limits, fail closed, measured last
 
-### 2026-10-09 - FU-U14: the song mp3 is part of the deliverable
+- New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
+- `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
+- `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
+- Gate registered in `shared-utils/kie_prompt_gates.json`; the shared enforcer is called ceiling-only through the module (the 80 percent floor must not apply: the 67 house floor of 5000 sits above Kling's 2500 hard cap).
+- New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built).
+## v2.9.4 (included) - qc-kie-docs-host: F14 scanner exempts the docs host only
 
-Trevor: "make an update so that the mp3 is a part of the deliverable ... update the repo with the latest understanding I just taught you".
-- **Every delivered ad folder carries the song.** Beside the captioned and clean-master mp4s: the FINAL SONG as `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length) plus the wav when one exists, so clients can release the songs as an album.
-- **New REQUIRED battery item.** `delivery_checklist.check_song_mp3(ad_dir, ad_audio_path, title, author)` -> rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`: file present, duration matches the ad's audio within 0.1 s, cross-correlation >= 0.95 with the ad's audio (normalized correlation of downsampled mono envelopes, stdlib math). Missing or mismatched = FAIL, fail closed. `delivery_battery()` returns the rows with `pass` / `reason_code` / `repair_scope`. wav is measured with the stdlib wave module, mp3 through ffprobe/ffmpeg when present.
-- **Batch zip.** `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads, out_path)`: one zip per client, one folder per author holding the captioned ad, the clean master and the song mp3 (exactly three files per ad), plus a README listing every file, duration, resolution and banner link. A missing file is a `BatchZipError`.
-- **Docs:** SKILL.md (deliverables), `references/choice-card-spec.md` (the card lists "song mp3 included"), `references/stage-runbook.md`, QC.md.
-- Tests: `scripts/core/delivery_checklist/test_song_mp3_u14.py` (stdlib WAV fixtures, no ffmpeg, no network).
+- `scripts/qc-no-direct-kie.sh`: the endpoint pattern `(https?://)?(api\.)?kie\.ai` matched a bare `docs.kie.ai` host, so the KIE documentation provenance URLs in `scripts/core/prompt_limits.py` (added by FU-U6) were reported as direct-KIE calls and the check exited 2 on a clean tree. The scan now extracts each host occurrence (`grep -oE`) and drops exactly the `docs.kie.ai` host — the exemption is decided per OCCURRENCE, so a line carrying both a docs URL and a real api URL still fails on the api record (a line-level `grep -v` would discard the whole line and let the real call escape). Every other host still bites: `api.kie.ai`, any other subdomain including ones nobody has thought of yet, and bare `kie.ai`. No filename exemption: a real direct call added to `prompt_limits.py` later is still caught.
+- New test `scripts/core/kie_dispatch/test_qc_docs_host.py` (fails on the base tree: the docs fixture exits 2). Covers the docs citation passing, the api call still failing by name, the mixed one-line docs+api case failing per occurrence, unknown subdomains and bare `kie.ai` failing, and the real core tree staying clean. Existing `test_model_lock_f14.py::test_qc_no_direct_kie` regression stays green.
 
-### 2026-10-09 - FU-U10: the book orientation contract
+## v2.9.1 - 2026-10-09 - Batch MGB008: W-G-007-amend, W-G-002-amend
 
-No book shape or motion rule existed anywhere; nothing measured the cover and nothing measured page-turn direction. Every compiled clip prompt carried the generic F12 people line ("limbs, head and camera stay in gentle continuous motion"), the wrong instruction for a book.
-- New `scripts/core/book_shot/` (`book_shot.py`, `calibrate_book.py`, seeded fixture generator, `test_book_shot_c1.py`): the seven-rule BOOK ORIENTATION CONTRACT, the exact fixed prompt blocks (ORIENTATION / ACTION:open / ACTION:flip / CAMERA / CONSTRAINTS; H3 also gets `[Static shot]` plus the plain-words camera line), and measured checks -- cover match vs the HORIZONTAL MIRROR of the client's cover file (ORB + RANSAC inliers; mirror score higher = BOOK_MIRRORED), back/invented cover (BOOK_COVER_NOT_FRONT), spine-side sign (BOOK_SPINE_WRONG_SIDE), title OCR in reading order (tesseract, U9's engine; missing engine = UNAVAILABLE, never a pass), Farneback flow direction and right-half-to-left-half crossing (BOOK_WRONG_DIRECTION / BOOK_NO_MOTION). Frames run through load_governor.
-- `calibrate_book.py` is the required control: a known-good clip must PASS and its ffmpeg hflip must FAIL, or every book verdict is UNAVAILABLE. `qc_record()` will not mint a PASS without a calibrated checker.
-- `intake_book`: `BOOK_FIELDS` gains `language` (default "en" = left-to-right; the ask folds into the existing offer sentence so the three-question cap holds) and the cover's aspect is MEASURED from the file header (stdlib; measured=False when unreadable, never invented).
-- `product_style_bible`: `compile_visual_prompt()` takes `[MOTION]` from `shot["motion"]` for `book` / `product` / `insert`; the generic F12 line stays for people shots. A kind that owns its motion with none set refuses (MOTION_MISSING_FOR_SHOT).
-- `kie_dispatch` (outside the LIPSYNC_* seams): a video job whose shot kind is `book` is refused (BOOK_SHOT_NOT_CONTRACTED) without a start frame made from the cover file; the approved-plan-hash side stays dormant until `book_plan_sha256` exists (U11), then activates.
-- `qc_gate`: the shots stage requires a `book_orientation` record for book campaigns; UNAVAILABLE never advances.
-- Tests: `scripts/core/book_shot/test_book_shot_c1.py` covers (a) hflip cover FAILs BOOK_MIRRORED (b) back cover FAILs BOOK_COVER_NOT_FRONT (c) left-to-right leaf FAILs, right-to-left PASSes, still clip FAILs BOOK_NO_MOTION (d) the calibration pair sorts or the check is UNAVAILABLE (e) a book prompt carries no "gentle continuous motion" line. All five FAIL on the base tree.
+- Delivery checklist consumes the amended receipt fields (W-G-007-amend); kept-take tags merged with the calibrated verdict gate.
+- Delivery-named tag grammar in lyric_structure (W-G-002-amend).
 
-## [2.7.25] - 2026-10-09 - Batch MGB009a: W-G-003-amend + TESTHYG-75-residue
+## v2.9.0 - 2026-10-08 - Batch MGB007: LSC001: one consolidated lip-sync change (LPG001 + LSL001 + LSR001)
 
-Landed together by merge-train: #94 singing detector aligned to Appendix A (order 1150 part G, review G2), #95 the 2 conftest-induced order-sensitive test failures fixed (residue of #93). #96 (W-G-008 minute-lanes) not included: CONFLICTING at the merge step.
+No version bump. Replaces onboarding #1697, #1698, #1699 (999-setup #72, #73, #86), which overlapped and partly contradicted each other.
+- **Sync gate = `sync_check` (LSL001, calibrated on real controls).** `lip_gate.judge` maps SYNCED / WEAK / NOT_SYNCED to PASS / ACCEPT_WITH_FLAG / FAIL, a sung line that is WEAK or NOT_SYNCED to UNDETERMINED (held for a person, no paid redo), UNMEASURABLE never a pass. LSR001's `event_sync` moved to `lip_gate/event_sync.py` as an ADVISORY measure: recorded in the row as `advisory_event_sync`, never gating (its thresholds were synthetic-only; `calibrate_events.py` prints its real-control table, see the PR body).
+- **Picture gate = `picture_gate` (LPG001, calibrated, enforced in the dispatcher).** `image_gate.check_image` no longer has close-up thresholds of its own: `picture_gate.check_numbers` judges face count, face height, roll, yaw, jawOpen, smile, teeth and sharpness; `image_gate` adds only size (720x1280, 9:16), occlusion, mouth shadow, light, background, same character and provenance. ONE rule set.
+- **LSR001 non-gate improvements kept:** `lipsync_clips.choose_window`, `MAX_TRIES = 2`, `count_jobs`, `check_try_limit`, cost default `attempts=2`; `lip_gate.kling_prompt` ("sings" / "says"); the padded cut (0.30 s lead-in, 0.20 s tail) is the default input of try 1; try 2 only on a hard defect and only with a changed input (`retry_input`); `KEPT_BEST_OF_2` receipt rows with flag and mouth-strip path; `qc_check` accepts them and rejects more than 2 jobs; every paid submit through `load_governor.kie_request`; QC.md H4, QC checklist items 8 and 11 (keep-best carve-out), `delivery_checklist` Q8 aligned to the sync_check verdicts.
+- **InfiniTalk:** the A/B third job is removed from the code. Every doc mention now says manual backup only, not on by default. `kling/ai-avatar-standard` is THE lip-sync model.
+- Tests: `test_lip_gate_h2.py`, `test_image_gate.py`, `test_delivery_checklist.py`, `test_lipsync_closeup.py` updated; `test_event_sync.py` (advisory), `test_choose_window.py`, `test_lipsync_clips.py`, `test_sync_check.py`, `test_picture_gate_lpg001.py` kept.
 
-## [2.7.24] - 2026-10-09 - Batch MGB008b: W-G-002-amend + TESTHYG-75 + W-G-007-amend
+## v2.9.0 (included) - LPG001 / LPG002 / LPG003 - lip-sync picture gate enforced in the dispatcher
 
-Landed together by merge-train: #91 delivery-named tag grammar in lyric_structure, #93 skill-75 tests pytest-collectable and green in one process, #92 delivery checklist consumes the amended receipt fields.
+Owner order (Trevor, 2026-10-08). No version bump. Two close-ups (30-Day Reset: face 28%, smile 0.62; Perfect Daughter: face 34%, teeth, roll -7.8) were never measured before paid Kling lip-sync.
+- `lip_gate/picture_gate.py` + `picture_measure.py`: real mediapipe measurement, sha256 receipt (`<dir>/.lipgate/<sha256>.json`), one free crop, at most 2 paid regenerations through `kie_dispatch` (ledger cap, `load_governor.kie_request`), upload bound to the measured bytes. Same files, constants block and test as the 999-setup copy.
+- LPG003 loosened the rules (Trevor: "loosen the checks so it's not as strict"): PASS / ACCEPT_WITH_FLAG / FAIL. FAIL only for face count not 1, face under 20%, |roll| over 20, |yaw| over 0.25, jawOpen over 0.30, sharpness under 60. Smile, teeth, small face, mild tilt are flags, never a paid regeneration. Calibrated so every Trevor-approved Kiesett version 2 and LeAnne Dolce picture passes or flags.
+- LPG003 F14: `kling/ai-avatar-standard` (the locked lip-sync model) no longer hits `MODEL_NOT_ON_MENU`; it passes the F14 video lock and goes to the picture gate.
+- `kie_dispatch.dispatch` hard-blocks lip-sync models without a PASS or ACCEPT_WITH_FLAG receipt (`LIPSYNC_PICTURE_NOT_GATED`).
+- `lip_gate/install_face_model.py` + PREREQS entries + INSTALL step 2b: mediapipe and Google's `face_landmarker.task` (pinned sha256) ship with the skill; a missing/corrupt model refuses and names the install command.
+- Test: `lip_gate/test_picture_gate_lpg001.py`.
 
-## [2.7.23] - 2026-10-08 - Batch MGB008: LSC001 + LSP001 + PAR003 + G3-WIRE
+## v2.8.5 - 2026-10-08 - G4-WIRE: target engine on Trevor's 5/10 band, wired into music_director + retake_manager
 
-Landed together by merge-train (one gate run): #88 consolidated lip-sync (LSC001), #90 approved lip-sync process (LSP001, rewords Downloads in install_face_model.py for the leak check), #89 final_assembler byte parity (PAR003), #87 G3-WIRE port (onboarding #1692). Waiting on onboarding: #1700, #1701, #1695 (MGB007) and #1702.
+G4's engine was on main but (a) its accept line was the single 5-point grace with a
+keep-the-closest-with-a-warning endgame, which G11 (Trevor order 12:30, consolidated order
+1240 item 3) replaces, and (b) nothing called it. Skill bump v2.8.4 to v2.8.5.
 
-### LSC001: one consolidated lip-sync change (LPG001 + LSL001 + LSR001)
+- `core/target_engine`: `score()` now returns `worst_pts` and a `band`
+  (ACCEPT / FLAG / REDO) judged by `spoken_share.judge_gap` -- one constants module, no
+  second band. `steer()`: within 5 points = ACCEPT; past 5 up to 10 = ACCEPT_WITH_FLAG with
+  the flag written into the receipt; after the bounded rounds past 10 = REDO with the closest
+  take's measurements attached (REPLACES keep-the-closest-with-a-warning; the engine still
+  never raises and never cancels -- REDO means regenerate). New exports: `VERDICT_FLAG`,
+  `VERDICT_REDO`, `ACCEPT_PTS`, `FLAG_PTS`, `BAND_*`, `band_for_gap()`.
+- Call path (order 1150 names music_director + retake_manager): `music_director.select_best`
+  takes optional `target_metrics`/`targets` and judges the winning take through the engine
+  (receipt block `target`: verdict / band / worst_pts / flags). `retake_manager.plan` takes
+  optional `target_gap_pts` and rejects an in-band retake with `TARGET_IN_BAND` (within 5
+  accept, 5-10 flag, past 10 the retake proceeds).
+- Tests: `test_target_engine.py` proves accept/flag/redo at 5 / 6 / 10 / 14 points (both
+  boundaries), all-spoken reject-and-regenerate to REDO, closest-of-N, single-source band
+  constants, and both call paths; suite green with `HOME=$(mktemp -d)`.
 
-Replaces 999-setup #72, #86 (and builds on #73, already merged by train MGB007); onboarding #1697, #1698, #1699 carry the same change.
-- **Sync gate = `sync_check` (LSL001, calibrated on real controls).** `lip_gate.judge` maps SYNCED / WEAK / NOT_SYNCED to PASS / ACCEPT_WITH_FLAG / FAIL, a sung line that is WEAK or NOT_SYNCED to UNDETERMINED (held for a person, no paid redo), UNMEASURABLE never a pass. LSR001's `event_sync` moved to `lip_gate/event_sync.py` as an ADVISORY measure recorded as `advisory_event_sync`, never gating (`calibrate_events.py` prints its real-control table, see the PR body).
-- **Picture gate = `picture_gate` (LPG001, calibrated, enforced in the dispatcher).** `image_gate.check_image` has no close-up thresholds of its own: `picture_gate.check_numbers` judges the close-up numbers; `image_gate` adds only size (720x1280, 9:16), occlusion, mouth shadow, light, background, same character and provenance. ONE rule set.
-- **LSR001 non-gate improvements kept:** `choose_window`, `MAX_TRIES = 2`, `count_jobs`, `check_try_limit`, cost default `attempts=2`; `kling_prompt` ("sings" / "says"); padded cut (0.30 s / 0.20 s) is the default input of try 1; try 2 only on a hard defect and only with a changed input (`retry_input`); `KEPT_BEST_OF_2` receipt rows with flag and mouth-strip path; every paid submit through `load_governor.kie_request`; QC.md H4, QC checklist items 8 and 11, `delivery_checklist` Q8 aligned to the sync_check verdicts.
-- **InfiniTalk:** the A/B third job is removed from the code; every doc mention says manual backup only, not on by default. `kling/ai-avatar-standard` is THE lip-sync model.
+## v2.8.4 - 2026-10-08 - Batch MGB005: song recipe v2, load governor, G5, G9, H10, G2, H3-TEST
 
-## [2.7.22] - 2026-10-08 - Skill 75 parity with onboarding v2.8.4 (PAR001 batch)
+One batch release of nine units. #1653 CIO002 run each check once per commit (push main-only, per-PR concurrency, 93 fast guards folded); #1678 G5 honest receipts (measured sung/spoken/rap/no-voice, target, gap, every take); #1681 song recipe v2, song length formula and song dispatcher; #1684 G9 words-fit preflight before spend and Suno duration with 15% headroom; #1685 H10 each line's voice must fit the character on screen; #1687 H3-TEST fps policy (30 fps master, Kling pass-through, per-segment duplicate gate); #1688 KIE rate limit reference; #1689 G2 the builder enforces the lint it ships; #1690 load governor (machine-wide heavy-job gate, bounded ffmpeg, stage cleanup, KIE pacing). Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted).
 
-Port of onboarding main 3aff3fa1 (skill v2.8.4), per `15-SKILL75-999-PARITY.md`. This entry is the release record for the whole PAR001 batch; each unit lands in its own PR (branches `port/par001-*`) and is described by its own line below. This unit (9, docs and release) carries the docs, VERSION, SKILL.md version and this changelog.
+## v2.8.3 - 2026-10-08 - Batch MGB004: F3, G8, G1, F16, W4-PROOF, doubled lip-sync, user model choice, orchestrate-only
 
-- Unit 1 (G1 delivery map): music_styles delivery map and contradicting-tag gate, `no_echo` contradiction gate, suno_recipe spoken-once exemption.
-- Unit 2 (G5 receipts, H4 wiring): `singing_detector/receipt_evidence.py`, measured sung/spoken/rap/no-voice receipts in `sung_vocal_guard`, assembler `_receipt_evidence`/`_attach_evidence`, assembler `face_speaks_gate` wiring.
-- Units 3-4 (G8 target engine, G2 lyric structure, G9 words-fit): `target_engine` package, `lyric_writer/lyric_structure.py`, `words_fit/` preflight and the 15% Suno duration headroom.
-- Units 5-6 (F16 delivery video-model gate, F3 lipsync_cuts, H10 line_voice_fit): `delivery_checklist` calls `model_lock.check_video_model_delivery`, `audio_c3/lipsync_cuts.py`, `qc_voice_match/line_voice_fit.py`.
-- Units 7-8 (W4-PROOF, CI): `scripts/proof_run/run_proof.py`, workflows that run the skill 75 tests, `qc-operator-path-leak.sh`, PREREQS faster-whisper and numpy.
-- Unit 9 (this PR, docs only):
-  - `QC.md`: new H4 (speaking faces and lip-sync coverage), I5 (clean ending), H7 (protected names and captions) and H10 (voice fits the character) sections; the master-provenance receipt wording (`produced_by.module`, `master_sha256`, builders call the skill's modules); the I1 website rule now says the address is stored as a protected word.
-  - `SKILL.md`: new "Captions and protected names (Part H, H7)" section.
-  - `references/stage-runbook.md`: onboarding's runbook with 999 paths (Suno `music` stage runs `kie_dispatch` with full flags, qc_gate commands for continuity-bible, final-qc and delivery, the H14 song-files note). `test_factory_next.py` still parses it.
-  - `references/choice-card-spec.md`: All Suno voice wording (spoken words are performed inside the one Suno track) and the E6 lip-sync floor wording.
-  - `INSTRUCTIONS.md` and `references/price-menu.md`: checked against onboarding, no content gap (999's INSTRUCTIONS is its own layout; price-menu is byte-identical).
-  - VERSION and SKILL.md frontmatter: 2.7.21 to 2.7.22.
+One batch release of eight units (#1674 F3 lipsync_cuts, #1675 G8 audio shares, #1676 user model choice, #1677 orchestrate-only and no silent failure, #1679 F16 video model gate, #1680 W4-PROOF, #1682 G1 delivery map, #1683 doubled lip-sync and image gate). Entries below are each unit's own notes. Skill 75 is now v2.8.3.
 
-### Batch MGB007 (landed together with merge-train.sh)
+### Doubled lip-sync and the lip-sync image gate (#1683)
 
-PRs #73 (looser sung-aware lip-sync sync check, onboarding #1698), #74-#79 and #81-#83 (PAR001 ports), #80 (W3-A-999 target_engine, F14 loud path, H12 provenance), #84 (F18 caption and lyric QC use F17 measured word timing), #85 (G4-WIRE target engine 5/10 band). `target_engine` and `music_director/__init__` take the onboarding main bytes. Still open against onboarding main (ef25a17d1): 999 #72 (picture gate), #86 and onboarding #1697, #1698, #1699, and the G3-WIRE sung-claim gate port.
+Owner order (Trevor, 2026-10-08). No version bump in this unit.
 
-## [2.7.21] - 2026-10-08 - Batch MGB005: song recipe v2, load governor, F14, F15, KIE rate limit reference
-
-Landed together by merge-train: #67 song recipe v2, song length formula and song dispatcher; #68 KIE rate limit reference; #69 F14 video model lock; #70 load governor; #71 F15 choice card gate. Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted), with a test. Fixes the version mismatch (VERSION said 2.7.19 while SKILL.md said 2.7.20): VERSION, SKILL.md and this changelog now agree on 2.7.21. F14 and F15 were merged by hand (both sides kept) in the test stubs.
-
-## [Unreleased] - Doubled lip-sync and the lip-sync image gate (owner order 2026-10-08)
-
-Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
-
-- A 60 s ad carries 6-8 lip-sync clips of 4-6 s (30-40 s, was 15-20 s), scaled linearly, no clip
-  over 6 s. New `core/lipsync_clips.py` is the one source; `face_speaks` (band + planner: sung
-  hooks, spoken opener and closing first) and `lipsync_coverage` (E6) follow it.
-- `lipsync_clips.check_budget` refuses loudly past the cap; the price card refuses a clip over 6 s.
-- Lip-sync image gate `lip_sync/lip_gate/image_gate.py` runs before any paid job (`run_gate` now
-  requires `source_image` and `image_check`); prompt template `closeup_prompt()`.
+- **Doubled lip-sync, more pieces not longer ones.** A 60 s ad carries 6-8 clips of 4-6 s
+  (30-40 s in all, was 15-20 s), scaled linearly with ad length, no clip over 6 s. One source:
+  new `core/lipsync_clips.py` (the operator's length-formula module is not on main; swap
+  `scale()` when it lands). `shot_planner/face_speaks.py` (band, planner: every sung hook, the
+  spoken opener and closing first, each cut to 6 s) and `final_assembler/lipsync_coverage.py`
+  (E6 floor: 50% of runtime, 6 clips per 60 s) follow it; the old 15-20 s plan now FAILS.
+- **Spend.** `lipsync_clips.check_budget` refuses loudly past the cap, unknown price or unknown
+  cap; the price card refuses a clip over 6 s (`LIPSYNC_CLIP_OVER_CAP`); price-menu snapshot and
+  every doc that held 15-20 s updated.
+- **Lip-sync image gate** `lip_sync/lip_gate/image_gate.py`: runs on every source picture before
+  any paid job (`run_gate` now requires `source_image` and `image_check`); measurable checks
+  (size, 9:16, face-box share 30-45%, frontal pose, mouth open ratio, occlusion, light, shadow,
+  background, same character, sharpness, provenance); unmeasured = refused. Prompt template
+  `closeup_prompt()` makes the picture this way.
 - Tests: `test_lipsync_clips.py`, `lip_gate/test_image_gate.py`, `extensions/test_lipsync_cap.py`;
-  H2, H4, E6, F8, F9 tests updated.
+  H2, H4, E6 tests updated to the doubled numbers.
 
-## [2.7.21] - 2026-10-08 - F15 choice card always asked before any paid job (style_defaults/card_gate)
+## v2.8.2 - 2026-10-08 - G3b: sung detector v2
 
-Port of onboarding main `b9ced148c` (manual Part F F15, Critical, owner order 2026-10-08). The choice card is no longer something a brief can skip: no run starts any paid job until the card's four answers - video style, audio style, length, video model - are shown and recorded with who and when.
+The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.
 
-- New `core/style_defaults/card_gate.py`: `answers_recorded` lists the missing fields (`CARD_UNANSWERED`), `answered_stamped` records the receipt block `{answers, who, at}` in UTC, `gate_run_state` is the single gate the W-F-U16 wiring calls. The card renders one plain fifth-grade sentence per pick with RECOMMENDED markers; the video-model menu is parsed from the price-menu snapshot (live Skill 74 price still first). `core/style_defaults/defaults.py` gains the 2-minute (120 s) length between 90 s and 3 minutes with the F15 note.
-- `core/kie_dispatch` refuses any paid job whose request carries no recorded card receipt (`card_gate_refusal`; fail-closed, status `waiting`, nothing reserved; the local check keeps the gate shut when style_defaults is not importable). Gate order is unchanged: card gate, then price, then storyboard (F6), then placeholder (F10).
-- `core/intake_preflight`: `intake.evaluate()` - a complete brief (zero questions) still waits on `CARD_UNANSWERED`, and the resume-no-changes / resume-material-changes ok paths are gated the same way; the <=3 story questions are still asked first in 999's H9 blank-line format (directive 24.3 caps story questions only). `preflight.check()` requires the recorded receipt for any paid preflight; the factory CLI gains `--run-state-file` / `--card-receipt-file`.
-- Docs: `references/price-menu.md` gains the 2-minute table computed from the SAME published rates the 90 s rows use (per-second x120, Veo 15 clips, Gemini 12 clips, keyframes per shot, one $0.06 Suno generation, both shapes double, 20% retakes); `references/choice-card-spec.md` carries the 2-minute option and the directive 24.3 note; `INSTRUCTIONS.md` gains the F15 gate paragraph and the 2-minute length, hand-ported into 999's numbered-list layout (the patch hunks rejected on context drift, not on already-applied content).
-- Tests: `test_card_gate_f15.py` (59 checks, taken from onboarding main so the I1 website field and the package import match 999's intake); `test_kie_dispatch.py` gains the F15 refusal case and every stub run carries the stamped receipt; the F5, F10 and F6 suites carry the receipt the way onboarding main does (plus its detail-tuple formatting fix in the F6 check helper). F15 applied file-by-file onto 999 main - 999's newer I-series intake/master-length work and the F4/F5/F6/F10/G8/lip-sync gates already on main are kept; F14 model_lock is not part of this port (separate unit).
+## v2.8.1 - 2026-10-08 - Batch MGB002: LPC001, BND001, W-G-003 (G3), SPK001
 
-## [2.7.21] - 2026-10-08 - F14 video model lock ported from onboarding main
+One combined release of four units (#1654, #1655, #1656, #1659), one skill bump from v2.8.0 to v2.8.1. Each unit's own entry follows.
 
-Video jobs are locked to the choice-card model: only models on references/price-menu.md dispatch (seedance-1.5-pro refused), a different menu model is VIDEO_MODEL_MISMATCH, no lock is VIDEO_MODEL_LOCK_MISSING fail-closed, and a definite submit error is VIDEO_MODEL_DOWN with no automatic fallback. New core/kie_dispatch/model_lock.py plus scripts/qc-no-direct-kie.sh; dispatch runs the gate before any ledger row.
+### Lip-sync close-up in every reference set (LPC001)
 
-## [2.7.19] - 2026-10-08 - Sung detector no longer reads gap-free speech as sung (singing_detector 2.0.0)
+Same change as 999-setup drama-song-ad-factory 2.7.13. Owner order (Trevor, 2026-10-08): every
+character gets a close-up where the lips can clearly be seen, because the lip-sync step works
+best from it.
 
-Measured bug (detector check 1536): a sung share built on the density of pitched voice read fully spoken audio as sung (macOS say Samantha 100% sung, 10 of 13 say voices 74-100%, a rap control 91.7%). Real Suno sung hooks read 96% sung and real Suno spoken lines read spoken, so the old numbers looked fine on stems with natural pauses.
+- `catalog_calculator.image_plan`: reference set is 7 per character (3 angles, 3 expressions,
+  1 `lipsync-closeup`); image count and cost estimate include it.
+- `lip_gate.run_gate(source_image=)`: Kling avatar attempts and the InfiniTalk A/B use the
+  close-up as source image by default. `lip_gate.check_reference_set`: a set with no close-up,
+  or one whose mouth is not clear, fails.
+- SKILL.md rule; test `lip_sync/lip_gate/test_lipsync_closeup.py` (mocked, $0);
+  `catalog_calculator/test_image_plan_i3.py` updated.
 
-- `core/singing_detector` 1.0.0 -> 2.0.0, same public interface (`detect_track`, `share_for_stem`, `score_stem_window`, `score_window`, `calibrate`, same receipt keys, same `METHOD` name). A window is sung only when the voice behaves like a melody on a scale: steady-note share of voiced time >= 0.45, pitch-class concentration of the note pitches >= 0.70 (tuning-free; speech glides through every pitch), note-to-note intervals within 0.22 semitone of whole semitones (speech about 0.25), and enough notes per second. Pitched-voice density alone can no longer decide. Sustained-note share (notes held 250 ms or more) and the old note range are reported, not gated. Window 8 s, a second counts sung when half or more of its windows vote sung (a sung neighbour no longer paints the next spoken line sung).
-- Control table, now a test (`core/singing_detector/test_singing_detector.py`, fixtures are a few seconds each in `fixtures/`, plus 13 macOS `say` voices generated in the test): every spoken control <= 15% sung, every sung control >= 85% sung. Result: 13 say voices, 5 Suno spoken lines, 6 Gemini TTS lines and an O3a spoken stem all 0% sung; Chanel hook lines (5) and BSW hook lines (3) all 100% sung. Before (same clips): 9 of the 13 say voices were 33-94% sung and 3 Gemini TTS lines were 100% sung.
-- Band logic (`spoken_share`, `sung_vocal_guard`) is untouched; both read the 12.4 timing map, not audio density.
-- The factory's local `singcheck.py` (v60-tools, outside this repo) got a `singcheck-v2.py` next to it that calls this detector with the same CLI.
+### SPK001: spoken share cut to 20-25%, singing judged against voice time (builds on BND001 / #1655)
 
-## [2.7.18] - 2026-10-08 - Re-sync shared core and references from onboarding main (W3-A-U1)
+Trevor, 2026-10-08: "Okay, let's go to your recommendation that cut it to about 20-25%." Why: Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40% of runtime plus a music-only intro and end card left at most about 50% for singing, never the 55-60% goal). Six chapter songs came back 15-30% sung.
 
-Packaging parity with onboarding main `ac8a43fd4` (`75-drama-song-ad-factory`), done file by file instead of a wholesale mirror. Rule: a 999 file is replaced only when its bytes equal an older onboarding-main version (onboarding is strictly newer); every 999 file that carries a newer 999-only fix (H6/H8 band engine, I-series intake and master length, spoken_share, sung_vocal_guard, lip-sync close-up, singing_detector) is kept. `installer-registration/package_core.py` was not run in mirror mode because it would overwrite those fixes.
+- `core/spoken_share` (the one G10 constants set): `SPOKEN_TARGET_PCT` 45 -> 22.5 (band 20-25); redo edges `SPOKEN_MIN_PCT` / `SPOKEN_MAX_PCT` 12.5 / 32.5 (target -/+ 10, reporting only, no absolute floor); `SUNG_TARGET_PCT` = 77.5 (75-80), now a share of VOICE time, sung / (sung + spoken): a music-only intro, gaps and the end card never count against it. New `sung_of_voice_pct`, `check_sung_of_voice`, `LYRIC_SPOKEN_WORD_PCT` = (15, 18), `spoken_word_budget`, `check_spoken_word_budget`; `check_plan` also judges sung-of-voice.
+- `final_assembler/sung_vocal_guard`: sung coverage is sung / (sung + spoken) from the 12.4 timing map (`spoken_section_ids` names the spoken sections); default target 77.5. Only other hard reject stays: no sung stretch of 6 s.
+- `lyric_writer.spoken_word_budget`: spoken lines budgeted at about 15-18% of the lyric words. `suno_recipe.score_take` judges sung-of-voice and passes the spoken-share flag through. `music_styles`, the `spoken_share_card_docs` card line and docs wording, the `intake_book` spoken-share menu range, `target_engine` notes, SKILL.md, the choice-card spec and the QC checklist carry the new numbers.
+- Trevor's band on both numbers: within 5 accept, 5 to 10 accept with a flag, over 10 redo. Hard reject only: no sung stretch of 6 s.
+- Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a 10 s intro plus 5 s end card is not penalized. Same rule in 999-setup drama-song-ad-factory 2.7.17.
 
-- Added from onboarding: `audio_c3/soundtrack.py` + `test_soundtrack_f1.py`, `references/style-bibles/`, `references/client-messages.md`.
-- Updated from onboarding: `audio_c3/voice_packs`, `final_assembler/lipsync_coverage` (+ test), `smp/no_echo` (3 files), `suno_recipe/test_suno_recipe.py`, `references/cli-contract.md`.
-- NOT synced, still differ (`target_engine/`: its test assumes the old spoken target and fails against SPK001 spoken share 20-25%, so it needs the onboarding spoken25 PR first; onboarding copies need the F6/F15 gates and the F4/F5/F10/F14/F15 set that 999 does not have; copying them turned suites red): `kie_dispatch/*` + `model_lock.py` + `test_model_lock_f14.py`, `style_defaults/*` + `card_gate.py` + `test_card_gate_f15.py`, `intake_preflight/preflight.py` + test, `intake_book/test_never_invent_f6.py`, `final_assembler/test_master_provenance_h12.py` (fails against 999's I4 assembler), `references/price-menu.md`, `references/choice-card-spec.md`, `references/stage-runbook.md`, and every 999-newer file (spoken_share, sung_vocal_guard, lip_gate, lyric_writer, music_styles, intake/factory, assembler, catalog_calculator).
-- Carry to onboarding (999 is ahead): spoken_share + sung_vocal_guard band rule (onboarding PR 1655, open), lip-sync close-up (PR 1654, open), I3 to I8 intake and master-length work, singing_detector.
-- Suites: every skill 75 suite passes except `tests/test_parity_layout.py`, which fails on main too whenever the onboarding canonical core is reachable (pre-existing divergence; skipped otherwise).
 
-## [2.7.17] - 2026-10-08 - Spoken share cut to 20-25%, singing judged against voice time (SPK001)
+### BND001: sung share judged only by Trevor's band; H6 first real singing 15% (supersedes #1637)
 
-Owner order (Trevor, 2026-10-08): "Okay, let's go to your recommendation that cut it to about 20-25%." Why: Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40% of runtime plus a music-only intro and end card left at most about 50% for singing, never the 55-60% goal). Six chapter songs came back 15-30% sung.
+Trevor, 2026-10-08: "It's not an absolute 55% or 20% ... within about 5 percentage points" and "We always want to try to be within 5% of the goal. Once you get past 5%, 5% to 7% gets a flag. Once you get past 10%, it's got to be redone." Batch #1652 had kept a hard 55% sung floor (E7-AMEND); that contradicted him.
 
-- `core/spoken_share` (the one G10 constants set): `SPOKEN_TARGET_PCT` 45 -> 22.5 (band 20-25); redo edges `SPOKEN_MIN_PCT` / `SPOKEN_MAX_PCT` 12.5 / 32.5 (target -/+ 10, reporting only, no absolute floor); `SUNG_TARGET_PCT` = 77.5 (75-80), now a share of VOICE time; new `LYRIC_SPOKEN_WORD_PCT` = (15, 18). New `sung_of_voice_pct`, `check_sung_of_voice` (sung / (sung + spoken), rap counts as spoken, intro / gaps / end card never counted), `spoken_word_budget`, `check_spoken_word_budget`; `check_plan` also judges sung-of-voice.
-- `final_assembler/sung_vocal_guard`: sung coverage is sung / (sung + spoken) from the 12.4 timing map (`spoken_section_ids` names the spoken sections); default target 77.5; new `sung_voice_seconds_from_timing`. Only other hard reject stays: no sung stretch of 6 s.
-- `lyric_writer.spoken_word_budget`: spoken lines budgeted at about 15-18% of the lyric words. `suno_recipe.score_take` judges sung-of-voice and passes the spoken-share flag through. `music_styles` share rule text, `spoken_share_card_docs` card line and docs wording, `intake_book` spoken-share menu range, SKILL.md, choice-card spec and QC checklist carry the new numbers.
-- Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a 10 s intro plus 5 s end card is not penalized. Same rule in onboarding skill 75 (PR fix/spoken25-SPK001, built on bandfix PR 1655).
+- `final_assembler/sung_vocal_guard`: `MIN_SUNG_COVERAGE` (the 55% hard floor) and the `min_coverage` / `goal` arguments are removed. Sung share is judged ONLY against the ad's own sung target (`target=`, or `sung_target` / `sung_target_pct` on the choice card, default `spoken_share.SUNG_TARGET_PCT`): within 5 points accept, over 5 up to 10 accept with a flag, over 10 redo (`SUNG_COVERAGE_LOW`). The only other hard reject stays H8's: no sung stretch of 6 s (`VOCAL_MISSING`).
+- `core/spoken_share`: one G10 constants block holds the target and band numbers (`ACCEPT_PTS`, `FLAG_PTS`, `FIRST_SUNG_TARGET_PCT`, `SUNG_TARGET_PCT`, `NO_REAL_SINGING_STRETCH_S`).
+- H6 (#1637) merged with H8: `check_first_sung` measures the first real singing (first sung stretch of 6 s or more) as a share of runtime against the 15% target with the same band (accept 10-20%); `FIRST_SUNG_WITHIN_SECONDS` is retired. Adds `steer_first_sung`, `segments_from_sung_stretches`, `lyric_writer.steer_opening`, and the card and docs wording.
+- Tests: 50 vs target 60 flag, 48 vs 60 redo, 57 vs 60 accept, no floor, no 6 s sung stretch redo, first sung 18% accept / 22% flag / 27% redo.
 
-## [2.7.16] - 2026-10-08 - Port onboarding skill 75 core into 999 (999-port)
+### W-G-003 (G3) calibrated sung detector
 
-Four port commits from onboarding 75-drama-song-ad-factory (origin/main 1c5d829f), merged onto main. Where the port and main overlapped, main wins (BND001 band, H3 30 fps, LPC001 lip-sync close-up); the port's own additions stay.
+- Added `scripts/core/singing_detector/` (detector, `__init__`, self-test): measures sung seconds per second and per line from the isolated vocal stem (pitch stability, voicing continuity, note alignment; ffmpeg + numpy, no ASR, no spend, Part D load guard). Every share it returns carries `source: measured` and is never computed from section labels. Calibrated against the reference fixtures (bsw sung lines, O3 spoken lines). Test: `scripts/core/singing_detector/test_singing_detector.py`.
 
-- Ported: `final_assembler` E2-E7/M7 pieces main lacked, `shot_planner` E2/E4 (shot beats, no-reuse), `kie_dispatch` submit/wait/save + modality budgets + resolver zero-settle evidence, `smp/initial_questions`, and operator paths removed from 6 core files.
-- Tests: `final_assembler/conftest.py` supplies the `tmp_root` fixture so `test_assemble_timeout_default_and_override`, `test_gate_wiring` and `test_marker_validation` run under pytest as well as as scripts.
+## v2.8.0 - 2026-10-08 - Batch MGB001: Part H (H1-H5, H8, H9, H7, H11-H14), Part I (I1-I8), G4/G6/G12, E7-AMEND
 
-## [2.7.15] - 2026-10-08 - Calibrated sung detector (G3, W-G-003)
+One combined release of every unit below (each unit's own entry follows, unchanged except one heading level deeper). The H6 unit (#1637) is held out of this batch: it conflicts with H8 (#1635) in `spoken_share` and ships separately.
 
-- Added `core/singing_detector/` (detector, `__init__`, self-test): measures sung seconds per second and per line from the isolated vocal stem (pitch stability, voicing continuity, note alignment; ffmpeg + numpy, no ASR, no spend, load guard). Every share carries `source: measured`, never computed from section labels. Calibrated on the bsw sung lines and O3 spoken lines. Test: `scripts/core/singing_detector/test_singing_detector.py`. Same detector ships in onboarding skill 75 v2.8.1 (PR 1656).
+<!-- #1627 -->
+### #1627: v2.6.1 - 2026-10-08 - H14 song files in every delivery
 
-## [2.7.14] - 2026-10-08 - Sung share judged only by Trevor's band, no absolute floor (BND001)
+- Added `delivery_variants/song_files.py`: builds the full mastered mix as MP3 320 kbps + WAV named after the ad (plus the instrumental pair when one exists), lists them in `delivery-receipt.json` and `README.md`, and `check_song_files` fails a delivery missing any of them. New `song_files` QC check in `qc_gate` and `qc-schema.json`. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
 
-Owner order (Trevor, 2026-10-08): "It's not an absolute 55% or 20% ... within about 5 percentage points" and "Once you get past 10%, it's got to be redone."
+<!-- #1628 -->
+### #1628: [v2.6.1] - 2026-10-08 - Part H H11: delivery checklist Q8-Q11
 
-- `final_assembler/sung_vocal_guard`: the hard 70% floor (`MIN_SUNG_COVERAGE`) is removed. Sung share is judged ONLY against the ad's own sung target (`target=`, or `sung_target` / `sung_target_pct` on the choice card; default `spoken_share.SUNG_TARGET_PCT` = 100 - spoken target = 55): within 5 points accept, over 5 up to 10 accept with a flag, over 10 redo (`SUNG_COVERAGE_LOW`). The only other hard reject is H8's: no sung stretch of 6 s (`VOCAL_MISSING`).
-- `core/spoken_share`: the G10 constants block is the one set (`TARGET_ACCEPT_PCT` / `TARGET_FLAG_PCT` / `REAL_SINGING_STRETCH_S` are the same numbers as `ACCEPT_PTS` / `FLAG_PTS` / `NO_REAL_SINGING_STRETCH_S`); adds `SUNG_TARGET_PCT`; `judge_gap(measured, target)` also returns `verdict`.
-- Tests: 50 vs target 60 flag, 48 vs 60 redo, 57 vs 60 accept, no floor, no 6 s sung stretch redo, first sung at 18% accept / 22% flag / 27% redo. Same rule ships in onboarding skill 75 v2.8.1.
+The final QC gate 4 delivery checklist (G7, check `delivery_checklist`) grows
+from 7 to 11 measured questions: Q8 lip-sync measured (offset <= 0.05 s,
+correlation >= 0.55 and >= 0.25 above the wrong-audio control, no frozen face
+> 0.75 s), Q9 first-sung % of runtime (goal 15%), Q10 pictures match words
+(shot / Suno time / line / match, no slow-motion above 1.15x), Q11 every
+numeric goal judged by Trevor's band (within 5 accept; over 5 to 10 accept
+WITH a flag shown in the receipt; over 10 REDO, never keep the closest). Q2
+uses the same band. No new gate or framework.
 
-## [2.7.13] - 2026-10-08 - Lip-sync close-up in every reference set (LPC001)
+<!-- #1629 -->
+### #1629: [v2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
 
-Owner order (Trevor, 2026-10-08): "make sure you create a close-up one where their lips can
-clearly be seen, because when you're doing the lip sync, they really like that."
+- New `scripts/core/lip_sync/lip_gate/`: every lip-sync clip is measured
+  against the FINAL MIX envelope. PASS needs |offset| <= 0.05 s, correlation
+  >= 0.55 AND >= 0.25 above a wrong-audio control, no frozen face > 0.75 s.
+  Below it: regenerate once with better input (single clean line, front-facing
+  tight crop, still image), then InfiniTalk only through a one-time single-line
+  A/B that keeps whichever measures better; still failing = `FAIL_REPLACE`.
+  Numbers ride the receipt row; `qc_check` fails a missing or failed row.
+- Test: `lip_sync/lip_gate/test_lip_gate_h2.py` (shifted clip fails, good clip
+  passes, A/B once per run). Assembler/Q8 wiring is H11's.
 
-- `catalog_calculator.image_plan`: reference set is now 7 per character (3 angles, 3
-  expressions, 1 `lipsync-closeup`); the image count and cost estimate include it.
-- `lip_gate.run_gate(source_image=)`: Kling avatar attempts and the InfiniTalk A/B all take the
-  close-up as their source image. `lip_gate.check_reference_set`: a set with no close-up, or a
-  close-up whose mouth is not clear (injected detection), fails.
-- SKILL.md rule; tests `lip_sync/lip_gate/test_lipsync_closeup.py` (mocked, $0) and updated
-  `catalog_calculator/test_image_plan_i3.py`.
+<!-- #1630 -->
+### #1630: [v2.6.1] - 2026-10-08 - Part H H13: cross-fades vs words
 
-## [2.7.12] - 2026-10-08 - Red suites repaired (R75001)
+`first_word_s` per segment shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY (inner gap > 0.5 s must be held on one lip-sync clip). Test `scripts/core/final_assembler/test_fade_words_h13.py`.
 
-Five skill 75 suites failed on a clean main. Causes and fixes:
+<!-- #1631 -->
+### #1631: [v2.6.1] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
 
-- `audio_c3/test_lyric_timing_f17.py`: the scan it calls, `scripts/qc-no-local-asr.sh`, was never
-  committed (the F17 test arrived in e6690bf without it). Added the script: exit 2 and name the file
-  when a run folder or the core imports `whisper` / `openai_whisper`, or imports `faster_whisper`
-  anywhere but `audio_c3/lyric_timing.py`.
-- `intake_preflight/test_factory_next.py`: `factory.py next` reads `references/stage-runbook.md`,
-  which was never committed. Added the 12-row runbook (same stage order as `batch_mode` STAGES).
-- `kie_dispatch/test_all_at_once_f5.py`: SKILL.md never carried the F5 rule the test and the
-  `submit_all_ready` docstring cite. Added the "Submit all ready jobs at once" section.
-- `tests/test_launcher_plain_claude.py`: compared the repo core with the operator Mac's
-  `~/.claude-nine` install. It now compares the core each repo adapter resolves.
-- `tests/test_master_provenance_h12.py`: Part I I4 (85854ba) made `qc_gate.evaluate` require the
-  measured master length when `final_edit` is required, so the fixture returned BLOCKED, not FAIL.
-  The test now passes a valid master (60 s chosen, 57 s measured); the provenance rule is unchanged.
+- New `scripts/core/final_assembler/master_provenance.py`: the assembler receipt
+  now carries `produced_by` (module `final_assembler.assembler`) and
+  `master_sha256`; `check_master_provenance(run_dir, master)` FAILS a run whose
+  master has no matching skill receipt, or whose run folder holds a script that
+  calls ffmpeg or writes captions itself (the Kiesett `edit/final.py` case).
+  `master_provenance_qc_record` emits the `final_edit` record for `qc_gate`.
+- Test: `scripts/core/final_assembler/test_master_provenance_h12.py`.
 
-## [2.7.11] - 2026-10-08 - Part H H6 first real singing is a measured 15% target
+<!-- #1632 -->
+### #1632: [v2.6.1] - 2026-10-08 - Part H H1 lip-sync stem offset
 
-Same change as onboarding Skill 75 v2.6.5: `core/spoken_share` replaces the
-fixed-seconds `FIRST_SUNG_WITHIN_SECONDS = 10` label check with
-`FIRST_SUNG_TARGET_PCT = 15`, measured on the vocal stem (first sung stretch of
-at least 6 s) and judged with the owner's 5/10 band: within 5 points accept,
-over 5 up to 10 accept with a FLAG line for the receipt, over 10 redo.
-`steer_first_sung` / `lyric_writer.steer_opening` steer the lyric-sheet builder.
-Tests: `spoken_share/test_spoken_share.py`, `lyric_writer/test_steer_opening.py`.
-`core/smp/spoken_share` becomes the same thin re-export of core `spoken_share`
-that the onboarding copy already is (its old 999-only copy kept its own
-`FIRST_SUNG_WITHIN_SECONDS = 10` and shadowed the canonical names, which broke
-`music_styles`); its test follows.
+- New `scripts/core/lip_sync/stem_offset/`: `measure_offset` (envelope
+  cross-correlation, offset > 0 = the vocal stem runs LATE vs the full mix;
+  Kiesett measured +0.066 s) and `cut_plan` (cut the stem at mix word start +
+  offset minus lead-in; place the clip at the line's real Suno start minus
+  the lead-in, never re-timed).
+- `final_assembler.validate_lipsync_placement` (gate `LIPSYNC_RETIMED`): a
+  lip-sync segment carrying `lip_lead_s` must sit within one frame of its
+  line start minus that lead. Runs in `assemble()` after the E5 atomic gate.
+- Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
+  `final_assembler/test_lipsync_placement_h1.py`.
 
-## [2.7.10] - 2026-10-08 - Part I I4: masters end 2 seconds early
+<!-- #1633 -->
+### #1633: [v2.6.1] - 2026-10-08 - Part H H5: pictures match the words
 
-- New `scripts/core/master_length/` (same module and tests as OpenClaw skill 75 v2.6.1): a chosen
-  length L delivers a master of at most L-2 seconds (60 to 58, 30 to 28, 90 to 88, 120 to 118).
-  Hard maximum, not a band. Song, shot plan and end card are planned to L-2; QC (`final_edit`
-  record, reason `MASTER_TOO_LONG`) fails any longer master.
-- Intake summary now carries `master_max_s`.
-- Enforcement (repair): `qc_gate.evaluate(..., master={chosen_length_s, measured_s})` is mandatory
-  whenever `final_edit` is required (CLI `--chosen-length-s`, `--master-s`); a 62 s master on a 60 s
-  video fails `MASTER_TOO_LONG`, a missing master is `MASTER_LENGTH_MISSING`.
-  `final_assembler.assemble(chosen_length_s=)` (or timeline key `chosen_length_s`) refuses an over-long
-  plan, an end card at or after L-2, and an over-long rendered file. `shot_planner.bind_plan(chosen_length_s=)`
-  rejects a song or shot past L-2.
+- New `scripts/core/shot_planner/timestamp_plan.py`: `plan_from_timestamps` (shots from REAL Suno timestamps; planned timings refused), `match_table` / `pictures_match_gate` (shot / time / line / match, `PICTURE_LINE_MISMATCH`), `check_stretch` (no slow motion above 1.15x, `SLOWMO_OVER_LIMIT`).
+- Assembler `h5_gates`: blocks both before any render; the receipt carries the stretch rows and the match table.
+- INSTRUCTIONS.md: stage order is audio, timestamps, shot plan, pictures.
+- Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
 
-## [2.7.9] - 2026-10-08 - I8 sung hook and repeat formula
+<!-- #1634 -->
+### #1634: [v2.6.1] - 2026-10-08 - H9 readable intake card
 
-- New `scripts/core/sung_hook/` (same module and test as OpenClaw skill 75 v2.6.7). Every sung
-  style gets ONE hook (4-10 words, client's own words), sung `clamp(1 + floor(L / 25), 2, 12)`
-  times, first by 15% of runtime, last near the end. `suno_recipe` takes `length_s` and enforces
-  the count; `suno_recipe.score_take` measures sung hooks (accept / accept with flag / regenerate).
-  Velvet Voiceover is exempt. `SKILL.md` gains the "Sung hook" section.
+- New `scripts/core/choice_card/intake_card/`: builds the six intake questions
+  (length, music style, video style, video model, spend limit, storyboard
+  approval) as one block per question, one numbered option per line,
+  RECOMMENDED marked, blank line between questions, a closing "how to answer"
+  line. Plain text so no sender strips line breaks; split between questions
+  under Telegram's limit; exact `openclaw message send` argv and Bot API body.
+- `factory.py card` prints the raw card (Claude Code chat) or send payloads.
+- Intake and book `question_message` now use the same layout (they were a
+  single `"\n".join`, no blank lines).
+- Test: `choice_card/intake_card/test_intake_card_h9.py`.
 
-## [2.7.8] - 2026-10-08 - I3 storyboard pictures
+<!-- #1635 -->
+### #1635: [v2.6.1] - 2026-10-08 - H8: one singing rule, one tolerance band
 
-- Same change as OpenClaw skill 75 v2.6.1: per main character a reference set (front,
-  three-quarter, side, neutral, sad-tired, happy-relieved) plus one keyframe picture per
-  shot per shape; the cost estimate counts them and the choice card shows an Images line.
-  Test: `scripts/core/catalog_calculator/test_image_plan_i3.py`.
+- The only hard reject when singing was chosen is "no real singing" (no
+  6-second sung stretch). Constant `NO_REAL_SINGING_STRETCH_S` lives in
+  `scripts/core/spoken_share/spoken_share.py` (the Part G constants module)
+  and is read by the plan check, the sung-vocal guard and the lip-sync check.
+- Every share, first-sung, length and lip-sync-seconds goal uses Trevor's
+  band (`ACCEPT_PTS=5`, `FLAG_PTS=10`): within 5 accept, over 5 up to 10
+  accept WITH A FLAG in the receipt, over 10 REDO (never keep the closest).
+  `check_share`, `check_first_sung`, `check_plan`, `sung_vocal_guard` and
+  `lipsync_coverage` return `flags` for the receipt.
+- Flagged outputs: share verdict `FLAG` (accepted); a flagged lip-sync or
+  sung-coverage result passes and carries the flag text.
 
-## [2.7.7] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
+<!-- #1636 -->
+### #1636: [v2.6.3] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip + coverage target
 
-- `core/protected_names.py` gains `check_spelling` (every caption word is a real word or a protected
-  word; unknown word fails `CAPTION_MISSPELLED` with the word shown) and `check_website` (the exact
-  address verbatim in lyrics, captions and end card). Bundled `core/english_words.txt.gz`.
-- `delivery_variants.checks.check_captions` runs the spelling check.
-- Intake asks "What is the exact website address you want people to go to?" when the ad sends people
-  to a website; stored as `website` and as a protected word.
-- Test: `core/test_caption_spelling_i1.py` (same module and test as OpenClaw skill 75 v2.6.5).
+- New `scripts/core/shot_planner/face_speaks.py`: `check_face_speaks` lists
+  every shot where a face is visibly speaking (shot / time / line / lip-sync)
+  and fails `FACE_SPEAKS_NO_LIPSYNC` for any that is not a lip-sync clip of
+  that character's own line (`LIPSYNC_WRONG_FACE` for a lip-sync clip whose
+  speaker is not on screen). Back of head, hands, another character or an
+  off-screen narrator are the allowed alternatives.
+- `plan_lipsync_lines` picks enough own-face lines to reach the lip-sync
+  target (15-20 s in a 60-90 s ad, scaled by runtime, with the 5-point
+  grace); `check_coverage_band` is the QC measurement
+  (`LIPSYNC_COVERAGE_BELOW_BAND`). Part E E6 floors are unchanged.
+- Assembler: `face_speaks_gate` runs when timeline `lines` carry `speaker`;
+  segments then declare `faces_on_screen` (and `speaking_faces`), a missing
+  declaration fails closed `FACE_DATA_MISSING`.
+- Test: `shot_planner/test_face_speaks_h4.py` (Kiesett S01/S02/S08 flagged,
+  planner reaches the target, band measured, assembler gate).
 
-## [2.7.6] - 2026-10-08 - I7 intake asked one question at a time
+<!-- #1638 -->
+### #1638: [v2.6.4] - 2026-10-08 - Part H H7: captions use the approved words + protected names
 
-- `intake_card.conversation(replies)` and `factory.py card --step --reply ...` (same module and
-  test as OpenClaw skill 75 v2.6.6): each message holds one question, a one-sentence why,
-  numbered options one per line, the RECOMMENDED option with its reason, then waits. After the
-  sixth answer, a recap and a request for "yes"; a line number reopens just that question.
-- `INSTRUCTIONS.md` and `references/choice-card-spec.md` section 2.2 tell claude-nine to ask
-  this way. Test: `scripts/core/choice_card/intake_card/test_intake_step_i7.py`.
+Kiesett's Stop Stale ad captioned "the house went still" for "Stale": the lyric
+sheet itself said "still" (136 Suno requests), Suno sang it, the caption copied
+the sheet. Fixed at the source.
 
-## [2.7.5] - 2026-10-08 - I2 scenes must match the song and the faces
+### Added
+- `scripts/core/protected_names.py` (+ `test_protected_names_h7.py`): sheet BUILD
+  gate, sung-take words check, sheet-text captions timed from Suno timestamps,
+  caption QC. Codes `PROTECTED_NAME_CHANGED`, `PACKET_LINE_REWRITTEN`,
+  `PROTECTED_NAME_SUNG_WRONG`, `CAPTION_MISMATCH`, `CAPTION_SOURCE_NOT_SHEET`.
 
-- New `scripts/core/scene_match/` (same module and test as OpenClaw skill 75): each shot carries
-  line, meaning, place and action, face emotion at storyboard time; after clips exist, sampled
-  frames are checked against them (off-topic scene or a smile under a pain line fails) and only
-  the failing shots are regenerated.
-- Adds `scripts/core/face_emotion/` (Part G G6), which `scene_match` builds on.
+### Changed
+- `lyric_writer.validate_lyrics`: brief `packet_lines` + protected names reject a changed name or rewritten packet line.
+- `music_director.build_generate_request(..., protected=)`: no Suno request from a bad sheet.
+- `music_qc.check_song_qc(..., protected=)`: a take that sang a protected name wrong FAILS.
+- `delivery_variants.checks.check_captions(..., protected=, text_source=)`: speech-to-text source or any mismatch FAILS.
+- `QC.md` / `SKILL.md`: H7 gate row and rule.
+
+<!-- #1642 -->
+### #1642: [v2.6.1] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
+
+- New `scripts/core/suno_recipe/` (module + tests): one gate every Suno
+  style goes through. Style text carries the sung/spoken map, the lyric sheet
+  needs a repeated sung hook built from the client's own words, singing starts
+  early (15% of runtime target, 5/10 band), and a take is judged only from
+  measured segments, never labels.
+- `music_director.build_generate_request` takes `style_id` and `client_text`
+  and refuses a raw Suno style prompt that skipped the recipe.
+- Only the Velvet Voiceover id (`velvet_voiceover`) is exempt.
+- `SKILL.md` and `references/choice-card-spec.md` gain the "Suno song recipe" section.
+
+<!-- #1643 -->
+### #1643: [2.6.1] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
+
+- New `scripts/core/ending_qc/`: `with_clean_ending` adds an `[Outro]` section, a final
+  `[Resolve on final chord]` tag and "natural resolved ending" style words to every sung
+  song request (`music_director.build_generate_request`); `check_ending` measures the last
+  2 s of the master (audio level must decay, last word not cut, picture fades to the end
+  card, end card 4-5 s and finished by target length minus 2 s).
+- Done-when test: `python3 scripts/core/ending_qc/test_ending_qc.py` (abrupt cut fails,
+  resolved ending passes).
+
+<!-- #1644 -->
+### #1644: [2.6.1] - 2026-10-08 - Part I I2 scenes must match the song and the faces
+
+- New `scripts/core/scene_match/`: each shot carries line, meaning, place and action, and face
+  emotion at storyboard time (`check_cards`); after clips exist, sampled frames are checked
+  against them (`qc_scene_match`). A scene that is off-topic, or a smiling face under a pain
+  line, fails, and only the failing shots are regenerated. A shot with no sampled frames never
+  passes unseen. Test: `python3 scripts/core/scene_match/test_scene_match_i2.py`.
+- Includes `scripts/core/face_emotion/` (Part G G6) which it builds on.
 - `SKILL.md` gains the "Scenes must match the song and the faces" section.
 
-## [2.7.4] - 2026-10-08 - Part I I6 character library
+<!-- #1645 -->
+### #1645: [v2.6.2] - 2026-10-08 - Part I I6 character library
 
 - New `scripts/core/character_library/`: after a character is approved, one question ("Do you want to save <character> to your character library so you can reuse them in future ads?"), then a name; saves reference images, description and voice notes under the client's own data folder; later cards list "Use a saved character?".
 - `factory.py character` subcommand (ask, save, list, use, card); `card --client-dir` adds the saved-character question where the H9 intake card exists.
 - Test: `scripts/core/character_library/test_character_library_i6.py` (save + reuse round trip).
 
-## [2.7.3] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
+<!-- #1646 -->
+### #1646: [v2.6.1] - 2026-10-08 - I3 storyboard pictures
 
-- New `scripts/core/ending_qc/` (same module and test as OpenClaw skill 75 v2.6.1): every sung
-  song request gets an `[Outro]`, a `[Resolve on final chord]` tag and resolved-ending style
-  words (`music_director.build_generate_request`); `check_ending` measures the last 2 s of the
-  master (level decays, last word not cut, picture fades to the end card, 4-5 s end card done by
-  target length minus 2 s). Test: `python3 scripts/core/ending_qc/test_ending_qc.py`.
+- Per main character the planner now lists a reference set (front, three-quarter,
+  side, plus neutral, sad-tired and happy-relieved faces) and one keyframe picture
+  per shot per shape, all before any video. Same image model as before.
+- The cost estimate counts these pictures (Skill 74 price, no local rates) and the
+  choice card shows an Images line with the added reference-picture cost.
+- Up to 6 main characters; none or more fails closed. Test:
+  `catalog_calculator/test_image_plan_i3.py`.
 
-## [2.7.2] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
+<!-- #1647 -->
+### #1647: [v2.6.6] - 2026-10-08 - I7 one question at a time
 
-- New `scripts/core/suno_recipe/` (same module and tests as OpenClaw skill 75 v2.6.1): style
-  text carries the sung/spoken map, the lyric sheet needs a repeated sung hook built from the
-  client's own words, singing starts early (15% of runtime, 5/10 band), takes are judged from
-  measured segments only, never labels.
-- `music_director.build_generate_request` takes `style_id` and `client_text` and refuses a raw
-  Suno style prompt that skipped the recipe (kept alongside the H7 `protected` check).
+- `intake_card.conversation(replies)` and `factory.py card --step --reply ...`:
+  the intake is a conversation. Each message holds one question, a
+  one-sentence why, numbered options one per line, the RECOMMENDED option with
+  its reason; then it waits. After the sixth answer, a recap and a request for
+  "yes"; a line number reopens just that question. Same code in claude-nine
+  and OpenClaw (Telegram: `--format openclaw-json`).
+- Test: `choice_card/intake_card/test_intake_step_i7.py`.
+
+### #1647: [v2.6.1] - 2026-10-08 - H9 readable intake card
+
+- New `scripts/core/choice_card/intake_card/`: builds the six intake questions
+  (length, music style, video style, video model, spend limit, storyboard
+  approval) as one block per question, one numbered option per line,
+  RECOMMENDED marked, blank line between questions, a closing "how to answer"
+  line. Plain text so no sender strips line breaks; split between questions
+  under Telegram's limit; exact `openclaw message send` argv and Bot API body.
+- `factory.py card` prints the raw card (Claude Code chat) or send payloads.
+- Intake and book `question_message` now use the same layout (they were a
+  single `"\n".join`, no blank lines).
+- Test: `choice_card/intake_card/test_intake_card_h9.py`.
+
+<!-- #1648 -->
+### #1648: [v2.6.5] - 2026-10-08 - Part I I1: captions spell-checked; exact website asked and kept
+
+The client's website was misspelled in the captions ("wakeuphappysis.com").
+
+### Added
+- `protected_names.check_spelling`: every caption word must be a real word
+  (bundled `english_words.txt.gz` plus simple endings) or a protected word
+  (names, brands, the client's website). An unknown word fails QC
+  (`CAPTION_MISSPELLED`) with the word shown. Wired into
+  `delivery_variants.checks.check_captions`.
+- `protected_names.check_website`: the exact address must appear verbatim in the
+  lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+- Intake asks "What is the exact website address you want people to go to?" when
+  the ad sends people to a website; stored as `website` and as a protected word.
+- Test: `scripts/core/test_caption_spelling_i1.py`.
+
+
+### #1648: [v2.6.4] - 2026-10-08 - Part H H7: captions use the approved words + protected names
+
+Kiesett's Stop Stale ad captioned "the house went still" for "Stale": the lyric
+sheet itself said "still" (136 Suno requests), Suno sang it, the caption copied
+the sheet. Fixed at the source.
+
+### Added
+- `scripts/core/protected_names.py` (+ `test_protected_names_h7.py`): sheet BUILD
+  gate, sung-take words check, sheet-text captions timed from Suno timestamps,
+  caption QC. Codes `PROTECTED_NAME_CHANGED`, `PACKET_LINE_REWRITTEN`,
+  `PROTECTED_NAME_SUNG_WRONG`, `CAPTION_MISMATCH`, `CAPTION_SOURCE_NOT_SHEET`.
+
+### Changed
+- `lyric_writer.validate_lyrics`: brief `packet_lines` + protected names reject a changed name or rewritten packet line.
+- `music_director.build_generate_request(..., protected=)`: no Suno request from a bad sheet.
+- `music_qc.check_song_qc(..., protected=)`: a take that sang a protected name wrong FAILS.
+- `delivery_variants.checks.check_captions(..., protected=, text_source=)`: speech-to-text source or any mismatch FAILS.
+- `QC.md` / `SKILL.md`: H7 gate row and rule.
+
+<!-- #1650 -->
+### #1650: [v2.6.7] - 2026-10-08 - I8 sung hook and repeat formula
+
+- New `scripts/core/sung_hook/` (module + tests). Every sung style gets ONE
+  hook (4-10 words, client's own words, protected names exact), sung
+  `clamp(1 + floor(L / 25), 2, 12)` times (L = delivered seconds). First hook
+  by 15% of runtime, last at 90%, rest evenly spaced.
+- `suno_recipe.check_lyric_sheet` / `prepare` / `guard_request` take
+  `length_s` and enforce the exact count; `music_director.build_generate_request`
+  passes it through. `suno_recipe.hook_target` returns 0 for the exempt
+  Velvet Voiceover style.
+- `suno_recipe.score_take` measures how many hooks were actually sung (Suno
+  aligned words + detector segments): count met = accept, one short = accept
+  with a flag, two or more short = regenerate. The receipt carries hook text,
+  target, measured count and times.
+- `SKILL.md` gains the "Sung hook" section.
+
+### #1650: [v2.6.1] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
+
+- New `scripts/core/suno_recipe/` (module + tests): one gate every Suno
+  style goes through. Style text carries the sung/spoken map, the lyric sheet
+  needs a repeated sung hook built from the client's own words, singing starts
+  early (15% of runtime target, 5/10 band), and a take is judged only from
+  measured segments, never labels.
+- `music_director.build_generate_request` takes `style_id` and `client_text`
+  and refuses a raw Suno style prompt that skipped the recipe.
 - Only the Velvet Voiceover id (`velvet_voiceover`) is exempt.
 - `SKILL.md` and `references/choice-card-spec.md` gain the "Suno song recipe" section.
 
-## [2.7.1] - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation
+<!-- #1651 -->
+### #1651: [v2.6.1] - 2026-10-08 - Part I I4: masters end 2 seconds early
 
-`scripts/core/` synced from the onboarding H3 core (commit 4685158b7); the H13 fade-vs-words
-and H12 master-provenance code in `final_assembler/assembler.py` and the H2
-lip_gate, H14 song_files, qc_gate.py and qc-schema.json changes are kept.
+- New `scripts/core/master_length/`: a chosen length L delivers a master of at
+  most L-2 seconds (60 to 58, 30 to 28, 90 to 88, 120 to 118). Hard maximum,
+  not a band. Song, shot plan and end card are planned to L-2; QC (`final_edit`
+  record, reason `MASTER_TOO_LONG`) fails any longer master.
+- Intake summary now carries `master_max_s`.
+- Enforcement (repair): `qc_gate.evaluate(..., master={chosen_length_s, measured_s})`
+  is mandatory whenever `final_edit` is required (CLI `--chosen-length-s`,
+  `--master-s`); a 62 s master on a 60 s video fails `MASTER_TOO_LONG`, a missing
+  master is `MASTER_LENGTH_MISSING`. `final_assembler.assemble(chosen_length_s=)`
+  (or timeline key `chosen_length_s`) refuses an over-long plan, an end card that
+  starts at or after L-2, and an over-long rendered file, before spend where it
+  can. `shot_planner.bind_plan(chosen_length_s=)` rejects a song or shot past L-2
+  (`SONG_PAST_MASTER_END`, `SHOT_PAST_MASTER_END`).
 
-- Master 30 fps; Kling clips pass through untouched; MiniMax H3 24 fps
-  clips motion-interpolated to 30 (never the plain `fps` filter); per-segment
-  mpdecimate duplicate check (2% cap, `hold` exempt); master duplicate gate
-  now measures the rendered file. See the onboarding CHANGELOG v2.6.1.
-- `SKILL.md` frame-rate rule added (E1 wording updated); `VERSION` and
-  frontmatter `version:` 2.6.11 -> 2.7.1 (follows onboarding `skill-version.txt`).
+---
 
-## [2.6.11] - 2026-10-08 - H9 readable intake card
+## v2.6.1 - 2026-10-08 - H14 song files in every delivery
 
-- New `scripts/core/choice_card/intake_card/` (same module as the OpenClaw
-  copy): the six intake questions, one block per question, one numbered option
-  per line, RECOMMENDED marked, blank line between questions, closing "how to
-  answer" line; plain text; split under Telegram's limit; exact
-  `openclaw message send` argv and Bot API body.
-- `factory.py card` prints the raw card; intake `question_message` uses the
-  same layout. Test: `choice_card/intake_card/test_intake_card_h9.py`.
+- Added `delivery_variants/song_files.py`: builds the full mastered mix as MP3 320 kbps + WAV named after the ad (plus the instrumental pair when one exists), lists them in `delivery-receipt.json` and `README.md`, and `check_song_files` fails a delivery missing any of them. New `song_files` QC check in `qc_gate` and `qc-schema.json`. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
 
-## [2.6.10] - 2026-10-08 - Part H H7: captions use the approved words + protected names
-
-Same fix as onboarding Skill 75 v2.6.4 (Kiesett "Stale" captioned "still").
-New `scripts/core/protected_names.py` + `test_protected_names_h7.py`: sheet
-build gate, sung-take words check, sheet-text captions timed from Suno
-timestamps, caption QC. Wired into `lyric_writer`, `music_qc`,
-`delivery_variants` (byte-identical to canonical) and `music_director`
-(`build_generate_request(packet_lines=, protected=)`; this packaged copy still
-predates the F7 `words_match` guard, a full re-package from canonical is a
-separate step).
-
-## [2.6.9] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip
-
-Same change as onboarding Skill 75 Part H H4: `scripts/core/shot_planner/face_speaks.py`
-lists every shot where a face is visibly speaking and fails
-`FACE_SPEAKS_NO_LIPSYNC` unless it is a lip-sync clip of that character's own
-line; `plan_lipsync_lines` picks lines to reach the 15-20 s lip-sync target (5-point
-grace) and `check_coverage_band` measures it. Test:
-`shot_planner/test_face_speaks_h4.py`. The assembler wiring (`face_speaks_gate`)
-ships with the onboarding core; this copy's assembler predates Part E, so it
-lands with the next core resync.
-
-## [2.6.8] - 2026-10-08 - Part H H1 lip-sync stem offset
-
-- New `scripts/core/lip_sync/stem_offset/` (`measure_offset`, `cut_plan`):
-  measures the vocal-stem vs full-mix offset (offset > 0 = stem LATE;
-  Kiesett +0.066 s) and cuts/places lip-sync clips compensated, at the
-  line's real Suno timestamp, never re-timed. Same files as onboarding
-  skill 75 v2.6.1.
-- `final_assembler`: plan carries `lip_sync_line_ids` / `lip_lead_s`; new
-  gate `LIPSYNC_RETIMED` (`validate_lipsync_placement`) runs in `assemble()`.
-- Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
-  `final_assembler/test_lipsync_placement_h1.py`.
-
-## [2.6.7] - 2026-10-08 - H8: one singing rule, one tolerance band
-
-`scripts/core/spoken_share/` (the constants module) now holds the single
-singing rule (`NO_REAL_SINGING_STRETCH_S` = 6 s, the only hard reject when
-singing was chosen) and Trevor's band (`ACCEPT_PTS=5`, `FLAG_PTS=10`):
-within 5 accept, over 5 up to 10 accept WITH A FLAG, over 10 redo.
-`check_share`, `check_first_sung` and `check_plan` use it and return `flags`.
-Same files as the onboarding copy (skill v2.6.1). The sung-vocal guard and
-lip-sync coverage modules are not in this distribution yet; they pick the
-band up when they are ported.
-
-## [2.6.6] - 2026-10-08 - Part H H5: pictures match the words
-
-- New `scripts/core/shot_planner/timestamp_plan.py` (`plan_from_timestamps`,
-  `pictures_match_gate`, `check_stretch`); the assembler blocks slow motion
-  above 1.15x and picture/line mismatches before any render.
-- INSTRUCTIONS.md section 6b: stage order audio, timestamps, plan, pictures.
-
-## [2.6.5] - 2026-10-08 - Part H H11: delivery checklist (G7 + Q8-Q11)
-
-Ships the final QC gate 4 delivery checklist (`scripts/core/delivery_checklist/`,
-`references/QC-CHECKLIST-BEFORE-DELIVERY.md`, `delivery_checklist` check in
-`qc_gate.py` and `qc-schema.json`), byte-identical to the onboarding copy
-(skill 75 v2.6.1). 11 measured questions: the G7 seven plus Q8 lip-sync
-measured (H2 numbers), Q9 first-sung % (H6), Q10 pictures match words (H5),
-Q11 every numeric goal judged by Trevor's band (within 5 accept; over 5 to 10
-accept with a flag shown in the receipt; over 10 redo).
-
-## [2.6.4] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
-
-- New `scripts/core/final_assembler/master_provenance.py`; the assembler receipt
-  carries `produced_by` and `master_sha256`; `check_master_provenance` fails a
-  run whose master has no matching skill receipt or whose run folder holds an
-  ffmpeg or caption script. Test: `tests/test_master_provenance_h12.py`.
-
-## [2.6.3] - 2026-10-08 - Part H H13: cross-fades vs words
-
-`final_assembler`: per-segment `first_word_s` shrinks the fade into a lip-sync clip to end >= 0.1 s before its first word; gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY. Test `scripts/core/final_assembler/test_fade_words_h13.py`.
-
-## [2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
-
-Same change as onboarding Skill 75 v2.6.2: `scripts/core/lip_sync/lip_gate/`
-measures every lip-sync clip (|offset| <= 0.05 s, correlation >= 0.55 and
->= 0.25 above a wrong-audio control, no frozen face > 0.75 s); regenerate with
-better input, then a one-time single-line InfiniTalk A/B keeping whichever
-measures better. Test: `lip_sync/lip_gate/test_lip_gate_h2.py`.
-
-## [2.4.6] - 2026-10-08 - H14 song files in every delivery
-
-- Core `delivery_variants/song_files.py` (shared with the OpenClaw copy): MP3 320 kbps + WAV of the full mix named after the ad, plus the instrumental pair if one exists, listed in `delivery-receipt.json` and `README.md`; `song_files` QC check fails a delivery missing them. Test: `scripts/core/delivery_variants/test_song_files_h14.py`.
-
-## [2.4.5] - 2026-10-08 - version linked to the onboarding source (manual M5)
-
-`VERSION` `1.0.0` -> `2.4.5`: this distribution now carries the
-`skill-version.txt` version of the onboarding skill it was packaged from
-(leading `v` dropped), so the fleet roll and the parity test can tell which
-onboarding release a 999 user has.
-
-packaged_from: c73637ddf1b59dda8f0e3168b3b904b1281f2b18
-
-- `SKILL.md` frontmatter `version:` follows `VERSION` (change-control rule in
-  `INSTALL.md` / `CORE_UPDATES.md`; asserted by `tests/test_parity_layout.py`).
 
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
+Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
+
 Packaging unit `BO-PKG2-U2` regenerated `scripts/core/` from the canonical
 build core (`<build>/core/`) so this copy carries the version 2 BUILD-OUT
-outputs, byte-identical to the OpenClaw copy; entrypoint, exit map and the
-14 production modules unchanged.
-
-Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
+outputs, byte-identical to the Claude-Nine / Claude Code copy; entrypoint,
+exit map and the 14 production modules unchanged.
 
 ### Added (BUILD-OUT owned outputs, whole modules)
 - `audio_c3/extend/`, `audio_c3/voice_packs/`, `batch_mode/`,
@@ -601,6 +756,10 @@ Regenerated `scripts/core/` from the canonical build core — 120 files, tree sh
   `qc_voice_match/` (root package only), `spoken_share/`, `style_bibles/hybrid/`,
   `style_defaults/`, `voice_velvet_echo/`
 
+### Changed
+- `SKILL.md` exit-map note: removed the dead build-tree test path
+  (`tests/distribution-parity/run_parity.sh`), plan G5 packaging step.
+
 ### Not shipped here, on record
 - `core/docs_rename_velvet_voiceover/` — build-tree sweep tool carrying
   operator absolute paths; build tooling, never client skill code.
@@ -609,47 +768,84 @@ Regenerated `scripts/core/` from the canonical build core — 120 files, tree sh
 - `core/kie_dispatch/kie_dispatch.py` — packaging owned by unit `A2-R2-U2`,
   whose canonical module is under fix; shipped only from the fixed core.
 
-`VERSION` stays `1.0.0`: the release bump belongs to the V2-W4 ship lane.
+`version:` stays `v2.3.0`: the release bump belongs to the V2-W4 ship lane.
 
-## [1.0.0] - 2026-10-06
 
-Initial release: the Claude-Nine / Claude Code distribution of the BlackCEO
-drama-song ad factory, built to directive section 2.2 (skill shape),
-section 26 (both runtime adapters, one control entrypoint), and
-section 35.2 (999 distribution process).
+## [v2.4.3] - 2026-10-07 - audio-fix wave D36-D38: no-echo rule, spoken-share band, reverb-tail QC, pitch ban, Sketch-to-Life voice guard
 
-- Skill shape: `SKILL.md`, `INSTRUCTIONS.md`, `CHANGELOG.md`, `VERSION`,
-  `references/`, `scripts/`, `tests/`, `assets/`, and the two runtime
-  adapters `adapters/claude-nine/README.md` +
-  `adapters/claude-code/README.md`. One skill folder; no second config root,
-  no independently maintained duplicate.
-- Same CLI as the OpenClaw distribution (W3-02): `scripts/core/` is a
-  byte-identical packaged copy of
-  `onboarding/75-drama-song-ad-factory/scripts/core/` — 15 files, tree sha256 `ccaacbfedc4d33cf47408fc1f7cdbb696b40e6be0341e0652294153a2fab419d`
-  on both sides at packaging time (`__pycache__` excluded). Entrypoint:
-  `scripts/core/intake_preflight/factory.py` (`intake` / `preflight`,
-  JSON envelope, exit codes 0/1/2/3/4).
-- References: `references/cli-contract.md` (envelope, arguments, reason
-  codes, live-verified results) and `references/parity-contract.md`
-  (what must match across distributions, source path, re-sync procedure).
-- Registry: registered in `CONTROL/bundled-skills.txt` alongside
-  `motion-video-plus`, so source presence becomes automatic installation
-  (directive 2.4). `CONTROL/bundled-components.json` is release-manifest
-  territory and is intentionally not touched by this unit.
-- Tests: `tests/test_cli_smoke.py` (packaged CLI behavior) and
-  `tests/test_parity_layout.py` (layout, registry, adapter hygiene,
-  byte parity with the canonical core; reports `PARITY UNDETERMINED` when
-  the canonical tree is absent instead of claiming a pass).
-- Runtime: Claude-Nine adapter follows router laws and live catalog
-  resolution with no hardcoded model table; plain Claude Code adapter keeps
-  `claude` non-routed and never sets a separate config directory.
-- Directive doc set complete (directive 2.1/2.2): `INSTALL.md` (registry-based
-  install, verification, update and removal contract), `EXAMPLES.md`
-  (intake/preflight/resume/injection-verified examples with exit codes),
-  `QC.md` (shape, registry, parity, envelope, adapter hygiene, secrets and
-  change-control checklist), `CORE_UPDATES.md` (regenerate `scripts/core/` from
-  canonical, never hand-edit, contract-bump migration notes, lockstep rule),
-  `PREREQS.json` (machine-readable prerequisites: Python 3 stdlib-only, shared
-  config root, registry entry, approved storage root, authorization receipt,
-  presence-only credentials, helper skills 46/66/67/68/74, FFmpeg, live model
-  discovery, no committed secrets).
+### Added
+- `scripts/core/audio_c3/no_echo/` - every Suno request (song and voice-pack) stamps dry close-microphone vocals plus the seven negative tags and refuses spacious / cinematic / choir in spoken parts (D22a).
+- `scripts/core/smp/no_echo/` - the same no-echo rule on the Skill 35 weekly drama-song request.
+- `scripts/core/qc_reverb_tail/` - QC measures the reverb tail after each spoken line; a ringing line fails QC (D22a).
+- `scripts/core/qc_voice_match/pitch_ban/` - pitch ban guard for voice-match QC.
+- `scripts/core/spoken_share/` - spoken share retarget: target 45 percent, band 40-55, rap counts as spoken, first sung line within about 10 seconds (D15).
+- `scripts/core/spoken_share_card_docs/` - card and docs lines carrying that spoken-share rule.
+- `scripts/core/smp/spoken_share/` - the same spoken-share rule on the Skill 35 planner wave (D15).
+- `scripts/core/choice_card/stl_voice_guard/` - Sketch to Life is always All Suno; Velvet Voiceover is refused for that look (D25).
+
+## [v2.4.2] - 2026-10-07 - fix: style bible compiler routes its prompt cap through the one KIE enforcer
+
+### Fixed
+- `scripts/core/product_style_bible/bible.py` imports `shared-utils/kie_prompt_enforcer.py` and calls `KPE.check(...)` (kind verbatim, ceiling only) on every compiled prompt, as the KIE prompt enforcer guard (rule 12) requires of a declared gate module. The cap values (20000 sunburst, 25000 legacy) and compile behavior are unchanged.
+
+## [v2.4.1] - 2026-10-07 - docs: PACKAGING-DECISION wording
+
+### Fixed
+- `PACKAGING-DECISION.md` no longer cites the retired legacy updater path literally (single-update-skills-entrypoint guard, section C). No behavior change.
+
+## [v2.3.0] - 2026-10-07 - docs: directive 2.1 document set landed
+
+### Added
+- `INSTRUCTIONS.md` - operating instructions: the mandatory TYP gate, the
+  eleven build-directive section 25 runtime steps, the shared
+  intake/preflight controls and section 24.3 intake rules, exit-code
+  envelope contract, section 17 QC non-negotiables, and the skill's
+  never-do list.
+- `EXAMPLES.md` - twelve verified examples using only the implemented
+  entrypoint (`scripts/core/intake_preflight/factory.py`) and the repo's
+  shipped `check-skill-prereqs.sh` / `qc-prereqs-json.sh`; every shown
+  outcome was executed and captured (intake ok/waiting/rejected, resume
+  ok/parked, preflight pass/tool-unavailable/credential-missing/
+  approval-missing/approval-expired/reference-outside, checker rc 0/2/3,
+  lint PASS on 24 PREREQS.json files).
+- `QC.md` - install-time rubric (10 points, gate 8.5), file/version and
+  credential checks, control-layer smoke, 9-question knowledge check,
+  and the campaign QC gate checklist mapped to build-directive sections
+  17.1-17.9 with anti-patterns.
+- `INSTALL.md` - first install (`install.sh` one-liner / checkout),
+  update (`update-skills.sh`), canonical credential paths, helper-skill
+  install law (section 2.4), verification steps, run-storage root,
+  version bookkeeping and rollback via installer backups.
+- `CORE_UPDATES.md` - surgical allowlist (AGENTS.md / TOOLS.md /
+  MEMORY.md) with exact text blocks; core persona files never touched.
+- `PREREQS.json` - executable prerequisite mirror per INSTALL-CONTRACT
+  Rule 16: skills 01/02/07/24/25/27/30/46/66/67/68/74 (folder form),
+  KIE_API_KEY (required), FISH_AUDIO_API_KEY (optional), python3 and
+  ffmpeg binaries, faster-whisper advisory note; every required `satisfy`
+  names the action, canonical secrets path and config command.
+
+### Changed
+- `DEPENDENCY-MANIFEST.md` - helper dependency table now carries version
+  + git tree hash per helper pinned at source commit
+  `cc2e595f1de87c1411dfb44e9542f0017f3b5acc` (2026-10-07), cross-linked
+  to `PREREQS.json` as the executable mirror. Scaffold notes for
+  release-time pins (W5-02) are preserved.
+
+---
+
+## [v2.3.0] - 2026-10-06 - feat: OpenClaw distribution (W3-02)
+
+- Initial Skill 75 folder: `SKILL.md` (route boundaries, control
+  entrypoint contract, section 24.3 intake rules, paid-generation
+  boundaries, department wiring), `scripts/core/` shared canonical core
+  (state_store, artifact_graph, spend_ledger, job_recovery, contracts,
+  acceptance-profile, intake_preflight, qc_gate, timing_guard),
+  `DEPENDENCY-MANIFEST.md`, `THIRD_PARTY_NOTICES.md`,
+  `skill-version.txt` = v2.3.0. Exit-table correction and CI guard
+  repairs followed the same day (commits `2dd07e409`..`37a6926c8`).
+
+---
+
+Format follows `46-kie-callback-relay/CHANGELOG.md`: newest first,
+`## [version] - date - type: summary`, sections `### Added` /
+`### Changed` / `### Fixed` / `### Tests`.
