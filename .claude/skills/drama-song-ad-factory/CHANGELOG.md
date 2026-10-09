@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.25] - 2026-10-09 - Batch MGB009a: W-G-003-amend + TESTHYG-75-residue
+
+Landed together by merge-train: #94 singing detector aligned to Appendix A (order 1150 part G, review G2), #95 the 2 conftest-induced order-sensitive test failures fixed (residue of #93). #96 (W-G-008 minute-lanes) not included: CONFLICTING at the merge step.
+
 ## [2.7.24] - 2026-10-09 - Batch MGB008b: W-G-002-amend + TESTHYG-75 + W-G-007-amend
 
 Landed together by merge-train: #91 delivery-named tag grammar in lyric_structure, #93 skill-75 tests pytest-collectable and green in one process, #92 delivery checklist consumes the amended receipt fields.
