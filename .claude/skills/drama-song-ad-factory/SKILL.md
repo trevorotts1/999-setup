@@ -587,6 +587,41 @@ already route through it, and a test fails if one stops.
   fails loudly naming the job.
 - Never the OpenAI whisper stack. Transcription is faster-whisper through `lyric_timing.py`.
 
+## Parallel minute-lanes (ads 120 s and up, W-G-008)
+
+A song **under 120 seconds** keeps today's flow exactly: **one lane, nothing
+changes**. At **120 s and up** the ad runs as **N = ceil(L / 60)** parallel
+minute-lanes, about 60 seconds each (`scripts/core/lane_planner.py`). The split
+is planned by `lane_planner.plan_lanes(shots, song_length_s)` and every cut
+lands **on a shot boundary** — a shot is never split; an unreachable boundary
+fails closed (`LANE_BOUNDARY_INSIDE_SHOT`), never cuts mid-shot.
+
+**Shared steps run ONCE, before the split** (`SHARED_STEPS_BEFORE`): song +
+song checker, plan/shot list, character, close-up picture gate. Each lane then
+makes its own stills, motion clips and lip-sync segments **at the same time**
+as the others, on the same character, through the picture gate, with **at most
+2 lip-sync jobs per segment then the best take**, and mouth strips (the LSP001
+process above, unchanged). **Then once, over the whole ad**
+(`SHARED_STEPS_AFTER`): ONE edit over the full song, ONE independent checker
+for the whole ad (hard audio-length rule, captions = lyrics, face through the
+call to action), and one repair.
+
+- **ONE shared KIE governor across all lanes** (`SharedGovernor`): at most 20
+  NEW generation requests per rolling 10 s in total, **per-lane share
+  floor(18 / N)** (so 3 lanes -> 6 each), and every submit rides
+  `load_governor.kie_request`, so a 429 is backed off and **resubmitted, never
+  dropped**.
+- **Heavy local jobs (ffmpeg) at most 2 at once across all lanes**, through the
+  existing machine-wide gate `load_governor.heavy_slot` — no new limiter.
+- **Resume and reuse:** `lane_planner.classify_tag(db, run_id, tag)` answers
+  against the run's spend ledger — a job tag already in the ledger is **polled,
+  never resubmitted**; a finished file is **reused**, so a re-run never pays
+  twice. Every lane plans against the ONE ledger run, so spend stays under the
+  run cap across all lanes together.
+- Tests: `python3 scripts/core/test_lane_planner.py` (180 s -> 3 lanes on shot
+  boundaries; 90 s -> 1 lane; shared governor <= 20 per 10 s across 3 lanes on a
+  fake clock; a ledger-known tag is polled).
+
 ## Tests
 
 ```bash
