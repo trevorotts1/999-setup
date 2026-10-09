@@ -38,7 +38,7 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(CL.brief_fields(rec)["character_voice_notes"], "Low, calm alto")
         q = CL.saved_character_question(self.client)
         self.assertTrue(q["ask"].endswith("?"))
-        self.assertEqual(q["options"][0][0], "Make a new character")
+        self.assertEqual(q["options"][0][0], "Create a new character")
         self.assertEqual(q["options"][1][0], "Use Maya Lee")
 
     def test_clients_are_separate_and_refusals(self):
@@ -68,7 +68,7 @@ class RoundTrip(unittest.TestCase):
         if os.path.exists(card):  # H9 card present in this tree
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
                                  capture_output=True, text=True, check=True).stdout
-            self.assertIn("SAVED CHARACTER", out)
+            self.assertIn("saved with us", out)
             self.assertIn("Question 1 of 7", out)
 
 

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- unit/FU-SAVED-CHARACTER-QUESTION: drama-song-ad-factory: the saved-character intake question is a full numbered question (new character first, recommended; "Use <Name>" per saved character) with a plain-English recap; ported from onboarding
+- unit/FU-SAVED-CHARACTER-QUESTION: drama-song-ad-factory: the saved-character intake question now asks "create a new character, or use one you've used before?" with "You have N character(s) saved with us." and numbered options (new character first, recommended); with none saved it shows one plain line instead of a question; ported from onboarding
 
 - unit/F15-999: drama-song-ad-factory 2.7.21: F15 choice card always asked before any paid job - card_gate receipt, intake/preflight/kie_dispatch refuse CARD_UNANSWERED, 2-minute length + price table (ported from onboarding main b9ced148c)
 - ci/CIO002: push triggers are main-only (a PR branch no longer runs every check twice, once on push and once on pull_request) and every workflow has a per-PR concurrency group that cancels superseded pull_request runs only (never main)
