@@ -46,7 +46,14 @@ Proves:
       character ([Hook], [Intro]) are never judged;
   (f) All Suno is unchanged: the built request still carries ONE
       vocal_gender and the same KIE params; no per-character voice map and
-      no new voice option is added (Trevor's locked rule, plan section 8).
+      no new voice option is added (Trevor's locked rule, plan section 8);
+  (g) the PLAN-TIME record (superseded, kept only because it is the
+      acceptance the unit row was written against) still refuses the desk
+      neighbour tagged Female against a cast that says man, and the brief
+      -> map helper protected_names.cast_genders is proven end to end.
+
+The live record is the PRIMARY cast this file tests against; (g) is the
+superseded plan-time acceptance retained alongside it, never instead of it.
 
 Run: python3 core/suno_recipe/test_voice_tags_u5.py
 stdlib only, no network, no spend.
