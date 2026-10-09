@@ -1,23 +1,41 @@
-## Unreleased
+# Changelog: drama-song-ad-factory
+
+## [2.7.28] - 2026-10-09 - Batch MGB011: #108 + #102 + #105 + #110 + #106 + #113 + #109 + #111 + #112
+
+Landed together by merge train: #108 qc-kie-docs-host, #102 FU-U6 Suno request limits, #105 FU-U15a template data layer, #110 FU-U7 video/avatar prompt caps, #106 FU-U1 rap-aware tag grammar, #113 adapter parity (skill 74), #109 FU-U15e Kling avatar template, #111 FU-U15d Suno templates, #112 FU-U15b H3 assembler.
 
 ### FU-U15a: prompt template data layer, loader and caps reader
-
 - New `references/prompt-templates/` (52 files): `20-prompt-templates/` ported as data — README, `manifest.json`, `length-classes.json`, 4 models, 5 modes, 5 looks, 6 shot types, 3 music styles, 15 fixtures.
 - New `scripts/core/prompt_templates/` with `load()` and `caps()`. `caps()` reads the catalogs (67-kie-video, 68-kie-audio) through FU-U6's `prompt_limits` first and the manifest only for what the catalogs lack (the Kling avatar row, UNVERIFIED 2500); no second caps table. H3 image-to-video prompt cap 7000 VERIFIED from the 67 catalog; every look x mode x shot type resolves, each mode block carries its record's key phrases (realism: the five `RECIPE_REQUIRED_PHRASES`).
 - New test `scripts/core/prompt_templates/test_prompt_templates_u15.py` (fails on the base tree: the module is absent). No version bump.
-
 ### FU-U6: Suno request limits, fail closed, measured last
-
 - New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
 - `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
 - `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
 - New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built). Parity: core files byte-identical with the onboarding tree.
-
 ### FU-U7: video/avatar prompt caps enforced at the call site, fail closed
-
 - `kie_dispatch.dispatch` now runs the U6 `prompt_limits.check_request` over the FINAL payload before any other gate: an over-cap field is refused `PROMPT_OVER_CAP` (field, chars, cap, source, status; nothing reserved, nothing sent, never truncated) and a paid video/avatar job with no importable limit table is refused `PROMPT_LIMIT_UNAVAILABLE`; the ok receipt carries the measured `prompt_caps` rows; `prompt_limits.py` gains the file-17 video/avatar caps (Hailuo family 2,000, Kling 2.6 i2v 2,500, Kling 2.5 Turbo negative_prompt 2,500) and the 999 installer layout in its catalog walk. New test `kie_dispatch/test_prompt_cap_u7.py`.
+### qc-kie-docs-host: F14 scanner exempts the docs host only
+- `scripts/qc-no-direct-kie.sh`: the endpoint pattern `(https?://)?(api\.)?kie\.ai` matched a bare `docs.kie.ai` host, so the KIE documentation provenance URLs in `scripts/core/prompt_limits.py` (added by FU-U6) were reported as direct-KIE calls and the check exited 2 on a clean tree. The scan now extracts each host occurrence (`grep -oE`) and drops exactly the `docs.kie.ai` host — the exemption is decided per OCCURRENCE, so a line carrying both a docs URL and a real api URL still fails on the api record (a line-level `grep -v` would discard the whole line and let the real call escape). Every other host still bites: `api.kie.ai`, any other subdomain including ones nobody has thought of yet, and bare `kie.ai`. No filename exemption: a real direct call added to `prompt_limits.py` later is still caught.
+- New test `scripts/core/kie_dispatch/test_qc_docs_host.py` (fails on the base tree: the docs fixture exits 2). Covers the docs citation passing, the api call still failing by name, the mixed one-line docs+api case failing per occurrence, unknown subdomains and bare `kie.ai` failing, and the real core tree staying clean. Existing `test_model_lock_f14.py::test_qc_no_direct_kie` regression stays green. Parity: the scanner is byte-identical with the onboarding tree.
+### FU-U1: test_tag_grammar_u1.py collects and passes under pytest
+- `scripts/core/suno_recipe/test_tag_grammar_u1.py` line 84: the file is dual-mode — in script mode `main()` passes test_a's return into `test_b_lyric_gate_counts_rap_in_the_budget(sheet)`, but pytest calls test_b standalone and never receives that return, so pytest read `sheet` as a fixture name and errored `fixture 'sheet' not found` (the whole unit was uncollectable, which is why #106 was held out of the 2.7.27 batch). test_b now takes `sheet=None` and, when it is None, builds it in-test from the existing `load_fixture()` + `R.parse_lyrics()` (a parse failure reports through `check()` and leaves the sheet None); the existing `if sheet is None:` guard still fails loudly, so a failed build is never a silent skip. `main()` and every assertion are unchanged.
 
-# Changelog: drama-song-ad-factory
+### FU-U15b: H3 assembler, the 5,000-6,800 band, receipts
+
+- U15b (H3 assembler, band of record 5,000-6,800): `prompt_templates.assemble_h3/check/expand/receipt` build every MiniMax H3 prompt from the template layers plus the shot spec's facts, guard the owner band (under 5,000 = FLAG then `H3_THIN_SPEC`, never padding; over 6,800 = TRIM; over 7,000 = REFUSE `H3_OVER_HARD_MAX`), and write a prompt receipt (sha256 + template version + section char map). The six golden specs assemble to 5,578-6,740. `shot_planner.prompt_spec_for` writes the facts (`shot["prompt_spec"]`); `kie_dispatch` refuses `PROMPT_NOT_TEMPLATED` when the prompt's sha256 has no receipt or the receipt says REFUSE/TRIM, and re-measures the final payload cap just before spend. The video prompt path carries no square-bracket markers and no generic `[MOTION]` line (`bible.compile_visual_prompt(video=True)`, the three style bibles' `compile_prompt(video=True)`); `assert_compiled` accepts a matching receipt. New `shot-types/villain.json` carries the U16 villain guidance into the assembler. `music_styles` soul-ballad base text ends with a period.
+
+### FU-U15e: Kling avatar template
+
+- `prompt_templates.assemble_kling_avatar` / `check_kling_avatar`: the lip-sync prompt is three sentences with one emotion, the `who` descriptor read from the look's mode (`kling_who`), never a hard-coded look; sketch-ink and golden-realism refuse lip-sync. Lip-gate and image-gate updated (`test_lip_gate_u15e.py`).
+
+### FU-U15d: Suno templates per style and per length
+
+- `suno_recipe` reads the style parts, cue strings, gender words and negative tags from `references/prompt-templates/music/*.json` and `models/suno-v6.json` (data, not constants); no-voice sections render as a tag only; product-share and payload checks added; caps measured last.
+
+### adapter-parity-m8-h7 (skill 74 only)
+
+- `74-kie-live-adapter`: shadow-mode and adapter parity changes (see `installer-registration/helpers/74-kie-live-adapter/CHANGELOG.md`); no skill 75 code change.
 
 ## [2.7.27] - 2026-10-09 - Batch MGB010b: #104 + #96 + #103 + #107
 
@@ -62,22 +80,6 @@ skill 75 v2.9.1 (same core, byte-identical).
 - Docs: SKILL.md "Parallel minute-lanes" section; `references/stage-runbook.md`
   lane note.
 
-## Unreleased
-
-### qc-kie-docs-host: F14 scanner exempts the docs host only
-
-- `scripts/qc-no-direct-kie.sh`: the endpoint pattern `(https?://)?(api\.)?kie\.ai` matched a bare `docs.kie.ai` host, so the KIE documentation provenance URLs in `scripts/core/prompt_limits.py` (added by FU-U6) were reported as direct-KIE calls and the check exited 2 on a clean tree. The scan now extracts each host occurrence (`grep -oE`) and drops exactly the `docs.kie.ai` host — the exemption is decided per OCCURRENCE, so a line carrying both a docs URL and a real api URL still fails on the api record (a line-level `grep -v` would discard the whole line and let the real call escape). Every other host still bites: `api.kie.ai`, any other subdomain including ones nobody has thought of yet, and bare `kie.ai`. No filename exemption: a real direct call added to `prompt_limits.py` later is still caught.
-- New test `scripts/core/kie_dispatch/test_qc_docs_host.py` (fails on the base tree: the docs fixture exits 2). Covers the docs citation passing, the api call still failing by name, the mixed one-line docs+api case failing per occurrence, unknown subdomains and bare `kie.ai` failing, and the real core tree staying clean. Existing `test_model_lock_f14.py::test_qc_no_direct_kie` regression stays green. Parity: the scanner is byte-identical with the onboarding tree.
-### FU-U1: test_tag_grammar_u1.py collects and passes under pytest
-
-- `scripts/core/suno_recipe/test_tag_grammar_u1.py` line 84: the file is dual-mode — in script mode `main()` passes test_a's return into `test_b_lyric_gate_counts_rap_in_the_budget(sheet)`, but pytest calls test_b standalone and never receives that return, so pytest read `sheet` as a fixture name and errored `fixture 'sheet' not found` (the whole unit was uncollectable, which is why #106 was held out of the 2.7.27 batch). test_b now takes `sheet=None` and, when it is None, builds it in-test from the existing `load_fixture()` + `R.parse_lyrics()` (a parse failure reports through `check()` and leaves the sheet None); the existing `if sheet is None:` guard still fails loudly, so a failed build is never a silent skip. `main()` and every assertion are unchanged.
-
-## [2.7.26] - 2026-10-09 - FU-U6: Suno request limits, fail closed, measured last
-
-- New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
-- `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
-- `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
-- New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built). Parity: core files byte-identical with the onboarding tree.
 ## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
 
 Landed together by merge-train: #101 (drama-song-tests collection, lyric_structure import path), #97 (whole-track retakes), #98 (story arc + product connection), #99 (song mp3 in every deliverable), #100 (book orientation contract). #96 (W-G-008) not included: CONFLICTING, being rebased.
@@ -124,12 +126,6 @@ No book shape or motion rule existed anywhere; nothing measured the cover and no
 - `kie_dispatch` (outside the LIPSYNC_* seams): a video job whose shot kind is `book` is refused (BOOK_SHOT_NOT_CONTRACTED) without a start frame made from the cover file; the approved-plan-hash side stays dormant until `book_plan_sha256` exists (U11), then activates.
 - `qc_gate`: the shots stage requires a `book_orientation` record for book campaigns; UNAVAILABLE never advances.
 - Tests: `scripts/core/book_shot/test_book_shot_c1.py` covers (a) hflip cover FAILs BOOK_MIRRORED (b) back cover FAILs BOOK_COVER_NOT_FRONT (c) left-to-right leaf FAILs, right-to-left PASSes, still clip FAILs BOOK_NO_MOTION (d) the calibration pair sorts or the check is UNAVAILABLE (e) a book prompt carries no "gentle continuous motion" line. All five FAIL on the base tree.
-## [2.7.26] - 2026-10-09 - FU-U6: Suno request limits, fail closed, measured last
-
-- New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
-- `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
-- `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
-- New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built). Parity: core files byte-identical with the onboarding tree.
 
 ## [2.7.25] - 2026-10-09 - Batch MGB009a: W-G-003-amend + TESTHYG-75-residue
 
@@ -175,10 +171,6 @@ PRs #73 (looser sung-aware lip-sync sync check, onboarding #1698), #74-#79 and #
 ## [2.7.21] - 2026-10-08 - Batch MGB005: song recipe v2, load governor, F14, F15, KIE rate limit reference
 
 Landed together by merge-train: #67 song recipe v2, song length formula and song dispatcher; #68 KIE rate limit reference; #69 F14 video model lock; #70 load governor; #71 F15 choice card gate. Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted), with a test. Fixes the version mismatch (VERSION said 2.7.19 while SKILL.md said 2.7.20): VERSION, SKILL.md and this changelog now agree on 2.7.21. F14 and F15 were merged by hand (both sides kept) in the test stubs.
-
-## [Unreleased] - FU-U15b: H3 assembler, the 5,000-6,800 band, receipts
-
-- U15b (H3 assembler, band of record 5,000-6,800): `prompt_templates.assemble_h3/check/expand/receipt` build every MiniMax H3 prompt from the template layers plus the shot spec's facts, guard the owner band (under 5,000 = FLAG then `H3_THIN_SPEC`, never padding; over 6,800 = TRIM; over 7,000 = REFUSE `H3_OVER_HARD_MAX`), and write a prompt receipt (sha256 + template version + section char map). The six golden specs assemble to 5,578-6,740. `shot_planner.prompt_spec_for` writes the facts (`shot["prompt_spec"]`); `kie_dispatch` refuses `PROMPT_NOT_TEMPLATED` when the prompt's sha256 has no receipt or the receipt says REFUSE/TRIM, and re-measures the final payload cap just before spend. The video prompt path carries no square-bracket markers and no generic `[MOTION]` line (`bible.compile_visual_prompt(video=True)`, the three style bibles' `compile_prompt(video=True)`); `assert_compiled` accepts a matching receipt. New `shot-types/villain.json` carries the U16 villain guidance into the assembler. `music_styles` soul-ballad base text ends with a period.
 
 ## [Unreleased] - Doubled lip-sync and the lip-sync image gate (owner order 2026-10-08)
 
