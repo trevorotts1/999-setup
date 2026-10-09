@@ -383,6 +383,13 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 
+- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+  Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
+  client chose. One rates table (`core/choice_card/video_models/
+  video_model_rates.json`) and one price function shared by the question and
+  the final card; the pick is stored in run state, shown on the card and
+  submitted by dispatch with that model's provider id and resolution.
+
 - **Intake.** Quick mode by default (one sentence), Concept mode for a
   client with their own story. At most three questions total, and ONE choice
   card with every default pre-selected, so a client can approve with one
