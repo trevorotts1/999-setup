@@ -31,8 +31,8 @@ jobs:
           python-version: '3.12'
       - name: Install numpy + opencv (singing-detector and book_shot suites need them)
         run: python3 -m pip install --quiet numpy opencv-python-headless pytest
-      - name: Install ffmpeg (singing-detector suites decode mp3 fixtures)
-        run: command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
+      - name: Install ffmpeg + tesseract (mp3 fixtures; book_shot title OCR)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr
       - name: Static checks (F17 no local ASR, B6 operator-path leak)
         run: |
           bash "$SKILL/scripts/qc-no-local-asr.sh"
