@@ -1,4 +1,10 @@
-## Unreleased - W-G-008: parallel minute-lanes for ads 120 s and up
+# Changelog: drama-song-ad-factory
+
+## [2.7.27] - 2026-10-09 - Batch MGB010b: #104 + #96 + #103 + #107
+
+Landed together by merge train: #104 (drama-song-tests installs ffmpeg + opencv + tesseract, loop stdin-safe), #96 W-G-008 minute-lanes, #103 FU-U16 story doctrine (villain, pain, rise), #107 U15c owner prompt band (prompt_band_chars over the 80/95 rule). Not included: #102 FU-U6 (prompt_limits.py:41 trips qc-no-direct-kie.sh, failing test_model_lock_f14.py in the empty-HOME loop), #105 FU-U15a (stacked on #102), #106 FU-U1 (test_tag_grammar_u1.py:84 pytest fixture error).
+
+### W-G-008: parallel minute-lanes for ads 120 s and up
 
 Owner order (Trevor, 2026-10-08): "this type of intelligence should be built
 into skill 75 for all video 2 minutes and up". Reference run wf_9134d15e-b8e
@@ -36,8 +42,6 @@ skill 75 v2.9.1 (same core, byte-identical).
   3, 180 stays 3.
 - Docs: SKILL.md "Parallel minute-lanes" section; `references/stage-runbook.md`
   lane note.
-
-# Changelog: drama-song-ad-factory
 
 ## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
 
