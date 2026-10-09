@@ -309,7 +309,8 @@ def conversation(replies, questions=None, state_store=None, run_id=None, run_dir
     With state_store + run_id, the client's video model is written to run state
     (the F14 lock) as soon as it is answered; the card and dispatch read it there.
     With run_dir, the recap confirmation writes the STORYBOARD and SONG APPROVAL
-    answers to the run (so Yes turns each approval gate on)."""
+    answers to the run (so Yes turns each approval gate on). target (the
+    client's chat id) is stored with the song answer so the 3-song message goes to that client."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
@@ -349,7 +350,7 @@ def conversation(replies, questions=None, state_store=None, run_id=None, run_dir
             from storyboard_director import approval_runner as _ar
             _ar.record_card_answer(run_dir, answers, qs, target)
             from song_choices import song_choices as _sc   # noqa: PLC0415
-            _sc.record_card_answer(run_dir, answers)
+            _sc.record_card_answer(run_dir, answers, target)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
