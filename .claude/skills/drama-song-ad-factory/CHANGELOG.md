@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## Unreleased
+
+- **U12: docs and the onboarding SOP in lockstep with the code.** SKILL.md gains "Request and prompt limits", the tag-grammar / style-plan / voice-tag bullets in the Suno recipe, the early-captions paragraph (with FU-U9 named as NOT built) and the book-orientation bullets; choice-card-spec gains 2.3 (options come from the registry; the fit card FU-U4 is not built), a machine-checked "Offered lengths" line, the book language and orientation text and the Book shots block (FU-U11, open branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6 seconds). Sections that describe open branches (FU-U3, FU-U11) say so and are refreshed when those land. New test `scripts/core/prompt_templates/test_docs_u12.py`.
+
 ## [2.7.30] - 2026-10-09 - Batch MGB014: #118 + #119
 
 Landed together by merge train: #118 FU-U8 captions caught early, #119 U15i docs in lockstep with the prompt. VERSION and SKILL.md frontmatter: 2.7.29 to 2.7.30.
