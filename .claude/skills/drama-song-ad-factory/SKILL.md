@@ -178,6 +178,41 @@ intake cards list saved characters under "Use a saved character?" (`character
 intake card exists). `character --client-dir <dir> use --name <name>` prints
 the brief fields (name, description, reference images, voice notes) to reuse.
 
+## Prompt templates (every paid prompt is assembled, never written)
+
+A prompt is never hand-written. It is assembled from data layers plus the
+facts of one shot or one song, and every assembled payload gets a receipt.
+The layers and the assembler are the same in the OpenClaw distribution
+(U15a-U15i):
+
+- **Data:** `references/prompt-templates/` - `manifest.json` (caps with their
+  source and status, owner bands, layer order, quality rules), `models/`
+  (minimax-h3, kling-video, kling-ai-avatar-standard, suno-v6), `modes/` (the
+  five render modes the looks are built from), `looks/` (the five card looks),
+  `shot-types/`, `music/` (the three styles), and `length-classes.json`
+  (60/90/120/180/300/600 s: shots, H3 clips, lip-sync clips and seconds,
+  lanes, hooks, song words, spoken share, product seconds).
+- **Code:** `scripts/core/prompt_templates/prompt_templates.py` - `load`,
+  `caps`, `band`, `assemble_h3`, `check`, `expand`, `receipt`,
+  `length_class`, `check_product_seconds`. The shot planner writes the FACTS
+  (`shot_planner.prompt_spec_for` writes `shot["prompt_spec"]`), never prose.
+- **MiniMax H3 band** (Trevor, 2026-10-08): **5,000-6,800 characters**, hard
+  max 7,000. Under 5,000 = FLAG then expand from the spec (real detail only,
+  never padding), and `H3_THIN_SPEC` when the spec has no facts left; over
+  6,800 = TRIM in the documented priority order; over 7,000 = REFUSE
+  `H3_OVER_HARD_MAX` before any spend.
+- **Receipt.** Every payload returns a prompt receipt (`prompt_sha256`, the
+  template version, the per-section character map, the band verdict).
+  `kie_dispatch` refuses a paid job whose prompt hash has no matching receipt
+  or whose receipt says REFUSE or TRIM: `PROMPT_NOT_TEMPLATED`.
+- **Final QC** requires a `prompt_compliance` record: one row per paid ledger
+  job matched to its receipt (`qc_gate`). A paid job with no receipt fails the
+  final gate; it is never a pass.
+- **One length table.** `references/prompt-templates/length-classes.json` is
+  the only table; the card, the planner and QC read it, and
+  `prompt_templates.length_class(L)` raises `PROMPT_LENGTH_CLASS_DRIFT` rather
+  than let a stale row be read silently.
+
 ## Suno song recipe (read this first when you build audio)
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
@@ -229,6 +264,11 @@ The only exemption is the Velvet Voiceover version (the spoken Google voice
 over the song, id `velvet_voiceover`), which keeps its own flow. Almost
 nobody asks for it. Every other style, including the All Suno voice default,
 uses the recipe.
+
+The Suno payload itself is assembled the same way: `prompt_templates.suno_parts(style_id, length_s, vocal_gender)` reads
+`references/prompt-templates/music/<style>.json` and `models/suno-v6.json`, so the style text,
+the delivery cues, the negative tags and the caps are data and not constants; the caps are
+measured on the FINAL payload, after `ending_qc`. See "Prompt templates" above.
 
 ## Scenes must match the song and the faces (Part I I2)
 
@@ -408,7 +448,9 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   that character's own isolated line, cut from the LEAD-VOCAL STEM (never the mix) on phrase boundaries
   from the Suno word timestamps (`lipsync_clips.choose_window`) with 0.30 s lead-in and 0.20 s tail from try 1
   (placed with `stem_offset.cut_plan`). The prompt says SINGS on sung lines and SAYS on spoken ones, one emotion,
-  minimal head movement, steady camera (`lip_gate.kling_prompt`). **At most 2 paid Kling jobs per segment,
+  minimal head movement, steady camera (`lip_gate.kling_prompt`). The avatar prompt itself is assembled by `prompt_templates`
+  (`assemble_kling_avatar`): three sentences, one emotion, and the `who`
+  descriptor taken from the look's mode - see "Prompt templates" above. **At most 2 paid Kling jobs per segment,
   every name variant of the segment counted; the code refuses a 3rd** (`lip_gate.run_gate`, `lipsync_clips.count_jobs`).
   Try 2 runs ONLY on a PERSON'S call (rule 4 of the lip-sync process bullet below: a person marks a visible
   defect such as frozen or garbled face, text across the chest, hand over the mouth, wrong face), never on a checker verdict
