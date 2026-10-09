@@ -11,10 +11,12 @@ Proves, behaviourally, the four cases the unit brief names:
   (d) the client excerpt is NEVER sent to a video model: the assembled H3
       prompt carries no excerpt text, because the overlay is posted as DATA.
 
-(d) is designed to pass WITHOUT U9 (the caption burn module is U9's artifact
-and has not landed): no test is deferred here except the OCR read-back of the
-burned overlay itself. It never weakens into a silent pass -- it asserts the
-absent text AND that the overlay payload still carries the excerpt as data.
+(d) asserts the SEAM now that U9 has landed on main: captions_burn.py is
+importable, entry ``overlay_excerpt`` and hook
+``final_assembler.captions_burn.overlay_excerpt`` exist, and the call site
+returns the PENDING row when the artifact is absent and the burn hand-off
+row when it is present. The excerpt still never reaches a video prompt --
+it is posted as DATA, and the burn receipt claims no frame it did not draw.
 
 This is the RECONCILED suite (FU-U11 halves): the 999 form is the base, with
 the onboarding half's unique checks ported in -- the second fixture family,
@@ -378,19 +380,38 @@ def _cases(TMP):
 
     # -------------------------------------- the U9 hook call site ----------
     # Item 6 boundary: exactly ONE burn site in this codebase and it is U9's.
+    # U9 landed with train 2.7.33, so this asserts the SEAM -- the module is
+    # importable, the entry point and hook string exist, the call site
+    # reports the hand-off -- never the artifact's absence.
     import glob
+    import importlib
     core = os.path.dirname(HERE)
-    burns = [p for p in glob.glob(os.path.join(core, "**", "*.py"),
-                                  recursive=True)
-             if "captions_burn" in os.path.basename(p)]
-    check("U9: no captions_burn.py exists in this tree (U9 has not landed)",
-          burns == [], burns)
-    # ...and no second burn module was smuggled in under another name. A burn
+    burns = sorted(os.path.relpath(p, core) for p in
+                   glob.glob(os.path.join(core, "**", "*.py"), recursive=True)
+                   if "captions_burn" in os.path.basename(p))
+    check("U9: the captions_burn artifact lives at final_assembler/captions_burn.py",
+          [p for p in burns if os.path.basename(p) == "captions_burn.py"]
+          == [os.path.join("final_assembler", "captions_burn.py")], burns)
+    CB = importlib.import_module("final_assembler.captions_burn")
+    check("U9: captions_burn is importable from the skill root",
+          getattr(CB, "TOOL_NAME", None) == "captions_burn", CB)
+    check("U9: entry point overlay_excerpt exists",
+          callable(getattr(CB, "overlay_excerpt", None)), burns)
+    check("U9: hook string is final_assembler.captions_burn.overlay_excerpt",
+          CB.EXCERPT_OVERLAY_HOOK
+          == "final_assembler.captions_burn.overlay_excerpt"
+          and CB.ENTRY == "overlay_excerpt",
+          getattr(CB, "EXCERPT_OVERLAY_HOOK", None))
+    # ...and no SECOND burn module was smuggled in under another name. A burn
     # module SPEAKS of burning: it defines an overlay_excerpt/burn entry point.
+    # captions_burn.py is the one allowed owner of that entry point; every
+    # other module that grew one is a violation.
     # (master_provenance.py merely BANS caption writers, so it is not one.)
     burners = []
     for p in glob.glob(os.path.join(core, "**", "*.py"), recursive=True):
         if os.path.basename(p).startswith("test_"):
+            continue
+        if os.path.basename(p) == "captions_burn.py":
             continue
         try:
             src = open(p, encoding="utf-8").read()
@@ -399,18 +420,51 @@ def _cases(TMP):
         if re.search(r"^def (overlay_excerpt|burn_captions|burn_excerpt)\b",
                      src, re.M):
             burners.append(os.path.relpath(p, core))
-    check("U9: no module defines a second excerpt burn entry point",
+    check("U9: no module outside captions_burn.py defines a burn entry point",
           burners == [], burners)
     AS = importlib.import_module("final_assembler.assembler")
-    row_pending = AS.excerpt_overlay_stage(
-        {"excerpt_overlay": {"lines": EXCERPT, "provenance": "provided"}})
-    check("U9: with no captions_burn.py the call site reports PENDING",
+    # The PENDING half of the seam's contract, with the artifact on disk: the
+    # same function, same branch, only the artifact probe says absent. The
+    # tree itself is never mutated.
+    _real_isfile = os.path.isfile
+
+    def _absent(path, _real=_real_isfile):
+        if os.path.basename(path) == "captions_burn.py":
+            return False
+        return _real(path)
+
+    os.path.isfile = _absent
+    try:
+        row_pending = AS.excerpt_overlay_stage(
+            {"excerpt_overlay": {"lines": EXCERPT, "provenance": "provided"}})
+    finally:
+        os.path.isfile = _real_isfile
+    check("U9: with the artifact absent the call site reports PENDING",
           row_pending["pending"] is True
-          and row_pending["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE",
+          and row_pending["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE"
+          and row_pending["rows"][0]["hook"]
+          == "captions_burn.overlay_excerpt"
+          and row_pending["rows"][0]["burned"] is False
+          and row_pending["rows"][0]["artifact_present"] is False,
           row_pending)
-    check("U9: the pending row names the artifact U9 must land",
-          row_pending["rows"][0]["hook"] == "captions_burn.overlay_excerpt"
-          and row_pending["rows"][0]["burned"] is False, row_pending)
+    # The burn half, with the real artifact on disk.
+    row_burn = AS.excerpt_overlay_stage(
+        {"excerpt_overlay": {"lines": EXCERPT, "provenance": "provided"}})
+    check("U9: with captions_burn.py present the call site hands off the burn",
+          row_burn["pending"] is False
+          and row_burn["reason_code"] is None
+          and row_burn["rows"][0]["hook"] == "captions_burn.overlay_excerpt"
+          and row_burn["rows"][0]["burned"] is True
+          and row_burn["rows"][0]["lines"] == len(EXCERPT),
+          row_burn)
+    receipt = CB.overlay_excerpt(EXCERPT, provenance="provided")
+    check("U9: overlay_excerpt plans the burn and never claims it burned",
+          receipt.get("ok") is True
+          and receipt.get("planned") is True
+          and receipt.get("burned") is False
+          and receipt.get("hook")
+          == "final_assembler.captions_burn.overlay_excerpt"
+          and receipt.get("lines") == EXCERPT, receipt)
     check("U9: no excerpt -> no overlay row at all",
           AS.excerpt_overlay_stage({}) == {"rows": [], "pending": False,
                                            "reason_code": None},
