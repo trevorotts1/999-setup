@@ -1,8 +1,11 @@
 """suno_recipe package: the Suno song recipe v2, default for every Suno style."""
 from .suno_recipe import (  # noqa: F401
+    CAST_GENDERS,
     DELIVERIES,
     EXEMPT_STYLE_IDS,
+    GENDER_WORDS,
     INSTRUMENTAL,
+    KIE_PARAMS,
     NEGATIVE_TAGS,
     PRODUCT_SHARE_CAP_PCT,
     PRODUCT_SHARE_FLOOR_PCT,
@@ -16,6 +19,7 @@ from .suno_recipe import (  # noqa: F401
     check_payload,
     check_product_share,
     check_style_text,
+    check_voice_tags,
     cue_for,
     delivery_of_tag,
     guard_request,
@@ -29,6 +33,7 @@ from .suno_recipe import (  # noqa: F401
     negative_tags,
     parse_lyrics,
     parse_tag,
+    parse_voice_tags,
     prepare,
     product_share_pct,
     render_lyrics,
