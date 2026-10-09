@@ -376,6 +376,8 @@ times. The Velvet Voiceover version is exempt.
 - Never fabricate testimonials, clinical results, credentials or product
   facts. Creative beats stay separate from production stages.
 
+Client-facing question guide with examples and prep: `references/CLIENT-GUIDE.md`.
+
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
 Everything in this section is shared doctrine: identical in both
