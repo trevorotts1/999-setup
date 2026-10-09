@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## Unreleased
+
+- **U12: docs and the onboarding SOP in lockstep with the code.** SKILL.md gains "Request and prompt limits", the tag-grammar / style-plan / voice-tag bullets in the Suno recipe, the early-captions paragraph (with FU-U9 named as NOT built) and the book-orientation bullets; choice-card-spec gains 2.3 (options come from the registry; the fit card FU-U4 is not built), a machine-checked "Offered lengths" line, the book language and orientation text and the Book shots block (FU-U11, open branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6 seconds). Sections that describe open branches (FU-U4 PR #124, FU-U11 `unit/FU-U11`, FU-U9 no branch) say so and are refreshed when those land; FU-U3 landed in 2.7.31 and was refreshed here. New test `scripts/core/prompt_templates/test_docs_u12.py`.
+- **TODO(FU-U3): DONE in this unit** — SKILL.md and QC.md now read "landed in 2.7.31 via PR #120", not "open pull request".
+- **TODO(FU-U4):** choice-card-spec 2.3 rewritten when PR #124 (`unit/FU-U4`) lands.
+- **TODO(FU-U11):** refresh the Book shots block / book-orientation sections when `unit/FU-U11` lands.
+- **TODO(FU-U9):** captions read-back off frames — no branch yet; QC.md and SKILL.md say NOT built.
+
 ## [2.7.31] - 2026-10-09 - Batch MGB016: #120 + #121
 
 Landed together by merge train: #120 FU-U3 bands per music style (rap is its own band), #121 docs: fix check-docs-fresh failures (repo-level, no skill change). VERSION and SKILL.md frontmatter: 2.7.30 to 2.7.31.
