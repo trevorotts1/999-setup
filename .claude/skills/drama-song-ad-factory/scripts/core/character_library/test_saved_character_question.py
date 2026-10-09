@@ -66,13 +66,13 @@ class SavedCharacterQuestion(unittest.TestCase):
         self.assertNotIn(NO_SAVED, IC.render_card(self.qs))                    # saved: no such line
 
     def test_recap_plain_english_and_change_by_number(self):
-        st = IC.conversation(["3"] + ["recommended"] * 6, self.qs)
+        st = IC.conversation(["3"] + ["recommended"] * 4 + ["$25", "recommended"], self.qs)
         self.assertIn("1. Character: Maya Lee (saved)", st["message"])
-        st = IC.conversation(["1"] + ["recommended"] * 6, self.qs)
+        st = IC.conversation(["1"] + ["recommended"] * 4 + ["$25", "recommended"], self.qs)
         self.assertIn("1. Character: new", st["message"])
-        st = IC.conversation(["1"] + ["recommended"] * 6 + ["1", "2"], self.qs)
+        st = IC.conversation(["1"] + ["recommended"] * 4 + ["$25", "recommended"] + ["1", "2"], self.qs)
         self.assertIn("1. Character: Dre (saved)", st["message"])
-        st = IC.conversation(["1"] + ["recommended"] * 6 + ["1"], self.qs)
+        st = IC.conversation(["1"] + ["recommended"] * 4 + ["$25", "recommended"] + ["1"], self.qs)
         self.assertEqual(st["message"], IC.render_step(1, self.qs))
 
 
