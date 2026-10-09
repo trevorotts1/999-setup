@@ -1,5 +1,18 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.30] - 2026-10-09 - Batch MGB014: #118 + #119
+
+Landed together by merge train: #118 FU-U8 captions caught early, #119 U15i docs in lockstep with the prompt. VERSION and SKILL.md frontmatter: 2.7.29 to 2.7.30.
+
+### FU-U8: captions caught early
+
+Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
+
+- Every string that reaches the screen is now caught before a paid call: `_tokens()` maps U+2019/U+2018 and NFKC-normalises ("could’ve" is one word, not "could"+"ve"); the new `display_text()` turns performance spelling into the caption ("Girl, I got you-u" burns as "Girl, I got you", a wordless vocalise makes no cue) and `build_captions`/`check_captions` use it; `check_lyrics_spelling` refuses a misspelled lyric word with `LYRIC_MISSPELLED` inside `music_director.build_generate_request` BEFORE the recipe guard and any payload; `check_confusables` FLAGS the two confusions a token proves wrong (never a fix); `intake.client_typo_question` sends a client typo BACK AS ONE QUESTION ("Your storyboard says 'kitchan'...") and never rewrites the client's words; `kie_dispatch.onscreen_text_refusal` refuses `ONSCREEN_TEXT_NOT_CHECKED` a keyframe/video whose on-screen text is not in the checked receipt; and `qc_gate` requires a `spelling_grammar` record at the Script stage (new `required_checks`, schema enum, contract updated). New test `scripts/core/test_captions_early_u8.py` (24 checks; 18 fail on the base tree).
+
+### U15i
+- U15i (docs in lockstep with the template system; last unit of the U15 set): `SKILL.md` gains the "Prompt templates" section (data under `references/prompt-templates/`, the assembler `scripts/core/prompt_templates/`, the H3 band 5,000-6,800 with hard max 7,000, the prompt receipt, `PROMPT_NOT_TEMPLATED`, the `prompt_compliance` gate) and the Suno recipe and lip-sync bullets now point at it. `references/choice-card-spec.md` 3.1 names `references/prompt-templates/length-classes.json` as the ONE length table (its list equals the table's keys) and 3.3 points at `looks/` and `modes/`. `references/style-bibles/realism-cinematic.md` keeps the recipe as the source of the `realism` mode, moves the Chanel identity into a "worked example" heading, deletes the nine "(Restated for emphasis.)" duplicate blocks, and states the camera as per shot. `QC.md` carries the bands, the receipt, `PROMPT_NOT_TEMPLATED` and the required `prompt_compliance` record. New doc test `prompt_templates/test_docs_u15i.py`. Same change as onboarding Skill 75. No version bump in this unit (999 has no skill-version.txt).
+
 ## [2.7.29] - 2026-10-09 - Batch MGB013: #115 + #116 + #117 + #114
 
 Landed together by merge train: #115 U15f Kling as the card's video model, #116 U15h length classes / product seconds / lanes, #117 FU-U2 style-aware length plan, #114 FU-U5 voice tags from the cast. VERSION and SKILL.md frontmatter: 2.7.28 to 2.7.29.
