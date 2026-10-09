@@ -1,6 +1,8 @@
 # Changelog: drama-song-ad-factory
 
-## Unreleased
+## [2.7.33] - 2026-10-09 - Train 2.7.33: #128 + #129 + #131 + #132
+
+Landed together by merge train: #128 cast-sweep voice_casting docstring, #129 FU-U9 captions_burn.overlay_excerpt, #131 U12 per-style spoken paragraph and TODO block, #132 U15g book and printed-page prompt fragments one home. PR #130 (FU-U11) was dropped from this train: its test_book_pages_d1.py asserts that captions_burn.py does not exist, which fails once #129 lands (4 checks). VERSION and SKILL.md frontmatter: 2.7.32 to 2.7.33.
 
 - **U12 narrative follow-up after 2.7.32.** The spoken-target paragraph in
   SKILL.md now reads the band numbers per style since FU-U3 landed
