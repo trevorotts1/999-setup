@@ -1,5 +1,11 @@
 # Changelog: drama-song-ad-factory
 
+## [Unreleased] - FU-AI-MODELS-QUESTION
+
+- New first intake question, AI MODELS: which AI builds the video and which checks the work. OpenRouter is recommended (faster), Ollama is allowed, unknown names are refused politely, and the checker must differ from the builder.
+- Honest scope: the run still uses the session's own model. The answer is recorded as `ai_models` in the approved intake summary, as a preference for the operator.
+- The card now has seven questions (eight with a saved character, which comes second). Tests: `choice_card/intake_card/test_ai_models.py`; card-count checks in `test_intake_card_h9.py`, `test_intake_step_i7.py`, `test_character_library_i6.py` updated.
+
 ## [2.7.34] - 2026-10-09 - Train 2.7.34: #124 + #133
 
 Landed together by merge train: #124 FU-U4 (client lines are a contract; the STOP card lists only real options; fit card, `fit_card`, `card --fit`), #133 U12 choice-card-spec gap fills (STL voice guard, voice-match QC, planner card, fit-card TODO). Neither PR carried an Unreleased entry; this one is written by the train. One clash, spec text only: both PRs rewrote `references/choice-card-spec.md` section 2.3. #133's section 2.3 described the fit card as not built and carried a TODO to rewrite it when #124 landed; #124 is in this train, so the #124 text is kept and the stale #133 paragraph and its TODO line are dropped. All other #133 changes are kept. VERSION and SKILL.md frontmatter: 2.7.33 to 2.7.34.
