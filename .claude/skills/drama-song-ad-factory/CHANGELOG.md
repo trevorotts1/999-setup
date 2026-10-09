@@ -3,6 +3,16 @@
 ## Unreleased
 
 - **U12: docs and the onboarding SOP in lockstep with the code.** SKILL.md gains "Request and prompt limits", the tag-grammar / style-plan / voice-tag bullets in the Suno recipe, the early-captions paragraph (with FU-U9 named as NOT built) and the book-orientation bullets; choice-card-spec gains 2.3 (options come from the registry; the fit card FU-U4 is not built), a machine-checked "Offered lengths" line, the book language and orientation text and the Book shots block (FU-U11, open branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6 seconds). Sections that describe open branches (FU-U3, FU-U11) say so and are refreshed when those land. New test `scripts/core/prompt_templates/test_docs_u12.py`.
+- **TODO(FU-U3 landed in 2.7.31):** refresh the U12 docs sections that still mark FU-U3 as an open branch (per-style bands are now in main).
+- **TODO(FU-U11):** refresh the Book shots block / book-orientation sections when FU-U11 lands.
+
+## [2.7.31] - 2026-10-09 - Batch MGB016: #120 + #121
+
+Landed together by merge train: #120 FU-U3 bands per music style (rap is its own band), #121 docs: fix check-docs-fresh failures (repo-level, no skill change). VERSION and SKILL.md frontmatter: 2.7.30 to 2.7.31.
+
+### FU-U3: bands per music style; rap is its own delivery; silence is not speech
+
+- Per-style bands under the SAME locked 5/10 band: `spoken_share.STYLE_TARGETS` holds Soul Ballad and Soul Rise at exactly 22.5 runtime spoken / 77.5 sung-of-voice; R&B Flow's target is the documented default flagged as a TREVOR-DECISION ITEM in plan 18 section 9 item 1 -- the share planned from the approved sheet (the U2 plan's word counts at the style's measured rates), not a new number invented here -- and sung-of-voice on a rap sheet is recorded, not gated (hook content, not a planned share); the 6 s sung stretch and the hook count stay hard. `measure_share(segments, style_id=...)` reports rap separately for a rap style and counts plain spoken against its target; `segments_from_sung_stretches(voiced=)` turns music-only time into a fourth delivery `none` that counts in runtime and never in voice time (a music-only gap no longer counts as spoken); the rap-versus-speech split is measured word timestamps x the sheet's delivery labels, recorded as basis `aligned`, never `measured`. `song_dispatch.judge_take` / `run_takes` and `suno_recipe.score_take` carry `style_id` (+ `plan`) through validate and judge. New test `scripts/core/spoken_share/test_style_bands_u3.py` with the g1b segment fixture from SONG-RECEIPT (fails on the base tree: `voiced=` did not exist).
 
 ## [2.7.30] - 2026-10-09 - Batch MGB014: #118 + #119
 

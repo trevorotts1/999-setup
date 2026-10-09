@@ -7,7 +7,6 @@
 - fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
 
 - fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card
-- fix/headless-NHL001: nine-router-setup 1.29.0: locked Keychain (SSH/fleet installs) falls back to ~/.9router/gateway-key (mode 600) instead of aborting rc=36; 9Router guards auto-resolve the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes
 
 - fix/partI-I1: drama-song-ad-factory 2.7.7: captions spell-checked, exact website asked at intake and kept verbatim
 - fix/nineinst-NIN001: nine-router-setup 1.28.0: optional DeepSeek/Agnes keys, OpenRouter DeepSeek V4.1 Flash route, combos never overwritten without --update-combos
@@ -146,6 +145,15 @@ Now only CANCELLED, FAILED, COMPLETED and REAPED launches resolve a watch; a RET
 own journal shows every agent returned. The Workflow tool's reported `Transcript dir` (receipt `transcript_dir`) is
 used to find the run's journal, not only a slug derived from the launching transcript. Regression test:
 `test_returned_run_live.py`.
+
+## [nine-router-setup 1.29.0] — 2026-10-08
+
+### Headless Keychain fallback and guards that auto-resolve the 9Router install path (NHL001)
+
+- `fix/headless-NHL001`: locked Keychain (SSH/fleet installs) falls back to
+  `~/.9router/gateway-key` (mode 600) instead of aborting rc=36; 9Router guards auto-resolve
+  the install (npm root -g, running process, /opt/homebrew, /usr/local, ~/.npm-global) so
+  Homebrew-prefix boxes get the GLM 5.3 and OpenCode fixes.
 
 ## [nine-router-setup 1.28.0] — 2026-10-08
 
