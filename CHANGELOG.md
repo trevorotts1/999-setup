@@ -92,6 +92,8 @@
 - fix/lipsync-process-LSP001: skill 75: approved lip-sync process (LSP001) - reuse first, KEPT_BEST, mouth strips, retry only on a person's call, edit placement, QC (merge 29752ab7f7ab)
 - fix/par003-final-assembler-parity: skill 75 final_assembler: byte parity with onboarding main (PAR003) (merge 89417e6ad835)
 - port/par002-G3-WIRE: Merge main (#81 G5 receipts + H4 gate) into port/par002-G3-WIRE (merge 9231c8bacd09)
+- unit/W-G-002-amend: W-G-002 amend: delivery-named tag grammar in lyric_structure (review G4/G5) (merge cc188584c46e)
+- unit/TESTHYG-75: TESTHYG-75: catalog_calculator import guard in test_lipsync_closeup (merge ff418339a2ef)
 
 ## [hook-skill] — 2026-10-06
 
