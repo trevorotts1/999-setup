@@ -85,7 +85,7 @@ previous selections kept.
 
 The intake is a conversation, not a form. One message per turn:
 
-1. `Question 4 of 9 - VIDEO STYLE`, then a one-sentence reason the question
+1. `Question 3 of 9 - VIDEO STYLE`, then a one-sentence reason the question
    matters, then the question.
 2. Options as a numbered list, one per line, each with a short plain
    description; the RECOMMENDED option is marked and followed by "I recommend
@@ -128,9 +128,10 @@ prints the intro on the first call and records `intro_shown` in that file;
 the next call prints question 1. A run state that already shows `intro_shown`
 never prints it again. Without `--run-state-file` the card is unchanged.
 Test: `choice_card/intake_card/test_intro_message.py`.
-## 2.6 Script approval (the last card question)
 
-Appended after SONG APPROVAL (the card's last question; the total
+## 2.1b SCRIPT APPROVAL (the last card question)
+
+Appended after STORYBOARD APPROVAL (the card's last question; the total
 count is computed, never typed):
 
 ```
@@ -147,8 +148,8 @@ pauses before the song (`script_approval/script_approval.py`; gate
 
 ## 2.1 Intake question card layout (Part H9, normative)
 
-The nine intake questions (AI models, length, music style, video style, video model,
-budget, storyboard approval, song approval, script approval) are built by
+The nine intake questions (AI models, length, music style, video style, video
+model, budget, storyboard approval, song approval, script approval) are built by
 `scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
 write them free hand and never carry them as one JSON string.
 
@@ -172,7 +173,7 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
-## 2.7 Fit stop card (FU-U4, normative)
+## 2.5 Fit stop card (FU-U4, normative)
 
 When the client brings their own lines (concept mode, `brief.mode == "concept"`),
 their lines are a contract: `brief.packet_lines` is required (missing is refused
@@ -202,7 +203,7 @@ length that is not offered, and any fps other than the 30 fps master.
 ### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
 
 Shown only when the client's data folder holds saved characters; it is then
-question 2 (AI MODELS is always question 1) and the card has one more question. Built by
+question 2 (AI MODELS stays question 1) and the card has one more question. Built by
 `character_library.saved_character_question`, never free hand. N is how many
 characters the client has saved ("1 character", "2 characters"):
 
@@ -238,7 +239,7 @@ still and re-sends only that shot. Built by
 `scripts/core/storyboard_director/approval_package.py`; a shot with an
 incomplete card or no still file blocks the approval message. The live run sends it with `factory.py storyboard` (see stage-runbook.md, Wiring).
 
-## 2.5 Song approval (FU-SONG-APPROVAL, normative)
+## 2.6 Song approval (FU-SONG-APPROVAL, normative)
 
 Question 8 of 9, label `SONG APPROVAL`, built by `intake_card.py` like the
 storyboard question (the saved-character question, when shown, makes it 9 of 10):
@@ -470,6 +471,20 @@ Constraints:
 
 Decision 32, plan 6.13.
 
+- Automatic 60-second and 90-second clips are offered **for the 5-minute and
+  10-minute lengths only**. On 60 s, 90 s and 3 minutes the Clips row is
+  hidden and states "not offered for this length".
+- Cutting a clip is free: it is an FFmpeg edit of the finished video. The AI
+  that picks the moments runs on the client's own AI plan.
+- Default set: Clip 1 = cold-open teaser plus humiliation (the ad clip);
+  Clip 2 = mentor and turning point; Clip 3 = transformation and vindication.
+- Every clip starts on a strong line, is cut on whole lines with a short
+  music fade, gets its own re-timed captions, and ends with an end card
+  pointing at the full story.
+  TODO(FU-U9): refresh this sentence when caption read-back off the rendered
+  frames lands (no onboarding branch; 999 `unit/FU-U9` carries only the
+  excerpt burn).
+
 - Automatic clips come with the **3-minute, 5-minute and 10-minute** ads:
   one 60-second clip and one 90-second clip each (`core/clip_cutdown`,
   `clips_for`). On 60 s and 90 s the Clips row says "not offered".
@@ -484,9 +499,6 @@ Decision 32, plan 6.13.
   No window that meets those rules fails closed (`CLIP_NO_WINDOW`).
   `build_argv` / `run_clips` cut it with a short fade-out; the captions are
   re-timed by `captions_offset_s`.
-  TODO(FU-U9): refresh this sentence when caption read-back off the rendered
-  frames lands (no onboarding branch; 999 `unit/FU-U9` carries only the
-  excerpt burn).
 - Long-version shape choice is shown on the card: generate both shapes
   (roughly double the video cost, clips cut from the 9:16 version) or
   centre-crop to 9:16 (free, may cut off faces, the client must accept it).
@@ -617,7 +629,7 @@ Sketch to Life / Velvet pair is refused there too), `core/smp/saturday_prompt`.
    does not start paid work.
 5. On resume the card shows only what changed, plus the next stage.
 6. With SONG APPROVAL = Yes the total includes the two extra song generations
-   (section 2.4).
+   (section 2.6).
 
 ## 5. Skill 74 mode gate
 

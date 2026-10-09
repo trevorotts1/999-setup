@@ -51,8 +51,7 @@ def make_run(yes=True):
                         (s, "COMPLETE" if STAGES.index(s) < 3 else "NOT_STARTED"))
     shutil.copy(SAMPLES[0], os.path.join(run, "creative", "story.json"))
     shutil.copy(SAMPLES[1], os.path.join(run, "creative", "lyrics.json"))
-    answers = IC.conversation([("1" if yes else "2") if q["id"] == "script" else "$25" if q["id"] == "spend" else "1"
-                                for q in IC.QUESTIONS])["answers"]
+    answers = IC.conversation(ones()[:-1] + ["1" if yes else "2"])["answers"]
     json.dump(answers, open(os.path.join(run, "card-answers.json"), "w"))
     write_script(run, SHEET)
     return run

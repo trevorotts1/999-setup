@@ -351,8 +351,7 @@ def compile_visual_prompt(style, characters, product, shot, video=False):
         for k in STYLE_LIST_MIN1:
             lines.append("%s: %s" % (k, " | ".join(style[k])))
         lines.append("Character references: %s." % ", ".join(
-            "%s=%s" % (cid,
-                       "+".join(by_id[cid]["approved_reference_asset_ids"]))
+            "%s=%s" % (cid, "+".join(by_id[cid]["approved_reference_asset_ids"]))
             for cid in cids))
         lines.append("Product references: %s." % ", ".join(
             product["required_product_reference_images"]))
@@ -373,42 +372,24 @@ def compile_visual_prompt(style, characters, product, shot, video=False):
             lines.append("%s: %s" % (k, " | ".join(style[k])))
         lines.append("[/STYLE]")
         lines.append("[CHARACTER_REFS] %s [/CHARACTER_REFS]" % ", ".join(
-            "%s=%s" % (cid,
-                       "+".join(by_id[cid]["approved_reference_asset_ids"]))
+            "%s=%s" % (cid, "+".join(by_id[cid]["approved_reference_asset_ids"]))
             for cid in cids))
         lines.append("[PRODUCT_REFS] %s [/PRODUCT_REFS]" %
                      ", ".join(product["required_product_reference_images"]))
         lines.append("[TEXT_ALLOWLIST] %s [/TEXT_ALLOWLIST]" %
                      ("; ".join(allow) if allow else "(none)"))
         lines.append("[SHOT:%s] %s [/SHOT]" % (shot_id, base.strip()))
-    # Part F F12: every compiled clip prompt asks for motion — the failed
-    # 2026-10-08 runs produced near-still clips because the prompt never
-    # said the subject moves. Exact one-line wording, builder style.
-    #
-    # FU-U10: the generic line is a PEOPLE instruction ("limbs, head and
-    # camera ..."). On a book / product / insert shot a moving camera plus
-    # object rotation is the named cause of flipped and invented covers, so
-    # those kinds carry the shot's OWN motion block and never the generic
-    # line. A kind outside the people set with no motion refuses rather than
-    # silently shipping the wrong instruction.
-    kind = shot.get("kind", "people")
-    if video:
-        # U15b video path: the prompt carries no square-bracket markers at
-        # all, so neither the generic F12 line nor the U10 own-motion block
-        # (both are [MOTION] markers) may ride here. Per-shot motion comes
-        # from the shot spec's Physics and Timing sections; the U10
-        # MOTION_MISSING_FOR_SHOT refusal still fires for owned kinds.
-        if isinstance(kind, str) and kind.strip().lower() in KIND_OWN_MOTION:
-            motion = shot.get("motion")
-            if not isinstance(motion, str) or not motion.strip():
-                raise CompilerError(
-                    "MOTION_MISSING_FOR_SHOT",
-                    "shot kind %r owns its motion block; set shot['motion'] "
-                    "(people shots keep the generic F12 line)" % kind)
-    else:
         # Part F F12: every compiled clip prompt asks for motion — the failed
         # 2026-10-08 runs produced near-still clips because the prompt never
         # said the subject moves. Exact one-line wording, builder style.
+        #
+        # FU-U10: the generic line is a PEOPLE instruction ("limbs, head and
+        # camera ..."). On a book / product / insert shot a moving camera plus
+        # object rotation is the named cause of flipped and invented covers, so
+        # those kinds carry the shot's OWN motion block and never the generic
+        # line. A kind outside the people set with no motion refuses rather than
+        # silently shipping the wrong instruction.
+        kind = shot.get("kind", "people")
         if isinstance(kind, str) and kind.strip().lower() in KIND_OWN_MOTION:
             motion = shot.get("motion")
             if not isinstance(motion, str) or not motion.strip():
@@ -418,10 +399,10 @@ def compile_visual_prompt(style, characters, product, shot, video=False):
                     "(people shots keep the generic F12 line)" % kind)
             lines.append("[MOTION] %s [/MOTION]" % motion.strip())
         else:
-            lines.append("[MOTION] The subject moves naturally through the "
-                         "frame; limbs, head and camera stay in gentle "
-                         "continuous motion. [/MOTION]")
-    prompt = "\n".join(lines)
+            lines.append("[MOTION] The subject moves naturally through the frame; "
+                         "limbs, head and camera stay in gentle continuous motion. "
+                         "[/MOTION]")
+        prompt = "\n".join(lines)
     if len(prompt) > cap:
         raise CompilerError("OVER_CAP", "%d > %d for %s"
                             % (len(prompt), cap, model))

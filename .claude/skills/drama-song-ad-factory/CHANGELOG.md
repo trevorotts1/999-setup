@@ -1,5 +1,15 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
+
+Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
+
+- `delivery_audio.check_delivery_audio()` now requires AAC-LC, 48 kHz and faststart (moov before mdat), not only AAC and non-silent. New codes `DELIVERY_AUDIO_NOT_48K` and `DELIVERY_NOT_FASTSTART`; new `require_delivery_audio()` raises `DeliveryAudioRefused` (fail closed).
+- Every code path that writes a client-delivered video now calls the gate on its output: the final assembler master (already gated), `clip_cutdown.run_clips` (a refused clip is deleted and the run stops with `CLIP_AUDIO_REFUSED`), `batch_zip.build_batch_zip` (captioned ad and clean master, `DELIVERY_AUDIO_REFUSED`, no zip written) and `delivery_checklist.delivery_battery` (already gated).
+- `clip_cutdown.build_argv` uses `AUDIO_OUT_ARGS` + `FASTSTART_ARGS` instead of bare `-c:a aac`.
+- 999 copy of `scripts/core` and three reference docs synced byte-for-byte to openclaw-onboarding main (intake card, 9-question card and count-built example, and every other diverged shared file).
+- New `scripts/core/test_delivery_gate_paths.py`: one MP3-refused test per delivery path plus 44.1 kHz and non-faststart refusals.
+
 ## [2.7.36] - 2026-10-09 - Train 2.7.36: #125 + #126 + #136 + #139 + #140 + #141 + #142 + #143 + #144 + #145 + #146
 
 Landed together by merge train: #136 style questions with sample links, #139 four video models each priced, #140 storyboard approval shows both card and still, #141 SONG APPROVAL (3 labelled versions), #142 intro message, #143 SCRIPT APPROVAL, #144 client guide, #145 AI MODELS question, #146 test temp-dir isolation, #125 song style contract (ae193a55), #126 hook placement (d17a078c). #141 and #143 are at their final heads (7bbb1848, 5ee8c812): card Yes records the chat id and the confirmed recap writes card-answers.json. The card is now nine questions (ten with a saved character, which is question 2 after AI MODELS): AI MODELS, LENGTH, MUSIC STYLE, VIDEO STYLE, VIDEO MODEL, BUDGET, STORYBOARD APPROVAL, SONG APPROVAL, SCRIPT APPROVAL. Interaction fixes: song_choices validates requests with the delivered length; the cinematic-strings R&B Flow clause no longer says slow (#125 refuses slow in upbeat styles); test sheets put a verse before the first hook and carry a hook_plan (#126); `_parse` tolerates the list-valued model question, `card_render` maps the FU-LENGTH-CLIPS labels to the canonical length, the SONG APPROVAL price row now also lifts the Total line, `_priced` finds the length question by id, the recap labels read "Video model" and "AI Models", and `conversation(..., run_dir=, target=)` is keyword-only for the run arguments. VERSION and SKILL.md frontmatter: 2.7.36.

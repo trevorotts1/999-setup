@@ -1011,6 +1011,8 @@ def _song_pick_refusal(model, run_dir):
     except Exception as exc:  # noqa: BLE001 - a gate that cannot run never opens
         return {"reason_code": "SONG_GATE_BROKEN", "detail": "song gate failed: %r." % (exc,),
                 "next_action": "Fix the song-choices gate before any paid job."}
+
+
 def check_script_approval_gate(model, request, save_dir=None):
     """SCRIPT APPROVAL: a music job for a run whose client asked to approve the
     script first refuses until the script is approved. Others untouched."""

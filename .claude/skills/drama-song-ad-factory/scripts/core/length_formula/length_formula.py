@@ -467,3 +467,8 @@ def class_check(chosen_length_s):
                                  else "1 base + %d extends" % len(ext))}
     return ["%s class=%r plan=%r" % (f, row.get(f), v)
             for f, v in sorted(mine.items()) if row.get(f) != v]
+
+
+if __name__ == "__main__":  # python3 length_formula.py <chosen_s>
+    import json
+    print(json.dumps(plan(float(sys.argv[1])), indent=2))
