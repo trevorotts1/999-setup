@@ -7,6 +7,14 @@
 - Fail closed: a missing view names exactly the missing views and leaves the delivery folder untouched (the whole plan is computed before any write); the same for NO_CHARACTERS, SOURCE_MISSING, BAD_IMAGE and DUPLICATE_SLUG. Receipt rows carry source basename + bytes, never an absolute path.
 - New `test_character_images_del11.py` (14 unit tests). `scripts/core/character_images/` is byte-identical to the openclaw-onboarding copy (skill 75 v2.9.14).
 
+## [2.7.39] - 2026-10-09 - FU-DEL-09: the lyric sheet PDF
+
+- New `scripts/core/lyric_sheet/`: the run's approved `creative/script.json` rendered into the delivery folder as `09 - Lyric Sheet.pdf`. Section headings come from the song's own tags — one break per block, in song order — the approved title and lines print verbatim, and nothing on the page is under 12 pt. Bright page: white paper, near-black ink, gold eyebrow and rule, a footer on every page.
+- Stdlib-only PDF writer (this core is stdlib-only), deterministic bytes: no date and no random id, so the same approved sheet renders identical every run.
+- Refuses fail-closed: `MONEY_ON_PAGE` (chrome wording), `TOOL_NAME_ON_PAGE` (a tool or model name reaching the page), `SCRIPT_MISSING` / `SCRIPT_UNREADABLE` / `EMPTY_SHEET`. A lyrics-only run reuses `lyric_writer.lyric_structure.parse_sheet`, so both approved inputs give the same section structure.
+- Page law: `c.need(74.0)` before each heading keeps the section header and its first line up together, so a page break never lands between a section heading and its body and no heading is orphaned at the foot of a page. Section order, heading sequence and the 12 pt floor are held by the 17 unit tests in `test_lyric_sheet.py`.
+- Shared core stays byte-identical to the OpenClaw copy (`tests/test_parity_layout.py`, tree sha256 match). VERSION and SKILL.md frontmatter: 2.7.39.
+
 ## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
 
 Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
