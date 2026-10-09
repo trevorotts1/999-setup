@@ -437,6 +437,17 @@ def test_kie_dispatch_refuses_uncontracted_book_job():
     check("a mismatched plan hash refuses once the field exists",
           bad is not None and bad["reason_code"] == "BOOK_PLAN_NOT_APPROVED"
           and "book_plan_sha256" in bad["detail"], bad)
+    # (onboarding half's extra case) a carried hash with NO approval at all
+    # is refused -- the plan changed hands without the client's tick.
+    unapproved = KD.book_shot_refusal(
+        "kling-3.0/video",
+        {"request_kind": "video", "shot_kind": "book",
+         "book_plan_sha256": _sha,
+         "book_start_frame": frame_with_cover, "book_cover_path": cover})
+    check("a carried plan hash with no approval is refused",
+          unapproved is not None
+          and unapproved["reason_code"] == "BOOK_PLAN_NOT_APPROVED",
+          unapproved)
 
 def test_qc_gate_requires_book_orientation():
     """A book campaign's shots stage requires a book_orientation record."""

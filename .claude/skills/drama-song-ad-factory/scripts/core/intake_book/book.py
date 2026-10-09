@@ -93,6 +93,11 @@ BOOK_FIELDS = (
 EXCERPT_FIELD = "excerpt_lines"
 EXCERPT_MAX_LINES = 3
 EXCERPT_PROVENANCE = "provided"
+#: The notice the card shows when the client supplied no excerpt (the
+#: onboarding half's wording, kept for the package export surface).
+EXCERPT_NOTE_EMPTY = ("No excerpt supplied -- the pages carry no overlay "
+                      "text. The excerpt is optional and is never invented "
+                      "for the client.")
 
 #: Default when the brief says nothing: English, which is left-to-right.
 DEFAULT_LANGUAGE = "en"
@@ -271,6 +276,25 @@ def _spellcheck_excerpt(lines):
     # check_spelling walks the LINES of its argument; a dict is walked over
     # its KEYS, so the lines are passed as a list (never a dict).
     return list(_PN.check_spelling(list(lines)))
+
+
+def excerpt_lines(brief):
+    """The client's optional excerpt as (lines, provenance, errors).
+
+    The onboarding half's package surface, kept: evaluate() is the fail-closed
+    path (a bad excerpt refuses the brief), while this read-only view reports
+    the errors instead of raising, for a caller that wants to show them.
+    CLIENT-SUPPLIED ONLY -- lines come verbatim from the brief, never composed
+    here; provenance is "provided" when lines were supplied, "missing" when
+    the field is absent, never invented.
+    """
+    try:
+        lines, prov = _pick_excerpt(brief)
+    except BookBriefError as exc:
+        return [], "missing", [str(exc)]
+    if lines is None:
+        return [], "missing", []
+    return list(lines), prov, []
 
 
 def to_intake_brief(fields):

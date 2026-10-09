@@ -16,11 +16,18 @@ and has not landed): no test is deferred here except the OCR read-back of the
 burned overlay itself. It never weakens into a silent pass -- it asserts the
 absent text AND that the overlay payload still carries the excerpt as data.
 
+This is the RECONCILED suite (FU-U11 halves): the 999 form is the base, with
+the onboarding half's unique checks ported in -- the second fixture family,
+the single-blank chapter-break rule, the carried-hash-no-approval refusal,
+approval-field exclusion and key-order stability, the template-assembled H3
+boundary, pages_block, and the excerpt_lines package surface.
+
 Run: HOME=$(mktemp -d) python3 scripts/core/book_shot/test_book_pages_d1.py
 stdlib + cv2/numpy (PREREQS python-mediapipe); no network, no spend.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -112,6 +119,21 @@ def _cases(TMP):
     seq_ok = BS.check_pages_sequence([printed, printed, printed])
     check("(a) all-printed open frames PASS the sequence check",
           seq_ok["verdict"] == "PASS", seq_ok)
+    # ONE blank open frame may be a chapter break (onboarding half's rule).
+    one_blank = BS.check_pages_sequence([printed, white, printed])
+    check("(a) a single blank open frame does not fail the sequence",
+          one_blank["verdict"] == "PASS", one_blank)
+    # The onboarding half's independent fixture family must sort the same
+    # way: the grid check is proven on a generator it was not calibrated on.
+    ob_printed = FIX.open_book_frames(cv2, np, printed=True)
+    ob_white = FIX.open_book_frames(cv2, np, printed=False)
+    check("(a) the onboarding printed-page fixture PASSes the same check",
+          all(BS.check_pages(f)["verdict"] == "PASS" for f in ob_printed),
+          [BS.check_pages(f)["verdict"] for f in ob_printed])
+    check("(a) the onboarding white-page fixture FAILs BOOK_BLANK_PAGES",
+          all(BS.check_pages(f)["reason_code"] == "BOOK_BLANK_PAGES"
+              for f in ob_white),
+          [BS.check_pages(f)["reason_code"] for f in ob_white])
 
     # ---------------------------------------------------------------- (b) --
     # A book video job with no approved plan hash is refused.
@@ -131,6 +153,16 @@ def _cases(TMP):
         dict(base, book_plan_sha256=sha, approved_book_plan_sha256=sha))
     check("(b) a matching approved plan hash passes",
           matching is None, matching)
+    # (onboarding half) a carried hash with no approval is refused too.
+    unapproved = KD.book_shot_refusal(
+        "kling-3.0/video",
+        dict(base, book_plan_sha256=sha,
+             book_start_frame=frame_with_cover,
+             book_cover_path=FX["paths"]["cover"]))
+    check("(b) a carried hash with no approval is REFUSED",
+          unapproved is not None
+          and unapproved["reason_code"] == "BOOK_PLAN_NOT_APPROVED",
+          unapproved)
 
     # ---------------------------------------------------------------- (c) --
     # A changed prompt changes the hash and is refused until re-approved.
@@ -150,6 +182,15 @@ def _cases(TMP):
         dict(base, book_plan_sha256=sha2, approved_book_plan_sha256=sha2))
     check("(c) re-approving the new hash lets it through",
           reapproved is None, reapproved)
+    # (onboarding half) the approval fields never feed the hash, and key
+    # order never moves it: approving a plan cannot chase its own hash.
+    approved_carrier = dict(spec, approved_book_plan_sha256=sha,
+                            approved_at="2026-10-09")
+    check("(c) approval fields are excluded from the plan hash",
+          BS.plan_sha256(approved_carrier) == sha,
+          BS.plan_sha256(approved_carrier)[:12])
+    check("(c) the hash is stable across key order",
+          BS.plan_sha256({"a": 1, "b": 2}) == BS.plan_sha256({"b": 2, "a": 1}))
 
     # ---------------------------------------------------------------- (d) --
     # The excerpt is DATA, never prompt text.
@@ -191,6 +232,50 @@ def _cases(TMP):
     hook = BS.EXCERPT_OVERLAY_HOOK
     check("(d) exactly one overlay hook is named, for U9",
           hook == "final_assembler.captions_burn.overlay_excerpt", hook)
+    # An over-cap excerpt fails closed (never truncated, never rewritten).
+    try:
+        BS.normalize_excerpt(EXCERPT + ["a fourth line"])
+        check("(d) an over-cap excerpt raises (fail closed)", False)
+    except BS.BookShotError as exc:
+        check("(d) an over-cap excerpt raises (fail closed)",
+              exc.code == BS.BOOK_EXCERPT_INVALID, exc)
+    # The onboarding half proved the same boundary one layer up, through the
+    # U15b template assembler: the assembled H3 prompt carries the
+    # PRINTED_PAGES fragment and never an excerpt word.
+    import prompt_templates as PT
+    spec_pt = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
+               / "product-book-S09.json")
+    chars_pt = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
+                / "sample-characters.json")
+    if spec_pt.is_file() and chars_pt.is_file():
+        prompt_pt, sections = PT.assemble_h3(
+            json.loads(spec_pt.read_text("utf-8")),
+            json.loads(chars_pt.read_text("utf-8")))
+        check("(d) the template-assembled H3 prompt carries PRINTED_PAGES",
+              "printed" in prompt_pt.lower() and "pages" in sections,
+              sorted(sections))
+        # The word test would be a false claim here: the fixture subject is
+        # literally "...on a light oak kitchen table" and the PRINTED_PAGES
+        # fragment itself says "no blank pages and no large empty white
+        # areas", so "kitchen", "table" and "empty" are authored template
+        # words that collide with the excerpt BY CHANCE. The evidence the
+        # boundary rests on is structural: the template knows no excerpt key,
+        # and no whole excerpt line ever appears.
+        check("(d) the H3 spec carries no excerpt key at all",
+              "excerpt" not in json.loads(spec_pt.read_text("utf-8")),
+              sorted(json.loads(spec_pt.read_text("utf-8"))))
+        check("(d) no whole excerpt line appears in the template prompt",
+              not [ln for ln in EXCERPT
+                   if ln.lower() in prompt_pt.lower()], "")
+        # pages_block (onboarding half) quotes that same fragment verbatim.
+        check("(d) pages_block consumes the template, never authors text",
+              (BS.pages_block({"pages": "texture"}) or "") in prompt_pt,
+              BS.pages_block({"pages": "texture"}))
+    else:
+        check("(d) the product-book H3 fixture exists", False, str(spec_pt))
+    check("(d) pages_block is silent unless pages==texture",
+          BS.pages_block({"pages": "plain"}) is None
+          and BS.pages_block({}) is None, BS.pages_block({}))
 
     # ------------------------------------------------- intake excerpt ------
     from intake_book import book as IB
@@ -220,6 +305,19 @@ def _cases(TMP):
     except BS.BookShotError as exc:
         check("book_shot: a misspelled excerpt raises",
               exc.code == BS.BOOK_EXCERPT_INVALID, exc)
+    # The onboarding half's read-only package surface (intake_book.__init__
+    # imports it) reports errors instead of raising.
+    ex_view = IB.excerpt_lines(dict(brief, excerpt_lines=EXCERPT))
+    check("compat: excerpt_lines returns (lines, provided, no errors)",
+          ex_view == (EXCERPT, "provided", []), ex_view)
+    ex_missing = IB.excerpt_lines(dict(brief))
+    check("compat: excerpt_lines with no excerpt is ([], missing, [])",
+          ex_missing == ([], "missing", []), ex_missing)
+    ex_bad = IB.excerpt_lines(dict(brief, excerpt_lines=["one", "two",
+                                                         "three", "four"]))
+    check("compat: excerpt_lines over the cap reports the error",
+          ex_bad[0] == [] and ex_bad[1] == "missing" and ex_bad[2],
+          ex_bad)
 
     # ------------------------------------------- card approval block -------
     plan = BS.plan_spec({"book_title": FX["title"], "author": FX["author"],
@@ -236,6 +334,8 @@ def _cases(TMP):
           "No buy link supplied." in text, text)
     check("card: the block offers NO new choice (no numbered options)",
           not re.search(r"^\s*\d+\.\s", text, re.M), text)
+    check("card: the block says the excerpt never reaches a video model",
+          "never sent to the video model" in text, text)
     check("card: a non-book plan adds no block",
           BS.plan_card_block(None) == [], BS.plan_card_block(None))
 
