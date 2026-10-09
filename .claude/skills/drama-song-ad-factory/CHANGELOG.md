@@ -26,6 +26,13 @@
 - New `scripts/core/delivery_package/test_welcome_sheet_del12.py` (11 tests): one page, all 20 file names and all 12 numbers present, no type below 12 pt, no client/model/tool name, no price or income claim, byte-identical rebuild, checklist shares the same objects.
 - Shared `delivery_package/` and `delivery_checklist/` content byte-identical to the openclaw-onboarding twin (v2.9.14), verified with cmp. Version bump per repo convention: VERSION 2.7.38 -> 2.7.39 with the matching SKILL.md frontmatter stamp (`tests/test_parity_layout.py` asserts it).
 
+## [2.7.39] - 2026-10-09 - DEL-04: the storyboard delivered as one grid PDF
+
+- New `scripts/core/storyboard_grid/`: the approved storyboard becomes `04-storyboard.pdf` in the run's delivery folder — a page grid of the scene pictures, each captioned with shot number and timecode, the lyric line it plays over and what happens, in song order. Built only from the run's approval records (`storyboard/gate.json`, `contracts.json`, `stills.json`, `shot-list.json`); a run never approved refuses `STORYBOARD_NOT_APPROVED`.
+- New `scripts/core/pdf_kit/`: the shared stdlib PDF writer every DEL document composes with — base-14 Helvetica with real AFM widths, PNG alpha composited onto white, JPEG embedded unchanged, and a **12 pt floor that refuses `FONT_TOO_SMALL`** rather than drawing small.
+- `forbidden_text()` refuses a model/tool name, a dollar amount or an income promise before a byte is written (`CLIENT_TEXT_FORBIDDEN`).
+- `references/stage-runbook.md` and `QC.md` carry the wiring. Shared `scripts/` and `references/` files are byte-identical to the onboarding copy (verified with `cmp`). VERSION and SKILL.md frontmatter: 2.7.38 to 2.7.39.
+
 ## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
 
 Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
