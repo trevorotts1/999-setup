@@ -13,6 +13,10 @@
 - `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
 - New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built). Parity: core files byte-identical with the onboarding tree.
 
+### FU-U7: video/avatar prompt caps enforced at the call site, fail closed
+
+- `kie_dispatch.dispatch` now runs the U6 `prompt_limits.check_request` over the FINAL payload before any other gate: an over-cap field is refused `PROMPT_OVER_CAP` (field, chars, cap, source, status; nothing reserved, nothing sent, never truncated) and a paid video/avatar job with no importable limit table is refused `PROMPT_LIMIT_UNAVAILABLE`; the ok receipt carries the measured `prompt_caps` rows; `prompt_limits.py` gains the file-17 video/avatar caps (Hailuo family 2,000, Kling 2.6 i2v 2,500, Kling 2.5 Turbo negative_prompt 2,500) and the 999 installer layout in its catalog walk. New test `kie_dispatch/test_prompt_cap_u7.py`.
+
 # Changelog: drama-song-ad-factory
 
 ## [2.7.27] - 2026-10-09 - Batch MGB010b: #104 + #96 + #103 + #107
