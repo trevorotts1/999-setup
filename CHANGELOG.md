@@ -97,6 +97,9 @@
 - unit/W-G-007-amend: W-G-007-amend: 999 syncs to shared-core bytes (G3-WIRE detector enforcement + 4 tests) (merge 607322b19492)
 - unit/TESTHYG-75: TESTHYG-75: re-import the identity pairs in one wave under the collection drop (merge 9cc59f8cdc45)
 - unit/W-G-003-amend: W-G-003 amend: singing detector aligned to Appendix A (order 1150 part G, review G2) (merge d604dd23a59b)
+- fix/ci-999-pytest: fix(ci): 999 drama-song-tests collect — lyric_structure import path (v2.7.26) (merge 831590870253)
+- unit/W-F-U2: W-F-U2 (F2): whole-track retakes only - PARTIAL_SUNO_JOB gate + live dispatch seam (merge 073becb0a7a3)
+- unit/FU-U13: FU-U13: story arc rule + product-connection target (10-15 percent) (merge 0bafad4e3705)
 
 ## [hook-skill] — 2026-10-06
 
