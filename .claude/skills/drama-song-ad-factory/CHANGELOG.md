@@ -1,6 +1,10 @@
 # Changelog: drama-song-ad-factory
 
-## [2.7.26] - 2026-10-08 - FU-U13: story arc rule + product-connection target
+## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
+
+Landed together by merge-train: #101 (drama-song-tests collection, lyric_structure import path), #97 (whole-track retakes), #98 (story arc + product connection), #99 (song mp3 in every deliverable), #100 (book orientation contract). #96 (W-G-008) not included: CONFLICTING, being rebased.
+
+### FU-U13: story arc rule + product-connection target
 
 Trevor's order: never forget to connect the product to the story, and spend at
 least 10-15% of the time connecting the dots to the product and promoting it -
