@@ -49,6 +49,10 @@ skill 75 v2.9.1 (same core, byte-identical).
 
 - `scripts/core/suno_recipe/test_tag_grammar_u1.py` line 84: the file is dual-mode — in script mode `main()` passes test_a's return into `test_b_lyric_gate_counts_rap_in_the_budget(sheet)`, but pytest calls test_b standalone and never receives that return, so pytest read `sheet` as a fixture name and errored `fixture 'sheet' not found` (the whole unit was uncollectable, which is why #106 was held out of the 2.7.27 batch). test_b now takes `sheet=None` and, when it is None, builds it in-test from the existing `load_fixture()` + `R.parse_lyrics()` (a parse failure reports through `check()` and leaves the sheet None); the existing `if sheet is None:` guard still fails loudly, so a failed build is never a silent skip. `main()` and every assertion are unchanged.
 
+### FU-U2: style-aware length plan and words fit
+
+- Style-aware length plan and words fit: `length_formula.plan(L, spoken_share_pct=None, style_id=None)` gives a rap style (R&B Flow, from the style's own `deliveries` in `core/music_styles`) a rap budget for the verses by splitting the D15 spoken-STYLE allowance with the [Intro]/[Outro] spoken block caps, at the calibrated `core/words_fit` rate, and returns `words {spoken, rap, sung}` plus `rap_s`; `words_fit.STYLE_RATES` is keyed by STYLE ID with `rates_for()` normalizing through `music_styles.style()` and `CARD_LENGTHS_S` now re-exports `music_styles.OFFERED_LENGTHS_S` (one copy, gain 120 s); `music_director.build_generate_request` passes `style_id` into `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet` passes it into `plan`; Soul Ballad and Soul Rise plans are BYTE-IDENTICAL (65 words at L=60). New test `scripts/core/length_formula/test_style_plan_u2.py`.
+
 ## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
 
 Landed together by merge-train: #101 (drama-song-tests collection, lyric_structure import path), #97 (whole-track retakes), #98 (story arc + product connection), #99 (song mp3 in every deliverable), #100 (book orientation contract). #96 (W-G-008) not included: CONFLICTING, being rebased.
