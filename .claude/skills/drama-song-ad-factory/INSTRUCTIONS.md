@@ -161,9 +161,10 @@ card. The answers and the time answered go into the receipt
    60 seconds - the card still shows and the answers still record (F15).
    Each length is its own song and timing map, never a cut-down.
 3. **Shape:** 9:16, 16:9 or both, each generated natively.
-4. **Clips:** automatic 60- or 90-second clips are offered for the
-   **5-minute and 10-minute lengths only**; cutting is free, the AI that
-   picks the moments runs on the client's own AI plan.
+4. **Clips:** the 3-minute, 5-minute and 10-minute ads each come with one
+   automatic 60-second clip and one 90-second clip (`core/clip_cutdown`);
+   cutting is free (FFmpeg, no new AI media), so the price already includes
+   them. 60 s and 90 s ads get none.
 5. **Five looks:** Lifelike 3D (default), 2D Hand-Painted, Sketch to Life,
    Canvas to Life, Canvas to 3D - each with its own style-bible block,
    switching rules and QC. Hybrids switch on matched poses with a 0.3-0.4 s
