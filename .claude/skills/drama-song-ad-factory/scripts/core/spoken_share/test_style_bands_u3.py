@@ -196,6 +196,10 @@ def test_b_rnb_judge_not_fail_by_construction():
           "approved plan", j["verdict"] != "FAIL" and not bad,
           "verdict=%s failed=%s band=%s" % (j["verdict"], j["failed"],
                                             {g: j["gates"][g] for g in band_gates}))
+    # FU-RNBFLOW-SONG: g1b is the v1 take Trevor rated 4/10 (no sung lyric
+    # outside the hook); the style contract FAILs it, which is not a band verdict.
+    check("(b) song_contract FAILs the g1b take", "song_contract" in j["failed"],
+          j["gates"].get("song_contract"))
     check("(b) spoken_share judged against the approved plan's planned share "
           "(documented default, no new number)",
           "approved plan" in j["gates"]["spoken_share"]["detail"],
