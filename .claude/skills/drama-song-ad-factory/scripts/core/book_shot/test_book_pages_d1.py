@@ -202,6 +202,61 @@ def _cases(TMP):
         check("book_shot: a misspelled excerpt raises",
               exc.code == BS.BOOK_EXCERPT_INVALID, exc)
 
+    # ------------------------------------------- card approval block -------
+    plan = BS.plan_spec({"book_title": FX["title"], "author": FX["author"],
+                         "pages": "texture", "excerpt": EXCERPT[:2]})
+    block = BS.plan_card_block(plan, ["No buy link supplied."])
+    text = "\n".join(block)
+    check("card: the block shows the plan hash",
+          BS.plan_sha256(plan) in text, text)
+    check("card: the block shows the title and the author",
+          FX["title"] in text and FX["author"] in text, text)
+    check("card: the block shows the excerpt as client-supplied",
+          "client-supplied" in text, text)
+    check("card: the block carries the notice it was given",
+          "No buy link supplied." in text, text)
+    check("card: the block offers NO new choice (no numbered options)",
+          not re.search(r"^\s*\d+\.\s", text, re.M), text)
+    check("card: a non-book plan adds no block",
+          BS.plan_card_block(None) == [], BS.plan_card_block(None))
+
+    import importlib
+    CR = importlib.import_module("catalog_calculator.card_render")
+    card = {"length": "60 seconds", "book_plan": plan}
+    rendered, _ = CR.render(card, None)
+    check("card: the calculator card carries the book block",
+          "Book shots" in rendered and BS.plan_sha256(plan) in rendered,
+          rendered[-400:])
+    plain, _ = CR.render({"length": "60 seconds"}, None)
+    check("card: a non-book card is unchanged (no book block)",
+          "Book shots" not in plain, plain[-200:])
+
+    IC = importlib.import_module("choice_card.intake_card.intake_card")
+    icheck = IC.render_card(None, book_plan=plan)
+    check("card: the intake card carries the book block",
+          "Book shots" in icheck and BS.plan_sha256(plan) in icheck, "")
+    plain_ic = IC.render_card(None)
+    check("card: a non-book intake card is unchanged",
+          "Book shots" not in plain_ic, "")
+    msgs = IC.render_messages(None, book_plan=plan)
+    check("card: the intake messages carry the block and stay under the limit",
+          any("Book shots" in m for m in msgs)
+          and all(len(m) <= IC.TELEGRAM_LIMIT for m in msgs),
+          [len(m) for m in msgs])
+    # The block is an approval, not a question: the question count and the
+    # answer instruction are IDENTICAL with and without it.
+    with_b = "\n\n".join(IC.render_messages(None, book_plan=plan))
+    without_b = "\n\n".join(IC.render_messages(None))
+    import re as _re
+    q_with = len(_re.findall(r"Question \d+ of \d+", with_b))
+    q_without = len(_re.findall(r"Question \d+ of \d+", without_b))
+    check("card: the block never adds a question",
+          q_with == q_without and q_with == len(IC.QUESTIONS),
+          (q_with, q_without, len(IC.QUESTIONS)))
+    check("card: the closing answer line is unchanged",
+          IC.CLOSING_LINE in with_b and IC.CLOSING_LINE in without_b,
+          "")
+
 
 def _kie():
     import importlib
