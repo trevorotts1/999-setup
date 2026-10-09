@@ -40,6 +40,12 @@
 - New `test_delivery_package_e2e.py`: one fixture run through the packaging entry point. While a sibling DEL-01..DEL-12 producer is not in the branch base it SKIPs with the full list of items still owed (never a fabricated green); a raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
 - Shared core byte-identical to the onboarding copy (v2.9.14).
 
+## [2.7.39] - 2026-10-09 - DEL-08: one cover image (thumbnail) per delivery folder
+
+- New `scripts/core/delivery_variants/cover_image.py`: at the end of the run, build the ONE cover image into the delivery folder — frame from the approved storyboard stills (`storyboard/stills.json`, gated by `approval_runner.gate_open`, face-visible shot first), title from the approved script (`creative/script.json`, brief title as fallback, never invented). One ffmpeg pass through `load_governor.run_ffmpeg` writes `<safe ad name>-cover.png` (default 1280x720, 16:9), title inside the title-safe inset via `drawtext=textfile=` with `expansion=none` (data, never filter syntax). A build whose ffmpeg has no drawtext refuses `COVER_DRAWTEXT_UNAVAILABLE`.
+- `check_cover_image` is the delivery QC gate (measured IHDR pixels, matching sha256, README listing; the row's own claim never passes). `qc_gate` gains the `cover_image` check; the stage runbook gains the run row. Exactly one cover thumbnail per delivery folder.
+- Local runner variable named `runner_fn` (not `launch`) so the onboarding agent-browser headless-only guard does not false-positive on the bare `launch(` token; shared scripts/core and references stay byte-identical with openclaw-onboarding 75-drama-song-ad-factory v2.9.14. VERSION and SKILL.md frontmatter: 2.7.38 to 2.7.39.
+
 ## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
 
 Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
