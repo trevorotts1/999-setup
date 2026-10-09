@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- unit/FU-SONG-APPROVAL: drama-song-ad-factory: SONG APPROVAL intake question (7 of 7), three labelled song versions in SONG-CHOICES/, pick gate (SONG_PICK_MISSING) before any picture timing, video or lip-sync spend, card price adds the two extra songs (ported from openclaw-onboarding 2.9.8)
+
 - unit/F15-999: drama-song-ad-factory 2.7.21: F15 choice card always asked before any paid job - card_gate receipt, intake/preflight/kie_dispatch refuse CARD_UNANSWERED, 2-minute length + price table (ported from onboarding main b9ced148c)
 - ci/CIO002: push triggers are main-only (a PR branch no longer runs every check twice, once on push and once on pull_request) and every workflow has a per-PR concurrency group that cancels superseded pull_request runs only (never main)
 - fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
