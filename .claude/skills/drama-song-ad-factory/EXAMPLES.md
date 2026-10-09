@@ -67,7 +67,8 @@ EXAMPLE 1: INTAKE - THIN BRIEF ASKS STORY QUESTIONS ONLY (NEVER MONEY)
 Observed: exit 2, outcome=waiting, reason_code=missing-essentials,
 digest f533196064a9d066, two questions bundled in ONE message (at most three):
 
-  1. Who is it for, and what should viewers do?
+  1. Who is this ad for, and what should they do after watching it?
+     For example: 'Women 35-55 who want a second income - register for my free masterclass.'
   2. What placement/format should we produce (aspect ratio + target length)?
 
 Placement substitutes into a leftover question slot; the story essentials are
