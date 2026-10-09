@@ -674,6 +674,44 @@ def plan_card_rows(spec):
     rows.append(("Plan hash", plan_sha256(s) if s else "not computed"))
     return rows
 
+# ------------------------------------------------------------ card block ----
+#: FU-U11. The approval block on the choice card. Trevor's locked rule: the
+#: block shows APPROVALS AND NOTICES, never new choices. It adds no question
+#: and no option -- nothing in it can be "picked"; the only answer the card
+#: takes from it is the existing yes/no on the card as a whole.
+
+def plan_card_block(spec, notes=()):
+    """The 'Book shots' block for the card: rows, notices, hash.
+
+    Returns a list of plain-text lines (no Markdown). ``spec`` is the plan;
+    ``spec=None`` returns [] so a non-book card is untouched.
+    """
+    if not spec:
+        return []
+    lines = ["Book shots (this is what you are approving):"]
+    for label, value in plan_card_rows(spec):
+        lines.append("  %-18s %s" % (label + ":", value))
+    lines.append("  %-18s %s" % ("Pages:", "every visible page is printed "
+                                 "with real text; a blank page is a defect "
+                                 "and the shot is redone."))
+    ex = spec.get("excerpt") or []
+    if ex:
+        lines.append("  %-18s %s" % (
+            "Excerpt:", "%d client-supplied line%s, shown on the page as an "
+            "overlay. It is never sent to the video model."
+            % (len(ex), "" if len(ex) == 1 else "s")))
+    for n in notes or ():
+        if n:
+            lines.append("  Note:              %s" % n)
+    lines.append("  Approving the card approves the book shots above. "
+                 "Change any row and the plan hash changes, so it comes back "
+                 "to you before any video is made.")
+    return lines
+
+def plan_card_text(spec, notes=()):
+    """The block as one string, for a caller that joins its own lines."""
+    return "\n".join(plan_card_block(spec, notes))
+
 # --------------------------------------------------------------- excerpt ----
 
 def normalize_excerpt(lines):
