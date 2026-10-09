@@ -257,6 +257,54 @@ def _cases(TMP):
           IC.CLOSING_LINE in with_b and IC.CLOSING_LINE in without_b,
           "")
 
+    # -------------------------------------- the U9 hook call site ----------
+    # Item 6 boundary: exactly ONE burn site in this codebase and it is U9's.
+    import glob
+    core = os.path.dirname(HERE)
+    burns = [p for p in glob.glob(os.path.join(core, "**", "*.py"),
+                                  recursive=True)
+             if "captions_burn" in os.path.basename(p)]
+    check("U9: no captions_burn.py exists in this tree (U9 has not landed)",
+          burns == [], burns)
+    # ...and no second burn module was smuggled in under another name. A burn
+    # module SPEAKS of burning: it defines an overlay_excerpt/burn entry point.
+    # (master_provenance.py merely BANS caption writers, so it is not one.)
+    burners = []
+    for p in glob.glob(os.path.join(core, "**", "*.py"), recursive=True):
+        if os.path.basename(p).startswith("test_"):
+            continue
+        try:
+            src = open(p, encoding="utf-8").read()
+        except OSError:
+            continue
+        if re.search(r"^def (overlay_excerpt|burn_captions|burn_excerpt)\b",
+                     src, re.M):
+            burners.append(os.path.relpath(p, core))
+    check("U9: no module defines a second excerpt burn entry point",
+          burners == [], burners)
+    AS = importlib.import_module("final_assembler.assembler")
+    row_pending = AS.excerpt_overlay_stage(
+        {"excerpt_overlay": {"lines": EXCERPT, "provenance": "provided"}})
+    check("U9: with no captions_burn.py the call site reports PENDING",
+          row_pending["pending"] is True
+          and row_pending["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE",
+          row_pending)
+    check("U9: the pending row names the artifact U9 must land",
+          row_pending["rows"][0]["hook"] == "captions_burn.overlay_excerpt"
+          and row_pending["rows"][0]["burned"] is False, row_pending)
+    check("U9: no excerpt -> no overlay row at all",
+          AS.excerpt_overlay_stage({}) == {"rows": [], "pending": False,
+                                           "reason_code": None},
+          AS.excerpt_overlay_stage({}))
+    # The overlay is DATA: it rides the plan under its own key and is never
+    # read when the video prompt is assembled.
+    plan_d = BS.plan_spec({"book_title": FX["title"], "pages": "texture",
+                           "excerpt": EXCERPT})
+    prompt_d = BS.build_prompt(plan_d, "flip")
+    check("U9: the video prompt never reads the overlay key",
+          "excerpt_overlay" not in prompt_d and "overlay" not in prompt_d.lower(),
+          prompt_d)
+
 
 def _kie():
     import importlib
