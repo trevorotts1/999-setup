@@ -314,12 +314,12 @@ def test_f_all_suno_is_unchanged():
     check("(f) exactly ONE vocal_gender on the request",
           req.get("vocal_gender") == "f", repr(req.get("vocal_gender")))
     check("(f) the KIE params are untouched",
-          all(req.get(k) == v for k, v in R.KIE_PARAMS.items()),
-          repr({k: req.get(k) for k in R.KIE_PARAMS}))
+          all(req.get(k) == v for k, v in R.kie_params().items()),
+          repr({k: req.get(k) for k in R.kie_params()}))
     check("(f) no per-character voice map was added",
           not [k for k in req if "voice" in k and k != "vocal_gender"], repr(sorted(req)))
     check("(f) the request shape is exactly the KIE fields plus the song",
-          sorted(req) == sorted(list(R.KIE_PARAMS) + [
+          sorted(req) == sorted(list(R.kie_params()) + [
               "duration", "vocal_gender", "title", "style", "lyrics",
               "negative_tags"]), repr(sorted(req)))
 

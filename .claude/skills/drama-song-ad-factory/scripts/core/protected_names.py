@@ -46,6 +46,7 @@ CODE_NO_DICT = "SPELLCHECK_DICTIONARY_MISSING"
 CODE_LYRIC = "LYRIC_MISSPELLED"
 #: U8: a real word in the wrong place (your/you're). A FLAG, never a fix.
 CODE_CONFUSABLE = "GRAMMAR_FLAG"
+
 #: FU-U4: a concept-mode brief must carry the client's own lines.
 CODE_PACKET_REQUIRED = "PACKET_REQUIRED_IN_CONCEPT_MODE"
 
@@ -104,7 +105,6 @@ def cast_genders(brief):
         if key not in out:
             out[name.strip()] = gender
     return out
-
 
 def _line_ids(value):
     """Client line ids (``id`` or ``line_id``) parallel to ``_lines``; None when absent."""

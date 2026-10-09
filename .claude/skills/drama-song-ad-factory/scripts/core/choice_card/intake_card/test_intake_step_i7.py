@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 N = len(IC.QUESTIONS)
-#: option 1 everywhere, but an explicit dollar amount for the spend question (no amount = no spend)
-OK = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]
+#: AI MODELS + four picks, then an explicit dollar amount for the spend question (no amount = no spend)
+OK = ["1"] * 5 + ["$25"] + ["1"] * (N - 6)
 
 
 def _transcript(replies):

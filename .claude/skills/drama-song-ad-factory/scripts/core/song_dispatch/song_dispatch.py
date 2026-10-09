@@ -33,8 +33,8 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 import load_governor as _LG   # noqa: E402
-import script_approval as _SA   # noqa: E402
 import song_contract as _SC  # noqa: E402
+import script_approval as _SA   # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
@@ -127,10 +127,7 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
     """Gate a measured take. ``take`` = {segments (measured and/or aligned),
     aligned_words, duration_s, detector, music_under_speech_ratio,
     tail_rms_dbfs, first_sung_s}. Returns {verdict, gates:{name:{verdict,
-    detail}}, score}. The hook_placement gate always runs: ``sheet_text``
-    (the lyrics sent to Suno, or plan["sheet_text"]), the style
-    (``style_id`` or plan["style_id"]) or plan["hook_plan"] missing = FAIL
-    "UNMEASURED: <field>".
+    detail}}, score}.
 
     FU-U3: ``style_id`` carries the music style through the judge. Bands per
     style (spoken_share.STYLE_TARGETS), the SAME 5/10 band everywhere:
@@ -213,8 +210,7 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
     # The hook is counted on the DETECTOR segments only: aligned segments
     # carry the sheet's labels, and sung_hook.measure requires measured ones.
     hook_segs = [s for s in segs if s.get("source") == "measured"]
-    rec = _SH.measure(hook_text, take.get("aligned_words") or [], hook_segs,
-                     _HP.hook_target(D, plan.get("hook_plan")))
+    rec = _SH.measure(hook_text, take.get("aligned_words") or [], hook_segs, _HP.hook_target(D, plan.get("hook_plan")))
     put("hook", "PASS" if rec["measured"] >= 2 and rec["verdict"] != "FAIL" else
         ("FLAG" if rec["measured"] >= 2 else "FAIL"), "%d of %d" % (rec["measured"], rec["target"]))
     # FU-RNBFLOW-SONG: the returned song against the style's contract, before any

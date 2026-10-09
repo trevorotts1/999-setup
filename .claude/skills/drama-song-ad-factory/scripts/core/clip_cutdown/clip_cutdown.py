@@ -32,8 +32,8 @@ import sys
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+from delivery_audio import AUDIO_OUT_ARGS, FASTSTART_ARGS, check_delivery_audio  # noqa: E402
 from master_length import master_max_s  # noqa: E402
-from delivery_audio import AUDIO_OUT_ARGS, FASTSTART_ARGS  # noqa: E402
 from sung_hook import sung_hook as _SH  # noqa: E402
 
 TOOL_NAME = "clip_cutdown"
@@ -123,6 +123,11 @@ def run_clips(master, plans, out_dir, runner=subprocess.run, ffmpeg="ffmpeg"):
         r = runner(argv, capture_output=True, text=True)
         if getattr(r, "returncode", 0) != 0:
             raise ClipCutdownError("CLIP_FFMPEG_FAILED: %s" % p["name"])
+        g = check_delivery_audio(argv[-1])      # fail closed: never hand over a silent clip
+        if not g["ok"]:
+            if os.path.exists(argv[-1]):
+                os.remove(argv[-1])
+            raise ClipCutdownError("%s: %s: %s" % (g["reason_code"], p["name"], g["reason"]))
         paths.append(argv[-1])
     return paths
 

@@ -63,8 +63,8 @@ def test_not_shown_on_resume_or_recap():
     st = _state()
     json.dump({"intro_shown": True, "keep": 1}, open(st, "w"))
     assert card("--run-state-file", st).startswith("Question 1 of ")   # resume
-    ok = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]    # BUDGET needs an amount
-    assert "Here is what you picked" in card("--run-state-file", st, *[x for r in ok for x in ("--reply", r)])
+    n = len(IC.QUESTIONS)
+    assert "Here is what you picked" in card("--run-state-file", st, *[x for r in ["1"] * 5 + ["$25"] + ["1"] * (n - 6) for x in ("--reply", r)])
     assert json.load(open(st))["keep"] == 1                            # state kept
 
 

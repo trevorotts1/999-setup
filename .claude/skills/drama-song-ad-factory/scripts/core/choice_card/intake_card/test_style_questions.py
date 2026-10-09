@@ -76,7 +76,8 @@ def test_exact_sample_links():
 
 
 def test_recap_reads_plainly():
-    st = IC.conversation(["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS])
+    n = len(IC.QUESTIONS)
+    st = IC.conversation(["1"] * 5 + ["$25"] + ["1"] * (n - 6))
     assert "Music Style: Soul Ballad" in st["message"]
     assert "Video Style: Lifelike 3D" in st["message"]
 

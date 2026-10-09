@@ -19,12 +19,6 @@ import install_face_model as IM                        # noqa: E402
 import kie_dispatch.kie_dispatch as D                  # noqa: E402
 import spend_ledger as L                               # noqa: E402
 
-# pytest runs this file in one process with every other suite: pin the
-# picture_gate resolver to THIS module object, or adapter_uploader's late
-# `_dispatch()` re-import can bind a different kie_dispatch and the patched
-# transport below is never called (spy sees zero calls).
-G._dispatch = lambda: D
-
 # Measured 2026-10-08 with the mediapipe face landmarker (pic_check.py, read-only).
 def N(h, roll, yaw, smile, gap, sharp, jaw=0.0):
     return {"face_count": 1, "face_h_pct": h, "roll_deg": roll, "yaw_proxy": yaw,
@@ -224,7 +218,9 @@ def test_missing_mediapipe_or_model_refuses_and_names_install():
 def test_face_model_install_pins_sha256():
     prereqs = json.load(open(os.path.join(HERE, "..", "..", "..", "..", "PREREQS.json")))
     ids = {e["id"]: e for e in prereqs["prerequisites"]}
-    assert ids["face-landmarker-model"]["check"]["sha256"] == IM.MODEL_SHA256
+    # OpenClaw PREREQS is type "manual" (sha256 in its note); the Claude Code copy is type "file" (check.sha256)
+    chk = ids["face-landmarker-model"]["check"]
+    assert IM.MODEL_SHA256 in (chk.get("note") or chk.get("sha256") or "")
     assert "install_face_model.py" in ids["face-landmarker-model"]["satisfy"]
     assert "mediapipe" in ids["python-mediapipe"]["satisfy"]
     assert IM.MODEL_URL.startswith("https://storage.googleapis.com/mediapipe-models/"
@@ -303,19 +299,30 @@ def test_default_regenerate_goes_through_dispatch_ledger_and_cap():
 
 
 def test_real_transport_rides_load_governor_kie_request():
+    # Plain `python3 <test>.py` binds kie_dispatch once. Under pytest the
+    # suite's conftest drops skill modules as it collects later files, so the
+    # module-level D above can be a first copy while picture_gate's body-time
+    # `_dispatch()` import mints a SECOND one with its own unpatched
+    # load_governor -- the spy below would never fire. Re-import both modules
+    # in ONE wave so the setup and the transport picture_gate reaches are the
+    # same objects.
+    import importlib
+    for _name in ("kie_dispatch.kie_dispatch", "load_governor"):
+        sys.modules.pop(_name, None)
+    D_now = importlib.import_module("kie_dispatch.kie_dispatch")
     seen = []
-    real_kr, real_run = D._LG.kie_request, D.subprocess.run
+    real_kr, real_run = D_now._LG.kie_request, D_now.subprocess.run
     def spy(fn, label="kie", **kw):
         seen.append((label, kw.get("generation")))
         return real_kr(fn, label, **dict(kw, acquire=lambda: None))
     class R:
         returncode, stdout = 0, json.dumps({"state": "success",
                                             "data": {"download_url": "https://k/x.png"}})
-    D._LG.kie_request, D.subprocess.run = spy, lambda *a, **k: R()
+    D_now._LG.kie_request, D_now.subprocess.run = spy, lambda *a, **k: R()
     try:
         url = G.adapter_uploader(adapter_path=os.path.abspath(__file__))("/tmp/x.png")
     finally:
-        D._LG.kie_request, D.subprocess.run = real_kr, real_run
+        D_now._LG.kie_request, D_now.subprocess.run = real_kr, real_run
     assert url == "https://k/x.png" and len(seen) == 1 and seen[0][1] is False, seen
 
 
