@@ -173,6 +173,35 @@ def _cases(TMP):
     check("(d) exactly one overlay hook is named, for U9",
           hook == "final_assembler.captions_burn.overlay_excerpt", hook)
 
+    # ------------------------------------------------- intake excerpt ------
+    from intake_book import book as IB
+    brief = {"book_title": "T", "author": "A", "buy_link": "https://x.example/b",
+             "audience": "a", "pain_or_transformation": "p"}
+    with_ex = dict(brief, excerpt_lines=EXCERPT)
+    r1 = IB.evaluate(with_ex)
+    check("intake: a supplied excerpt is carried with provenance 'provided'",
+          r1["summary"].get("excerpt_lines") == EXCERPT
+          and r1["summary"].get("excerpt_provenance") == "provided", r1)
+    r2 = IB.evaluate(dict(brief))
+    check("intake: no excerpt -> no excerpt key at all",
+          "excerpt_lines" not in (r2.get("summary") or {}), r2.get("summary"))
+    r3 = IB.evaluate(dict(brief, excerpt_lines=["one", "two", "three", "four"]))
+    check("intake: more than 3 excerpt lines is REFUSED",
+          r3["outcome"] == "rejected"
+          and r3["reason_code"] == "book_excerpt_invalid", r3)
+    r4 = IB.evaluate(dict(brief, excerpt_lines=["The kitchn was empty"]))
+    check("intake: a misspelled excerpt is REFUSED",
+          r4["outcome"] == "rejected"
+          and r4["reason_code"] == "book_excerpt_invalid", r4)
+    check("intake: a refused excerpt never reaches the questions",
+          r4["questions"] == [], r4["questions"])
+    try:
+        BS.normalize_excerpt(["The kitchn was empty"])
+        check("book_shot: a misspelled excerpt raises", False)
+    except BS.BookShotError as exc:
+        check("book_shot: a misspelled excerpt raises",
+              exc.code == BS.BOOK_EXCERPT_INVALID, exc)
+
 
 def _kie():
     import importlib

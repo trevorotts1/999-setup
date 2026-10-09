@@ -715,8 +715,9 @@ def _check_excerpt_spelling(lines):
     """Spelling check against the caption gate's dictionary (one owner)."""
     try:
         import protected_names as _PN                            # noqa: PLC0415
-        cu = {i + 1: ln for i, ln in enumerate(lines)}
-        errors = _PN.check_spelling(cu)
+        # check_spelling walks the LINES of its argument; a dict is walked
+        # over its KEYS, so the lines are passed as a list (never a dict).
+        errors = list(_PN.check_spelling(list(lines)))
     except ImportError:            # dictionary check unavailable -> fail closed
         errors = ["SPELLCHECK_UNAVAILABLE: protected_names cannot be imported"]
     if errors:
