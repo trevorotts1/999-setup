@@ -128,6 +128,9 @@ BOOK_PLAN_NOT_APPROVED = "BOOK_PLAN_NOT_APPROVED"
 BOOK_EXCERPT_INVALID = "BOOK_EXCERPT_INVALID"
 #: FU-U11: U9's caption-burn module is absent, so the overlay cannot burn.
 BOOK_OVERLAY_UNAVAILABLE = "BOOK_OVERLAY_UNAVAILABLE"
+#: FU-U11: the PRINTED_PAGES fragment in the H3 template is unreadable, so
+#: pages_block cannot quote it (kept from the onboarding half; never invented).
+BOOK_PAGES_UNAVAILABLE = "BOOK_PAGES_UNAVAILABLE"
 
 #: ORB + RANSAC inlier floor. Measured on the shipped fixtures: an upright
 #: cover against itself scores 1000+ inliers; a perspective-warped cover 700+;
@@ -606,6 +609,30 @@ def check_pages_sequence(frames):
                         "frames %s" % (len(blanks), len(pages), blanks))
     return _verdict("PASS", "BOOK_PAGES_PRINTED", checks, "")
 
+def pages_block(spec):
+    """The PRINTED_PAGES fragment, CONSUMED verbatim from the H3 template.
+
+    U11 authors no prompt wording: the text is the ``PRINTED_PAGES`` fragment
+    of references/prompt-templates/models/minimax-h3.json (the same fragment
+    prompt_templates injects; this reader exists so a caller can quote it
+    directly). Returns the text when the shot's pages mode is "texture",
+    else None. A missing template file is a loud BookShotError naming the
+    path, never invented text.
+    """
+    if str((spec or {}).get("pages") or "").strip() != "texture":
+        return None
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    path = os.path.join(root, "references", "prompt-templates", "models",
+                        "minimax-h3.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            frag = (json.load(fh).get("fragments") or {})["PRINTED_PAGES"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise BookShotError(BOOK_PAGES_UNAVAILABLE,
+                            "PRINTED_PAGES fragment unreadable at %s (%s)"
+                            % (path, exc)) from exc
+    return frag
+
 # --------------------------------------------------------------- plan hash --
 #: FU-U11. The producer side: the plan the client approved is hashed, the
 #: hash is carried on every book video job, and kie_dispatch refuses the job
@@ -634,16 +661,24 @@ def plan_spec(fields):
         spec["excerpt"] = normalize_excerpt(ex)["overlay"]["lines"]
     return spec
 
+#: Plan keys that are the APPROVAL, not the plan: the hash is of the plan
+#: content, so the approval fields are excluded or the hash would chase
+#: itself every time a client approves (kept from the onboarding half).
+PLAN_HASH_EXCLUDED = ("approved_book_plan_sha256", "approved_at")
+
 def plan_sha256(spec):
     """sha256 of the canonical plan serialisation (UTF-8, sorted keys).
 
     The plan hash is over the APPROVED PLAN, not over the rendered prompt:
     the same plan hashes the same everywhere, and a change to any approved
-    field (or to the excerpt) changes it.
+    field (or to the excerpt) changes it. The approval fields themselves are
+    excluded (PLAN_HASH_EXCLUDED): a plan that already carries its approval
+    re-hashes to the same value, so approval never chases its own hash.
     """
     if not isinstance(spec, dict) or not spec:
         raise BookShotError(BOOK_INPUT_INVALID, "plan_sha256 wants a plan dict")
-    blob = json.dumps(spec, sort_keys=True, ensure_ascii=True,
+    doc = {k: v for k, v in spec.items() if k not in PLAN_HASH_EXCLUDED}
+    blob = json.dumps(doc, sort_keys=True, ensure_ascii=True,
                       separators=(",", ":")).encode("utf-8")
     import hashlib
     return hashlib.sha256(blob).hexdigest()
