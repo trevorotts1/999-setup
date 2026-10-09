@@ -29,8 +29,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install numpy (singing-detector suite skips itself without it)
-        run: python3 -m pip install --quiet numpy pytest
+      - name: Install numpy + opencv (singing-detector and book_shot suites need them)
+        run: python3 -m pip install --quiet numpy opencv-python-headless pytest
+      - name: Install ffmpeg + tesseract (mp3 fixtures; book_shot title OCR)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg tesseract-ocr
       - name: Static checks (F17 no local ASR, B6 operator-path leak)
         run: |
           bash "$SKILL/scripts/qc-no-local-asr.sh"
@@ -42,7 +44,7 @@ jobs:
           rc=0
           while IFS= read -r t; do
             h="$(mktemp -d)"
-            if ! (HOME="$h" python3 "$t"); then echo "FAIL (empty HOME): $t"; rc=1; fi
+            if ! (HOME="$h" python3 "$t" </dev/null); then echo "FAIL (empty HOME): $t"; rc=1; fi
           done < <(find "$SKILL/scripts/core" -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
           [ "$rc" -eq 0 ]
       - name: Skill 75 pytest collection + run (no hidden failures)
