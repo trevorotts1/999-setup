@@ -33,11 +33,8 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 import load_governor as _LG   # noqa: E402
-<<<<<<< HEAD
 import script_approval as _SA   # noqa: E402
-=======
 import song_contract as _SC  # noqa: E402
->>>>>>> pr125
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
