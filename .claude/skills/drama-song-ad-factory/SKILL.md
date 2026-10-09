@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.25
+version: 2.7.26
 ---
 
 # Drama Song Ad Factory
@@ -431,6 +431,17 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   image; one choice card covers the whole batch; one ad per book with its own
   campaign folder, receipt, spend-ledger run and Command Center deliverable;
   books and authors are never mixed; the card shows the batch total.
+- **The song mp3 is part of the deliverable (FU-U14):** every delivered ad
+  folder holds, beside the captioned and clean-master mp4s, the FINAL SONG as
+  an mp3 (320 kbps, the exact song used in the ad, full length) plus the wav
+  when one exists, named `<Author> - <Title> - Song.mp3` — clients release the
+  songs as an album. `delivery_checklist.check_song_mp3()` gates it (present,
+  duration matches the ad audio within 0.1 s, cross-correlation >= 0.95 with
+  the ad's audio; missing or mismatched = FAIL, fail closed). When a
+  book/batch campaign finishes, one zip per client ships every ad's three
+  files in one folder per author plus a README listing every file, duration,
+  resolution and banner link: `scripts/core/batch_zip/batch_zip.py
+  build_batch_zip(client, ads, out_path)`.
 - **Pricing:** every figure on the card - video, both shapes, lip-sync
   close-ups, voice packs, clips and the batch total - comes from Skill 74
   `price`. This skill never computes or hard-codes a rate.

@@ -1,5 +1,14 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.26] - 2026-10-09 - FU-U14: the song mp3 is part of the deliverable
+
+Trevor: "make an update so that the mp3 is a part of the deliverable ... update the repo with the latest understanding I just taught you".
+- **Every delivered ad folder carries the song.** Beside the captioned and clean-master mp4s: the FINAL SONG as `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length) plus the wav when one exists, so clients can release the songs as an album.
+- **New REQUIRED battery item.** `delivery_checklist.check_song_mp3(ad_dir, ad_audio_path, title, author)` -> rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`: file present, duration matches the ad's audio within 0.1 s, cross-correlation >= 0.95 with the ad's audio (normalized correlation of downsampled mono envelopes, stdlib math). Missing or mismatched = FAIL, fail closed. `delivery_battery()` returns the rows with `pass` / `reason_code` / `repair_scope`. wav is measured with the stdlib wave module, mp3 through ffprobe/ffmpeg when present.
+- **Batch zip.** `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads, out_path)`: one zip per client, one folder per author holding the captioned ad, the clean master and the song mp3 (exactly three files per ad), plus a README listing every file, duration, resolution and banner link. A missing file is a `BatchZipError`.
+- **Docs:** SKILL.md (deliverables), `references/choice-card-spec.md` (the card lists "song mp3 included"), `references/stage-runbook.md`, QC.md.
+- Tests: `scripts/core/delivery_checklist/test_song_mp3_u14.py` (stdlib WAV fixtures, no ffmpeg, no network).
+
 ## [2.7.25] - 2026-10-09 - Batch MGB009a: W-G-003-amend + TESTHYG-75-residue
 
 Landed together by merge-train: #94 singing detector aligned to Appendix A (order 1150 part G, review G2), #95 the 2 conftest-induced order-sensitive test failures fixed (residue of #93). #96 (W-G-008 minute-lanes) not included: CONFLICTING at the merge step.
