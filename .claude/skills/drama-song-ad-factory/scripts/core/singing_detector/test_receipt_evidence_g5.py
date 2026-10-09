@@ -33,7 +33,7 @@ CORE = os.path.dirname(HERE)
 if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
-import receipt_evidence as RE  # noqa: E402
+from singing_detector import receipt_evidence as RE  # noqa: E402
 
 _passed = [0]
 _failed = [0]
