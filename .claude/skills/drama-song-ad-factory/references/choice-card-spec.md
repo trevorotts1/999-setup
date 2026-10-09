@@ -118,13 +118,15 @@ write them free hand and never carry them as one JSON string.
 Every option the card shows is read from code, never typed into the card:
 lengths from `music_styles.OFFERED_LENGTHS_S`, music styles from
 `music_styles` style ids, voices from the voice registry, video models from
-Skill 74. NOT built on main (FU-U4, no branch yet): the **fit card**, which
+Skill 74. NOT built on main (FU-U4: open branch `unit/FU-U4`, PR #124, not yet
+merged — refresh when it lands): the **fit card**, which
 would show, per music style, whether the client's lyrics fit the chosen length
 (one row per style with the numbers) and would list the notices (sound
 effects, echo voice, length not offered, frame rate). Until it lands, the fit
 check runs inside `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet`
 and refuses with a plain reason; the card does not preview it. Do not describe
 a fit card to a client.
+- **TODO(FU-U4):** rewrite 2.3 when PR #124 lands — the card then previews the fit rows.
 
 ## 3. Field rules
 
