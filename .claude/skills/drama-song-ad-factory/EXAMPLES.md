@@ -67,7 +67,8 @@ EXAMPLE 1: INTAKE - THIN BRIEF ASKS AT MOST THREE QUESTIONS
 Observed: exit 2, outcome=waiting, reason_code=missing-essentials,
 digest e64ca3a125a7dbcc, exactly three questions bundled in ONE message:
 
-  1. Who is it for, and what should viewers do?
+  1. Who is this ad for, and what should they do after watching it?
+     For example: 'Women 35-55 who want a second income - register for my free masterclass.'
   2. What maximum generation budget is authorized, with its currency/credit unit?
   3. What placement/format should we produce (aspect ratio + target length)?
 
