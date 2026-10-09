@@ -1,5 +1,26 @@
 # QC Checklist: Drama Song Ad Factory (Skill 75)
 
+## FU-U16 story doctrine: villain, pain, rise
+
+> "People don't care about the hero until they meet the villain." - Trevor Otts
+
+These are not music videos: compelling true stories; the pain AND the rise.
+Check on every run:
+
+- The story plan names its VILLAIN (person or not a person: cancer, debt, a
+  layoff, a lie, burnout, fear, the inner critic, a system).
+- The villain has its OWN shots tagged `villain` (or `villain_visibility`
+  outside `none`) - `length_formula.plan_villain_doctrine` fails CLOSED (never
+  a pass) when no villain is named or the villain has no shot. Those two are
+  the only hard cases.
+- Pain share of runtime inside the 20-35% target band; outside is a FLAG in
+  the receipt with the measured seconds, never a block.
+- The `VILLAIN_DOCTRINE` row (`delivery_checklist.measure_villain_doctrine`)
+  reports villain shots, villain screen seconds, pain seconds, rise seconds.
+  Evidence only: it never joins repair_scope.
+- The rise is earned: pain gets real screen time, the turn names the product
+  as the key, the rise is never rushed.
+
 ## Lip-sync doubled and the source-picture gate (owner order 2026-10-08)
 
 - Coverage: 30-40 s and 6-8 clips of 4-6 s in a 60 s ad, scaled linearly with
