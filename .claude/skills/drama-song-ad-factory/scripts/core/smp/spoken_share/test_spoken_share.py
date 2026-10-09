@@ -27,7 +27,10 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-import spoken_share as M  # noqa: E402  module under test (the re-export)
+try:                                   # pytest imports the spoken_share PACKAGE
+    from spoken_share import spoken_share as M   # noqa: E402  (the re-export file)
+except ImportError:                    # script run gets the module file
+    import spoken_share as M           # noqa: E402  module under test (the re-export)
 
 OWNED_DIR = HERE
 MODULE_SRC = os.path.join(OWNED_DIR, "spoken_share.py")

@@ -131,6 +131,16 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
+      (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
+      clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
+      PASS rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION` — duration within 0.1 s of the
+      ad's audio and cross-correlation >= 0.95 with it. A missing or mismatched mp3 is a FAIL (fail closed).
+      Run: `python3 scripts/core/delivery_checklist/test_song_mp3_u14.py`.
+- [ ] Batch zip (FU-U14): a finished book/batch campaign ships one zip per client,
+      `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
+      master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
+      resolution and banner link. A missing file is a `BatchZipError`.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
@@ -155,6 +165,7 @@ schema violation all refuse the stage (exit 5).
 | Storyboard QC | 17.3 | `storyboard` | lyric match, emotional expression, character reference correctness, wardrobe, location, product timing, composition, visual variety, generatability, adjacent-shot continuity |
 | Video QC | 17.4 | `video`, `continuity` | MULTIPLE frames inspected (not frame zero only): correct character, face/body continuity, wardrobe, location, product appearance, physical plausibility, motion coherence, camera intent, no unwanted text, no warped hands/faces/objects, no temporal artifacts, lyric match, start/end continuity, no accidental lip movement in non-speaking shots |
 | Final edit QC | 17.5 | `final_edit`, `export`, `timeline`, `audio`, `text_product` (critical) | audio/video duration vs profile, master no longer than chosen length minus 2 seconds (`core/master_length`, reason `MASTER_TOO_LONG`), sync to lyric timing, no gaps/frozen/black frames, no missing assets, caption correctness when enabled, packshot correctness, CTA readability, audio levels, final format/resolution, required aspect ratio, complete manifest/receipts |
+| Product connection (FU-U13) | 17.5 | `final_edit`, `delivery` | story arc rule: struggle -> what changed -> the product is why -> get the product; the product is named in the lyrics AND on screen (cover, title, link), never only on an end card. `delivery_checklist.measure_product_connection` reports the measured seconds and percent of runtime connecting story to product (row `PRODUCT_CONNECTION` in the checklist output). 10-15% of runtime is a TARGET: inside is PASS, outside is FLAG with the measured numbers, never a blocker by itself and never a repair directive. |
 | Independent verifier law | 17.6 | all | reviewer identity differs from the maker binding; `reviewer.session` and `reviewer.authority` present; same records re-submitted unchanged cannot pass (`MAKER_SELF_REVIEW` observed exit 5) |
 | Targeted repair | 17.7 | failing check only | gate returns `repair_scope` naming only the failed `check_id`s; repair runs with new attempt ids; approved assets stand; repair cost travels through the ledger `repair-cap`, and once the configured budget is spent the run PARKS - never an unbounded retry loop |
 | Acceptance profile + UNAVAILABLE | 17.8 | `timing` (profile-bound) | `--profile acceptance-profile.json --expect-profile <version>` matches or the gate refuses `PROFILE_MISMATCH`; UNAVAILABLE on any required check = `UNAVAILABLE_MANDATORY`, never PASS; a `timing` record carries `timing_detail` {sample_ref, confidence, annotation_method} plus median/p95/critical ms against profile thresholds (100/250/100 ms baseline); export 1080p30 H.264+AAC 48 kHz, A/V duration delta <= 1 frame, lyric coverage 100% critical / >= 98% overall, loudness -14 LUFS +/-1 and true peak <= -1 dBTP, CTA hold >= 3 s reviewed at 360 px width; threshold changes require a documented decision before the affected run |

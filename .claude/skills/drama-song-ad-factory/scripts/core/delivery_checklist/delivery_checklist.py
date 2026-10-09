@@ -56,13 +56,27 @@ What evaluate() does per question, measured from the receipt only:
 Fail-closed: a receipt that is not an object, a question with no answer, or
 an answer without its measurement is a FAIL naming exactly that part.
 stdlib only, no network, no provider call, no spend, no absolute operator
-path, opens no file at all (the receipt is handed in as data).
+path; evaluate() opens no file at all (the receipt is handed in as data).
+
+FU-U14 (Trevor: "make the mp3 part of the deliverable"): check_song_mp3()
+adds the song-mp3 item to the delivery battery as PASS/FAIL rows: the final
+song file sits in the ad folder beside the captioned and clean-master mp4s,
+duration-matches the ad audio (0.1 s) and cross-correlates >= 0.95 with it.
+Missing or mismatched = FAIL, fail closed. mp3 is probed through ffmpeg
+when present; wav is measured with the stdlib wave module.
 
 Run: python3 core/delivery_checklist/test_delivery_checklist.py
+Run: python3 core/delivery_checklist/test_song_mp3_u14.py
 """
 from __future__ import annotations
 
+import math
+import re
+import shutil
+import struct
+import subprocess
 import sys
+import wave
 from pathlib import Path
 
 # F16 delivery gate: the video-model lock lives in the sibling kie_dispatch
@@ -74,7 +88,7 @@ if str(_CORE) not in sys.path:
 import kie_dispatch.model_lock as model_lock  # noqa: E402  (F16)
 
 TOOL_NAME = "delivery_checklist"
-TOOL_VERSION = "1.3.0"
+TOOL_VERSION = "1.4.0"
 SCHEMA_VERSION = "1.0.0"          # final_assembler receipt schema
 QC_SCHEMA_VERSION = "1.0.0"       # core/qc_gate.py
 CHECK = "delivery_checklist"      # new required check ON gate 4 (17.5 Final)
@@ -106,6 +120,15 @@ LIPSYNC_KEPT = "KEPT_BEST_OF_2"
 LIPSYNC_MAX_JOBS = 2
 #: Q9: first real singing (vocal stem) target, share of runtime (H6).
 FIRST_SUNG_TARGET_PCT = 15.0
+
+#: FU-U13 product-connection row: 10-15% of runtime connecting story to
+#: product. A TARGET, never a hard cap: outside the band is FLAG with the
+#: measured seconds and percent -- this row never joins repair_scope and
+#: never blocks the gate by itself. The planner computes these (Q12 in the
+#: runbook); this checker MEASURES them from the delivered shots/lyrics.
+PRODUCT_TARGET_LO_PCT = 10.0
+PRODUCT_TARGET_HI_PCT = 15.0
+PRODUCT_ROW = "PRODUCT_CONNECTION"
 #: Q10: no slow-motion above this speed-down factor (H5).
 MAX_SLOWDOWN = 1.15
 
@@ -1056,6 +1079,77 @@ def _q11_goals(receipt, ans, codes, details):
 
 
 # ----------------------------------------------------------------- evaluate
+# ---------------------------------------------------------- FU-U13 (product)
+_PC_WPS = 1.07                      # sung words per second (length_formula)
+_PC_SHOT_S = 3.0                    # a tagged shot with no stated duration
+_PC_END_CARD = ("end_card", "endcard", "cta_card")
+
+
+def _pc_tagged(obj, tag):
+    if not isinstance(obj, dict):
+        return False
+    if obj.get(tag) is True:
+        return True
+    tags = obj.get("tags") or ()
+    if isinstance(tags, str):
+        tags = (tags,)
+    return tag in tags
+
+
+def _pc_seconds(obj, fallback):
+    for k in ("seconds", "duration_s", "duration"):
+        v = obj.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+            return float(v)
+    words = len(str(obj.get("text", "")).split())
+    return words / _PC_WPS if words else fallback
+
+
+def measure_product_connection(shots, lyrics, runtime_s):
+    """FU-U13: measure the product-connection seconds from the delivered run.
+
+    Totals the seconds of shots tagged product plus lyric lines tagged
+    product, against the measured runtime. 10-15% is a TARGET: inside is
+    PASS, outside is FLAG carrying the measured seconds and percent, and it
+    is NEVER a blocker by itself. A run whose product appears only on an end
+    card is flagged (the product must be named in the lyrics and on screen).
+    """
+    def _num(v):
+        return float(v) if isinstance(v, (int, float)) \
+            and not isinstance(v, bool) and v > 0 else None
+
+    rt = _num(runtime_s)
+    if rt is None:
+        return {"verdict": "UNAVAILABLE",
+                "measurement": "UNMEASURED: no runtime_s for the run",
+                "seconds": None, "percent": None, "blocking": False}
+    shots = [s for s in (shots or []) if isinstance(s, dict)]
+    lines = [l for l in (lyrics or []) if isinstance(l, dict)]
+    product_shots = [s for s in shots if _pc_tagged(s, "product")]
+    product_lines = [l for l in lines if _pc_tagged(l, "product")]
+    seconds = round(sum(_pc_seconds(o, _PC_SHOT_S)
+                        for o in product_shots + product_lines), 1)
+    percent = round(seconds / rt * 100.0, 1)
+    in_band = PRODUCT_TARGET_LO_PCT <= percent <= PRODUCT_TARGET_HI_PCT
+    end_card_only = bool(product_shots) and all(
+        any(_pc_tagged(s, t) for t in _PC_END_CARD) for s in product_shots)
+    verdict = "PASS" if in_band and not end_card_only else "FLAG"
+    why = []
+    if not in_band:
+        why.append("%.1f%% of %.1fs runtime outside the %.0f-%.0f%% target"
+                   % (percent, rt, PRODUCT_TARGET_LO_PCT,
+                      PRODUCT_TARGET_HI_PCT))
+    if end_card_only:
+        why.append("product appears only on an end card; name it in the "
+                   "lyrics and on screen (cover, title, link)")
+    return {"verdict": verdict, "seconds": seconds, "percent": percent,
+            "runtime_s": rt, "in_target": in_band,
+            "end_card_only": end_card_only, "blocking": False,
+            "measurement": ("product connection %.1fs = %.1f%% of runtime "
+                            "(%s%s)" % (seconds, percent, verdict,
+                                        "; " + "; ".join(why) if why else ""))}
+
+
 def evaluate(receipt):
     """Answer the 11 questions from the delivery receipt.
 
@@ -1122,6 +1216,13 @@ def evaluate(receipt):
                           "measurement": "; ".join(qcodes) or
                                          "UNMEASURED: no measurement"}
             failing.append(q)
+    # FU-U13: the product-connection row is reported, never enforced. The
+    # check finds no measurement -> UNAVAILABLE, which is neither pass nor
+    # fail here: the row carries no weight in repair_scope by construction.
+    pc = measure_product_connection(receipt.get("shots"),
+                                    receipt.get("lyrics"),
+                                    receipt.get("runtime_s"))
+    details[PRODUCT_ROW] = pc
     if codes:
         return {"pass": False,
                 "answers": answers,
@@ -1224,6 +1325,13 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
     # the summary, each as yes/no plus the measurement that proves it
     lines = ["%s=%s(%s)" % (q, a["answer"], a["measurement"][:80])
              for q, a in sorted(answers.items())]
+    # FU-U13: the product-connection measurement rides the same summary so
+    # the receipt/checklist output reports it every run (measured, flagged
+    # when outside the 10-15% target, never a blocker).
+    pc = (result.get("evidence") or {}).get(PRODUCT_ROW)
+    if isinstance(pc, dict):
+        lines.append("%s=%s(%s)" % (PRODUCT_ROW, pc.get("verdict", "?"),
+                                    str(pc.get("measurement", ""))[:120]))
     passed = bool(result["pass"])
     summary = ("delivery checklist %s: %d/%d measured%s | %s"
                % ("pass" if passed else "FAIL",
@@ -1247,6 +1355,216 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
         "checker_version": checker_version or TOOL_VERSION,
         "reviewer": rev,
     }
+
+
+# --------------------------------------------------- FU-U14 SONG MP3 ITEM
+#: Trevor (order FU-U14, verbatim): "make an update so that the mp3 is a part
+#: of the deliverable ... so clients can release the songs as an album". Every
+#: delivered ad folder MUST hold the FINAL SONG as an mp3 (320 kbps, the exact
+#: song used in the ad), named "<Author> - <Title> - Song.mp3".
+SONG_MP3_SUFFIX = " - Song"
+SONG_MP3_TOL_S = 0.1        # duration match, seconds ("within 0.1 s")
+SONG_MP3_CORR_MIN = 0.95    # cross-correlation floor vs the ad's audio
+SONG_MP3_WINDOW_S = 0.05    # envelope window for the correlation
+SONG_MP3_WINDOWS_MAX = 2000
+
+#: The new REQUIRED battery item (rows, same shape as the checklist's own).
+SONG_MP3_ITEM = "SONG_MP3"
+SONG_MP3_CODES = {
+    "FILE": "SONG_MP3_MISSING",
+    "DURATION": "SONG_MP3_DURATION_MISMATCH",
+    "CORRELATION": "SONG_MP3_CORRELATION_LOW",
+    "UNMEASURED": "SONG_MP3_UNMEASURED",
+}
+
+
+def safe_song_name(author, title):
+    """The deliverable's song stem: "<Author> - <Title> - Song"."""
+    clean = lambda s: re.sub(r"\s+", " ", (s or "").strip())
+    author, title = clean(author), clean(title)
+    if not (author and title):
+        raise ChecklistError("BAD_INPUT", "author and title are required")
+    return "%s - %s%s" % (author, title, SONG_MP3_SUFFIX)
+
+
+def _wav_measure(path):
+    with wave.open(str(path), "rb") as w:
+        rate = w.getframerate()
+        width = w.getsampwidth()
+        frames = w.readframes(w.getnframes())
+    if rate <= 0 or w.getnchannels() < 1:
+        return None
+    # mono downmix; 8/16/24/32-bit little-endian PCM (the wave module's own)
+    chans = 2 if width in (2, 3, 4) else 1
+    step = width * chans
+    window = max(1, int(rate * SONG_MP3_WINDOW_S))
+    env, acc, n = [], 0.0, 0
+    total = len(frames) // step
+    for i in range(total):
+        chunk = frames[i * step:i * step + width]
+        if width == 1:
+            v = (chunk[0] - 128) / 128.0
+        else:
+            v = struct.unpack("<h", chunk[:2])[0] / 32768.0
+        acc += v * v
+        n += 1
+        if n == window:
+            env.append(math.sqrt(acc / n))
+            acc, n = 0.0, 0
+    if n:
+        env.append(math.sqrt(acc / n))
+    return {"duration_s": total / float(rate), "envelope": env}
+
+
+def _mp3_measure(path, ffprobe="ffprobe", ffmpeg="ffmpeg"):
+    """mp3 (and any non-wav): ffprobe duration + ffmpeg decode -> wave."""
+    if not (shutil.which(ffprobe) and shutil.which(ffmpeg)):
+        return None
+    import json as _json
+    import tempfile
+    try:
+        out = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "json", str(path)],
+            capture_output=True, text=True, check=True, timeout=60).stdout
+        dur = float(_json.loads(out)["format"]["duration"])
+    except (OSError, ValueError, KeyError,
+            subprocess.SubprocessError):
+        return None
+    with tempfile.TemporaryDirectory() as td:
+        wav = Path(td) / "decoded.wav"
+        try:
+            subprocess.run([ffmpeg, "-y", "-v", "error", "-i", str(path),
+                            "-ac", "1", "-ar", "8000", str(wav)],
+                           capture_output=True, text=True, check=True,
+                           timeout=600)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        m = _wav_measure(wav)
+    if m is None:
+        return None
+    m["duration_s"] = dur            # ffprobe's number is the container truth
+    return m
+
+
+def measure_audio(path):
+    """{"duration_s", "envelope"} for wav (wave module) or mp3 (ffmpeg).
+
+    None when the file has no readable audio: the caller fails closed.
+    """
+    try:
+        return _wav_measure(path)
+    except (wave.Error, OSError, EOFError, struct.error):
+        return _mp3_measure(path)
+
+
+def _pearson(env_a, env_b):
+    """Normalized (Pearson) correlation of two envelopes, stdlib math only."""
+    n = min(len(env_a), len(env_b))
+    if n < 3:
+        return None
+    a, b = env_a[:n], env_b[:n]
+    ma, mb = sum(a) / n, sum(b) / n
+    va = sum((x - ma) ** 2 for x in a)
+    vb = sum((y - mb) ** 2 for y in b)
+    if va <= 0.0 or vb <= 0.0:      # constant envelope: nothing to correlate
+        return None
+    cov = sum((a[i] - ma) * (b[i] - mb) for i in range(n))
+    return cov / math.sqrt(va * vb)
+
+
+def check_song_mp3(ad_dir, ad_audio_path, title, author, ffprobe="ffprobe",
+                   ffmpeg="ffmpeg"):
+    """The song-mp3 battery item: PASS/FAIL rows, fail closed.
+
+    Rows (the checklist's own row shape: item / answer / measurement):
+      SONG_MP3_FILE         the "<Author> - <Title> - Song.<ext>" file exists
+      SONG_MP3_DURATION     its duration covers the ad's audio (0.1 s)
+      SONG_MP3_CORRELATION  >= 0.95 with the ad's audio (mono envelopes)
+    """
+    d = Path(ad_dir)
+    stem = safe_song_name(author, title)
+    hits = sorted(p for p in d.glob(stem + ".*")
+                  if p.suffix.lower() in (".mp3", ".wav"))
+    rows = []
+
+    def row(item, ok, measurement, code=None, value=None):
+        r = {"item": item, "answer": "yes" if ok else "no",
+             "measurement": measurement}
+        if code and not ok:
+            r["code"] = code
+        if value is not None:
+            r["value"] = value
+        rows.append(r)
+        return ok
+
+    if not hits:
+        row("SONG_MP3_FILE", False,
+            "no %s.{mp3,wav} in %s" % (stem, d), SONG_MP3_CODES["FILE"])
+        row("SONG_MP3_DURATION", False, "UNMEASURED: no song file",
+            SONG_MP3_CODES["DURATION"])
+        row("SONG_MP3_CORRELATION", False, "UNMEASURED: no song file",
+            SONG_MP3_CODES["CORRELATION"])
+        return rows
+    song_path = hits[0]
+    row("SONG_MP3_FILE", True, "found %s" % song_path.name)
+
+    song = measure_audio(song_path)
+    ad = measure_audio(ad_audio_path)
+    if song is None:
+        row("SONG_MP3_DURATION", False,
+            "UNMEASURED: cannot read audio from %s" % song_path.name,
+            SONG_MP3_CODES["UNMEASURED"])
+        row("SONG_MP3_CORRELATION", False,
+            "UNMEASURED: cannot read audio from %s" % song_path.name,
+            SONG_MP3_CODES["UNMEASURED"])
+        return rows
+    if ad is None:
+        row("SONG_MP3_DURATION", False,
+            "UNMEASURED: cannot read audio from %s" % Path(ad_audio_path).name,
+            SONG_MP3_CODES["UNMEASURED"])
+        row("SONG_MP3_CORRELATION", False,
+            "UNMEASURED: cannot read audio from %s" % Path(ad_audio_path).name,
+            SONG_MP3_CODES["UNMEASURED"])
+        return rows
+
+    # the song is the FULL track: it must at least cover the ad's span
+    dur_ok = song["duration_s"] >= ad["duration_s"] - SONG_MP3_TOL_S
+    row("SONG_MP3_DURATION", dur_ok,
+        "song %.2fs vs ad %.2fs (tolerance %.1fs%s)"
+        % (song["duration_s"], ad["duration_s"], SONG_MP3_TOL_S,
+           "" if dur_ok else ", song shorter than the ad span"),
+        SONG_MP3_CODES["DURATION"])
+
+    corr = _pearson(song["envelope"], ad["envelope"])
+    if corr is None:
+        row("SONG_MP3_CORRELATION", False,
+            "UNMEASURED: envelope has no variance (silence or unreadable)",
+            SONG_MP3_CODES["UNMEASURED"], 0.0)
+    else:
+        row("SONG_MP3_CORRELATION", corr >= SONG_MP3_CORR_MIN,
+            "correlation %.3f vs floor %.2f" % (corr, SONG_MP3_CORR_MIN),
+            SONG_MP3_CODES["CORRELATION"], round(corr, 4))
+    return rows
+
+
+def delivery_battery(ad_dir, ad_audio_path, title, author):
+    """The file-backed delivery battery rows (FU-U14: the song mp3 item).
+
+    Same contract shape as evaluate(): pass / rows / reason_code /
+    repair_scope / detail; a "no" row names only the failing item (the
+    repair scope) and never cancels the run.
+    """
+    rows = check_song_mp3(ad_dir, ad_audio_path, title, author)
+    failing = [r["item"] for r in rows if r["answer"] != "yes"]
+    codes = sorted({r.get("code") for r in rows if r.get("code")})
+    detail = "; ".join("%s: %s" % (r["item"], r["measurement"])
+                       for r in rows if r["answer"] != "yes")
+    return {"pass": not failing, "rows": rows,
+            "reason_code": "+".join(codes) if codes
+                           else "CHECKLIST_SONG_MP3_PASS",
+            "repair_scope": failing, "detail": detail,
+            "item": SONG_MP3_ITEM}
 
 
 # ------------------------------------------------------------------- CLI

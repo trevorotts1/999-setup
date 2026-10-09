@@ -22,7 +22,21 @@ Run each command from this skill's root (`.claude/skills/drama-song-ad-factory/`
 | final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes). |
 | delivery | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage delivery --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only). |
 
+Story arc rule (FU-U13): every ad's story runs struggle -> what changed ->
+the product is why -> get the product. The product is named and connected
+inside the lyrics AND on screen (cover, title, link), never only on an end
+card. The script-lyrics stage plans the spoken-word parts and the struggle
+motion shots from the source material; the plan carries `product_connection`
+(seconds and percent of runtime). The aim is 10-15% of runtime connecting
+story to product - a TARGET, not a hard cap: the planner computes it, the
+final-qc delivery checklist measures it (row `PRODUCT_CONNECTION` in
+`delivery_checklist`), and outside the band is a FLAG with the measured
+seconds and percent, never a blocker by itself. The choice card shows the
+planned seconds and percent.
+
 Song files (H14): before the delivery gate, build the audio-only deliverables with `delivery_variants.build_song_files(mix, $DELIVERY, <ad name>, instrumental)` then `write_song_docs($DELIVERY, rows)` (MP3 320 kbps + WAV named after the ad, plus the instrumental pair if one exists; both listed in `delivery-receipt.json` and `README.md`). Gate it with a `song_files` QC record (`python3 scripts/core/delivery_variants/song_files.py check $DELIVERY <ad name>`, exit 5 = a song file is missing); include `song_files` in the delivery `--required` list.
+
+Song mp3 part of the deliverable (FU-U14): every delivered ad folder must ALSO hold the final song named `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length; plus the wav when one exists) beside the captioned and clean-master mp4s. Gate it before delivery: `python3 -c "from delivery_checklist import delivery_checklist as dc; print(dc.check_song_mp3('<AD_DIR>', '<AD_AUDIO>', '<Title>', '<Author>'))"` — rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`, fail closed (missing file, duration off by more than 0.1 s, or correlation under 0.95 is a FAIL). When a book/batch campaign finishes, build one zip per client: `python3 scripts/core/batch_zip/batch_zip.py <manifest.json>` (`build_batch_zip(client, ads, out_path)`) — one folder per author with the three files per ad plus a README listing every file, duration, resolution and banner link.
 
 Note: `music`, `image-keyframes` and `video-generation` share one command shape (the
 Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.

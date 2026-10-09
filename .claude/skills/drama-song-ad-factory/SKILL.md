@@ -431,6 +431,17 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   image; one choice card covers the whole batch; one ad per book with its own
   campaign folder, receipt, spend-ledger run and Command Center deliverable;
   books and authors are never mixed; the card shows the batch total.
+- **The song mp3 is part of the deliverable (FU-U14):** every delivered ad
+  folder holds, beside the captioned and clean-master mp4s, the FINAL SONG as
+  an mp3 (320 kbps, the exact song used in the ad, full length) plus the wav
+  when one exists, named `<Author> - <Title> - Song.mp3` — clients release the
+  songs as an album. `delivery_checklist.check_song_mp3()` gates it (present,
+  duration matches the ad audio within 0.1 s, cross-correlation >= 0.95 with
+  the ad's audio; missing or mismatched = FAIL, fail closed). When a
+  book/batch campaign finishes, one zip per client ships every ad's three
+  files in one folder per author plus a README listing every file, duration,
+  resolution and banner link: `scripts/core/batch_zip/batch_zip.py
+  build_batch_zip(client, ads, out_path)`.
 - **Pricing:** every figure on the card - video, both shapes, lip-sync
   close-ups, voice packs, clips and the batch total - comes from Skill 74
   `price`. This skill never computes or hard-codes a rate.
@@ -485,6 +496,25 @@ brand names (for example Stale, Stop Stale) are protected words:
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
   protected=...)`): "the house went still" for "Stale" is a FAIL.
+
+## Story arc rule and product-connection target (FU-U13, owner order 2026-10-08)
+
+Every ad's story runs struggle -> what changed -> the product is why -> get
+the product. The product is named and connected inside the lyrics AND on
+screen (cover, title, link) - never only on an end card.
+
+The lyric/script and shot-plan stages plan the spoken-word parts (inside the
+spoken band) and the motion shots showing the character's struggle, taken from
+the source material, and plan how many seconds connect the story to the
+product: aim for 10-15% of runtime
+(`length_formula.plan_product_connection`, carried on the plan as
+`product_connection`, shown on the choice card).
+
+That band is a TARGET, never a hard cap: the delivery checklist measures the
+delivered run (`delivery_checklist.measure_product_connection`, row
+`PRODUCT_CONNECTION` in the checklist output) and reports the seconds and
+percent. Inside the band is PASS, outside is a FLAG with the measured numbers,
+never a blocker by itself and never a repair directive.
 
 ## No hand-written pipeline scripts (Part H H12)
 

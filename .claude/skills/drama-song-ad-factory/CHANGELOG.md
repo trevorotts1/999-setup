@@ -6,6 +6,52 @@
 - `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
 - `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
 - New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built). Parity: core files byte-identical with the onboarding tree.
+## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
+
+Landed together by merge-train: #101 (drama-song-tests collection, lyric_structure import path), #97 (whole-track retakes), #98 (story arc + product connection), #99 (song mp3 in every deliverable), #100 (book orientation contract). #96 (W-G-008) not included: CONFLICTING, being rebased.
+
+### FU-U13: story arc rule + product-connection target
+
+Trevor's order: never forget to connect the product to the story, and spend at
+least 10-15% of the time connecting the dots to the product and promoting it -
+a target, not a hard cap.
+
+- Story arc rule in the lyric/script and shot-plan stages: struggle -> what
+  changed -> the product is why -> get the product. The product is named and
+  connected in the lyrics AND on screen (cover, title, link), never only on an
+  end card.
+- `length_formula.plan_product_connection(plan, shots, lyric_lines)`: totals
+  product-tagged lyric lines and product-tagged shots, returns seconds and
+  percent of runtime, PASS/FLAG against the 10-15% band, plus the spoken-word
+  and struggle-motion-shot requirements. The plan carries it as
+  `product_connection`; the choice card shows the seconds and percent.
+- `delivery_checklist.measure_product_connection(shots, lyrics, runtime_s)`:
+  measures the delivered run, reports row `PRODUCT_CONNECTION` in the
+  receipt/checklist output with the measured seconds and percent. Outside the
+  band is FLAG, never a blocker by itself, never a repair directive.
+- Docs: SKILL.md, references/choice-card-spec.md, references/stage-runbook.md,
+  QC.md (SOP lives in the onboarding distribution only).
+- Test: `scripts/core/length_formula/test_story_arc_u13.py`.
+
+### 2026-10-09 - FU-U14: the song mp3 is part of the deliverable
+
+Trevor: "make an update so that the mp3 is a part of the deliverable ... update the repo with the latest understanding I just taught you".
+- **Every delivered ad folder carries the song.** Beside the captioned and clean-master mp4s: the FINAL SONG as `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length) plus the wav when one exists, so clients can release the songs as an album.
+- **New REQUIRED battery item.** `delivery_checklist.check_song_mp3(ad_dir, ad_audio_path, title, author)` -> rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`: file present, duration matches the ad's audio within 0.1 s, cross-correlation >= 0.95 with the ad's audio (normalized correlation of downsampled mono envelopes, stdlib math). Missing or mismatched = FAIL, fail closed. `delivery_battery()` returns the rows with `pass` / `reason_code` / `repair_scope`. wav is measured with the stdlib wave module, mp3 through ffprobe/ffmpeg when present.
+- **Batch zip.** `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads, out_path)`: one zip per client, one folder per author holding the captioned ad, the clean master and the song mp3 (exactly three files per ad), plus a README listing every file, duration, resolution and banner link. A missing file is a `BatchZipError`.
+- **Docs:** SKILL.md (deliverables), `references/choice-card-spec.md` (the card lists "song mp3 included"), `references/stage-runbook.md`, QC.md.
+- Tests: `scripts/core/delivery_checklist/test_song_mp3_u14.py` (stdlib WAV fixtures, no ffmpeg, no network).
+
+### 2026-10-09 - FU-U10: the book orientation contract
+
+No book shape or motion rule existed anywhere; nothing measured the cover and nothing measured page-turn direction. Every compiled clip prompt carried the generic F12 people line ("limbs, head and camera stay in gentle continuous motion"), the wrong instruction for a book.
+- New `scripts/core/book_shot/` (`book_shot.py`, `calibrate_book.py`, seeded fixture generator, `test_book_shot_c1.py`): the seven-rule BOOK ORIENTATION CONTRACT, the exact fixed prompt blocks (ORIENTATION / ACTION:open / ACTION:flip / CAMERA / CONSTRAINTS; H3 also gets `[Static shot]` plus the plain-words camera line), and measured checks -- cover match vs the HORIZONTAL MIRROR of the client's cover file (ORB + RANSAC inliers; mirror score higher = BOOK_MIRRORED), back/invented cover (BOOK_COVER_NOT_FRONT), spine-side sign (BOOK_SPINE_WRONG_SIDE), title OCR in reading order (tesseract, U9's engine; missing engine = UNAVAILABLE, never a pass), Farneback flow direction and right-half-to-left-half crossing (BOOK_WRONG_DIRECTION / BOOK_NO_MOTION). Frames run through load_governor.
+- `calibrate_book.py` is the required control: a known-good clip must PASS and its ffmpeg hflip must FAIL, or every book verdict is UNAVAILABLE. `qc_record()` will not mint a PASS without a calibrated checker.
+- `intake_book`: `BOOK_FIELDS` gains `language` (default "en" = left-to-right; the ask folds into the existing offer sentence so the three-question cap holds) and the cover's aspect is MEASURED from the file header (stdlib; measured=False when unreadable, never invented).
+- `product_style_bible`: `compile_visual_prompt()` takes `[MOTION]` from `shot["motion"]` for `book` / `product` / `insert`; the generic F12 line stays for people shots. A kind that owns its motion with none set refuses (MOTION_MISSING_FOR_SHOT).
+- `kie_dispatch` (outside the LIPSYNC_* seams): a video job whose shot kind is `book` is refused (BOOK_SHOT_NOT_CONTRACTED) without a start frame made from the cover file; the approved-plan-hash side stays dormant until `book_plan_sha256` exists (U11), then activates.
+- `qc_gate`: the shots stage requires a `book_orientation` record for book campaigns; UNAVAILABLE never advances.
+- Tests: `scripts/core/book_shot/test_book_shot_c1.py` covers (a) hflip cover FAILs BOOK_MIRRORED (b) back cover FAILs BOOK_COVER_NOT_FRONT (c) left-to-right leaf FAILs, right-to-left PASSes, still clip FAILs BOOK_NO_MOTION (d) the calibration pair sorts or the check is UNAVAILABLE (e) a book prompt carries no "gentle continuous motion" line. All five FAIL on the base tree.
 
 ## [2.7.25] - 2026-10-09 - Batch MGB009a: W-G-003-amend + TESTHYG-75-residue
 
