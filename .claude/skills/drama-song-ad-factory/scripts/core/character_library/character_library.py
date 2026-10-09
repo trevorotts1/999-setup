@@ -3,7 +3,7 @@
 
 After the client approves a character, ask ONE question (``save_question``);
 on "yes", ask for a name and call ``save_character``. Later intake cards list
-the saved characters under "Use a saved character?" (``saved_character_question``)
+the saved characters under the numbered saved-character question (``saved_character_question``)
 and ``brief_fields`` turns the pick into brief fields (same face, same voice).
 
 Layout, inside the client's own data folder (never shared between clients):
