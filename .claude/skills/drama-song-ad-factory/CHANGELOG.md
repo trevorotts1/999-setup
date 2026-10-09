@@ -1,5 +1,11 @@
 # Changelog: drama-song-ad-factory
 
+## [Unreleased] - 2026-10-09 - FU-SCRIPT-APPROVAL
+
+- New card question SCRIPT APPROVAL (last question): the client can read and approve the story and song lyrics before the song is made. Yes sends the script and pauses before any song generation; edits are applied, re-checked and re-sent; missing approval fails closed (`SCRIPT_NOT_APPROVED`) in `kie_dispatch.dispatch` and `song_dispatch.run_takes`. No: unchanged.
+- Wired, nothing is called by hand: `factory.py next` runs `script_approval.stage.run_stage` when `music` is next and the card answer is Yes (checks, `request_approval`, send through `openclaw message send` or back to the chat, run recorded as waiting, outcome `waiting`). New `factory.py script-reply` carries the client's answer (`approve` or an edit that is re-checked and re-sent). Resume stays waiting and never re-sends a delivered script. The dispatch gates read the record from the run folder (`record_near`, `run_dir=`).
+- New `scripts/core/script_approval/` with `test_script_approval.py` and `test_script_wiring.py`. No version bump.
+
 ## [2.7.34] - 2026-10-09 - Train 2.7.34: #124 + #133
 
 Landed together by merge train: #124 FU-U4 (client lines are a contract; the STOP card lists only real options; fit card, `fit_card`, `card --fit`), #133 U12 choice-card-spec gap fills (STL voice guard, voice-match QC, planner card, fit-card TODO). Neither PR carried an Unreleased entry; this one is written by the train. One clash, spec text only: both PRs rewrote `references/choice-card-spec.md` section 2.3. #133's section 2.3 described the fit card as not built and carried a TODO to rewrite it when #124 landed; #124 is in this train, so the #124 text is kept and the stale #133 paragraph and its TODO line are dropped. All other #133 changes are kept. VERSION and SKILL.md frontmatter: 2.7.33 to 2.7.34.
