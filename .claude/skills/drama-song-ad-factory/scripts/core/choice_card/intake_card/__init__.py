@@ -1,4 +1,4 @@
-"""choice_card.intake_card: the readable six-question intake card (Part H9)."""
+"""choice_card.intake_card: the readable nine-question intake card (Part H9)."""
 from .intake_card import (  # noqa: F401
     CLOSING_LINE,
     QUESTIONS,

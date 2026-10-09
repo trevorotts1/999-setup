@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.35
+version: 2.7.36
 ---
 
 # Drama Song Ad Factory
@@ -81,6 +81,29 @@ silently.
   unreachable); those still print a `WARNING <CODE>: ...` line and sit in the
   receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
   `tests/test_loud_failure.py`.
+
+## Script approval before the song (card question SCRIPT APPROVAL)
+
+The last card question asks: "Do you want to read and approve the script - your
+story and the song lyrics - before the song is made?" (1 Yes, show me first,
+RECOMMENDED; 2 No, just make it). Stage order with Yes:
+`creative-strategy` (story) -> `script-lyrics` (lyric sheet) -> **script
+approval** -> `music` (song) -> ... Once the story and lyric sheet pass their
+checks, the runner does it by itself: `factory.py next --run-dir $RUN [--target <chat id>]`,
+when `music` would be next and the card answer is Yes (`$RUN/card-answers.json`, the `answers` list of
+`intake_card.conversation`; the script in `$RUN/creative/script.json`: title, story, sheet, lyrics), runs
+`script_approval.stage.run_stage`: checks the story and lyric sheet, calls `request_approval`, sends the script
+(title, story a few lines per act, full lyrics with section labels) through the client-delivery path
+(`openclaw message send` to `--target`; no `--target` = the messages come back in `data.messages` for the chat),
+records the run as waiting (`creative/script-approval.json`, `sent: true`) and answers `waiting` (exit 2) with no
+music command. The client's reply goes to `factory.py script-reply --run-dir $RUN --reply "<their words>"`:
+"approve" -> `handle_reply` records it and the next `next` hands out `music`; anything else is an edit: apply it
+to `creative/script.json`, run `script-reply` again, it re-checks and re-sends. Resume (`next` again) stays
+waiting and never re-sends a script that was delivered. No song generation, no Suno or music spend, until
+approval; approval is bound to the exact lyrics, and `kie_dispatch.dispatch` (music jobs) and
+`song_dispatch.run_takes` (`run_dir=`) read the record from the run folder themselves (`SCRIPT_NOT_APPROVED`
+when missing or stale). No: nothing changes. Code and tests: `scripts/core/script_approval/`
+(`stage.py`, `test_script_wiring.py`).
 
 ## Start here: the enforced flow
 
@@ -227,8 +250,11 @@ The four rules (recipe v2, replaces G12):
    text, and the style says the full band keeps playing under the spoken lines.
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
    hyphen-held vowels, after a wordless sung vocalise.
-3. The first hook comes after the vocalise, never at 0 s; the hook is the
-   client's own words, repeated by length (`core/sung_hook`).
+3. The hook is the payoff, never the opener: it comes after the build-up
+   (a verse, plus a pre-chorus or build where the style and length plan
+   have one), measured at or after the story beat where its words become
+   true; the hook is the client's own words, repeated by
+   length (`core/sung_hook`, `core/sung_hook/hook_placement.py`).
 4. Each take's singing is measured, not taken from its labels.
 
 Word budget, section plan, hook repeats, spoken placement, instrumental breaks
@@ -304,6 +330,18 @@ The Suno payload itself is assembled the same way: `prompt_templates.suno_parts(
 the delivery cues, the negative tags and the caps are data and not constants; the caps are
 measured on the FINAL payload, after `ending_qc`. See "Prompt templates" above.
 
+## What the storyboard is
+
+The storyboard is the written shot-by-shot plan: one card per shot with the
+exact line, what the viewer must understand, the place and action, and the
+emotion on the face. A still image is then made for every shot (stills are
+cheap; video clips are the expensive part), and the client approval shows
+BOTH together, each shot's written card and that shot's still, before any
+video money is spent. Code: `scripts/core/storyboard_director/approval_package.py`
+(`build` makes the message, `approve` is the only thing that opens the video
+gate, `revise_shot` fixes one shot and re-sends only that shot). Order:
+storyboard cards, stills, approval, video.
+
 ## Scenes must match the song and the faces (Part I I2)
 
 Plain rules, no exceptions:
@@ -333,13 +371,106 @@ delivered length in seconds (chosen length minus 2).
 |-----------|------|------|------|-------|-------|-------|-------|
 | Hook sung | 2    | 3    | 4    | 5     | 8     | 12    | 12    |
 
-First hook by 15% of runtime, last hook near the end (about 90%) before the
-call to action, the rest evenly spaced. Build the sheet with
+Hook placement (FU-HOOK-PLACEMENT, Trevor 2026-10-09: "THE HOOK HAS TO MAKE
+SENSE AND BE PLACED CORRECTLY"): the hook is the payoff, never the opener.
+Before the first hook the sheet carries the style's build-up: a verse, plus
+a pre-chorus/build when the style's section plan has one and the length plan
+has pre-choruses (not at 60 s). Story sense: the story plan names the beat
+of the U16 arc (`length_formula.STORY_ARC_U16`) where the hook's words
+become true, `true_at_beat` (never the opening beat). Pass it to
+`music_director.build_generate_request(..., true_at_beat=...)`; the director
+emits the sheet's hook_plan (`hook_placement.plan_for`) and carries it as
+`_hook_plan`, and `song_dispatch.run_takes` moves it into the judge's plan
+(never sent to KIE). The gate MEASURES where every hook block sits (the
+words before it at the style's own rates, as a share of the sheet, mapped
+onto the arc, whose beats after the opening one span the runtime evenly)
+and fails a first hook that sits before `true_at_beat`, whatever beats a
+plan claims (150 s, first hook about a quarter in, true at the turn:
+FAIL). The hook count is `hook_placement.hook_target`: the table above,
+reduced to what fits in the runtime after that beat starts (148 s true at
+the turn: 3). The returned take is measured the same way: a first hook
+sung before the beat's start second fails.
+
+hook_plan JSON shape (what `prepare`, `build_request`, `guard_request`,
+`check_payload` and `judge_take` read):
+
+```json
+{"true_at_beat": "the_turn"}
+```
+
+`plan_for` adds `"beats"`, one MEASURED beat per hook block in sheet order,
+as a receipt (`{"true_at_beat": "the_turn", "beats": ["the_turn",
+"the_rise"]}`); the gate never reads it. Beats: `the_world`,
+`villain_arrives`, `pain_deepens`, `lowest_point`, `the_turn`, `the_rise`,
+`call_to_action`.
+
+No gate switches itself off: a missing style, length, sheet, `hook_plan` or
+`true_at_beat` is a FAIL reading `UNMEASURED: <field>`. A sheet with sung or
+rap sections sent with no `style_id` is refused `UNMEASURED: style_id`; a built
+payload with no `music_style` is `UNMEASURED: music_style`; a `true_at_beat`
+that is not a beat, or is the opening beat, fails the sheet and the returned
+take alike. The golden sheets name the beat where their hook ("You can rest
+and still rise") pays off: `the_turn`, when the book arrives, and
+`lowest_point` at 60 s, where two hooks cannot fit after the turn starts; each
+carries `hook_target` hooks and fails if its first hook is moved up. The
+director's words-fit check holds the sung share to the style's own floor
+(`words_fit.style_sung_target_pct`, the song contract's rule), and its
+spelling check reads a held vowel ("re-est", "lo-ook") as its word. A chorus that carries the hook also
+carries at least one other real lyric line (the golden sheets do). After
+Suno and before any picture or video spend, `song_dispatch` always reads
+Suno's returned section headers and word times: an added hook block, a hook
+moved earlier, or a first hook inside the build-up window
+(`hook_placement.min_first_hook_s`, from the length plan: about 13 s at
+60 s, 28 s at 150 s with a pre-chorus) fails the take. The Suno style text says to sing the sections in order
+and never open with the hook. Last hook near the end before the call to action. Build the sheet with
 `core/sung_hook.build_lyric_sheet`. After a take is chosen, count the hook
 occurrences that were actually sung (Suno timestamps plus the singing
 detector): count met = accept, one short = accept with a flag, two or more
 short = regenerate. The receipt shows hook text, target, measured count and
 times. The Velvet Voiceover version is exempt.
+
+## Style contract (FU-RNBFLOW-SONG)
+
+Every sheet is held to its music style's OWN definition
+(`scripts/core/song_contract`), so a song can never turn into a dialogue
+track. The failure it prevents: an R&B Flow sheet with one 4-word hook sung
+6 times and every storyboard line tagged rap with no rap cue (24.9% of voice
+sung, Trevor 4 out of 10: "it was not singing any lyrics").
+
+- **Sheet, before any spend** (`suno_recipe.guard_request` and
+  `song_dispatch.validate_request(req, style_id, client_text, delivered_s)`
+  run `song_contract.check_sheet`): every chorus carries the hook PLUS at
+  least one other line of real words (the hook itself may stay one short
+  line, I8); the sung sections the length plan calls for are there
+  (pre-choruses and bridge for every style, plus sung verses for Soul Ballad
+  and Soul Rise; R&B Flow's verses are rap); the planned sung share of voice
+  is judged on the band against the style's own floor (only a shortfall
+  counts, so a Soul sheet may be almost all sung): Soul Ballad and Soul Rise
+  77.5%; R&B Flow the share its own length plan holds once its rap budget
+  is carved out (`song_contract.sung_target`, 71.1% at 150 s; one copy of
+  the rule, `words_fit.style_sung_target_pct`, which the director's
+  words-fit check uses too); rap
+  blocks are tagged as rhythmic rap on the beat, never spoken, talk or
+  conversational; an upbeat style (R&B Flow) never asks for "slow"; a spoken
+  outro says "no melody", so the closing lines are never sung on the hook
+  melody. The report counts sung, rap and spoken words and seconds per
+  section.
+- **Hook count and placement** belong to `sung_hook/hook_placement`
+  (FU-HOOK-PLACEMENT). Until that module is installed the contract keeps a
+  fallback: hook blocks never exceed `sung_hook.hook_count(delivered_s)`,
+  counted on the plan's delivered seconds, never the request duration.
+- **Returned song, before any picture or video spend**: the dispatch plan
+  carries `style_id` (`run_takes` stamps the request's lyrics as
+  `sheet_text`). `song_dispatch.judge_take` runs gate `song_contract` on
+  Suno's aligned words and the singing detector: FAIL when Suno sang a hook
+  line more often than the sheet (untagged repeats under a verse or outro
+  header count), when no sung non-hook lyric was sung for a style that needs
+  them, or when the measured sung share of voice is more than 10 points
+  under the style's target. Rap versus spoken delivery on the audio is
+  UNMEASURED (the singing detector reads sung versus not sung; no
+  speech-to-text is used).
+- **No gate switches itself off**: a missing `style_id`, length or plan
+  field is a FAIL that says `UNMEASURED: <field>`.
 
 ## Caption and lyric QC on measured timing
 
@@ -376,6 +507,34 @@ times. The Velvet Voiceover version is exempt.
 - Never fabricate testimonials, clinical results, credentials or product
   facts. Creative beats stay separate from production stages.
 
+## Song approval (FU-SONG-APPROVAL)
+
+The intake card's eighth question is SONG APPROVAL: "Do you want to hear and
+pick the song before any video is made?" (1. Yes, send me 3 versions to choose
+from (recommended), 2. No, just make it). On Yes the song stage makes THREE
+versions of the same lyric sheet in parallel, each a different arrangement of
+the client's music style (the variant table is `scripts/core/song_choices/
+variants.json`). Each version passes the same song checks as a single song
+(`song_dispatch`: lyrics, hook placement, voice rules); a version that fails
+is regenerated once, then reported. They land in `SONG-CHOICES/` in the
+delivery folder as `1 - <LABEL> (<description>).mp3` (title tag = the same
+label) with a `README.txt`, and the client message ends "Reply 1, 2 or 3 to
+pick your song." No picture timing, image, video or lip-sync spend happens
+until the pick is recorded (`song_choices.py pick`); `factory.py next` and
+`kie_dispatch` refuse with `SONG_PICK_MISSING` until then and never default.
+On No nothing changes: one song, no wait. The card price adds the two extra
+song generations (row `Song picks`). The card answer is recorded
+automatically when the recap is confirmed (`factory.py card --step --run-dir
+$RUN --reply ...`, i.e. `intake_card.conversation(replies, run_dir=$RUN)` ->
+`song_choices.record_card_answer`): Yes turns the gate on, No records No, a
+changed answer at the recap replaces it, and a resumed run keeps what was
+recorded once versions exist. The three files and the message go to the client
+in one `openclaw message send` (`song_choices.send_choices`, files attached
+in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
+recorded with `song_choices.py pick`.
+
+Client-facing question guide with examples and prep: `references/CLIENT-GUIDE.md`.
+
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
 Everything in this section is shared doctrine: identical in both
@@ -383,7 +542,13 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 
-- **Intake.** Quick mode by default (one sentence), Concept mode for a
+- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+  Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
+  client chose. One rates table (`core/choice_card/video_models/
+  video_model_rates.json`) and one price function shared by the question and
+  the final card; the pick is stored in run state, shown on the card and
+  submitted by dispatch with that model's provider id and resolution.
+
   client with their own story. At most three questions total, and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.
@@ -419,6 +584,11 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   flicker, identity locked; golden realism carries the transformation and
   payoff.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
+- **Style questions on the intake card:** each music and video option shows
+  one plain line saying what it is; Sketch to Life shows as "Sketch to Life
+  (Hybrid)"; video options show a `Watch:` sample link from
+  `scripts/core/choice_card/intake_card/style_samples.json` (no link when the
+  table says `null`). See `references/choice-card-spec.md`.
 - **Voice (decisions 27, 31):** All Suno (default) - sung and spoken lines
   all from Suno, spoken lines over the music bed only, no singing-underneath
   layer - or **Velvet Voiceover**: Google text-to-speech for the spoken
@@ -702,6 +872,13 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   model the user has not set up.
 - If the user names a model or agent, use exactly that one.
 
+The one AI MODELS question on the intake card (first question) asks which AI
+builds and which AI checks, with OpenRouter recommended and Ollama allowed. It
+only RECORDS the answer as `ai_models` in the approved intake summary, as a
+preference for the operator. The run itself still uses the session's own model;
+nothing here switches models. Names that are not routable are refused, and the
+checker must differ from the builder. Code: `scripts/core/choice_card/intake_card/ai_models.py`.
+
 ## Main window: orchestrate only, all work visible, no silent failure
 
 - The main window only operates and orchestrates. It does not do the build
@@ -810,7 +987,7 @@ check, not a pass. Run it where the canonical source exists to prove parity.
 
 ## Sections marked TODO (refresh when the named unit lands)
 
-- `references/choice-card-spec.md` 2.3 and its `TODO(FU-U4)` line - the fit
+- `references/choice-card-spec.md` 2.7 and its `TODO(FU-U4)` line - the fit
   card's stop-card form: refresh when FU-U4 lands (PR #124).
 - "Captions and protected names" - "NOT built on main (FU-U9...)" for
   reading burned caption text back off frames: refresh when FU-U9 lands.

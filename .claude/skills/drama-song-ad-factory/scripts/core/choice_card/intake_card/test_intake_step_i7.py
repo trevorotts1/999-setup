@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 N = len(IC.QUESTIONS)
-#: five picks, then an explicit dollar amount for the spend question (no amount = no spend)
-OK = ["1"] * 4 + ["$25"] + ["1"] * (N - 5)
+#: option 1 everywhere, but an explicit dollar amount for the spend question (no amount = no spend)
+OK = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]
 
 
 def _transcript(replies):
@@ -57,8 +57,8 @@ def test_recommended_bad_answer_and_spend_amount():
     st = IC.conversation(["recommended", "9"])
     assert st["message"].startswith("Sorry, I did not catch that. Question 2 of")
     assert len(st["answers"]) == 1
-    a = IC.conversation(["1", "1", "1", "1", "$25", "2"])["answers"]
-    assert a[4]["value"] == "25" and a[5]["n"] == 2
+    a = IC.conversation(["1"] * 5 + ["$25", "2"])["answers"]
+    assert a[5]["value"] == "25" and a[6]["n"] == 2
 
 
 def test_change_one_line_returns_to_recap():

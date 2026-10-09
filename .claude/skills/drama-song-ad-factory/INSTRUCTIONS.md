@@ -113,7 +113,7 @@ style difference.
 
 ## 6b. Pictures match the words (Part H H5)
 
-Stage order: audio, then timestamps, then shot plan, then pictures. Never
+Stage order: audio, then timestamps, then shot plan, then pictures, then storyboard approval (each shot's written card and its still together), then video. Never
 generate pictures before the song exists. Plan shots with
 `shot_planner.plan_from_timestamps` from the REAL Suno timestamps; every shot
 names the line it shows (`shows_line_ids`) and its picture is generated at its
@@ -124,12 +124,14 @@ Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
 
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
 
-**Asking the six intake questions (H9).** Build them with
+**Asking the nine intake questions (H9).** Build them with
 `python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
 show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
 run each argv without a shell). Never type them free hand or send them as one
 line: one block per question, one numbered option per line, a blank line
 between questions. See `references/choice-card-spec.md` section 2.1.
+
+**Script approval.** The card's last question (SCRIPT APPROVAL) lets the client read and approve the story and song lyrics before the song is made. On Yes, send the script, pause, and do not generate the song until "approve"; save the card answers (the `answers` list of `intake_card.conversation`) to `$RUN/card-answers.json` and the script to `$RUN/creative/script.json`; `factory.py next` then sends the script and pauses by itself, and `factory.py script-reply` carries the client's answer; see SKILL.md "Script approval before the song".
 
 **Ask them one at a time (I7).** Do not send the whole card. Run
 `factory.py card --step` (add one `--reply <what the client said>` per answer so
