@@ -397,6 +397,8 @@ def main(argv=None):
     c.add_argument("--brief-file", default=None, help="Brief JSON file (or the planner's); same.")
     c.add_argument("--summary-file", default=None,
                    help="intake output (envelope or summary) JSON; its generation_ceiling becomes spend option 1.")
+    c.add_argument("--run-dir", default="",
+                   help="Run folder; the confirmed recap writes card-answers.json there.")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -443,6 +445,7 @@ def main(argv=None):
                           + (["--price", a.price] if a.price else [])
                           + (["--limit", limit] if limit else [])
                           + (["--limit-from-brief"] if limit and from_brief else [])
+                          + (["--run-dir", a.run_dir] if a.run_dir else [])
                           + (["--step"] if a.step else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
