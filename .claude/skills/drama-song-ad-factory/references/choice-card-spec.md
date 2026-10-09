@@ -85,7 +85,7 @@ previous selections kept.
 
 The intake is a conversation, not a form. One message per turn:
 
-1. `Question 3 of 7 - VIDEO STYLE`, then a one-sentence reason the question
+1. `Question 4 of 9 - VIDEO STYLE`, then a one-sentence reason the question
    matters, then the question.
 2. Options as a numbered list, one per line, each with a short plain
    description; the RECOMMENDED option is marked and followed by "I recommend
@@ -130,7 +130,7 @@ never prints it again. Without `--run-state-file` the card is unchanged.
 Test: `choice_card/intake_card/test_intro_message.py`.
 ## 2.6 Script approval (the last card question)
 
-Appended after STORYBOARD APPROVAL (the card's last question; the total
+Appended after SONG APPROVAL (the card's last question; the total
 count is computed, never typed):
 
 ```
@@ -172,7 +172,7 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
-## 2.3 Fit stop card (FU-U4, normative)
+## 2.7 Fit stop card (FU-U4, normative)
 
 When the client brings their own lines (concept mode, `brief.mode == "concept"`),
 their lines are a contract: `brief.packet_lines` is required (missing is refused
@@ -202,12 +202,12 @@ length that is not offered, and any fps other than the 30 fps master.
 ### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
 
 Shown only when the client's data folder holds saved characters; it is then
-question 1 and the card has one more question. Built by
+question 2 (AI MODELS is always question 1) and the card has one more question. Built by
 `character_library.saved_character_question`, never free hand. N is how many
 characters the client has saved ("1 character", "2 characters"):
 
 ```
-Question 1 of 7 - CHARACTER
+Question 2 of 10 - CHARACTER
 Do you want to create a new character for this ad, or use one you've used before?
 You have 2 characters saved with us.
 1. Create a new character (recommended)
@@ -225,6 +225,7 @@ shown once, before the first question: "You don't have any saved characters
 yet, so I'll create a new one for this ad and save it for next time."
 
 Test: `character_library/test_saved_character_question.py`.
+
 ## 2.4 STORYBOARD APPROVAL shows both (normative)
 
 When the client answers Yes to "Do you want to approve the storyboard before
@@ -236,19 +237,20 @@ the client approves. A client edit to one shot regenerates only that shot's
 still and re-sends only that shot. Built by
 `scripts/core/storyboard_director/approval_package.py`; a shot with an
 incomplete card or no still file blocks the approval message. The live run sends it with `factory.py storyboard` (see stage-runbook.md, Wiring).
+
 ## 2.5 Song approval (FU-SONG-APPROVAL, normative)
 
-Question 7 of 7, label `SONG APPROVAL`, built by `intake_card.py` like the
-storyboard question (the saved-character question, when shown, makes it 8 of 8):
+Question 8 of 9, label `SONG APPROVAL`, built by `intake_card.py` like the
+storyboard question (the saved-character question, when shown, makes it 9 of 10):
 
 ```text
-Question 7 of 7 - SONG APPROVAL
+Question 8 of 9 - SONG APPROVAL
 Do you want to hear and pick the song before any video is made?
 1. Yes, send me 3 versions to choose from - ... (RECOMMENDED)
 2. No, just make it - I make one song and keep going.
 ```
 
-- It appears in the recap ("7. Song Approval: ...") and the recap's "number of
+- It appears in the recap ("8. Song Approval: ...") and the recap's "number of
   a line to change it" reopens it.
 - **Yes:** the song stage generates three versions of the same lyric sheet IN
   PARALLEL inside the chosen music style, three arrangement variants from the

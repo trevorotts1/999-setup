@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""intake_card: the seven intake questions as a card a client can read (H9).
+"""intake_card: the nine intake questions as a card a client can read (H9).
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -7,7 +7,7 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 1 of 7 - LENGTH
+    Question 2 of 9 - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
@@ -38,11 +38,11 @@ if _CORE not in sys.path:
 TELEGRAM_LIMIT = 4000
 
 CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                'like "1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
+                'like "1, 1, 1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
                 'RECOMMENDED choice.')
 
 SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                      'like "1, 1, 1, 1, 1, 1". For the BUDGET, reply with a dollar amount.')
+                      'like "1, 1, 1, 1, 1, 1, 1, 1, 1". For the BUDGET, reply with a dollar amount.')
 
 REC = "(RECOMMENDED)"
 
@@ -622,7 +622,7 @@ except ImportError:                                # run as a plain script
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the seven-question intake card.")
+    ap = argparse.ArgumentParser(description="Print the nine-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "

@@ -440,7 +440,7 @@ def main(argv=None):
     sb.add_argument("--run-dir", required=True)
     sb.add_argument("--target", default="", help="Telegram chat id")
     sb.add_argument("--reply", default=None, help="The client's reply, if any.")
-    c = sub.add_parser("card", help="Print the seven-question intake card as raw "
+    c = sub.add_parser("card", help="Print the nine-question intake card as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json"))

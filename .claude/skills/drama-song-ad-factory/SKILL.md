@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.35
+version: 2.7.36
 ---
 
 # Drama Song Ad Factory
@@ -413,7 +413,7 @@ times. The Velvet Voiceover version is exempt.
 
 ## Song approval (FU-SONG-APPROVAL)
 
-The intake card's seventh question is SONG APPROVAL: "Do you want to hear and
+The intake card's eighth question is SONG APPROVAL: "Do you want to hear and
 pick the song before any video is made?" (1. Yes, send me 3 versions to choose
 from (recommended), 2. No, just make it). On Yes the song stage makes THREE
 versions of the same lyric sheet in parallel, each a different arrangement of
@@ -891,7 +891,7 @@ check, not a pass. Run it where the canonical source exists to prove parity.
 
 ## Sections marked TODO (refresh when the named unit lands)
 
-- `references/choice-card-spec.md` 2.3 and its `TODO(FU-U4)` line - the fit
+- `references/choice-card-spec.md` 2.7 and its `TODO(FU-U4)` line - the fit
   card's stop-card form: refresh when FU-U4 lands (PR #124).
 - "Captions and protected names" - "NOT built on main (FU-U9...)" for
   reading burned caption text back off frames: refresh when FU-U9 lands.
