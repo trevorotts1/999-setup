@@ -192,8 +192,15 @@ def test_b_rnb_judge_not_fail_by_construction():
                       None, "rnb-flow")
     band_gates = ("spoken_share", "rap_share", "sung_of_voice")
     bad = [g for g in band_gates if j["gates"][g]["verdict"] == "FAIL"]
-    check("(b) the R&B Flow judge is not FAIL when the take matches its "
-          "approved plan", j["verdict"] != "FAIL" and not bad,
+    # FU-HOOK-PLACEMENT: this fixture carries no sheet and no hook_plan, so
+    # the always-on hook_placement gate FAILs it as UNMEASURED (never a
+    # silent pass); the band gates are judged as before.
+    check("(b) hook_placement on a take with no sheet is FAIL, UNMEASURED",
+          j["gates"]["hook_placement"]["verdict"] == "FAIL"
+          and "UNMEASURED: sheet_text" in j["gates"]["hook_placement"]["detail"],
+          j["gates"]["hook_placement"])
+    check("(b) the R&B Flow band gates are not FAIL when the take matches its "
+          "approved plan", not bad and not (set(j["failed"]) - {"hook_placement", "song_contract"}),
           "verdict=%s failed=%s band=%s" % (j["verdict"], j["failed"],
                                             {g: j["gates"][g] for g in band_gates}))
     # FU-RNBFLOW-SONG: g1b is the v1 take Trevor rated 4/10 (no sung lyric
