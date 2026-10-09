@@ -258,7 +258,12 @@ with a default target of **77.5%** (75-80): a music-only intro, gaps and the
 end card never count against it. Both numbers use Trevor's band: within 5
 points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
 hard reject is no sung stretch of at least 6 seconds. One constants set holds
-the numbers: `scripts/core/spoken_share/spoken_share.py`.
+the numbers: `scripts/core/spoken_share/spoken_share.py`. Since FU-U3 landed
+(2.7.31) those numbers are read per style: `spoken_share.STYLE_TARGETS` gives
+Soul Ballad and Soul Rise 22.5 / 77.5, R&B Flow the share planned from the
+approved sheet, and counts the fourth delivery `none` (music-only intro, gaps,
+end card) in runtime and never in voice time; a music-only gap never counts as
+spoken.
 
 Tag grammar and the checks around it (FU-U1, FU-U2, FU-U5, FU-U6; what main does):
 
@@ -798,3 +803,13 @@ check, not a pass. Run it where the canonical source exists to prove parity.
 - `scripts/core/` - packaged copy of the OpenClaw distribution's control
   layer; regenerate it from the canonical source when the core changes, then
   re-run the parity test. Do not hand-edit the copy.
+
+## Sections marked TODO (refresh when the named unit lands)
+
+- `references/choice-card-spec.md` 2.3 and its `TODO(FU-U4)` line - the fit
+  card's stop-card form: refresh when FU-U4 lands (PR #124).
+- "Captions and protected names" - "NOT built on main (FU-U9...)" for
+  reading burned caption text back off frames: refresh when FU-U9 lands.
+- Book bullets and `QC.md` book line - FU-U11's `BOOK_BLANK_PAGES`,
+  `BOOK_PLAN_NOT_APPROVED` and the Book shots block are described as an open
+  branch: refresh when FU-U11 lands.
