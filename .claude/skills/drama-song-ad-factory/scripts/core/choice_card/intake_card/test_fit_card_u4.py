@@ -68,7 +68,8 @@ def test_a_concept_mode_contract():
               {"id": "L003", "text": "I packed OPTIONS."}]
     sheet = "[Intro (spoken): x]\nGirl, you ready?\nOf course.\n"
     ok, d = raises(lambda: music_director.build_generate_request(
-        sheet, "x", "T", packet_lines=packet, mode="concept"), "L003")
+        sheet, "x", "T", packet_lines=packet, mode="concept",
+        style_id="velvet_voiceover"), "L003")   # no style + lyrics = UNMEASURED
     check("(a) sheet missing L003 is refused naming L003", ok, d)
     ok, d = raises(lambda: music_director.build_generate_request(
         sheet, "x", "T", mode="concept"), "PACKET_REQUIRED_IN_CONCEPT_MODE")
