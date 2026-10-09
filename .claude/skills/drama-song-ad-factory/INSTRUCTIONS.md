@@ -113,7 +113,7 @@ style difference.
 
 ## 6b. Pictures match the words (Part H H5)
 
-Stage order: audio, then timestamps, then shot plan, then pictures. Never
+Stage order: audio, then timestamps, then shot plan, then pictures, then storyboard approval (each shot's written card and its still together), then video. Never
 generate pictures before the song exists. Plan shots with
 `shot_planner.plan_from_timestamps` from the REAL Suno timestamps; every shot
 names the line it shows (`shows_line_ids`) and its picture is generated at its

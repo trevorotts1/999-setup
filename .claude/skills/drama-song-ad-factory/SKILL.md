@@ -304,6 +304,18 @@ The Suno payload itself is assembled the same way: `prompt_templates.suno_parts(
 the delivery cues, the negative tags and the caps are data and not constants; the caps are
 measured on the FINAL payload, after `ending_qc`. See "Prompt templates" above.
 
+## What the storyboard is
+
+The storyboard is the written shot-by-shot plan: one card per shot with the
+exact line, what the viewer must understand, the place and action, and the
+emotion on the face. A still image is then made for every shot (stills are
+cheap; video clips are the expensive part), and the client approval shows
+BOTH together, each shot's written card and that shot's still, before any
+video money is spent. Code: `scripts/core/storyboard_director/approval_package.py`
+(`build` makes the message, `approve` is the only thing that opens the video
+gate, `revise_shot` fixes one shot and re-sends only that shot). Order:
+storyboard cards, stills, approval, video.
+
 ## Scenes must match the song and the faces (Part I I2)
 
 Plain rules, no exceptions:
