@@ -31,6 +31,8 @@ jobs:
           python-version: '3.12'
       - name: Install numpy (singing-detector suite skips itself without it)
         run: python3 -m pip install --quiet numpy pytest
+      - name: Install ffmpeg (singing-detector suites decode mp3 fixtures)
+        run: command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
       - name: Static checks (F17 no local ASR, B6 operator-path leak)
         run: |
           bash "$SKILL/scripts/qc-no-local-asr.sh"
