@@ -37,14 +37,12 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Load the module by file path: under pytest the package directory (it has an
-# __init__.py) is also named weekly_step and would shadow the module.
-import importlib.util                               # noqa: E402
-_spec = importlib.util.spec_from_file_location("weekly_step_module",
-                                               HERE / "weekly_step.py")
-V = importlib.util.module_from_spec(_spec)
-sys.modules["weekly_step_module"] = V
-_spec.loader.exec_module(V)
+sys.path.insert(0, str(HERE))                      # core/smp/weekly_step/
+
+try:                                   # pytest imports the weekly_step PACKAGE
+    from weekly_step import weekly_step as V       # noqa: E402
+except ImportError:                    # script run gets the module file
+    import weekly_step as V                        # noqa: E402
 
 FAILS = []
 
@@ -642,16 +640,14 @@ check("module ships only the weekly_step sources",
 
 # --- result ----------------------------------------------------------------
 
-print()
-if FAILS:
-    print("FAILURES (%d): %s" % (len(FAILS), "; ".join(FAILS)))
-else:
-    print("all checks passed")
-
-
-def test_weekly_step_checks():  # pytest entry; the checks above ran at import
-    assert not FAILS, "; ".join(FAILS)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
 
 
 if __name__ == "__main__":
-    sys.exit(1 if FAILS else 0)
+    print()
+    if FAILS:
+        print("FAILURES (%d): %s" % (len(FAILS), "; ".join(FAILS)))
+        sys.exit(1)
+    print("all checks passed")
+    sys.exit(0)

@@ -196,7 +196,10 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 
 Lip-sync runs on 6 to 8 short clips of 4 to 6 seconds per 60 s ad, 30 to 40
 seconds of footage per shape (choice card section 3.6), doubled 2026-10-08:
-more pieces, not longer ones, scaled linearly with ad length, no clip over 6 s.
+more pieces, not longer ones, scaled linearly with ad length, no clip over 6
+seconds. Enforced at the final edit QC gate (Part E E6): at least 6 lip-sync
+clips and 30 s of lip-sync in a 60 s ad (never fewer than 3 clips), scaling
+linearly (50% of runtime) for longer or shorter ads.
 
 Every clip is its own paid job, so the lip-sync line is about twice what it was.
 Per-ad cap math: `lipsync_clips.check_budget(total_s, usd_per_s, remaining_usd,
