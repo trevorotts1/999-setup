@@ -43,6 +43,13 @@ skill 75 v2.9.1 (same core, byte-identical).
 - Docs: SKILL.md "Parallel minute-lanes" section; `references/stage-runbook.md`
   lane note.
 
+## Unreleased
+
+### qc-kie-docs-host: F14 scanner exempts the docs host only
+
+- `scripts/qc-no-direct-kie.sh`: the endpoint pattern `(https?://)?(api\.)?kie\.ai` matched a bare `docs.kie.ai` host, so the KIE documentation provenance URLs in `scripts/core/prompt_limits.py` (added by FU-U6) were reported as direct-KIE calls and the check exited 2 on a clean tree. The scan now extracts each host occurrence (`grep -oE`) and drops exactly the `docs.kie.ai` host — the exemption is decided per OCCURRENCE, so a line carrying both a docs URL and a real api URL still fails on the api record (a line-level `grep -v` would discard the whole line and let the real call escape). Every other host still bites: `api.kie.ai`, any other subdomain including ones nobody has thought of yet, and bare `kie.ai`. No filename exemption: a real direct call added to `prompt_limits.py` later is still caught.
+- New test `scripts/core/kie_dispatch/test_qc_docs_host.py` (fails on the base tree: the docs fixture exits 2). Covers the docs citation passing, the api call still failing by name, the mixed one-line docs+api case failing per occurrence, unknown subdomains and bare `kie.ai` failing, and the real core tree staying clean. Existing `test_model_lock_f14.py::test_qc_no_direct_kie` regression stays green. Parity: the scanner is byte-identical with the onboarding tree.
+
 ## [2.7.26] - 2026-10-09 - Batch MGB010a: #101 CI collect fix + W-F-U2 + FU-U13 + FU-U14 + FU-U10
 
 Landed together by merge-train: #101 (drama-song-tests collection, lyric_structure import path), #97 (whole-track retakes), #98 (story arc + product connection), #99 (song mp3 in every deliverable), #100 (book orientation contract). #96 (W-G-008) not included: CONFLICTING, being rebased.
