@@ -1,5 +1,13 @@
 # Changelog: drama-song-ad-factory
 
+## Unreleased
+
+- **U12 narrative follow-up after 2.7.32.** The spoken-target paragraph in
+  SKILL.md now reads the band numbers per style since FU-U3 landed
+  (`STYLE_TARGETS`, the fourth delivery `none` never counted as spoken), and
+  SKILL.md closes with a "Sections marked TODO" block naming FU-U4, FU-U9 and
+  FU-U11 as the sections to refresh when those land.
+
 ## [2.7.32] - 2026-10-09 - Batch MGB017: #122 + #127
 
 Landed together by merge train: #122 U12 docs and SOP in lockstep with the code, #127 load-governor test no longer sleeps about 7 minutes on a fresh runner (test-only). VERSION and SKILL.md frontmatter: 2.7.31 to 2.7.32.
