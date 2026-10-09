@@ -71,6 +71,18 @@ _WITH_CLIPS = "automatic 60-second and 90-second clips (included in the price)"
 CLIPS_OFFER = {k: (_WITH_CLIPS if clips_for(v) else _NO_CLIPS)
                for k, v in LENGTH_SECONDS.items()}
 
+def _canon_length(label):
+    """FU-LENGTH-CLIPS labels ('3 minutes + 60s and 90s clips') -> the canonical LENGTH_SECONDS key."""
+    label = str(label or "60 seconds")
+    if label in LENGTH_SECONDS:
+        return label
+    try:
+        secs = VM.length_seconds(label)
+    except ValueError:
+        return label
+    return next((k for k, v in LENGTH_SECONDS.items() if v == secs), label)
+
+
 RETAKE_RATE = 0.20  # plan 4.1; the extension applies the same rate
 
 
@@ -86,7 +98,7 @@ def default_choice(card, model=None):
     calculator's ``choice`` + shipped fixtures, so a card renders with real
     prices without any operator path or catalog sync state.
     """
-    length = LENGTH_SECONDS.get(str(card.get("length") or "60 seconds"), 60)
+    length = LENGTH_SECONDS.get(_canon_length(card.get("length")), 60)
     shape = str(card.get("shape") or "9:16")
     shapes = ("9:16", "16:9") if shape == "both" else (shape if shape in
                                                        ("9:16", "16:9") else "9:16",)
@@ -134,7 +146,7 @@ def _row_values(card, model=None):
         "Style": _style_label(card.get("style")),
         "Music": _music_label(card.get("music")),
         "Voice": voice_label,
-        "Clips": CLIPS_OFFER.get(str(card.get("length") or "60 seconds"),
+        "Clips": CLIPS_OFFER.get(_canon_length(card.get("length")),
                                  "automatic 60-second and 90-second clips"),
         "Video model": VM.row_label(model or VM.chosen(None, None, card.get("video_model"))),
     }
