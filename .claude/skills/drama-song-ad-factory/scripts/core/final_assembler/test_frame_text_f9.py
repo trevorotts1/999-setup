@@ -141,7 +141,11 @@ def test_stub_flag_blocks_before_spend(tmp):
 
 def test_block_rides_assemble(tmp):
     """assemble() blocks with GARBLED_TEXT_FRAME before any render spend."""
-    import final_assembler.frame_text as ft_mod
+    # Use the module imported at the top: a fresh `import` here would mint a
+    # SECOND copy after the skill-tree conftest purges modules between pytest
+    # collections, so the extractor registered above would land on a registry
+    # this call never reads (BAD_EXTRACTOR). One module, one registry.
+    ft_mod = FT
     clip = os.path.join(tmp, "lip.mp4")
     open(clip, "wb").close()
     open(os.path.join(tmp, "b.mp4"), "wb").close()
