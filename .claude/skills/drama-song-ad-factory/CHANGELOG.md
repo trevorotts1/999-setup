@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.39] - 2026-10-09 - DEL-12 one-page welcome sheet + the canonical 12-item package list
+
+- `scripts/core/delivery_package/package_items.py`: `PACKAGE_ITEMS` / `PACKAGE_FILES` -- the canonical numbered file-name list for all 12 package items (01..12), ONE shared constant. Every file name is exact, carries its own item number and is unique; `delivery_checklist` re-exports it and gains `missing_package_files(delivery_dir)`, so the delivery gate and the printed page read one list instead of two.
+- `scripts/core/delivery_package/welcome_sheet.py`: the one-page client WELCOME SHEET PDF built from that constant -- stdlib PDF 1.4 writer, base-14 Helvetica, US Letter single page, deterministic bytes, 13 pt body type, hard 12 pt floor (`MIN_PDF_POINT_SIZE`), title, gold rule, then every file with its number badge and one sentence on what it is for.
+- New `scripts/core/delivery_package/test_welcome_sheet_del12.py` (11 tests): one page, all 20 file names and all 12 numbers present, no type below 12 pt, no client/model/tool name, no price or income claim, byte-identical rebuild, checklist shares the same objects.
+- Shared `delivery_package/` and `delivery_checklist/` content byte-identical to the openclaw-onboarding twin (v2.9.14), verified with cmp. Version bump per repo convention: VERSION 2.7.38 -> 2.7.39 with the matching SKILL.md frontmatter stamp (`tests/test_parity_layout.py` asserts it).
+
 ## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
 
 Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
