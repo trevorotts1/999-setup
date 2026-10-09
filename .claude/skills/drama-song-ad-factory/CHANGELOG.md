@@ -1,5 +1,28 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.26] - 2026-10-08 - FU-U13: story arc rule + product-connection target
+
+Trevor's order: never forget to connect the product to the story, and spend at
+least 10-15% of the time connecting the dots to the product and promoting it -
+a target, not a hard cap.
+
+- Story arc rule in the lyric/script and shot-plan stages: struggle -> what
+  changed -> the product is why -> get the product. The product is named and
+  connected in the lyrics AND on screen (cover, title, link), never only on an
+  end card.
+- `length_formula.plan_product_connection(plan, shots, lyric_lines)`: totals
+  product-tagged lyric lines and product-tagged shots, returns seconds and
+  percent of runtime, PASS/FLAG against the 10-15% band, plus the spoken-word
+  and struggle-motion-shot requirements. The plan carries it as
+  `product_connection`; the choice card shows the seconds and percent.
+- `delivery_checklist.measure_product_connection(shots, lyrics, runtime_s)`:
+  measures the delivered run, reports row `PRODUCT_CONNECTION` in the
+  receipt/checklist output with the measured seconds and percent. Outside the
+  band is FLAG, never a blocker by itself, never a repair directive.
+- Docs: SKILL.md, references/choice-card-spec.md, references/stage-runbook.md,
+  QC.md (SOP lives in the onboarding distribution only).
+- Test: `scripts/core/length_formula/test_story_arc_u13.py`.
+
 ## [2.7.25] - 2026-10-09 - Batch MGB009a: W-G-003-amend + TESTHYG-75-residue
 
 Landed together by merge-train: #94 singing detector aligned to Appendix A (order 1150 part G, review G2), #95 the 2 conftest-induced order-sensitive test failures fixed (residue of #93). #96 (W-G-008 minute-lanes) not included: CONFLICTING at the merge step.
