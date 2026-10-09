@@ -31,12 +31,14 @@ except ImportError:  # script import from inside this directory
 try:
     from choice_card.looks import looks as LOOKS
     from music_styles import music_styles as MS
+    from clip_cutdown import clips_for
 except ImportError:
     _CORE_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if _CORE_HERE not in sys.path:
         sys.path.insert(0, _CORE_HERE)
     from choice_card.looks import looks as LOOKS          # type: ignore
     from music_styles import music_styles as MS           # type: ignore
+    from clip_cutdown import clips_for                    # type: ignore
 
 UNIT_NAME = "catalog-calculator.card-render"
 
@@ -58,14 +60,14 @@ LENGTH_SECONDS = {
     "10-minute long version": 600,
 }
 
-#: Length row -> offered clip line (INSTRUCTIONS.md row 6).
-CLIPS_OFFER = {
-    "60 seconds": "not offered (60/90-second lengths only)",
-    "90 seconds": "not offered (60/90-second lengths only)",
-    "3 minutes": "not offered (clips are a 5/10-minute option)",
-    "5 minutes": "automatic 60-second and 90-second clips",
-    "10-minute long version": "automatic 60-second and 90-second clips",
-}
+#: Length row -> offered clip line (INSTRUCTIONS.md row 6). Which lengths get
+#: clips comes from core/clip_cutdown (the code that cuts them), so the card
+#: can never promise a clip the pipeline does not make. Cutting is free, so the
+#: price of the ad already includes the clips.
+_NO_CLIPS = "not offered (60/90-second lengths only)"
+_WITH_CLIPS = "automatic 60-second and 90-second clips (included in the price)"
+CLIPS_OFFER = {k: (_WITH_CLIPS if clips_for(v) else _NO_CLIPS)
+               for k, v in LENGTH_SECONDS.items()}
 
 RETAKE_RATE = 0.20  # plan 4.1; the extension applies the same rate
 
@@ -134,6 +136,9 @@ def render(card, price_fn):
     or the intake card). ``price_fn`` is the Skill 74 ``price`` adapter
     ``(model, units) -> JSON``; None means render unpriced.
 
+    FU-U11: when the card carries a book plan (``book_plan``), the Book shots
+    APPROVAL BLOCK is appended -- approvals and notices, never a new choice.
+
     Returns (text, priced_ok). The card always renders every row; a card
     whose price cannot be read says "Price unavailable" on the total and is
     safe to show, and approval must stay blocked (fail closed, 4.4).
@@ -188,7 +193,26 @@ def render(card, price_fn):
         reasons = [str(r) for r in ((envelope or {}).get("reasons") or [])]
         if reasons:
             lines.append("  (%s)" % "; ".join(reasons[:4]))
+    lines += _book_block(card)
     return "\n".join(lines), priced_ok
+
+
+def _book_block(card):
+    """FU-U11: the Book shots approval block lines, or [] for a non-book card.
+
+    Imported lazily so a card render never depends on the book module being
+    present (and a non-book card never pays for it).
+    """
+    plan = (card or {}).get("book_plan")
+    if not plan:
+        return []
+    try:
+        from book_shot import book_shot as BS
+    except ImportError:
+        return ["", "Book shots: the book plan is present but the book module "
+                    "could not be loaded, so its rows cannot be shown."]
+    notes = list((card or {}).get("card_notes") or [])
+    return [""] + BS.plan_card_block(plan, notes)
 
 
 def _load_shipped_catalog():

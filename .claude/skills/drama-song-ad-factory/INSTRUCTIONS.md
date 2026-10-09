@@ -32,7 +32,8 @@ and stage rules live in `SKILL.md`; the machine contract lives in
      recorded.
    - `waiting` (2) -> answer the bundled questions in ONE reply. At most
      three are asked, only the genuinely missing essentials:
-     offer; audience + action; spending authority. A question already
+     offer; audience + action; the exact website or placement. Never money:
+     the choice card asks that once, with the real price. A question already
      answered is never re-asked.
    - `parked` (3) on resume with approval-affecting changes -> re-approve
      the scope; do not start a fresh campaign to escape the park.
@@ -153,17 +154,19 @@ card. The answers and the time answered go into the receipt
 `CARD_UNANSWERED` until the record exists).
 
 1. **One card, all defaults pre-selected** - a client approves with one
-   click. Directive 24.3 still caps intake at three questions in one message
-   (offer + optional product image; audience and action; approve the price).
+   click. Directive 24.3 still caps intake at three story questions in one message
+   (offer + optional product image; audience and action; website or placement).
+   Money is asked once, on the card, with the real price.
    Quick mode is the default; Concept mode takes the client's own story.
 2. **Length:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes,
    **10-minute long version**. Brief pre-fills the RECOMMENDED pick, else
    60 seconds - the card still shows and the answers still record (F15).
    Each length is its own song and timing map, never a cut-down.
 3. **Shape:** 9:16, 16:9 or both, each generated natively.
-4. **Clips:** automatic 60- or 90-second clips are offered for the
-   **5-minute and 10-minute lengths only**; cutting is free, the AI that
-   picks the moments runs on the client's own AI plan.
+4. **Clips:** the 3-minute, 5-minute and 10-minute ads each come with one
+   automatic 60-second clip and one 90-second clip (`core/clip_cutdown`);
+   cutting is free (FFmpeg, no new AI media), so the price already includes
+   them. 60 s and 90 s ads get none.
 5. **Five looks:** Lifelike 3D (default), 2D Hand-Painted, Sketch to Life,
    Canvas to Life, Canvas to 3D - each with its own style-bible block,
    switching rules and QC. Hybrids switch on matched poses with a 0.3-0.4 s

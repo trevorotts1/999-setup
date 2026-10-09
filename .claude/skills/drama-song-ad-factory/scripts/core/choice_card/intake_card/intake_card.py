@@ -41,7 +41,15 @@ CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
                 'like "1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
                 'RECOMMENDED choice.')
 
+SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
+                      'like "1, 1, 1, 1, 1, 1". For the BUDGET, reply with a dollar amount.')
+
 REC = "(RECOMMENDED)"
+
+
+def _closing(qs):
+    """'all recommended' is offered only when every question has a recommended option."""
+    return CLOSING_LINE if all(q.get("recommended") is not None for q in qs) else SHORT_CLOSING_LINE
 
 #: (label, question, [(option, one short sentence)], recommended option index)
 #: Looks and music come from the choice-card modules so the menu cannot drift.
@@ -75,14 +83,43 @@ def _musics():
                  _MUSIC_SENTENCE)
 
 
+def _usd(x):
+    return "$%.2f" % float(str(x).lstrip("$"))
+
+
+def spend_question(price=None, limit=None, from_brief=False):
+    """The ONE money question, asked here and nowhere else (FU-ONE-SPEND-QUESTION).
+    price: the card's total in dollars (20% redo allowance included). limit: a
+    maximum already known. from_brief: that maximum came from the brief (not a --limit
+    override). Neither is ever defaulted: the client must reply."""
+    opts, vals = [], {}
+    if limit is not None:
+        opts.append(("Your max: " + _usd(limit), "from your brief" if from_brief else None))
+        vals[len(opts)] = str(limit).lstrip("$")
+    if price is not None:
+        opts.append((_usd(price), "the estimated price for your video, including a 20% allowance for redoing shots"))
+        vals[len(opts)] = str(price).lstrip("$")
+    opts.append(("A different maximum", "reply with a dollar amount, like $25"))
+    return {"id": "spend", "why": "This keeps you in control of the cost.",
+            "reason": ("it is the maximum you already gave in your brief." if limit is not None and from_brief else
+                       "it is the maximum you set." if limit is not None else
+                       "it covers the whole price, with room to redo shots." if price is not None else
+                       "you choose the number."),
+            "label": "BUDGET",
+            "ask": ("What's the most you want to spend on this video?" if opts[:-1] else
+                    "What's the most you want to spend on this video? Reply with a dollar amount, like $25."),
+            # no price and no limit: nothing to recommend, the client types an amount
+            "options": opts, "values": vals, "recommended": 0 if opts[:-1] else None}
+
+
 def _questions():
     return [
-        {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long should the ad be?",
+        {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
          "options": [("60 seconds", "The standard ad length."),
                      ("90 seconds", "Room for a fuller story."),
-                     ("3 minutes", "A short film."),
-                     ("5 minutes", "A long story, with automatic 60 and 90 second clips."),
-                     ("10-minute long version", "The full-length cut, with automatic clips.")],
+                     ("3 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+                     ("5 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+                     ("10 minutes (the long version) + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip.")],
          "recommended": 0},
         {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "What should the song sound like?",
          "options": _musics(), "recommended": 0},
@@ -92,11 +129,7 @@ def _questions():
          "options": [("MiniMax H3, 768P", "Best balance of quality and price."),
                      ("Show me every model and its price", "I will list them, then you pick.")],
          "recommended": 0},
-        {"id": "spend", "why": "This keeps you in control of the cost.", "reason": "it already covers a 20% allowance for redoing shots.", "label": "SPEND LIMIT",
-         "ask": "What is the most you want to spend on this ad?",
-         "options": [("The price on the card", "Includes a 20% allowance for redoing shots."),
-                     ("My own limit", "Reply with a dollar amount, for example $25.")],
-         "recommended": 0},
+        spend_question(),
         {"id": "storyboard", "why": "The storyboard is cheap to fix now and costly to fix after video is made.", "reason": "you see every scene before any money is spent on video.", "label": "STORYBOARD APPROVAL",
          "ask": "Do you want to approve the storyboard before any video is made?",
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
@@ -108,16 +141,26 @@ def _questions():
 QUESTIONS = _questions()
 
 
+#: Shown once, before the first question, when the client has no saved characters.
+NO_SAVED_LINE = ("You don't have any saved characters yet, so I'll create a new one "
+                 "for this ad and save it for next time.")
+
+
 def _block(i, total, q):
+    if "body" in q:                       # saved-character question: fixed text
+        return "\n".join(["Question %d of %d - %s" % (i, total, q["label"])] + q["body"])
     lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
-        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+        lines.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
     return "\n".join(lines)
 
 
 def _blocks(questions):
-    return [_block(i, len(questions), q) for i, q in enumerate(questions, 1)]
+    blocks = [_block(i, len(questions), q) for i, q in enumerate(questions, 1)]
+    if questions and questions[0].get("preface"):
+        blocks[0] = questions[0]["preface"] + "\n\n" + blocks[0]
+    return blocks
 
 
 def render_step(i, questions=None):
@@ -126,11 +169,16 @@ def render_step(i, questions=None):
     explained, then how to answer."""
     qs = questions or QUESTIONS
     q = qs[i - 1]
+    if "body" in q:
+        return _block(i, len(qs), q)
     lines = ["Question %d of %d - %s" % (i, len(qs), q["label"]), q["why"], "", q["ask"]]
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
-        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+        lines.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
     r = q.get("recommended", 0)
+    if r is None:
+        lines += ["", "Reply with a dollar amount, like $25."]
+        return "\n".join(lines)
     lines += ["", "I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]),
               "Reply with a number, or say \"recommended\"."]
     return "\n".join(lines)
@@ -140,7 +188,8 @@ def render_recap(answers, questions=None):
     qs = questions or QUESTIONS
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        lines.append("%d. %s: %s" % (i, q["label"].title(), a["text"]))
+        lines.append("%d. %s" % (i, q["recap"][a["n"] - 1] if "recap" in q
+                                 else "%s: %s" % (q["label"].title(), a["text"])))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -153,14 +202,19 @@ def _parse(reply, q):
     t = (reply or "").strip().lower()
     opts = q["options"]
     if t in ("recommended", "recommend", "rec") or (t in _YES and len(opts) > 0):
+        if q.get("recommended") is None:
+            return None
         n = q.get("recommended", 0) + 1
     elif t.isdigit() and 1 <= int(t) <= len(opts):
         n = int(t)
     elif q["id"] == "spend" and t.lstrip("$").replace(".", "", 1).isdigit():
-        return {"n": 2, "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$")}
+        return {"n": len(opts), "text": "up to " + _usd(t), "value": t.lstrip("$")}
     else:
         return None
-    return {"n": n, "text": opts[n - 1][0], "value": None}
+    value = q.get("values", {}).get(n)
+    if q["id"] == "spend" and value is None:      # "A different maximum" with no amount, or a
+        return None                               # bare "yes": no amount = no spend
+    return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value}
 
 
 def conversation(replies, questions=None):
@@ -197,15 +251,42 @@ def conversation(replies, questions=None):
         msg = note + render_step(fix + 1, qs)
     elif len(answers) < len(qs):
         msg = note + render_step(len(answers) + 1, qs)
+        if not replies and qs[0].get("preface"):
+            msg = qs[0]["preface"] + "\n\n" + msg
     else:
         msg = note + render_recap(answers, qs)
     return {"answers": answers, "done": done, "message": msg}
 
 
-def render_card(questions=None):
-    """The whole card as one string: blank line between questions, closing line."""
+def render_card(questions=None, book_plan=None, notes=()):
+    """The whole card as one string: blank line between questions, closing line.
+
+    FU-U11: a book card also carries the Book shots APPROVAL BLOCK. It shows
+    approvals and notices only -- it adds no question and no option, so the
+    card's answer shape (one number per question, then yes) is unchanged.
+    """
     qs = questions or QUESTIONS
-    return "\n\n".join(_blocks(qs) + [CLOSING_LINE])
+    blocks = _blocks(qs) + [_closing(qs)]
+    book = _book_block(book_plan, notes)
+    if book:
+        blocks = blocks + book
+    return "\n\n".join(blocks)
+
+
+def _book_block(book_plan, notes=()):
+    """FU-U11: the Book shots approval block, or [] for a non-book card."""
+    if not book_plan:
+        return []
+    _core = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    if _core not in sys.path:
+        sys.path.insert(0, _core)
+    try:
+        from book_shot import book_shot as BS
+    except ImportError:
+        return ["Book shots: the book plan is present but the book module "
+                "could not be loaded, so its rows cannot be shown."]
+    return ["\n".join(BS.plan_card_block(book_plan, notes))]
 
 
 def format_questions(texts):
@@ -235,11 +316,18 @@ def _split_long(block, limit):
     return out + ([cur] if cur else [])
 
 
-def render_messages(questions=None, limit=TELEGRAM_LIMIT):
+def render_messages(questions=None, limit=TELEGRAM_LIMIT, book_plan=None,
+                    notes=()):
     """The card as a list of messages, each <= limit chars, split only between
-    questions (one message per question when they do not all fit)."""
+    questions (one message per question when they do not all fit).
+
+    FU-U11: a book card's approval block rides as its own message(s), after
+    the closing line; it is never split mid-row unless a single row exceeds
+    the limit.
+    """
     parts = []
-    for b in _blocks(questions or QUESTIONS) + [CLOSING_LINE]:
+    for b in _blocks(questions or QUESTIONS) + [_closing(questions or QUESTIONS)] + \
+            _book_block(book_plan, notes):
         parts.extend(_split_long(b, limit) if len(b) > limit else [b])
     msgs, cur = [], ""
     for p in parts:
@@ -409,15 +497,14 @@ def _render_fit(card):
 
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
-    saved characters (Part I, I6); otherwise the plain six."""
+    saved characters (Part I, I6). With a client folder but no saved characters
+    the plain six open with one short line (``NO_SAVED_LINE``). No folder: plain six."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
     q = CL.saved_character_question(client_dir)
     if not q:
-        return QUESTIONS
-    q = dict(q, why="A saved character keeps the same face across your ads.",
-             reason="you can still pick a new character if you prefer.")
+        return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
     return [q] + QUESTIONS
 
 
@@ -433,11 +520,20 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--price", default=None,
+                    help="the card total in dollars (20%% redo allowance included); "
+                         "shown as spend option 1 or 2")
+    ap.add_argument("--limit", default=None,
+                    help="a spend limit the brief already gave, in dollars; "
+                         "shown as spend option 1")
+    ap.add_argument("--limit-from-brief", action="store_true",
+                    help="the --limit came from the brief; labels option 1 'from your brief'")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
-                         "card opens with 'Use a saved character?' (I6)")
+                         "card opens with the saved-character question (I6)")
     a = ap.parse_args(argv)
-    qs = _with_saved_character(a.client_dir)
+    qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
+          for q in _with_saved_character(a.client_dir)]
     if a.step:
         st = conversation(a.reply, qs)
         if a.format == "text":

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.34
+version: 2.7.35
 ---
 
 # Drama Song Ad Factory
@@ -173,7 +173,7 @@ with `python3 scripts/core/intake_preflight/factory.py character --client-dir
 <client data folder> save --name <name> --description <text> --image <file>
 [--image ...] --voice-notes <text>`. The library lives inside that client's own
 data folder (`character-library/<name>/`), never shared between clients. Later
-intake cards list saved characters under "Use a saved character?" (`character
+intake cards open with a CHARACTER question when the client has saved characters ("Do you want to create a new character for this ad, or use one you've used before? You have N characters saved with us.", option 1 = create a new character, recommended, then one "Use <Name> - <description>" option per saved character; the recap reads "Character: new" or "Character: <Name> (saved)"). With none saved there is no question: one line says a new character will be created and saved for next time (`character
 --client-dir <dir> card`; `factory.py card --client-dir <dir>` where the
 intake card exists). `character --client-dir <dir> use --name <name>` prints
 the brief fields (name, description, reference images, voice notes) to reuse.
@@ -389,6 +389,10 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
   **10-minute long version**. Each length is its own song and timing map.
+  The 3, 5 and 10 minute ads each come with an automatic 60-second clip and
+  a 90-second clip (`scripts/core/clip_cutdown`; free, included in the
+  price). The intake card asks it as one full question with numbered options
+  that name the clips.
 - **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
   at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
   becomes 118), because a 60-second video that runs to 1:02 cannot be used in
@@ -404,9 +408,9 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   `fps` filter). The assembler refuses any other timeline rate unless the
   choice card sets it, and checks every segment with mpdecimate (at most 2%
   duplicated frames; a deliberate still is marked `hold`).
-- **Clips:** automatic 60- or 90-second clips are offered for the **5-minute
-  and 10-minute lengths only**. Cutting a clip is free (FFmpeg); the AI that
-  picks the moments runs on the client's own AI plan.
+- **Clips:** the **3-minute, 5-minute and 10-minute** ads each come with one
+  automatic 60-second clip and one 90-second clip (`core/clip_cutdown`).
+  Cutting a clip is free (FFmpeg), so the price already includes them.
 - **Five looks (decision 29):** Lifelike 3D (default), 2D Hand-Painted,
   Sketch to Life, Canvas to Life, Canvas to 3D. Each look owns its style
   bible block, its own switching rules and its own QC. The three hybrids

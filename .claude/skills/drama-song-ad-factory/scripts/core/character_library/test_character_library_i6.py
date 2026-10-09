@@ -8,10 +8,10 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-try:                                   # pytest imports the character_library PACKAGE
-    from character_library import character_library as CL   # noqa: E402
-except ImportError:                    # script run gets the module file
-    import character_library as CL     # noqa: E402
+try:                                   # pytest imports the character_library
+    from character_library import character_library as CL  # noqa: E402
+except ImportError:                    # PACKAGE (dir has __init__.py) first;
+    import character_library as CL     # a script run gets the module file
 
 
 class RoundTrip(unittest.TestCase):
@@ -37,8 +37,9 @@ class RoundTrip(unittest.TestCase):
             self.assertEqual(f.read(), b"\x89PNG-fake-bytes")
         self.assertEqual(CL.brief_fields(rec)["character_voice_notes"], "Low, calm alto")
         q = CL.saved_character_question(self.client)
-        self.assertEqual(q["ask"], "Use a saved character?")
-        self.assertEqual(q["options"][0][0], "Yes, use Maya Lee")
+        self.assertTrue(q["ask"].endswith("?"))
+        self.assertEqual(q["options"][0][0], "Create a new character")
+        self.assertEqual(q["options"][1][0], "Use Maya Lee")
 
     def test_clients_are_separate_and_refusals(self):
         CL.save_character(self.client, "Maya", "d", [self.img])
@@ -61,13 +62,16 @@ class RoundTrip(unittest.TestCase):
                 "--description", "Warm, 40s", "--image", self.img)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("Maya", run("character", "--client-dir", self.client, "list").stdout)
-        self.assertIn("Yes, use Maya",
+        self.assertIn("Use Maya",
                       run("character", "--client-dir", self.client, "card").stdout)
+        out = run("card", "--client-dir", self.client).stdout  # factory card passes --client-dir (I6)
+        self.assertIn("saved with us", out)
+        self.assertNotIn("saved with us", run("card").stdout)
         card = os.path.join(HERE, "..", "choice_card", "intake_card", "intake_card.py")
         if os.path.exists(card):  # H9 card present in this tree
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
                                  capture_output=True, text=True, check=True).stdout
-            self.assertIn("Use a saved character?", out)
+            self.assertIn("saved with us", out)
             self.assertIn("Question 1 of 7", out)
 
 

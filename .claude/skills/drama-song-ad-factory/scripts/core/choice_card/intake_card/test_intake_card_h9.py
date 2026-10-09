@@ -32,7 +32,7 @@ def test_six_questions_each_own_block():
         assert first.startswith("Question %d of %d - " % (i, N)), first
     labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
     assert labels == ["LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
-                      "SPEND LIMIT", "STORYBOARD APPROVAL"]
+                      "BUDGET", "STORYBOARD APPROVAL"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
@@ -41,14 +41,17 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
         opts = lines[2:]
         assert len(opts) == len(q["options"])
         for n, line in enumerate(opts, 1):
-            assert re.match(r"^%d\. .+ - .+[.)]$" % n, line), line
+            assert re.match(r"^%d\. .+ - .+(?:[.)]|\d)$" % n, line), line
             assert "\n" not in line
+        if q["recommended"] is None:        # unpriced BUDGET: nothing to recommend
+            assert not any(IC.REC in l for l in opts)
+            continue
         assert sum(IC.REC in l for l in opts) == 1
         assert IC.REC in opts[q["recommended"]]
 
 
 def test_closing_line_last():
-    assert _blocks(CARD)[-1] == IC.CLOSING_LINE
+    assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
     assert CARD.startswith("Question 1 of 6")
 
 
@@ -59,9 +62,9 @@ def test_no_markup_that_a_sender_could_strip():
 def test_messages_under_limit_and_split_between_questions():
     one = IC.render_messages()
     assert len(one) == 1 and one[0] == CARD
-    small = IC.render_messages(limit=400)
+    small = IC.render_messages(limit=500)
     assert len(small) > 1
-    assert all(len(m) <= 400 for m in small)
+    assert all(len(m) <= 500 for m in small)
     assert "\n\n".join(small) == CARD         # only blank-line seams were cut
     for m in small:                       # never starts a message mid-question
         assert m.startswith("Question") or m == IC.CLOSING_LINE
@@ -72,7 +75,7 @@ def test_messages_under_limit_and_split_between_questions():
 
 
 def test_telegram_payload_keeps_newlines():
-    for m in IC.render_messages(limit=400):
+    for m in IC.render_messages(limit=500):
         body = json.loads(json.dumps(IC.telegram_payload("123", m)))
         assert body["text"] == m and body["text"].count("\n") == m.count("\n")
         assert "parse_mode" not in body and len(body["text"]) <= 4096

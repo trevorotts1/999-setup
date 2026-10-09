@@ -196,7 +196,10 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 
 Lip-sync runs on 6 to 8 short clips of 4 to 6 seconds per 60 s ad, 30 to 40
 seconds of footage per shape (choice card section 3.6), doubled 2026-10-08:
-more pieces, not longer ones, scaled linearly with ad length, no clip over 6 s.
+more pieces, not longer ones, scaled linearly with ad length, no clip over 6
+seconds. Enforced at the final edit QC gate (Part E E6): at least 6 lip-sync
+clips and 30 s of lip-sync in a 60 s ad (never fewer than 3 clips), scaling
+linearly (50% of runtime) for longer or shorter ads.
 
 Every clip is its own paid job, so the lip-sync line is about twice what it was.
 Per-ad cap math: `lipsync_clips.check_budget(total_s, usd_per_s, remaining_usd,
@@ -232,12 +235,12 @@ that explains it. Lip-sync runs on both shapes when both shapes are ordered.
 
 ## 5. Clips
 
-Automatic 60-second and 90-second clips are offered for the **5-minute and
-10-minute** lengths only.
+Automatic 60-second and 90-second clips come with the **3-minute, 5-minute
+and 10-minute** lengths (`core/clip_cutdown`).
 
 - Cutting a clip is **free**: an FFmpeg edit of the finished video, no new
-  AI media. The AI that picks the moments runs on the client's own AI plan.
-- The card shows $0 for clips and says so.
+  AI media, so the price of the ad already includes the clips.
+- The card shows $0 for clips and says "included in the price".
 - Long-version shape choice is separate: both shapes roughly double the
   video cost; a centre-crop to 9:16 is free but may cut off faces.
 
