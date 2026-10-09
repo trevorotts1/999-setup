@@ -380,6 +380,8 @@ def main(argv=None):
                    help="intake output (envelope or summary) JSON; its generation_ceiling becomes spend option 1.")
     c.add_argument("--run-dir", default="",
                    help="Run dir; the confirmed card writes control/card-receipt.json and records the SONG APPROVAL answer there.")
+    c.add_argument("--run-state-file", default="",
+                   help="with --step and no replies: first call sends the one-time intro, next call question 1")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -428,6 +430,7 @@ def main(argv=None):
                           + (["--limit-from-brief"] if limit and from_brief else [])
                           + (["--run-dir", a.run_dir] if a.run_dir else [])
                           + (["--step"] if a.step else [])
+                          + (["--run-state-file", a.run_state_file] if a.run_state_file else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
         env = cmd_intake(a)

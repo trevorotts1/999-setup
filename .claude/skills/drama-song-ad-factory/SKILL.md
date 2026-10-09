@@ -428,7 +428,6 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   the final card; the pick is stored in run state, shown on the card and
   submitted by dispatch with that model's provider id and resolution.
 
-- **Intake.** Quick mode by default (one sentence), Concept mode for a
   client with their own story. At most three questions total, and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.

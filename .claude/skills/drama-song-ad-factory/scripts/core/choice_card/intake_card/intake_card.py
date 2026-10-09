@@ -581,6 +581,12 @@ def _with_saved_character(client_dir):
     return [q] + QUESTIONS
 
 
+try:
+    from choice_card.intake_card.intro import INTRO as _INTRO, take as _intro_take
+except ImportError:                                # run as a plain script
+    from intro import INTRO as _INTRO, take as _intro_take  # noqa: E402
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Print the seven-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
@@ -604,6 +610,9 @@ def main(argv=None):
     ap.add_argument("--run-dir", default="",
                     help="run folder; when the recap is confirmed the storyboard and "
                          "song approval answers are written to the run")
+    ap.add_argument("--run-state-file", default="",
+                    help="with --step and no replies: send the one-time intro as its "
+                         "own message first (recorded as intro_shown in this file)")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with the saved-character question (I6)")
@@ -612,6 +621,8 @@ def main(argv=None):
           for q in _with_saved_character(a.client_dir)]
     if a.step:
         st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None)
+        if not a.reply and a.run_state_file and _intro_take(a.run_state_file):
+            st = dict(st, message=_INTRO)          # FU-INTRO-MESSAGE
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:
