@@ -45,6 +45,16 @@ jobs:
             if ! (HOME="$h" python3 "$t"); then echo "FAIL (empty HOME): $t"; rc=1; fi
           done < <(find "$SKILL/scripts/core" -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
           [ "$rc" -eq 0 ]
+      - name: Skill 75 pytest collection + run (no hidden failures)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Unit TESTHYG-75: a module-level sys.exit made the whole-tree pytest
+          # run INTERNALERROR and hid every failure after it. Collection and a
+          # full run over scripts/ are now red builds of their own.
+          HOME="$(mktemp -d)" python3 -m pytest -q "$SKILL/scripts" --collect-only
+          HOME="$(mktemp -d)" python3 -m pytest -q "$SKILL/scripts"
+          echo "✓ Skill 75 scripts/ pytest-collectable and green"
       - name: Skill tests + layout parity test (empty HOME)
         run: HOME="$(mktemp -d)" python3 -m pytest -q "$SKILL/tests"
       - name: W4 proof run (19 stages, zero network, zero spend)

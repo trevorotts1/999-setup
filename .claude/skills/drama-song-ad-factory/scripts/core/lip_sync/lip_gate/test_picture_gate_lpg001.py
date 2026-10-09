@@ -19,6 +19,12 @@ import install_face_model as IM                        # noqa: E402
 import kie_dispatch.kie_dispatch as D                  # noqa: E402
 import spend_ledger as L                               # noqa: E402
 
+# pytest runs this file in one process with every other suite: pin the
+# picture_gate resolver to THIS module object, or adapter_uploader's late
+# `_dispatch()` re-import can bind a different kie_dispatch and the patched
+# transport below is never called (spy sees zero calls).
+G._dispatch = lambda: D
+
 # Measured 2026-10-08 with the mediapipe face landmarker (pic_check.py, read-only).
 def N(h, roll, yaw, smile, gap, sharp, jaw=0.0):
     return {"face_count": 1, "face_h_pct": h, "roll_deg": roll, "yaw_proxy": yaw,
