@@ -1,5 +1,11 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.40] - 2026-10-09 - Batch PKG follow-up: PKG-11 one delivery package naming scheme (pairs with openclaw-onboarding v27.1.1, skill 75 v2.9.17)
+
+PKG-11 is the fix for the delivery package naming gap flagged in the v27.1.0 batch (#167 here, onboarding #1806). ONE scheme, `NN - Label.ext`; `scripts/core/delivery_package/contract.py` is the single source; `package_items` is derived from it; every one of the 12 producers exports `produce_delivery(run_dir, item)`; `test_delivery_package_e2e` runs (no skip) with a negative control. Its verdict file must read PASS before merge. The 999-setup unit is unit/PKG-11-U1.
+
+Twin sync: `scripts/core` and the shared `references/` are byte-identical with the onboarding batch (diff -rq empty). The operator wording scrub of the onboarding batch needs no change in this repository.
+
 ## [2.7.39] - 2026-10-09 - Batch PKG roll-up (pairs with openclaw-onboarding v27.1.0, skill 75 v2.9.15)
 
 Released as one batch. Units: FU-DEL-01 three audio versions and note (#165); FU-DEL-02 character bible PDF and image bible (#163); FU-DEL-03 script PDF (#162); FU-DEL-04 storyboard grid PDF (#157); FU-DEL-05 video twice, captioned and clean (#160); FU-DEL-06 60 and 90 second clips (#164); FU-DEL-07 ready-to-post kit (#161); FU-DEL-08 cover image (#159); FU-DEL-09 lyric sheet PDF (#154); FU-DEL-10 caption file (#155); FU-DEL-11 character images (#153); FU-DEL-12 welcome sheet and package list (#156); FU-DEL-13 delivery folder contract and the 12-item hard gate (#158); FU-DEL-14-U2 no-blur-fill refusal gates (#166); unit/PKG-05-U1 full height by crop-in; unit/PKG-07-U1 camera vocabulary data file (byte-identical with onboarding).
