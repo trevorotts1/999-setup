@@ -94,6 +94,7 @@
 - port/par002-G3-WIRE: Merge main (#81 G5 receipts + H4 gate) into port/par002-G3-WIRE (merge 9231c8bacd09)
 - unit/W-G-002-amend: W-G-002 amend: delivery-named tag grammar in lyric_structure (review G4/G5) (merge cc188584c46e)
 - unit/TESTHYG-75: TESTHYG-75: catalog_calculator import guard in test_lipsync_closeup (merge ff418339a2ef)
+- unit/W-G-007-amend: W-G-007-amend: 999 syncs to shared-core bytes (G3-WIRE detector enforcement + 4 tests) (merge 607322b19492)
 
 ## [hook-skill] — 2026-10-06
 
