@@ -1,4 +1,5 @@
-"""Prompt template data layer (U15a) + H3 assembler (U15b) + Kling avatar (U15e)."""
+"""Prompt template data layer (U15a) + H3 assembler (U15b) + Kling avatar (U15e)
++ Kling video assembler (U15f)."""
 from .prompt_templates import (  # noqa: F401
     CORE_DIR,
     KLING_AVATAR_MODEL,
@@ -16,17 +17,21 @@ from .prompt_templates import (  # noqa: F401
     VILLAIN_SHOT_TYPE_NAME,
     assemble_h3,
     assemble_kling_avatar,
+    assemble_kling_video,
     band,
+    band_cap,
     caps,
     catalog_path,
     check,
+    check_kling,
     check_kling_avatar,
     expand,
     has_receipt,
     kling_avatar_model,
+    kling_section_limits,
     load,
     receipt,
     templates_dir,
 )
 
-__all__ = ['CORE_DIR', 'KLING_AVATAR_MODEL', 'KLING_FORBIDDEN', 'KLING_FRAMING_ALT', 'KLING_FRAMING_DEFAULT', 'KLING_HEAD_EXTRAS', 'KLING_VERBS', 'LOOKS', 'MODES', 'PromptTemplateError', 'SHOT_TYPES', 'SKILL_ROOT', 'TEMPLATES_DIR', 'VILLAIN_SHOT_TYPE_NAME', 'assemble_h3', 'assemble_kling_avatar', 'band', 'caps', 'catalog_path', 'check', 'check_kling_avatar', 'expand', 'has_receipt', 'kling_avatar_model', 'load', 'receipt', 'templates_dir']
+__all__ = ['CORE_DIR', 'KLING_AVATAR_MODEL', 'KLING_FORBIDDEN', 'KLING_FRAMING_ALT', 'KLING_FRAMING_DEFAULT', 'KLING_HEAD_EXTRAS', 'KLING_VERBS', 'LOOKS', 'MODES', 'PromptTemplateError', 'SHOT_TYPES', 'SKILL_ROOT', 'TEMPLATES_DIR', 'VILLAIN_SHOT_TYPE_NAME', 'assemble_h3', 'assemble_kling_avatar', 'assemble_kling_video', 'band', 'band_cap', 'caps', 'catalog_path', 'check', 'check_kling', 'check_kling_avatar', 'expand', 'has_receipt', 'kling_avatar_model', 'kling_section_limits', 'load', 'receipt', 'templates_dir']
