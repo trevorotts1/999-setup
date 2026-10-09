@@ -44,13 +44,32 @@ def check(name, cond, detail=""):
         FAILS.append(name)
 
 
-def main():
+def _run_all():
+    """Run every D1 case once, into the module's FAILS list."""
+    import shutil
     TMP = tempfile.mkdtemp(prefix="book-pages-d1-")
     try:
         _cases(TMP)
     finally:
-        import shutil
         shutil.rmtree(TMP, ignore_errors=True)
+
+
+def test_book_pages_d1():
+    """pytest entry point: run the D1 cases (check() records, never raises)."""
+    _run_all()
+
+
+def test_no_failed_checks():
+    """pytest guard: check() records failures, it does not raise them.
+
+    Without this a bare ``pytest`` run would report green on a red suite.
+    The direct runner gets the same signal through main()'s exit code.
+    """
+    assert not FAILS, "failed checks: %s" % FAILS
+
+
+def main():
+    _run_all()
     print("")
     if FAILS:
         print("FAILED %d: %s" % (len(FAILS), "; ".join(FAILS)))
