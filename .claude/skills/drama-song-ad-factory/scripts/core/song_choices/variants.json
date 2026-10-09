@@ -6,7 +6,7 @@
     {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band feel with bass, keys and guitar",
      "clause": "Arrangement: warm live band feel, round electric bass, soft Rhodes keys, gentle clean guitar, relaxed pocket"},
     {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "big film-style strings that swell under the hook",
-     "clause": "Arrangement: cinematic string section, slow swelling violins and cellos, soft piano, film-score drama"}
+     "clause": "Arrangement: cinematic string section, swelling violins and cellos, soft piano, film-score drama"}
   ],
   "soul-ballad": [
     {"id": "intimate-piano", "label": "INTIMATE PIANO", "description": "close, tender piano and voice",

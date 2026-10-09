@@ -78,7 +78,7 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
     for v in variants_for(style_id):
         req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
         req = dict(req, style=req["style"].rstrip() + " " + v["clause"].rstrip(".") + ".")
-        errs = _SD.validate_request(req, style_id, client_text)
+        errs = _SD.validate_request(req, style_id, client_text, length_s)
         if errs:
             raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))
         out.append((v, req))

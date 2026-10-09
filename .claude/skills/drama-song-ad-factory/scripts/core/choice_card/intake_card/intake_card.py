@@ -643,17 +643,14 @@ def main(argv=None):
     ap.add_argument("--limit-from-brief", action="store_true",
                     help="the --limit came from the brief; labels option 1 'from your brief'")
     ap.add_argument("--run-dir", default="",
-                    help="run folder; when the recap is confirmed the storyboard and "
-                         "song approval answers are written to the run")
+                    help="run folder; when the recap is confirmed the storyboard, song approval "
+                         "and script approval answers are written to the run (card-answers.json)")
     ap.add_argument("--run-state-file", default="",
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with the saved-character question (I6)")
-    ap.add_argument("--run-dir", default="",
-                    help="run folder; when the recap is confirmed, the answers are written "
-                         "to <run-dir>/card-answers.json (SCRIPT APPROVAL reads it)")
     a = ap.parse_args(argv)
     qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
           for q in _with_saved_character(a.client_dir)]

@@ -28,12 +28,13 @@ CLIENT = "I am not small. I never was. One seed of truth made me strong. She Fou
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
-         {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
          {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
+         {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
          {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
          {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
          {"tag": "Outro", "delivery": "spoken", "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
-PLAN = LF.plan(60, (15, 20))
+HOOK_PLAN = {"true_at_beat": "the_world"}   # FU-HOOK-PLACEMENT
+PLAN = dict(LF.plan(60, (15, 20)), style_id="rnb-flow", hook_plan=HOOK_PLAN)
 SCRIPT = "One closed door. She Found Power in the Climb. Get the book. Link below."
 HOOKTXT = " ".join(HOOK)
 _W = "one closed door oo-o-oh i am not small i never was one seed of truth made me strong " \
@@ -44,6 +45,17 @@ GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "mea
         "aligned_words": [{"word": w, "startS": 3 + i, "endS": 3.5 + i} for i, w in enumerate(_W)],
         "detector": "singing_detector 2.0.0", "duration_s": 57.5, "music_under_speech_ratio": 0.6,
         "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
+
+
+def _suno_words(lyrics, t0=3):
+    """Aligned words the way Suno returns them: each section header rides
+    inline on the section's first word (FU-HOOK-PLACEMENT reads them)."""
+    out = []
+    for block in lyrics.split("\n\n"):
+        head, *lines = block.split("\n")
+        toks = " ".join(lines).split() or [""]
+        out += [{"word": (head + "\n" + t + " ") if k == 0 else t + " "} for k, t in enumerate(toks)]
+    return [dict(w, startS=t0 + i, endS=t0 + i + 0.5) for i, w in enumerate(out)]
 
 
 def _mp3(path, hz):
@@ -59,7 +71,7 @@ def _tag(path):
 
 def _pipeline(tmp, bad_first=(), bad_always=()):
     """Run the Yes path with a fake generator. Returns (results, calls, barrier_ok)."""
-    reqs = SC.build_requests("rnb-flow", SHEET, CLIENT, "T", 58)
+    reqs = SC.build_requests("rnb-flow", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
     calls, seen, lock = {}, set(), threading.Lock()
     barrier = threading.Barrier(3, timeout=10)
 
@@ -74,7 +86,7 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
         src = os.path.join(tmp, "%s-%d.mp3" % (v["id"], k))
         _mp3(src, 300 + 100 * len(calls))
         bad = v["id"] in bad_always or (v["id"] in bad_first and k == 1)
-        t = dict(GOOD, audio_path=src)
+        t = dict(GOOD, audio_path=src, aligned_words=_suno_words(rq["lyrics"]))
         if bad:
             t["detector"] = "singcheck v1"
         return [t]
@@ -117,7 +129,7 @@ def test_recap_lists_it_and_line_change_works():
 
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
     for style in ("rnb-flow", "soul-ballad", "soul-rise"):
-        reqs = SC.build_requests(style, SHEET, CLIENT, "T", 58)
+        reqs = SC.build_requests(style, SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
         assert len({rq["style"] for _, rq in reqs}) == 3 and len({v["label"] for v, _ in reqs}) == 3
         assert len({rq["lyrics"] for _, rq in reqs}) == 1        # same lyric sheet
         for v, rq in reqs:
