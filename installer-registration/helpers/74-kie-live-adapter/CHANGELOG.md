@@ -1,5 +1,8 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.3] - 2026-10-09
+- M8/H7 adapter parity: the mode-file lookup walks four candidates in order ($OC_CONFIG, then /data/.openclaw when it exists so Docker/VPS boxes are found where OpenClaw lives while the agent HOME is elsewhere, then ${CLAUDE_CONFIG_DIR:-~/.claude} so a Claude Code machine can switch the adapter on, then ~/.openclaw), first existing file wins, de-duplicated; wire.sh no longer writes a sentinel into a missing AGENTS.md; install QC reads the version from skill-version.txt instead of a hardcoded literal (INF002 D).
+
 ## [1.1.2] - 2026-10-06
 - `--allow-host` now also governs the download-url refresh link and every redirect (a handler re-checks each Location: allow-listed host and https), ignores blank values (blank-only fails closed), and any result URL with no hostname is refused.
 - Consumer options for the one-KIE-path consolidation of Skills 25, 37, 58 and 59: result downloads send a product User-Agent by default (urllib's default is 403-blocked by the result CDN); `save` and `run` take `--user-agent` (replaces it, result download only) and a repeatable `--allow-host`; `run` saves a direct result link returned by a synchronous endpoint (data.resultUrls or data.response.resultUrls). Tests: `tests/test_consumer_options.py`.
