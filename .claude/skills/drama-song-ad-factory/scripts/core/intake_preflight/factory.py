@@ -327,7 +327,6 @@ def main(argv=None):
     c.add_argument("--fit", action="store_true",
                    help="FU-U4: the fit STOP card for the client's own lines "
                         "(--brief-file, --packet-file); exit 2 when they do not fit")
-    c.add_argument("--brief-file", default=None)
     c.add_argument("--packet-file", default=None,
                    help="JSON list of client lines {id, speaker, text, scene}")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
@@ -356,14 +355,17 @@ def main(argv=None):
             card = _card.fit_card(brief, packet)
             sys.stdout.write(card["text"] + "\n")
             return EXIT[card["outcome"]]
-        limit = a.limit
+        limit, from_brief = a.limit, False
         for doc in ((_load(a.summary_file) if a.summary_file else None),
                     (_load(a.brief_file) if a.brief_file else json.loads(a.brief) if a.brief else None)):
-            limit = limit or limit_from(doc)
+            if not limit:
+                limit = limit_from(doc)
+                from_brief = bool(limit)
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--price", a.price] if a.price else [])
                           + (["--limit", limit] if limit else [])
+                          + (["--limit-from-brief"] if limit and from_brief else [])
                           + (["--step"] if a.step else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
