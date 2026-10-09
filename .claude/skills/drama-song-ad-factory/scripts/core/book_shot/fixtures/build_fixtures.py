@@ -9,6 +9,10 @@ discovery. Every caller builds them into a temp dir instead.
   cover_flip   the HORIZONTAL MIRROR of the cover (the defect the checker hunts)
   back_cover   unrelated art (a back cover / invented cover)
   leaf frames  a synthetic leaf moving left (right-to-left) and right
+  pages frames a PRINTED page (dense serif lines, paragraph blocks, page
+               numbers) and a WHITE page (the defect U11's BOOK_BLANK_PAGES
+               hunts). Both are the same size and paper colour, so the only
+               difference the checker can see is the printed ink.
 
 All shapes are seeded, so two runs on the same machine produce byte-equal
 frames.
@@ -74,6 +78,37 @@ def leaf_frames(cv2, np, direction="left", count=8, w=FRAME_W, h=FRAME_H):
         frames.append(f)
     return frames
 
+def pages_frame(cv2, np, kind="printed", w=FRAME_W, h=FRAME_H):
+    """An OPEN book's double page: "printed" (dense type) or "white" (blank).
+
+    U11's BOOK_BLANK_PAGES hunts the empty page. Both kinds share the same
+    paper colour and the same gutter, so the only signal the checker may use
+    is the printed ink itself.
+    """
+    f = np.full((h, w, 3), 245, np.uint8)
+    f[:, int(w * 0.5):int(w * 0.5) + 2] = (120, 120, 120)        # gutter
+    if kind == "white":
+        return f
+    rng = np.random.default_rng(11)
+    # Two columns of dense serif-ish text lines, with paragraph blocks.
+    for col_x in (int(w * 0.06), int(w * 0.54)):
+        y = int(h * 0.10)
+        col_w = int(w * 0.38)
+        while y < int(h * 0.92):
+            n_lines = int(rng.integers(3, 7))                    # a paragraph
+            for _ in range(n_lines):
+                if y >= int(h * 0.90):
+                    break
+                cv2.line(f, (col_x, y), (col_x + col_w, y), (25, 25, 25), 2)
+                y += 9
+            y += 12                                              # paragraph gap
+    # Page numbers at the foot of each page.
+    cv2.putText(f, "142", (int(w * 0.30), int(h * 0.95)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 30, 30), 1, cv2.LINE_AA)
+    cv2.putText(f, "143", (int(w * 0.78), int(h * 0.95)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 30, 30), 1, cv2.LINE_AA)
+    return f
+
 def write_pngs(tmpdir, cv2, images):
     out = {}
     for name, img in images.items():
@@ -94,9 +129,13 @@ def build(tmpdir):
         "front_frame": paste_into_frame(cv2, np, cover),
         "flip_frame": cv2.flip(paste_into_frame(cv2, np, cover), 1),
         "back_frame": paste_into_frame(cv2, np, make_back_cover(cv2, np)),
+        "pages_printed": pages_frame(cv2, np, "printed"),
+        "pages_white": pages_frame(cv2, np, "white"),
     }
     paths = write_pngs(tmpdir, cv2, imgs)
     return {"paths": paths, "images": imgs,
             "leaf_left": leaf_frames(cv2, np, "left"),
             "leaf_right": leaf_frames(cv2, np, "right"),
+            "printed_page": imgs["pages_printed"],
+            "white_page": imgs["pages_white"],
             "title": TITLE, "author": AUTHOR}
