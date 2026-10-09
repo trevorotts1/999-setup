@@ -128,6 +128,25 @@ and refuses with a plain reason; the card does not preview it. Do not describe
 a fit card to a client.
 - **TODO(FU-U4):** rewrite 2.3 when PR #124 lands — the card then previews the fit rows.
 
+### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
+
+Shown only when the client's data folder holds saved characters; it is then
+question 1 and the card has one more question. Built by
+`character_library.saved_character_question`, never free hand:
+
+```
+Question 1 of 7 - SAVED CHARACTER
+You have saved characters from past ads. Do you want to use one of them in this ad, or make a brand-new character?
+1. Make a new character - I create a fresh character for this ad. (RECOMMENDED)
+2. Use <Name> - <the saved description, up to 90 characters>
+Reply with a number, or say "recommended".
+```
+
+Reply 1 or "recommended" makes a new character; reply 2 and up loads that
+saved character. The recap line reads `Character: new` or
+`Character: <Name> (saved)`, and replying with its number re-asks the question.
+Test: `character_library/test_saved_character_question.py`.
+
 ## 3. Field rules
 
 ### 3.1 Length
