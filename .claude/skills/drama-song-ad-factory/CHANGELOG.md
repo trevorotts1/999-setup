@@ -1,5 +1,11 @@
 # Changelog: drama-song-ad-factory
 
+## Unreleased - FU-U8: captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags)
+
+Same change as onboarding Skill 75 (Unreleased). No version bump in this unit.
+
+- Every string that reaches the screen is now caught before a paid call: `_tokens()` maps U+2019/U+2018 and NFKC-normalises ("could’ve" is one word, not "could"+"ve"); the new `display_text()` turns performance spelling into the caption ("Girl, I got you-u" burns as "Girl, I got you", a wordless vocalise makes no cue) and `build_captions`/`check_captions` use it; `check_lyrics_spelling` refuses a misspelled lyric word with `LYRIC_MISSPELLED` inside `music_director.build_generate_request` BEFORE the recipe guard and any payload; `check_confusables` FLAGS the two confusions a token proves wrong (never a fix); `intake.client_typo_question` sends a client typo BACK AS ONE QUESTION ("Your storyboard says 'kitchan'...") and never rewrites the client's words; `kie_dispatch.onscreen_text_refusal` refuses `ONSCREEN_TEXT_NOT_CHECKED` a keyframe/video whose on-screen text is not in the checked receipt; and `qc_gate` requires a `spelling_grammar` record at the Script stage (new `required_checks`, schema enum, contract updated). New test `scripts/core/test_captions_early_u8.py` (24 checks; 18 fail on the base tree).
+
 ## [2.7.27] - 2026-10-09 - Batch MGB010b: #104 + #96 + #103 + #107
 
 Landed together by merge train: #104 (drama-song-tests installs ffmpeg + opencv + tesseract, loop stdin-safe), #96 W-G-008 minute-lanes, #103 FU-U16 story doctrine (villain, pain, rise), #107 U15c owner prompt band (prompt_band_chars over the 80/95 rule). Not included: #102 FU-U6 (prompt_limits.py:41 trips qc-no-direct-kie.sh, failing test_model_lock_f14.py in the empty-HOME loop), #105 FU-U15a (stacked on #102), #106 FU-U1 (test_tag_grammar_u1.py:84 pytest fixture error).

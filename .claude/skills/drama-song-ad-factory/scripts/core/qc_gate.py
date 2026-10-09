@@ -49,6 +49,9 @@ CHECKS = frozenset({
     # the Final edit QC gate as one more independent record (check_id
     # "delivery-checklist", checker scripts/core/delivery_checklist/).
     "delivery_checklist",
+    # U8: the Script gate (SOP DS-9 gate 1) carries the spelling and
+    # grammar record as one more independent check.
+    "spelling_grammar",
     # FU-U10: the book orientation contract. A book campaign's shots stage
     # requires one PASS record per book clip from the CALIBRATED book_shot
     # checker (scripts/core/book_shot/).
@@ -152,6 +155,9 @@ def validate_record(rec):
 
 BOOK_CAMPAIGN_TYPES = frozenset({"book"})
 
+#: U8: the Script stage names whose gate always requires spelling_grammar.
+SCRIPT_STAGES = frozenset({"script", "script-lyrics"})
+
 def required_checks(stage, required, campaign_type=None):
     """FU-U10: a book campaign's shots stage also requires book_orientation.
 
@@ -164,6 +170,10 @@ def required_checks(stage, required, campaign_type=None):
     if stage == "shots" and ct.strip().lower() in BOOK_CAMPAIGN_TYPES \
             and "book_orientation" not in req:
         req.append("book_orientation")
+    # U8: a Script-stage gate always also requires the spelling_grammar
+    # record (the words are read by the same independent judge).
+    if stage in SCRIPT_STAGES and "spelling_grammar" not in req:
+        req.append("spelling_grammar")
     return req
 
 def evaluate(run_id, stage, records, makers, required,
