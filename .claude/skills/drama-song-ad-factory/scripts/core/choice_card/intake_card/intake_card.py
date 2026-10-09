@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""intake_card: the nine intake questions as a card a client can read (H9).
+"""intake_card: the intake questions (nine, ten with a saved character) as a card a client can read (H9).
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -37,19 +37,25 @@ if _CORE not in sys.path:
 #: Telegram's hard limit is 4096 characters per message; stay under it.
 TELEGRAM_LIMIT = 4000
 
-CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                'like "1, 1, 1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
-                'RECOMMENDED choice.')
+_CLOSING = ('How to answer: reply with one number per question, in order, '
+            'like "{ex}". Say "all recommended" to take every RECOMMENDED choice.')
 
-SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                      'like "1, 1, 1, 1, 1, 1, 1, 1, 1". For the BUDGET, reply with a dollar amount.')
+_SHORT_CLOSING = ('How to answer: reply with one number per question, in order, '
+                  'like "{ex}". For the BUDGET, reply with a dollar amount.')
+
+
+def _example(n):
+    """The sample answer string: one '1' per real question."""
+    return ", ".join(["1"] * n)
+
 
 REC = "(RECOMMENDED)"
 
 
 def _closing(qs):
     """'all recommended' is offered only when every question has a recommended option."""
-    return CLOSING_LINE if all(q.get("recommended") is not None for q in qs) else SHORT_CLOSING_LINE
+    tpl = _CLOSING if all(q.get("recommended") is not None for q in qs) else _SHORT_CLOSING
+    return tpl.format(ex=_example(len(qs)))
 
 #: (label, question, [(option, one short sentence)], recommended option index)
 #: Looks and music come from the choice-card modules so the menu cannot drift.
@@ -201,6 +207,8 @@ def _priced(qs, answers):
 
 
 QUESTIONS = _questions()
+CLOSING_LINE = _CLOSING.format(ex=_example(len(QUESTIONS)))
+SHORT_CLOSING_LINE = _SHORT_CLOSING.format(ex=_example(len(QUESTIONS)))
 
 
 #: Shown once, before the first question, when the client has no saved characters.
@@ -623,7 +631,7 @@ except ImportError:                                # run as a plain script
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the nine-question intake card.")
+    ap = argparse.ArgumentParser(description="Print the intake card (nine questions, ten with a saved character).")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "

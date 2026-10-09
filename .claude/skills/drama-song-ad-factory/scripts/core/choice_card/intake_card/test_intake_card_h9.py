@@ -116,6 +116,13 @@ def test_intake_question_message_uses_it():
     assert m and "\n\n" in m and m.count("Question ") == len(r["questions"])
 
 
+def test_closing_example_matches_question_count():
+    import re
+    for qs in (IC.QUESTIONS, IC.QUESTIONS[:5], IC.QUESTIONS + IC.QUESTIONS[:1]):
+        ex = re.search(r'like "([^"]+)"', IC._closing(qs)).group(1)
+        assert len(ex.split(",")) == len(qs)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):
