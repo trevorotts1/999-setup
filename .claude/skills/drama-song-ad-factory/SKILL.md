@@ -280,7 +280,7 @@ Tag grammar and the checks around it (FU-U1, FU-U2, FU-U5, FU-U6; what main does
   character tag whose gender disagrees with the cast record
   (`VOICE_TAG_MISMATCH`) or cannot be checked (`VOICE_TAG_UNCHECKED`).
 - **Request limits, measured last.** See "Request and prompt limits" below.
-- **Per-style bands (FU-U3, open pull request; refresh when it lands).** The
+- **Per-style bands (FU-U3, landed in 2.7.31 via PR #120).** The
   5/10 band is unchanged. Soul Ballad and Soul Rise stay at 22.5 runtime spoken
   and 77.5 sung of voice. R&B Flow is judged against the share planned from the
   approved sheet (a Trevor decision item in the plan, no new number invented),
