@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.25
+version: 2.7.26
 ---
 
 # Drama Song Ad Factory
@@ -485,6 +485,25 @@ brand names (for example Stale, Stop Stale) are protected words:
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
   protected=...)`): "the house went still" for "Stale" is a FAIL.
+
+## Story arc rule and product-connection target (FU-U13, owner order 2026-10-08)
+
+Every ad's story runs struggle -> what changed -> the product is why -> get
+the product. The product is named and connected inside the lyrics AND on
+screen (cover, title, link) - never only on an end card.
+
+The lyric/script and shot-plan stages plan the spoken-word parts (inside the
+spoken band) and the motion shots showing the character's struggle, taken from
+the source material, and plan how many seconds connect the story to the
+product: aim for 10-15% of runtime
+(`length_formula.plan_product_connection`, carried on the plan as
+`product_connection`, shown on the choice card).
+
+That band is a TARGET, never a hard cap: the delivery checklist measures the
+delivered run (`delivery_checklist.measure_product_connection`, row
+`PRODUCT_CONNECTION` in the checklist output) and reports the seconds and
+percent. Inside the band is PASS, outside is a FLAG with the measured numbers,
+never a blocker by itself and never a repair directive.
 
 ## No hand-written pipeline scripts (Part H H12)
 
