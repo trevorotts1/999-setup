@@ -126,6 +126,7 @@ class Recipe(unittest.TestCase):
 
     def test_request_seam_blocks_bypass(self):
         import music_director as MD
+        import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         raw = MS.style_prompt("rnb-flow")
         with self.assertRaises(R.RecipeError):          # raw style, no recipe
             MD.build_generate_request("la la", raw, "T")
@@ -136,6 +137,7 @@ class Recipe(unittest.TestCase):
 
     def test_request_seam_accepts_recipe_output(self):
         import music_director as MD
+        import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         if not MD.workcopy_paths()["models"].is_file():
             self.skipTest("68-kie-audio catalog not in this checkout")
         out = R.prepare("rnb-flow", sheet(), CLIENT)

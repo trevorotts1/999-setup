@@ -110,7 +110,13 @@ def disp(label, model, input_body, lock=None):
     if lock:
         ML.lock_run_model(state_db, "run-u7", lock)
     fake = Fake74(BASE_SCRIPT)
-    req = {"model": "m", "input": dict(input_body), "card_receipt": STAMPED_CARD}
+    # U15b (merged with U7 in v2.7.28): an H3 job dispatches only with a PASS
+    # prompt receipt for the exact prompt bytes; the cap gate runs before it.
+    import hashlib
+    sha = hashlib.sha256(str(input_body.get("prompt", "")).encode("utf-8")).hexdigest()
+    req = {"model": "m", "input": dict(input_body), "card_receipt": STAMPED_CARD,
+           "prompt_receipt": {"prompt_sha256": sha,
+                              "check": {"verdict": "PASS", "reasons": []}}}
     env = MODULE.dispatch(
         model=model, request=req, save_dir=tmp, ledger_db=db,
         run_id="run-u7", logical_key=label, attempt_id="att-1",
