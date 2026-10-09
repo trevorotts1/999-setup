@@ -1,5 +1,12 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.39] - 2026-10-09 - FU-DEL-11: character images as separate full-resolution delivery files
+
+- New `scripts/core/character_images/` package: every character picture reaches the delivery folder as its OWN full-resolution file (`11-character-<slug>-<view>.<ext>` — close-up, side profile, three-quarter, full standing), byte-for-byte `shutil.copyfile` from an existing `character_library` record. No generation, no crop, no resize, no re-encode, no contact sheet; the page screenshots are untouched.
+- View selection, in order of trust: an explicit `views` mapping on the record, else the whole view words in the reference file's own name (`close-up.png`, `side.png`, `three-quarter.png`, `standing.png`, `lipsync-closeup.png`). One file never claims two views.
+- Fail closed: a missing view names exactly the missing views and leaves the delivery folder untouched (the whole plan is computed before any write); the same for NO_CHARACTERS, SOURCE_MISSING, BAD_IMAGE and DUPLICATE_SLUG. Receipt rows carry source basename + bytes, never an absolute path.
+- New `test_character_images_del11.py` (14 unit tests). `scripts/core/character_images/` is byte-identical to the openclaw-onboarding copy (skill 75 v2.9.14).
+
 ## [2.7.38] - 2026-10-09 - Train 2.7.38: delivery audio gate on every delivered video
 
 Trevor: "I DON'T HEAR ANY AUDIO". QuickTime plays MP3-in-MP4 silent.
