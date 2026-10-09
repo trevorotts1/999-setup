@@ -32,7 +32,7 @@ def test_seven_questions_each_own_block():
         assert first.startswith("Question %d of %d - " % (i, N)), first
     labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
     assert labels == ["LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
-                      "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL"]
+                      "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
