@@ -225,9 +225,13 @@ def render(card, price_fn, state_store=None, run_id=None):
                         plan["reference_set_usd"]))
     if priced_ok and total is not None:
         retake = ok_card["retake_allowance_usd"]
+        limit = ok_card["spending_limit_usd"]
+        if song_extra:        # the two extra songs get the same 20% redo allowance
+            retake += song_extra * RETAKE_RATE
+            limit += song_extra * (1 + RETAKE_RATE)
         lines.append("")
         lines.append("  %-12s $%.2f + $%.2f retake allowance (20%%) = $%.2f"
-                     % ("Total:", total, retake, ok_card["spending_limit_usd"]))
+                     % ("Total:", total, retake, limit))
     else:
         lines.append("")
         lines.append("  %-12s Price unavailable -- media generation pricing is "

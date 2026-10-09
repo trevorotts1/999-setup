@@ -73,7 +73,7 @@ class RoundTrip(unittest.TestCase):
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn("saved with us", out)
             self.assertIn("Question 1 of 10 - AI MODELS", out)
-            self.assertIn("Question 2 of 10 - SAVED CHARACTER", out)
+            self.assertIn("Question 2 of 10 - CHARACTER", out)
 
 
 if __name__ == "__main__":

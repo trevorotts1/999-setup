@@ -18,8 +18,10 @@ from choice_card.intake_card import intake_card as IC           # noqa: E402
 from song_choices import song_choices as SC                     # noqa: E402
 import factory as F                                             # noqa: E402
 
-YES = ["1"] * 7 + ["yes"]                 # all recommended; SONG APPROVAL = Yes
-NO = ["1"] * 6 + ["2", "yes"]             # SONG APPROVAL = No
+FULL = T._pre(T.N)                        # option 1 everywhere (BUDGET gets an amount); SONG APPROVAL = Yes
+SONG_LINE = str(T.SONG_AT + 1)            # the recap line number of SONG APPROVAL
+YES = FULL + ["yes"]
+NO = [("2" if i == T.SONG_AT else r) for i, r in enumerate(FULL)] + ["yes"]   # SONG APPROVAL = No
 
 
 def _gate(run):
@@ -36,7 +38,7 @@ def test_yes_card_to_gate_closed_until_pick_then_open():
     with tempfile.TemporaryDirectory() as tmp:
         run = T._stage_run(tmp)
         assert _gate(run) == "open"                                  # nothing recorded yet
-        IC.conversation(["1"] * 7, run_dir=run)                      # recap shown, not confirmed
+        IC.conversation(FULL, run_dir=run)                      # recap shown, not confirmed
         assert SC._state(run) is None and _gate(run) == "open"
         st = IC.conversation(YES, run_dir=run)
         assert st["done"] and SC._state(run)["required"] is True
@@ -59,9 +61,9 @@ def test_recap_change_updates_the_recorded_answer():
         run = T._stage_run(tmp)
         IC.conversation(NO, run_dir=run)
         assert _gate(run) == "open"
-        IC.conversation(["1"] * 6 + ["2", "7", "1", "yes"], run_dir=run)   # changed 7 to Yes
+        IC.conversation(NO[:-1] + [SONG_LINE, "1", "yes"], run_dir=run)   # changed SONG APPROVAL to Yes
         assert SC._state(run)["required"] is True and _gate(run) == "SONG_PICK_MISSING"
-        IC.conversation(["1"] * 7 + ["7", "2", "yes"], run_dir=run)         # and back to No
+        IC.conversation(FULL + [SONG_LINE, "2", "yes"], run_dir=run)         # and back to No
         assert SC._state(run)["required"] is False and _gate(run) == "open"
 
 

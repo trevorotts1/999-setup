@@ -266,7 +266,8 @@ def render_recap(answers, questions=None):
             lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
             continue
         price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" else ""
-        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"), a["text"], price))
+        label = "Video model" if q["id"] == "model" else q["label"].title().replace("Ai ", "AI ")
+        lines.append("%d. %s: %s%s" % (i, label, a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 

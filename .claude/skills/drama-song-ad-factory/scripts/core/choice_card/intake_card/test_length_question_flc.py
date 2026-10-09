@@ -17,7 +17,8 @@ sys.path.insert(0, CORE)
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 from clip_cutdown import clips_for  # noqa: E402
 
-STEP = IC.render_step(1)
+LI = next(i for i, q in enumerate(IC.QUESTIONS) if q["id"] == "length")   # AI MODELS is question 1
+STEP = IC.render_step(LI + 1)
 OPTS = [l for l in STEP.split("\n") if re.match(r"^\d\. ", l)]
 FIX = os.path.join(CORE, "catalog_calculator", "extensions", "fixtures", "skill74-responses.json")
 
@@ -60,8 +61,9 @@ class T(unittest.TestCase):
             self.assertEqual("clip" in line, bool(clips_for(secs)), line)
 
     def test_recap_is_plain(self):
-        a = [{"text": IC.QUESTIONS[0]["options"][2][0]}] + [{"text": "x"}] * 5
-        self.assertIn("1. Length: 3 minutes + 60s and 90s clips", IC.render_recap(a))
+        a = [{"text": "x", "n": 1}] * len(IC.QUESTIONS)
+        a[LI] = {"text": IC.QUESTIONS[LI]["options"][2][0], "n": 3}
+        self.assertIn("%d. Length: 3 minutes + 60s and 90s clips" % (LI + 1), IC.render_recap(a))
 
     def test_three_minute_price_includes_clips(self):
         from catalog_calculator import card_render as CR

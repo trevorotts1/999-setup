@@ -84,27 +84,35 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
     return res, calls, len(seen)
 
 
+def _pre(k):
+    """Option 1 for the first k questions, an explicit amount for BUDGET."""
+    return ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS[:k]]
+
+
+SONG_AT = [q["id"] for q in IC.QUESTIONS].index("song")      # 0-based; the card's order is computed
+
+
 def test_card_has_song_approval_after_storyboard():
     labels = [q["label"] for q in IC.QUESTIONS]
-    assert N == 7 and labels[-2:] == ["STORYBOARD APPROVAL", "SONG APPROVAL"], labels
-    block = IC.render_card().split("\n\n")[6].split("\n")
-    assert block[0] == "Question 7 of 7 - SONG APPROVAL"
+    assert labels[SONG_AT - 1:SONG_AT + 1] == ["STORYBOARD APPROVAL", "SONG APPROVAL"], labels
+    block = IC.render_card().split("\n\n")[SONG_AT].split("\n")
+    assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_AT + 1, N)
     assert block[1] == "Do you want to hear and pick the song before any video is made?"
     assert block[2].startswith("1. Yes, send me 3 versions to choose from - ") and IC.REC in block[2]
     assert block[3].startswith("2. No, just make it - ") and IC.REC not in block[3]
-    step = IC.conversation(["1"] * 6)["message"]
-    assert step.startswith("Question 7 of 7 - SONG APPROVAL") and 'say "recommended".' in step
-    assert IC.conversation(["1"] * 6 + ["recommended"])["answers"][6]["n"] == 1
+    step = IC.conversation(_pre(SONG_AT))["message"]
+    assert step.startswith("Question %d of %d - SONG APPROVAL" % (SONG_AT + 1, N)) and 'say "recommended".' in step
+    assert IC.conversation(_pre(SONG_AT) + ["recommended"])["answers"][SONG_AT]["n"] == 1
 
 
 def test_recap_lists_it_and_line_change_works():
-    st = IC.conversation(["1"] * 7)
-    assert "7. Song Approval: Yes, send me 3 versions to choose from" in st["message"]
+    st = IC.conversation(_pre(N))
+    assert "%d. Song Approval: Yes, send me 3 versions to choose from" % (SONG_AT + 1) in st["message"]
     assert IC.song_required(st["answers"]) is True
-    fix = IC.conversation(["1"] * 7 + ["7"])
-    assert fix["message"].startswith("Question 7 of 7 - SONG APPROVAL")
-    no = IC.conversation(["1"] * 7 + ["7", "2"])
-    assert IC.song_required(no["answers"]) is False and "7. Song Approval: No, just make it" in no["message"]
+    fix = IC.conversation(_pre(N) + [str(SONG_AT + 1)])
+    assert fix["message"].startswith("Question %d of %d - SONG APPROVAL" % (SONG_AT + 1, N))
+    no = IC.conversation(_pre(N) + [str(SONG_AT + 1), "2"])
+    assert IC.song_required(no["answers"]) is False and "%d. Song Approval: No, just make it" % (SONG_AT + 1) in no["message"]
 
 
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
