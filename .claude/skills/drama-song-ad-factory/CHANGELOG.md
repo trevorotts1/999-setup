@@ -1,5 +1,11 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.39] - 2026-10-09 - Batch PKG roll-up (pairs with openclaw-onboarding v27.1.0, skill 75 v2.9.15)
+
+Released as one batch. Units: FU-DEL-01 three audio versions and note (#165); FU-DEL-02 character bible PDF and image bible (#163); FU-DEL-03 script PDF (#162); FU-DEL-04 storyboard grid PDF (#157); FU-DEL-05 video twice, captioned and clean (#160); FU-DEL-06 60 and 90 second clips (#164); FU-DEL-07 ready-to-post kit (#161); FU-DEL-08 cover image (#159); FU-DEL-09 lyric sheet PDF (#154); FU-DEL-10 caption file (#155); FU-DEL-11 character images (#153); FU-DEL-12 welcome sheet and package list (#156); FU-DEL-13 delivery folder contract and the 12-item hard gate (#158); FU-DEL-14-U2 no-blur-fill refusal gates (#166); unit/PKG-05-U1 full height by crop-in; unit/PKG-07-U1 camera vocabulary data file (byte-identical with onboarding).
+
+Twin sync (same method as 2.7.38): scripts/core and the shared references (CLIENT-GUIDE.md, choice-card-spec.md, price-menu.md) copied byte for byte from the onboarding batch so the two distributions carry zero drift. That brings in the shared code of onboarding units that have no 999 branch: PKG-05-U3 (core/no_blur_fill and the no_blur_fill check in qc_gate.py) and PKG-06 (catalog_calculator storyboard picture budget with storyboard-config.json, price and choice card wording). The 999 docs and test halves of those units are not part of this batch.
+
 ## [2.7.39] - 2026-10-09 - FU-DEL-11: character images as separate full-resolution delivery files
 
 - New `scripts/core/character_images/` package: every character picture reaches the delivery folder as its OWN full-resolution file (`11-character-<slug>-<view>.<ext>` — close-up, side profile, three-quarter, full standing), byte-for-byte `shutil.copyfile` from an existing `character_library` record. No generation, no crop, no resize, no re-encode, no contact sheet; the page screenshots are untouched.
@@ -66,7 +72,7 @@ frontmatter `version:` field).
 
 ---
 
-## v2.9.14 - 2026-10-09 - DEL-01: three audio versions + plain-English note in the delivery folder
+## [2.7.39] - 2026-10-09 - DEL-01: three audio versions + plain-English note in the delivery folder
 
 - The delivery folder now ships the song three clearly-labelled ways, all from EXISTING pipeline output (the finished mix, the instrumental the run made, the vocal stem saved for every take; nothing re-synthesised): `delivery_variants.build_audio_versions(mix, delivery_dir, instrumental, vocal_stem)` encodes `01 - Full Song.mp3`, `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (MP3 320 kbps each) and writes `00 - About These Audio Files.txt`, the short plain-English note on how the three differ; `write_version_docs` lists them in `delivery-receipt.json` and `README.md` (merge, never clobber). Every source is required -- a missing mix, instrumental or vocal stem raises `ValueError`, never a two-version delivery dressed up as three.
 - `check_audio_versions` / `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` fails a missing version, a missing note, or anything unlisted in the receipt or README (exit 5). The check is registered as `audio_versions` in `qc_gate.CHECKS` so the delivery gate can require it. `delivery_variants` exports `build_audio_versions` / `check_audio_versions` / `write_version_docs` / `version_note_text` / `expected_version_files` / `version_file_name` / `DELIVERY_VERSIONS` / `VERSION_NOTE_NAME`.
