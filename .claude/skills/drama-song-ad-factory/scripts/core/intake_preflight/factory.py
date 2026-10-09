@@ -249,6 +249,8 @@ def cmd_storyboard(a):
                     "Run `next` for the video stage." if r["action"] == "approved"
                     else "Waiting for the client's reply (GO, or 'shot N: change ...').",
                     data=r)
+
+
 def _deliverer(a, out):
     """The client-delivery sink: `openclaw message send` (intake_card.openclaw_send_argv)
     to --target; with no --target the message is handed back for the chat."""
@@ -427,6 +429,11 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
+    sb = sub.add_parser("storyboard", help="Storyboard approval step: send cards + "
+                        "stills, or apply the client's reply.")
+    sb.add_argument("--run-dir", required=True)
+    sb.add_argument("--target", default="", help="Telegram chat id")
+    sb.add_argument("--reply", default=None, help="The client's reply, if any.")
     n.add_argument("--target", default="",
                    help="Client Telegram chat id for the SCRIPT APPROVAL message; "
                         "empty = hand the message back for the chat.")
@@ -435,18 +442,15 @@ def main(argv=None):
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
     sr.add_argument("--target", default="")
-    sb = sub.add_parser("storyboard", help="Storyboard approval step: send cards + "
-                        "stills, or apply the client's reply.")
-    sb.add_argument("--run-dir", required=True)
-    sb.add_argument("--target", default="", help="Telegram chat id")
-    sb.add_argument("--reply", default=None, help="The client's reply, if any.")
-    c = sub.add_parser("card", help="Print the nine-question intake card as raw "
+    c = sub.add_parser("card", help="Print the intake card (nine questions, ten with a saved character) as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json"))
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
                    help="Client data folder; adds the saved-character question when it has saved characters (I6).")
+    c.add_argument("--run-state-file", default="",
+                   help="with --step and no replies: first call sends the one-time intro, next call question 1")
     c.add_argument("--price", default=None, help="card total in dollars, shown in the spend question")
     c.add_argument("--limit", default=None, help="spend limit in dollars; overrides the one found in the brief or summary")
     c.add_argument("--brief", default=None, help="Brief as JSON string; its budget_minor becomes spend option 1.")
@@ -454,9 +458,7 @@ def main(argv=None):
     c.add_argument("--summary-file", default=None,
                    help="intake output (envelope or summary) JSON; its generation_ceiling becomes spend option 1.")
     c.add_argument("--run-dir", default="",
-                   help="Run dir; the confirmed card writes control/card-receipt.json and records the SONG APPROVAL answer and card-answers.json there.")
-    c.add_argument("--run-state-file", default="",
-                   help="with --step and no replies: first call sends the one-time intro, next call question 1")
+                   help="Run dir; the confirmed card writes control/card-receipt.json (storyboard), the SONG APPROVAL answer and card-answers.json (SCRIPT APPROVAL) there.")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],

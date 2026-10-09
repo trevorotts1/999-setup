@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""intake_card: the intake questions (nine, ten with a saved character) as a card a client can read (H9).
+"""intake_card: the intake questions (nine; ten with a saved character) as a card a client can read (H9).
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -7,7 +7,7 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 2 of 9 - LENGTH
+    Question 1 of 9 - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
@@ -37,25 +37,19 @@ if _CORE not in sys.path:
 #: Telegram's hard limit is 4096 characters per message; stay under it.
 TELEGRAM_LIMIT = 4000
 
-_CLOSING = ('How to answer: reply with one number per question, in order, '
-            'like "{ex}". Say "all recommended" to take every RECOMMENDED choice.')
+_CLOSING_FMT = ('How to answer: reply with one number per question, in order, '
+                'like "{ex}". Say "all recommended" to take every RECOMMENDED choice.')
 
-_SHORT_CLOSING = ('How to answer: reply with one number per question, in order, '
-                  'like "{ex}". For the BUDGET, reply with a dollar amount.')
-
-
-def _example(n):
-    """The sample answer string: one '1' per real question."""
-    return ", ".join(["1"] * n)
-
+_SHORT_CLOSING_FMT = ('How to answer: reply with one number per question, in order, '
+                      'like "{ex}". For the BUDGET, reply with a dollar amount.')
 
 REC = "(RECOMMENDED)"
 
 
 def _closing(qs):
     """'all recommended' is offered only when every question has a recommended option."""
-    tpl = _CLOSING if all(q.get("recommended") is not None for q in qs) else _SHORT_CLOSING
-    return tpl.format(ex=_example(len(qs)))
+    fmt = _CLOSING_FMT if all(q.get("recommended") is not None for q in qs) else _SHORT_CLOSING_FMT
+    return fmt.format(ex=", ".join(["1"] * len(qs)))
 
 #: (label, question, [(option, one short sentence)], recommended option index)
 #: Looks and music come from the choice-card modules so the menu cannot drift.
@@ -200,15 +194,16 @@ def _model_question(length_label):
 
 def _priced(qs, answers):
     """Swap in the VIDEO MODEL question priced for the length already answered."""
-    li = next((i for i, q in enumerate(qs) if q["id"] == "length"), None)
-    if li is None or li >= len(answers):          # the length is not answered yet
+    ids = [q["id"] for q in qs]
+    if "length" not in ids or len(answers) <= ids.index("length"):
         return qs
-    return [_model_question(answers[li]["text"]) if q["id"] == "model" else q for q in qs]
+    length_text = answers[ids.index("length")]["text"]       # AI MODELS (and the saved character) may come first
+    return [_model_question(length_text) if q["id"] == "model" else q for q in qs]
 
 
 QUESTIONS = _questions()
-CLOSING_LINE = _CLOSING.format(ex=_example(len(QUESTIONS)))
-SHORT_CLOSING_LINE = _SHORT_CLOSING.format(ex=_example(len(QUESTIONS)))
+CLOSING_LINE = _CLOSING_FMT.format(ex=", ".join(["1"] * len(QUESTIONS)))
+SHORT_CLOSING_LINE = _SHORT_CLOSING_FMT.format(ex=", ".join(["1"] * len(QUESTIONS)))
 
 
 #: Shown once, before the first question, when the client has no saved characters.
@@ -270,12 +265,11 @@ def render_recap(answers, questions=None):
     qs = _priced(questions or QUESTIONS, answers)
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        if "recap" in q:
+        if "recap" in q and a.get("n"):
             lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
             continue
-        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" else ""
-        label = "Video model" if q["id"] == "model" else q["label"].title().replace("Ai ", "AI ")
-        lines.append("%d. %s: %s%s" % (i, label, a["text"], price))
+        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
+        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"), a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -304,21 +298,23 @@ def _parse(reply, q):
         return {"n": len(opts), "text": "up to " + _usd(t), "value": t.lstrip("$"), "id": q["id"]}
     else:
         return None
-    value = q["values"].get(n) if isinstance(q.get("values"), dict) else None   # model q.values is a list of prices
+    _v = q.get("values")
+    value = _v.get(n) if isinstance(_v, dict) else None
     if q["id"] == "spend" and value is None:      # "A different maximum" with no amount, or a
         return None                               # bare "yes": no amount = no spend
     return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value, "id": q["id"]}
 
 
-def conversation(replies, questions=None, state_store=None, run_id=None, run_dir=None, target=None):
+def conversation(replies, questions=None, state_store=None, run_id=None,
+                 run_dir=None, target=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
     With state_store + run_id, the client's video model is written to run state
     (the F14 lock) as soon as it is answered; the card and dispatch read it there.
     With run_dir, the recap confirmation writes the STORYBOARD and SONG APPROVAL
-    answers to the run (so Yes turns each approval gate on). target (the
-    client's chat id) is stored with the song answer so the 3-song message goes to that client."""
+    answers to the run (approval_runner / song_choices record_card_answer), so Yes
+    turns the pick gates on; target (the client's chat id) is stored with them."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
@@ -354,11 +350,13 @@ def conversation(replies, questions=None, state_store=None, run_id=None, run_dir
         from choice_card.video_models import video_models as VM
         VM.lock_choice(state_store, run_id, model_n)
     if done:
-        if run_dir:     # recap confirmed: the approval answers go to the run
+        if run_dir:     # recap confirmed: the storyboard answer goes to the run
             from storyboard_director import approval_runner as _ar
             _ar.record_card_answer(run_dir, answers, qs, target)
             from song_choices import song_choices as _sc   # noqa: PLC0415
             _sc.record_card_answer(run_dir, answers, target)
+            from script_approval import card_answers       # noqa: PLC0415
+            card_answers.write(run_dir, answers, qs)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
@@ -610,17 +608,15 @@ def _render_fit(card):
 
 
 def _with_saved_character(client_dir):
-    """QUESTIONS, with the saved-character question second (AI MODELS stays first) when the
-    client has saved characters (Part I, I6). With a client folder but no saved characters
-    the plain questions open with one short line (``NO_SAVED_LINE``). No folder: the plain questions."""
+    """QUESTIONS, with the saved-character question first when the client has
+    saved characters (Part I, I6). With a client folder but no saved characters
+    the plain nine open with one short line (``NO_SAVED_LINE``). No folder: plain nine."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
     q = CL.saved_character_question(client_dir)
     if not q:
         return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
-    q = dict(q, why="A saved character keeps the same face across your ads.",
-             reason="you can still pick a new character if you prefer.")
     return QUESTIONS[:1] + [q] + QUESTIONS[1:]      # AI MODELS stays the first question
 
 
@@ -642,6 +638,9 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--run-state-file", default="",
+                    help="with --step and no replies: send the one-time intro as its "
+                         "own message first (recorded as intro_shown in this file)")
     ap.add_argument("--price", default=None,
                     help="the card total in dollars (20%% redo allowance included); "
                          "shown as spend option 1 or 2")
@@ -651,11 +650,8 @@ def main(argv=None):
     ap.add_argument("--limit-from-brief", action="store_true",
                     help="the --limit came from the brief; labels option 1 'from your brief'")
     ap.add_argument("--run-dir", default="",
-                    help="run folder; when the recap is confirmed the storyboard, song approval "
-                         "and script approval answers are written to the run (card-answers.json)")
-    ap.add_argument("--run-state-file", default="",
-                    help="with --step and no replies: send the one-time intro as its "
-                         "own message first (recorded as intro_shown in this file)")
+                    help="run folder; when the recap is confirmed the storyboard "
+                         "answer is written to its control/card-receipt.json")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with the saved-character question (I6)")
@@ -666,12 +662,6 @@ def main(argv=None):
         st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None)
         if not a.reply and a.run_state_file and _intro_take(a.run_state_file):
             st = dict(st, message=_INTRO)          # FU-INTRO-MESSAGE
-        if st["done"] and a.run_dir:
-            core = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            if core not in sys.path:
-                sys.path.insert(0, core)
-            from script_approval import card_answers  # noqa: PLC0415
-            card_answers.write(a.run_dir, st["answers"], qs)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:

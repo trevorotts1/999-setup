@@ -60,7 +60,7 @@ def test_question_renders_last_with_right_count_and_text():
 
 
 def test_recap_and_change_by_number():
-    base = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]    # BUDGET needs an amount
+    base = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]   # spend takes a dollar amount
     recap = IC.conversation(base)["message"]
     assert "%d. Script Approval: Yes, show me first" % N in recap
     st = IC.conversation(base + [str(N)])                      # change the last line
@@ -110,19 +110,6 @@ def test_yes_pauses_before_any_music_submit_and_sends_script():
 
 
 def test_dispatch_path_refuses_pending_and_allows_approved_and_unasked():
-    # this file puts core/suno_recipe on sys.path so `import suno_recipe` is the flat module;
-    # the song-approval gate in dispatch imports the PACKAGE of that name, so hide the flat one here
-    flat, saved = os.path.join(CORE, "suno_recipe"), dict(sys.modules)
-    sys.path[:] = [p for p in sys.path if p != flat]
-    sys.modules.pop("suno_recipe", None)
-    try:
-        _dispatch_path_cases()
-    finally:
-        sys.path.insert(0, flat)
-        sys.modules.update(saved)
-
-
-def _dispatch_path_cases():
     import test_kie_dispatch as TK
     base = {"model": "m", "input": {"prompt": "p" * 200}, "lyrics": "la la"}
     pending = {"required": True, "status": "pending", "lyrics_sha": SA.lyrics_sha("la la")}

@@ -192,21 +192,18 @@ def test_b_rnb_judge_not_fail_by_construction():
                       None, "rnb-flow")
     band_gates = ("spoken_share", "rap_share", "sung_of_voice")
     bad = [g for g in band_gates if j["gates"][g]["verdict"] == "FAIL"]
-    # FU-HOOK-PLACEMENT: this fixture carries no sheet and no hook_plan, so
-    # the always-on hook_placement gate FAILs it as UNMEASURED (never a
-    # silent pass); the band gates are judged as before.
-    check("(b) hook_placement on a take with no sheet is FAIL, UNMEASURED",
-          j["gates"]["hook_placement"]["verdict"] == "FAIL"
-          and "UNMEASURED: sheet_text" in j["gates"]["hook_placement"]["detail"],
-          j["gates"]["hook_placement"])
-    check("(b) the R&B Flow band gates are not FAIL when the take matches its "
-          "approved plan", not bad and not (set(j["failed"]) - {"hook_placement", "song_contract"}),
+    # The sheet-dependent gates (FU-RNBFLOW-SONG song_contract, FU-HOOK-PLACEMENT
+    # hook_placement) need the approved sheet text and hook_plan, which this band
+    # fixture does not carry: they must fail CLOSED as UNMEASURED, and nothing
+    # else may fail. Their own tests cover them with a real sheet.
+    sheet_gates = ("song_contract", "hook_placement")
+    check("(b) without a sheet the song-contract and hook-placement gates fail closed (UNMEASURED)",
+          all("UNMEASURED" in j["gates"][g]["detail"] for g in sheet_gates)
+          and set(j["failed"]) <= set(sheet_gates), repr(j["failed"]))
+    check("(b) the R&B Flow judge is not FAIL when the take matches its "
+          "approved plan", not [g for g in j["failed"] if g not in sheet_gates] and not bad,
           "verdict=%s failed=%s band=%s" % (j["verdict"], j["failed"],
                                             {g: j["gates"][g] for g in band_gates}))
-    # FU-RNBFLOW-SONG: g1b is the v1 take Trevor rated 4/10 (no sung lyric
-    # outside the hook); the style contract FAILs it, which is not a band verdict.
-    check("(b) song_contract FAILs the g1b take", "song_contract" in j["failed"],
-          j["gates"].get("song_contract"))
     check("(b) spoken_share judged against the approved plan's planned share "
           "(documented default, no new number)",
           "approved plan" in j["gates"]["spoken_share"]["detail"],
