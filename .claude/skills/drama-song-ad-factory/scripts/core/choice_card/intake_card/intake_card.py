@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""intake_card: the six intake questions as a card a client can read (H9).
+"""intake_card: the seven intake questions as a card a client can read (H9).
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -7,7 +7,7 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 1 of 6 - LENGTH
+    Question 1 of 7 - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
@@ -38,7 +38,7 @@ if _CORE not in sys.path:
 TELEGRAM_LIMIT = 4000
 
 CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                'like "1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
+                'like "1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
                 'RECOMMENDED choice.')
 
 SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
@@ -150,6 +150,11 @@ def _questions():
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
                      ("No, just make it", "I start as soon as the card is approved.")],
          "recommended": 0},
+        {"id": "song", "why": "The song is the heart of the ad, and it is cheap to change now and costly after video is made.", "reason": "you hear three labelled versions and pick your favourite before any money is spent on video.", "label": "SONG APPROVAL",
+         "ask": "Do you want to hear and pick the song before any video is made?",
+         "options": [("Yes, send me 3 versions to choose from", "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price."),
+                     ("No, just make it", "I make one song and keep going.")],
+         "recommended": 0},
     ]
 
 
@@ -181,6 +186,11 @@ QUESTIONS = _questions()
 #: Shown once, before the first question, when the client has no saved characters.
 NO_SAVED_LINE = ("You don't have any saved characters yet, so I'll create a new one "
                  "for this ad and save it for next time.")
+
+
+def song_required(answers):
+    """True when the client answered Yes to SONG APPROVAL (3 versions, then a pick)."""
+    return any(a.get("id") == "song" and a.get("n") == 1 for a in answers)
 
 
 def _option_lines(q):
@@ -255,13 +265,13 @@ def _parse(reply, q):
     elif t.isdigit() and 1 <= int(t) <= len(opts):
         n = int(t)
     elif q["id"] == "spend" and t.lstrip("$").replace(".", "", 1).isdigit():
-        return {"n": len(opts), "text": "up to " + _usd(t), "value": t.lstrip("$")}
+        return {"n": len(opts), "text": "up to " + _usd(t), "value": t.lstrip("$"), "id": q["id"]}
     else:
         return None
     value = q["values"].get(n) if isinstance(q.get("values"), dict) else None   # model q.values is a list of prices
     if q["id"] == "spend" and value is None:      # "A different maximum" with no amount, or a
         return None                               # bare "yes": no amount = no spend
-    return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value}
+    return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value, "id": q["id"]}
 
 
 def conversation(replies, questions=None, state_store=None, run_id=None, run_dir=None, target=None):
@@ -269,7 +279,9 @@ def conversation(replies, questions=None, state_store=None, run_id=None, run_dir
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
     With state_store + run_id, the client's video model is written to run state
-    (the F14 lock) as soon as it is answered; the card and dispatch read it there."""
+    (the F14 lock) as soon as it is answered; the card and dispatch read it there.
+    With run_dir, the recap confirmation writes the STORYBOARD and SONG APPROVAL
+    answers to the run (so Yes turns each approval gate on)."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
@@ -301,9 +313,11 @@ def conversation(replies, questions=None, state_store=None, run_id=None, run_dir
         from choice_card.video_models import video_models as VM
         VM.lock_choice(state_store, run_id, model_n)
     if done:
-        if run_dir:     # recap confirmed: the storyboard answer goes to the run
+        if run_dir:     # recap confirmed: the approval answers go to the run
             from storyboard_director import approval_runner as _ar
             _ar.record_card_answer(run_dir, answers, qs, target)
+            from song_choices import song_choices as _sc   # noqa: PLC0415
+            _sc.record_card_answer(run_dir, answers)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
@@ -404,12 +418,13 @@ def telegram_payload(chat_id, text):
     return {"chat_id": chat_id, "text": text}
 
 
-def openclaw_send_argv(target, text):
+def openclaw_send_argv(target, text, media=()):
     """Exact argv for ``openclaw message send`` on Telegram. A list, not a
     shell string: run it with subprocess (shell=False) and the newlines in
     ``text`` reach the sender untouched."""
-    return ["openclaw", "message", "send", "--channel", "telegram",
-            "--target", str(target), "--message", text]
+    return (["openclaw", "message", "send", "--channel", "telegram",
+             "--target", str(target), "--message", text]
+            + [x for m in media for x in ("--media", str(m))])
 
 
 # --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------
@@ -556,7 +571,7 @@ def _render_fit(card):
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
     saved characters (Part I, I6). With a client folder but no saved characters
-    the plain six open with one short line (``NO_SAVED_LINE``). No folder: plain six."""
+    the plain questions open with one short line (``NO_SAVED_LINE``). No folder: the plain questions."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
@@ -567,7 +582,7 @@ def _with_saved_character(client_dir):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the six-question intake card.")
+    ap = argparse.ArgumentParser(description="Print the seven-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "
@@ -587,8 +602,8 @@ def main(argv=None):
     ap.add_argument("--limit-from-brief", action="store_true",
                     help="the --limit came from the brief; labels option 1 'from your brief'")
     ap.add_argument("--run-dir", default="",
-                    help="run folder; when the recap is confirmed the storyboard "
-                         "answer is written to its control/card-receipt.json")
+                    help="run folder; when the recap is confirmed the storyboard and "
+                         "song approval answers are written to the run")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with the saved-character question (I6)")
@@ -596,7 +611,7 @@ def main(argv=None):
     qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
           for q in _with_saved_character(a.client_dir)]
     if a.step:
-        st = conversation(a.reply, qs, a.run_dir or None, a.target or None)
+        st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:

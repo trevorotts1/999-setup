@@ -124,7 +124,7 @@ Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
 
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
 
-**Asking the six intake questions (H9).** Build them with
+**Asking the seven intake questions (H9).** Build them with
 `python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
 show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
 run each argv without a shell). Never type them free hand or send them as one
