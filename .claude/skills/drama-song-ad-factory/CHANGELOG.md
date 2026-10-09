@@ -1,5 +1,11 @@
 ## Unreleased
 
+### FU-U15a: prompt template data layer, loader and caps reader
+
+- New `references/prompt-templates/` (52 files): `20-prompt-templates/` ported as data — README, `manifest.json`, `length-classes.json`, 4 models, 5 modes, 5 looks, 6 shot types, 3 music styles, 15 fixtures.
+- New `scripts/core/prompt_templates/` with `load()` and `caps()`. `caps()` reads the catalogs (67-kie-video, 68-kie-audio) through FU-U6's `prompt_limits` first and the manifest only for what the catalogs lack (the Kling avatar row, UNVERIFIED 2500); no second caps table. H3 image-to-video prompt cap 7000 VERIFIED from the 67 catalog; every look x mode x shot type resolves, each mode block carries its record's key phrases (realism: the five `RECIPE_REQUIRED_PHRASES`).
+- New test `scripts/core/prompt_templates/test_prompt_templates_u15.py` (fails on the base tree: the module is absent). No version bump.
+
 ### FU-U6: Suno request limits, fail closed, measured last
 
 - New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
