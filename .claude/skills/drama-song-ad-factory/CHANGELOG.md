@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.24] - 2026-10-09 - Batch MGB008b: W-G-002-amend + TESTHYG-75 + W-G-007-amend
+
+Landed together by merge-train: #91 delivery-named tag grammar in lyric_structure, #93 skill-75 tests pytest-collectable and green in one process, #92 delivery checklist consumes the amended receipt fields.
+
 ## [2.7.23] - 2026-10-08 - Batch MGB008: LSC001 + LSP001 + PAR003 + G3-WIRE
 
 Landed together by merge-train (one gate run): #88 consolidated lip-sync (LSC001), #90 approved lip-sync process (LSP001, rewords Downloads in install_face_model.py for the leak check), #89 final_assembler byte parity (PAR003), #87 G3-WIRE port (onboarding #1692). Waiting on onboarding: #1700, #1701, #1695 (MGB007) and #1702.
