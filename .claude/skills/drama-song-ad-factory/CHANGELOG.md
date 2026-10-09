@@ -1,5 +1,9 @@
 # Changelog: drama-song-ad-factory
 
+## [2.7.34] - 2026-10-09 - Train 2.7.34: #124 + #133
+
+Landed together by merge train: #124 FU-U4 (client lines are a contract; the STOP card lists only real options; fit card, `fit_card`, `card --fit`), #133 U12 choice-card-spec gap fills (STL voice guard, voice-match QC, planner card, fit-card TODO). Neither PR carried an Unreleased entry; this one is written by the train. One clash, spec text only: both PRs rewrote `references/choice-card-spec.md` section 2.3. #133's section 2.3 described the fit card as not built and carried a TODO to rewrite it when #124 landed; #124 is in this train, so the #124 text is kept and the stale #133 paragraph and its TODO line are dropped. All other #133 changes are kept. VERSION and SKILL.md frontmatter: 2.7.33 to 2.7.34.
+
 ## [2.7.33] - 2026-10-09 - Train 2.7.33: #128 + #129 + #131 + #132
 
 Landed together by merge train: #128 cast-sweep voice_casting docstring, #129 FU-U9 captions_burn.overlay_excerpt, #131 U12 per-style spoken paragraph and TODO block, #132 U15g book and printed-page prompt fragments one home. PR #130 (FU-U11) was dropped from this train: its test_book_pages_d1.py asserts that captions_burn.py does not exist, which fails once #129 lands (4 checks). VERSION and SKILL.md frontmatter: 2.7.32 to 2.7.33.
