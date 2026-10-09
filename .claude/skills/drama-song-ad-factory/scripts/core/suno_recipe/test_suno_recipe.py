@@ -53,7 +53,12 @@ class Recipe(unittest.TestCase):
             out = R.prepare(sid, sheet(), CLIENT)
             self.assertFalse(out["exempt"])
             self.assertEqual(R.check_style_text(out["style"]), [])
-            self.assertTrue(out["style"].startswith(MS.style_prompt(sid)))
+            # U15d: the style text is built from music/<style>.json, so it
+            # starts from the DATA's base prompt and carries the delivery map
+            # (the old startswith(MS.style_prompt) contract put the map last
+            # and the lead before it; the data order is base, lead, map).
+            self.assertTrue(out["style"].startswith(R.base_prompt(sid)), out["style"][:80])
+            self.assertIn("The lead SPEAKS the lines tagged Spoken", out["style"])
             self.assertLessEqual(len(out["style"]), 1000)
             self.assertEqual(R.check_negatives(out["negative_tags"], sid), [])
             self.assertNotIn("spoken word", out["negative_tags"])
@@ -120,23 +125,14 @@ class Recipe(unittest.TestCase):
         self.assertEqual(R.parse_lyrics(R.render_lyrics(s)), s)
 
     def test_request_seam_blocks_bypass(self):
-        # The skill-tree conftest drops skill modules between pytest
-        # collections; a bare `import music_director` here would re-execute
-        # suno_recipe into a SECOND copy, and the director's guard would then
-        # raise that copy's RecipeError -- never the one `R` above holds.
-        # Import the recipe and the director in one wave so both share ONE
-        # suno_recipe and the seam is judged on one exception class (I8).
-        for _name in ("music_director", "suno_recipe"):
-            sys.modules.pop(_name, None)
-        import suno_recipe as R_now                        # noqa: E402
         import music_director as MD
         raw = MS.style_prompt("rnb-flow")
-        with self.assertRaises(R_now.RecipeError):      # raw style, no recipe
+        with self.assertRaises(R.RecipeError):          # raw style, no recipe
             MD.build_generate_request("la la", raw, "T")
-        with self.assertRaises(R_now.RecipeError):      # recipe id, no band wording
+        with self.assertRaises(R.RecipeError):          # recipe id, no band wording
             MD.build_generate_request("la la", raw, "T", style_id="rnb-flow",
                                       client_text=CLIENT)
-        R_now.guard_request(raw, "la la", "velvet_voiceover")  # exempt id passes
+        R.guard_request(raw, "la la", "velvet_voiceover")     # exempt id passes
 
     def test_request_seam_accepts_recipe_output(self):
         import music_director as MD
