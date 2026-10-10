@@ -1,5 +1,13 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
+
+The 2.7.41 sentence ("a missing reference picture is a refusal, never an empty directory") was false in code: `character_bible.write_delivery` rendered the PDF and created `02 - Character Bible Images/` before raising `NO_REFERENCE_IMAGES`, leaving both contract artifacts behind on a refusal.
+
+- `write_delivery` now computes the full ship plan (every shippable reference file, existence and non-zero size checked) BEFORE creating the delivery directory, rendering the PDF, or creating the images directory. No shippable picture raises `NO_REFERENCE_IMAGES` with a completely untouched filesystem.
+- New tests in `scripts/core/character_bible/test_character_bible_del02.py` (`RefuseBeforeAnyWrite`): three planted missing-reference cases (no pictures, only broken paths, zero-byte file) each assert the exception AND that no PDF and no images directory exist; a clean case still delivers both contract files.
+- Version markers: this `VERSION` + SKILL.md frontmatter 2.7.42 -> 2.7.43.
+
 ## [2.7.42] - 2026-10-10 - KIE batch train (KIE-U1..U5): two-root adapter docs, kie front-door skill, client-owned KIE key
 
 Released with the 999 KIE batch PR (units KIE-U1 #173, KIE-U2 #171, KIE-U3 #170, KIE-U4 #174, KIE-U5 #172), paired with openclaw-onboarding #1809 (unit KIE-U0, ported KIE official agent docs: 07 v7.2.0, 74 v1.1.6, 66 v2.2.2, 68 v2.3.1).
