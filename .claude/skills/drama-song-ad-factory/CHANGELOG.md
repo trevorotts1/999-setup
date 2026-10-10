@@ -1,5 +1,13 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
+
+The 2.7.41 sentence ("a missing reference picture is a refusal, never an empty directory") was false in code: `character_bible.write_delivery` rendered the PDF and created `02 - Character Bible Images/` before raising `NO_REFERENCE_IMAGES`, leaving both contract artifacts behind on a refusal.
+
+- `write_delivery` now computes the full ship plan (every shippable reference file, existence and non-zero size checked) BEFORE creating the delivery directory, rendering the PDF, or creating the images directory. No shippable picture raises `NO_REFERENCE_IMAGES` with a completely untouched filesystem.
+- New tests in `scripts/core/character_bible/test_character_bible_del02.py` (`RefuseBeforeAnyWrite`): three planted missing-reference cases (no pictures, only broken paths, zero-byte file) each assert the exception AND that no PDF and no images directory exist; a clean case still delivers both contract files.
+- Version markers: this `VERSION` + SKILL.md frontmatter 2.7.42 -> 2.7.43.
+
 ## [2.7.42] - 2026-10-10 - KIE batch train (KIE-U1..U5): two-root adapter docs, kie front-door skill, client-owned KIE key
 
 Released with the 999 KIE batch PR (units KIE-U1 #173, KIE-U2 #171, KIE-U3 #170, KIE-U4 #174, KIE-U5 #172), paired with openclaw-onboarding #1809 (unit KIE-U0, ported KIE official agent docs: 07 v7.2.0, 74 v1.1.6, 66 v2.2.2, 68 v2.3.1).
@@ -66,7 +74,7 @@ Twin sync (same method as 2.7.38): scripts/core and the shared references (CLIEN
 
 - `scripts/core/delivery_package/`: the client delivery folder contract -- 12 numbered package items, exact file names, and what "opens" means per kind (PDF header, SRT cue block, non-empty media, image directory). `packaging.package_run(run_dir, out_dir)` is the one packaging call: it discovers each item's `produce_delivery()` component, writes the canonical numbered files, and verifies the folder. Fail closed: `COMPONENT_MISSING` (naming every item still owed, before any write), `COMPONENT_FAILED`, `PACKAGE_INCOMPLETE`.
 - `delivery_checklist` gains Q12 `PACKAGE_COMPLETE` (`CHECKLIST_PACKAGE_INCOMPLETE`): the receipt names the delivery folder and Q12 reads it -- all 12 items present and opening, one missing item fails the run and is named. The gate is hard; the 11 human checklist questions are unchanged.
-- New `test_delivery_package_e2e.py`: a run through the packaging entry point. (Its behavior moved with DEL-13's producers: at 2.7.40 the test builds a non-empty run and runs the twelve real deliver paths with no skip -- see the 2.7.40 entry.) A raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
+- New `test_delivery_package_e2e.py`: a run through the packaging entry point. (Its behavior moved with DEL-13's producers: at 2.7.41 the test builds a non-empty run and runs the twelve real deliver paths with no skip -- see the 2.7.41 entry.) A raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
 - Shared core byte-identical to the onboarding copy (v2.9.14).
 
 ## [2.7.39] - 2026-10-09 - DEL-08: one cover image (thumbnail) per delivery folder
