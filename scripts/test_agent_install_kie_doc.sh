@@ -16,6 +16,13 @@
 #
 # It also asserts the retired one-shared-root sentences are ABSENT.
 #
+# Version policy (unit N99-U3T): this test carries NO hard-coded version for
+# helper 74. The 74 pin lives in installer-registration/helper-dependencies.json
+# (source of truth), and AGENT_INSTALL.md prose may lag it during a re-pin
+# batch, so a fixed string here would assert a value this test cannot own.
+# Control sv below proves the test still passes when the doc's 74 version is
+# rewritten from v1.1.5 to v1.1.6 — i.e. no stale-version requirement remains.
+#
 # No skips, no network, no fixture-only proof: the clean case is the current
 # AGENT_INSTALL.md; every required phrase then gets a planted-bad control
 # (the phrase is stripped from a temp copy and the same check must fail) and
@@ -56,7 +63,6 @@ sync script	sync-nine-skills.sh
 sync script install location	~/.local/bin/sync-nine-skills.sh
 no KIE MCP	no KIE MCP
 rate limit budget	20 new generation requests per 10
-re-pinned helper 74	v1.1.5
 re-pinned helper 67	v2.1.3
 helper 07-kie-setup	07-kie-setup
 helper shared-utils	shared-utils
@@ -76,6 +82,17 @@ declined fallback line	Declined fallback
 declined fallback skill 74 stays shadow	skill 74 stays in
 EOF
 )
+
+# N99-U3T guard: the retired hard-coded 74 pin must never be re-asserted.
+# The doc prose may say any 74 version; the pin's value is owned by
+# installer-registration/helper-dependencies.json, not by this test.
+# Control: a temp copy of this script with "v1.1.5" put back into REQS must
+# exit non-zero here, proving a stale expectation is fail-closed.
+if printf '%s\n' "$REQS" | grep -Fq 'v1.1.5'; then
+  echo "FAIL: test re-asserts stale 74-kie-live-adapter v1.1.5 (removed by N99-U3T)"
+  echo "RESULT: FAIL"
+  exit 1
+fi
 
 # Retired one-shared-root sentences: LABEL<TAB>FIXED-STRING (must be ABSENT).
 ABSENTS=$(cat <<'EOF'
