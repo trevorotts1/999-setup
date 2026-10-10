@@ -152,7 +152,7 @@ image/video/audio model selectors, the KIE paid transport, the callback relay, p
 (the key resolver and the prompt enforcer). Naming them does **not** install them. They
 ship in this repository under `installer-registration/helpers/`, pinned by version and
 sha256 tree hash in `installer-registration/helper-dependencies.json`. The current pins are
-the re-pinned OpenClaw versions: `74-kie-live-adapter` **v1.1.5**, `67-kie-video`
+the re-pinned OpenClaw versions: `74-kie-live-adapter` **v1.1.6**, `67-kie-video`
 **v2.1.3**, together with `46-kie-callback-relay`, `66-kie-image`, `68-kie-audio`,
 `07-kie-setup` and `shared-utils`. After step 5's skill copies,
 run from the repository root:
@@ -175,7 +175,7 @@ Then, at step 11, add this check to the test run:
 python3 installer-registration/helper-deps.py preflight
 ```
 
-It exits 0 only when every pinned helper — `74-kie-live-adapter` v1.1.5, `67-kie-video`
+It exits 0 only when every pinned helper — `74-kie-live-adapter` v1.1.6, `67-kie-video`
 v2.1.3, `46-kie-callback-relay`, `66-kie-image`, `68-kie-audio`, `07-kie-setup` and
 `shared-utils` — is present at its pinned hash in **each** config root this machine uses,
 and exits 1 with an actionable per-helper error otherwise (directive 2.4: a clean install
