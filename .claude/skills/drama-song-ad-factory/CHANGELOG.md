@@ -1,6 +1,6 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
-## [2.7.40] - 2026-10-10 - PKG-11 attempt 4: one delivery package naming scheme (pairs with openclaw-onboarding v27.1.1, skill 75 v2.9.17)
+## [2.7.41] - 2026-10-10 - PKG-11 attempt 4: twelve REAL produce_delivery paths, real-run e2e (pairs with openclaw-onboarding v27.1.1, skill 75 v2.9.18)
 
 Released with onboarding v27.1.1 (follow-up to the v2.7.39 batch; closes the delivery package naming gap flagged there).
 
@@ -12,7 +12,7 @@ Released with onboarding v27.1.1 (follow-up to the v2.7.39 batch; closes the del
 - DEL-02 now ships BOTH of its contract files through its own real path: `write_delivery` renders `02 - Character Bible.pdf` and copies the run's reference pictures into `02 - Character Bible Images/` (one file per view, a copy never a re-encode). No reference picture in the run is a refusal (`NO_REFERENCE_IMAGES`), never an empty directory.
 - `test_delivery_package_e2e.py` BUILDS a non-empty run folder with the real producer inputs (media through ffmpeg, records as JSON), runs `package_run` over it and proves `contract.verify_folder` reports all twelve items present with zero missing and every file opening -- with no skip anywhere. The negative control removes one REAL produced item from a copy of that package and `verify_folder` must fail naming exactly it. A second packaging run runs with `contract.produce_item` replaced by a raiser: all twelve adapters still produce every item from the run, and no produced file carries fixture bytes.
 - Shared docs state the one scheme everywhere they name a delivery file (`QC.md`, `references/stage-runbook.md`, `references/character-bible.md`, `references/choice-card-spec.md`), byte-identical with the onboarding copy: `01 - Instrumental.mp3`, `01 - Voice Only.mp3`, `01 - About These Audio Files.txt`, `02 - Character Bible.pdf` + `02 - Character Bible Images/`, `04 - Storyboard.pdf`, `05 - Video Captioned.mp4` / `05 - Video Clean.mp4`, `06 - Clip 60s.mp4` / `06 - Clip 90s.mp4`, `08 - Cover Thumbnail.png`.
-- Proof: `python3 scripts/core/delivery_package/test_delivery_package_e2e.py` runs 9 tests green (real run, no skip); the skill 75 tree in ONE pytest process is green with no new skip; the per-file empty-`HOME` loop is green. Version markers: this `VERSION` + SKILL.md frontmatter 2.7.39 -> 2.7.40 (its own train, paired with onboarding v2.9.17). Shared files stay byte-identical with openclaw-onboarding.
+- Proof: `python3 scripts/core/delivery_package/test_delivery_package_e2e.py` runs 9 tests green (real run, no skip); the skill 75 tree in ONE pytest process is green with no new skip; the per-file empty-`HOME` loop is green. Version markers: this `VERSION` + SKILL.md frontmatter land at 2.7.41 on this follow-up batch (its own train, paired with onboarding skill 75 v2.9.18). Shared files stay byte-identical with openclaw-onboarding.
 
 ## [2.7.39] - 2026-10-09 - Batch PKG roll-up (pairs with openclaw-onboarding v27.1.0, skill 75 v2.9.15)
 
