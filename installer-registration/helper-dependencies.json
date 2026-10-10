@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-07T09:27:30Z",
+  "generatedAt": "2026-10-10T02:36:45Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -13,6 +13,7 @@
     "command": "python3 installer-registration/helper-deps.py install",
     "windowsCommand": "py installer-registration\\helper-deps.py install",
     "target": "<config root>/skills/<name>",
+    "roots": "every config root the machine has: ~/.claude and ~/.claude-nine when both exist; CLAUDE_CONFIG_DIR when set (single root); ~/.claude otherwise",
     "configRoot": "CLAUDE_CONFIG_DIR when set, otherwise ~/.claude (read only; never assigned by this tool)",
     "backupDir": "~/.claude-skill-backups/<name>.<timestamp> (existing differing copies are moved there, never deleted)",
     "wiredInto": "AGENT_INSTALL.md section 5"
@@ -21,7 +22,14 @@
     "command": "python3 installer-registration/helper-deps.py preflight",
     "exitOk": 0,
     "exitFail": 1,
-    "rule": "a required helper that is absent, lacks SKILL.md, or does not match its pinned treeSha256 fails the preflight with the helper name and the repair command"
+    "rule": "a required helper that is absent, lacks SKILL.md (skill kind), or does not match its pinned treeSha256 fails the preflight with the helper name, the root and the repair command"
+  },
+  "pinGuard": {
+    "command": "python3 installer-registration/check-helper-pins.py --onboarding <openclaw-onboarding checkout>",
+    "exitOk": 0,
+    "exitFail": 1,
+    "rule": "every pin must equal trevorotts1/openclaw-onboarding at the checked ref: skill helpers by version and tree hash, files helpers file by file; a stale pin or a vendored folder that drifted from its pin fails",
+    "ci": ".github/workflows/helper-pin-guard.yml"
   },
   "helpers": [
     {
@@ -29,6 +37,7 @@
       "name": "66-kie-image",
       "skillName": "kie-image",
       "role": "KIE image model selection, prompt constraints, domain QC",
+      "kind": "skill",
       "required": true,
       "version": "v2.2.1",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
@@ -44,21 +53,23 @@
       "name": "67-kie-video",
       "skillName": "kie-video",
       "role": "KIE video routing (no hardcoded model registry)",
+      "kind": "skill",
       "required": true,
-      "version": "v2.1.2",
+      "version": "v2.1.3",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/67-kie-video",
       "installPath": "skills/67-kie-video",
       "fileCount": 21,
-      "sizeBytes": 322395,
-      "treeSha256": "973d9be85f6eef14bd014d07c099cfca65de2f200a399758d4e38ffc8ebedc65",
-      "skillMdSha256": "a701f0ff8694068a8bcacdefa75a5040620cfe75c6f00f8237d08358db24cd77"
+      "sizeBytes": 323265,
+      "treeSha256": "e0b23290b3858ab4506a16105f1551c4b2a0b8afdc3b1e3943aba012cf4e309d",
+      "skillMdSha256": "119b80e5d4c5c8c9b626a488ae5fc87f2c2d1bb76c68effd0b8db4fe9fec602f"
     },
     {
       "id": "68",
       "name": "68-kie-audio",
       "skillName": "kie-audio",
       "role": "KIE/Suno audio request contract, model selection, domain QC",
+      "kind": "skill",
       "required": true,
       "version": "v2.3.0",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
@@ -74,21 +85,23 @@
       "name": "74-kie-live-adapter",
       "skillName": "kie-live-adapter",
       "role": "KIE paid transport: discovery, schemas, upload, submit, poll, credits",
+      "kind": "skill",
       "required": true,
-      "version": "v1.1.2",
+      "version": "v1.1.5",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/74-kie-live-adapter",
       "installPath": "skills/74-kie-live-adapter",
-      "fileCount": 32,
-      "sizeBytes": 726017,
-      "treeSha256": "6c8de370c730450f3cc94c495f338efd066a939a06aad865dac34eca57823055",
-      "skillMdSha256": "3d5b3adc9ee4db71eb55e8d4be76a4d6066deda2192b640b93079f368564f365"
+      "fileCount": 33,
+      "sizeBytes": 744161,
+      "treeSha256": "1e350d29f82ee89ebbc75ceed8abed034025de407385aeab2f70f764a5bf45b9",
+      "skillMdSha256": "57ed2ceeb7bc1a24cbc98f2be3eb0eaca93cc4244585a10423e0664d8941a1f9"
     },
     {
       "id": "46",
       "name": "46-kie-callback-relay",
       "skillName": "kie-callback-relay",
       "role": "Callback relay (webhook-primary result path for paid generations)",
+      "kind": "skill",
       "required": true,
       "version": "v2.1.0",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
@@ -98,6 +111,60 @@
       "sizeBytes": 169310,
       "treeSha256": "249badb74629aca0c11da58348f8357fe3a47637431bc39780071f73db1c9ee5",
       "skillMdSha256": "20b19e814c778b6f0832b34533854d9c788f8d3680b4c769968e6bbb9688d50f"
+    },
+    {
+      "id": "07",
+      "name": "07-kie-setup",
+      "skillName": "kie-setup",
+      "role": "KIE setup: credentials, router and the common rules 1 through 13 (references/kie-common-rules.md)",
+      "kind": "skill",
+      "required": true,
+      "version": "v7.1.1",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/07-kie-setup",
+      "installPath": "skills/07-kie-setup",
+      "fileCount": 14,
+      "sizeBytes": 330601,
+      "treeSha256": "87826c5efb382bba4ec1ce0a29d9881a026e5668b43fd1c8c8cd9c6316dda0d2",
+      "skillMdSha256": "ea489becfff9e599d8bb337d0990d9c7fff7e99d5678931751749344e241b0ee"
+    },
+    {
+      "id": "shared-utils",
+      "name": "shared-utils",
+      "skillName": "shared-utils",
+      "role": "KIE key resolver, prompt rule 12 enforcer, declared gate list and its test",
+      "kind": "files",
+      "required": true,
+      "version": "sha256:db74be3114ae",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/shared-utils",
+      "installPath": "skills/shared-utils",
+      "fileCount": 4,
+      "sizeBytes": 67865,
+      "treeSha256": "db74be3114ae589a69e28f565f864436766df8032e0aa0fa2e53980f928d208c",
+      "skillMdSha256": null,
+      "files": [
+        {
+          "path": "key_resolver.py",
+          "sourcePath": "shared-utils/key_resolver.py",
+          "sha256": "d5622bca792713e5cd93f5f227ae8d65ba79ffc09972592ecf872031f90b040a"
+        },
+        {
+          "path": "kie_prompt_enforcer.py",
+          "sourcePath": "shared-utils/kie_prompt_enforcer.py",
+          "sha256": "2f5bb67aee7e7f4784741b9af1fe4d6e2ec6f51325045cd9a1acc44988936e01"
+        },
+        {
+          "path": "kie_prompt_gates.json",
+          "sourcePath": "shared-utils/kie_prompt_gates.json",
+          "sha256": "c3cd47e3cae0fbad04599b1f70808ed3bf90d19b9c8189a9ff6b6b081a04531f"
+        },
+        {
+          "path": "kie-prompt-enforcer-and-gates.test.py",
+          "sourcePath": "tests/unit/kie-prompt-enforcer-and-gates.test.py",
+          "sha256": "a6d53cc5a375c1f0c744e0167021ca656733a58407fb584cae0ee93ab2bc9112"
+        }
+      ]
     }
   ]
 }

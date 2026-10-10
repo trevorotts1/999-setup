@@ -8,8 +8,9 @@
 #   * BOTH runtimes discover it: plain claude (~/.claude) and claude-nine
 #     (~/.claude-nine), with the claude-nine launcher installed
 #   * required runtime helpers RUN (python3, git — executed, not just
-#     resolved) and every declared helper skill (Skills 66/67/68/74 and
-#     46) is installed; a missing helper fails with an actionable message
+#     resolved) and every declared helper (Skills 66/67/68/74/46/07 plus the
+#     shared-utils files) is installed; a missing helper fails with an
+#     actionable message
 #   * no line this script prints ever carries key material: every line
 #     passes a leak filter first, a match is suppressed and fails the run
 #
@@ -192,7 +193,7 @@ main_checks() {
     fi
   done
 
-  # 6. helper skills (Skills 66/67/68/74 and 46)
+  # 6. helper skills (Skills 66/67/68/74/46/07 plus the shared-utils files)
   local helper_lines helper_src manifest_ok=0 hline hname hpath found
   helper_lines=""
   helper_src="builtin default"
@@ -225,7 +226,7 @@ PY
     if [ "$mrc" -eq 0 ]; then
       manifest_ok=1
       if [ -z "$helper_lines" ]; then
-        emit "FAIL helper-manifest: ${MANIFEST} declares no helpers — clean installs would miss Skills 66/67/68/74/46"
+        emit "FAIL helper-manifest: ${MANIFEST} declares no helpers — clean installs would miss Skills 66/67/68/74/46/07 and shared-utils"
         note_fail 4
       fi
     else
@@ -238,7 +239,7 @@ PY
     if [ ! -f "$MANIFEST" ]; then
       emit "helper source: builtin default (${MANIFEST} not present yet)"
     fi
-    helper_lines="$(printf '%s\n' 66-kie-image 67-kie-video 68-kie-audio 74-kie-live-adapter 46-kie-callback-relay)"
+    helper_lines="$(printf '%s\n' 66-kie-image 67-kie-video 68-kie-audio 74-kie-live-adapter 46-kie-callback-relay 07-kie-setup shared-utils)"
   fi
 
   while IFS=$'\t' read -r hname hpath; do
@@ -295,14 +296,15 @@ self_test() {
   chmod +x "$fx/launchers/claude-nine"
 
   local h
-  for h in 66-kie-image 67-kie-video 68-kie-audio 74-kie-live-adapter 46-kie-callback-relay; do
+  for h in 66-kie-image 67-kie-video 68-kie-audio 74-kie-live-adapter 46-kie-callback-relay 07-kie-setup shared-utils; do
     mkdir -p "$fx/helpers/$h"
     printf '%s\n' '---' "name: $h" 'description: fixture helper' '---' > "$fx/helpers/$h/SKILL.md"
   done
   python3 - "$fx" > "$fx/repo/installer-registration/helper-dependencies.json" <<'PY'
 import json, os, sys
 fx = sys.argv[1]
-names = ["66-kie-image", "67-kie-video", "68-kie-audio", "74-kie-live-adapter", "46-kie-callback-relay"]
+names = ["66-kie-image", "67-kie-video", "68-kie-audio", "74-kie-live-adapter",
+         "46-kie-callback-relay", "07-kie-setup", "shared-utils"]
 print(json.dumps({
     "schema": "helper-dependencies@1",
     "helpers": [{"name": n, "path": os.path.join(fx, "helpers", n)} for n in names],

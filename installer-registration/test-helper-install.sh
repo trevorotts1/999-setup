@@ -3,11 +3,15 @@
 # installation (directive 2.4). One process, stdlib only, no network, no
 # secrets. Proves the acceptance contract:
 #   1. a clean install places every pinned helper in the config root
+#      (every helper, including 07-kie-setup and the shared-utils files)
 #   2. preflight exits 0 when all helpers are present at their pinned hash
 #   3. removing one helper makes preflight exit nonzero with an actionable
 #      error naming that helper and the repair command
 #   4. an altered helper makes preflight exit nonzero (hash mismatch)
 #   5. re-running install restores the pinned state and preflight passes again
+#   6. one install run lands every helper in BOTH config roots when the
+#      machine has them (~/.claude and ~/.claude-nine) — KIE-U1 item d
+#   7. CLAUDE_CONFIG_DIR still selects a single root on a single-root machine
 # Exits 0 only when every step passes.
 set -u
 
@@ -19,11 +23,35 @@ ROOT="$TMP/config-root"
 BACKUP="$TMP/backups"
 trap 'rm -rf "$TMP"' EXIT
 
+# Every helper the manifest pins — including 07 and shared-utils (KIE-U1).
+ALL_HELPERS="$("$PY" -c '
+import json,sys
+for h in json.load(open(sys.argv[1]))["helpers"]:
+    print(h["name"])
+' "$HERE/helper-dependencies.json" 2>/dev/null)"
+[ -n "$ALL_HELPERS" ] || { echo "cannot read helper list from the manifest" >&2; exit 2; }
+
 PASS=0
 FAIL=0
 step() { printf '== %s\n' "$1"; }
 ok()   { printf 'ok: %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf 'FAIL: %s\n' "$1"; FAIL=$((FAIL + 1)); }
+
+# every_pinned_helper_present <root> <desc>
+every_pinned_helper_present() {
+  local root="$1" desc="$2" n missing=""
+  for n in $ALL_HELPERS; do
+    if [ -d "$root/skills/$n" ] && [ -n "$(ls -A "$root/skills/$n" 2>/dev/null)" ]; then
+      continue
+    fi
+    missing="$missing $n"
+  done
+  if [ -z "$missing" ]; then
+    ok "$desc"
+  else
+    bad "$desc — absent:$missing"
+  fi
+}
 
 run() { # run <expected_rc> <desc> <cmd...>
   local want="$1" desc="$2"; shift 2
@@ -51,13 +79,8 @@ expect_line() { # expect_line <needle> <desc>
 step "1. clean install into a fresh config root"
 run 0 "install copies every pinned helper" \
   "$PY" "$DEP" install --root "$ROOT" --backup-dir "$BACKUP"
-for n in 66-kie-image 67-kie-video 68-kie-audio 74-kie-live-adapter 46-kie-callback-relay; do
-  if [ -f "$ROOT/skills/$n/SKILL.md" ]; then
-    ok "helper present after clean install: $n"
-  else
-    bad "helper absent after clean install: $n ($ROOT/skills/$n)"
-  fi
-done
+every_pinned_helper_present "$ROOT" \
+  "every pinned helper present after clean install (incl. 07 and shared-utils)"
 
 step "2. preflight passes on a clean install"
 run 0 "preflight exits 0 with all helpers present" \
@@ -101,6 +124,49 @@ run 0 "final preflight passes" "$PY" "$DEP" preflight --root "$ROOT"
 step "8. empty manifest root fails closed"
 run 1 "preflight on an uninstalled root exits 1" \
   "$PY" "$DEP" preflight --root "$TMP/never-installed"
+
+step "9. one install run lands every helper in BOTH config roots (KIE-U1 d)"
+# A machine with both roots: a fake HOME holding .claude and .claude-nine.
+# No --root and no CLAUDE_CONFIG_DIR, exactly as a real client runs it.
+DUAL_HOME="$TMP/dual-home"
+mkdir -p "$DUAL_HOME/.claude" "$DUAL_HOME/.claude-nine"
+run 0 "bare install covers both roots" \
+  env -u CLAUDE_CONFIG_DIR HOME="$DUAL_HOME" \
+  "$PY" "$DEP" install --backup-dir "$TMP/dual-backups"
+every_pinned_helper_present "$DUAL_HOME/.claude" \
+  "every pinned helper in the first config root (~/.claude)"
+every_pinned_helper_present "$DUAL_HOME/.claude-nine" \
+  "every pinned helper in the second config root (~/.claude-nine)"
+if [ -f "$DUAL_HOME/.claude/skills/07-kie-setup/references/kie-common-rules.md" ] \
+   && [ -f "$DUAL_HOME/.claude-nine/skills/07-kie-setup/references/kie-common-rules.md" ]; then
+  ok "07-kie-setup common rules present in both roots"
+else
+  bad "07-kie-setup common rules missing from one of the two roots"
+fi
+if [ -f "$DUAL_HOME/.claude/skills/shared-utils/key_resolver.py" ] \
+   && [ -f "$DUAL_HOME/.claude-nine/skills/shared-utils/key_resolver.py" ]; then
+  ok "shared-utils files present in both roots"
+else
+  bad "shared-utils files missing from one of the two roots"
+fi
+run 0 "preflight passes across both roots" \
+  env -u CLAUDE_CONFIG_DIR HOME="$DUAL_HOME" "$PY" "$DEP" preflight
+expect_line "$DUAL_HOME/.claude" "preflight reports both roots"
+expect_line "$DUAL_HOME/.claude-nine" "preflight reports both roots (nine)"
+
+step "10. CLAUDE_CONFIG_DIR still selects a single root"
+SINGLE_HOME="$TMP/single-home"
+mkdir -p "$SINGLE_HOME/.claude" "$SINGLE_HOME/.claude-nine"
+run 0 "install honors CLAUDE_CONFIG_DIR alone" \
+  env CLAUDE_CONFIG_DIR="$SINGLE_HOME/.claude" HOME="$SINGLE_HOME" \
+  "$PY" "$DEP" install --backup-dir "$TMP/single-backups"
+every_pinned_helper_present "$SINGLE_HOME/.claude" \
+  "helpers landed in the CLAUDE_CONFIG_DIR root"
+if [ -e "$SINGLE_HOME/.claude-nine/skills" ]; then
+  bad "CLAUDE_CONFIG_DIR was ignored — the second root was written anyway"
+else
+  ok "second root untouched when CLAUDE_CONFIG_DIR pins one root"
+fi
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
