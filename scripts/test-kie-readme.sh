@@ -7,7 +7,10 @@
 # paid door with the credits check that moves shadow -> active; the KIE helpers
 # in both config roots plus sync-nine-skills.sh; the front-door kie skill as
 # the entry point for image, video and audio; the 20 requests per 10 seconds
-# rate limit; that no KIE MCP exists; and the pointer to AGENT_INSTALL.md.
+# rate limit; that no KIE MCP exists; the pointer to AGENT_INSTALL.md; and the
+# three amendment statements (U5-a): KIE's vendor skills kie-models and
+# kie-chat-agents are never installed; claude and claude-nine are never pointed
+# at KIE for chat (api.kie.ai/anthropic); failed jobs show on kie.ai/logs.
 #
 # Also proves the repository adds no MCP of any kind (no .mcp.json, no
 # mcpServers registration).
@@ -17,7 +20,7 @@
 # a temp copy of the normalized text and the same check must then report it
 # missing, so a checker that cannot fail would fail here.
 #
-# Usage: bash tests/test-kie-readme.sh [path/to/README.md]
+# Usage: bash scripts/test-kie-readme.sh [path/to/README.md]
 # Exits 0 only when every check passes.
 set -uo pipefail
 
@@ -63,6 +66,9 @@ PHRASES=(
   "no .mcp.json entry"
   "AGENT_INSTALL.md"
   "## KIE"
+  "vendor skills (kie-models, kie-chat-agents) are never installed"
+  "claude and claude-nine are never pointed at KIE for chat (api.kie.ai/anthropic)"
+  "Failed jobs show on kie.ai/logs"
 )
 
 LABELS=(
@@ -86,6 +92,9 @@ LABELS=(
   "README states no .mcp.json entry exists"
   "README points to AGENT_INSTALL.md"
   "README carries a KIE section heading"
+  "README states KIE's vendor skills kie-models and kie-chat-agents are never installed"
+  "README states claude and claude-nine are never pointed at KIE for chat (api.kie.ai/anthropic)"
+  "README states failed jobs show on kie.ai/logs"
 )
 
 # --- Negative controls: deleting a phrase must make its own check fail -------

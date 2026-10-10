@@ -207,8 +207,13 @@ it is shared or pre-wired: during install you supply **your own** KIE key.
 - **No KIE MCP.** There is no KIE MCP — no MCP server, no `.mcp.json` entry, no
   MCP registration of any kind. The helpers are ordinary skills that call the KIE
   HTTPS API with your own key.
+- KIE's vendor skills (`kie-models`, `kie-chat-agents`) are never installed here —
+  they belong to KIE's own chat product, not to this install.
+- `claude` and `claude-nine` are never pointed at KIE for chat
+  (`api.kie.ai/anthropic`); KIE is media only, chat stays where it was.
+- Failed jobs show on `kie.ai/logs`, where each job's status and error are listed.
 
-Test: `bash tests/test-kie-readme.sh`. Full install steps — the key step, the
+Test: `bash scripts/test-kie-readme.sh`. Full install steps — the key step, the
 credits check, the helper install — are in
 [`AGENT_INSTALL.md`](AGENT_INSTALL.md) (section 5.1 covers the helper install).
 
