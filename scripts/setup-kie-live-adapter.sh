@@ -27,6 +27,29 @@
 # (when claude-nine is installed), and $CLAUDE_CONFIG_DIR when it is set — each
 # only when its directory exists.
 #
+# Amendment U2-a..U2-e (golden-rule exception, scope exactly one line):
+#   U2-a  only env.KIE_API_KEY is ever written; no ANTHROPIC_* key is written,
+#         and a stored value never starts with "Bearer " (one leading
+#         "Bearer " token is stripped from whatever the client pasted).
+#   U2-b  before writing, any env.ANTHROPIC_BASE_URL (and an
+#         env.ANTHROPIC_AUTH_TOKEN beside it) whose base URL contains
+#         api.kie.ai is REPORTED and never edited and never deleted.
+#   U2-c  any kie-models or kie-chat-agents folder under ~/.claude/skills,
+#         ~/.claude-nine/skills or ~/.agents/skills is REPORTED and never
+#         removed.
+#   U2-d  a failed credits read prints the cause in plain words:
+#         code 401 = key wrong, expired or rejected; check kie.ai/api-key
+#         code 402 = not enough credits; top up at kie.ai/pricing
+#   Declined fallback: --decline-settings-write writes nothing, prints the
+#         single line the client pastes into the env block themselves (with a
+#         placeholder — never the value) and leaves skill 74 in shadow mode.
+#
+# Approval: writing env.KIE_API_KEY into settings.json is a golden-rule
+# exception, approved by Trevor by name 2026-10-09 ("OK YES", scope exactly
+# this one line, mode 600, SET/NOT SET only) and tracked in pull request #170.
+# A real-machine run depends on that by-name word holding; nothing here assumes
+# consent beyond it.
+#
 # Exit codes: 0 = the step reached a decision (SET+pass, SET+fail, or NOT SET —
 # the mode file carries the outcome), 1 = settings could not be written.
 set -euo pipefail
@@ -36,15 +59,18 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 API_DOCS="${API_DOCS_PATH:-}"
 NON_INTERACTIVE=0
+DECLINE=0
 ADAPTER_OVERRIDE="${KIE_LIVE_ADAPTER_PY:-}"
 
 usage() {
   cat <<'EOF'
-usage: setup-kie-live-adapter.sh [--api-docs PATH] [--adapter PATH] [--non-interactive]
+usage: setup-kie-live-adapter.sh [--api-docs PATH] [--adapter PATH] [--non-interactive] [--decline-settings-write]
 
-  --api-docs PATH   client's own API document to read KIE_API_KEY from
-  --adapter PATH    kie_live_adapter.py to use for the credits read
-  --non-interactive never prompt; NOT SET when no key can be found
+  --api-docs PATH          client's own API document to read KIE_API_KEY from
+  --adapter PATH           kie_live_adapter.py to use for the credits read
+  --non-interactive        never prompt; NOT SET when no key can be found
+  --decline-settings-write write nothing; print the single paste line for the
+                           client and leave skill 74 in shadow mode
 EOF
 }
 
@@ -55,6 +81,7 @@ while [ $# -gt 0 ]; do
     --adapter) [ $# -ge 2 ] || { echo "setup-kie-live-adapter: --adapter needs a path" >&2; exit 1; }; ADAPTER_OVERRIDE="$2"; shift 2 ;;
     --adapter=*) ADAPTER_OVERRIDE="${1#*=}"; shift ;;
     --non-interactive) NON_INTERACTIVE=1; shift ;;
+    --decline-settings-write) DECLINE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "setup-kie-live-adapter: unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -112,11 +139,62 @@ if [ -z "$key" ] && [ "$NON_INTERACTIVE" -eq 0 ] && [ -t 0 ]; then
   case "$asked" in ""|"$placeholder") ;; *) key="$asked"; key_source="prompt" ;; esac
 fi
 
+# (U2-a) a stored value never starts with "Bearer " — strip the leading token
+# (case-insensitively) off whatever the client pasted, however many times.
+while [[ "$key" == [Bb][Ee][Aa][Rr][Ee][Rr]\ * ]]; do
+  key="$(trim "${key#[Bb][Ee][Aa][Rr][Ee][Rr] }")"
+done
+if [ -z "$key" ]; then
+  key_source=""
+fi
+
 if [ -n "$key" ]; then
   echo "KIE key: SET"
 else
   echo "KIE key: NOT SET"
 fi
+
+# ------------------------------------ (U2-b) report ANTHROPIC entries at api.kie.ai
+# Report only: never edited, never deleted, and no value is ever printed for the
+# token — only that it is there.
+report_anthropic() { # $1 = config root
+  [ -f "$1/settings.json" ] || return 0
+  python3 - "$1/settings.json" <<'PY' || true
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as fh:
+        doc = json.load(fh)
+except Exception:
+    sys.exit(0)
+env = doc.get("env") if isinstance(doc, dict) else None
+if not isinstance(env, dict):
+    sys.exit(0)
+base = env.get("ANTHROPIC_BASE_URL")
+if isinstance(base, str) and "api.kie.ai" in base:
+    print("report: %s env.ANTHROPIC_BASE_URL points at api.kie.ai (%s) — left untouched, never edited, never deleted" % (path, base))
+    if "ANTHROPIC_AUTH_TOKEN" in env:
+        print("report: %s env.ANTHROPIC_AUTH_TOKEN present beside that base URL — value never printed, left untouched" % path)
+PY
+}
+
+# ------------------------------------ (U2-c) report kie-models / kie-chat-agents
+# Report only: never removed.
+report_kie_folders() {
+  local skills folder
+  for skills in "$HOME/.claude/skills" "$HOME/.claude-nine/skills" "$HOME/.agents/skills"; do
+    [ -d "$skills" ] || continue
+    while IFS= read -r folder; do
+      [ -n "$folder" ] || continue
+      echo "report: $folder present — left untouched, never removed"
+    done < <(find "$skills" -type d \( -name kie-models -o -name kie-chat-agents \) 2>/dev/null || true)
+  done
+}
+
+for r in ${roots[@]+"${roots[@]}"}; do
+  report_anthropic "$r"
+done
+report_kie_folders
 
 # ------------------------------------------------- store it in every config root
 write_settings() { # $1 = config root
@@ -178,7 +256,20 @@ PY
   fi
 }
 
-if [ -n "$key" ]; then
+if [ "$DECLINE" -eq 1 ]; then
+  # Declined fallback: write nothing, print the single line for the client to
+  # paste themselves (a placeholder — never the value), skill 74 stays shadow.
+  echo "settings write declined — no settings.json is touched; skill 74 stays in shadow mode"
+  if [ -n "$key" ]; then
+    if [ "${#roots[@]}" -eq 0 ]; then
+      echo "settings: no Claude config root exists on this machine — nothing to paste into"
+    fi
+    for r in ${roots[@]+"${roots[@]}"}; do
+      printf 'paste this single line into the "env" block of %s yourself, then run: chmod 600 %s\n' "$r/settings.json" "$r/settings.json"
+      echo '    "KIE_API_KEY": "PASTE_YOUR_OWN_KEY"'
+    done
+  fi
+elif [ -n "$key" ]; then
   if [ "${#roots[@]}" -eq 0 ]; then
     echo "settings: no Claude config root exists on this machine — nothing to store"
   fi
@@ -202,7 +293,9 @@ if [ -z "$adapter" ]; then
 fi
 
 credits_ok=0
-if [ -z "$key" ]; then
+if [ "$DECLINE" -eq 1 ]; then
+  echo "KIE credits: NOT CHECKED (settings write declined)"
+elif [ -z "$key" ]; then
   echo "KIE credits: NOT CHECKED (no key)"
 elif [ -z "$adapter" ]; then
   echo "KIE credits: CHECK FAILED (kie_live_adapter.py not found)"
@@ -228,12 +321,33 @@ if isinstance(data, dict) and data.get("credits") is not None:
 PY
 )"
   fi
+  # (U2-d) cause of a failed read, in plain words for 401 / 402.
+  cause=""
+  if [ -z "$balance" ]; then
+    cause="$(python3 - "$out" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        doc = json.load(fh)
+except Exception:
+    sys.exit(0)
+err = doc.get("error") if isinstance(doc, dict) else None
+code = err.get("code") if isinstance(err, dict) else None
+if code is not None:
+    print(code)
+PY
+)"
+  fi
   rm -f "$out" "$err"
   if [ -n "$balance" ]; then
     echo "KIE credits: $balance"
     credits_ok=1
   else
-    echo "KIE credits: CHECK FAILED"
+    case "$cause" in
+      401) echo "KIE credits: CHECK FAILED (key wrong, expired or rejected; check kie.ai/api-key)" ;;
+      402) echo "KIE credits: CHECK FAILED (not enough credits; top up at kie.ai/pricing)" ;;
+      *)   echo "KIE credits: CHECK FAILED" ;;
+    esac
   fi
 fi
 

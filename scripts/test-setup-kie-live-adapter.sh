@@ -12,6 +12,20 @@
 #      (absent stays absent, a pre-existing `active` is demoted to `shadow`).
 #   C. failing credits call  -> key still stored, `CHECK FAILED`, mode file
 #      never becomes `active`.
+#   D. root coverage         -> an existing CLAUDE_CONFIG_DIR root is written, a
+#      missing ~/.claude-nine root is never created.
+#   E. (U2-a) only env.KIE_API_KEY is written, no ANTHROPIC_* key, and a stored
+#      value never starts with "Bearer " — planted bad + clean.
+#   F. (U2-b) ANTHROPIC_* at api.kie.ai is reported and never edited or
+#      deleted — planted bad + clean.
+#   G. (U2-c) kie-models / kie-chat-agents folders are reported and never
+#      removed — planted bad + clean.
+#   H. (U2-d) failed credits prints the 401 / 402 cause in plain words —
+#      planted bad (401, 402) + clean (other failure shows neither phrase).
+#   I. golden-rule exception: a planted settings.json keeps every other key
+#      byte-for-byte; only KIE_API_KEY is added.
+#   J. declined fallback: --decline-settings-write writes nothing, prints the
+#      single paste line, skill 74 stays in shadow mode.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -270,6 +284,439 @@ else
   bad "C: settings storage check failed"
 fi
 no_key_outside_settings "$c" "$c/api-docs.md" "C"
+
+# ---------------------------------------------------------------------------
+# D. root coverage — an existing CLAUDE_CONFIG_DIR root is written, a missing
+#    ~/.claude-nine root is never created (failing credits: shadow stays)
+# ---------------------------------------------------------------------------
+d="$work/d"
+mkdir -p "$d/home/.claude" "$d/alt-config"
+printf '{"model":"opus"}\n' >"$d/home/.claude/settings.json"
+printf '{"model":"opus"}\n' >"$d/alt-config/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$d/api-docs.md"
+start_server '{"code":500,"msg":"boom"}' 500
+
+if clean_env HOME="$d/home" CLAUDE_CONFIG_DIR="$d/alt-config" \
+     KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$d/api-docs.md" --non-interactive \
+     </dev/null >"$d/stdout.txt" 2>"$d/stderr.txt"; then
+  ok "D: step exits 0"
+else
+  bad "D: step exited non-zero"
+fi
+if [ -d "$d/home/.claude-nine" ]; then
+  bad "D: created a ~/.claude-nine root that did not exist"
+else
+  ok "D: a config root that does not exist is never created"
+fi
+if grep -qF "$KEY" "$d/stdout.txt" "$d/stderr.txt"; then
+  bad "D: key value present in captured stdout/stderr"
+else
+  ok "D: key value absent from captured stdout and stderr"
+fi
+if clean_env python3 - "$KEY" "$d/home/.claude/settings.json" "$d/alt-config/settings.json" <<'PY'
+import json, os, stat, sys
+key, paths = sys.argv[1], sys.argv[2:]
+for p in paths:
+    assert stat.S_IMODE(os.stat(p).st_mode) == 0o600, "%s not mode 600" % p
+    assert (json.load(open(p)).get("env") or {}).get("KIE_API_KEY") == key, "%s does not hold the key" % p
+pass
+PY
+then
+  ok "D: both EXISTING roots hold the key at mode 600 (default root + CLAUDE_CONFIG_DIR)"
+else
+  bad "D: existing-root storage check failed"
+fi
+if [ -e "$d/home/.claude/kie-live-adapter-mode.conf" ] || [ -e "$d/alt-config/kie-live-adapter-mode.conf" ]; then
+  bad "D: a mode file was created after a failing credits call"
+else
+  ok "D: mode files stay absent (shadow default) in every existing root"
+fi
+no_key_outside_settings "$d" "$d/api-docs.md" "D"
+
+# ---------------------------------------------------------------------------
+# E. (U2-a) only env.KIE_API_KEY is written, never an ANTHROPIC_* key, and the
+#    stored value never starts with "Bearer ". Planted bad: the client pasted
+#    the whole authorization value. Clean: the plain key.
+# ---------------------------------------------------------------------------
+e="$work/e"
+mkdir -p "$e/home/.claude" "$e/home/.claude-nine"
+printf '{"model":"opus"}\n' >"$e/home/.claude/settings.json"
+printf '{"model":"opus"}\n' >"$e/home/.claude-nine/settings.json"
+printf 'KIE_API_KEY=Bearer %s\n' "$KEY" >"$e/api-docs.md"
+start_server "{\"data\":$BALANCE}" 200
+
+if clean_env HOME="$e/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$e/api-docs.md" --non-interactive \
+     </dev/null >"$e/stdout.txt" 2>"$e/stderr.txt"; then
+  ok "E(bad): step exits 0 with a Bearer-prefixed paste"
+else
+  bad "E(bad): step exited non-zero with a Bearer-prefixed paste"
+fi
+if clean_env python3 - "$KEY" "$e/home/.claude/settings.json" "$e/home/.claude-nine/settings.json" <<'PY'
+import json, sys
+key, paths = sys.argv[1], sys.argv[2:]
+for p in paths:
+    env = json.load(open(p)).get("env") or {}
+    stored = env.get("KIE_API_KEY")
+    assert stored == key, "%s stored %r instead of the plain key" % (p, stored)
+    assert not str(stored).startswith("Bearer "), "%s stored a Bearer-prefixed value" % p
+    gained = [k for k in env if k.startswith("ANTHROPIC_")]
+    assert not gained, "%s gained ANTHROPIC_* keys: %s" % (p, gained)
+pass
+PY
+then
+  ok "E(bad): stored value is the plain key, never Bearer-prefixed, no ANTHROPIC_* written"
+else
+  bad "E(bad): U2-a storage check failed"
+fi
+if grep -qF -- "$KEY" "$e/stdout.txt" "$e/stderr.txt" || grep -qF -- "Bearer" "$e/stdout.txt" "$e/stderr.txt"; then
+  bad "E(bad): key material present in captured stdout/stderr"
+else
+  ok "E(bad): key value and the Bearer token absent from stdout/stderr"
+fi
+
+e2="$work/e2"
+mkdir -p "$e2/home/.claude"
+printf '{"model":"opus"}\n' >"$e2/home/.claude/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$e2/api-docs.md"
+start_server "{\"data\":$BALANCE}" 200
+
+if clean_env HOME="$e2/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$e2/api-docs.md" --non-interactive \
+     </dev/null >"$e2/stdout.txt" 2>"$e2/stderr.txt"; then
+  ok "E(clean): step exits 0 with the plain key"
+else
+  bad "E(clean): step exited non-zero with the plain key"
+fi
+if clean_env python3 - "$KEY" "$e2/home/.claude/settings.json" <<'PY'
+import json, os, stat, sys
+key, path = sys.argv[1], sys.argv[2]
+assert stat.S_IMODE(os.stat(path).st_mode) == 0o600, "%s not mode 600" % path
+env = json.load(open(path)).get("env") or {}
+assert env.get("KIE_API_KEY") == key, "plain key stored incorrectly"
+assert not [k for k in env if k.startswith("ANTHROPIC_")], "ANTHROPIC_* key written"
+pass
+PY
+then
+  ok "E(clean): plain key stored at mode 600 with no ANTHROPIC_* written"
+else
+  bad "E(clean): U2-a clean-case check failed"
+fi
+
+# ---------------------------------------------------------------------------
+# F. (U2-b) ANTHROPIC_* whose base URL contains api.kie.ai is reported and
+#    never edited and never deleted. Planted bad + clean.
+# ---------------------------------------------------------------------------
+f="$work/f"
+mkdir -p "$f/home/.claude" "$f/home/.claude-nine"
+cat >"$f/home/.claude/settings.json" <<'JSON'
+{"model":"opus","env":{"ANTHROPIC_BASE_URL":"https://api.kie.ai/v1","ANTHROPIC_AUTH_TOKEN":"planted-token-not-a-secret-f2"}}
+JSON
+cp "$f/home/.claude/settings.json" "$f/planted-claude.json"
+printf '{"model":"opus"}\n' >"$f/home/.claude-nine/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$f/api-docs.md"
+start_server "{\"data\":$BALANCE}" 200
+
+if clean_env HOME="$f/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$f/api-docs.md" --non-interactive \
+     </dev/null >"$f/stdout.txt" 2>"$f/stderr.txt"; then
+  ok "F(bad): step exits 0 with a kie-pointing base URL present"
+else
+  bad "F(bad): step exited non-zero"
+fi
+if grep -qF 'ANTHROPIC_BASE_URL points at api.kie.ai' "$f/stdout.txt"; then
+  ok "F(bad): env.ANTHROPIC_BASE_URL pointing at api.kie.ai is reported"
+else
+  bad "F(bad): no report line for the api.kie.ai base URL (got: $(tr '\n' ' ' <"$f/stdout.txt"))"
+fi
+if grep -qF 'ANTHROPIC_AUTH_TOKEN present' "$f/stdout.txt"; then
+  ok "F(bad): env.ANTHROPIC_AUTH_TOKEN beside it is reported"
+else
+  bad "F(bad): no report line for the ANTHROPIC_AUTH_TOKEN"
+fi
+if grep -qF 'planted-token-not-a-secret-f2' "$f/stdout.txt" "$f/stderr.txt"; then
+  bad "F(bad): the token value was printed"
+else
+  ok "F(bad): the token value is never printed"
+fi
+if clean_env python3 - "$f/planted-claude.json" "$f/home/.claude/settings.json" <<'PY'
+import json, sys
+orig = json.load(open(sys.argv[1]))["env"]
+env = json.load(open(sys.argv[2])).get("env") or {}
+assert env.get("ANTHROPIC_BASE_URL") == orig["ANTHROPIC_BASE_URL"], "base URL was edited or deleted"
+assert env.get("ANTHROPIC_AUTH_TOKEN") == orig["ANTHROPIC_AUTH_TOKEN"], "token was edited or deleted"
+pass
+PY
+then
+  ok "F(bad): both ANTHROPIC_* entries are still present and unchanged (reported, never edited)"
+else
+  bad "F(bad): an ANTHROPIC_* entry was edited or deleted"
+fi
+
+f2="$work/f2"
+mkdir -p "$f2/home/.claude"
+cat >"$f2/home/.claude/settings.json" <<'JSON'
+{"model":"opus","env":{"ANTHROPIC_BASE_URL":"https://api.anthropic.com","ANTHROPIC_AUTH_TOKEN":"planted-token-not-a-secret-f2"}}
+JSON
+cp "$f2/home/.claude/settings.json" "$f2/planted-claude.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$f2/api-docs.md"
+start_server "{\"data\":$BALANCE}" 200
+
+if clean_env HOME="$f2/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$f2/api-docs.md" --non-interactive \
+     </dev/null >"$f2/stdout.txt" 2>"$f2/stderr.txt"; then
+  ok "F(clean): step exits 0 with an anthropic.com base URL"
+else
+  bad "F(clean): step exited non-zero"
+fi
+if grep -qF 'points at api.kie.ai' "$f2/stdout.txt" "$f2/stderr.txt"; then
+  bad "F(clean): a base URL that does not point at api.kie.ai was reported"
+else
+  ok "F(clean): no api.kie.ai report for a base URL that points elsewhere"
+fi
+if clean_env python3 - "$f2/planted-claude.json" "$f2/home/.claude/settings.json" <<'PY'
+import json, sys
+orig = json.load(open(sys.argv[1]))["env"]
+env = json.load(open(sys.argv[2])).get("env") or {}
+assert env.get("ANTHROPIC_BASE_URL") == orig["ANTHROPIC_BASE_URL"], "base URL was edited"
+assert env.get("ANTHROPIC_AUTH_TOKEN") == orig["ANTHROPIC_AUTH_TOKEN"], "token was edited"
+pass
+PY
+then
+  ok "F(clean): the clean-case ANTHROPIC_* entries are untouched"
+else
+  bad "F(clean): an ANTHROPIC_* entry changed"
+fi
+
+# ---------------------------------------------------------------------------
+# G. (U2-c) kie-models / kie-chat-agents folders are reported and never
+#    removed. Planted bad + clean.
+# ---------------------------------------------------------------------------
+g="$work/g"
+mkdir -p "$g/home/.claude/skills/kie-models" \
+         "$g/home/.claude-nine/skills/kie-chat-agents" \
+         "$g/home/.agents/skills/kie-models"
+printf '{"model":"opus"}\n' >"$g/home/.claude/settings.json"
+printf '{"model":"opus"}\n' >"$g/home/.claude-nine/settings.json"
+printf 'KIE_API_KEY=replace_with_real_key\n' >"$g/api-docs.md"
+
+if clean_env HOME="$g/home" bash "$STEP" --api-docs "$g/api-docs.md" --non-interactive \
+     </dev/null >"$g/stdout.txt" 2>"$g/stderr.txt"; then
+  ok "G(bad): step exits 0 with kie folders planted"
+else
+  bad "G(bad): step exited non-zero"
+fi
+for planted in "$g/home/.claude/skills/kie-models" \
+               "$g/home/.claude-nine/skills/kie-chat-agents" \
+               "$g/home/.agents/skills/kie-models"; do
+  if grep -qF "$planted present" "$g/stdout.txt"; then
+    ok "G(bad): $planted is reported"
+  else
+    bad "G(bad): $planted is not reported"
+  fi
+  if [ -d "$planted" ]; then
+    ok "G(bad): $planted still exists (never removed)"
+  else
+    bad "G(bad): $planted was removed"
+  fi
+done
+
+g2="$work/g2"
+mkdir -p "$g2/home/.claude/skills/shared-utils" "$g2/home/.claude-nine/skills/74-kie-live-adapter"
+printf '{"model":"opus"}\n' >"$g2/home/.claude/settings.json"
+printf 'KIE_API_KEY=replace_with_real_key\n' >"$g2/api-docs.md"
+
+if clean_env HOME="$g2/home" bash "$STEP" --api-docs "$g2/api-docs.md" --non-interactive \
+     </dev/null >"$g2/stdout.txt" 2>"$g2/stderr.txt"; then
+  ok "G(clean): step exits 0 with no kie folders present"
+else
+  bad "G(clean): step exited non-zero"
+fi
+if grep -qE 'kie-models|kie-chat-agents' "$g2/stdout.txt" "$g2/stderr.txt"; then
+  bad "G(clean): a folder report fired when no kie folder exists"
+else
+  ok "G(clean): no folder report when none exists"
+fi
+
+# ---------------------------------------------------------------------------
+# H. (U2-d) a failed credits read prints the cause in plain words.
+#    Planted bad: 401, then 402. Clean: another failure shows neither phrase.
+# ---------------------------------------------------------------------------
+h1="$work/h1"
+mkdir -p "$h1/home/.claude"
+printf '{"model":"opus"}\n' >"$h1/home/.claude/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$h1/api-docs.md"
+start_server '{"code":401,"msg":"invalid key"}' 401
+
+if clean_env HOME="$h1/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$h1/api-docs.md" --non-interactive \
+     </dev/null >"$h1/stdout.txt" 2>"$h1/stderr.txt"; then
+  ok "H(bad 401): step exits 0"
+else
+  bad "H(bad 401): step exited non-zero"
+fi
+if grep -qF 'key wrong, expired or rejected; check kie.ai/api-key' "$h1/stdout.txt"; then
+  ok "H(bad 401): code 401 prints the plain-words cause"
+else
+  bad "H(bad 401): 401 cause line missing (got: $(tr '\n' ' ' <"$h1/stdout.txt"))"
+fi
+
+h2="$work/h2"
+mkdir -p "$h2/home/.claude"
+printf '{"model":"opus"}\n' >"$h2/home/.claude/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$h2/api-docs.md"
+start_server '{"code":402,"msg":"no balance"}' 402
+
+if clean_env HOME="$h2/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$h2/api-docs.md" --non-interactive \
+     </dev/null >"$h2/stdout.txt" 2>"$h2/stderr.txt"; then
+  ok "H(bad 402): step exits 0"
+else
+  bad "H(bad 402): step exited non-zero"
+fi
+if grep -qF 'not enough credits; top up at kie.ai/pricing' "$h2/stdout.txt"; then
+  ok "H(bad 402): code 402 prints the plain-words cause"
+else
+  bad "H(bad 402): 402 cause line missing (got: $(tr '\n' ' ' <"$h2/stdout.txt"))"
+fi
+
+h3="$work/h3"
+mkdir -p "$h3/home/.claude"
+printf '{"model":"opus"}\n' >"$h3/home/.claude/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$h3/api-docs.md"
+start_server '{"code":500,"msg":"boom"}' 500
+
+if clean_env HOME="$h3/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$h3/api-docs.md" --non-interactive \
+     </dev/null >"$h3/stdout.txt" 2>"$h3/stderr.txt"; then
+  ok "H(clean): step exits 0 on a non-401/402 failure"
+else
+  bad "H(clean): step exited non-zero"
+fi
+if grep -qF 'KIE credits: CHECK FAILED' "$h3/stdout.txt" \
+   && ! grep -qF 'key wrong, expired or rejected' "$h3/stdout.txt" \
+   && ! grep -qF 'not enough credits' "$h3/stdout.txt"; then
+  ok "H(clean): a different failure prints CHECK FAILED and neither 401 nor 402 phrase"
+else
+  bad "H(clean): wrong failure wording (got: $(tr '\n' ' ' <"$h3/stdout.txt"))"
+fi
+if [ -e "$h3/home/.claude/kie-live-adapter-mode.conf" ]; then
+  bad "H(clean): mode file became active after a failed credits read"
+else
+  ok "H(clean): mode file stays absent (shadow default)"
+fi
+
+# ---------------------------------------------------------------------------
+# I. golden-rule exception: only KIE_API_KEY is added to a planted
+#    settings.json — no existing line edited, none deleted, no ANTHROPIC_*.
+# ---------------------------------------------------------------------------
+i="$work/i"
+mkdir -p "$i/home/.claude" "$i/home/.claude-nine"
+cat >"$i/home/.claude/settings.json" <<'JSON'
+{
+  "model": "opus",
+  "permissions": {"defaultMode": "bypassPermissions"},
+  "hooks": {"PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "echo planted"}]}]},
+  "env": {"ANTHROPIC_AUTH_TOKEN": "planted-token-keep-me", "OTHER_VAR": "keep-me"}
+}
+JSON
+cp "$i/home/.claude/settings.json" "$i/planted-claude.json"
+printf '{"model":"opus"}\n' >"$i/home/.claude-nine/settings.json"
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$i/api-docs.md"
+start_server "{\"data\":$BALANCE}" 200
+
+if clean_env HOME="$i/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$i/api-docs.md" --non-interactive \
+     </dev/null >"$i/stdout.txt" 2>"$i/stderr.txt"; then
+  ok "I: step exits 0 against the planted settings.json"
+else
+  bad "I: step exited non-zero"
+fi
+if clean_env python3 - "$KEY" "$i/planted-claude.json" "$i/home/.claude/settings.json" <<'PY'
+import json, os, stat, sys
+key, planted_path, path = sys.argv[1], sys.argv[2], sys.argv[3]
+planted = json.load(open(planted_path))
+after = json.load(open(path))
+assert set(after) == set(planted), "top-level keys changed: %s" % (set(after) ^ set(planted),)
+for k in planted:
+    if k == "env":
+        continue
+    assert after[k] == planted[k], "top-level %r was edited or deleted" % k
+p_env, a_env = planted["env"], after["env"]
+for k, v in p_env.items():
+    assert k in a_env, "%r was deleted" % k
+    assert a_env[k] == v, "%r was edited" % k
+added = set(a_env) - set(p_env)
+assert added == {"KIE_API_KEY"}, "added keys beyond KIE_API_KEY: %s" % (added,)
+assert a_env["KIE_API_KEY"] == key, "KIE_API_KEY holds the wrong value"
+assert "ANTHROPIC_BASE_URL" not in a_env, "an ANTHROPIC_* key was written"
+assert stat.S_IMODE(os.stat(path).st_mode) == 0o600, "not mode 600"
+pass
+PY
+then
+  ok "I: only env.KIE_API_KEY was added — every other line byte-identical, no ANTHROPIC_*"
+else
+  bad "I: the planted settings.json was touched beyond env.KIE_API_KEY"
+fi
+
+# ---------------------------------------------------------------------------
+# J. declined fallback: nothing is written, the single paste line is printed
+#    (placeholder, never the value), and skill 74 stays in shadow mode even
+#    though the credits call would have passed.
+# ---------------------------------------------------------------------------
+j="$work/j"
+mkdir -p "$j/home/.claude" "$j/home/.claude-nine"
+printf '{"model":"opus","env":{"OTHER_VAR":"keep-me"}}\n' >"$j/home/.claude/settings.json"
+cp "$j/home/.claude/settings.json" "$j/planted-claude.json"
+printf '{"model":"opus"}\n' >"$j/home/.claude-nine/settings.json"
+printf 'active\n' >"$j/home/.claude-nine/kie-live-adapter-mode.conf"  # must be demoted
+printf 'KIE_API_KEY=%s\n' "$KEY" >"$j/api-docs.md"
+start_server "{\"data\":$BALANCE}" 200
+
+if clean_env HOME="$j/home" KIE_LIVE_API_BASE="http://127.0.0.1:$PORT" \
+     bash "$STEP" --api-docs "$j/api-docs.md" --non-interactive --decline-settings-write \
+     </dev/null >"$j/stdout.txt" 2>"$j/stderr.txt"; then
+  ok "J: step exits 0 when the client declines the write"
+else
+  bad "J: step exited non-zero on decline"
+fi
+if grep -qF 'PASTE_YOUR_OWN_KEY' "$j/stdout.txt"; then
+  ok "J: the single paste line is printed for the client"
+else
+  bad "J: paste line missing (got: $(tr '\n' ' ' <"$j/stdout.txt"))"
+fi
+if grep -qF -- "$KEY" "$j/stdout.txt" "$j/stderr.txt"; then
+  bad "J: key value present in captured stdout/stderr"
+else
+  ok "J: key value absent from stdout and stderr"
+fi
+if cmp -s "$j/planted-claude.json" "$j/home/.claude/settings.json"; then
+  ok "J: settings.json is byte-identical to the planted file (nothing written)"
+else
+  bad "J: settings.json was modified despite the decline"
+fi
+if [ -e "$j/home/.claude/kie-live-adapter-mode.conf" ]; then
+  bad "J: a mode file was created for .claude after a declined write"
+else
+  ok "J: .claude mode file stays absent (shadow default) even though credits would pass"
+fi
+if [ "$(cat "$j/home/.claude-nine/kie-live-adapter-mode.conf" 2>/dev/null || echo missing)" = "shadow" ]; then
+  ok "J: pre-existing active demoted to shadow on a declined write"
+else
+  bad "J: mode file is $(cat "$j/home/.claude-nine/kie-live-adapter-mode.conf" 2>/dev/null || echo missing), expected shadow"
+fi
+if grep -qF 'settings write declined' "$j/stdout.txt" \
+   && grep -qF 'NOT CHECKED (settings write declined)' "$j/stdout.txt"; then
+  ok "J: decline is stated and the credits call is not made"
+else
+  bad "J: decline wording missing (got: $(tr '\n' ' ' <"$j/stdout.txt"))"
+fi
+if find "$j/home" -name 'settings.json.bak-kie-*' | grep -q .; then
+  bad "J: a settings backup was taken despite the decline"
+else
+  ok "J: no backup is taken when nothing is written"
+fi
 
 printf '\nSUITES (setup-kie-live-adapter): %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
