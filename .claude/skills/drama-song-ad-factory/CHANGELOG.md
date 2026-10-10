@@ -1,5 +1,14 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.40] - 2026-10-10 - PKG-11 attempt 3: one delivery package naming scheme (pairs with openclaw-onboarding v27.1.1, skill 75 v2.9.17)
+
+Released with onboarding v27.1.1 (follow-up to the v2.7.39 batch; closes the delivery package naming gap flagged there).
+
+- ONE naming scheme, `NN - Label.ext`, defined in `scripts/core/delivery_package/contract.py`. All 12 producers' deliver paths emit the `contract.PACKAGE_ITEMS` names. Attempt 2 failed because only 5 of 12 did and the adapters wrote fixture bytes.
+- `produce_delivery` adapters call each producer's real deliver path (no fixture bytes).
+- `test_delivery_package_e2e` runs the REAL producers into a folder and passes `contract.verify_folder` for all 12 items, plus a negative control.
+- Shared files (scripts/core, references) byte-identical with the onboarding batch (diff -rq empty). The onboarding wording scrub touches onboarding-only files (two_strike module, skills 47/53/54/71); nothing to change here.
+
 ## [2.7.39] - 2026-10-09 - Batch PKG roll-up (pairs with openclaw-onboarding v27.1.0, skill 75 v2.9.15)
 
 Released as one batch. Units: FU-DEL-01 three audio versions and note (#165); FU-DEL-02 character bible PDF and image bible (#163); FU-DEL-03 script PDF (#162); FU-DEL-04 storyboard grid PDF (#157); FU-DEL-05 video twice, captioned and clean (#160); FU-DEL-06 60 and 90 second clips (#164); FU-DEL-07 ready-to-post kit (#161); FU-DEL-08 cover image (#159); FU-DEL-09 lyric sheet PDF (#154); FU-DEL-10 caption file (#155); FU-DEL-11 character images (#153); FU-DEL-12 welcome sheet and package list (#156); FU-DEL-13 delivery folder contract and the 12-item hard gate (#158); FU-DEL-14-U2 no-blur-fill refusal gates (#166); unit/PKG-05-U1 full height by crop-in; unit/PKG-07-U1 camera vocabulary data file (byte-identical with onboarding).
