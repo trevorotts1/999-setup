@@ -7,11 +7,20 @@ Code. It does not redesign the drama-song-ad-factory methodology.
 
 1. Verify the current Claude Code skill-discovery mechanism in the local
    install.
-2. If the normal local skills root is `~/.claude/skills`, install the skill
-   there (one install; `claude-nine` shares this root, so it is visible to
-   both). Never set a separate `CLAUDE_CONFIG_DIR` and never create a
-   second skills root for this skill — plain `claude` and `claude-nine`
-   read the one shared root.
+2. Install the skill once into the plain `claude` config root
+   `~/.claude/skills`. A box has two config roots, not one: plain `claude`
+   reads `~/.claude`, while `claude-nine` runs under the environment
+   variable `CLAUDE_CONFIG_DIR`, pointed at `~/.claude-nine`, and reads
+   `~/.claude-nine/skills`. Plain `claude` never runs with
+   `CLAUDE_CONFIG_DIR` — only the `claude-nine` launcher sets it, in its
+   own child process. The sync step is `~/.local/bin/sync-nine-skills.sh`,
+   which the `claude-nine` launcher runs at start: it symlinks each skill
+   present in `~/.claude/skills` but missing in `~/.claude-nine/skills`,
+   never overwrites a real directory there (`claude-nine`'s own tuned
+   copies win), and prunes dead links. So: install once under
+   `~/.claude/skills`, then run the sync so `claude-nine` sees the same
+   files through the symlink. Never create and maintain a second edited
+   copy of this skill under `~/.claude-nine/skills`.
 3. Confirm plain `claude` is not routed:
    - no router base URL persisted into global Claude settings,
    - no router base URL exported from shell startup files by any step of
@@ -34,12 +43,12 @@ Code. It does not redesign the drama-song-ad-factory methodology.
 
 ## Discovery check commands
 
-Run from any directory after install (shared skills root shown; substitute
-your skills root if it is elsewhere — it must still be the one root shared
-with `claude-nine`):
+Run from any directory after install (plain `claude` root shown; under
+`claude-nine` the same files appear at `~/.claude-nine/skills/...` through
+the sync symlink, so substitute that path there):
 
 ```bash
-# 1. the runtime can discover the skill in the shared skills root
+# 1. the runtime can discover the skill in this config root's skills dir
 test -f ~/.claude/skills/drama-song-ad-factory/SKILL.md && echo discovered
 
 # 2. frontmatter the runtime matches on
@@ -67,7 +76,8 @@ scripts/core/intake_preflight/factory.py
 
 `adapters/claude-code/` and `adapters/claude-nine/` hold README guidance
 only. The launcher contract for this adapter — non-routed environment, one
-skills root, and core-path identity with the `claude-nine` launcher — is
+install in the plain `claude` root bridged to `claude-nine` by the sync
+step, and core-path identity with the `claude-nine` launcher — is
 enforced by:
 
 ```bash
@@ -102,8 +112,9 @@ Install steps (run from the `999-setup` repository root):
 # 1. check the vendored helper against its pinned tree sha256
 python3 installer-registration/helper-deps.py preflight
 
-# 2. install it into the shared skills root (one root, shared by
-#    claude and claude-nine): <config-root>/skills/74-kie-live-adapter
+# 2. install it into the plain claude skills root
+#    ~/.claude/skills/74-kie-live-adapter (the sync step then links it
+#    for claude-nine)
 python3 installer-registration/helper-deps.py install
 
 # 3. inside the installed skill folder: offline QC, then wire

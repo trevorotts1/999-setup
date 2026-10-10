@@ -170,17 +170,27 @@ def main():
 
         nine_ad = SKILL / "adapters" / "claude-nine" / "README.md"
         code_ad = SKILL / "adapters" / "claude-code" / "README.md"
+        # Two config roots, one install: the plain `claude` root and the
+        # `claude-nine` root are bridged by sync-nine-skills.sh, so the law
+        # is "install once, never maintain a second copy" — not "there is
+        # only one root".
+        nine_body = (
+            norm(nine_ad.read_text(encoding="utf-8")) if nine_ad.is_file() else ""
+        )
         check(
-            "claude-nine adapter: shares the same Claude config root",
-            nine_ad.is_file()
-            and "shares the same claude config root" in norm(nine_ad.read_text(encoding="utf-8")),
+            "claude-nine adapter: two config roots bridged by the sync step",
+            bool(nine_body)
+            and "two config roots" in nine_body
+            and "sync-nine-skills.sh" in nine_body,
         )
         if code_ad.is_file():
             ad = norm(code_ad.read_text(encoding="utf-8"))
             check(
-                "claude-code adapter: one install, no second skills root",
-                "claude-nine shares this root" in ad
-                and "never create a second skills root" in ad,
+                "claude-code adapter: one install in the plain root, no maintained second copy",
+                "two config roots" in ad
+                and "sync-nine-skills.sh" in ad
+                and "install the skill once" in ad
+                and "second edited copy" in ad,
             )
         else:
             check("claude-code adapter present", False, str(code_ad))
