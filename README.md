@@ -172,6 +172,53 @@ To pin effort on purpose for a single launch, run `CLAUDE_NINE_FORCE_EFFORT=xhig
 
 ---
 
+## KIE (Kie.ai) — your own key, one paid door
+
+KIE is the media API behind image, video and audio generation here. Nothing about
+it is shared or pre-wired: during install you supply **your own** KIE key.
+
+- **Your key, your account.** The installer asks for the client's own KIE key as
+  the variable **`KIE_API_KEY`** (from app.kie.ai → Settings → API Keys) — never
+  an operator key, never a hardcoded one. It is written into the `env` block of
+  `settings.json` for **each config root** this machine uses —
+  `~/.claude/settings.json` and, when `claude-nine` is installed,
+  `~/.claude-nine/settings.json` — and `settings.json` stays at permission `600`.
+  The value is never printed, logged or echoed into a test output: presence is
+  reported only as **`SET` or `NOT SET`**.
+- **Entry point: the front-door `kie` skill.** Image, video and audio work starts
+  there. It routes each job to `66-kie-image` (image), `67-kie-video` (video) and
+  `68-kie-audio` (audio and music), with `46-kie-callback-relay` for callbacks,
+  and points at `07-kie-setup/references/kie-common-rules.md` for the full rules.
+- **Skill 74 is the single paid door.** Every paid KIE call goes through
+  `74-kie-live-adapter`; nothing calls `api.kie.ai` directly. It ships in
+  **shadow** mode — it observes and refuses paid dispatch — and the **credits
+  check** (`credits` / `preflight`, a read call that runs no job) is what moves it
+  to **active** for a config root by writing `active` into
+  `kie-live-adapter-mode.conf`. No key, or a failed credits call, leaves the mode
+  at its shadow default.
+- **Both config roots.** The KIE helpers install into `~/.claude/skills` and
+  `~/.claude-nine/skills` (`python3 installer-registration/helper-deps.py install`,
+  then `python3 installer-registration/helper-deps.py preflight`), and
+  `sync-nine-skills.sh` — installed at `~/.local/bin/sync-nine-skills.sh` and run
+  by the `claude-nine` launcher — keeps `claude-nine`'s skills root current.
+- **Rate limit: 20 requests per 10 seconds** per KIE account (new generation
+  requests). An HTTP 429 means the job did not run: wait and resubmit it, never
+  drop it.
+- **No KIE MCP.** There is no KIE MCP — no MCP server, no `.mcp.json` entry, no
+  MCP registration of any kind. The helpers are ordinary skills that call the KIE
+  HTTPS API with your own key.
+- KIE's vendor skills (`kie-models`, `kie-chat-agents`) are never installed here —
+  they belong to KIE's own chat product, not to this install.
+- `claude` and `claude-nine` are never pointed at KIE for chat
+  (`api.kie.ai/anthropic`); KIE is media only, chat stays where it was.
+- Failed jobs show on `kie.ai/logs`, where each job's status and error are listed.
+
+Test: `bash scripts/test-kie-readme.sh`. Full install steps — the key step, the
+credits check, the helper install — are in
+[`AGENT_INSTALL.md`](AGENT_INSTALL.md) (section 5.1 covers the helper install).
+
+---
+
 ## Repository layout
 
 ```text
