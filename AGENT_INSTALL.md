@@ -17,11 +17,16 @@ this procedure exactly. Do not skip steps. Do not stop early.
   registrations into it (Stop → `conversation-gate.py`, `gate0-claim-gate.py`; PreToolUse
   `Workflow` → `workflow-syntax-gate.py`; PreToolUse `Workflow|Agent|Task|SendMessage` →
   `dispatch-gate.py`, timeout 120), keeping every existing key and entry. Nothing else in the file changes.
-  **Second exception, owner-authorized (step 5.2):** the KIE key step writes exactly one
-  entry — `env.KIE_API_KEY` — into the `env` block of `settings.json` for each config root
-  on this machine, keeps that file at permission 600, and changes nothing else in it.
+  **Golden-rule exception, named by Trevor and approved by name 2026-10-09 ("OK YES",
+  pull request #170) — the one approved exception is step 5.2's KIE key write:** that step
+  writes exactly one line, `env.KIE_API_KEY` (the client's own key only), into the `env`
+  block of `settings.json` for each config root on this machine, keeps that file at
+  permission 600, reports it only as `KIE key: SET` or `KIE key: NOT SET`, and touches no
+  other key or line in the file — writing `env.KIE_API_KEY` into `settings.json` needs
+  Trevor's by-name approval (pull request #170), not assumed.
 - ⛔ **Never print the KIE key either.** Step 5.2 reports `KIE key: SET` or
   `KIE key: NOT SET` and nothing more.
+- ⛔ **Key safety:** never paste the key in chat; if it leaks, reset it at kie.ai/api-key.
 - ⛔ **Never infer the operating system from the current shell.** Detect it from the OS.
 - ⛔ **Prefer the bundled deterministic scripts** over improvising shell commands.
 - ⛔ **Do not stop until the validation suite passes, or you can name exactly one blocker**
@@ -203,6 +208,17 @@ Trevor key, never a hardcoded key.
 client's own key carries that client's own budget of **20 new generation requests per 10
 seconds**.
 
+Two never-lines for this install, exactly:
+
+- Do not run npx skills add https://kie.ai
+- Do not configure claude or claude-nine to use KIE as its chat provider (api.kie.ai/anthropic); a settings-file value overrides the launcher's router address
+
+**Declined fallback.** If the client refuses the `env.KIE_API_KEY` write into
+`settings.json`, do not write it: print the single line for the client to paste
+themselves into the `env` block of their own `settings.json`, and skill 74 stays in
+shadow mode — the credits gate never runs, `kie-live-adapter-mode.conf` never flips to
+`active`, and no paid KIE call is made.
+
 ### 5.3 Keep `claude-nine`'s skills root current (`sync-nine-skills.sh`)
 
 `~/.claude-nine/skills` mirrors `~/.claude/skills`; it is not a second hand-maintained
@@ -319,6 +335,9 @@ Windows there is one root, so confirm it once.
 - Plain `claude`: verify no `ANTHROPIC_BASE_URL=http://localhost:20128/v1` was persisted
   into global Claude settings or shell startup files by this setup.
 - `claude-nine`: verify a minimal non-interactive request reaches 9Router successfully.
+- This step also checks that no settings.json in either config root carries an
+  api.kie.ai base URL — report-only: print the finding and the file path, and never edit
+  it in this step.
 
 ## 11. Run the tests
 
