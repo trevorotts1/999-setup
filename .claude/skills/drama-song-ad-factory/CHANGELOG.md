@@ -66,7 +66,7 @@ Twin sync (same method as 2.7.38): scripts/core and the shared references (CLIEN
 
 - `scripts/core/delivery_package/`: the client delivery folder contract -- 12 numbered package items, exact file names, and what "opens" means per kind (PDF header, SRT cue block, non-empty media, image directory). `packaging.package_run(run_dir, out_dir)` is the one packaging call: it discovers each item's `produce_delivery()` component, writes the canonical numbered files, and verifies the folder. Fail closed: `COMPONENT_MISSING` (naming every item still owed, before any write), `COMPONENT_FAILED`, `PACKAGE_INCOMPLETE`.
 - `delivery_checklist` gains Q12 `PACKAGE_COMPLETE` (`CHECKLIST_PACKAGE_INCOMPLETE`): the receipt names the delivery folder and Q12 reads it -- all 12 items present and opening, one missing item fails the run and is named. The gate is hard; the 11 human checklist questions are unchanged.
-- New `test_delivery_package_e2e.py`: a run through the packaging entry point. (Its behavior moved with DEL-13's producers: at 2.7.40 the test builds a non-empty run and runs the twelve real deliver paths with no skip -- see the 2.7.40 entry.) A raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
+- New `test_delivery_package_e2e.py`: a run through the packaging entry point. (Its behavior moved with DEL-13's producers: at 2.7.41 the test builds a non-empty run and runs the twelve real deliver paths with no skip -- see the 2.7.41 entry.) A raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
 - Shared core byte-identical to the onboarding copy (v2.9.14).
 
 ## [2.7.39] - 2026-10-09 - DEL-08: one cover image (thumbnail) per delivery folder
