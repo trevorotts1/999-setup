@@ -4,8 +4,9 @@
 Acceptance (unit W3-03-U3, directive §26 "Under plain Claude Code", §2.2,
 §5.3):
 
-- the README states plain `claude` is non-routed and that there is no
-  separate skill root (one shared root with `claude-nine`),
+- the README states plain `claude` is non-routed and documents the two config
+  roots (`~/.claude` and `~/.claude-nine`) bridged by `sync-nine-skills.sh`,
+  with one install and no maintained second copy,
 - the README lists discovery check commands,
 - environment shows no 9Router base URL / routing set by the skill:
   no skill file writes routing env (static scan) and the shared control
@@ -72,13 +73,14 @@ def main():
 
     check("README states plain claude is non-routed",
           "Plain `claude` must remain non-routed" in norm)
-    check("README forbids a separate config root",
-          "Never set a separate `CLAUDE_CONFIG_DIR`" in norm)
-    check("README forbids a second skills root",
-          "never create a second skills root" in norm)
-    check("README says claude-nine shares the one root",
-          "claude-nine shares this root" in norm
-          or "`claude-nine` shares this root" in norm)
+    # Two config roots bridged by sync-nine-skills.sh — not one shared root.
+    check("README describes the two config roots",
+          "two config roots" in flat(text).casefold())
+    check("README names the sync step that bridges them",
+          "sync-nine-skills.sh" in text)
+    check("README installs once into the plain claude root",
+          "install the skill once" in flat(text).casefold()
+          and "never create and maintain a second edited" in flat(text).casefold())
     check("README says the skill itself writes no routing env",
           "no file in this skill writes router/routing environment variables" in norm)
 

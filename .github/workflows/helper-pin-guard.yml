@@ -1,0 +1,70 @@
+name: helper-pin-guard
+
+# KIE-U1 item (a): a helper pin in installer-registration/helper-dependencies.json
+# that is older than trevorotts1/openclaw-onboarding origin/main must fail CI.
+#
+#   check-helper-pins.py            every pin equals origin/main; every vendored
+#                                   helper folder equals its own pin; no KIE
+#                                   vendor skill is declared or shipped (U1-b)
+#   test-helper-pins.sh             the guard actually discriminates: current
+#                                   pins pass, a deliberately stale pin fails
+#   test-kie-amendments.sh          U1-a vendor-approval.json is byte-identical
+#                                   to openclaw-onboarding origin/main (cmp);
+#                                   U1-b vendor skills banned, with negative
+#                                   controls for an injected entry and folder
+#   test-helper-install.sh          the pins install into a config root, into
+#                                   BOTH roots when a machine has two, and
+#                                   CLAUDE_CONFIG_DIR still picks one
+#   test-kie-rules-pointer.sh       the signature page's reference to
+#                                   07-kie-setup/references/kie-common-rules.md
+#                                   resolves from the installed skills root
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'installer-registration/**'
+      - '.github/workflows/helper-pin-guard.yml'
+  pull_request:
+    paths:
+      - 'installer-registration/**'
+      - '.github/workflows/helper-pin-guard.yml'
+  schedule:
+    # openclaw-onboarding moving forward is the drift this guards against, and
+    # it can move without any commit here — so this also runs on a clock
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  helper-pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Checkout trevorotts1/openclaw-onboarding (the pin source)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: trevorotts1/openclaw-onboarding
+          ref: main
+          path: openclaw-onboarding
+      - name: Make origin/main resolvable in the pin source
+        run: |
+          git -C openclaw-onboarding fetch --depth=1 origin "+refs/heads/main:refs/remotes/origin/main"
+          git -C openclaw-onboarding rev-parse origin/main
+      - name: Pins equal openclaw-onboarding origin/main
+        run: python3 installer-registration/check-helper-pins.py --onboarding openclaw-onboarding --ref origin/main
+      - name: Pin guard discriminates — stale pin fails, current pins pass
+        env:
+          OPENCLAW_ONBOARDING: ${{ github.workspace }}/openclaw-onboarding
+        run: bash installer-registration/test-helper-pins.sh
+      - name: Amendments U1-a / U1-b — vendor-approval cmp, vendor skills never installed
+        env:
+          OPENCLAW_ONBOARDING: ${{ github.workspace }}/openclaw-onboarding
+        run: bash installer-registration/test-kie-amendments.sh
+      - name: Helper install covers every helper, both config roots, CLAUDE_CONFIG_DIR
+        run: bash installer-registration/test-helper-install.sh
+      - name: Signature page rules reference resolves from the installed skills root
+        run: bash installer-registration/test-kie-rules-pointer.sh

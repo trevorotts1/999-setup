@@ -1,14 +1,24 @@
 # Claude-Nine adapter
 
-Claude-Nine shares the same Claude config root and personal skills as plain
-`claude`, so one install of this skill is visible to both. This adapter is
-about routing and orchestration guidance, not a duplicated skill. Do not
-invent a Claude-Nine-only skills path and do not create a second
-independently maintained copy of this skill.
+A box has two config roots: plain `claude` runs from `~/.claude` (skills in
+`~/.claude/skills`), while Claude-Nine runs under the environment variable
+`CLAUDE_CONFIG_DIR`, pointed at `~/.claude-nine` (skills in
+`~/.claude-nine/skills`).
+The two roots are bridged by one sync step — `~/.local/bin/sync-nine-skills.sh`,
+run by the Claude-Nine launcher at start — which symlinks every skill found in
+`~/.claude/skills` but missing from `~/.claude-nine/skills`, never overwrites a
+real directory there (Claude-Nine's own tuned copies win), and prunes dead
+links. So the skill is installed ONCE, into the plain `claude` root, and
+Claude-Nine sees the same files through the symlink. This adapter is routing
+and orchestration guidance, not a duplicated skill. Do not create a second
+independently maintained copy of this skill under `~/.claude-nine/skills`.
 
-1. Install the skill once into the shared skills root (the same root plain
-   `claude` reads), via `CONTROL/bundled-skills.txt`. Never set a separate
-   config directory for Claude-Nine.
+1. Install the skill once into the plain `claude` config root
+   `~/.claude/skills`, via `CONTROL/bundled-skills.txt`, then let the sync
+   step (`sync-nine-skills.sh`, which the launcher runs) link it into
+   `~/.claude-nine/skills`. Never hand-set a config directory for
+   Claude-Nine (its launcher already points `CLAUDE_CONFIG_DIR` at
+   `~/.claude-nine`) and never hand-maintain a second copy.
 2. Confirm the router itself is installed and healthy using the
    `nine-router-setup` skill. Routing is Claude-Nine's own law, not
    something this skill configures: this skill must never write a router
@@ -47,8 +57,9 @@ resolves `kie_live_adapter.py` and runs Skill 74 as a single subprocess.
 this skill folder**, so install it before dispatching any generation —
 otherwise `kie_dispatch` stops with `adapter-not-found`, and there is
 deliberately no private KIE fallback and no second transport. The install
-goes into the one shared skills root, so plain `claude` sees it too; do not
-give Claude-Nine its own copy.
+goes into the plain `claude` skills root `~/.claude/skills/74-kie-live-adapter`
+and the sync step links it into `~/.claude-nine/skills` for Claude-Nine;
+do not give Claude-Nine its own copy.
 
 Install steps (run from the `999-setup` repository root):
 
@@ -56,7 +67,9 @@ Install steps (run from the `999-setup` repository root):
 # 1. check the vendored helper against its pinned tree sha256
 python3 installer-registration/helper-deps.py preflight
 
-# 2. install it into the shared skills root: <config-root>/skills/74-kie-live-adapter
+# 2. install it into the plain claude skills root
+#    ~/.claude/skills/74-kie-live-adapter (the sync step then links it
+#    for claude-nine)
 python3 installer-registration/helper-deps.py install
 
 # 3. inside the installed skill folder: offline QC, then wire

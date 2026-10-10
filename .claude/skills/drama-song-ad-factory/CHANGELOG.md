@@ -1,5 +1,14 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.42] - 2026-10-10 - KIE batch train (KIE-U1..U5): two-root adapter docs, kie front-door skill, client-owned KIE key
+
+Released with the 999 KIE batch PR (units KIE-U1 #173, KIE-U2 #171, KIE-U3 #170, KIE-U4 #174, KIE-U5 #172), paired with openclaw-onboarding #1809 (unit KIE-U0, ported KIE official agent docs: 07 v7.2.0, 74 v1.1.6, 66 v2.2.2, 68 v2.3.1).
+
+- KIE-U4 (U4-a..U4-g): new `.claude/skills/kie/SKILL.md` front-door skill plus `tests/test_front_door_docs.py` (40 required doc elements, both adapter READMEs, negative controls green); the two drama-factory adapter READMEs (`adapters/claude-code/README.md`, `adapters/claude-nine/README.md`) now state both config roots and drop the old single-shared-root claim.
+- KIE-U4 test halves: `tests/test_launcher_plain_claude.py` and `tests/test_single_config_root.py` updated for the same two-root contract.
+- This bump is the skill-75 release for that batch train. Version markers: this `VERSION` + SKILL.md frontmatter 2.7.41 -> 2.7.42.
+
+
 ## [2.7.41] - 2026-10-10 - PKG-11 attempt 4: twelve REAL produce_delivery paths, real-run e2e (pairs with openclaw-onboarding v27.1.1, skill 75 v2.9.18)
 
 Released with onboarding v27.1.1 (follow-up to the v2.7.39 batch; closes the delivery package naming gap flagged there).
