@@ -17,6 +17,11 @@ this procedure exactly. Do not skip steps. Do not stop early.
   registrations into it (Stop → `conversation-gate.py`, `gate0-claim-gate.py`; PreToolUse
   `Workflow` → `workflow-syntax-gate.py`; PreToolUse `Workflow|Agent|Task|SendMessage` →
   `dispatch-gate.py`, timeout 120), keeping every existing key and entry. Nothing else in the file changes.
+  **Second exception, owner-authorized (step 5.2):** the KIE key step writes exactly one
+  entry — `env.KIE_API_KEY` — into the `env` block of `settings.json` for each config root
+  on this machine, keeps that file at permission 600, and changes nothing else in it.
+- ⛔ **Never print the KIE key either.** Step 5.2 reports `KIE key: SET` or
+  `KIE key: NOT SET` and nothing more.
 - ⛔ **Never infer the operating system from the current shell.** Detect it from the OS.
 - ⛔ **Prefer the bundled deterministic scripts** over improvising shell commands.
 - ⛔ **Do not stop until the validation suite passes, or you can name exactly one blocker**
@@ -76,9 +81,19 @@ If the repository is already present, REFRESH it before proceeding: a git clone 
 
 ## 5. Install the personal skills
 
-Install the bundled personal Claude Code skills into the user's **existing** Claude
-config root so they are visible to both `claude` and `claude-nine`. Do not create a
-second config root for `claude-nine`; do not set a separate `CLAUDE_CONFIG_DIR`.
+Install the bundled personal Claude Code skills into the config roots this machine
+actually uses, so both commands see them. There are **two** roots on macOS:
+
+- `~/.claude` — normal `claude` (Anthropic-direct, never routed).
+- `~/.claude-nine` — `claude-nine`, whose launcher sets `CLAUDE_CONFIG_DIR=$HOME/.claude-nine`
+  and therefore reads `~/.claude-nine/skills`.
+
+Install every skill into `~/.claude/skills`, then bring `~/.claude-nine/skills` up to date
+with `sync-nine-skills.sh` (step 5.3); the KIE helper install of step 5.1 writes both roots
+in one run. Both roots are deliberate: `claude-nine` exports `CLAUDE_CONFIG_DIR` itself, so
+do not undo it and do not invent a third root. Windows is the one-root case: its launcher
+sets no `CLAUDE_CONFIG_DIR`, so both commands read the single default root
+`%USERPROFILE%\.claude`.
 
 The authoritative list is `CONTROL/bundled-skills.txt` — one skill per line; `#`
 comments and blank lines are ignored. Install **every** skill it names, not a
@@ -99,8 +114,10 @@ Source:  <repo>/.claude/skills/<skill-name>
 Target:  <Claude config root>/skills/<skill-name>
 ```
 
-`<Claude config root>` is `~/.claude` by default, or `$CLAUDE_CONFIG_DIR` if the user has
-set it.
+`<Claude config root>` means **every** config root this machine uses: `~/.claude` (normal
+`claude`) and `~/.claude-nine` (`claude-nine`, set by its own launcher) on macOS, or the
+single default root (`$CLAUDE_CONFIG_DIR` if the user set one, otherwise `~/.claude`) on
+Windows. Where a step names one root, repeat it for each root the machine has.
 
 - If a previous copy of any bundled skill already exists at the target, **back it up**
   first (move it aside with a timestamp suffix) before copying the new one. **Move it
@@ -124,23 +141,28 @@ set it.
 
 ### 5.1 Install the KIE helper skills (required — do not skip)
 
-The bundled `drama-song-ad-factory` skill invokes five onboarding helper skills
-(KIE image/video/audio model selection, the KIE paid transport, and the callback
-relay). Naming them does **not** install them. They ship in this repository under
-`installer-registration/helpers/`, pinned by version and sha256 tree hash in
-`installer-registration/helper-dependencies.json`. After step 5's skill copies,
+The bundled `drama-song-ad-factory` skill invokes onboarding helper skills: the KIE
+image/video/audio model selectors, the KIE paid transport, the callback relay, plus
+`07-kie-setup` (the common KIE rules, `references/kie-common-rules.md`) and `shared-utils`
+(the key resolver and the prompt enforcer). Naming them does **not** install them. They
+ship in this repository under `installer-registration/helpers/`, pinned by version and
+sha256 tree hash in `installer-registration/helper-dependencies.json`. The current pins are
+the re-pinned OpenClaw versions: `74-kie-live-adapter` **v1.1.5**, `67-kie-video`
+**v2.1.3**, together with `46-kie-callback-relay`, `66-kie-image`, `68-kie-audio`,
+`07-kie-setup` and `shared-utils`. After step 5's skill copies,
 run from the repository root:
 
 - macOS:   `python3 installer-registration/helper-deps.py install`
 - Windows: `py installer-registration\helper-deps.py install`
 
-This copies each helper into the same `<Claude config root>/skills/` used above
-(a differing pre-existing copy is first moved to
-`$HOME/.claude-skill-backups/`, never deleted), verifies every vendored tree
-against its pin, and finishes by running the helper preflight. Treat a nonzero
-exit as a BLOCKER and follow the printed repair line; the output names the
-helper that failed and the exact command that fixes it. Never set
-`CLAUDE_CONFIG_DIR` yourself — read the root the machine already uses.
+One install run lands **every** helper in **both** roots this machine has —
+`~/.claude/skills` and `~/.claude-nine/skills` — and still honors `CLAUDE_CONFIG_DIR` for a
+machine that runs a single root (a differing pre-existing copy is first moved to
+`$HOME/.claude-skill-backups/`, never deleted), verifies every vendored tree against its
+pin, and finishes by running the helper preflight. Treat a nonzero exit as a BLOCKER and
+follow the printed repair line; the output names the helper that failed and the exact
+command that fixes it. `claude-nine` exports `CLAUDE_CONFIG_DIR` itself; do not override it
+in the client's shell profile and do not invent a third root.
 
 Then, at step 11, add this check to the test run:
 
@@ -148,9 +170,51 @@ Then, at step 11, add this check to the test run:
 python3 installer-registration/helper-deps.py preflight
 ```
 
-It exits 0 only when all five helpers are present at their pinned hashes, and
-exits 1 with an actionable per-helper error otherwise (directive 2.4: a clean
-install must receive the helpers; a missing one fails preflight).
+It exits 0 only when every pinned helper — `74-kie-live-adapter` v1.1.5, `67-kie-video`
+v2.1.3, `46-kie-callback-relay`, `66-kie-image`, `68-kie-audio`, `07-kie-setup` and
+`shared-utils` — is present at its pinned hash in **each** config root this machine uses,
+and exits 1 with an actionable per-helper error otherwise (directive 2.4: a clean install
+must receive the helpers; a missing one fails preflight).
+
+### 5.2 Collect the client's own KIE key (required before any paid KIE call)
+
+Each client brings their own KIE account. Ask the client for their key, or read it from
+the client's own API document if they point you at one. Never an operator key, never a
+Trevor key, never a hardcoded key.
+
+- **Variable name:** `KIE_API_KEY` — exactly the name skill 74's `kie_live_adapter.py` reads.
+- **Where it goes:** the `env` block of `settings.json` in **every** config root this machine
+  uses — `~/.claude/settings.json` and, when `claude-nine` is installed,
+  `~/.claude-nine/settings.json` — through the settings-writer pattern (unlock, edit,
+  validate, re-lock), with `settings.json` kept at **permission 600**.
+- **What you print:** only `KIE key: SET` or `KIE key: NOT SET`. The value never reaches
+  output, a log, a transcript, a test result, or any file other than that `env` block.
+  Setup prints the same two words during the run; if it reports `NOT SET`, or the run
+  predates this step, finish it here before anything paid happens.
+- **Credits gate:** run the credits check once — a read call, no paid job — and print only
+  the balance. Write the single word `active` to `<config root>/kie-live-adapter-mode.conf`
+  for each config root **only when that credits call passes**. If the key is absent, or the
+  credits call fails, the mode file is left at its shadow default. Skill 74 stays in
+  **shadow** mode and makes no paid call until the gate passes.
+
+**No KIE MCP.** There is no KIE MCP server: none exists, none is installed, and no
+`.mcp.json` or mcp registration of any kind is added. Every paid KIE call goes through
+**skill 74** (`74-kie-live-adapter`) and nothing else calls `api.kie.ai` directly. Each
+client's own key carries that client's own budget of **20 new generation requests per 10
+seconds**.
+
+### 5.3 Keep `claude-nine`'s skills root current (`sync-nine-skills.sh`)
+
+`~/.claude-nine/skills` mirrors `~/.claude/skills`; it is not a second hand-maintained
+copy. The installer places `sync-nine-skills.sh` at `~/.local/bin/sync-nine-skills.sh` with
+execute permission. It mirrors the installed skills from `~/.claude/skills` into
+`~/.claude-nine/skills` — linking what is missing, pruning links to skills that were
+removed — and the `claude-nine` launcher runs it at startup. Run it once after every skill
+or helper install and again before the verification in step 9:
+
+```text
+~/.local/bin/sync-nine-skills.sh
+```
 
 ## 6. Read SKILL.md files fully
 
@@ -196,7 +260,8 @@ recorded in `CLAUDE_CODE_GIT_BASH_PATH`), the Vercel CLI (installed into the sam
 prefix as 9Router; used to publish finished products), the spec-protocol hook registration
 above, and ultracode on by default for `claude-nine`. Setup also sets `"permissions":
 {"defaultMode": "bypassPermissions"}` in the `claude-nine` settings (only when no
-`defaultMode` is set; backed up first; on Windows that is the shared config root) so a
+`defaultMode` is set; backed up first; on Windows that file is the single root both
+commands read) so a
 build never stalls at a permission prompt while the client is away. A background run does not do the
 GitHub sign-in; its report says `GitHub sign-in: PENDING` and you do it next.
 
@@ -236,14 +301,18 @@ The orchestrator installs the `claude-nine` launcher. Verify afterwards:
 - macOS: `$HOME/.local/bin/claude-nine` exists, is executable (mode 700), and a fresh login
   shell can resolve `claude-nine`.
 
-## 9. Verify shared skill visibility
+## 9. Verify skill visibility in both config roots
 
 Verify **every skill in `CONTROL/bundled-skills.txt`** is visible from **both**:
 
-- normal `claude`
-- `claude-nine`
+- normal `claude` → `~/.claude/skills`
+- `claude-nine` → `~/.claude-nine/skills` (its launcher sets `CLAUDE_CONFIG_DIR=$HOME/.claude-nine`)
 
-They must resolve the **same** skills (same config root, no duplicate install).
+The two roots must expose the same skill set, because one install feeds both: skills and
+KIE helpers land in `~/.claude/skills`, the helper install also writes
+`~/.claude-nine/skills`, and `sync-nine-skills.sh` (step 5.3) mirrors the rest. List both
+directories, run `~/.local/bin/sync-nine-skills.sh`, and confirm the skill names match. On
+Windows there is one root, so confirm it once.
 
 ## 10. Verify plain `claude` is not routed and `claude-nine` activates the router
 
