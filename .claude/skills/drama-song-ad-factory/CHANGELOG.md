@@ -1,5 +1,15 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.44] - 2026-10-11 - U18: final core twin sync - packaged scripts/core regenerated from the canonical onboarding core
+
+U18 brings the packaged copy into byte-for-byte agreement with the frozen, reviewed canonical core (`openclaw-onboarding` `75-drama-song-ad-factory/scripts/core/` at base `68f686350e8f8f4f513333c159a4cbb6b9825dd5`), exactly as `references/parity-contract.md` requires: the copy is regenerated from the canonical source, never hand-edited.
+
+- Eleven `scripts/core/` paths changed; the other 460 in-scope paths were already identical and are untouched. All 471 in-scope paths are now byte-identical on both sides, proved by `tests/twin_sync_prove.py` (`PARITY: PROVEN`).
+- Brought in from the canonical core: the U1 studio-shaped intake export (`choice_card/intake_card/intake_card.py`, now re-exporting `studio_json`, `studio_questions`, `StudioExportError` through the package `__init__.py`, plus `test_studio_json_u1.py`), the U11 channel-neutral send path (`choice_card/intake_card/channel_send.py`, `README-channel-send.md`, `test_channel_send_u11.py`), and the plan 3.17 dual-presence hybrid validator (`style_bibles/hybrid/hybrid_bible.py`, its `__init__.py`, `test_hybrid_dual_presence.py`).
+- Same-scope fingerprints for every in-scope path on both sides (`__pycache__`/`*.pyc` excluded, no other normalisation) are recorded in `references/twin-sync-fingerprints.json`; the human-readable receipt is `references/twin-sync-receipt.md`.
+- Reported consequence (`references/twin-sync-receipt.md`, "Known canonical gap"): the canonical core does not yet carry the N99-CB refuse-before-write fix released in 2.7.43, so regenerating the copy removes that hand-edit from the packaged tree. The fix is preserved in 999 history at `ebb90a4ad`; its correct home is the canonical onboarding core, which needs a separate port unit before it ships again.
+- Version markers: this `VERSION` + SKILL.md frontmatter 2.7.43 -> 2.7.44.
+
 ## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
 
 The 2.7.41 sentence ("a missing reference picture is a refusal, never an empty directory") was false in code: `character_bible.write_delivery` rendered the PDF and created `02 - Character Bible Images/` before raising `NO_REFERENCE_IMAGES`, leaving both contract artifacts behind on a refusal.
