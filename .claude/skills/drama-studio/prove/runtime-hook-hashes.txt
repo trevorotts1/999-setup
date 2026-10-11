@@ -1,0 +1,42 @@
+# Drama Studio U13 — runtime hook before/after sha256 evidence.
+#
+# WHY THIS FILE EXISTS. An earlier version of this unit's proof quoted four hashes
+# (conversation-gate 05e6519c, gate0-claim-gate 0943068a, workflow-syntax-gate 3b035b92,
+# dispatch-gate c4e0cb8b). Those are the hashes of the spec-protocol SKILL COPIES under
+# skills/spec-protocol/tools/hooks/ — NOT the hooks any settings file registers. The table
+# was narrative: no artifact stood behind it and prove_plugin_behaviour.py hashed nothing.
+# This file is that artifact. It records the hooks that are ACTUALLY REGISTERED, and the two
+# settings files that register them.
+#
+# MEASURED READ-ONLY. Nothing was written, moved, reordered or reformatted: no settings file
+# was edited and no hook file was added, deleted or disabled. The measurement is a plain read.
+#
+#   when:  2026-10-10T21:09:29-0400  (2026-10-11T01:09:29Z)
+#   where: trevor-macmini (operator box), darwin
+#   how:   shasum -a 256 <path>        (shasum 6.02, /usr/bin/shasum)
+#
+# VERIFY. Each line below is literal `shasum -a 256` output, so this file re-checks with:
+#     shasum -a 256 -c .claude/skills/drama-studio/prove/runtime-hook-hashes.txt
+#
+# THE FOUR RUNTIME HOOK FILES (count = 4; identities unchanged):
+635e3f1e9e2c43ae17e265a6307ddbadffa63d839ebeb4b7d5e98f4579485db6  /Users/blackceomacmini/.claude/hooks/conversation-gate.py
+0509dd6a555ba900930cb5e4429a3b6cb42302a0cc20094de796f0ebf043598f  /Users/blackceomacmini/.claude/hooks/gate0-claim-gate.py
+e7b8b7542e161646e8742293e4de373a5f04f46f5868a5c89bd1e06f813e26b9  /Users/blackceomacmini/.claude/hooks/workflow-syntax-gate.py
+6c6b90736539c8782a677b4d32bfdefdab21ac30b9a502ab1188c768cc928892  /Users/blackceomacmini/.claude/hooks/dispatch-gate.py
+#
+# THE TWO SETTINGS FILES THAT REGISTER THEM (each registers the SAME dispatch-gate.py above,
+# /Users/blackceomacmini/.claude/hooks/dispatch-gate.py -> 6c6b9073..., not the spec-protocol
+# copy's c4e0cb8b...):
+749cb25f368ae8bb9432241fc4dee45720b8e24d5726f5db3583412ccd0e050d  /Users/blackceomacmini/.claude/settings.json
+c486a2a29a06ba6808b315b5810d88db03a79fdce43619187061c9d77c344f4c  /Users/blackceomacmini/.claude-nine/settings.json
+#
+# Not measured here (outside this unit's scope, and no claim is made about them):
+#   /Users/blackceomacmini/.claude-nine/hooks/dispatch-gate.py  — present, a second copy on the
+#   claude-nine path. Neither settings file above registers it; both register the .claude one.
+# Sizes at measurement (bytes / mtime):
+#   87485 / 2026-10-08T01:57:43-0400   conversation-gate.py
+#   18387 / 2026-10-08T01:57:43-0400   gate0-claim-gate.py
+#    4005 / 2026-10-08T01:57:43-0400   workflow-syntax-gate.py
+#  128055 / 2026-10-08T01:57:54-0400   dispatch-gate.py
+#   11915 / 2026-10-10T13:31:21-0400   .claude/settings.json
+#   12318 / 2026-10-10T19:45:17-0400   .claude-nine/settings.json

@@ -32,6 +32,9 @@ PAIR = os.path.join(SKILL, "studio.py")
 SKILLMD = os.path.join(SKILL, "SKILL.md")
 HOOKSJSON = os.path.join(SKILL, "hooks", "hooks.json")
 PLUGINJSON = os.path.join(SKILL, ".claude-plugin", "plugin.json")
+HASHES = os.path.join(HERE, "runtime-hook-hashes.txt")
+HOOK_IDS = ("conversation-gate.py", "gate0-claim-gate.py",
+            "workflow-syntax-gate.py", "dispatch-gate.py")
 
 BOX = "trevor-macmini"
 UNIT = "U13-U1"
@@ -392,6 +395,90 @@ def check_plugin_shape():
                % (plugin.get("name"), len(ss), entry.get("timeout"), version_free))
 
 
+def check_startup_only():
+    """(i) rule 1's "a real start only": resume and clear print nothing, and a copy that
+    accepts every source is caught. Three legs, all required and all reported.
+
+    (1) POSITIVE CONTROL — on a fresh state with an order waiting, source=startup DOES
+        announce, so the instrument is demonstrably able to see a notice (without this a
+        silent run proves nothing).
+    (2) THE RULE — source=resume and source=clear each exit 0 with EMPTY stdout. A fresh
+        state per run, so session dedup can never be what silences them.
+    (3) PLANTED-BAD CONTROL — the same two sources run against a copy whose source filter is
+        neutered (`if str(data.get("source") or "") != "startup"` -> `if False`), which MUST
+        announce on BOTH. If it stays silent the plant was vacuous and the check is worthless.
+    """
+    def hook(script, source, tag):
+        sd = new_state(tag)
+        env = child_env(DRAMA_STUDIO_STATE=sd, DRAMA_STUDIO_FAKE_LINE=ORDER_LINE)
+        return run(script, ["--hook"], env,
+                   stdin='{"source":"%s","session_id":"s1"}' % source)
+
+    rc0, out0, _e0, _d0 = hook(CHECK, "startup", "i0")
+    positive_ok = rc0 == 0 and any(w in out0 for w in NOTICE_WORDS)
+
+    silent = {}
+    for src, tag in (("resume", "i1"), ("clear", "i2")):
+        rc, out, _e, _d = hook(CHECK, src, tag)
+        silent[src] = rc == 0 and out.strip() == ""
+    rule_ok = all(silent.values())
+
+    blind = plant(CHECK, "blind-source",
+                  '    if str(data.get("source") or "") != "startup":\n        return None',
+                  '    if False:\n        return None')
+    announced = {}
+    for src, tag in (("resume", "i3"), ("clear", "i4")):
+        rc, out, _e, _d = hook(blind, src, tag)
+        announced[src] = rc == 0 and any(w in out for w in NOTICE_WORDS)
+    planted_caught = all(announced.values())
+
+    return say(positive_ok and rule_ok and planted_caught, "startup-only",
+               "startup announces=%s | resume silent=%s clear silent=%s | planted blind-source"
+               " announced resume=%s clear=%s caught=%s"
+               % (positive_ok, silent["resume"], silent["clear"],
+                  announced["resume"], announced["clear"], planted_caught))
+
+
+def parse_hash_artifact(text):
+    """The measured `sha256  /absolute/path` rows of the artifact, or None if malformed."""
+    rows = []
+    for ln in text.splitlines():
+        ln = ln.rstrip()
+        if not ln or ln.lstrip().startswith("#"):
+            continue
+        m = re.match(r"^([0-9a-f]{64})  (/\S+)$", ln)
+        if not m:
+            return None
+        rows.append((m.group(1), m.group(2)))
+    return rows
+
+
+def check_hash_artifact():
+    """(j) the runtime-hook sha256 evidence is a real, well-formed artifact behind the table.
+
+    It must carry exactly SIX measured rows: the four REGISTERED runtime hook files and the
+    two settings files that register them, each path absolute and named, each digest a full
+    64-hex sha256, the four hook identities exactly the four known ones. A copy carrying a
+    truncated digest must be caught, so the check can actually fail.
+    """
+    rows = parse_hash_artifact(read(HASHES))
+    if rows is None:
+        return say(False, "runtime-hook-hashes",
+                   "%s is missing or malformed" % os.path.relpath(HASHES, SKILL))
+    hooks = [p for _h, p in rows if "/hooks/" in p and p.endswith(".py")]
+    settings = [p for _h, p in rows if p.endswith("/settings.json")]
+    names = sorted(os.path.basename(p) for p in hooks)
+    real_ok = (len(rows) == 6 and len(hooks) == 4 and len(settings) == 2
+               and names == sorted(HOOK_IDS))
+
+    broken = re.sub(r"^[0-9a-f]{64}  ", "6c6b9073  ", read(HASHES), count=1, flags=re.M)
+    planted_caught = parse_hash_artifact(broken) is None
+
+    return say(real_ok and planted_caught, "runtime-hook-hashes",
+               "rows=%d hooks=%d settings=%d ids=%s | planted truncated-digest caught=%s"
+               % (len(rows), len(hooks), len(settings), ",".join(names), planted_caught))
+
+
 CHECKS = [
     check_hook_budget,
     check_network_budget,
@@ -403,6 +490,8 @@ CHECKS = [
     check_state_root_tools,
     check_no_secret_printed,
     check_plugin_shape,
+    check_startup_only,
+    check_hash_artifact,
 ]
 
 
