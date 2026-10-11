@@ -27,13 +27,14 @@ description: >
 allowed-tools: Read, "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio.py *)", "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio_check.py *)"
 ---
 
-# Drama Studio (999-setup, unit U13)
+# Drama Studio (999-setup, units U13 and U14)
 
 The Claude Code and claude-nine half of the drama studio: **pair**, **link**, the
 **SessionStart check-in hook**, the **opt-in desktop notice** and the **Option 2
 watcher**. It ships as a **skills-folder plugin**: the hook loads from
-`hooks/hooks.json` inside this folder, and the installer writes **nothing** to any
-`settings.json` (decision 11 answered 2026-10-09).
+`hooks/hooks.json` and the Option-2 watcher from `monitors/monitors.json`, both
+inside this folder, and the installer writes **nothing** to any `settings.json`
+(decision 11 answered 2026-10-09).
 
 It is a skill folder and two scripts, not a product: no framework, no bundler, no
 scheduler, no dashboard, no new management app.
@@ -42,8 +43,8 @@ scheduler, no dashboard, no new management app.
 
 | Unit | Owns |
 | --- | --- |
-| **U13 (this unit)** | `999-setup/.claude/skills/drama-studio/**` — the pair/link command, the check-in script, the hook, the manifest, this document and the prover |
-| U14 | the Option-2 watcher's own behaviour, on top of `studio_check.py --watch` |
+| **U13** | `999-setup/.claude/skills/drama-studio/**` — the pair/link command, the check-in script, the SessionStart hook, the manifest, this document and the plugin prover |
+| **U14 (this unit)** | the Option-2 watcher: `monitors/monitors.json`, the `--watch` / `--claim` behaviour in `studio_check.py`, and `prove/prove_option2_monitor.py` |
 | U15 | the heartbeat job (launchd/Task Scheduler) that calls `studio_check.py --desktop` |
 | U12 | the pairing/admin **pages**; this unit calls `POST /api/studio/pair` |
 | U2 | the service this unit talks to; never edited here |
@@ -79,6 +80,32 @@ A refusal is always `{ ok: false, code, message }`. The presented key travels in
 The hook budget is **10 seconds**; the network budget is **3 seconds**. A copy that
 overruns either is rejected: it prints nothing and still exits 0.
 
+## The Option-2 watcher (U14)
+
+`monitors/monitors.json` arms one plugin monitor at session start. It runs
+`studio_check.py --watch --every 120` for the session and hands each stdout line to
+the model as a task event, so the session needs no instruction to arm it. The watcher
+is silent while idle. Four behaviours are its contract:
+
+1. **Option handling.** The watcher acts for **Option 2 alone**. The option is
+   resolved flag → env → state → default, and the default is **Option 1 (wait)**, so a
+   machine that never chose Option 2 stays silent and spends no network call. When the
+   studio's check-in reports the machine's option, it is recorded for the next arm.
+2. **Deduplication.** One line per order, however many 120-second cycles pass. The
+   marker is the order id in `state.json` (`watch_announced`).
+3. **Claimed state.** An order that is picked up — it leaves the waiting line, or the
+   run records `studio_check.py --claim <id>` — is marked `watch_claimed` and never
+   announced again, even by a later watcher over the same state.
+4. **Interactive fallback.** When the host declares it does not honour this skill's
+   allowed-tools (`DRAMA_STUDIO_SKILL_LOCAL_PERMS`, or `skill_local_perms` in the
+   state), the watcher stops and prints the interactive-fallback line: keep the
+   interactive approval, or re-arm the Monitor tool. It never fabricates a settings
+   exception and never writes a settings file. The permissions it relies on are
+   **skill-local only** — the two `Bash(...)` entries in this file's `allowed-tools`.
+
+The watcher's cost is reported, not replaced: no `/loop`, no polling fallback, no
+`option2-settings.json` anywhere in the plugin.
+
 ## State, root and allowed-tools
 
 | Piece | Where | Who sets it |
@@ -98,6 +125,8 @@ python3 .claude/skills/drama-studio/studio.py pair ABCD-2345      # burn a one-t
 python3 .claude/skills/drama-studio/studio.py link --print        # show the studio link
 python3 .claude/skills/drama-studio/studio_check.py --hook        # the SessionStart hook
 python3 .claude/skills/drama-studio/studio_check.py --desktop     # the opt-in desktop notice
+python3 .claude/skills/drama-studio/studio_check.py --watch --every 120   # the Option-2 watcher
+python3 .claude/skills/drama-studio/studio_check.py --claim r_123 # record an order as picked up
 python3 .claude/skills/drama-studio/studio_check.py --print-root  # refuse a wrong root
 ```
 
@@ -105,22 +134,30 @@ python3 .claude/skills/drama-studio/studio_check.py --print-root  # refuse a wro
 
 ```bash
 node --version >/dev/null 2>&1   # not required; this unit is Python only
-python3 .claude/skills/drama-studio/prove/prove_plugin_behaviour.py
+python3 .claude/skills/drama-studio/prove/prove_plugin_behaviour.py   # U13 (the plugin)
+python3 .claude/skills/drama-studio/prove/prove_option2_monitor.py    # U14 (the watcher)
 #   exit 0 = every check passed and every planted-bad control was caught
 #   exit 2 = a named check failed, or a planted-bad control stayed green (vacuous)
 #   exit 3 = the prover could not run
 ```
 
-The prover exercises the real scripts in a temporary state folder under `/tmp`. It
-**installs, loads or enables nothing**, registers nothing live, and never sends a
-notice anywhere: the desktop sink is pointed at a scratch file.
+`prove_option2_monitor.py` takes `--skill <dir>` so the same checks run against a
+pre-change copy of the skill. Run that way they must FAIL (the option, dedup, claimed
+and fallback behaviours do not exist there yet); against this skill they must PASS.
+
+The provers exercise the real scripts in a temporary state folder under `/tmp`. They
+**install, load or enable nothing**, arm no monitor live, write no settings file, and
+never send a notice anywhere: the desktop sink is pointed at a scratch file.
 
 ## Deliberate limits
 
-- **No settings write, ever.** The hook is registered inside this folder only.
+- **No settings write, ever.** The hook loads from `hooks/hooks.json` and the watcher
+  from `monitors/monitors.json`; both live inside this folder. There is no
+  `option2-settings.json` and the two script permissions are skill-local only.
 - **No version field here.** Per JOINT PLAN 5.3.2 the version bump and the CHANGELOG
   entry happen once, in the batch pull request.
-- **No `/loop`, no polling `--watch` default.** Option 2's cost is reported, not
-  silently replaced.
-- `--watch` is the shared primitive; **U14** owns its dedup and its interactive
-  fallback.
+- **No `/loop`.** The watcher's cost is reported, never silently replaced by a polling
+  `/loop`; the interactive fallback says so and stops.
+- **The watcher needs no U18 yet.** It is proven in isolation against the check-in
+  contract. End-to-end production waits for the runnable U18 bridge.
+

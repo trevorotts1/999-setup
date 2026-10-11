@@ -1,5 +1,15 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.44] - 2026-10-11 - U14: the Drama Studio Option-2 watcher (skill-local permissions only)
+
+The `drama-studio` skills-folder plugin gains its Option-2 monitor. The code, this CHANGELOG entry and the `VERSION` bump land in one commit (no bump-only commit). Because end-to-end production is still gated on the runnable U18 bridge, the monitor is proven in isolation against the check-in contract.
+
+- New `.claude/skills/drama-studio/monitors/monitors.json`: one monitor `drama-studio-option2`, armed `when: always`, running `"${CLAUDE_PLUGIN_ROOT}"/studio_check.py --watch --every 120`. The host delivers each stdout line to the model as a task event. No `monitors` key is added to `.claude-plugin/plugin.json` — the default `monitors/monitors.json` at the plugin root is loaded.
+- `.claude/skills/drama-studio/studio_check.py`: `--watch` is now the Option-2 watcher. **Option handling** — the option resolves flag -> `DRAMA_STUDIO_OPTION` -> state -> default, and Option 1 (wait) is the default, so anything but Option 2 stays silent and spends no network call. **Deduplication** — one line per order, via `watch_announced` in `~/.drama-studio/state.json`. **Claimed state** — an order that leaves the waiting line, or is recorded with the new `studio_check.py --claim <id>`, is marked `watch_claimed` and never announced again by a later watcher. **Interactive fallback** — when the host declares it does not honour the skill's allowed-tools (`DRAMA_STUDIO_SKILL_LOCAL_PERMS`, or `skill_local_perms` in state), the watcher stops with the interactive-approval / Monitor-tool line; it never fabricates a settings exception. `--hook` and `--desktop` are unchanged.
+- Permissions stay **skill-local only** (the two `Bash(...)` entries in the plugin's `allowed-tools`); no `option2-settings.json` exists anywhere, and neither studio script writes a settings file.
+- New test `.claude/skills/drama-studio/prove/prove_option2_monitor.py` — six checks, each with a planted-bad control. It takes `--skill <dir>`, so the same checks run against a pre-change copy of the skill and there FAIL (option, dedup, claimed, fallback and the monitor manifest do not exist yet) and against this skill PASS.
+- Version markers: this `VERSION` + SKILL.md frontmatter 2.7.43 -> 2.7.44.
+
 ## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
 
 The 2.7.41 sentence ("a missing reference picture is a refusal, never an empty directory") was false in code: `character_bible.write_delivery` rendered the PDF and created `02 - Character Bible Images/` before raising `NO_REFERENCE_IMAGES`, leaving both contract artifacts behind on a refusal.

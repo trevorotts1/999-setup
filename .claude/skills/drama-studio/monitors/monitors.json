@@ -1,0 +1,8 @@
+[
+  {
+    "name": "drama-studio-option2",
+    "description": "Drama Studio Option 2 watcher: checks the studio every 120 seconds for the whole session and prints one line per newly waiting order (silent while idle). It acts only when the client's recorded option is 2, announces each order once, and never writes a settings file.",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}\"/studio_check.py --watch --every 120",
+    "when": "always"
+  }
+]
