@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
-# studio_check.py — the Drama Studio check-in, the SessionStart hook and the watcher (U13).
+# studio_check.py — the Drama Studio check-in, the SessionStart hook and the watcher (U13, U14).
 #
 # Usage:
 #   studio_check.py --hook                 # the SessionStart hook (reads the hook JSON on stdin)
 #   studio_check.py --desktop              # the heartbeat job's desktop notice (opt-in only)
-#   studio_check.py --watch [--every N] [--once]   # Option 2 watcher; U14 owns its dedup
+#   studio_check.py --watch [--every N] [--once] [--option N]   # the Option-2 watcher (U14)
+#   studio_check.py --claim ORDER_ID       # record an order as picked up (claimed), U14
 #   studio_check.py --print-root           # the skill root, refused when it is not this plugin
 #   studio_check.py --print-state          # the protected state folder
 #
-# THE RULES THIS FILE OWNS (JOINT PLAN section 3.10, row U13):
+# THE RULES THIS FILE OWNS (JOINT PLAN section 3.10, rows U13 and U14):
 #   1  the terminal notice prints once per order per session, and only on a real start
 #      (the hook matches source=startup; a resume or a clear prints nothing)
 #   2  a desktop notice happens ONLY when the client opted in — off otherwise
 #   4  the hook is SILENT on any error, exit 0
 #   4a the hook skips the network check when the last check was less than 60 seconds ago
+#   U14-a OPTION — the watcher acts for Option 2 alone. Option 1 is the default; anything
+#         that is not 2 keeps the watcher silent (the option is chosen per client, never guessed)
+#   U14-b DEDUP  — one line per order, however many 120-second cycles pass
+#   U14-c CLAIMED — an order that is picked up is never announced again by a later watcher
+#   U14-d FALLBACK — with no skill-local permissions the watcher stops and keeps the
+#         interactive approval (or the Monitor-tool re-arm); it never writes a settings file
+#
+# PERMISSIONS. The two script permissions live in this skill's allowed-tools (SKILL.md
+# frontmatter) — skill-local only. Nothing here writes, reads or names any settings file,
+# and no per-option settings file is created anywhere in this plugin.
 #
 # BUDGETS. HOOK_BUDGET_S is the whole hook; NETWORK_BUDGET_S is the network call.
 # A copy that overruns either is rejected: nothing is printed and the run still exits 0.
@@ -43,6 +54,18 @@ MARKERS = ("SKILL.md", os.path.join("hooks", "hooks.json"))
 AF_ROOT = "AF-DS-ROOT"
 AF_ARGS = "AF-DS-ARGS"
 ORDER_RE = re.compile(r'^DRAMA_ORDER\s+(\S+)\s+"([^"]*)"\s*$')
+
+# U14, the Option-2 watcher. Option 1 (wait) is the default: Option 2 is a per-client choice
+# and is never assumed. A non-2 option keeps the watcher silent.
+WATCH_OPTION = 2
+DEFAULT_OPTION = 1
+WATCH_HINT = "Start it now and run it to the next approval stop."
+FALLBACK_LINE = (NOTICE_PREFIX +
+                 "skill-local permissions are not available in this session. Keeping the "
+                 "interactive approval fallback; re-arm the Monitor tool if this session has no "
+                 "interactive approval either. The watcher is stopping and no settings file was written.")
+PERMS_ENV = "DRAMA_STUDIO_SKILL_LOCAL_PERMS"
+FALSE_WORDS = ("0", "no", "false", "off", "unsupported")
 
 
 # ---------------------------------------------------------------- root and state
@@ -146,8 +169,12 @@ def machine_key():
         return ""
 
 
-def fetch_line():
-    """Ask the studio for the one waiting order. Returns the line or None. Never prints a key."""
+def fetch_checkin():
+    """Ask the studio for the one waiting order. Returns the check-in body (never a key).
+
+    The body carries `line` (the waiting order, or null). U14's watcher also reads the
+    machine's `option` from here when the studio sends one; the hook ignores it.
+    """
     if fake_mode():
         _fake_calls()
         delay = float(os.environ.get("DRAMA_STUDIO_FAKE_DELAY") or 0)
@@ -155,10 +182,11 @@ def fetch_line():
             time.sleep(delay)
         if os.environ.get("DRAMA_STUDIO_FAKE_ERROR") == "1":
             raise RuntimeError("studio unreachable")
-        return os.environ.get("DRAMA_STUDIO_FAKE_LINE") or None
+        return {"line": os.environ.get("DRAMA_STUDIO_FAKE_LINE") or None,
+                "option": os.environ.get("DRAMA_STUDIO_FAKE_OPTION")}
     url = studio_url()
     if not url:
-        return None
+        return {"line": None}
     req = urllib.request.Request(
         url + "/api/studio/checkin",
         data=b'{"orders": true}',
@@ -167,12 +195,22 @@ def fetch_line():
     )
     with urllib.request.urlopen(req, timeout=NETWORK_BUDGET_S) as resp:
         body = json.loads(resp.read().decode("utf-8") or "{}")
-    return body.get("line")
+    return body if isinstance(body, dict) else {"line": None}
+
+
+def fetch_line():
+    """The hook's view of the check-in: the one waiting line, or None."""
+    return fetch_checkin().get("line")
 
 
 def check_network():
     """The network call, inside its own 3-second budget."""
     return run_budget(fetch_line, NETWORK_BUDGET_S)
+
+
+def check_network_full():
+    """The watcher's network call: the whole check-in body, same 3-second budget."""
+    return run_budget(fetch_checkin, NETWORK_BUDGET_S)
 
 
 def parse_order(line):
@@ -271,6 +309,111 @@ def desktop_notify(sd, sink_cmd=None):
     return body
 
 
+# ---------------------------------------------------------------- the Option-2 watcher (U14)
+def as_option(value):
+    """An option number, or None. Only 1, 2 and 3 are real; anything else is not an option."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s.isdigit():
+        return None
+    n = int(s)
+    return n if n in (1, 2, 3) else None
+
+
+def resolve_option(cli_option, st):
+    """U14-a. The option in force, most specific first: flag, env, state, then Option 1."""
+    return (as_option(cli_option)
+            or as_option(os.environ.get("DRAMA_STUDIO_OPTION"))
+            or as_option(st.get("option"))
+            or DEFAULT_OPTION)
+
+
+def skill_local_perms_ok(st):
+    """U14-d. True when the host honours this skill's allowed-tools. A host that declares it
+    does not (env or state) gets the interactive fallback instead of a fabricated exception."""
+    v = os.environ.get(PERMS_ENV)
+    if v is None:
+        v = st.get("skill_local_perms")
+    if v is None:
+        return True
+    return str(v).strip().lower() not in FALSE_WORDS
+
+
+def watch_cycle(st, option, sd):
+    """One Option-2 cycle. Returns the line to print, or None. Persists the state it changes.
+
+    Dedup (U14-b): an order already announced is never announced again by this state.
+    Claimed (U14-c): an order that left the waiting line, or was claimed explicitly, is
+    never announced again, even from a later watcher (a fresh process over the same state).
+    """
+    st["watch_cycles"] = int(st.get("watch_cycles") or 0) + 1
+    try:
+        body = check_network_full()
+    except BaseException:
+        body = {"line": None}
+    if not isinstance(body, dict):
+        body = {"line": None}
+    resp_option = as_option(body.get("option"))
+    if resp_option is not None:
+        option = resp_option            # the studio's record decides; the flag is only a hint
+    st["option"] = option
+    st["last_watch_at"] = time.time()
+
+    order = parse_order(body.get("line"))
+    announced = st.get("watch_announced") or {}
+    claimed = st.get("watch_claimed") or {}
+    # an announced order that is no longer waiting has been picked up: claim it
+    now = time.time()
+    waiting = {order[0]} if order else set()
+    for oid in list(announced.keys()):
+        if oid not in waiting:
+            claimed[oid] = now
+
+    out = None
+    if order:
+        oid, title = order
+        if oid not in announced and oid not in claimed:
+            out = "%s1 order waiting (%s). %s" % (NOTICE_PREFIX, title, WATCH_HINT)
+            announced[oid] = now
+    st["watch_announced"] = announced
+    st["watch_claimed"] = claimed
+    save_state(sd, st)
+    return out
+
+
+def run_watch(sd, option, every, once):
+    """The watcher loop. Returns 0. Silent for any option that is not 2 and on any error."""
+    st = load_state(sd)
+    if not skill_local_perms_ok(st):
+        sys.stdout.write(FALLBACK_LINE + "\n")
+        sys.stdout.flush()
+        return 0
+    option = resolve_option(option, st)
+    if option != WATCH_OPTION:
+        # not Option 2: the watcher does nothing, and does not even spend a network call
+        st["option"] = option
+        save_state(sd, st)
+        return 0
+    while True:
+        st = load_state(sd)
+        out = watch_cycle(st, option, sd)
+        if out:
+            sys.stdout.write(out + "\n")
+            sys.stdout.flush()
+        if once:
+            return 0
+        time.sleep(max(1.0, every))
+
+
+def claim_order(sd, order_id):
+    """U14-c. Record an order as picked up so no watcher (this one or a later one) re-announces."""
+    st = load_state(sd)
+    st.setdefault("watch_claimed", {})[order_id] = time.time()
+    save_state(sd, st)
+    return 0
+
+
 # ---------------------------------------------------------------- CLI
 def main(argv):
     ap = argparse.ArgumentParser(add_help=True)
@@ -279,6 +422,8 @@ def main(argv):
     ap.add_argument("--watch", action="store_true")
     ap.add_argument("--every", type=float, default=120.0)
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--option", default=None)
+    ap.add_argument("--claim", default=None)
     ap.add_argument("--print-root", action="store_true")
     ap.add_argument("--print-state", action="store_true")
     ap.add_argument("--root")
@@ -323,20 +468,16 @@ def main(argv):
             sys.stdout.write(out + "\n")
         return 0
 
-    if a.watch:
-        while True:
-            try:
-                line = check_network()
-            except BaseException:
-                line = None
-            if line:
-                sys.stdout.write(line + "\n")
-                sys.stdout.flush()
-            if a.once:
-                return 0
-            time.sleep(max(1.0, a.every))
+    if a.claim is not None:
+        if not re.match(r"^\S+$", a.claim):
+            sys.stderr.write("%s --claim needs one order id\n" % AF_ARGS)
+            return 2
+        return claim_order(sd, a.claim)
 
-    sys.stderr.write("%s need one of --hook, --desktop, --watch, --print-root, --print-state\n" % AF_ARGS)
+    if a.watch:
+        return run_watch(sd, a.option, a.every, a.once)
+
+    sys.stderr.write("%s need one of --hook, --desktop, --watch, --claim, --print-root, --print-state\n" % AF_ARGS)
     return 2
 
 
