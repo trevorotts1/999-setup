@@ -57,7 +57,14 @@ LAUNCH CONTRACT (check_launch) a Workflow call under a found plan must carry arg
           the script must carry the helper (WINDOW_HELPER) with a window of exactly cap (not smaller, not larger).
           Undeterminable -> blocked.
 
+CENSUS  a v2 plan may declare top-level "census": path of the v1 swarm plan. A workflow present there may not have fewer units than
+          min(census agent_count, policy cap) (validate_plan, add-plan, launch contract). add-plan also binds a census found near the
+          plan (.spec-protocol.json "census", packet/claude-nine-swarm/SWARM-PLAN.json) and pins it in the installed copy.
+          `staffing.py from-census --census V1.json --workflow ID [--workflow ID ...] --out DRAFT.json` builds the staffed units.
+
 CLI:  staffing.py status --cwd DIR [--state-dir DIR] [--json]   |   staffing.py start --cwd DIR   |   staffing.py --selftest
+      staffing.py retire --cwd DIR | --plan PATH [--dry-run]   (off only when every unit is proven PASS; never deletes files)
+      staffing.py add-plan --src DRAFT --dest PATH [--dry-run]   (validated, planned-not-running, no overwrite)
 """
 import hashlib
 import json
@@ -173,8 +180,11 @@ def _overlap(a, b):
     return a == b or (a.endswith("/") and b.startswith(a)) or (b.endswith("/") and a.startswith(b))
 
 
-def validate_plan(doc):
-    """Return a list of error strings; empty means the plan satisfies the v2 schema."""
+def validate_plan(doc, plan_dir=None, implicit_census=False):
+    """Return a list of error strings; empty means the plan satisfies the v2 schema.
+    plan_dir (the directory holding the plan file) lets a declared "census" (top-level path to the v1 swarm plan) be checked:
+    a workflow that exists in the census may not have fewer units than min(census agent_count, policy cap). implicit_census also
+    looks for a census bound to the project (see find_census); no plan_dir and no census key means no census check."""
     if not isinstance(doc, dict):
         return ["plan is unreadable or not a JSON object"]
     errs = []
@@ -285,6 +295,66 @@ def validate_plan(doc):
         return False
     if any(visit(n) for n in list(deps_of)):
         errs.append("workflow dependencies contain a cycle")
+    errs += census_errors(doc, plan_dir, implicit_census)
+    return errs
+
+
+# ---------------------------------------------------------------- census (v1 plan) staffing floor
+def find_census(doc, plan_dir, implicit=False):
+    """(path, census_doc, err). A top-level "census" key in the plan is authoritative (relative paths resolve against plan_dir).
+    implicit: no key -> walk up from plan_dir for .spec-protocol.json "census", else a v1 SWARM-PLAN.json at
+    packet/claude-nine-swarm/, claude-nine-swarm/ or the dir itself. (None, None, None) = nothing bound = no check."""
+    ref = doc.get("census") if isinstance(doc, dict) else None
+    if ref is not None:
+        if not _nonempty(ref):
+            return None, None, "census must be a nonempty path to the v1 swarm plan"
+        p = Path(ref).expanduser()
+        if not p.is_absolute():
+            if plan_dir is None:
+                return None, None, None
+            p = Path(plan_dir) / p
+        c = _jload(p)
+        if not isinstance(c, dict) or not isinstance(c.get("workflows"), list):
+            return None, None, "census %s is unreadable or not a swarm plan" % p
+        return p, c, None
+    if not implicit or plan_dir is None:
+        return None, None, None
+    d = Path(plan_dir).resolve()
+    for _ in range(8):
+        cands = []
+        prof = _jload(d / ".spec-protocol.json") if (d / ".spec-protocol.json").is_file() else None
+        if isinstance(prof, dict) and _nonempty(prof.get("census")):
+            cands.append((d / prof["census"]).resolve())
+        cands += [d / "packet" / "claude-nine-swarm" / "SWARM-PLAN.json", d / "claude-nine-swarm" / "SWARM-PLAN.json", d / "SWARM-PLAN.json"]
+        for f in cands:
+            c = _jload(f) if f.is_file() else None
+            if isinstance(c, dict) and c.get("schema") != SCHEMA and isinstance(c.get("workflows"), list):
+                return f, c, None
+        if d.parent == d:
+            break
+        d = d.parent
+    return None, None, None
+
+
+def census_errors(doc, plan_dir, implicit=False):
+    """A plan workflow that exists in its census may not be staffed below min(census agent_count, policy cap)."""
+    path, cen, err = find_census(doc, plan_dir, implicit)
+    if err:
+        return [err]
+    if cen is None:
+        return []
+    cap = plan_cap(doc) or CEIL_AGENTS
+    by_id = {w.get("workflow_id"): w for w in cen["workflows"] if isinstance(w, dict)}
+    errs = []
+    for w in workflows(doc):
+        c = by_id.get(w.get("workflow_id"))
+        if c is None or not _int(c.get("agent_count")):
+            continue
+        planned, given = min(c["agent_count"], cap), len(w.get("units") or [])
+        if given < planned:
+            errs.append("%s: under-staffed against census %s: it plans %d agents (min(census agent_count %d, cap %d)) but this plan gives %d unit(s). "
+                        "Build the units with `python3 %s from-census --census %s --workflow %s --out DRAFT.json`, then add-plan the draft."
+                        % (w["workflow_id"], path, planned, c["agent_count"], cap, given, HERE / "staffing.py", path, w["workflow_id"]))
     return errs
 
 
@@ -397,7 +467,7 @@ def is_done(plan_dir, wf, attempts=(), records=None, proof=None):
     return bool(units) and all(unit_done(plan_dir, wf, u, attempts, records, proof) for u in units)
 
 
-def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOWS, agent_cap=None, attempts=None, records=None, proof=None):
+def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOWS, agent_cap=None, attempts=None, records=None, proof=None, cancelled=None):
     """Pure state computation. running: workflowIds with a live launch. launches: wid -> count."""
     launches = launches or {}
     attempts = attempts or {}
@@ -407,11 +477,12 @@ def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOW
     order = [w["workflow_id"] for w in wfs]
     done = {w["workflow_id"] for w in wfs if is_done(Path(plan_path).parent, w, attempts.get(w["workflow_id"], ()), records.get(w["workflow_id"], ()), proof.get(w["workflow_id"]))}
     run = [i for i in order if i in set(running)]
-    handback = [i for i in order if i not in done and i not in run and launches.get(i, 0) >= HANDBACK_LAUNCHES]
+    canc = [i for i in order if i in (cancelled or ()) and i not in done]  # operator-cancelled: never owed, never done
+    handback = [i for i in order if i not in done and i not in run and i not in canc and launches.get(i, 0) >= HANDBACK_LAUNCHES]
     ready = []
     for w in wfs:
         i = w["workflow_id"]
-        if i in done or i in run or i in handback:
+        if i in done or i in run or i in handback or i in canc:
             continue
         if all(d in done for d in (w.get("dependencies") or [])):
             ready.append(i)
@@ -422,7 +493,7 @@ def compute(plan_path, doc, running=(), launches=None, program_cap=CEIL_WORKFLOW
     acap = agent_cap or plan_cap(doc) or CEIL_AGENTS
     counts = {w["workflow_id"]: agent_count(w, acap) for w in wfs}
     return {"order": order, "done": sorted(done, key=order.index), "running": run, "ready": ready,
-            "owed": owed, "handback": handback, "required_running": required,
+            "owed": owed, "handback": handback, "cancelled": canc, "required_running": required,
             "max_active": maw, "agents": counts}
 
 
@@ -446,6 +517,64 @@ def set_running(path):
     return True
 
 
+RECORD_SANCTIONED = False  # True only for the staffing.py command line: its plan writes are then recorded as expected (see sanction)
+
+
+def sanction(path, state_dir=None):
+    """Record that the file at path was just written by a sanctioned writer (the guard's status flip, staffing start/retire/add-plan/cancel):
+    its path + sha256 go to sanctioned_writes so the tamper check does not call that change a tamper. Never raises."""
+    try:
+        p = Path(path).resolve()
+        sha = hashlib.sha256(p.read_bytes()).hexdigest()
+        conn = open_journal(state_dir)
+        if not conn:
+            return
+        try:
+            conn.execute("INSERT OR REPLACE INTO sanctioned_writes VALUES(?,?,?)", (str(p), sha, time.time()))
+            conn.execute("DELETE FROM sanctioned_writes WHERE at<?", (time.time() - 7 * 86400,))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def _cli_sanction(path, state_dir=None):
+    if RECORD_SANCTIONED:
+        sanction(path, state_dir)
+
+
+def cmd_clear_tamper(session, reason, state_dir=None):
+    """OPERATOR-ONLY (the guard refuses it to a governed session): close every open TAMPER alert of a session so its Workflow launches
+    and Stop work again. Needs --reason; writes tamper_alerts (cleared=1, reason, time), deletes that session's tamper_snap rows and adds a
+    TAMPER_CLEARED line to STATUS.md. Touches no plan, verdict or evidence file."""
+    if not session or not _nonempty(reason):
+        print("clear-tamper REFUSED: --session and --reason are required; nothing changed")
+        return 2
+    conn = open_journal(state_dir)
+    if not conn:
+        print("clear-tamper REFUSED: guard journal cannot be opened; nothing changed")
+        return 2
+    try:
+        rows = conn.execute("SELECT path,change,tool_use_id FROM tamper_alerts WHERE session=? AND cleared=0", (str(session),)).fetchall()
+        conn.execute("UPDATE tamper_alerts SET cleared=1,cleared_reason=?,cleared_at=? WHERE session=? AND cleared=0", (reason, time.time(), str(session)))
+        n = conn.execute("DELETE FROM tamper_snap WHERE session=?", (str(session),)).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    sd = Path(state_dir) if state_dir else default_state_dir()
+    try:
+        f = sd / "STATUS.md"
+        old = f.read_text() if f.exists() else "# Workflow watchdog status\n"
+        f.write_text(old.rstrip("\n") + "\n- TAMPER_CLEARED: session %s: %d alert(s) cleared by operator: %s\n" % (session, len(rows), reason))
+    except OSError:
+        pass
+    print("tamper_alerts: %d row(s) cleared for session %s (reason %r); tamper_snap: %d row(s) deleted" % (len(rows), session, reason, n))
+    for r in rows:
+        print("  cleared: %s %s (Bash call %s)" % (r[1], r[0], r[2]))
+    return 0
+
+
 def describe_owed(state):
     return ", ".join("%s (%d agents)" % (i, state["agents"][i]) for i in state["owed"])
 
@@ -461,7 +590,12 @@ def migrate(conn):
         "CREATE TABLE IF NOT EXISTS session_pins(session TEXT,plan TEXT,armed REAL,PRIMARY KEY(session,plan));"
         "CREATE TABLE IF NOT EXISTS verdict_records(plan TEXT,workflow_id TEXT,unit_id TEXT,attempt_id TEXT,sha256 TEXT,agent_id TEXT,launch_id TEXT,created REAL,PRIMARY KEY(plan,unit_id,attempt_id,sha256));"
         "CREATE TABLE IF NOT EXISTS attempt_ids(plan TEXT,attempt_id TEXT,workflow_id TEXT,launch_id TEXT,created REAL,PRIMARY KEY(plan,attempt_id));"
-        "CREATE TABLE IF NOT EXISTS launch_attempts(attempt TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,outcome TEXT,detail TEXT,created REAL);")
+        "CREATE TABLE IF NOT EXISTS launch_attempts(attempt TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,outcome TEXT,detail TEXT,created REAL);"
+        "CREATE TABLE IF NOT EXISTS cancellations(plan TEXT,workflow_id TEXT,reason TEXT,superseded_by TEXT,operator_session TEXT,at REAL,PRIMARY KEY(plan,workflow_id));"
+        # tamper detection (guard.py): snapshots of the protected set per Bash call, the alerts they raise, and the writes that are expected
+        "CREATE TABLE IF NOT EXISTS tamper_snap(session TEXT,tool_use_id TEXT,taken REAL,command TEXT,snap TEXT,PRIMARY KEY(session,tool_use_id));"
+        "CREATE TABLE IF NOT EXISTS tamper_alerts(key TEXT PRIMARY KEY,session TEXT,tool_use_id TEXT,path TEXT,change TEXT,command TEXT,at REAL,cleared INTEGER DEFAULT 0,cleared_reason TEXT,cleared_at REAL);"
+        "CREATE TABLE IF NOT EXISTS sanctioned_writes(path TEXT,sha256 TEXT,at REAL,PRIMARY KEY(path,sha256));")
     if fresh:  # one-time carry-over of the old single-pin table; never again, or deleted pins would come back
         conn.execute("INSERT OR IGNORE INTO session_pins SELECT session,plan,armed FROM session_plans")
         conn.commit()
@@ -471,10 +605,13 @@ def journal_view(conn, plan_path, ids, session=None):
     """Read the journal for one plan. Returns dict(running=set, launches={wid:n}, any=bool, attempts={wid:set(attempt_id)},
     records={wid:{(unit,attempt,sha)}}, proof={wid:{(unit,attempt,sha):(writer agent_id, [run folders])}}).
     Everything here is an ADMITTED launch; hook refusals are never counted."""
-    out = {"running": set(), "launches": {}, "any": False, "attempts": {}, "records": {}, "proof": {}}
+    out = {"running": set(), "launches": {}, "any": False, "attempts": {}, "records": {}, "proof": {}, "cancelled": {}}
     p = str(plan_path)
     idset = set(ids)
     try:
+        for wid, why in conn.execute("SELECT workflow_id,reason FROM cancellations WHERE plan=?", (p,)):
+            if wid in idset:
+                out["cancelled"][wid] = why
         q = ",".join("?" * len(LIVE_STATES))
         for (wid,) in conn.execute("SELECT DISTINCT t.workflow_id FROM launch_tags t JOIN launches l ON l.id=t.id WHERE t.plan=? AND l.state IN (%s)" % q, (p,) + LIVE_STATES):
             if wid in idset:
@@ -533,8 +670,6 @@ def program_cap(state_dir=None):
 
 PROBE_TTL = 600
 PROBE = None  # tests inject a callable returning {"per_workflow_cap": n}; None = capacity_probe.probe()
-if os.environ.get("STAFFING_TEST_PROBE_CAP", "").isdigit() and 1 <= int(os.environ["STAFFING_TEST_PROBE_CAP"]) <= 10:
-    PROBE = lambda: {"per_workflow_cap": int(os.environ["STAFFING_TEST_PROBE_CAP"])}  # test-only door (999-setup repo adaptation)
 
 
 def probed_cap(state_dir=None, session=None, now=None):
@@ -621,11 +756,34 @@ def _attempts_records(conn, p):
     return att, rec, proof
 
 
+def plan_settled(plan_path, state_dir=None):
+    """True iff the plan has workflows and every one is done or operator-cancelled (nothing owed; must not be re-armed)."""
+    try:
+        p = Path(plan_path)
+        doc = _jload(p)
+        wfs = workflows(doc) if isinstance(doc, dict) else []
+        conn = open_journal(state_dir)
+        if not wfs or not conn:
+            return False
+        try:
+            pr = p.resolve()
+            try:
+                att, rec, proof = _attempts_records(conn, pr)
+            except sqlite3.Error:  # no launches table yet: nothing has been recorded, so nothing is done
+                att, rec, proof = {}, {}, {}
+            canc = {r[0] for r in conn.execute("SELECT workflow_id FROM cancellations WHERE plan IN (?,?)", (str(pr), str(p)))}
+            return all(w.get("workflow_id") in canc or is_done(pr.parent, w, att.get(w.get("workflow_id"), ()), rec.get(w.get("workflow_id"), ()), proof.get(w.get("workflow_id"))) for w in wfs)
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
 def resolve_plans(cwd, session=None, state_dir=None):
     """Every plan governing this session: [(path, doc)], doc None when the file is missing/unreadable.
     A plan found from cwd that is ARMED (status running) or has a recorded launch is pinned to the session; a pin is never
     replaced by another (several armed plans may be pinned at once). Pinned plans keep governing wherever the cwd goes
-    until EVERY workflow of the plan is done (the pin is then deleted); the user's stop latch only SUSPENDS pins (they stay
+    until EVERY workflow of the plan is done (the pin is then deleted); Trevor's stop latch only SUSPENDS pins (they stay
     and govern again after the next human message). A pinned plan whose file vanished or is unreadable while launches are
     recorded is returned with doc None: armed and invalid ("plan file missing"), never "no plan". An unarmed cwd plan stays cwd-scoped."""
     found = find_plan(cwd)
@@ -663,7 +821,8 @@ def resolve_plans(cwd, session=None, state_dir=None):
                     continue
                 wfs = workflows(d)
                 att, rec, proof = _attempts_records(conn, p)
-                if wfs and all(is_done(p.parent, w, att.get(w.get("workflow_id"), ()), rec.get(w.get("workflow_id"), ()), proof.get(w.get("workflow_id"))) for w in wfs):
+                canc = {r[0] for r in conn.execute("SELECT workflow_id FROM cancellations WHERE plan=?", (str(p),))}
+                if wfs and all(w.get("workflow_id") in canc or is_done(p.parent, w, att.get(w.get("workflow_id"), ()), rec.get(w.get("workflow_id"), ()), proof.get(w.get("workflow_id"))) for w in wfs):
                     conn.execute("DELETE FROM session_pins WHERE session=? AND plan=?", (str(session), plan))
                     conn.commit()
                     continue
@@ -681,13 +840,35 @@ def resolve_plan(cwd, session=None, state_dir=None):
     return r[0] if r else None
 
 
-def plan_for_launch(cwd, session, state_dir, wid):
-    """Of the plans governing the session, the one that owns workflow wid (else the first)."""
+def run_root_plan(script, wid):
+    """The plan a make-workflow.py launch belongs to: `const RUN_ROOT = "<dir>"` names the plan's folder; return the ONE
+    valid, not-finished (planned-not-running or running) *SWARM-PLAN.json in that folder that owns wid as (Path, doc),
+    else None (zero or several owners: no guess). Read-only."""
+    try:
+        m = re.search(r'^const RUN_ROOT = ("(?:[^"\\]|\\.)*");', script or "", re.M)
+        if not (isinstance(wid, str) and wid and m):
+            return None
+        d = Path(json.loads(m.group(1)))
+        owners = []
+        for p in sorted(d.glob("*SWARM-PLAN.json")):
+            doc = _jload(p)
+            if (isinstance(doc, dict) and doc.get("status") in STATUS_OK
+                    and wid in [w.get("workflow_id") for w in workflows(doc)]):
+                owners.append((p.resolve(), doc))
+        return owners[0] if len(owners) == 1 else None
+    except Exception:
+        return None
+
+
+def plan_for_launch(cwd, session, state_dir, wid, script=None):
+    """Of the plans governing the session, the one that owns workflow wid; else (script given) the plan its RUN_ROOT names
+    when that plan owns wid (a launch is checked against the plan it belongs to, never against an unrelated pinned plan);
+    else the first. A workflowId no plan owns still lands on the first governing plan and is refused there."""
     plans = resolve_plans(cwd, session, state_dir)
     for path, doc in plans:
         if isinstance(wid, str) and doc is not None and wid in [w.get("workflow_id") for w in workflows(doc)]:
             return path, doc
-    return plans[0] if plans else None
+    return run_root_plan(script, wid) or (plans[0] if plans else None)
 
 
 def protected_plan_paths(cwd, session, state_dir=None):
@@ -722,7 +903,7 @@ def snapshot(cwd, state_dir=None, session=None, reap=True, plan=None):
     if not found:
         return None
     path, doc = found
-    errs = validate_plan(doc) if doc is not None else (
+    errs = validate_plan(doc, Path(path).parent) if doc is not None else (
         ["plan file missing: %s (a pinned plan with recorded launches cannot vanish; restore it, do not rename or rewrite it)" % path] if not Path(path).exists()
         else ["plan file unreadable: %s" % path])
     snap = {"path": path, "doc": doc, "errors": errs, "view": None, "state": None, "armed": False}
@@ -741,7 +922,7 @@ def snapshot(cwd, state_dir=None, session=None, reap=True, plan=None):
     snap["armed"] = is_armed(doc) if doc is not None else bool(view["any"])
     if errs:
         return snap
-    snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir, session), view["attempts"], view["records"], view["proof"])
+    snap["state"] = compute(path, doc, view["running"], view["launches"], program_cap(state_dir), launch_agent_cap(doc, state_dir, session), view["attempts"], view["records"], view["proof"], view.get("cancelled"))
     return snap
 
 
@@ -1011,7 +1192,7 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
             args = None
     args = args if isinstance(args, dict) else {}
     wid = args.get("workflowId")
-    found = plan_for_launch(cwd, session, state_dir, wid)
+    found = plan_for_launch(cwd, session, state_dir, wid, _read_script(ti, cwd)[0])
     if not found:
         return True, ""
     snap = snapshot(cwd, state_dir, session, reap=(state_dir is None) if reap is None else reap, plan=found)
@@ -1037,12 +1218,14 @@ def check_launch(tool_input, cwd, session=None, state_dir=None, attempt_id=None,
     target = wid if isinstance(wid, str) and wid in wfs else None
     if target is None:
         problems.append("args.workflowId is %s; it must equal a workflow_id of this plan" % (json.dumps(wid) if "workflowId" in args else "missing"))
+    elif target in st.get("cancelled", ()):
+        problems.append("workflow %s was cancelled by operator: %s; it cannot be launched again" % (target, snap["view"].get("cancelled", {}).get(target) or "no reason recorded"))
     elif target in st["done"]:
         problems.append("workflow %s is already done (its verdict file is PASS); do not launch it again" % target)
     elif target in st["running"]:
         problems.append("workflow %s is already running" % target)
     elif target in st["handback"]:
-        problems.append("workflow %s was launched %d times without becoming done: it is in HANDBACK and needs the user, not a relaunch" % (target, HANDBACK_LAUNCHES))
+        problems.append("workflow %s was launched %d times without becoming done: it is in HANDBACK and needs Trevor, not a relaunch" % (target, HANDBACK_LAUNCHES))
     elif target not in st["ready"]:
         unmet = [d for d in (wfs[target].get("dependencies") or []) if d not in st["done"]]
         problems.append("workflow %s is not ready: unfinished dependencies %s" % (target, unmet))
@@ -1119,7 +1302,7 @@ def cmd_status(cwd, state_dir, as_json):
     st = snap["state"]
     row = {"plan": str(snap["path"]), "armed": snap["armed"], "max_active": st["max_active"], "required_running": st["required_running"],
            "done": st["done"], "running": st["running"], "ready": st["ready"], "owed": [{"workflow_id": i, "agents": st["agents"][i]} for i in st["owed"]],
-           "handback": st["handback"]}
+           "handback": st["handback"], "cancelled": st["cancelled"]}
     if as_json:
         print(json.dumps(row, indent=2))
         return 0
@@ -1130,6 +1313,7 @@ def cmd_status(cwd, state_dir, as_json):
     print("running (%d): %s" % (len(st["running"]), ", ".join(st["running"]) or "none"))
     print("owed now: %s" % (describe_owed(st) or "none"))
     print("handback: %s" % (", ".join(st["handback"]) or "none"))
+    print("cancelled (%d): %s" % (len(st["cancelled"]), ", ".join("%s (%s)" % (i, snap["view"]["cancelled"].get(i, "")) for i in st["cancelled"]) or "none"))
     return 0
 
 
@@ -1144,7 +1328,7 @@ def cmd_start(cwd):
         print("no plan found from %s; nothing to start" % cwd)
         return 1
     path, doc = found
-    errs = validate_plan(doc)
+    errs = validate_plan(doc, Path(path).parent)
     if errs:
         print("plan %s is INVALID, not started:\n  - %s" % (path, "\n  - ".join(errs)))
         return 1
@@ -1152,8 +1336,390 @@ def cmd_start(cwd):
         print("plan %s is already running" % path)
         return 0
     set_running(path)
+    _cli_sanction(path)
     print("plan %s started: status is now running; the floor applies" % path)
     return 0
+
+
+# ---------------------------------------------------------------- retire / add-plan (sanctioned plan operations)
+def _recs(conn, p):
+    """{unit_id: {sha256}} journaled for plan p (verdict_records)."""
+    out = {}
+    try:
+        for uid, sha in conn.execute("SELECT unit_id,sha256 FROM verdict_records WHERE plan IN (?,?)", (str(p), str(Path(p).resolve()))):
+            out.setdefault(uid, set()).add(sha)
+    except sqlite3.Error:
+        pass
+    return out
+
+
+def _unit_pass(plan_path, u, recs):
+    """None when u has a real PASS verdict under plan_path (file parses, PASS exactly, unit_id matches, and its sha256 matches
+    a verdict_records row when the journal has any row for that unit); else the reason it is unproven."""
+    vf = u.get("verdict_file")
+    if not _nonempty(vf):
+        return "no verdict_file"
+    base = Path(plan_path).resolve().parent
+    try:
+        target = (base / vf).resolve()
+        target.relative_to(base)
+        raw = target.read_bytes()
+        d = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError):
+        return "verdict file missing or unreadable (%s)" % vf
+    if not isinstance(d, dict) or d.get("verdict") != "PASS":
+        return "verdict is %r, not PASS" % (d.get("verdict") if isinstance(d, dict) else None)
+    if d.get("unit_id") != u.get("unit_id"):
+        return "verdict unit_id %r does not match" % d.get("unit_id")
+    have = recs.get(u.get("unit_id"))
+    if have and hashlib.sha256(raw).hexdigest() not in have:
+        return "verdict file hash does not match the guard journal (edited after journaling)"
+    return None
+
+
+def _known_plans(conn, near, exclude=None):
+    """Other plans the guard knows: *SWARM-PLAN.json in/above the given dirs (3 levels) and every plan named in the journal."""
+    seen, out, paths = set(), [], []
+    for d in near:
+        p = Path(d).resolve()
+        for q in [p] + list(p.parents)[:3]:
+            paths += sorted(q.glob("*SWARM-PLAN.json")) + sorted(q.glob("claude-nine-swarm/SWARM-PLAN.json"))
+    try:
+        for t in ("session_pins", "launch_tags", "verdict_records"):
+            paths += [Path(r[0]) for r in conn.execute("SELECT DISTINCT plan FROM %s" % t) if r[0]]
+    except sqlite3.Error:
+        pass
+    for p in paths:
+        try:
+            p = p.resolve()
+        except OSError:
+            continue
+        if p in seen or (exclude and p == Path(exclude).resolve()) or not p.is_file():
+            continue
+        seen.add(p)
+        d = _jload(p)
+        if isinstance(d, dict):
+            out.append((p, d))
+    return out
+
+
+def _unit_proven(conn, plan_path, wid, u, others):
+    """(ok, why): u proven PASS under its own plan, or the same workflow_id/unit_id PASS under another known plan."""
+    why = _unit_pass(plan_path, u, _recs(conn, plan_path))
+    if why is None:
+        return True, "own evidence"
+    for op, od in others:
+        for w in workflows(od):
+            if w.get("workflow_id") != wid:
+                continue
+            for ou in w.get("units") or []:
+                if isinstance(ou, dict) and ou.get("unit_id") == u.get("unit_id") and _unit_pass(op, ou, _recs(conn, op)) is None:
+                    return True, "PASS under %s" % op
+    return False, why
+
+
+def _write_new(path, doc, state_dir=None):
+    """Atomic, never-overwrite write: tmp file then hard link (fails if path exists)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        os.link(tmp, path)
+        _cli_sanction(path, state_dir)
+    finally:
+        tmp.unlink()
+
+
+def cmd_retire(cwd, plan, dry, state_dir=None):
+    """Switch a plan off (status planned-not-running, session pins deleted) only when EVERY unit of EVERY workflow is proven PASS."""
+    if plan:
+        path, doc = Path(plan).expanduser().resolve(), _jload(Path(plan).expanduser())
+    else:
+        found = find_plan(cwd)
+        path, doc = (found[0], found[1]) if found else (None, None)
+    if not isinstance(doc, dict) or not workflows(doc):
+        print("retire REFUSED: no readable plan with workflows (%s); nothing changed" % (plan or cwd))
+        return 1
+    conn = open_journal(state_dir)
+    if not conn:
+        print("retire REFUSED: guard journal cannot be opened; nothing changed")
+        return 2
+    try:
+        others = _known_plans(conn, [path.parent], exclude=path)
+        bad, proven = [], []
+        for w in workflows(doc):
+            for u in [x for x in (w.get("units") or []) if isinstance(x, dict)]:
+                ok, why = _unit_proven(conn, path, w.get("workflow_id"), u, others)
+                (proven if ok else bad).append("%s/%s: %s" % (w.get("workflow_id"), u.get("unit_id"), why))
+        if bad:
+            print("retire REFUSED for %s; nothing changed. Unproven units:\n  - %s" % (path, "\n  - ".join(bad)))
+            return 1
+        keys = (str(path), str(plan or path))
+        pins = conn.execute("SELECT session FROM session_pins WHERE plan IN (?,?)", keys).fetchall()
+        print("%s: all %d units proven done:\n  + %s" % (path, len(proven), "\n  + ".join(proven)))
+        print("%sstatus %s -> planned-not-running; %d session pin row(s) deleted; no plan or evidence file deleted"
+              % ("[dry-run] would set " if dry else "", doc.get("status"), len(pins)))
+        if dry:
+            return 0
+        if doc.get("status") != "planned-not-running":
+            doc["status"] = "planned-not-running"
+            tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
+            tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            os.replace(tmp, path)
+            _cli_sanction(path, state_dir)
+        conn.execute("DELETE FROM session_pins WHERE plan IN (?,?)", keys)
+        conn.commit()
+        print("retired")
+        return 0
+    finally:
+        conn.close()
+
+
+def cmd_cancel(plan, wid, reason, superseded_by=None, state_dir=None):
+    """OPERATOR-ONLY (the guard refuses it to a governed session): record that workflow wid of plan was cancelled on purpose.
+    It is then neither owed nor done nor launchable. When every workflow of the plan is done-or-cancelled the plan goes to
+    planned-not-running and its session pins are deleted. Never deletes a plan or evidence file."""
+    path = Path(plan).expanduser().resolve()
+    doc = _jload(path)
+    if not isinstance(doc, dict) or wid not in [w.get("workflow_id") for w in workflows(doc)]:
+        print("cancel REFUSED: %s is not a workflow of readable plan %s; nothing changed" % (wid, path))
+        return 1
+    if not _nonempty(reason):
+        print("cancel REFUSED: --reason is required; nothing changed")
+        return 2
+    conn = open_journal(state_dir)
+    if not conn:
+        print("cancel REFUSED: guard journal cannot be opened; nothing changed")
+        return 2
+    try:
+        key = str(path)
+        who = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "operator-cli"
+        conn.execute("INSERT OR REPLACE INTO cancellations VALUES(?,?,?,?,?,?)", (key, wid, reason, superseded_by or "", who, time.time()))
+        print("cancellations row written: plan=%s workflow=%s reason=%r superseded_by=%r operator_session=%s" % (key, wid, reason, superseded_by or "", who))
+        conn.commit()
+        try:
+            live = conn.execute("SELECT 1 FROM launch_tags t JOIN launches l ON l.id=t.id WHERE t.plan=? AND t.workflow_id=? AND l.state IN (%s) LIMIT 1" % ",".join("?" * len(LIVE_STATES)), (key, wid) + LIVE_STATES).fetchone()
+        except sqlite3.Error:
+            live = None
+        if live:
+            print("WARNING: the journal still lists a live launch of %s; cancel did not stop it" % wid)
+    finally:
+        conn.close()
+    if plan_settled(path, state_dir):
+        conn = open_journal(state_dir)
+        try:
+            n = conn.execute("DELETE FROM session_pins WHERE plan=?", (key,)).rowcount
+            conn.commit()
+        finally:
+            conn.close()
+        old = doc.get("status")
+        if old != "planned-not-running":
+            doc["status"] = "planned-not-running"
+            tmp = path.with_name(path.name + ".%d.tmp" % os.getpid())
+            tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            os.replace(tmp, path)
+            _cli_sanction(path, state_dir)
+        print("plan fully done-or-cancelled: status %s -> planned-not-running; %d session_pins row(s) deleted; no plan or evidence file deleted" % (old, n))
+    else:
+        print("plan still has workflows neither done nor cancelled: plan status and pins unchanged")
+    return 0
+
+
+def cmd_add_plan(src, dest, dry, state_dir=None):
+    """Install a next-wave plan: full validation, planned-not-running, no overwrite, proven dependencies, no weakening of owed work."""
+    def refuse(msg):
+        print("add-plan REFUSED; nothing written: %s" % msg)
+        return 1
+    doc = _jload(src)
+    if not isinstance(doc, dict):
+        return refuse("source %s is unreadable or not a JSON object" % src)
+    dest = Path(dest).expanduser().absolute()
+    if dest.exists() or dest.is_symlink():
+        return refuse("destination %s already exists (no overwrite)" % dest)
+    if doc.get("status") != "planned-not-running":
+        return refuse("status must be planned-not-running, got %r" % doc.get("status"))
+    conn = open_journal(state_dir)
+    if not conn:
+        return refuse("guard journal cannot be opened")
+    try:
+        own = {w.get("workflow_id") for w in workflows(doc)}
+        others = _known_plans(conn, [dest.parent, Path(src).resolve().parent])
+        trial, external = json.loads(json.dumps(doc)), []
+        for w in workflows(trial):
+            deps = w.get("dependencies")
+            if isinstance(deps, list):
+                external += [(w.get("workflow_id"), d) for d in deps if d not in own]
+                w["dependencies"] = [d for d in deps if d in own]
+        for base in (Path(src).expanduser().resolve().parent, dest.parent):  # pin the census as an absolute path in the installed copy
+            cpath, _c, cerr = find_census(trial, base, implicit=True)
+            if cpath is not None or cerr:
+                if cpath is not None:
+                    trial["census"] = str(Path(cpath).resolve())
+                break
+        errs = validate_plan(trial, dest.parent)
+        for wid, d in external:
+            hit = [(p, w) for p, od in others for w in workflows(od) if w.get("workflow_id") == d]
+            if not hit:
+                errs.append("%s: dependency %r is in no known plan and not in this plan" % (wid, d))
+            elif not any(all(_unit_proven(conn, p, d, u, [o for o in others if o[0] != p])[0] for u in w.get("units") or [] if isinstance(u, dict)) for p, w in hit):
+                errs.append("%s: dependency %r is not PASS-proven done in any known plan" % (wid, d))
+        new_by_id = {w.get("workflow_id"): w for w in workflows(trial)}
+        for p, od in others:  # workflows still owed in an armed plan may not be re-declared weaker
+            if not is_armed(od):
+                continue
+            rest = [o for o in others if o[0] != p]
+            for ow in workflows(od):
+                nw = new_by_id.get(ow.get("workflow_id"))
+                ous = [u for u in ow.get("units") or [] if isinstance(u, dict)]
+                if nw is None or all(_unit_proven(conn, p, ow.get("workflow_id"), u, rest)[0] for u in ous):
+                    continue
+                nu = {u.get("unit_id"): u for u in nw.get("units") or [] if isinstance(u, dict)}
+                for u in ous:
+                    n = nu.get(u.get("unit_id"))
+                    if n is None:
+                        errs.append("%s: owed unit %s of armed plan %s is missing" % (nw["workflow_id"], u.get("unit_id"), p))
+                    elif str(u.get("acceptance") or "").strip() not in str(n.get("acceptance") or ""):
+                        errs.append("%s: %s acceptance is weaker than the owed one in armed plan %s" % (nw["workflow_id"], u.get("unit_id"), p))
+                if _int(nw.get("agent_count")) and _int(ow.get("agent_count")) and nw["agent_count"] < ow["agent_count"]:
+                    errs.append("%s: agent_count %d is fewer than the owed %d in armed plan %s" % (nw["workflow_id"], nw["agent_count"], ow["agent_count"], p))
+        if errs:
+            return refuse("\n  - " + "\n  - ".join(errs))
+        out = trial  # external deps are proven done elsewhere; the guard's plan rules only accept in-plan deps, so they are dropped
+        print("%s %s: valid; %d workflows, status planned-not-running%s" % ("[dry-run] would install" if dry else "installing", dest, len(workflows(out)),
+              "; external dependencies proven done and dropped from the installed copy: %s" % external if external else ""))
+        if dry:
+            return 0
+        try:
+            _write_new(dest, out, state_dir)
+        except FileExistsError:
+            return refuse("destination %s appeared meanwhile" % dest)
+        print("installed %s" % dest)
+        return 0
+    finally:
+        conn.close()
+
+
+def _derive_owned(out, n):
+    """A per-unit path under a workflow output: dir/ -> dir/U<n>/ ; file.ext -> file.U<n>.ext (never a prefix of a sibling)."""
+    if out.endswith("/"):
+        return "%sU%d/" % (out, n)
+    stem, dot, ext = out.rpartition(".")
+    return "%s.U%d.%s" % (stem, n, ext) if dot and "/" not in ext else "%s.U%d" % (out, n)
+
+
+def _census_units(c):
+    """Per-agent sources of a v1 census workflow: its own `units` when present (they are the per-agent breakdown), else the
+    agent_ownership entries that are not checker (evidence/) seats."""
+    us = [u for u in (c.get("units") or []) if isinstance(u, dict) and _nonempty(u.get("work"))]
+    if us:
+        return [{"work": u["work"], "owned": u.get("owned_output"), "acc": u.get("acceptance"), "src": u.get("source")} for u in us]
+    out = []
+    for a in c.get("agent_ownership") or []:
+        if not isinstance(a, dict):
+            continue
+        own = [x for x in (a.get("files_or_components_owned") or []) if isinstance(x, str)]
+        if own and all(x.startswith("evidence/") for x in own):
+            continue
+        out.append({"work": "%s: %s (%s)" % (a.get("agent_name"), a.get("responsibility"), a.get("scope_of_ownership")),
+                    "owned": own[0] if own else None, "acc": a.get("acceptance_criteria"),
+                    "src": "census agent_ownership %s" % a.get("agent_name")})
+    return out
+
+
+def _out_refused(out, state_dir=None):
+    """Why from-census may not write `out` (None = fine): it never overwrites, and never writes a governed path."""
+    o = Path(out).expanduser().absolute()
+    rp = o.resolve()
+    if o.exists() or o.is_symlink():
+        return "--out %s already exists (no overwrite)" % o
+    if "evidence" in rp.parts or "subagents" in rp.parts:
+        return "--out %s is inside an evidence or run tree" % o
+    if re.search(r"SWARM-PLAN[^/]*\.json$", o.name):
+        return "--out %s looks like a governed plan file (name contains SWARM-PLAN); write the draft elsewhere, e.g. /private/tmp, then add-plan it" % o
+    sd = Path(state_dir).resolve() if state_dir else Path(default_state_dir()).resolve()
+    if rp == sd or sd in rp.parents:
+        return "--out %s is inside the guard state dir" % o
+    conn = open_journal(state_dir)
+    try:
+        if conn and any(rp == p for p, _d in _known_plans(conn, [rp.parent])):
+            return "--out %s is a plan the guard knows" % o
+    finally:
+        if conn:
+            conn.close()
+    return None
+
+
+def cmd_from_census(census, wids, out, status="planned-not-running", state_dir=None):
+    """Emit a v2 plan draft whose units are built 1:1 from the census workflows' per-agent breakdown. Writes only --out."""
+    def refuse(msg):
+        print("from-census REFUSED; nothing written: %s" % msg)
+        return 1
+    if not census or not wids or not out:
+        return refuse("usage: staffing.py from-census --census PLAN.json --workflow ID [--workflow ID ...] --out DRAFT.json [--status planned-not-running]")
+    cpath = Path(census).expanduser().resolve()
+    cen = _jload(cpath)
+    if not isinstance(cen, dict) or not isinstance(cen.get("workflows"), list):
+        return refuse("census %s is unreadable or not a swarm plan" % cpath)
+    bad = _out_refused(out, state_dir)
+    if bad:
+        return refuse(bad)
+    pol = cen.get("policy") if isinstance(cen.get("policy"), dict) else {}
+    cap = pol.get("max_agents_per_workflow")
+    if not (_int(cap) and 1 <= cap <= CEIL_AGENTS):
+        return refuse("census policy.max_agents_per_workflow must be an integer 1..%d" % CEIL_AGENTS)
+    by_id = {w.get("workflow_id"): w for w in cen["workflows"] if isinstance(w, dict)}
+    wfs = []
+    for wid in wids:
+        c = by_id.get(wid)
+        if c is None:
+            return refuse("workflow %s is not in the census %s" % (wid, cpath))
+        want = c.get("agent_count")
+        src = _census_units(c)
+        if not _int(want) or len(src) < min(want, cap):
+            return refuse("%s: census plans %r agents but only %d per-agent source(s) (units/agent_ownership) exist; fix the census first" % (wid, want, len(src)))
+        outs = [x for x in (c.get("outputs") or []) if _nonempty(x)]
+        ctx = " [workflow %s: %s; outputs: %s]" % (wid, c.get("purpose", ""), ", ".join(outs))
+        units, seen = [], []
+        for n, u in enumerate(src, 1):
+            uid = "%s-U%d" % (wid, n)
+            oo = u["owned"] if _nonempty(u["owned"]) and not _bad_owned(u["owned"]) and not any(_overlap(u["owned"], q) for q in seen) else None
+            if oo is None:
+                if not outs:
+                    return refuse("%s: census declares no outputs to derive an owned_output from" % wid)
+                oo = _derive_owned(outs[(n - 1) % len(outs)], n)
+            seen.append(oo)
+            acc = (u["acc"] if _nonempty(u["acc"]) else c.get("verification_method") or "").strip()
+            if not _nonempty(acc):
+                return refuse("%s: no acceptance text for %s" % (wid, uid))
+            units.append({"unit_id": uid, "work": u["work"].strip() + ctx, "owned_output": oo,
+                          "acceptance": "%s (stop: %s)" % (acc, c.get("stop_condition") or "evidence recorded"),
+                          "source": u["src"] if _nonempty(u["src"]) else "census %s" % wid,
+                          "verdict_file": "evidence/%s/%s.verdict.json" % (wid, uid)})
+        n = min(cap, len(units))
+        wfs.append({"workflow_id": wid, "purpose": c.get("purpose"), "dependencies": list(c.get("dependencies") or []), "units": units, "agent_count": n, "concurrency": n})
+    keep = {k: pol[k] for k in ("max_active_workflows", "max_agents_per_workflow", "max_working_agents", "capacity_probe") if k in pol}
+    doc = {"schema": SCHEMA, "census": str(cpath), "status": status, "policy": keep, "workflows": wfs}
+    trial = json.loads(json.dumps(doc))
+    for w in workflows(trial):  # dependencies on workflows outside the draft are proven and dropped by add-plan, as there
+        w["dependencies"] = [d for d in w["dependencies"] if d in wids]
+    errs = validate_plan(trial, cpath.parent)
+    if errs:
+        return refuse("the draft fails v2 validation:\n  - " + "\n  - ".join(errs))
+    o = Path(out).expanduser().absolute()
+    o.parent.mkdir(parents=True, exist_ok=True)
+    tmp = o.with_name(o.name + ".%d.tmp" % os.getpid())
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        os.link(tmp, o)
+    finally:
+        tmp.unlink()
+    print("wrote %s: %s" % (o, ", ".join("%s=%d units" % (w["workflow_id"], len(w["units"])) for w in wfs)))
+    return 0
+
+
+def _opt(argv, name):
+    return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
 
 
 # ---------------------------------------------------------------- selftest
@@ -1461,7 +2027,7 @@ def selftest():
     c2.execute("INSERT OR REPLACE INTO continuations VALUES('sB',0,1,0)")
     c2.commit()
     c2.close()
-    check("the user's stop latch suspends the pinned plan", resolve_plan(away, "sB", sd) is None)
+    check("Trevor's stop latch suspends the pinned plan", resolve_plan(away, "sB", sd) is None)
     pins = lambda sess: [r[0] for r in sqlite3.connect(sd / "guard.sqlite3").execute("SELECT plan FROM session_pins WHERE session=?", (sess,)).fetchall()]
     check("the pin ROW survives the latch (defect 6)", pins("sB") == [str((armed / "SWARM-PLAN.json").resolve())], pins("sB"))
     c2 = open_journal(sd); c2.execute("UPDATE continuations SET latched=0 WHERE session='sB'"); c2.commit(); c2.close()
@@ -1559,8 +2125,15 @@ def selftest():
 
 
 def main(argv):
+    global RECORD_SANCTIONED
     if len(argv) > 1 and argv[1] == "--selftest":
         return selftest()
+    RECORD_SANCTIONED = True  # the command line is the sanctioned writer: what it writes to a plan is recorded as expected
+    if len(argv) > 1 and argv[1] == "clear-tamper":
+        if not (_opt(argv, "--session") and _opt(argv, "--reason")):
+            print("usage: staffing.py clear-tamper --session ID --reason TEXT  (operator only)")
+            return 2
+        return cmd_clear_tamper(_opt(argv, "--session"), _opt(argv, "--reason"), _opt(argv, "--state-dir"))
     if len(argv) > 1 and argv[1] == "start":
         cwd = os.getcwd()
         if "--cwd" in argv and argv.index("--cwd") + 1 < len(argv):
@@ -1580,6 +2153,24 @@ def main(argv):
                 js = True
             i += 1
         return cmd_status(cwd, sd, js)
+    if len(argv) > 1 and argv[1] == "retire":
+        if not (_opt(argv, "--cwd") or _opt(argv, "--plan")):
+            print("usage: staffing.py retire --cwd DIR | --plan PATH [--dry-run]")
+            return 2
+        return cmd_retire(_opt(argv, "--cwd") or os.getcwd(), _opt(argv, "--plan"), "--dry-run" in argv, _opt(argv, "--state-dir"))
+    if len(argv) > 1 and argv[1] == "cancel":
+        if not (_opt(argv, "--plan") and _opt(argv, "--workflow")):
+            print("usage: staffing.py cancel --plan PATH --workflow ID --reason TEXT [--superseded-by PLAN:WORKFLOW_ID]  (operator only)")
+            return 2
+        return cmd_cancel(_opt(argv, "--plan"), _opt(argv, "--workflow"), _opt(argv, "--reason"), _opt(argv, "--superseded-by"), _opt(argv, "--state-dir"))
+    if len(argv) > 1 and argv[1] == "add-plan":
+        if not (_opt(argv, "--src") and _opt(argv, "--dest")):
+            print("usage: staffing.py add-plan --src DRAFT.json --dest PATH [--dry-run]")
+            return 2
+        return cmd_add_plan(_opt(argv, "--src"), _opt(argv, "--dest"), "--dry-run" in argv, _opt(argv, "--state-dir"))
+    if len(argv) > 1 and argv[1] == "from-census":
+        return cmd_from_census(_opt(argv, "--census"), [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--workflow"], _opt(argv, "--out"),
+                               _opt(argv, "--status") or "planned-not-running", _opt(argv, "--state-dir"))
     print(__doc__)
     return 2
 
