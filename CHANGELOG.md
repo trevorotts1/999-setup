@@ -106,6 +106,8 @@
 - fix/ci-999-pytest: fix(ci): 999 drama-song-tests collect — lyric_structure import path (v2.7.26) (merge 831590870253)
 - unit/W-F-U2: W-F-U2 (F2): whole-track retakes only - PARTIAL_SUNO_JOB gate + live dispatch seam (merge 073becb0a7a3)
 - unit/FU-U13: FU-U13: story arc rule + product-connection target (10-15 percent) (merge 0bafad4e3705)
+- unit/KIE-U6-U1: KIE-U6: re-vendor 07/74 from tested onboarding main and repin (merge 0f1da3061e54)
+- unit/U13: U13 fix: prove the startup-only rule, and back the hook-hash table with a real artifact (merge 8365743fa830)
 
 ## [hook-skill] — 2026-10-06
 
