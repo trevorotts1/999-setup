@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- unit/U16-U1: drama-song-ad-factory 2.7.44: the Claude Code / claude-nine half of Drama Studio gains its **Option-3 runner shipped OFF** (`.claude/skills/drama-studio/option3_runner.py`) — a run with nobody present stays impossible until Trevor approves that one client **by name** and the studio admin page records it. Five pieces, each with its own runnable check: the **scoped command** (exactly two script allow-rules plus `Read`, `--permission-mode dontAsk`, `--permission-prompts none`, no bare flag, no bypass mode), the **lock** (one run at a time, a stale lock reclaimed), the **per-run cap** (`--max-budget-usd`, no default cap), the **log receipt** (raw log plus JSON receipt under `~/.drama-studio/option3-runs/`, never the machine key) and the **selected-root child environment** (the child runs in the approved root with `DRAMA_STUDIO_SELECTED_ROOT` exported and no `CLAUDE_CONFIG_DIR` override). Nothing activates it: the runner installs nothing, loads nothing and writes no approval. Proven in isolation; production end-to-end still waits on U18.
+
+- unit/TRAINFIX-U1: spec-protocol: merge-train.sh try_set now resolves a conflict whose every unmerged file is a CHANGELOG.md by union (git merge-file --union over the three stages, applied with git -C "$top"), keeping both sides; any non-CHANGELOG file, or any failed step, still aborts and parks exactly as before. No version bump: spec-protocol VERSION is release-tag-locked (check-docs-fresh compares it to the latest v* tag; tools/release.sh writes it).
 - unit/FU-SAVED-CHARACTER-QUESTION: drama-song-ad-factory: the saved-character intake question now asks "create a new character, or use one you've used before?" with "You have N character(s) saved with us." and numbered options (new character first, recommended); with none saved it shows one plain line instead of a question; ported from onboarding
 
 - unit/FU-ONE-SPEND-QUESTION: drama-song-ad-factory: money is asked once, on the choice card, with the real price (story questions no longer ask about spend; brief limit shown as option 1; no reply = no spend); shared code and tests byte-identical with onboarding skill 75 v2.9.8
@@ -12,6 +15,7 @@
 - unit/F15-999: drama-song-ad-factory 2.7.21: F15 choice card always asked before any paid job - card_gate receipt, intake/preflight/kie_dispatch refuse CARD_UNANSWERED, 2-minute length + price table (ported from onboarding main b9ced148c)
 - ci/CIO002: push triggers are main-only (a PR branch no longer runs every check twice, once on push and once on pull_request) and every workflow has a per-PR concurrency group that cancels superseded pull_request runs only (never main)
 - fix/hook-HK001: drama-song-ad-factory 2.7.9: I8 one sung hook per ad, repeated clamp(1+floor(L/25),2,12) times, measured sung count (core/sung_hook)
+- unit/DGATEFIX-U1: spec-protocol: dispatch-gate.py selftest() pre-writes the per-session capacity-probe cache (cap 10) inside its own sandbox, so the plan fixtures stay hermetic on a small CI runner whose MEASURED cap sits below the fixtures' 8 units; one write in selftest() only, no production path touched. No version bump: spec-protocol VERSION is release-tag-locked (check-docs-fresh compares it to the latest v* tag; tools/release.sh writes it).
 
 - fix/partI-I3: drama-song-ad-factory 2.7.8: character reference set plus one keyframe picture per shot, priced on the choice card
 
@@ -108,6 +112,7 @@
 - unit/FU-U13: FU-U13: story arc rule + product-connection target (10-15 percent) (merge 0bafad4e3705)
 - unit/KIE-U6-U1: KIE-U6: re-vendor 07/74 from tested onboarding main and repin (merge 0f1da3061e54)
 - unit/U13: U13 fix: prove the startup-only rule, and back the hook-hash table with a real artifact (merge 8365743fa830)
+- unit/STAFFFIX-U1: spec-protocol: tools/hooks/staffing.py synced to the hook-skill workflow-guard core (byte-identical, 130499 bytes, sha256 dbe25928bfcebda8) so tests/test_copies_identical.py passes again; the spec-protocol copy had drifted since c615791f, which ported the 1.2.0 guard into the hook-skill copy only. Side effect: install-hooks.sh now installs the 1.2.0 guard. No version bump: spec-protocol VERSION is release-tag-locked (check-docs-fresh compares it to the latest v* tag).
 
 ## [hook-skill] — 2026-10-06
 

@@ -15,6 +15,7 @@ run python3 "$HERE/test_plan_validators_agree.py"
 run python3 "$HERE/test_copies_identical.py"
 run bash "$SP/tools/install-hooks.sh" --selftest
 run bash "$HERE/test-settings-lock.sh"
+run bash "$HERE/test-merge-train-union.sh"
 run bash "$SP/tools/width.sh" --selftest
 run node "$SP/scripts/common/width.mjs" --selftest
 run bash "$SP/tools/capacity-resolver.sh" --selftest

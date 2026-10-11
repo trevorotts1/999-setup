@@ -1,5 +1,72 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.44] - 2026-10-11 - U14: the Drama Studio Option-2 watcher (skill-local permissions only)
+
+The `drama-studio` skills-folder plugin gains its Option-2 monitor. The code, this CHANGELOG entry and the `VERSION` bump land in one commit (no bump-only commit). Because end-to-end production is still gated on the runnable U18 bridge, the monitor is proven in isolation against the check-in contract.
+
+- New `.claude/skills/drama-studio/monitors/monitors.json`: one monitor `drama-studio-option2`, armed `when: always`, running `"${CLAUDE_PLUGIN_ROOT}"/studio_check.py --watch --every 120`. The host delivers each stdout line to the model as a task event. No `monitors` key is added to `.claude-plugin/plugin.json` — the default `monitors/monitors.json` at the plugin root is loaded.
+- `.claude/skills/drama-studio/studio_check.py`: `--watch` is now the Option-2 watcher. **Option handling** — the option resolves flag -> `DRAMA_STUDIO_OPTION` -> state -> default, and Option 1 (wait) is the default, so anything but Option 2 stays silent and spends no network call. **Deduplication** — one line per order, via `watch_announced` in `~/.drama-studio/state.json`. **Claimed state** — an order that leaves the waiting line, or is recorded with the new `studio_check.py --claim <id>`, is marked `watch_claimed` and never announced again by a later watcher. **Interactive fallback** — when the host declares it does not honour the skill's allowed-tools (`DRAMA_STUDIO_SKILL_LOCAL_PERMS`, or `skill_local_perms` in state), the watcher stops with the interactive-approval / Monitor-tool line; it never fabricates a settings exception. `--hook` and `--desktop` are unchanged.
+- Permissions stay **skill-local only** (the two `Bash(...)` entries in the plugin's `allowed-tools`); no `option2-settings.json` exists anywhere, and neither studio script writes a settings file.
+- New test `.claude/skills/drama-studio/prove/prove_option2_monitor.py` — six checks, each with a planted-bad control. It takes `--skill <dir>`, so the same checks run against a pre-change copy of the skill and there FAIL (option, dedup, claimed, fallback and the monitor manifest do not exist yet) and against this skill PASS.
+## [2.7.44] - 2026-10-11 - U18: final core twin sync - packaged scripts/core regenerated from the canonical onboarding core
+
+U18 brings the packaged copy into byte-for-byte agreement with the frozen, reviewed canonical core (`openclaw-onboarding` `75-drama-song-ad-factory/scripts/core/` at base `68f686350e8f8f4f513333c159a4cbb6b9825dd5`), exactly as `references/parity-contract.md` requires: the copy is regenerated from the canonical source, never hand-edited.
+
+- Eleven `scripts/core/` paths changed; the other 460 in-scope paths were already identical and are untouched. All 471 in-scope paths are now byte-identical on both sides, proved by `tests/twin_sync_prove.py` (`PARITY: PROVEN`).
+- Brought in from the canonical core: the U1 studio-shaped intake export (`choice_card/intake_card/intake_card.py`, now re-exporting `studio_json`, `studio_questions`, `StudioExportError` through the package `__init__.py`, plus `test_studio_json_u1.py`), the U11 channel-neutral send path (`choice_card/intake_card/channel_send.py`, `README-channel-send.md`, `test_channel_send_u11.py`), and the plan 3.17 dual-presence hybrid validator (`style_bibles/hybrid/hybrid_bible.py`, its `__init__.py`, `test_hybrid_dual_presence.py`).
+- Same-scope fingerprints for every in-scope path on both sides (`__pycache__`/`*.pyc` excluded, no other normalisation) are recorded in `references/twin-sync-fingerprints.json`; the human-readable receipt is `references/twin-sync-receipt.md`.
+- Reported consequence (`references/twin-sync-receipt.md`, "Known canonical gap"): the canonical core does not yet carry the N99-CB refuse-before-write fix released in 2.7.43, so regenerating the copy removes that hand-edit from the packaged tree. The fix is preserved in 999 history at `ebb90a4ad`; its correct home is the canonical onboarding core, which needs a separate port unit before it ships again.
+## [2.7.44] - 2026-10-11 - U16: the Option-3 runner, shipped OFF
+
+The Claude Code / claude-nine half of Drama Studio gains its **Option-3 runner** —
+the background scheduled run that starts a run with nobody present. It ships **OFF**:
+`check` exits 0 silently and does nothing at all — no order lookup, no lock, no child
+process, no spend — until Trevor has approved **that one client by name** and the
+studio admin page has recorded it in this computer's protected state.
+
+- **Named approval.** The runner reads `<state>/option3-approval.json` and needs a
+  non-empty client name, who approved it, the date, `background: true`, a positive
+  `cap_usd` and an absolute `run_root`. Anything else is refused `AF-DS-OPT3-APPROVAL`
+  and nothing starts. The runner never writes that record: the admin page owns it.
+- **Scoped command.** One fixed argv, exactly as JOINT PLAN 3.10 states it: the
+  launcher, `-p` with the order prompt, `--permission-mode dontAsk`,
+  `--permission-prompts none`, `--allowedTools` with exactly two script rules
+  (`Bash(python3 <skills>/drama-song-ad-factory/scripts/core/intake_preflight/factory.py *)`
+  and `Bash(python3 <skills>/drama-studio/studio_bridge.py *)`) plus `Read`,
+  `--max-budget-usd <cap>`, `--output-format json` and `--name drama-studio-<id>`.
+  The bare flag and the bypass permission mode are structurally impossible:
+  `assert_scoped` rejects them on every build.
+- **Lock.** One run at a time under `<state>/option3.lock.json`; a second `check`
+  while the lock is fresh does nothing, and a lock older than six hours is reclaimed
+  so a killed run cannot wedge the job forever.
+- **Cap.** `--max-budget-usd` comes from the approval record. There is **no default
+  cap**: a record without a positive number is refused `AF-DS-OPT3-CAP`.
+- **Log receipt.** Every run writes its raw log and one JSON receipt under
+  `<state>/option3-runs/`. The receipt carries the client, the order, the exit code,
+  the cap, the launcher, the selected root, the allowed tools and the command's
+  sha256 — never the machine key and never the child environment.
+- **Selected-root child environment.** The child runs with its working directory set
+  to the approved `run_root` and with `DRAMA_STUDIO_SELECTED_ROOT`,
+  `DRAMA_STUDIO_STATE`, `DRAMA_STUDIO_SKILL_ROOT` and `CLAUDE_PLUGIN_ROOT` exported.
+  `CLAUDE_CONFIG_DIR` is dropped, so claude-nine reuses the same Claude config root
+  as plain claude (999-setup rule 10).
+- **Nothing activates it.** The runner installs no job, loads no job and writes no
+  approval. `print-job` prints the launchd plist as text and touches nothing.
+- **Proven in isolation.** `python3 prove/prove_option3_runner.py` runs **8 checks**,
+  each paired with a planted-bad copy of the module carrying exactly that one defect
+  that the check must catch (exit 2 if a planted copy stays green). Production
+  end-to-end is still gated on the runnable U18 bridge, so no run is attempted here.
+## [2.7.44] - 2026-10-11 - U15: Drama Studio heartbeat job (launchd / Task Scheduler) — requested notice only, absolute paths, never starts Claude
+
+The Drama Studio plugin gains its heartbeat: a native timer that runs `.claude/skills/drama-studio/studio_check.py --desktop` on an interval. This is the 999-setup unit U15 of the joint plan (row 1081), the consumer of the U13 hand-off (PR #183).
+
+- New `.claude/skills/drama-studio/heartbeat.py`: `install` / `uninstall` / `status` / `beat` plus `print-plist` and `print-task-xml`. Native timer patterns only — a macOS LaunchAgent plist (`StartInterval`, `ProgramArguments`, `RunAtLoad` false) and a Windows Task Scheduler XML (`TimeTrigger` repetition `PTnM`, `Exec`). `--dry-run` writes nothing; `--no-load` writes the timer without loading it.
+- Absolute paths throughout: the timer's `ProgramArguments` / `Exec` name the absolute interpreter and the absolute `studio_check.py`; a relative path or a bare program name is refused (`AF-DS-HEARTBEAT`). launchd and Task Scheduler run with no PATH and no working directory, so this is required, not cosmetic.
+- Requested desktop notice only: the heartbeat emits nothing itself. It runs `studio_check.py --desktop`, which stays silent unless the client opted in, so an unsolicited notice is impossible on this path.
+- Never starts Claude: no code path launches, execs or spawns a Claude process. The timer runs exactly two things — the interpreter and `studio_check.py` — and `beat` refuses any program whose name starts with `claude`.
+- New runnable proof `.claude/skills/drama-studio/prove/prove_heartbeat.py` (exit 0 pass / 2 fail-or-vacuous / 3 cannot run). Five checks, each proven on the real script and on a planted-bad copy: native timer, absolute paths, requested-only, never-starts-Claude (a live PATH trap of fake `claude` launchers over every subcommand, plus a source scan for spawn/exec of a claude binary), and install-writes. It installs nothing live: no `launchctl` / `schtasks`, with the sink and timer dirs under `/tmp`.
+- Version markers: this `VERSION` + SKILL.md frontmatter 2.7.43 -> 2.7.44.
+
 ## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
 
 The 2.7.41 sentence ("a missing reference picture is a refusal, never an empty directory") was false in code: `character_bible.write_delivery` rendered the PDF and created `02 - Character Bible Images/` before raising `NO_REFERENCE_IMAGES`, leaving both contract artifacts behind on a refusal.
