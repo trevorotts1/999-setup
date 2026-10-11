@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-11T21:38:29Z",
+  "generatedAt": "2026-10-11T23:20:04Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -71,14 +71,14 @@
       "role": "KIE/Suno audio request contract, model selection, domain QC",
       "kind": "skill",
       "required": true,
-      "version": "v2.3.2",
+      "version": "v2.3.3",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/68-kie-audio",
       "installPath": "skills/68-kie-audio",
       "fileCount": 21,
-      "sizeBytes": 248956,
-      "treeSha256": "254fe9a4f9b8820b05f50329b36bc84b0892cac3b7f27f7db3a79c3d338f5272",
-      "skillMdSha256": "bac8eecf9cdbe3bede9646101bf9629368a01a32512e951397b900f1dd6dedb4"
+      "sizeBytes": 254058,
+      "treeSha256": "05626208a68b2e4ada9cff60169b82ffd8bcf64e66c75e29d581963534bc3a35",
+      "skillMdSha256": "29f6a524847a6879ac59827c1b71a408c4bb5fe6473a9e950b8c5339789037b7"
     },
     {
       "id": "74",
