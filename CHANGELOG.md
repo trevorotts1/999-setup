@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- unit/U16-U1: drama-song-ad-factory 2.7.44: the Claude Code / claude-nine half of Drama Studio gains its **Option-3 runner shipped OFF** (`.claude/skills/drama-studio/option3_runner.py`) — a run with nobody present stays impossible until Trevor approves that one client **by name** and the studio admin page records it. Five pieces, each with its own runnable check: the **scoped command** (exactly two script allow-rules plus `Read`, `--permission-mode dontAsk`, `--permission-prompts none`, no bare flag, no bypass mode), the **lock** (one run at a time, a stale lock reclaimed), the **per-run cap** (`--max-budget-usd`, no default cap), the **log receipt** (raw log plus JSON receipt under `~/.drama-studio/option3-runs/`, never the machine key) and the **selected-root child environment** (the child runs in the approved root with `DRAMA_STUDIO_SELECTED_ROOT` exported and no `CLAUDE_CONFIG_DIR` override). Nothing activates it: the runner installs nothing, loads nothing and writes no approval. Proven in isolation; production end-to-end still waits on U18.
+
 - unit/FU-SAVED-CHARACTER-QUESTION: drama-song-ad-factory: the saved-character intake question now asks "create a new character, or use one you've used before?" with "You have N character(s) saved with us." and numbered options (new character first, recommended); with none saved it shows one plain line instead of a question; ported from onboarding
 
 - unit/FU-ONE-SPEND-QUESTION: drama-song-ad-factory: money is asked once, on the choice card, with the real price (story questions no longer ask about spend; brief limit shown as option 1; no reply = no spend); shared code and tests byte-identical with onboarding skill 75 v2.9.8

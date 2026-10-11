@@ -45,6 +45,7 @@ scheduler, no dashboard, no new management app.
 | **U13 (this unit)** | `999-setup/.claude/skills/drama-studio/**` — the pair/link command, the check-in script, the hook, the manifest, this document and the prover |
 | U14 | the Option-2 watcher's own behaviour, on top of `studio_check.py --watch` |
 | U15 | the heartbeat job (launchd/Task Scheduler) that calls `studio_check.py --desktop` |
+| U16 | `option3_runner.py` — the Option-3 background run, shipped **off**; a named approval is required before it does anything |
 | U12 | the pairing/admin **pages**; this unit calls `POST /api/studio/pair` |
 | U2 | the service this unit talks to; never edited here |
 
@@ -114,6 +115,34 @@ python3 .claude/skills/drama-studio/prove/prove_plugin_behaviour.py
 The prover exercises the real scripts in a temporary state folder under `/tmp`. It
 **installs, loads or enables nothing**, registers nothing live, and never sends a
 notice anywhere: the desktop sink is pointed at a scratch file.
+
+## Option 3 — the background run, shipped OFF (U16)
+
+Option 3 starts a run with nobody present, so it is the highest-risk mode and it ships
+**off**. `option3_runner.py` does **nothing** until Trevor has approved that one client
+**by name** and the studio admin page has recorded it in `~/.drama-studio/option3-approval.json`.
+Until then `check` exits 0 silently: no order lookup, no lock, no child process, no spend.
+
+```bash
+python3 .claude/skills/drama-studio/option3_runner.py status      # off | named <client> cap <cap> root <root>
+python3 .claude/skills/drama-studio/option3_runner.py plan        # print the one command it would run (refused while off)
+python3 .claude/skills/drama-studio/option3_runner.py check       # the scheduled entry; silent while off
+python3 .claude/skills/drama-studio/option3_runner.py print-job   # the launchd job as text; installs nothing
+python3 .claude/skills/drama-studio/prove/prove_option3_runner.py # 8 checks, each with a planted-bad control
+```
+
+The runner owns five pieces, each stated here and proven by its own check: the
+**scoped command** (exactly two script allow-rules plus `Read`, `--permission-mode dontAsk`,
+`--permission-prompts none`, never the bare flag and never the bypass mode), the **lock**
+(`~/.drama-studio/option3.lock.json`, one run at a time, a stale lock reclaimed), the
+**per-run cap** (`--max-budget-usd` from the approval record; there is no default cap), the
+**log receipt** (`~/.drama-studio/option3-runs/`, never the machine key) and the
+**selected-root child environment** (the child runs in the approved root with
+`DRAMA_STUDIO_SELECTED_ROOT` exported and no `CLAUDE_CONFIG_DIR` override).
+
+It **installs nothing, loads nothing and writes no approval**. Installing the scheduled
+job is the separately-approved, separately-owned step (JOINT PLAN U19 is the canary), and
+production end-to-end waits on the runnable U18 bridge.
 
 ## Deliberate limits
 
