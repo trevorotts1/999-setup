@@ -1613,6 +1613,16 @@ def selftest():
     # The plan check reads and records in the guard journal: point every child at a temp one.
     os.environ["WORKFLOW_GUARD_STATE"] = os.path.join(sandbox, "guard-state")
     os.environ["STAFFING_TEST_PROBE_CAP"] = "10"  # hermetic: the fixture plans assume a cap-10 box (999-setup repo adaptation)
+    # The fixtures' plans assume a cap-10 box, but the cap is MEASURED from the runner
+    # (capacity_probe.py), so a small CI runner probes below the fixtures' 8 units and refuses
+    # them. STAFFING_TEST_PROBE_CAP above only reaches the staffing.py copy that reads that door,
+    # and staffing_path() can resolve one that does not -- so seed the cache instead: probed_cap()
+    # honors <state>/capacity-probe-cache.json FIRST (for PROBE_TTL), so one cap-10 entry per
+    # session these checks use is enough. The cache lives in the sandbox: production is untouched.
+    _probe_cache = os.path.join(os.environ["WORKFLOW_GUARD_STATE"], "capacity-probe-cache.json")
+    os.makedirs(os.path.dirname(_probe_cache), exist_ok=True)
+    with open(_probe_cache, "w", encoding="utf-8") as fh:
+        json.dump({_k: {"cap": 10, "t": time.time()} for _k in ("-", "selftest", "armedsess", "unarmedsess")}, fh)
     # SHAPE 10 must never read the operator's real crontab: every child sees a
     # stub watch-tick.sh (rc 0 = armed) unless a check swaps it for rc 3.
     tick_ok = os.path.join(sandbox, "tick-ok.sh")
