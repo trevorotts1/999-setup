@@ -16,6 +16,46 @@ U18 brings the packaged copy into byte-for-byte agreement with the frozen, revie
 - Brought in from the canonical core: the U1 studio-shaped intake export (`choice_card/intake_card/intake_card.py`, now re-exporting `studio_json`, `studio_questions`, `StudioExportError` through the package `__init__.py`, plus `test_studio_json_u1.py`), the U11 channel-neutral send path (`choice_card/intake_card/channel_send.py`, `README-channel-send.md`, `test_channel_send_u11.py`), and the plan 3.17 dual-presence hybrid validator (`style_bibles/hybrid/hybrid_bible.py`, its `__init__.py`, `test_hybrid_dual_presence.py`).
 - Same-scope fingerprints for every in-scope path on both sides (`__pycache__`/`*.pyc` excluded, no other normalisation) are recorded in `references/twin-sync-fingerprints.json`; the human-readable receipt is `references/twin-sync-receipt.md`.
 - Reported consequence (`references/twin-sync-receipt.md`, "Known canonical gap"): the canonical core does not yet carry the N99-CB refuse-before-write fix released in 2.7.43, so regenerating the copy removes that hand-edit from the packaged tree. The fix is preserved in 999 history at `ebb90a4ad`; its correct home is the canonical onboarding core, which needs a separate port unit before it ships again.
+## [2.7.44] - 2026-10-11 - U16: the Option-3 runner, shipped OFF
+
+The Claude Code / claude-nine half of Drama Studio gains its **Option-3 runner** —
+the background scheduled run that starts a run with nobody present. It ships **OFF**:
+`check` exits 0 silently and does nothing at all — no order lookup, no lock, no child
+process, no spend — until Trevor has approved **that one client by name** and the
+studio admin page has recorded it in this computer's protected state.
+
+- **Named approval.** The runner reads `<state>/option3-approval.json` and needs a
+  non-empty client name, who approved it, the date, `background: true`, a positive
+  `cap_usd` and an absolute `run_root`. Anything else is refused `AF-DS-OPT3-APPROVAL`
+  and nothing starts. The runner never writes that record: the admin page owns it.
+- **Scoped command.** One fixed argv, exactly as JOINT PLAN 3.10 states it: the
+  launcher, `-p` with the order prompt, `--permission-mode dontAsk`,
+  `--permission-prompts none`, `--allowedTools` with exactly two script rules
+  (`Bash(python3 <skills>/drama-song-ad-factory/scripts/core/intake_preflight/factory.py *)`
+  and `Bash(python3 <skills>/drama-studio/studio_bridge.py *)`) plus `Read`,
+  `--max-budget-usd <cap>`, `--output-format json` and `--name drama-studio-<id>`.
+  The bare flag and the bypass permission mode are structurally impossible:
+  `assert_scoped` rejects them on every build.
+- **Lock.** One run at a time under `<state>/option3.lock.json`; a second `check`
+  while the lock is fresh does nothing, and a lock older than six hours is reclaimed
+  so a killed run cannot wedge the job forever.
+- **Cap.** `--max-budget-usd` comes from the approval record. There is **no default
+  cap**: a record without a positive number is refused `AF-DS-OPT3-CAP`.
+- **Log receipt.** Every run writes its raw log and one JSON receipt under
+  `<state>/option3-runs/`. The receipt carries the client, the order, the exit code,
+  the cap, the launcher, the selected root, the allowed tools and the command's
+  sha256 — never the machine key and never the child environment.
+- **Selected-root child environment.** The child runs with its working directory set
+  to the approved `run_root` and with `DRAMA_STUDIO_SELECTED_ROOT`,
+  `DRAMA_STUDIO_STATE`, `DRAMA_STUDIO_SKILL_ROOT` and `CLAUDE_PLUGIN_ROOT` exported.
+  `CLAUDE_CONFIG_DIR` is dropped, so claude-nine reuses the same Claude config root
+  as plain claude (999-setup rule 10).
+- **Nothing activates it.** The runner installs no job, loads no job and writes no
+  approval. `print-job` prints the launchd plist as text and touches nothing.
+- **Proven in isolation.** `python3 prove/prove_option3_runner.py` runs **8 checks**,
+  each paired with a planted-bad copy of the module carrying exactly that one defect
+  that the check must catch (exit 2 if a planted copy stays green). Production
+  end-to-end is still gated on the runnable U18 bridge, so no run is attempted here.
 - Version markers: this `VERSION` + SKILL.md frontmatter 2.7.43 -> 2.7.44.
 
 ## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
