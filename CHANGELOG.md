@@ -108,6 +108,7 @@
 - unit/FU-U13: FU-U13: story arc rule + product-connection target (10-15 percent) (merge 0bafad4e3705)
 - unit/KIE-U6-U1: KIE-U6: re-vendor 07/74 from tested onboarding main and repin (merge 0f1da3061e54)
 - unit/U13: U13 fix: prove the startup-only rule, and back the hook-hash table with a real artifact (merge 8365743fa830)
+- unit/STAFFFIX-U1: spec-protocol: tools/hooks/staffing.py synced to the hook-skill workflow-guard core (byte-identical, 130499 bytes, sha256 dbe25928bfcebda8) so tests/test_copies_identical.py passes again; the spec-protocol copy had drifted since c615791f, which ported the 1.2.0 guard into the hook-skill copy only. Side effect: install-hooks.sh now installs the 1.2.0 guard. No version bump: spec-protocol VERSION is release-tag-locked (check-docs-fresh compares it to the latest v* tag).
 
 ## [hook-skill] — 2026-10-06
 
