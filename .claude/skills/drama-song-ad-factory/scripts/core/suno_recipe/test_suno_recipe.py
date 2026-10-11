@@ -21,18 +21,55 @@ CLIENT = "I am not small. I never was. One seed of truth made me strong. She Fou
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 
 
-def sheet(hook=HOOK, repeats=3, vocalise=True):
+def sheet(hook=HOOK, repeats=3, vocalise=True, rap=False):
     s = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]}]
     if vocalise:
         s.append({"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,", "A-a-a-a-a-ah,"]})
     # FU-HOOK-PLACEMENT: the verse builds up to the hook; the hook never opens.
     s.append({"tag": "Verse", "delivery": "sung",
               "lines": ["One seed of truth made me stro-o-ong,", "One seed is a-all I ne-e-eed,"]})
+    if rap:
+        # WWFIX D1: R&B Flow DELIVERS rap, so its sheet must plan the rap floor
+        # (max(8 s, 10% of D) = 22 rap words at 88 s) and keep the sung share;
+        # the last sung section stays the hook (the chorus closes the song).
+        # WWR3INTFIX U1 (option i): the rapped R&B Flow fixture runs on the
+        # 88-SECOND CARD. WW-01 made the floor PER VERSE (2 verses, each 8.8 s /
+        # 22 words at D = 88 => 40 rap words = 16.0 s) and below 88 s no sheet
+        # clears BOTH the per-verse floor AND the 72.9% sung-share target at
+        # once, which is why the old 58 s fixture was refused. At 88 s the
+        # shipped golden (suno-90s-rnb-flow.json) clears every gate the same
+        # way, so the rapped variant runs the 88 s sheet WITHOUT the spoken
+        # [Outro] (the intro + CTA shape is covered by every rap=False case
+        # below) and declares FOUR hook blocks (the 88 s plan fits four).
+        s.append({"tag": "Verse", "delivery": "sung",
+                  "lines": ["I hold the light I found,", "I am more than this,",
+                            "I walk out free,", "I rise a-a-above,", "I am he-e-ere,",
+                            "I am not lost,", "I am still standing ta-a-all,",
+                            "One seed of truth made me stro-o-ong,"]})
+        s.append({"tag": "Verse", "delivery": "rap",
+                  "lines": ["Backup shoes, backup jacket, but no backup plan,",
+                            "So I count what I make and not what they take today,"]})
+        s.append({"tag": "Verse", "delivery": "rap",
+                  "lines": ["Every door they closed I opened with my own two hands,",
+                            "And I keep walking toward the morning light now,"]})
     for i in range(repeats):
         s.append({"tag": "Hook %d" % (i + 1), "delivery": "sung", "lines": list(hook)})
-    s.append({"tag": "Outro", "delivery": "spoken",
-              "lines": ["She Found Power in the Climb. Get the book. Link below."]})
+    if not rap:
+        s.append({"tag": "Outro", "delivery": "spoken",
+                  "lines": ["She Found Power in the Climb. Get the book. Link below."]})
     return s
+
+
+def _no_cue(parsed):
+    """WW-16: a round-trip is compared on the sheet's LYRIC CONTENT.
+
+    ``render_lyrics`` writes each section's cue from the style DATA, and
+    ``parse_lyrics`` (WW-16) keeps the bracket cue under "cue" so
+    ``check_lyric_sheet``'s opening-vocalise ceiling fires on the production
+    path. The cue is therefore the style's own text, not something the sheet's
+    dict declares -- it is dropped here and nowhere else.
+    """
+    return [{k: v for k, v in s.items() if k != "cue"} for s in parsed]
 
 
 #: The story beat of every hook block (FU-HOOK-PLACEMENT rules 2-3).
@@ -88,13 +125,18 @@ class Recipe(unittest.TestCase):
         late = sheet()
         late[0]["tag"] = "Verse"                      # spoken outside Intro/Outro
         bad = ((sheet(repeats=1), "repeated"), (sheet(hook=["Buy now and save big"]), "client's own"),
-               (sheet(vocalise=False), "vocalise"), (late, "only allowed"),
+               (late, "only allowed"),
                ([{"tag": "Hook", "delivery": "sung", "lines": HOOK}] + sheet()[1:], "may not open"))
         for b_, why in bad:
             errs = R.check_lyric_sheet(b_, CLIENT)
             self.assertTrue(any(why in e for e in errs), (why, errs))
             with self.assertRaises(R.RecipeError):
                 R.prepare("soul-ballad", b_, CLIENT)
+        # WW-29: the wordless vocalise is OPTIONAL, never a forced lead-in, so the
+        # no-vocalise sheet is legal. (This replaces the base entry that pinned the
+        # removed mandate; the sheet is still refused by prepare without its length.)
+        self.assertEqual(R.check_lyric_sheet(sheet(vocalise=False), CLIENT), [],
+                         "WW-29: the vocalise is OPTIONAL")
         self.assertEqual(R.check_lyric_sheet(sheet(), CLIENT, 58), [])   # the BSW shape passes at 58 s
         long_ = sheet()
         long_[1]["lines"] = ["la la la la la la la la"] * 30
@@ -114,11 +156,19 @@ class Recipe(unittest.TestCase):
         self.assertTrue(R.check_negatives("rap"))                      # dry rule missing
         self.assertNotIn("rap", R.negative_tags("rnb-flow"))           # the rap style keeps its rap
         req = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58, hook_plan=HOOK_PLAN)
-        self.assertEqual((req["model"], req["custom_mode"], req["style_weight"], req["variety"],
-                          req["weirdness_constraint"], req["vocal_gender"], req["duration"]),
-                         ("V6", True, 0.75, 0, 0.3, "f", 58))
-        self.assertIn("band dropout", req["negative_tags"])
-        self.assertEqual(R.parse_lyrics(req["lyrics"]), sheet())
+        # WW-30: the build is the createTask ENVELOPE -- the route model and
+        # the top-level camelCase callBackUrl sit outside, every direction
+        # (including the generation value) sits inside the snake_case input.
+        self.assertEqual(req["endpoint"], R.KIE_MUSIC_TASK_ENDPOINT)
+        self.assertEqual(req["model"], R.KIE_MUSIC_TASK_MODEL)
+        self.assertTrue(req["callBackUrl"])
+        self.assertEqual(R.check_envelope(req), [])
+        inp = req["input"]
+        self.assertEqual((inp["model"], inp["custom_mode"], inp["style_weight"], inp["variety"],
+                          inp["weirdness_constraint"], inp["vocal_gender"], inp["duration"]),
+                         (R.KIE_MUSIC_MODEL_VALUE, True, 0.75, 0, 0.3, "f", 58))
+        self.assertIn("band dropout", inp["negative_tags"])
+        self.assertEqual(_no_cue(R.parse_lyrics(inp["lyrics"])), sheet())
 
     def test_syllables(self):
         self.assertEqual(R.syllables("I am not sma-a-all"), 4)
@@ -126,7 +176,7 @@ class Recipe(unittest.TestCase):
 
     def test_sheet_roundtrip(self):
         s = sheet()
-        self.assertEqual(R.parse_lyrics(R.render_lyrics(s)), s)
+        self.assertEqual(_no_cue(R.parse_lyrics(R.render_lyrics(s))), s)
 
     def test_request_seam_blocks_bypass(self):
         import music_director as MD
@@ -144,11 +194,11 @@ class Recipe(unittest.TestCase):
         import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         if not MD.workcopy_paths()["models"].is_file():
             self.skipTest("68-kie-audio catalog not in this checkout")
-        out = R.prepare("rnb-flow", sheet(), CLIENT, 58, hook_plan=HOOK_PLAN)
+        out = R.prepare("rnb-flow", sheet(rap=True, repeats=4), CLIENT, 88, hook_plan=HOOK_PLAN)
         out["style"] = out["style"]
         req = MD.build_generate_request(out["lyrics"], out["style"], "T",
                                         style_id="rnb-flow", client_text=CLIENT,
-                                        length_s=58, true_at_beat="the_world")
+                                        length_s=88, true_at_beat="the_world")
         self.assertTrue(req["input"]["style"].startswith(out["style"]))  # I5 appends ending words
 
     def test_take_scored_from_labels_fails(self):

@@ -122,6 +122,27 @@ shot / time / line / match (`pictures_match_gate`) and fails any mismatch
 (`PICTURE_LINE_MISMATCH`); the assembler enforces both before any render.
 Test: `python3 scripts/core/shot_planner/test_timestamp_plan_h5.py`.
 
+## 6c. Story-first audio acceptance and the reconciled music direction (WW29 / WW-21)
+
+The synced core (canonical `75-drama-song-ad-factory` at
+`4179b542db4020260d1857d1e0175a7d6344c105`) carries the round-3 acceptance rules
+and this distribution runs them unchanged:
+
+- **Delivered-audio acceptance has FIVE gates only (WW-21).** Real rap, story
+  start, both pace changes, three audibly different versions including an
+  upbeat option, and multiple character voices. They live in
+  `song_dispatch.accept_audio_results` with `AUDIO_RESULTS == ("D1","D2","D3","D4","D5")`;
+  there is no sixth gate, and evidence that is unmeasured, unavailable or
+  unknown cannot pass.
+- **Reconciled music direction (WW-29).** The vocalise is OPTIONAL and never a forced
+  opening: a sheet may open with one short note or with no vocalise at all.
+  R&B Flow consistently directs rhythmic speech-rhythm rap verses contrasted
+  with a fully sung melodic R&B hook (`references/prompt-templates/music/rnb-flow.json`).
+- **Transmission.** Cast, pace, hook, ending and the exclusions
+  (`negative_tags`) all survive into the exact serialized createTask request
+  and are checked there by `song_dispatch.validate_request`; a style text over
+  the 1000-character cap refuses `STYLE_TOO_LONG` rather than dropping a clause.
+
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
 
 **Asking the nine intake questions (H9).** Build them with
