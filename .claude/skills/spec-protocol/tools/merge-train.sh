@@ -391,13 +391,38 @@ park() { # park <branch> <conflict|red> [gate output]
 }
 
 try_set() { # try_set <branch>... -- merge each --no-ff onto HEAD; a conflict is aborted and parked
-  local b
+  local b f ok rc top
   TRIED=() TSHAS=()
   for b in "$@"; do
     if git merge --no-ff --no-edit "$b" >/dev/null 2>&1; then
       TRIED+=("$b"); TSHAS+=("$(git rev-parse HEAD)")
     else
-      git merge --abort >/dev/null 2>&1; park "$b" conflict
+      # ponytail: union keeps both version headings; add heading dedupe if two same-version sections ever matter.
+      ok=1; top="$(git rev-parse --show-toplevel)"
+      [[ -n "$(git -C "$top" diff --name-only --diff-filter=U)" ]] || ok=0
+      while IFS= read -r f; do
+        [[ "$(basename "$f")" == CHANGELOG.md ]] || { ok=0; break; }
+      done < <(git -C "$top" diff --name-only --diff-filter=U)
+      if (( ok )); then
+        while IFS= read -r f; do
+          git -C "$top" show ":1:$f" >"$MT/.union.base" 2>/dev/null || { ok=0; break; }
+          git -C "$top" show ":2:$f" >"$MT/.union.ours" 2>/dev/null || { ok=0; break; }
+          git -C "$top" show ":3:$f" >"$MT/.union.theirs" 2>/dev/null || { ok=0; break; }
+          git merge-file --union "$MT/.union.ours" "$MT/.union.base" "$MT/.union.theirs" >/dev/null 2>&1; rc=$?
+          (( rc > 1 )) && { ok=0; break; }
+          cp "$MT/.union.ours" "$top/$f" >/dev/null 2>&1 || { ok=0; break; }
+          git -C "$top" add -- "$f" >/dev/null 2>&1 || { ok=0; break; }
+        done < <(git -C "$top" diff --name-only --diff-filter=U)
+        [[ -n "$(git -C "$top" diff --name-only --diff-filter=U)" ]] && ok=0
+        (( ok )) || { git merge --abort >/dev/null 2>&1; park "$b" conflict; continue; }
+        if git commit --no-edit >/dev/null 2>&1; then
+          TRIED+=("$b"); TSHAS+=("$(git rev-parse HEAD)")
+        else
+          git merge --abort >/dev/null 2>&1; park "$b" conflict
+        fi
+      else
+        git merge --abort >/dev/null 2>&1; park "$b" conflict
+      fi
     fi
   done
 }

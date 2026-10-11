@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- unit/TRAINFIX-U1: spec-protocol: merge-train.sh try_set now resolves a conflict whose every unmerged file is a CHANGELOG.md by union (git merge-file --union over the three stages, applied with git -C "$top"), keeping both sides; any non-CHANGELOG file, or any failed step, still aborts and parks exactly as before. No version bump: spec-protocol VERSION is release-tag-locked (check-docs-fresh compares it to the latest v* tag; tools/release.sh writes it).
 - unit/FU-SAVED-CHARACTER-QUESTION: drama-song-ad-factory: the saved-character intake question now asks "create a new character, or use one you've used before?" with "You have N character(s) saved with us." and numbered options (new character first, recommended); with none saved it shows one plain line instead of a question; ported from onboarding
 
 - unit/FU-ONE-SPEND-QUESTION: drama-song-ad-factory: money is asked once, on the choice card, with the real price (story questions no longer ask about spend; brief limit shown as option 1; no reply = no spend); shared code and tests byte-identical with onboarding skill 75 v2.9.8
