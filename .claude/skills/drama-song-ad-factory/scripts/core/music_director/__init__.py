@@ -13,6 +13,19 @@ lock -> extend-for-length.
 
 Tests run on throwaway ledger DBs with fixture costs and task IDs; no paid
 call leaves this module.
+
+WW-29 (reconciled templates and researched guidance): the direction that
+reaches the provider is the CALLER's style text (built from the recipe and
+the music data) plus the ending clause and, when a pace plan was approved,
+the pace clause. This module never mandates a wordless held-note opening and
+never emits a percent-of-runtime hook rule: the opening vocalise is OPTIONAL
+(a sheet may open on a verse) and the hook is placed by MEASUREMENT against
+``true_at_beat`` (``sung_hook.hook_placement``), never by a heuristic. The
+required directions (custom_mode, instrumental, title, lyrics, style,
+negative_tags, duration) and the required clauses (cast, pace/shift, hook,
+ending, negatives) must still be present on the EXACT serialized ``input``
+after every mutation; an over-cap field raises
+``prompt_limits.PromptLimitError`` (PROMPT_OVER_CAP) and nothing is dropped.
 """
 from __future__ import annotations
 
@@ -39,7 +52,13 @@ from sung_hook import hook_placement
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
 
-CREATE_TASK_ENDPOINT = "/api/v1/jobs/createTask"
+#: WW-30: the createTask route, endpoint and outer model come from ONE named
+#: place (suno_recipe), never a second copy here. The legacy
+#: /api/v1/generate music path is retired with no fallback.
+CREATE_TASK_ENDPOINT = suno_recipe.KIE_MUSIC_TASK_ENDPOINT
+MUSIC_TASK_MODEL = suno_recipe.KIE_MUSIC_TASK_MODEL
+MUSIC_MODEL_VALUE = suno_recipe.KIE_MUSIC_MODEL_VALUE
+MUSIC_MODEL_VALUE_STATUS = suno_recipe.KIE_MUSIC_MODEL_VALUE_STATUS
 GENERATE_CATALOG_ID = "suno-generate"
 EXTEND_CATALOG_ID = "suno-extend"
 PERSONA_OP = "generate-persona"
@@ -109,12 +128,27 @@ def _checked_version(version, catalog_id=GENERATE_CATALOG_ID):
     return v
 
 
+#: WW-27: the ensemble cast gate (character_bible.character_bible), imported
+#: LAZILY so a build with no cast never loads it.
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's cast gate)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        import character_bible.character_bible as _cb   # noqa: PLC0415
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
+
+
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
                            style_id=None, client_text=None, length_s=None,
-                           mode=None, true_at_beat=None, hook_plan=None):
+                           mode=None, true_at_beat=None, hook_plan=None, pace_plan=None,
+                           cast=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -143,7 +177,34 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     judge's plan and never sends it to KIE). A caller-made ``hook_plan`` is
     checked and carried the same way. With a Suno style and neither, the
     guard refuses: "UNMEASURED: hook_plan". Shape in SKILL.md "Hook placement".
+
+    WW-27: ``cast`` (a brief carrying ``characters``, or a resolved cast) runs
+    the ensemble gate BEFORE anything is built and again on the FINAL
+    ``input.lyrics``/``input.style``. The cast rides the script the request
+    carries (the speaker tags in ``input.lyrics``), never a provider field this
+    builder invents. No cast -> nothing changes.
+
+    WW-29: the opening vocalise is OPTIONAL -- a sheet that opens on a verse
+    is accepted; the mandate lives in the recipe/data (``suno_recipe``), never
+    in this builder, and this builder adds no such direction. The hook is
+    placed by MEASUREMENT against ``true_at_beat`` (above), never by a
+    percent-of-runtime rule. The required directions and the ending, pace/shift,
+    hook, cast and negative clauses reach the EXACT serialized ``input``: the
+    ending clause is appended BEFORE the catalog caps are measured and the pace
+    clause is appended LAST, so an overflow raises PROMPT_OVER_CAP and no clause
+    is ever truncated away to fit.
     """
+    # WW-27: the CAST DECISION precedes drafting. With a cast the ensemble is
+    # resolved and judged FIRST -- an incomplete character, a cast with fewer
+    # than two characters, a villain/foil that never speaks or is never
+    # answered, a shared Suno voice direction or a single-voice cast is refused
+    # while no payload exists. The final pass on the exact serialized payload
+    # follows below. No cast -> nothing changes, exactly as before.
+    cast_rcpt = None
+    if cast is not None:
+        cast_rcpt = _cast_model().check_cast(cast)
+        if cast_rcpt["reasons"]:
+            raise ValueError("; ".join(cast_rcpt["reasons"]))
     # FU-U4: concept mode means the client's own lines; no packet, no request.
     errors = protected_names.packet_required({"mode": mode}, packet_lines)
     if errors:
@@ -184,32 +245,64 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         if errors:
             raise ValueError("; ".join(errors))
     suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s,
-                              hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
+                              hook_plan=hook_plan, cast=cast)  # recipe v2 + I8 + hook placement + WW-27 cast
     if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
         lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
+    # WW-07: the approved pace direction (the lowest-point drop and the return)
+    # is written into the FINAL style AFTER the ending clause is appended, and
+    # BEFORE the catalog cap is measured below, so an over-cap append raises
+    # rather than truncating. `pace_plan` is judging metadata only -- it reaches
+    # the judge as the internal `_pace_plan` and never the provider.
+    _sr = getattr(suno_recipe, "suno_recipe", suno_recipe)
+    pace_note = _sr.pace_clause(pace_plan)
+    if pace_note:
+        style_text = "%s %s" % (str(style_text).rstrip(), pace_note)
     ver = _checked_version(version)
+    # WW-30: the outer model is the createTask ROUTE, never a version; the
+    # version rides input.model. negative_tags is a REQUIRED direction of the
+    # envelope, so it is always present (empty only when no style is known --
+    # the recipe's own negative_tags() is the single source when there is one).
     req = {"endpoint": CREATE_TASK_ENDPOINT,
-           "model": route_model(GENERATE_CATALOG_ID),
+           "model": MUSIC_TASK_MODEL,
            "callBackUrl": callback_url,
            "input": {"custom_mode": True, "instrumental": bool(instrumental),
                      "model": ver, "style": style_text, "title": title,
-                     "lyrics": lyrics_text}}
+                     "lyrics": lyrics_text,
+                     "negative_tags": (suno_recipe.negative_tags(style_id)
+                                       if style_id else "")}}
     if vocal_gender is not None:
         req["input"]["vocal_gender"] = vocal_gender
-    if duration is not None:
-        req["input"]["duration"] = duration
-    elif fit is not None:
-        # The DELIVERED length (card - END_EARLY_S tail; ``length_s`` here),
-        # which song_dispatch.run_takes requires ("whole tracks only"). The
-        # words-fit check above stays on planned vocal time.
-        req["input"]["duration"] = length_s
+    # ponytail: ''duration'' is always PRESENT (a required direction), from the
+    # caller''s value, else the delivered length. It is null only on the
+    # pre-length seams (style_id=None fixtures that never reach a dispatch);
+    # song_dispatch.run_takes still refuses a null/short duration on any real
+    # generation. Upgrade path: require a number here once every caller knows
+    # its delivered length.
+    req["input"]["duration"] = duration if duration is not None else length_s
+    # WW-30: the FINAL envelope is checked against the ONE contract (outer
+    # model, top-level callBackUrl, nested input, exactly one lyrics source)
+    # before its caps are measured; the retired flat payload is refused here.
+    envelope_errs = suno_recipe.check_envelope(req)
+    if envelope_errs:
+        raise ValueError("; ".join(envelope_errs))
     # FU-U6 (plan E.2): the FINAL payload, measured after every mutation
     # (with_clean_ending appends the ending to the style ABOVE). Over a cap,
     # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and
     # status; nothing is ever truncated.
     prompt_limits.check_request(GENERATE_CATALOG_ID, req)
+    if cast is not None:
+        # WW-27: the FINAL serialized payload, after every transformation --
+        # the sheet the provider will sing and the style it will follow.
+        cast_rcpt = _cast_model().check_cast(
+            cast, sheet_text=req["input"]["lyrics"], style_text=req["input"]["style"])
+        if cast_rcpt["reasons"]:
+            raise ValueError("; ".join(cast_rcpt["reasons"]))
     if hook_plan is not None:
         req["_hook_plan"] = hook_plan
+    # WW-07: the pace plan rides the request like the hook plan; run_takes moves
+    # _pace_plan into the judge's plan and it never reaches KIE.
+    if pace_plan is not None:
+        req["_pace_plan"] = pace_plan
     return req
 
 

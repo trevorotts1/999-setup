@@ -73,12 +73,40 @@ import spoken_share as _SS     # noqa: E402
 import sung_hook as _SH        # noqa: E402
 import words_fit as _WF        # noqa: E402
 import suno_recipe as _RP     # noqa: E402
+from story_coverage import story_coverage as _story   # noqa: E402  (WWFIX D1)
+try:   # WW-28: the payload closing must carry the approved commercial call
+    from story_arc import story_arc as _SARC   # noqa: E402
+except ImportError:                            # pragma: no cover
+    _SARC = None
 #: the module itself whether core/suno_recipe/ is a package or on sys.path
 _R = getattr(_RP, "suno_recipe", _RP)
+#: WW-01: the per-verse rap-floor API (RAP_VERSE_MIN_S / MIN_RAP_VERSES /
+#: rap_verse_floor_for / rap_verse_budget_s) lives on the length_formula MODULE.
+#: The package ``__init__`` re-exports only a subset on this tree, so the module
+#: is read directly for it rather than through the package surface.
+try:
+    from length_formula import length_formula as _LFM   # noqa: E402
+except ImportError:                                     # pragma: no cover
+    _LFM = _LF
 try:   # FU-HOOK-PLACEMENT owns hook count and placement once it is installed
     from sung_hook import hook_placement as _HP   # noqa: E402
 except ImportError:
     _HP = None
+
+
+#: WW-27: the ensemble cast model lives in character_bible; it is imported
+#: LAZILY so a caller that passes no cast (and a sheet with no speaker bracket)
+#: never loads it and no existing sheet check changes.
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's cast gate)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        from character_bible import character_bible as _cb   # noqa: PLC0415
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
 
 TOOL_NAME = "song_contract"
 TOOL_VERSION = "1.1.0"
@@ -220,6 +248,33 @@ def sung_target(style_id, delivered_s):
     return _WF.style_sung_target_pct(_sid(style_id), delivered_s)
 
 
+def rap_floor_for(style_id, delivered_s):
+    """The rap sheet FLOOR for one style and ad length (WWFIX D1).
+
+    ONE rule, read from length_formula: ``max(8.0 s, 10% of D)`` and
+    ``ceil(floor_s * style_rap_rate)`` words, where D is the DELIVERED
+    seconds -- the same D ``length_formula.plan`` uses, so the plan and the
+    sheet gate can never disagree (at D = 88 the floor is 8.8 s / 22 words).
+    NEW ACCEPTANCE RULE."""
+    sid = _sid(style_id)
+    return {"style_id": sid, "delivered_s": delivered_s,
+            "floor_s": round(_LF.rap_floor_s(delivered_s), 3),
+            "rate": _WF.rates_for(sid)["rap"],
+            "floor_words": _LF.rap_floor_words(sid, delivered_s),
+            "source": "WWFIX D1: max(8 s, 10% of D) and ceil(seconds * rap rate)"}
+
+
+def rap_verse_floor_for(style_id):
+    """The PER-VERSE rap floor for one style (WW-01, NEW PROPOSED).
+
+    Every declared rap verse must reach ``RAP_VERSE_MIN_S`` seconds and
+    ``ceil(RAP_VERSE_MIN_S * style_rap_rate)`` words (8.0 s / 20 words at the
+    R&B Flow rap rate of 2.5 words per second), and a sheet must declare at least
+    ``MIN_RAP_VERSES`` rap verses. Both rules are STRICTLY STRONGER than the
+    total floor and never replace it. ONE copy of the numbers: length_formula."""
+    return dict(_LFM.rap_verse_floor_for(_sid(style_id)))
+
+
 def _pct(part, whole):
     return round(100.0 * part / whole, 1) if whole else 0.0
 
@@ -231,11 +286,22 @@ def _non_hook_sung(sections, blocks):
             and s["kind"] in NON_HOOK_SUNG_KINDS]
 
 
-def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
+def check_sheet(sheet_text, style_id, delivered_s, style_text=None, cast=None):
     """The style contract on one lyric sheet. Never raises on a bad sheet:
     returns {"verdict": PASS|FLAG|FAIL|EXEMPT, "reasons", "flags",
     "sections" (per-section words, seconds and word share by delivery),
-    "totals", "hook", "sung_non_hook", "sung_of_voice"}."""
+    "totals", "hook", "sung_non_hook", "sung_of_voice", "cast"}.
+
+    WW-27: with ``cast`` (a brief carrying ``characters``, or an already
+    resolved cast) the ensemble gate runs here too -- the sheet's speaker
+    brackets must name declared characters, a villain or foil must speak and be
+    answered, two characters must not share one Suno voice direction, and an
+    ensemble whose FINAL ``style_text`` commands a single voice is refused.
+    With no cast passed the sheet is judged exactly as before (the legacy
+    single-voice sheet has no cast to declare its brackets against, so there is
+    nothing to refuse). The EXEMPT voiceover style returns before this
+    (spoken dialogue by design) and a missing style_id/length_s returns first
+    (already a FAIL), exactly as before."""
     missing = ["UNMEASURED: %s" % f for f, v in (("style_id", style_id), ("length_s", delivered_s))
                if v is None]
     if missing:   # no gate switches itself off: a missing input is a FAIL
@@ -248,6 +314,17 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
     rates = _rates(sid)
     secs = parse_sections(sheet_text)
     reasons, flags = [], []
+    # WW-27: the ensemble cast gate, BEFORE any spend. It runs when a cast is
+    # DECLARED (a brief with characters, or an already resolved cast); a sheet
+    # with no cast at all is the legacy single-voice sheet and is judged exactly
+    # as before, so character_bible is never imported and nothing changes.
+    # ponytail: with no cast record the sheet's brackets are not "undeclared" --
+    # there is no cast to declare them against -- so SPEAKER_UNDECLARED needs a
+    # declared cast. character_bible.check_cast called directly stays closed.
+    _cast = None
+    if cast is not None:
+        _cast = _cast_model().check_cast(cast, sheet_text=sheet_text, style_text=style_text)
+        reasons.extend(_cast["reasons"])
     rows, words, seconds = [], dict.fromkeys(_R.DELIVERIES, 0), dict.fromkeys(_R.DELIVERIES, 0.0)
     for s in secs:
         n = sum(len(ln.split()) for ln in s["lines"])
@@ -268,7 +345,64 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
     totals.update({"%s_s" % d: round(seconds[d], 1) for d in _R.DELIVERIES})
     totals.update({"%s_word_share_pct" % d: _pct(words[d], total_w) for d in _R.DELIVERIES})
     totals["total_words"] = total_w
+    # WWFIX D1 x WW-01: THE RAP SHEET FLOOR AND THE PER-VERSE FLOOR. A rap style
+    # whose sheet plans fewer rap words than the total floor -- or whose declared
+    # rap verses are thinner than the per-verse floor, or that declares fewer
+    # than MIN_RAP_VERSES rap verses at all -- is refused HERE, before any spend.
+    # The failed run's sheet shipped a 10-word and a 9-word rap verse and nothing
+    # refused it. These are NEW PROPOSED ACCEPTANCE RULES.
+    rap_floor, rap_verses = None, None
+    rap_rows = [r for r in rows if r["delivery"] == "rap"]
+    if _is_rap_style(sid):
+        rap_floor = rap_floor_for(sid, delivered_s)
+        verse_floor = rap_verse_floor_for(sid)
+        rap_verses = {"count": len(rap_rows), "min_verses": verse_floor["min_verses"],
+                      "min_s": verse_floor["min_s"], "min_words": verse_floor["min_words"],
+                      "short": []}
+        totals["rap_floor_words"] = rap_floor["floor_words"]
+        totals["rap_floor_s"] = rap_floor["floor_s"]
+        totals["rap_verse_count"] = len(rap_rows)
+        totals["rap_verse_min_s"] = verse_floor["min_s"]
+        totals["rap_verse_min_words"] = verse_floor["min_words"]
+        if not words["rap"]:
+            reasons.append("RAP_PLANNED_ZERO_WORDS: %s delivers rap and the sheet "
+                           "carries no rap lines at all (floor %d rap words / %.1f s)"
+                           % (label, rap_floor["floor_words"], rap_floor["floor_s"]))
+        else:
+            if len(rap_rows) < verse_floor["min_verses"]:
+                reasons.append("RAP_VERSE_COUNT_BELOW_MIN: %s delivers rap and the sheet "
+                               "declares %d rap verse(s); the floor is %d rap verses, each "
+                               "reaching %.1f s and %d words"
+                               % (label, len(rap_rows), verse_floor["min_verses"],
+                                  verse_floor["min_s"], verse_floor["min_words"]))
+            short = [r for r in rap_rows
+                     if r["words"] < verse_floor["min_words"]
+                     or r["seconds"] + 1e-9 < verse_floor["min_s"]]
+            rap_verses["short"] = [{"tag": r["tag"], "words": r["words"],
+                                    "seconds": r["seconds"]} for r in short]
+            if short:
+                first = short[0]
+                reasons.append("RAP_VERSE_BELOW_FLOOR: %d of %d rap verse(s) are below the "
+                               "per-verse floor (first: %r at %d words / %.1f s, floor %d "
+                               "words / %.1f s at %.1f words per second); the %g s %s total "
+                               "floor is %d rap words"
+                               % (len(short), len(rap_rows), first["tag"], first["words"],
+                                  first["seconds"], verse_floor["min_words"],
+                                  verse_floor["min_s"], verse_floor["rate"],
+                                  delivered_s, label, rap_floor["floor_words"]))
+    # WW-22: the EXACT approved opening story line -- ordered, repeats kept --
+    # is CARRIED into this gate's returned context, which is the
+    # request/evidence context song_dispatch.validate_request and
+    # suno_recipe.guard_request record before any spend. It rides with its
+    # ordered match against the sheet's own delivered words, so the line is
+    # matched IN ORDER and never as a vocabulary set. (The delivered ONSET on
+    # the take is assessed by audio gate D2, never here.)
+    _opening = _story.approved_opening_line(sheet_text)
+    _opening["ordered_match"] = _story.ordered_match(
+        _opening["line"], _story.delivered_words_ordered(secs))
     out = {"verdict": "FAIL", "style_id": sid, "label": label, "delivered_s": delivered_s,
+           "rap_floor": rap_floor, "rap_verses": rap_verses,
+           "approved_opening": _opening, "cast": _cast,
            "reasons": reasons, "flags": flags, "sections": rows, "totals": totals,
            "rap_vs_spoken": "planned from the sheet's tags; on the audio " + RAP_AUDIO_UNMEASURED}
     if not rows:
@@ -350,6 +484,17 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
                            "closing lines on the hook melody" % (s["tag"], s["cue"]))
     if upbeat and style_text and _SLOW_RE.search(str(style_text)):
         reasons.append("style text asks for slow delivery in upbeat %s" % label)
+    # WW-28: the payload CLOSING must carry an approved commercial call (a book
+    # order or an assessment call) -- never a summary-only promise, an
+    # interchangeable slogan or a magical unsupported cure. It fires on a
+    # closing block tagged as a call ([CTA ...]/[Offer ...]); a sheet with no
+    # such closing is left to the story gate, so no existing sheet is refused.
+    if _SARC is not None:
+        _closing = _SARC.check_payload_closing(sheet_text)
+        if _closing.get("outcome") == "rejected":
+            reasons.append("%s: %s (closing block %r)" % (_closing["reason_code"],
+                                                          _closing["detail"], _closing.get("tag")))
+        out["payload_closing"] = _closing
     out["verdict"] = "FAIL" if reasons else ("FLAG" if flags else "PASS")
     return out
 
@@ -457,3 +602,73 @@ def check_returned_song(sheet_text, aligned_words, segments, style_id, delivered
                                        target))
     return {"verdict": "FAIL" if reasons else "PASS", "reasons": reasons, "numbers": nums,
             "style_id": sid}
+
+
+def check_returned_story(take, style_id, delivered_s, sheet_text=None, plan=None):
+    """WWFIX D1: the STORY gates on the RETURNED take, before any picture or
+    video spend -- a sibling gate to ``check_returned_song``, run by
+    ``song_dispatch.judge_take`` as gate ``story_coverage``.
+
+    All of these are NEW ACCEPTANCE RULES:
+      * ``story_start``      the approved PLOT line by an ABSOLUTE 5.0 s, plus
+                             an opening non-lexical span ceiling of 15% of D;
+      * ``lexical_coverage`` real lexical time over the delivered duration,
+                             0.70, with NO vocalise counted;
+      * ``story_arc``        every u16 beat of at least 5 s carries a measured
+                             lexical line;
+      * ``words_floor``      the words-versus-length floor (only when the plan
+                             carries its own word budget).
+    An UNAVAILABLE gate is reported as UNAVAILABLE, which blocks a take PASS.
+    Never a silent pass: a missing input fails closed."""
+    plan = dict(plan or {})
+    plan.setdefault("delivered_s", delivered_s)
+    plan.setdefault("beats_u16", len(_LF.STORY_ARC_U16))
+    sheet = sheet_text or plan.get("sheet_text")
+    story = _story.judge_returned_take({"aligned_words": (take or {}).get("aligned_words") or [],
+                                        "duration_s": (take or {}).get("duration_s"),
+                                        "delivered_words": (take or {}).get("delivered_words"),
+                                        "vocal_seconds": (take or {}).get("vocal_seconds")},
+                                       plan, sheet, delivered_s)
+    return {"verdict": "FAIL" if story["verdict"] in ("FAIL", "UNAVAILABLE") else "PASS",
+            "detail": story["detail"], "story_coverage": story}
+
+
+# ---- WW-23: the final style carries BOTH musical transitions ---------------
+
+def _pace_norm(text):
+    """Whitespace-collapsed, lower-cased text for a substring test."""
+    return " ".join(str(text or "").lower().split())
+
+def check_pace_style(style_text, pace_plan):
+    """WW-23: the FINAL provider style must carry BOTH approved musical
+    directions -- the lowest-point drop AND the return that follows it.
+
+    The two anchors are read from the ordered ``pace_plan`` (with the
+    specification's own clause words as the fallback, the SAME source
+    ``suno_recipe.pace_clause`` writes from), so a style that carries only one
+    transition -- the WW-23 defect -- is refused BEFORE any spend. No pace plan
+    means no ordered change and nothing to enforce. Returns a list of reasons
+    (empty = ok). NEW ACCEPTANCE RULE: the clauses are the plan's own approved
+    directions, never re-derived here."""
+    if not pace_plan:
+        return []
+    o = pace_plan if isinstance(pace_plan, dict) else {}
+    drop = o.get("drop") or getattr(_R, "PACE_DROP_CLAUSE", "")
+    ret = o.get("return") or getattr(_R, "PACE_RETURN_CLAUSE", "")
+    # WWB-INT in-branch seam (WW-23 -> WW-22): the anchor presence is decided by
+    # WW-22's ONE ordered matcher, story_coverage.ordered_run_match, instead of a
+    # raw substring scan. Each approved direction must appear as a CONTIGUOUS run
+    # of its full word sequence, IN ORDER, so a final style that carries the
+    # direction's words out of order, or only in fragments, is refused -- never a
+    # set/vocabulary test. Repeats are kept on both sides (WW-22
+    # normalize_approved_words). The ordered words come from the same approved
+    # anchors the D3 gate and the serialized payload carry.
+    obs = _story.normalize_approved_words(style_text)
+    reasons = []
+    for _label, _anchor in (("drop", drop), ("return", ret)):
+        _words = _story.normalize_approved_words(_anchor)
+        if not _words or _story.ordered_run_match([_words], obs,
+                                                  min_words=len(_words)) is None:
+            reasons.append("PACE_DIRECTION_MISSING: the final style does not carry the "
+                           "%s direction (%r) in order" % (_label, _anchor))
+    return reasons
