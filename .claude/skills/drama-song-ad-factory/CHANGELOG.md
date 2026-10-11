@@ -1,5 +1,16 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.44] - 2026-10-11 - U15: Drama Studio heartbeat job (launchd / Task Scheduler) — requested notice only, absolute paths, never starts Claude
+
+The Drama Studio plugin gains its heartbeat: a native timer that runs `.claude/skills/drama-studio/studio_check.py --desktop` on an interval. This is the 999-setup unit U15 of the joint plan (row 1081), the consumer of the U13 hand-off (PR #183).
+
+- New `.claude/skills/drama-studio/heartbeat.py`: `install` / `uninstall` / `status` / `beat` plus `print-plist` and `print-task-xml`. Native timer patterns only — a macOS LaunchAgent plist (`StartInterval`, `ProgramArguments`, `RunAtLoad` false) and a Windows Task Scheduler XML (`TimeTrigger` repetition `PTnM`, `Exec`). `--dry-run` writes nothing; `--no-load` writes the timer without loading it.
+- Absolute paths throughout: the timer's `ProgramArguments` / `Exec` name the absolute interpreter and the absolute `studio_check.py`; a relative path or a bare program name is refused (`AF-DS-HEARTBEAT`). launchd and Task Scheduler run with no PATH and no working directory, so this is required, not cosmetic.
+- Requested desktop notice only: the heartbeat emits nothing itself. It runs `studio_check.py --desktop`, which stays silent unless the client opted in, so an unsolicited notice is impossible on this path.
+- Never starts Claude: no code path launches, execs or spawns a Claude process. The timer runs exactly two things — the interpreter and `studio_check.py` — and `beat` refuses any program whose name starts with `claude`.
+- New runnable proof `.claude/skills/drama-studio/prove/prove_heartbeat.py` (exit 0 pass / 2 fail-or-vacuous / 3 cannot run). Five checks, each proven on the real script and on a planted-bad copy: native timer, absolute paths, requested-only, never-starts-Claude (a live PATH trap of fake `claude` launchers over every subcommand, plus a source scan for spawn/exec of a claude binary), and install-writes. It installs nothing live: no `launchctl` / `schtasks`, with the sink and timer dirs under `/tmp`.
+- Version markers: this `VERSION` + SKILL.md frontmatter 2.7.43 -> 2.7.44.
+
 ## [2.7.43] - 2026-10-10 - N99-CB: character bible refuses BEFORE any write on a missing reference picture
 
 The 2.7.41 sentence ("a missing reference picture is a refusal, never an empty directory") was false in code: `character_bible.write_delivery` rendered the PDF and created `02 - Character Bible Images/` before raising `NO_REFERENCE_IMAGES`, leaving both contract artifacts behind on a refusal.
