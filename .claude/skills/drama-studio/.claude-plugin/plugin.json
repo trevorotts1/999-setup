@@ -1,0 +1,7 @@
+{
+  "name": "drama-studio",
+  "description": "Drama Studio for Claude Code and claude-nine: the pair/link command, the SessionStart check-in hook, the opt-in desktop notice and the Option 2 watcher, shipped as a skills-folder plugin. It writes nothing to any settings.json and stores its per-machine key and state only under ~/.drama-studio.",
+  "author": {
+    "name": "Drama Studio (999-setup, unit U13)"
+  }
+}
