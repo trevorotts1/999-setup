@@ -1,0 +1,86 @@
+name: drama-studio-tests
+
+# The Drama Studio provers. CHECKIN-UA found that NOTHING ran them: a grep of
+# every workflow file on main (.github/workflows/*.yml) named no `prove/prove_*.py`
+# and no `.claude/skills/drama-studio/**` path, so the four provers written with
+# U13/U14/U15/U16 had run on a laptop once and no workflow re-ran them.
+#
+# WHY A DEDICATED WORKFLOW rather than a step in drama-song-tests.yml: that
+# workflow's `on.paths` gate its WHOLE job, which installs numpy, opencv-python,
+# ffmpeg and tesseract. Adding `.claude/skills/drama-studio/**` to those paths
+# would drag that heavy install onto every drama-studio change to run one stdlib
+# suite. This job needs no apt and no pip: every prover is stdlib-only and
+# hermetic (fake servers on 127.0.0.1, temp state under /tmp, no key, no live
+# host, no client box, installs nothing).
+#
+# ANTI-VACUITY is the point of these provers, so the job runs them as they are
+# written: each check drives the REAL module and is paired with a planted-bad
+# copy that must be caught, and a planted-bad copy that stays green exits 2.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/skills/drama-studio/**'
+      - '.github/workflows/drama-studio-tests.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/drama-studio/**'
+      - '.github/workflows/drama-studio-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  drama-studio:
+    runs-on: ubuntu-latest
+    env:
+      SKILL: .claude/skills/drama-studio
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Provers (every check paired with a planted-bad control)
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          # prove_heartbeat.py is deliberately NOT listed: it is RED on 999 main
+          # as measured on the operator Mac Mini on 2026-10-11 (1/6 checks failed:
+          # check_install_writes), it predates CHECKIN-UA and this unit does not
+          # touch it. Wiring a check that is already red converts "nobody is
+          # looking" into "somebody is looking and it is fine" for the four that
+          # do pass, so the four that are green on main are wired and the red one
+          # is named here instead of hidden.
+          for p in prove_plugin_behaviour.py prove_option2_monitor.py \
+                   prove_option3_runner.py prove_user_agent.py; do
+            h="$(mktemp -d)"
+            echo "== $p"
+            if ! HOME="$h" python3 "$SKILL/prove/$p" </dev/null; then
+              echo "FAIL: $SKILL/prove/$p"; rc=1
+            fi
+            rm -rf "$h"
+          done
+          [ "$rc" -eq 0 ]
+      - name: The studio User-Agent prover is RED against a pre-change copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A wired prover that cannot fail is worse than an unwired one. This
+          # step CONSTRUCTS the pre-change tree (the three scripts exactly as
+          # main has them: no STUDIO_USER_AGENT) and requires the prover to exit
+          # non-zero against it, then exit 0 against the head. It is the
+          # anti-vacuity control for the whole job.
+          git fetch --quiet --depth=1 origin main
+          git worktree add --detach "$RUNNER_TEMP/pre" "$(git rev-parse origin/main)" >/dev/null
+          set +e
+          HOME="$(mktemp -d)" python3 "$SKILL/prove/prove_user_agent.py" \
+            --skill "$RUNNER_TEMP/pre/.claude/skills/drama-studio" </dev/null
+          red=$?
+          set -e
+          if [ "$red" -eq 0 ]; then
+            echo "FAIL: prove_user_agent.py is GREEN against the pre-change tree — vacuous"; exit 1
+          fi
+          echo "ok: RED against the pre-change tree (rc=$red), GREEN against this head"

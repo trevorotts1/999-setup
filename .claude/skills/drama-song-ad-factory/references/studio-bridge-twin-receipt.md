@@ -117,3 +117,62 @@ The 999-setup root version markers were checked and deliberately NOT bumped: the
 root `VERSION` file, `CONTROL/bundled-components.json` carries no `drama-song-ad-factory`
 entry, `README.md` states no per-skill version for it, and `scripts/check-docs-fresh.sh`
 iterates only the eight named bundled skills. U18/TWIN-R3 set the same precedent.
+
+---
+
+## CHECKIN-UA addendum — the bridge now sends the studio's one explicit User-Agent
+
+Unit `CHECKIN-UA` / `CHECKIN-UA-U1` (order ORCH-CHECKIN-22-27, under Trevor's order
+"FINISH THIS MAX SWARM USE THE TERMINAL WINDOW"). The record above still describes the
+U19-BRIDGE copy that first brought these bytes into 999; this section records the ONE
+later change to `studio_bridge.py` and the new hashes. Nothing above is rewritten.
+
+Cloudflare in front of `https://studio.zerohumanworkforce.com` refuses Python's default
+User-Agent (`Python-urllib/3.x`) with HTTP 403 and the body `error code: 1010`; an
+explicit User-Agent gets 200. Measured read-only on 2026-10-11 (`GET /api/studio/health`,
+no key): bare `urllib.request.urlopen` -> `403 error code: 1010`; the same call with an
+explicit User-Agent -> `200 {"ok":true,"service":"drama-studio-service","version":"0.1.0"}`.
+A 999 install whose bridge sent the default User-Agent could not check in at all.
+
+Both sides of this twin changed in the same unit, one commit per repository, and the
+canonical side changed FIRST so the 999 fingerprint could pin it:
+
+| Side | Repository | Tree | Branch head |
+|---|---|---|---|
+| Canonical (source of truth) | `trevorotts1/openclaw-onboarding` | `75-drama-song-ad-factory/shared-bridge/` | `unit/CHECKIN-UA` `93f84e0e15a5a90328e9112968f2e8eed7e4e15c` |
+| Packaged copy (this repo) | `trevorotts1/999-setup` | `.claude/skills/drama-studio/` | `unit/CHECKIN-UA` (this commit) |
+
+Byte-identical after the change (raw bytes, sha256, no normalisation):
+
+| Packaged path | canonical path | sha256 (both sides) |
+|---|---|---|
+| `.claude/skills/drama-studio/studio_bridge.py` | `75-drama-song-ad-factory/shared-bridge/studio_bridge.py` | `d190f092acfa2c3b400dde2711ef6130917a7ac47d0c4fd9f0076084fa6a6ee4` |
+| `.claude/skills/drama-studio/studio_claim.py` | `75-drama-song-ad-factory/shared-bridge/studio_claim.py` | `b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42` (unchanged) |
+
+The change is one constant and one header:
+
+```python
+STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)"
+...
+    req.add_header("User-Agent", STUDIO_USER_AGENT)      # in _http, before urlopen
+```
+
+`studio.py` and `studio_check.py` live only in 999 and each carry an identical literal
+constant at their own request site (an import would couple the pairing command and the
+session hook to the bridge's sibling `studio_claim` import; the spec allows the literal
+form when one constant is kept equal). `prove/prove_user_agent.py` asserts all three
+strings are equal before it drives a request, so the "one constant" holds by proof.
+
+The onboarding side gained check F in `shared-bridge/checks/run_checks.py`, which drives
+the real `_http` at a fake studio on `127.0.0.1` and requires both the 200 and the exact
+string on the wire, with two controls on the same server: bare urllib refused 403/1010,
+and a planted-bad bridge copy with the header line removed refused too. On main the same
+run is RED (`FAIL F one explicit User-Agent`, rc 1, checks A-E still pass), so the check
+discriminates against exactly this change.
+
+Version: `VERSION` 2.7.47 -> 2.7.48 and the `SKILL.md` frontmatter `version:`, with one
+`CHANGELOG.md` entry, all inside this ONE commit. The drama-studio skill still carries no
+`VERSION` file and its `.claude-plugin/plugin.json` still has no version field, so nothing
+is bumped there. `prove/runtime-hook-hashes.txt` is untouched: it hashes the four
+`~/.claude/hooks/*.py` runtime hooks and two settings files, none of which this unit
+changes.

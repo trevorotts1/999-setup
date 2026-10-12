@@ -38,6 +38,12 @@ KEY_FILE = "machine.key"
 URL_FILE = "studio.url"
 NETWORK_BUDGET_S = 3.0
 
+# The studio sits behind Cloudflare, which refuses Python's default User-Agent
+# ("Python-urllib/3.x") with HTTP 403 "error code: 1010". Every request from this
+# module therefore carries this ONE explicit User-Agent. Keep it identical in
+# studio_bridge.py, studio.py and studio_check.py; prove/prove_user_agent.py
+# asserts all three strings are equal before it drives a request.
+STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)"
 
 def state_dir():
     d = os.environ.get("DRAMA_STUDIO_STATE") or os.path.join(os.path.expanduser("~"), STATE_DIR_NAME)
@@ -92,7 +98,7 @@ def call_pair(url, code):
         url.rstrip("/") + "/api/studio/pair",
         data=json.dumps(pair_body(code)).encode("utf-8"),
         method="POST",
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "User-Agent": STUDIO_USER_AGENT},
     )
     with urllib.request.urlopen(req, timeout=NETWORK_BUDGET_S) as resp:
         return json.loads(resp.read().decode("utf-8") or "{}")

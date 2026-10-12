@@ -2757,13 +2757,14 @@
     "canonical": {
       "repo": "trevorotts1/openclaw-onboarding",
       "tree": "75-drama-song-ad-factory/shared-bridge/",
-      "base_sha": "1dc33aa720f8138ca21d5e14f60198f3b6466f3b",
+      "base_sha": "93f84e0e15a5a90328e9112968f2e8eed7e4e15c",
+      "branch": "unit/CHECKIN-UA",
       "label": "ONBOARDING_CANONICAL"
     },
     "packaged": {
       "repo": "trevorotts1/999-setup",
       "tree": ".claude/skills/drama-studio/",
-      "branch": "unit/U19-BRIDGE",
+      "branch": "unit/CHECKIN-UA",
       "label": "999_PACKAGED"
     },
     "algorithm": "sha256",
@@ -2773,8 +2774,8 @@
       "studio_bridge.py": {
         "packaged": ".claude/skills/drama-studio/studio_bridge.py",
         "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
-        "canonical_sha256": "737c6898e2dfdd14c172da82488558fa5cbe1d3c543504613fd5291fc6a903d7",
-        "packaged_sha256": "737c6898e2dfdd14c172da82488558fa5cbe1d3c543504613fd5291fc6a903d7"
+        "canonical_sha256": "d190f092acfa2c3b400dde2711ef6130917a7ac47d0c4fd9f0076084fa6a6ee4",
+        "packaged_sha256": "d190f092acfa2c3b400dde2711ef6130917a7ac47d0c4fd9f0076084fa6a6ee4"
       },
       "studio_claim.py": {
         "packaged": ".claude/skills/drama-studio/studio_claim.py",
