@@ -137,6 +137,7 @@ python3 .claude/skills/drama-studio/studio_check.py --print-root  # refuse a wro
 node --version >/dev/null 2>&1   # not required; this unit is Python only
 python3 .claude/skills/drama-studio/prove/prove_plugin_behaviour.py   # U13 (the plugin)
 python3 .claude/skills/drama-studio/prove/prove_option2_monitor.py    # U14 (the watcher)
+python3 .claude/skills/drama-studio/prove/prove_user_agent.py         # CHECKIN-UA (the studio User-Agent)
 #   exit 0 = every check passed and every planted-bad control was caught
 #   exit 2 = a named check failed, or a planted-bad control stayed green (vacuous)
 #   exit 3 = the prover could not run
