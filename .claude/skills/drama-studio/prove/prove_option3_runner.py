@@ -77,6 +77,9 @@ PLANTS = {
         '    import subprocess\n'
         '    subprocess.run(["launchctl", "load", "/tmp/planted.plist"])\n\n\n'
         'if __name__ == "__main__":')],
+    "bridge_present": [(
+        '    return os.path.join(root, "studio_bridge.py")',
+        '    return os.path.join(root, "planted-missing-bridge.py")')],
 }
 
 
@@ -322,6 +325,35 @@ def check_no_activation(mod, src):
     return True
 
 
+def check_bridge_present(mod, src):
+    """The bridge the Option-3 scoped command names must exist in the skill root.
+
+    option3_runner.bridge_path(root) resolves to <skill root>/studio_bridge.py, and
+    with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is this
+    folder. The Option-3 scoped command allows exactly that path, and the bridge
+    imports its sibling studio_claim.py, so both must be in the root.
+    """
+    bridge = mod.bridge_path(SKILL)
+    assert os.path.basename(bridge) == "studio_bridge.py", bridge
+    assert os.path.isfile(bridge), \
+        "the Option-3 scoped command names a bridge that is not in the skill root: %s" % bridge
+    assert os.path.isfile(os.path.join(SKILL, "studio_claim.py")), \
+        "studio_bridge.py imports studio_claim.py; it is not in the skill root"
+    saved = [(k, os.environ.pop(k, None))
+             for k in ("CLAUDE_PLUGIN_ROOT", "DRAMA_STUDIO_SKILL_ROOT")]
+    try:
+        default_root = mod.skill_root()
+    finally:
+        for k, v in saved:
+            if v is not None:
+                os.environ[k] = v
+    assert os.path.isfile(os.path.join(default_root, "studio_bridge.py")), \
+        "with the env unset the runner looks for the bridge in %s and finds none" % default_root
+    argv = mod.plan_command(valid_rec("/tmp"), SKILL, "r_1")
+    tools = argv[argv.index("--allowedTools") + 1: argv.index("--max-budget-usd")]
+    assert any(t.endswith("studio_bridge.py *)") for t in tools), tools
+    return True
+
 CHECKS = [
     ("off_default", check_off_default),
     ("named_approval", check_named_approval),
@@ -331,6 +363,7 @@ CHECKS = [
     ("log_receipt", check_log_receipt),
     ("selected_root_env", check_selected_root_env),
     ("no_activation", check_no_activation),
+    ("bridge_present", check_bridge_present),
 ]
 
 

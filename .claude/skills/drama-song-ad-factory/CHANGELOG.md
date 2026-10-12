@@ -1,4 +1,33 @@
 # Changelog - drama-song-ad-factory (Skill 75)
+## [2.7.47] - 2026-10-11 - U19-BRIDGE: ship the Option-3 studio bridge (and its claim sibling) into the drama-studio skill root
+
+`.claude/skills/drama-studio/option3_runner.py` was merged naming `<skill root>/studio_bridge.py` in its scoped command, but 999-setup main carried no `studio_bridge.py` under `.claude/skills/drama-studio/`, and with `CLAUDE_PLUGIN_ROOT` / `DRAMA_STUDIO_SKILL_ROOT` unset the skill root is that folder. Every Option 3 run therefore named a bridge file that did not exist. This unit ships the bridge in ONE commit, the same way U18/TWIN-R3 syncs the core: copy from the canonical source, never hand-edit.
+
+- Canonical revision pinned: `openclaw-onboarding` main `1dc33aa720f8138ca21d5e14f60198f3b6466f3b`, synced from a read-only clone of exactly that revision.
+- Added `.claude/skills/drama-studio/studio_bridge.py` (sha256 `737c6898e2dfdd14c172da82488558fa5cbe1d3c543504613fd5291fc6a903d7`) and `.claude/skills/drama-studio/studio_claim.py` (sha256 `b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42`), both byte-identical to onboarding `75-drama-song-ad-factory/shared-bridge/`. `studio_claim.py` is copied because `studio_bridge.py` imports it as a sibling; the bridge cannot import without it.
+- Recorded in the twin parity fingerprints: `references/twin-sync-fingerprints.json` gains a `studio_bridge_twin` block (canonical repo/tree/base_sha, per-file sha256 on both sides). The human-readable receipt is `references/studio-bridge-twin-receipt.md`.
+- New `tests/test_studio_bridge_twin.py` (run by the drama-song-tests `pytest "$SKILL/tests"` step) enforces the record: packaged sha256 == recorded canonical on every run, plus a live byte compare against the canonical tree when it is present (`DSAF_CANONICAL_SHARED_BRIDGE`, else `<build>/onboarding/75-drama-song-ad-factory/shared-bridge`); a set-but-missing canonical path is a resolve failure, never a silent pass. Negative controls: planted drift red, missing canonical dir red, live onboarding clone green.
+- `prove/prove_option3_runner.py` gains a `bridge_present` check with its own planted-bad control (8 -> 9 checks, every planted-bad control caught, rc 0). A temp skill copy with `studio_bridge.py` removed makes the prover go RED (`failed=bridge_present`, rc 2).
+- Version `2.7.45` -> `2.7.47` (open PR #195 claims `2.7.46`), `SKILL.md` frontmatter `version:` bumped in the same commit. The drama-studio skill has no `VERSION` file and its plugin manifest carries no version field, so nothing is bumped there. No onboarding paired unit: onboarding is the canonical side of this copy and its parity suite records distribution-unique paths as UNDETERMINED, never a FAIL.
+
+
+## [2.7.46] - 2026-10-11 - OB-KIE-2: kie-rate-limit.md records the recordInfo and discovery limits
+
+Joint-plan OB-KIE-2 (line 1066) paired change. The twin `references/kie-rate-limit.md`
+is byte-identical to the onboarding skill 75 file in the same unit.
+
+- `references/kie-rate-limit.md` now states all three KIE per-key limits with a
+  per-number source: `createTask` 20 per 10 seconds per account (KIE docs "Rate
+  Limit"), `recordInfo` **10 per second per task**, and discovery (`models`,
+  `schema`, `price`, `success-rate`) **1 per second shared**. Both new numbers come
+  from KIE's `kie-models` "Rate limits" section (fetched 2026-10-09), itself recorded
+  in this repo at `installer-registration/helpers/07-kie-setup/references/kie-official-agent-docs-digest.md`
+  rule 9 and `.../kie-common-rules.md` rule 3. No number was invented.
+- Byte-identity proved: sha256 `e15a7592e5dff36bb032519c5f25decd7cc54628d3c0edca392cf4dd814df3aa`
+  on both sides (`cmp` clean).
+- `VERSION` 2.7.45 -> 2.7.46 and the `SKILL.md` frontmatter `version:` land in this
+  ONE commit with this entry (no bump-only commit). No file under `scripts/core/` was
+  touched, so cross-distribution core parity is unchanged.
 
 ## [2.7.45] - 2026-10-11 - TWINR3-U1: round-3 twin re-sync (packaged scripts/core + round-3 data files, skill 68 re-pinned)
 
