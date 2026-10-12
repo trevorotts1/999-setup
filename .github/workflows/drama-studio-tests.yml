@@ -34,7 +34,16 @@ concurrency:
 
 jobs:
   drama-studio:
-    runs-on: ubuntu-latest
+    # RUNS ON macOS. prove_heartbeat.py drives heartbeat.py's `install`, which builds a
+    # NATIVE timer and refuses every OS but darwin/win32 ("unsupported OS for a native
+    # timer: linux"), so its two install checks (install-writes, refuses-temp-install)
+    # cannot pass on ubuntu-latest: measured on a non-temporary skill copy with only
+    # sys.platform set to "linux", the prover reports 2/6 checks failed. macOS is also
+    # the OS the operator canary installs the launchd job on, so it is the platform the
+    # check must run on. The job stays stdlib-only and hermetic: no apt, no pip, no
+    # network, no key, nothing installed. Repo precedent: kaizen-tests has a platform-
+    # bound windows-tests job, and hook-skill-tests/spec-protocol-tests use an os matrix.
+    runs-on: macos-latest
     env:
       SKILL: .claude/skills/drama-studio
     steps:
@@ -47,15 +56,16 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          # prove_heartbeat.py is deliberately NOT listed: it is RED on 999 main
-          # as measured on the operator Mac Mini on 2026-10-11 (1/6 checks failed:
-          # check_install_writes), it predates CHECKIN-UA and this unit does not
-          # touch it. Wiring a check that is already red converts "nobody is
-          # looking" into "somebody is looking and it is fine" for the four that
-          # do pass, so the four that are green on main are wired and the red one
-          # is named here instead of hidden.
+          # All five provers are wired. prove_heartbeat.py was RED on 999 main
+          # when CHECKIN-UA added this job (1/6 checks failed: check_install_writes),
+          # so it was named here instead of wired. HEARTBEATFIX-U1 fixed the prover:
+          # its install-write scratch root was derived from $HOME, and this job runs
+          # every prover with HOME=$(mktemp -d), so install correctly refused a
+          # temporary target and the check was RED for a right reason and a wrong
+          # test. The prover now names a permanent scratch beside the skill under
+          # test and the check is green, so no prover is left unwatched.
           for p in prove_plugin_behaviour.py prove_option2_monitor.py \
-                   prove_option3_runner.py prove_user_agent.py; do
+                   prove_option3_runner.py prove_user_agent.py prove_heartbeat.py; do
             h="$(mktemp -d)"
             echo "== $p"
             if ! HOME="$h" python3 "$SKILL/prove/$p" </dev/null; then
@@ -64,23 +74,41 @@ jobs:
             rm -rf "$h"
           done
           [ "$rc" -eq 0 ]
-      - name: The studio User-Agent prover is RED against a pre-change copy
+      - name: The studio User-Agent prover is RED against a drifted copy
         shell: bash
         run: |
           set -euo pipefail
-          # A wired prover that cannot fail is worse than an unwired one. This
-          # step CONSTRUCTS the pre-change tree (the three scripts exactly as
-          # main has them: no STUDIO_USER_AGENT) and requires the prover to exit
-          # non-zero against it, then exit 0 against the head. It is the
-          # anti-vacuity control for the whole job.
-          git fetch --quiet --depth=1 origin main
-          git worktree add --detach "$RUNNER_TEMP/pre" "$(git rev-parse origin/main)" >/dev/null
+          # A wired prover that cannot fail is worse than an unwired one, so this
+          # step requires prove_user_agent.py to exit non-zero against a tree WITHOUT
+          # the one User-Agent it pins, then exit 0 against this head.
+          #
+          # The first form of this step checked out `origin/main` as "the pre-change
+          # tree". That only held while the change was an OPEN pull request: the moment
+          # it merged, origin/main carried it too, the prover was GREEN against it and
+          # the job went RED on main (run 38199232601 — `prove_user_agent: 4 checks,
+          # every planted-bad control caught` then `FAIL: prove_user_agent.py is GREEN
+          # against the pre-change tree — vacuous`). A checkout of a moving branch is
+          # not a pre-change tree. The tree is CONSTRUCTED here instead: a copy of this
+          # head with the UA constant drifted to a value the fake studio refuses. The
+          # copy is proved DIFFERENT from the head first, so a no-op drift cannot let
+          # the control pass vacuously.
+          pre="$RUNNER_TEMP/pre"
+          rm -rf "$pre"
+          mkdir -p "$pre"
+          cp -R "$SKILL" "$pre/drama-studio"
+          perl -pi -e 's{drama-studio-client/[0-9]+\.[0-9]+\.[0-9]+}{drama-studio-client/0.0.0-pre}g' \
+            "$pre/drama-studio/studio.py" \
+            "$pre/drama-studio/studio_check.py" \
+            "$pre/drama-studio/studio_bridge.py"
+          if cmp -s "$pre/drama-studio/studio.py" "$SKILL/studio.py"; then
+            echo "FAIL: the drifted copy is identical to the head — the control would be vacuous"; exit 1
+          fi
           set +e
           HOME="$(mktemp -d)" python3 "$SKILL/prove/prove_user_agent.py" \
-            --skill "$RUNNER_TEMP/pre/.claude/skills/drama-studio" </dev/null
+            --skill "$pre/drama-studio" </dev/null
           red=$?
           set -e
           if [ "$red" -eq 0 ]; then
-            echo "FAIL: prove_user_agent.py is GREEN against the pre-change tree — vacuous"; exit 1
+            echo "FAIL: prove_user_agent.py is GREEN against the drifted tree — vacuous"; exit 1
           fi
-          echo "ok: RED against the pre-change tree (rc=$red), GREEN against this head"
+          echo "ok: RED against the drifted tree (rc=$red), GREEN against this head"
