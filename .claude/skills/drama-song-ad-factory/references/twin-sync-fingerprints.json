@@ -2750,5 +2750,38 @@
   ],
   "layout_alias_added": {
     ".claude/skills/68-kie-audio": "symlink -> ../../installer-registration/helpers/68-kie-audio; makes scripts/core/test_music_createtask_ww30.py WW30-4a/4b (the INSTALLED skills-root layout) resolve in a bare checkout"
+  },
+  "studio_bridge_twin": {
+    "unit": "U19-BRIDGE-U1",
+    "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference.",
+    "canonical": {
+      "repo": "trevorotts1/openclaw-onboarding",
+      "tree": "75-drama-song-ad-factory/shared-bridge/",
+      "base_sha": "1dc33aa720f8138ca21d5e14f60198f3b6466f3b",
+      "label": "ONBOARDING_CANONICAL"
+    },
+    "packaged": {
+      "repo": "trevorotts1/999-setup",
+      "tree": ".claude/skills/drama-studio/",
+      "branch": "unit/U19-BRIDGE",
+      "label": "999_PACKAGED"
+    },
+    "algorithm": "sha256",
+    "normalisation": "none - raw file bytes are hashed with sha256",
+    "enforced_by": "tests/test_studio_bridge_twin.py (run by the drama-song-tests CI step 'Skill tests + layout parity test (empty HOME)'); the stronger live byte compare runs whenever the canonical shared-bridge tree is present (DSAF_CANONICAL_SHARED_BRIDGE, else <build>/onboarding/75-drama-song-ad-factory/shared-bridge)",
+    "files": {
+      "studio_bridge.py": {
+        "packaged": ".claude/skills/drama-studio/studio_bridge.py",
+        "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
+        "canonical_sha256": "737c6898e2dfdd14c172da82488558fa5cbe1d3c543504613fd5291fc6a903d7",
+        "packaged_sha256": "737c6898e2dfdd14c172da82488558fa5cbe1d3c543504613fd5291fc6a903d7"
+      },
+      "studio_claim.py": {
+        "packaged": ".claude/skills/drama-studio/studio_claim.py",
+        "canonical": "75-drama-song-ad-factory/shared-bridge/studio_claim.py",
+        "canonical_sha256": "b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42",
+        "packaged_sha256": "b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42"
+      }
+    }
   }
 }
