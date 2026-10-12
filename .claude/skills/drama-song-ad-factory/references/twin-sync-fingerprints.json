@@ -2752,19 +2752,19 @@
     ".claude/skills/68-kie-audio": "symlink -> ../../installer-registration/helpers/68-kie-audio; makes scripts/core/test_music_createtask_ww30.py WW30-4a/4b (the INSTALLED skills-root layout) resolve in a bare checkout"
   },
   "studio_bridge_twin": {
-    "unit": "U19-BRIDGE-U1",
+    "unit": "DRAMA-UPLOADS-TWIN",
     "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference.",
     "canonical": {
       "repo": "trevorotts1/openclaw-onboarding",
       "tree": "75-drama-song-ad-factory/shared-bridge/",
-      "base_sha": "93f84e0e15a5a90328e9112968f2e8eed7e4e15c",
-      "branch": "unit/CHECKIN-UA",
+      "base_sha": "73fa96563dec1eb954f210c6ad383693812cfec5",
+      "branch": "main",
       "label": "ONBOARDING_CANONICAL"
     },
     "packaged": {
       "repo": "trevorotts1/999-setup",
       "tree": ".claude/skills/drama-studio/",
-      "branch": "unit/CHECKIN-UA",
+      "branch": "unit/DRAMA-UPLOADS-TWIN",
       "label": "999_PACKAGED"
     },
     "algorithm": "sha256",
@@ -2774,8 +2774,8 @@
       "studio_bridge.py": {
         "packaged": ".claude/skills/drama-studio/studio_bridge.py",
         "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
-        "canonical_sha256": "d190f092acfa2c3b400dde2711ef6130917a7ac47d0c4fd9f0076084fa6a6ee4",
-        "packaged_sha256": "d190f092acfa2c3b400dde2711ef6130917a7ac47d0c4fd9f0076084fa6a6ee4"
+        "canonical_sha256": "9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e",
+        "packaged_sha256": "9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e"
       },
       "studio_claim.py": {
         "packaged": ".claude/skills/drama-studio/studio_claim.py",
