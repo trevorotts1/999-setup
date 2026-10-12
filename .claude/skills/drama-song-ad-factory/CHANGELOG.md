@@ -1,5 +1,23 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.46] - 2026-10-11 - OB-KIE-2: kie-rate-limit.md records the recordInfo and discovery limits
+
+Joint-plan OB-KIE-2 (line 1066) paired change. The twin `references/kie-rate-limit.md`
+is byte-identical to the onboarding skill 75 file in the same unit.
+
+- `references/kie-rate-limit.md` now states all three KIE per-key limits with a
+  per-number source: `createTask` 20 per 10 seconds per account (KIE docs "Rate
+  Limit"), `recordInfo` **10 per second per task**, and discovery (`models`,
+  `schema`, `price`, `success-rate`) **1 per second shared**. Both new numbers come
+  from KIE's `kie-models` "Rate limits" section (fetched 2026-10-09), itself recorded
+  in this repo at `installer-registration/helpers/07-kie-setup/references/kie-official-agent-docs-digest.md`
+  rule 9 and `.../kie-common-rules.md` rule 3. No number was invented.
+- Byte-identity proved: sha256 `e15a7592e5dff36bb032519c5f25decd7cc54628d3c0edca392cf4dd814df3aa`
+  on both sides (`cmp` clean).
+- `VERSION` 2.7.45 -> 2.7.46 and the `SKILL.md` frontmatter `version:` land in this
+  ONE commit with this entry (no bump-only commit). No file under `scripts/core/` was
+  touched, so cross-distribution core parity is unchanged.
+
 ## [2.7.45] - 2026-10-11 - TWINR3-U1: round-3 twin re-sync (packaged scripts/core + round-3 data files, skill 68 re-pinned)
 
 Round 3 of the onboarding wave (#1858 WWR3INT2 / WW-21 five bound delivered-audio results, #1863 WWB-U1, #1865 WW29 + WWC-U1) never reached the 999 twin. This unit re-syncs it in ONE commit, the same way U18 (#187) did: regenerate the packaged copy from the canonical source, never hand-edit it.
