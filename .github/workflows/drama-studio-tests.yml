@@ -74,6 +74,8 @@ jobs:
             rm -rf "$h"
           done
           [ "$rc" -eq 0 ]
+      - name: Direct upload transport tests (no network)
+        run: python3 "$SKILL/prove/test_upload.py"
       - name: The studio User-Agent prover is RED against a drifted copy
         shell: bash
         run: |

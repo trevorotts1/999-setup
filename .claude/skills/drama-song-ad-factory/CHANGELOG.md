@@ -1,4 +1,9 @@
 # Changelog - drama-song-ad-factory (Skill 75)
+
+## [2.7.50] — 2026-10-12 — Drama Studio direct-upload bridge twin
+
+The packaged bridge now sends file metadata and streams the returned signed PUT, with image/audio limits of 25 MB and video limits of 200 MB. It carries the canonical first-byte array, destination checks and secret-free receipt. Both bridge files are byte-identical to onboarding merged main `73fa96563dec1eb954f210c6ad383693812cfec5` (batch #1893). Six fake-transport upload tests are wired into the Drama Studio workflow.
+
 ## [2.7.49] - 2026-10-11 - HEARTBEATFIX-U1: prove_heartbeat.py was RED for a right reason and a wrong test; wire it into CI
 
 `.claude/skills/drama-studio/prove/prove_heartbeat.py` reported `prover: 1/6 checks failed: check_install_writes` on 999 main `87f3453`, reproduced with a fresh temporary HOME (`HOME=$(mktemp -d)`) on the operator Mac Mini. The heartbeat job installer `heartbeat.py` is CORRECT; the prover was wrong, and no check was weakened to fix it.
