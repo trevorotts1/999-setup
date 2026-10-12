@@ -17,7 +17,10 @@
 # It installs, loads or enables NOTHING live: it never calls launchctl or schtasks, it
 # points the timer at --no-load / --dry-run, and it points the desktop sink at a scratch
 # file. Every planted-bad run ALSO runs with --no-load. The install-write test names a
-# permanent scratch dir under HOME, because install refuses a temporary target by design.
+# permanent scratch BESIDE THE SKILL UNDER TEST: install refuses a temporary target by
+# design, and every caller runs this prover with a TEMPORARY HOME on purpose
+# (`HOME=$(mktemp -d)` in CI and the canary), which would make a scratch under HOME
+# temporary too — the exact red check_install_writes this file fixes.
 #
 # EXIT CODES
 #   0  every check passed and every planted-bad control was caught
@@ -52,8 +55,7 @@ ENV_KEYS = ("DRAMA_STUDIO_FAKE", "DRAMA_STUDIO_FAKE_LINE", "DRAMA_STUDIO_FAKE_DE
 
 TMP = None
 PLANTED = None
-PERM = None
-PERM_ROOT = os.path.join(os.path.expanduser("~"), ".drama-studio", "prove-heartbeat")
+PERM = None            # the run's permanent scratch, chosen on first use (see permanent())
 FAILED = []
 VACUOUS = []
 
@@ -107,9 +109,45 @@ def scratch(tag):
     return d
 
 
+_HEARTBEAT_MOD = None
+
+def heartbeat_module():
+    """The module under test, loaded once, ONLY for its own is_temporary guard. heartbeat.py's
+    module body defines constants and functions and main is __main__-guarded: this is inert.
+    Reusing its guard keeps one source of truth for "temporary" — the prover cannot drift."""
+    global _HEARTBEAT_MOD
+    if _HEARTBEAT_MOD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("heartbeat_under_test", HEARTBEAT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _HEARTBEAT_MOD = mod
+    return _HEARTBEAT_MOD
+
+def permanent_root():
+    """The directory the install-write test targets. install refuses a timer inside ANY
+    temporary root (its own TEMP_DIRS plus the process TMPDIR), and every caller runs this
+    prover with a TEMPORARY HOME on purpose (`HOME=$(mktemp -d)` in CI and the canary), so a
+    scratch under HOME is itself temporary and install CORRECTLY refuses it. The scratch
+    therefore sits beside the skill under test — a permanent location, since it is where the
+    timer's own check script lives — and the choice is proven with heartbeat.py's OWN
+    is_temporary. A tree checked out under a temporary root cannot name a permanent target
+    and fails closed (PlantError -> VACUOUS -> exit 2), never vacuously green."""
+    cand = os.path.join(SKILL, ".prove-heartbeat-perm")
+    if heartbeat_module().is_temporary(cand):
+        raise PlantError("the skill under test is inside a temporary directory, so the "
+                         "install-write check cannot name a permanent target: %s" % cand)
+    return cand
+
 def permanent(tag):
     """A scratch OUTSIDE every temporary root. install refuses a temporary target, so the
-    one install-write test has to name a stable location — a per-run folder under HOME."""
+    install-write test names a stable location: a per-run folder beside the skill under
+    test. The root is chosen on first use and removed with the run's scratch in main()."""
+    global PERM
+    if PERM is None:
+        PERM = os.path.join(permanent_root(), str(os.getpid()))
+        shutil.rmtree(PERM, ignore_errors=True)
+        os.makedirs(PERM, exist_ok=True)
     d = os.path.join(PERM, tag)
     os.makedirs(d, exist_ok=True)
     return d
@@ -314,7 +352,7 @@ def check_never_starts_claude():
 def check_install_writes():
     """(extra) install writes the native timer into the named PERMANENT dir; --dry-run writes
     nothing. The target must be a stable location — install refuses a temporary path (see
-    check_refuses_temp_install), so these dirs sit under HOME, never under TMPDIR."""
+    check_refuses_temp_install), so permanent() names a dir outside every temporary root."""
     env = child_env()
     live = permanent("iw-live")
     rc, out, err = run_hb(HEARTBEAT, ["install", "--no-load", "--dir", live], env)
@@ -382,11 +420,8 @@ def main():
     TMP = tempfile.mkdtemp(prefix="%s-%s-" % (BOX, UNIT))
     PLANTED = os.path.join(TMP, "planted")
     os.makedirs(PLANTED, exist_ok=True)
-    # A permanent scratch for the install-write test: install refuses a temporary target by
-    # design, so the write test names a stable dir under HOME and removes it in the finally.
-    PERM = os.path.join(PERM_ROOT, str(os.getpid()))
-    shutil.rmtree(PERM, ignore_errors=True)
-    os.makedirs(PERM, exist_ok=True)
+    # The install-write scratch root is chosen on first use (permanent()/permanent_root()):
+    # it must be outside every temporary root, and every caller runs with a temporary HOME.
     # a planted copy lives outside the skill folder; give it a real sibling script so its own
     # "check script missing" gate is not what silences it (that would make a plant vacuous).
     shutil.copyfile(CHECK, os.path.join(PLANTED, "studio_check.py"))
@@ -415,11 +450,13 @@ def main():
         return 0
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
-        shutil.rmtree(PERM, ignore_errors=True)
-        try:
-            os.rmdir(PERM_ROOT)
-        except OSError:
-            pass
+        if PERM:
+            root = os.path.dirname(PERM)
+            shutil.rmtree(PERM, ignore_errors=True)
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":
