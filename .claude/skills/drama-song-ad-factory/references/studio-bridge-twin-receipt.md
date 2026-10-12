@@ -176,3 +176,8 @@ Version: `VERSION` 2.7.47 -> 2.7.48 and the `SKILL.md` frontmatter `version:`, w
 is bumped there. `prove/runtime-hook-hashes.txt` is untouched: it hashes the four
 `~/.claude/hooks/*.py` runtime hooks and two settings files, none of which this unit
 changes.
+
+
+## Direct-upload twin — 2026-10-12
+
+Unit `DRAMA-UPLOADS-TWIN`, canonical onboarding merged main `73fa96563dec1eb954f210c6ad383693812cfec5` (batch #1893, skill 75 v2.9.43). The two bridge files are copied as raw bytes and recorded in `studio_bridge_twin`; `studio_claim.py` is unchanged. The upload command sends metadata, then streams a scoped R2 PUT, enforcing the service size limits and returning only the upload ID and object path. Six fake-transport tests run in the Drama Studio workflow. Packaged skill version 2.7.50 and both CHANGELOG entries land in this same content commit.

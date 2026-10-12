@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- unit/DRAMA-UPLOADS-TWIN: drama-song-ad-factory 2.7.50 packages the verified direct-upload bridge from onboarding merged main `73fa96563dec1eb954f210c6ad383693812cfec5`; twin hashes and six offline transport tests agree.
+
 - unit/U16-U1: drama-song-ad-factory 2.7.44: the Claude Code / claude-nine half of Drama Studio gains its **Option-3 runner shipped OFF** (`.claude/skills/drama-studio/option3_runner.py`) — a run with nobody present stays impossible until Trevor approves that one client **by name** and the studio admin page records it. Five pieces, each with its own runnable check: the **scoped command** (exactly two script allow-rules plus `Read`, `--permission-mode dontAsk`, `--permission-prompts none`, no bare flag, no bypass mode), the **lock** (one run at a time, a stale lock reclaimed), the **per-run cap** (`--max-budget-usd`, no default cap), the **log receipt** (raw log plus JSON receipt under `~/.drama-studio/option3-runs/`, never the machine key) and the **selected-root child environment** (the child runs in the approved root with `DRAMA_STUDIO_SELECTED_ROOT` exported and no `CLAUDE_CONFIG_DIR` override). Nothing activates it: the runner installs nothing, loads nothing and writes no approval. Proven in isolation; production end-to-end still waits on U18.
 
 - unit/TRAINFIX-U1: spec-protocol: merge-train.sh try_set now resolves a conflict whose every unmerged file is a CHANGELOG.md by union (git merge-file --union over the three stages, applied with git -C "$top"), keeping both sides; any non-CHANGELOG file, or any failed step, still aborts and parks exactly as before. No version bump: spec-protocol VERSION is release-tag-locked (check-docs-fresh compares it to the latest v* tag; tools/release.sh writes it).
