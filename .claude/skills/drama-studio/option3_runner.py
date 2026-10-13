@@ -63,7 +63,7 @@ PERMISSION_MODE = "dontAsk"
 PERMISSION_PROMPTS = "none"
 OUTPUT_FORMAT = "json"
 JOB_LABEL = "com.blackceo.drama-studio.option3"
-PROMPT = "Use the drama-studio skill. Pick up studio order %s and run it to the next approval stop."
+PROMPT = "Use the drama-studio skill: /drama-studio start for studio order %s and run it to the next approval stop."
 FORBIDDEN_FLAGS = ("--bare", "--dangerously-skip-permissions", "bypassPermissions")
 AF_OFF = "AF-DS-OPT3-OFF"
 AF_APPROVAL = "AF-DS-OPT3-APPROVAL"
@@ -427,7 +427,7 @@ def main(argv):
     if a.cmd == "plan":
         return cmd_plan(a, root, sd)
     if a.cmd == "check":
-        return cmd_check(a, root, sd)
+        return cmd_check(a, root, sd, runner=real_runner)
     if a.cmd == "print-job":
         return cmd_print_job(a, root, sd)
     sys.stderr.write("%s need one of: status, plan, check, print-job\n" % AF_ARGS)
