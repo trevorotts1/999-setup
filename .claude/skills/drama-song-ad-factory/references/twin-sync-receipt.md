@@ -503,3 +503,210 @@ python3 tests/twin_sync_prove.py --selftest --canonical <canonical core>
 With no canonical tree on the machine (a clean install), it prints
 `PARITY UNDETERMINED` and exits 0 — undetermined is recorded as such, not as a
 pass, matching `tests/test_parity_layout.py`.
+
+---
+
+## Re-sync after the client-folder fixes (unit DSF-521, Drama Fixes Oct 13)
+
+Unit `DSF-521`. This section, the regenerated `scripts/core/`, the copied
+`.claude/skills/drama-studio/approvals_bridge.py` and the refreshed blocks of
+`references/twin-sync-fingerprints.json` are this unit's whole change.
+
+### The defect (why the re-sync was needed)
+
+Batch DSF-5 (999 PR #213) synced skill 75 from a canonical **cut taken before** the
+six client-folder fixes landed on onboarding main (batch #1969). So 999's packaged
+core fell behind the real canonical, and `tests/test_studio_bridge_twin.py` was red
+on `approvals_bridge.py` while `tests/twin_sync_prove.py` reported a broken twin.
+
+Reproduced first-hand on this branch, before any edit, against onboarding
+`origin/main`'s core:
+
+```
+$ DSAF_CANONICAL_CORE=<onboarding origin/main>/75-drama-song-ad-factory/scripts/core \
+    python3 .claude/skills/drama-song-ad-factory/tests/twin_sync_prove.py
+  DIFFER          delivery_package/contract.py ...
+  only-canonical  delivery_package/test_contract_not_clean.py ...
+  only-canonical  delivery_variants/test_video_delivery_cleanup.py ...
+  DIFFER          delivery_variants/video_delivery.py ...
+  DIFFER          lip_sync/lip_gate/lip_process.py ...
+  DIFFER          lip_sync/lip_gate/test_lip_process.py ...
+  DIFFER          ready_post_kit/__init__.py ...
+  DIFFER          ready_post_kit/ready_post_kit.py ...
+  DIFFER          ready_post_kit/test_ready_post_kit.py ...
+  summary: same=486 differ=7 only-canonical=2 only-packaged=0
+[parity] PARITY: BROKEN                                     (exit 1)
+```
+
+and `.claude/skills/drama-studio/approvals_bridge.py` at `f2a61598dff3b2ec013ff6977e55c3a2acf6cdd9ae3f1c5778944c88d0a90e1a`
+against canonical `1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3`
+(CF-6 changed the canonical bridge after DSF-5 synced).
+
+### What was compared — the exact SHA this unit synced from
+
+| Side | Repository | Tree | Commit |
+|---|---|---|---|
+| Canonical (source of truth) | `trevorotts1/openclaw-onboarding` | `75-drama-song-ad-factory/` | **`37344f5cd23fc51bf2a2603ebc8c7090b9b649f0`** (`origin/main`, `Merge pull request #1971`) |
+| Packaged copy (this repo) | `trevorotts1/999-setup` | `.claude/skills/drama-song-ad-factory/` + `.claude/skills/drama-studio/` | `7ec07b782145d99529ca7be49ae8352980a0c058` (`origin/main`, PR #213 / batch DSF-5), packaged on branch `unit/DSF-521` |
+
+The SHA above is `git -C ~/openclaw-onboarding rev-parse origin/main`, read live at
+build time. It is **one merge past** the `56a22f226` (batch #1969) the batch plan
+names; the extra merge (#1971, a docs-only change) does not touch skill 75, proven
+before use:
+
+```
+$ git -C ~/openclaw-onboarding diff --stat 56a22f226 origin/main -- 75-drama-song-ad-factory/
+(no output, exit 0)
+```
+
+`~/openclaw-onboarding` was neither branched, checked out nor written: the source
+tree was exported read-only with
+`git -C ~/openclaw-onboarding archive 37344f5cd -- 75-drama-song-ad-factory | tar -x`
+into this unit's own lane folder.
+
+### What was done
+
+```
+$ python3 installer-registration/package_core.py --source <lane>/onb-export/75-drama-song-ad-factory/scripts/core
+package_core: OK  495 files (9 written, 0 stale removed) source=... dest=.claude/skills/drama-song-ad-factory/scripts/core
+  tree sha256 packaged=92cf1c3e967bee5f8a9b942efca012a89babcfda0149f96ac0fbaa789d58eb27 canonical=92cf1c3e967bee5f8a9b942efca012a89babcfda0149f96ac0fbaa789d58eb27
+  packaged tree only — no Claude config root was read or written
+$ python3 installer-registration/package_core.py --source <...> --check
+package_core --check: OK  495 files match canonical     (exit 0)
+```
+
+9 written = the 7 changed paths + the 2 paths that did not exist on 999; 0 stale
+removed, so nothing was deleted.
+
+`cmp` byte-for-byte, `.claude/skills/drama-studio/` against the same canonical
+`shared-bridge/`: `studio_bridge.py` exit 0, `studio_claim.py` exit 0,
+`approvals_bridge.py` exit 0.
+
+No `VERSION`, `skill-version.txt` or `CHANGELOG.md` edit: the batch carries the bump
+for the whole batch (SWARM-PLAN.md section 7).
+
+### Fingerprints refresh
+
+`references/twin-sync-fingerprints.json`, only the blocks this re-sync moved;
+`round3_*`, `layout_alias_added`, `pre_sync_999_main_divergence_from_canonical`,
+`pre_sync_summary` and the 486 unchanged `files` entries are byte-for-byte as the
+previous round left them:
+
+| Block | Change |
+|---|---|
+| `unit` | `W3-twin-sync-U1` -> `DSF-521` |
+| `canonical.base_sha` / `.branch` | `26d49681bc` @ `batch/DSF-3` -> **`37344f5cd23fc51bf2a2603ebc8c7090b9b649f0`** @ `main` |
+| `packaged.base_sha` / `.branch` | `75ba61ca59` @ `unit/DSF-W3-twin-sync-U1` -> `7ec07b7821` @ `unit/DSF-521` |
+| `summary` | `in_scope_files 493 -> 495`, `match 493 -> 495`, `differ 0`, `only_canonical 0`, `only_packaged 0` |
+| `files` | 7 entries re-digested, 2 entries added (`delivery_package/test_contract_not_clean.py`, `delivery_variants/test_video_delivery_cleanup.py`) -> 495 entries |
+| `studio_bridge_twin.files` | `approvals_bridge.py` **added**; `studio_bridge.py` (`b8d3706cc…`) and `studio_claim.py` (`b2d836711…`) **left exactly as they were** |
+| `studio_bridge_twin.canonical.base_sha` | `73fa96563d` -> `37344f5cd23fc51bf2a2603ebc8c7090b9b649f0` |
+| `pre_sync_DSF521_999_main_divergence_from_canonical` | new: the 7 changed + 2 added core paths and `approvals_bridge.py`, each with its pre-sync packaged digest and its canonical digest |
+| `pre_sync_DSF521_summary` | new: `in_scope_files 495, match 486, differ 7, only_canonical 2, only_packaged 0` |
+
+The 9 pre-sync packaged digests recorded in the JSON were re-derived from git, not
+from the transcript: `git show HEAD:<path> | shasum -a 256` on all 7 changed files and
+`approvals_bridge.py` matched the recorded value every time, and `git cat-file -e
+HEAD:<path>` returned 128 (absent) for both added files. `studio_bridge.py` /
+`studio_claim.py` were read live on both sides before being left alone, and both
+still hash to the pins already recorded.
+
+### Proof (1) — twin parity, PARITY: PROVEN
+
+```
+$ DSAF_CANONICAL_CORE=<onboarding origin/main>/75-drama-song-ad-factory/scripts/core \
+    python3 .claude/skills/drama-song-ad-factory/tests/twin_sync_prove.py
+[parity] scope=scripts/core/ (excl __pycache__/*.pyc) on both sides
+[parity] canonical=<lane>/onb-export/75-drama-song-ad-factory/scripts/core
+[parity] packaged =/Users/blackceomacmini/dsf-wt/DSF-521/.claude/skills/drama-song-ad-factory/scripts/core
+  summary: same=495 differ=0 only-canonical=0 only-packaged=0
+[parity] PARITY: PROVEN (byte-identical over same scope)     (exit 0)
+```
+
+`same=486 -> 495, differ=7 -> 0, only-canonical=2 -> 0`.
+
+### Proof (2) — studio-bridge twin, `bytes == live canonical` ×3
+
+The test lives at `.claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py`
+(there is no `drama-studio/prove/test_studio_bridge_twin.py`), and it is run **from its
+permanent path in the worktree**, not from `/tmp`, where its build-tree default
+resolution would collapse and it would print `VACUOUS PLANT`:
+
+```
+$ DSAF_CANONICAL_SHARED_BRIDGE=<onboarding origin/main>/75-drama-song-ad-factory/shared-bridge \
+    python3 .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py
+ok: approvals_bridge.py packaged sha256 1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3 == recorded canonical
+ok: approvals_bridge.py bytes == live canonical 1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3
+ok: studio_bridge.py packaged sha256 b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956 == recorded canonical
+ok: studio_bridge.py bytes == live canonical b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956
+ok: studio_claim.py packaged sha256 b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42 == recorded canonical
+ok: studio_claim.py bytes == live canonical b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42
+                                                                   (exit 0)
+```
+
+Three negative controls, same binary, same tree, to prove that green is a real
+result and not a vacuous one:
+
+| Control | Result |
+|---|---|
+| canonical tree present, `approvals_bridge.py` given one planted comment line | `1 FAILED: approvals_bridge.py: recorded canonical 1061783b7… != live canonical 2dae7333c…` (exit 1) |
+| `$DSAF_CANONICAL_SHARED_BRIDGE` set to a missing directory | `FAIL: … is set but the canonical shared-bridge tree is missing` (exit 1) |
+| env unset (clean install) | 3 × `UNDETERMINED: … live byte compare skipped`, `SUMMARY: 0 live compares …` (exit 0) |
+
+### Proof (3) — `cmp` against the onboarding originals
+
+```
+cmp .claude/skills/drama-studio/studio_bridge.py    <canonical>/shared-bridge/studio_bridge.py    -> exit 0
+cmp .claude/skills/drama-studio/studio_claim.py     <canonical>/shared-bridge/studio_claim.py     -> exit 0
+cmp .claude/skills/drama-studio/approvals_bridge.py <canonical>/shared-bridge/approvals_bridge.py -> exit 0
+```
+
+### Regression (this branch)
+
+| Command | Result |
+|---|---|
+| `HOME=$(mktemp -d) python3 -m pytest -q .claude/skills/drama-song-ad-factory/scripts .claude/skills/drama-song-ad-factory/tests`, same command on a clean detached `origin/main` `7ec07b782` worktree (baseline) | baseline `1913 passed, 3 skipped, 1 warning, 58 subtests passed in 185.36s` (`checks: 404 ok, 0 failed`), exit 0 |
+| same command on this branch | `1930 passed, 3 skipped, 1 warning, 58 subtests passed in 147.28s` (`checks: 404 ok, 0 failed`), exit 0 |
+
++17 net new tests, accounted for exactly by a collected-test-id diff between the two
+runs: **+18** test functions the re-synced core carries that `main` did not (9 in the
+new `delivery_package/test_contract_not_clean.py`, 4 in the new
+`delivery_variants/test_video_delivery_cleanup.py`, 1 in
+`lip_sync/lip_gate/test_lip_process.py`, 4 in `ready_post_kit/test_ready_post_kit.py`)
+and **-1** (`ready_post_kit/test_ready_post_kit.py::Build::test_numbered_kit_files_land_in_the_delivery_folder`,
+superseded by those same client-folder fixes). 1913 + 18 - 1 = 1930. **Zero new
+failures**, same `checks: 404 ok, 0 failed`.
+
+| Command | Result |
+|---|---|
+| `for p in .claude/skills/drama-studio/prove/*.py; do python3 "$p"; done` | all nine exit 0 — `prove_heartbeat.py`, `prove_option2_monitor.py`, `prove_option3_runner.py`, `prove_plugin_behaviour.py`, `prove_user_agent.py`, `test_check_option.py`, `test_link.py`, `test_option3_wired.py`, `test_upload.py` |
+
+`prove_plugin_behaviour.py` printed no `VACUOUS PLANT` line, so its planted-bad
+controls were really exercised.
+
+### Reported, not fixed — `wake_agent.sh` has no 999 counterpart
+
+Onboarding's `75-drama-song-ad-factory/shared-bridge/wake_agent.sh` (48 lines) has
+**no counterpart in 999** — `find . -name 'wake_agent*'` in this repo is empty and
+`grep -rn wake_agent .` finds nothing outside this receipt.
+
+Does the 999 copy of the skill need it? **No, not as the skill is wired today**, and
+the reason is the caller, not the script:
+
+- `wake_agent.sh` does exactly one thing — it shells out to `openclaw agent --message`
+  to start an OpenClaw agent turn.
+- Its only in-repo caller is onboarding's `75-drama-song-ad-factory/timer-artifacts/run-timer.sh`
+  (line 156: `WAKE="$SKILL_ROOT/shared-bridge/wake_agent.sh"`), plus prose in onboarding's
+  `INSTRUCTIONS.md` and `timer-artifacts/README.md`.
+- 999 ships **no `timer-artifacts/` tree and no `run-timer.sh`** (`timer-artifacts/` is
+  named as an out-of-scope, onboarding-owned tree in the sync scope above), and nothing
+  in the 999 skill calls `openclaw agent`.
+- The 999 unattended path is different and already shipped and proven: the Claude Code
+  side starts runs through `.claude/skills/drama-studio/option3_runner.py` (launchd
+  `check` entry, per-client approval + lock + budget cap, proved by
+  `prove_option3_runner.py`) and announces through the SessionStart hook
+  `studio_check.py --hook` wired in `.claude/skills/drama-studio/hooks/hooks.json`
+  (proved by `prove_plugin_behaviour.py`).
+
+Carrying `wake_agent.sh` into 999 would add a script no 999 code path invokes, whose
+whole job is to launch an OpenClaw turn. Not copied; conductor decides.
