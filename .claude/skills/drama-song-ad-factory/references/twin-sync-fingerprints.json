@@ -2668,8 +2668,8 @@
       "studio_bridge.py": {
         "packaged": ".claude/skills/drama-studio/studio_bridge.py",
         "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
-        "canonical_sha256": "9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e",
-        "packaged_sha256": "9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e"
+        "canonical_sha256": "b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956",
+        "packaged_sha256": "b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956"
       },
       "studio_claim.py": {
         "packaged": ".claude/skills/drama-studio/studio_claim.py",

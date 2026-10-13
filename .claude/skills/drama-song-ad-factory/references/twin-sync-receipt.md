@@ -171,6 +171,60 @@ files is in `twin-sync-fingerprints.json` -> `files`; the pre-sync divergence is
 
 ---
 
+## Fingerprints refresh on the batch head (batch/DSF-5, 2026-10-13)
+
+The `studio_bridge_twin` block above was **deliberately out of scope** for
+W3-twin-sync-U1 and was left to W3-twin-sync-U2 (see "In scope vs deliberately out of
+scope"). This section records the refresh the batch itself performs, because merging
+U2 without it leaves `tests/test_studio_bridge_twin.py` red: U2 copies the packaged
+`.claude/skills/drama-studio/studio_bridge.py` forward to the newer canonical bytes
+while the fingerprint block still pinned the older pair.
+
+**The single entry changed** (`twin-sync-fingerprints.json` -> `studio_bridge_twin.files.studio_bridge.py`,
+both fields; every other entry in the file, including `files`, `pre_sync_*`, `round3_*`,
+`layout_alias_added` and `studio_bridge_twin.files.studio_claim.py`, is untouched):
+
+| Field | Before | After |
+|---|---|---|
+| `canonical_sha256` | `9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e` | `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956` |
+| `packaged_sha256` | `9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e` | `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956` |
+
+Both sides were read live on the batch head, not copied from either document:
+
+- **packaged** — `shasum -a 256 .claude/skills/drama-studio/studio_bridge.py` in the
+  batch worktree (`/Users/blackceomacmini/dsf-wt/batch-N-5`) after all seven member
+  merges: `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`.
+- **canonical** — `git -C ~/openclaw-onboarding show origin/main:75-drama-song-ad-factory/shared-bridge/studio_bridge.py | shasum -a 256`
+  (`origin/main` = `5cd1d6145306d83cf8a9cbc532f4d64c22c7137e`): the same
+  `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`.
+
+The two digests agree, so the sync and the canonical side have **not** diverged — no
+BLOCKED condition. `batch/DSF-3` (`26d49681bcba1f760817f6c0c3cefa56092c2ae7`), the
+source this unit synced from, is an ancestor of `origin/main`, so the receipt's
+"re-run against the new origin/main" action above has been satisfied: the canonical
+core and the canonical bridge are now on `main`.
+
+Proven on the batch head, both ways:
+
+```
+# recorded-fingerprints mode (no canonical tree on the machine)
+python3 -I .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py   -> exit 0
+# live canonical compare (DSAF_CANONICAL_SHARED_BRIDGE = throwaway
+# `git archive origin/main 75-drama-song-ad-factory/shared-bridge` export)
+python3 -I .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py   -> exit 0
+```
+
+`studio_claim.py` needed no edit — its recorded pair
+`b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42` still matches both
+the packaged file and `origin/main`. The third bridge U2 ships,
+`approvals_bridge.py` (`f2a61598dff3b2ec013ff6977e55c3a2acf6cdd9ae3f1c5778944c88d0a90e1a`,
+identical on both sides), is not part of this block: `test_studio_bridge_twin.py`
+enforces exactly the entries `studio_bridge_twin.files` carries, and the record was
+never extended beyond those two — extending it is a change to the contract, not a
+refresh, and is left to its own unit.
+
+---
+
 ## Archive — the previous core receipt (unit TWINR3-U1, kept verbatim)
 
 # TWINR3-U1 twin-sync commit receipt
