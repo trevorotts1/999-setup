@@ -232,6 +232,27 @@ or helper install and again before the verification in step 9:
 ~/.local/bin/sync-nine-skills.sh
 ```
 
+### 5.4 Drama Studio (when the client has a pairing code)
+
+The bundled `drama-studio` skill is installed by step 5 like every other entry in
+`CONTROL/bundled-skills.txt`. Pair **this** computer only when the client hands over a
+pairing code (four and four, `ABCD-2345`); with no code, skip this step — the client can
+pair later by typing `/drama-studio pair <CODE>`.
+
+```text
+macOS:    python3 ~/.claude/skills/drama-studio/studio.py pair <CODE> --studio https://studio.zerohumanworkforce.com
+Windows:  py %USERPROFILE%\.claude\skills\drama-studio\studio.py pair <CODE> --studio https://studio.zerohumanworkforce.com
+```
+
+The one-time code is consumed and never echoed; the per-machine key lands in
+`~/.drama-studio` at folder permission 700 / file permission 600 and is never printed and
+never written into any settings file. The command confirms the pairing and shows the
+studio address. Then bring the second root up to date (step 5.3):
+
+```text
+~/.local/bin/sync-nine-skills.sh
+```
+
 ## 6. Read SKILL.md files fully
 
 Read `<Claude config root>/skills/nine-router-setup/SKILL.md` in full before running
