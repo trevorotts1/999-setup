@@ -11,9 +11,16 @@
 # MEASURED READ-ONLY. Nothing was written, moved, reordered or reformatted: no settings file
 # was edited and no hook file was added, deleted or disabled. The measurement is a plain read.
 #
-#   when:  2026-10-10T21:09:29-0400  (2026-10-11T01:09:29Z)
-#   where: trevor-macmini (operator box), darwin
+#   when:  2026-10-13T15:52:50-0400  (2026-10-13T19:52:50Z)
+#   where: TrevelynsMini2 (operator box), darwin
 #   how:   shasum -a 256 <path>        (shasum 6.02, /usr/bin/shasum)
+#
+# REGENERATED 2026-10-13 (DSF W3-twin-sync-U2 twin sync from onboarding origin/batch/DSF-3,
+# source 26d49681bcba1f760817f6c0c3cefa56092c2ae7). Same six paths, same method, fresh
+# measurement. Registration re-verified by reading both settings files' `hooks` blocks: both
+# still register the SAME four hook files below, and both still register
+# /Users/blackceomacmini/.claude/hooks/dispatch-gate.py — the .claude copy, never the
+# .claude-nine one.
 #
 # VERIFY. Each line below is literal `shasum -a 256` output, so this file re-checks with:
 #     shasum -a 256 -c .claude/skills/drama-studio/prove/runtime-hook-hashes.txt
@@ -28,7 +35,11 @@ e7b8b7542e161646e8742293e4de373a5f04f46f5868a5c89bd1e06f813e26b9  /Users/blackce
 # /Users/blackceomacmini/.claude/hooks/dispatch-gate.py -> 6c6b9073..., not the spec-protocol
 # copy's c4e0cb8b...):
 749cb25f368ae8bb9432241fc4dee45720b8e24d5726f5db3583412ccd0e050d  /Users/blackceomacmini/.claude/settings.json
-c486a2a29a06ba6808b315b5810d88db03a79fdce43619187061c9d77c344f4c  /Users/blackceomacmini/.claude-nine/settings.json
+00dd86b1c7ba34a3049f583078580489b24720aa7e687c0efbfa487b4ffdb39a  /Users/blackceomacmini/.claude-nine/settings.json
+#
+# Changed since the 2026-10-10 measurement: only /Users/blackceomacmini/.claude-nine/settings.json
+# (c486a2a2… -> 00dd86b1…, 12318 -> 12354 bytes). The four hook files and .claude/settings.json
+# hash-identical to 2026-10-10; .claude/settings.json was re-touched without a content change.
 #
 # Not measured here (outside this unit's scope, and no claim is made about them):
 #   /Users/blackceomacmini/.claude-nine/hooks/dispatch-gate.py  — present, a second copy on the
@@ -38,5 +49,5 @@ c486a2a29a06ba6808b315b5810d88db03a79fdce43619187061c9d77c344f4c  /Users/blackce
 #   18387 / 2026-10-08T01:57:43-0400   gate0-claim-gate.py
 #    4005 / 2026-10-08T01:57:43-0400   workflow-syntax-gate.py
 #  128055 / 2026-10-08T01:57:54-0400   dispatch-gate.py
-#   11915 / 2026-10-10T13:31:21-0400   .claude/settings.json
-#   12318 / 2026-10-10T19:45:17-0400   .claude-nine/settings.json
+#   11915 / 2026-10-12T05:38:37-0400   .claude/settings.json
+#   12354 / 2026-10-13T15:47:39-0400   .claude-nine/settings.json
