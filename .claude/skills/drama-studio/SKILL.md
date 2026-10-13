@@ -1,40 +1,133 @@
 ---
 name: drama-studio
 description: >
-  Drama Studio pairs this computer with the client's Drama Studio and runs the
-  startup check that tells Claude Code an order is waiting. Use it to pair a new
-  computer with a one-time code, to show or open the client's studio link, or to
-  run the check that the SessionStart hook and the heartbeat job call. Pairing is
-  one command, studio.py pair ABCD-2345. It prints the studio link, stores a
-  per-machine key on this computer alone, and never prints that key. The key
-  lives in ~/.drama-studio/machine.key, folder permission 700 and file permission
-  600, and it is never written into any settings file. The check, studio_check.py,
-  asks the studio whether an order is waiting and prints at most one line: Drama
-  Studio, one order waiting, then the order title and the hint to type
-  /drama-studio to start it. The startup hook passes --hook; it answers only a
-  real start, never a resume or a clear, and it is silent on every error with
-  exit status zero. It keeps the whole hook inside ten seconds, the network call
-  inside three, it skips the network when the last check was less than sixty
-  seconds ago, and it announces an order once per order per session. A desktop
-  notice is off unless the client asks for it. The whole thing ships as a
-  skills-folder plugin, so the hook lives in this folder, the two script
-  permissions live in this skill's allowed-tools, and nothing is written to any
-  settings.json. The skill root and the protected state are separate: the root is
-  ${CLAUDE_PLUGIN_ROOT}, the state is ~/.drama-studio, and the two never mix.
-  Option 1 waits for this hook, Option 2 keeps a session open with --watch, and
-  Option 3 is a background run that stays off until Trevor approves that client by
-  name.
-allowed-tools: Read, "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio.py *)", "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio_check.py *)"
+  Drama Studio connects this computer to the client's Drama Studio, prints the
+  client's personal link, and starts a drama order that is waiting — type
+  /drama-studio and it shows the link, checks for an order, and starts the run.
+  The client answers the questions on the phone, taps Lock it in, and the order
+  appears here within about two minutes. Pairing is one command, studio.py pair
+  ABCD-2345; it prints the studio link, stores a per-machine key on this computer
+  alone, and never prints that key. The key lives in ~/.drama-studio/machine.key,
+  folder permission 700 and file permission 600, and it is never written into any
+  settings file. studio.py link prints and opens the personal link; link new makes
+  a new one and the old link stops working at once. The startup check,
+  studio_check.py --hook, answers only a real start, never a resume or a clear,
+  stays inside ten seconds with the network call inside three, skips the network
+  when the last check was less than sixty seconds ago, and is silent on every
+  error with exit status zero. It announces at most one line: Drama Studio, one
+  order waiting, then the order title and the hint to start it. A desktop notice
+  is off unless the client asks for it. studio_bridge.py poll claims a waiting
+  order atomically, replays the client's answers into a run folder, and prints the
+  next factory command; factory.py of the sibling drama-song-ad-factory skill then
+  drives the stages and the approvals. The whole thing ships as a skills-folder
+  plugin: the hook loads from hooks/hooks.json, the Option 2 watcher from
+  monitors/monitors.json, the script permissions live in this skill's
+  allowed-tools, and nothing is written to any settings.json. The skill root and
+  the protected state are separate: the root is ${CLAUDE_PLUGIN_ROOT}, the state
+  is ~/.drama-studio, and the two never mix. Option 1 waits for the hook, Option 2
+  keeps a session open with --watch, and Option 3 is a background run that stays
+  off until Trevor approves that client by name.
+allowed-tools: Read, "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio.py *)", "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio_check.py *)", "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/studio_bridge.py *)", "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/../drama-song-ad-factory/scripts/core/intake_preflight/factory.py *)"
 ---
 
-# Drama Studio (999-setup, units U13 and U14)
+# Drama Studio
 
-The Claude Code and claude-nine half of the drama studio: **pair**, **link**, the
-**SessionStart check-in hook**, the **opt-in desktop notice** and the **Option 2
-watcher**. It ships as a **skills-folder plugin**: the hook loads from
-`hooks/hooks.json` and the Option-2 watcher from `monitors/monitors.json`, both
-inside this folder, and the installer writes **nothing** to any `settings.json`
-(decision 11 answered 2026-10-09).
+The Claude Code and claude-nine half of the drama studio: the client's personal
+link, the order check, the run start, pairing, the SessionStart hook and the
+Option 2 watcher.
+
+On Windows use `py` everywhere `python3` appears below.
+
+## When you are invoked
+
+The argument after `/drama-studio` picks the action. There is no other entry point
+and there is never a status report unless the client asks for one.
+
+### `/drama-studio` (no argument)
+
+1. **Print the personal link and open it.** Run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/studio.py link` — it mints a link when the
+   computer has none, prints `Your Drama Studio link: <url>` and opens it in the
+   browser. The link is the client's own; opening it on this computer shows the
+   page as the phone would (a QR code the client can scan).
+2. **Check for a waiting order.** Run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/studio_check.py --order` — a fresh check, no
+   cache. It prints `ORDER <id> "<title>"` or `NO-ORDER`.
+3. **An order waits → start it** (same as `start`, below).
+4. **No order waits → one line, then offer the questions:** "Tap **Order a new
+   video** on your studio page — or answer the questions here." If the client
+   chooses to answer here, run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/../drama-song-ad-factory/scripts/core/intake_preflight/factory.py card --step`
+   one question at a time in the terminal, exactly as a Telegram client would
+   answer, and lock the order in the same way.
+
+### `/drama-studio link`
+
+Print and open the personal link (`studio.py link`). No new link is made when one
+exists.
+
+### `/drama-studio link new`
+
+Make a new link (`studio.py link --new`), print and open it. The old link stops
+working immediately. Only do this when the client asks for a new link.
+
+### `/drama-studio start`
+
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/studio_bridge.py poll --skill-root ${CLAUDE_PLUGIN_ROOT}/../drama-song-ad-factory --runs <runs-dir>`
+   — checks in, claims exactly one waiting order (atomic; a lost claim exits
+   non-zero), replays the client's answers into the run folder with
+   `factory.py card --step --run-dir … --reply r1 … --reply yes`, and prints one
+   JSON line with the order id, the run folder and the next command.
+2. Run the printed next command and continue the normal skill-75 stage loop with
+   `factory.py next` until the first approval stop (script, song pick or
+   storyboard), which is published to the studio page for the client to answer.
+
+### `/drama-studio pair CODE`
+
+1. `python3 ${CLAUDE_PLUGIN_ROOT}/studio.py pair <CODE>` — burns the one-time
+   code, stores the machine key (600) in `~/.drama-studio/`, never prints it.
+2. Then show the link: the pair step mints one when the computer has none and
+   prints it; open it the same way as `link`.
+
+The hook (`studio_check.py --hook`), the opt-in desktop notice, the Option 2
+watcher and the Option 3 background runner are described under Reference; nothing
+in this procedure asks the client to run them.
+
+## Commands
+
+```bash
+# this skill — the root is the folder holding this file
+python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" pair ABCD-2345              # burn a one-time code, then show the link
+python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" link                        # print and open the personal link
+python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" link --new                  # make a new link (old one stops working)
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --order               # fresh order check: ORDER <id> "<title>" | NO-ORDER
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --hook                # the SessionStart hook
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --desktop             # the opt-in desktop notice
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --watch --every 120   # the Option-2 watcher
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --claim r_123         # record an order as picked up
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --print-root          # refuse a wrong root
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_bridge.py" poll --skill-root "${CLAUDE_PLUGIN_ROOT}/../drama-song-ad-factory" --runs <runs-dir>   # claim one order, replay the answers
+# the sibling skill — the drama factory that runs the stages
+python3 "${CLAUDE_PLUGIN_ROOT}/../drama-song-ad-factory/scripts/core/intake_preflight/factory.py" card --step
+python3 "${CLAUDE_PLUGIN_ROOT}/../drama-song-ad-factory/scripts/core/intake_preflight/factory.py" next
+```
+
+Windows: replace `python3` with `py`.
+
+---
+
+# Reference
+
+The design contract this skill was built against. It is kept for anyone changing
+these scripts; running `/drama-studio` never needs it.
+
+## What this skill was (units U13 and U14)
+
+The **pair/link command**, the **SessionStart check-in hook**, the **opt-in
+desktop notice** and the **Option 2 watcher**. It ships as a **skills-folder
+plugin**: the hook loads from `hooks/hooks.json` and the Option-2 watcher from
+`monitors/monitors.json`, both inside this folder, and the installer writes
+**nothing** to any `settings.json` (decision 11 answered 2026-10-09).
 
 It is a skill folder and two scripts, not a product: no framework, no bundler, no
 scheduler, no dashboard, no new management app.
@@ -102,7 +195,7 @@ is silent while idle. Four behaviours are its contract:
    state), the watcher stops and prints the interactive-fallback line: keep the
    interactive approval, or re-arm the Monitor tool. It never fabricates a settings
    exception and never writes a settings file. The permissions it relies on are
-   **skill-local only** — the two `Bash(...)` entries in this file's `allowed-tools`.
+   **skill-local only** — the `Bash(...)` entries in this file's `allowed-tools`.
 
 The watcher's cost is reported, not replaced: no `/loop`, no polling fallback, no
 `option2-settings.json` anywhere in the plugin.
@@ -112,32 +205,20 @@ The watcher's cost is reported, not replaced: no `/loop`, no polling fallback, n
 | Piece | Where | Who sets it |
 | --- | --- | --- |
 | Skill root | `${CLAUDE_PLUGIN_ROOT}` (the folder holding this file) | the plugin loader; a wrong root is refused with `AF-DS-ROOT` |
-| Protected state | `~/.drama-studio/` (folder 700) | this unit; `machine.key` 600, `studio.url`, `state.json` 600 |
-| allowed-tools | the frontmatter above | two script permissions (`studio.py`, `studio_check.py`) plus `Read` — nothing else |
+| Protected state | `~/.drama-studio/` (folder 700) | this skill; `machine.key` 600, `studio.url`, `client.url`, `state.json` 600 |
+| allowed-tools | the frontmatter above | the script permissions (`studio.py`, `studio_check.py`, `studio_bridge.py`, the sibling `factory.py`) plus `Read` — nothing else |
 
 The root and the state are deliberately different folders: the root is code, the
 state is the client's machine. The key is in the state and never in a settings file,
 because a launchd or Task Scheduler job cannot read a settings file anyway.
 
-## Commands
-
-```bash
-python3 .claude/skills/drama-studio/studio.py pair ABCD-2345      # burn a one-time code
-python3 .claude/skills/drama-studio/studio.py link --print        # show the studio link
-python3 .claude/skills/drama-studio/studio_check.py --hook        # the SessionStart hook
-python3 .claude/skills/drama-studio/studio_check.py --desktop     # the opt-in desktop notice
-python3 .claude/skills/drama-studio/studio_check.py --watch --every 120   # the Option-2 watcher
-python3 .claude/skills/drama-studio/studio_check.py --claim r_123 # record an order as picked up
-python3 .claude/skills/drama-studio/studio_check.py --print-root  # refuse a wrong root
-```
-
 ## Runnable checks (real commands, real exit codes)
 
 ```bash
-node --version >/dev/null 2>&1   # not required; this unit is Python only
-python3 .claude/skills/drama-studio/prove/prove_plugin_behaviour.py   # U13 (the plugin)
-python3 .claude/skills/drama-studio/prove/prove_option2_monitor.py    # U14 (the watcher)
-python3 .claude/skills/drama-studio/prove/prove_user_agent.py         # CHECKIN-UA (the studio User-Agent)
+node --version >/dev/null 2>&1   # not required; this skill is Python only
+python3 "${CLAUDE_PLUGIN_ROOT}/prove/prove_plugin_behaviour.py"   # U13 (the plugin)
+python3 "${CLAUDE_PLUGIN_ROOT}/prove/prove_option2_monitor.py"    # U14 (the watcher)
+python3 "${CLAUDE_PLUGIN_ROOT}/prove/prove_user_agent.py"         # CHECKIN-UA (the studio User-Agent)
 #   exit 0 = every check passed and every planted-bad control was caught
 #   exit 2 = a named check failed, or a planted-bad control stayed green (vacuous)
 #   exit 3 = the prover could not run
@@ -159,11 +240,11 @@ Option 3 starts a run with nobody present, so it is the highest-risk mode and it
 Until then `check` exits 0 silently: no order lookup, no lock, no child process, no spend.
 
 ```bash
-python3 .claude/skills/drama-studio/option3_runner.py status      # off | named <client> cap <cap> root <root>
-python3 .claude/skills/drama-studio/option3_runner.py plan        # print the one command it would run (refused while off)
-python3 .claude/skills/drama-studio/option3_runner.py check       # the scheduled entry; silent while off
-python3 .claude/skills/drama-studio/option3_runner.py print-job   # the launchd job as text; installs nothing
-python3 .claude/skills/drama-studio/prove/prove_option3_runner.py # 8 checks, each with a planted-bad control
+python3 "${CLAUDE_PLUGIN_ROOT}/option3_runner.py" status      # off | named <client> cap <cap> root <root>
+python3 "${CLAUDE_PLUGIN_ROOT}/option3_runner.py" plan        # print the one command it would run (refused while off)
+python3 "${CLAUDE_PLUGIN_ROOT}/option3_runner.py" check       # the scheduled entry; silent while off
+python3 "${CLAUDE_PLUGIN_ROOT}/option3_runner.py" print-job   # the launchd job as text; installs nothing
+python3 "${CLAUDE_PLUGIN_ROOT}/prove/prove_option3_runner.py" # 8 checks, each with a planted-bad control
 ```
 
 The runner owns five pieces, each stated here and proven by its own check: the
@@ -183,11 +264,10 @@ production end-to-end waits on the runnable U18 bridge.
 
 - **No settings write, ever.** The hook loads from `hooks/hooks.json` and the watcher
   from `monitors/monitors.json`; both live inside this folder. There is no
-  `option2-settings.json` and the two script permissions are skill-local only.
+  `option2-settings.json` and the script permissions are skill-local only.
 - **No version field here.** Per JOINT PLAN 5.3.2 the version bump and the CHANGELOG
   entry happen once, in the batch pull request.
 - **No `/loop`.** The watcher's cost is reported, never silently replaced by a polling
   `/loop`; the interactive fallback says so and stops.
-- **The watcher needs no U18 yet.** It is proven in isolation against the check-in
-  contract. End-to-end production waits for the runnable U18 bridge.
-
+- **The watcher needs no service bridge yet.** It is proven in isolation against the
+  check-in contract. End-to-end production waits for the runnable bridge.
