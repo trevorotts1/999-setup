@@ -1,6 +1,6 @@
 {
   "artifact": "twin-sync-fingerprints",
-  "unit": "W3-twin-sync-U1",
+  "unit": "DSF-521",
   "scope": "scripts/core/",
   "exclusions": [
     "__pycache__/",
@@ -11,20 +11,20 @@
   "canonical": {
     "repo": "trevorotts1/openclaw-onboarding",
     "tree": "75-drama-song-ad-factory/scripts/core/",
-    "base_sha": "26d49681bcba1f760817f6c0c3cefa56092c2ae7",
-    "branch": "batch/DSF-3",
+    "base_sha": "37344f5cd23fc51bf2a2603ebc8c7090b9b649f0",
+    "branch": "main",
     "label": "ONBOARDING_CANONICAL"
   },
   "packaged": {
     "repo": "trevorotts1/999-setup",
     "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-    "base_sha": "75ba61ca59427e9dae3ec550eb0e07f2ead53fa0",
-    "branch": "unit/DSF-W3-twin-sync-U1",
+    "base_sha": "7ec07b782145d99529ca7be49ae8352980a0c058",
+    "branch": "unit/DSF-521",
     "label": "999_PACKAGED"
   },
   "summary": {
-    "in_scope_files": 493,
-    "match": 493,
+    "in_scope_files": 495,
+    "match": 495,
     "differ": 0,
     "only_canonical": 0,
     "only_packaged": 0
@@ -670,8 +670,8 @@
       "match": true
     },
     "delivery_package/contract.py": {
-      "canonical_sha256": "0001b5831abcda36deb460ed0731b6a93a192469ea1ce92726929375da94a43e",
-      "packaged_sha256": "0001b5831abcda36deb460ed0731b6a93a192469ea1ce92726929375da94a43e",
+      "canonical_sha256": "e971ce5878c88326082c04507ac87cd48f15a8d759805bdc644f6d628f0fcf5a",
+      "packaged_sha256": "e971ce5878c88326082c04507ac87cd48f15a8d759805bdc644f6d628f0fcf5a",
       "match": true
     },
     "delivery_package/package_items.py": {
@@ -687,6 +687,11 @@
     "delivery_package/run_inputs.py": {
       "canonical_sha256": "ba7de8b9fbd38b88c09ea1ff94e5d2bc4b597f319081b632c2e1e94a1e6a8e37",
       "packaged_sha256": "ba7de8b9fbd38b88c09ea1ff94e5d2bc4b597f319081b632c2e1e94a1e6a8e37",
+      "match": true
+    },
+    "delivery_package/test_contract_not_clean.py": {
+      "canonical_sha256": "e1315004a3b9aef586579c0275cae82e40448406f809c3e9d315e2389f21a382",
+      "packaged_sha256": "e1315004a3b9aef586579c0275cae82e40448406f809c3e9d315e2389f21a382",
       "match": true
     },
     "delivery_package/test_delivery_package_contract.py": {
@@ -764,6 +769,11 @@
       "packaged_sha256": "bf81525048139ec922438a7bcde52aeeba2db5a640e93c45261fc8aa98c5a669",
       "match": true
     },
+    "delivery_variants/test_video_delivery_cleanup.py": {
+      "canonical_sha256": "23fa60d339ba276c3f8bca21233b2fbff69b08809428e50b6abd11fa9a1003e2",
+      "packaged_sha256": "23fa60d339ba276c3f8bca21233b2fbff69b08809428e50b6abd11fa9a1003e2",
+      "match": true
+    },
     "delivery_variants/test_video_delivery_del05.py": {
       "canonical_sha256": "c7479e7a76ab919e023c831c58031f0728936a413e6c2e6afb3b7ef655d36832",
       "packaged_sha256": "c7479e7a76ab919e023c831c58031f0728936a413e6c2e6afb3b7ef655d36832",
@@ -775,8 +785,8 @@
       "match": true
     },
     "delivery_variants/video_delivery.py": {
-      "canonical_sha256": "d510215bab0e948c5f4e4fe1bdaa420ba1111a8330c0d2676a7c9df4467c70b2",
-      "packaged_sha256": "d510215bab0e948c5f4e4fe1bdaa420ba1111a8330c0d2676a7c9df4467c70b2",
+      "canonical_sha256": "ed923f2ca46b0c69ec0f4ae2859a28b9ad0f23a445663de9a57a196a4b97e746",
+      "packaged_sha256": "ed923f2ca46b0c69ec0f4ae2859a28b9ad0f23a445663de9a57a196a4b97e746",
       "match": true
     },
     "ending_qc/__init__.py": {
@@ -1145,8 +1155,8 @@
       "match": true
     },
     "lip_sync/lip_gate/lip_process.py": {
-      "canonical_sha256": "c868fee1736e63dc7e5ebf89d2fbb4e456026400519e6b6af615ca6d0f9131a1",
-      "packaged_sha256": "c868fee1736e63dc7e5ebf89d2fbb4e456026400519e6b6af615ca6d0f9131a1",
+      "canonical_sha256": "ed664a2405a023779b53ab7e38e76b5225ce28e896d4899edf3cadadacf61e7d",
+      "packaged_sha256": "ed664a2405a023779b53ab7e38e76b5225ce28e896d4899edf3cadadacf61e7d",
       "match": true
     },
     "lip_sync/lip_gate/mouth_landmarks.py": {
@@ -1190,8 +1200,8 @@
       "match": true
     },
     "lip_sync/lip_gate/test_lip_process.py": {
-      "canonical_sha256": "a99d9dcf05ec542b8c4c1125ff37a7a265c6138fb07966e421e7f706c248a61f",
-      "packaged_sha256": "a99d9dcf05ec542b8c4c1125ff37a7a265c6138fb07966e421e7f706c248a61f",
+      "canonical_sha256": "e08483ca34f2aee428804a57c0123f6c0a2ad0f792f354b5552c33c277f51a76",
+      "packaged_sha256": "e08483ca34f2aee428804a57c0123f6c0a2ad0f792f354b5552c33c277f51a76",
       "match": true
     },
     "lip_sync/lip_gate/test_lipsync_closeup.py": {
@@ -1570,18 +1580,18 @@
       "match": true
     },
     "ready_post_kit/__init__.py": {
-      "canonical_sha256": "f57a958e3c14937c94d598cbd5546a2872ecf6eccf9373ad65f6b9adc88a9905",
-      "packaged_sha256": "f57a958e3c14937c94d598cbd5546a2872ecf6eccf9373ad65f6b9adc88a9905",
+      "canonical_sha256": "0cb9eef2e417b17b256f3ce8816fefe248ef29cdb8d7362f11020634e218c304",
+      "packaged_sha256": "0cb9eef2e417b17b256f3ce8816fefe248ef29cdb8d7362f11020634e218c304",
       "match": true
     },
     "ready_post_kit/ready_post_kit.py": {
-      "canonical_sha256": "8212a9b5d7b90d560d78e3d988a6cc6c5ced54d062618dfe814aad9d5781d253",
-      "packaged_sha256": "8212a9b5d7b90d560d78e3d988a6cc6c5ced54d062618dfe814aad9d5781d253",
+      "canonical_sha256": "b87a02a225ba4759b2e2090a2d8fbb203679a3848b906e5853372472f7045582",
+      "packaged_sha256": "b87a02a225ba4759b2e2090a2d8fbb203679a3848b906e5853372472f7045582",
       "match": true
     },
     "ready_post_kit/test_ready_post_kit.py": {
-      "canonical_sha256": "e192845f155c432135becfa71d1457c35bc58e833f244a10aa39b13225dac589",
-      "packaged_sha256": "e192845f155c432135becfa71d1457c35bc58e833f244a10aa39b13225dac589",
+      "canonical_sha256": "02374efc1e59b4ae55576fb1776a1cdf92e9b59972b5cabf1d719ac02c5ad9b6",
+      "packaged_sha256": "02374efc1e59b4ae55576fb1776a1cdf92e9b59972b5cabf1d719ac02c5ad9b6",
       "match": true
     },
     "research_engine/__init__.py": {
@@ -2651,7 +2661,7 @@
     "canonical": {
       "repo": "trevorotts1/openclaw-onboarding",
       "tree": "75-drama-song-ad-factory/shared-bridge/",
-      "base_sha": "73fa96563dec1eb954f210c6ad383693812cfec5",
+      "base_sha": "37344f5cd23fc51bf2a2603ebc8c7090b9b649f0",
       "branch": "main",
       "label": "ONBOARDING_CANONICAL"
     },
@@ -2665,6 +2675,12 @@
     "normalisation": "none - raw file bytes are hashed with sha256",
     "enforced_by": "tests/test_studio_bridge_twin.py (run by the drama-song-tests CI step 'Skill tests + layout parity test (empty HOME)'); the stronger live byte compare runs whenever the canonical shared-bridge tree is present (DSAF_CANONICAL_SHARED_BRIDGE, else <build>/onboarding/75-drama-song-ad-factory/shared-bridge)",
     "files": {
+      "approvals_bridge.py": {
+        "packaged": ".claude/skills/drama-studio/approvals_bridge.py",
+        "canonical": "75-drama-song-ad-factory/shared-bridge/approvals_bridge.py",
+        "canonical_sha256": "1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3",
+        "packaged_sha256": "1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3"
+      },
       "studio_bridge.py": {
         "packaged": ".claude/skills/drama-studio/studio_bridge.py",
         "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
@@ -2678,5 +2694,54 @@
         "packaged_sha256": "b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42"
       }
     }
+  },
+  "pre_sync_DSF521_999_main_divergence_from_canonical": {
+    "delivery_package/contract.py": {
+      "canonical_sha256": "e971ce5878c88326082c04507ac87cd48f15a8d759805bdc644f6d628f0fcf5a",
+      "packaged_sha256": "0001b5831abcda36deb460ed0731b6a93a192469ea1ce92726929375da94a43e"
+    },
+    "delivery_variants/video_delivery.py": {
+      "canonical_sha256": "ed923f2ca46b0c69ec0f4ae2859a28b9ad0f23a445663de9a57a196a4b97e746",
+      "packaged_sha256": "d510215bab0e948c5f4e4fe1bdaa420ba1111a8330c0d2676a7c9df4467c70b2"
+    },
+    "lip_sync/lip_gate/lip_process.py": {
+      "canonical_sha256": "ed664a2405a023779b53ab7e38e76b5225ce28e896d4899edf3cadadacf61e7d",
+      "packaged_sha256": "c868fee1736e63dc7e5ebf89d2fbb4e456026400519e6b6af615ca6d0f9131a1"
+    },
+    "lip_sync/lip_gate/test_lip_process.py": {
+      "canonical_sha256": "e08483ca34f2aee428804a57c0123f6c0a2ad0f792f354b5552c33c277f51a76",
+      "packaged_sha256": "a99d9dcf05ec542b8c4c1125ff37a7a265c6138fb07966e421e7f706c248a61f"
+    },
+    "ready_post_kit/__init__.py": {
+      "canonical_sha256": "0cb9eef2e417b17b256f3ce8816fefe248ef29cdb8d7362f11020634e218c304",
+      "packaged_sha256": "f57a958e3c14937c94d598cbd5546a2872ecf6eccf9373ad65f6b9adc88a9905"
+    },
+    "ready_post_kit/ready_post_kit.py": {
+      "canonical_sha256": "b87a02a225ba4759b2e2090a2d8fbb203679a3848b906e5853372472f7045582",
+      "packaged_sha256": "8212a9b5d7b90d560d78e3d988a6cc6c5ced54d062618dfe814aad9d5781d253"
+    },
+    "ready_post_kit/test_ready_post_kit.py": {
+      "canonical_sha256": "02374efc1e59b4ae55576fb1776a1cdf92e9b59972b5cabf1d719ac02c5ad9b6",
+      "packaged_sha256": "e192845f155c432135becfa71d1457c35bc58e833f244a10aa39b13225dac589"
+    },
+    "delivery_package/test_contract_not_clean.py": {
+      "canonical_sha256": "e1315004a3b9aef586579c0275cae82e40448406f809c3e9d315e2389f21a382",
+      "packaged_sha256": null
+    },
+    "delivery_variants/test_video_delivery_cleanup.py": {
+      "canonical_sha256": "23fa60d339ba276c3f8bca21233b2fbff69b08809428e50b6abd11fa9a1003e2",
+      "packaged_sha256": null
+    },
+    ".claude/skills/drama-studio/approvals_bridge.py": {
+      "canonical_sha256": "1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3",
+      "packaged_sha256": "f2a61598dff3b2ec013ff6977e55c3a2acf6cdd9ae3f1c5778944c88d0a90e1a"
+    }
+  },
+  "pre_sync_DSF521_summary": {
+    "in_scope_files": 495,
+    "match": 486,
+    "differ": 7,
+    "only_canonical": 2,
+    "only_packaged": 0
   }
 }
