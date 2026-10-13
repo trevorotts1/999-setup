@@ -11,6 +11,10 @@
 #   D. Negative control: same clean install against a manifest that omits the
 #      skill does NOT link it — the registry drives the install, not the
 #      source directory being on disk.
+#   Plus W1-claude-skill-U5: the same battery for drama-studio — registry line,
+#   bundled_skills() parse, clean-install link (SKILL.md frontmatter name and
+#   studio.py, what AGENT_INSTALL step 5.4 runs), and the withheld-registry
+#   negative control.
 #
 # stdlib/bash only; fixtures under /tmp (never the real $HOME, real repo is
 # read-only here). Run: bash installer-registration/verify-registration.sh
@@ -21,6 +25,7 @@ SETUP_SH="$REPO_ROOT/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
 MANIFEST="$REPO_ROOT/CONTROL/bundled-skills.txt"
 ENTRY_FILE="$REPO_ROOT/installer-registration/bundled-skills-entry.txt"
 SKILL_NAME="drama-song-ad-factory"
+STUDIO="drama-studio"
 PRIOR="nine-router-setup spec-protocol kaizen eli5 bro blackceo-signature-page hook-skill kiss motion-video-plus"
 
 PASS=0; FAIL=0
@@ -38,6 +43,11 @@ if manifest_names "$MANIFEST" | grep -qx "$SKILL_NAME"; then
   pass "registry lists $SKILL_NAME"
 else
   fail "registry does NOT list $SKILL_NAME"
+fi
+if manifest_names "$MANIFEST" | grep -qx "$STUDIO"; then
+  pass "registry lists $STUDIO"
+else
+  fail "registry does NOT list $STUDIO"
 fi
 for s in $PRIOR; do
   manifest_names "$MANIFEST" | grep -qx "$s" && pass "prior entry retained: $s" \
@@ -68,6 +78,10 @@ case "$B_LIST" in
   *"$SKILL_NAME"*) pass "bundled_skills() lists $SKILL_NAME" ;;
   *) fail "bundled_skills() does not list $SKILL_NAME (got: $B_LIST)" ;;
 esac
+case "$B_LIST" in
+  *"$STUDIO"*) pass "bundled_skills() lists $STUDIO" ;;
+  *) fail "bundled_skills() does not list $STUDIO (got: $B_LIST)" ;;
+esac
 
 echo "== C. clean install: fresh HOME, real installer links the skill =="
 HOME_C="$BASE/home-c"; mkdir -p "$HOME_C"
@@ -89,6 +103,21 @@ esac
 [ -f "$HOME_C/.claude/skills/$SKILL_NAME/VERSION" ] \
   && pass "linked skill exposes VERSION" || fail "linked skill VERSION missing"
 
+# Same battery for drama-studio (W1-claude-skill-U5): registry-driven, in the
+# same clean install.
+[ -L "$HOME_C/.claude/skills/$STUDIO" ] \
+  && pass "clean install created skills/$STUDIO link" \
+  || fail "skills/$STUDIO link absent after clean install"
+STUDIO_MD="$HOME_C/.claude/skills/$STUDIO/SKILL.md"
+if [ -f "$STUDIO_MD" ] && grep -q "name:[[:space:]]*$STUDIO" "$STUDIO_MD"; then
+  pass "linked $STUDIO exposes SKILL.md with frontmatter name $STUDIO"
+else
+  fail "linked $STUDIO has no SKILL.md named $STUDIO (got: ${STUDIO_MD:-absent})"
+fi
+[ -f "$HOME_C/.claude/skills/$STUDIO/studio.py" ] \
+  && pass "linked $STUDIO exposes studio.py (the pair/link command AGENT_INSTALL step 5.4 runs)" \
+  || fail "linked $STUDIO has no studio.py — the pairing step cannot run"
+
 echo "== D. negative control: manifest WITHOUT the entry must not link it =="
 SKEL="$BASE/skel-repo"
 mkdir -p "$SKEL/CONTROL" "$SKEL/.claude/skills/nine-router-setup" \
@@ -96,7 +125,7 @@ mkdir -p "$SKEL/CONTROL" "$SKEL/.claude/skills/nine-router-setup" \
 printf -- '---\nname: %s\ndescription: fixture\n---\nSOURCE-PRESENT\n' "$SKILL_NAME" \
   > "$SKEL/.claude/skills/$SKILL_NAME/SKILL.md"
 # Source IS present on disk; only the registry entry is withheld.
-manifest_names "$MANIFEST" | grep -vx "$SKILL_NAME" > "$SKEL/CONTROL/bundled-skills.txt"
+manifest_names "$MANIFEST" | grep -vx "$SKILL_NAME" | grep -vx "$STUDIO" > "$SKEL/CONTROL/bundled-skills.txt"
 HOME_D="$BASE/home-d"; mkdir -p "$HOME_D"
 OUT_D="$(HOME="$HOME_D" REPO_ROOT="$SKEL" \
   REPO_SKILL_DIR="$SKEL/.claude/skills/nine-router-setup" \
@@ -104,6 +133,9 @@ OUT_D="$(HOME="$HOME_D" REPO_ROOT="$SKEL" \
 [ ! -e "$HOME_D/.claude/skills/$SKILL_NAME" ] \
   && pass "without the registry entry the skill is NOT installed (source presence alone insufficient)" \
   || fail "skill installed despite missing registry entry — registry does not drive the install"
+[ ! -e "$HOME_D/.claude/skills/$STUDIO" ] \
+  && pass "without the registry entry $STUDIO is NOT installed either" \
+  || fail "$STUDIO installed despite missing registry entry — registry does not drive the install"
 
 echo "== E. owned artifact carries the entry =="
 if grep -qx "$SKILL_NAME" "$ENTRY_FILE" 2>/dev/null; then
