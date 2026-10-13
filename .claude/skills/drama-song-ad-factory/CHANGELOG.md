@@ -1,5 +1,46 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.51] — 2026-10-13 — BATCH-DSF-5: the drama-studio skill ships, and skill 75's core and bridges re-twin
+
+One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-5`, seven member
+units merged with `--no-ff` (each member keeps its own named merge commit). Version
+`2.7.50` -> `2.7.51`, in `VERSION` and the `SKILL.md` frontmatter `version:`, with this
+entry, all in this one commit.
+
+**The seven members:**
+
+| PR | Unit | What it does |
+|---|---|---|
+| #208 | `W1-claude-skill-U1` | `.claude/skills/drama-studio/SKILL.md` becomes the "when you are invoked" procedure (bare, `link`, `link new`, `start`, `pair CODE`) with `${CLAUDE_PLUGIN_ROOT}` paths and the sibling factory root, the design material kept under a Reference heading, and `allowed-tools` gains the bridge and `factory.py`. |
+| #209 | `W1-claude-skill-U2` | `studio.py` `link` prints and opens the personal link (`client.url`), `link --new` rotates it, `pair` mints one when missing, and `--print` keeps the no-browser behaviour. New `prove/test_link.py`. |
+| #210 | `W1-claude-skill-U3` | `studio_check.py` keeps the option the studio sends in the hook state (so Option 2 can switch on from the studio) and adds `--order`, a fresh uncached order check. New `prove/test_check_option.py`. |
+| #207 | `W1-claude-skill-U4` | `option3_runner.py` passes `real_runner` from its `check` path, so an approved Option-3 check really starts its run instead of writing an `exit_code: 0` receipt and starting nothing. New `prove/test_option3_wired.py`. |
+| #206 | `W1-claude-skill-U5` | The 999 installer bundles `drama-studio` (`CONTROL/bundled-skills.txt`, `installer-registration/verify-registration.sh`) and `AGENT_INSTALL.md` gains the pairing step. |
+| #212 | `W3-twin-sync-U1` | Skill 75 `scripts/core/` re-twin-synced from onboarding (493 files, 11 added, 4 changed, 0 deleted, 0 differences), with the regenerated `scripts/core/` fingerprints and the receipt, plus the `shared-bridge` -> `../drama-studio` layout alias the studio channel needs. |
+| #211 | `W3-twin-sync-U2` | `.claude/skills/drama-studio/studio_bridge.py`, `approvals_bridge.py` and `studio_claim.py` copied byte-identical from onboarding `75-drama-song-ad-factory/shared-bridge/` at `origin/main`, and `prove/runtime-hook-hashes.txt` regenerated. |
+
+**The fingerprints refresh (this commit, required by the merge).** Merging #211
+moves the packaged `.claude/skills/drama-studio/studio_bridge.py` forward, so the
+`studio_bridge_twin` block of `references/twin-sync-fingerprints.json` — which
+W3-twin-sync-U1 deliberately left to U2 — was still pinning the older pair and would
+have left `tests/test_studio_bridge_twin.py` red. Both fields of the one entry
+`studio_bridge_twin.files.studio_bridge.py` were recomputed from the live trees and now
+read the same digest:
+
+- `canonical_sha256` and `packaged_sha256` = `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`
+  (was `9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e` on both sides).
+
+Every other entry in that file is untouched, `studio_claim.py`'s pair still matches and
+needed no edit, and `approvals_bridge.py` (sha256
+`f2a61598dff3b2ec013ff6977e55c3a2acf6cdd9ae3f1c5778944c88d0a90e1a`, identical on both
+sides) is not part of that contract block, which still carries exactly its two files.
+`references/twin-sync-receipt.md` gains the "Fingerprints refresh on the batch head"
+section recording both digests, both live read commands, the proof, and the fact that
+`batch/DSF-3` is now an ancestor of `origin/main`, which satisfies the re-run action the
+original receipt recorded. Proven both ways on the batch head: recorded-fingerprints mode
+(no canonical tree) exit 0, and with `DSAF_CANONICAL_SHARED_BRIDGE` set to a throwaway
+`git archive origin/main 75-drama-song-ad-factory/shared-bridge` export, exit 0.
+
 ## [2.7.50] — 2026-10-12 — Drama Studio direct-upload bridge twin
 
 The packaged bridge now sends file metadata and streams the returned signed PUT, with image/audio limits of 25 MB and video limits of 200 MB. It carries the canonical first-byte array, destination checks and secret-free receipt. Both bridge files are byte-identical to onboarding merged main `73fa96563dec1eb954f210c6ad383693812cfec5` (batch #1893). Six fake-transport upload tests are wired into the Drama Studio workflow.

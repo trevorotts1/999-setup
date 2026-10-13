@@ -3,7 +3,7 @@
 #
 # Usage:
 #   studio.py pair ABCD-2345 [--studio URL] [--dry-run]
-#   studio.py link [--print] [--studio URL]
+#   studio.py link [--new] [--print] [--studio URL]
 #
 # pair sends the one-time code, this computer's name, its operating system and which
 # tools are present (claude, claude-nine) to U2's POST /api/studio/pair. It burns the
@@ -13,6 +13,8 @@
 #              encryption helper is nine-router-setup/scripts/windows/Protect-LocalState.ps1)
 # The key is NEVER printed and NEVER written into any settings.json (decision 11).
 # The studio address is not a secret and lives beside the key as studio.url.
+# The client's personal link (the #k= address) lives beside both as client.url (600);
+# `link` shows it and opens it, `link --new` makes a new one (the old one stops working).
 #
 # EXIT CODES
 #   0  paired, or the link was shown
@@ -23,10 +25,10 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import urllib.error
 import urllib.request
+import webbrowser
 
 STATE_DIR_NAME = ".drama-studio"
 # The alphabet has no look-alike characters (no 0/O, no 1/I/L), four and four.
@@ -36,6 +38,7 @@ AF_FAILED = "AF-DS-PAIR-FAILED"
 AF_ARGS = "AF-DS-ARGS"
 KEY_FILE = "machine.key"
 URL_FILE = "studio.url"
+LINK_FILE = "client.url"
 NETWORK_BUDGET_S = 3.0
 
 # The studio sits behind Cloudflare, which refuses Python's default User-Agent
@@ -74,6 +77,14 @@ def write_private(path, text):
         fh.write(text)
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
+
+
+def read_private(name):
+    try:
+        with open(os.path.join(state_dir(), name), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except Exception:
+        return ""
 
 
 def which_tools():
@@ -134,7 +145,21 @@ def cmd_pair(a):
     write_private(os.path.join(sd, URL_FILE), url + "\n")
     sys.stdout.write("Drama Studio paired (%s). The key is stored on this computer and was not printed.\n"
                      % out.get("client_id", "client"))
-    return cmd_link(a) if url else 0
+    if url:
+        cmd_link(a)          # best effort: the pair itself already succeeded, so exit 0 either way
+    return 0
+
+
+def call_link(url, key, rotate):
+    req = urllib.request.Request(
+        url.rstrip("/") + "/api/studio/link",
+        data=json.dumps({"rotate": bool(rotate)}).encode("utf-8"),
+        method="POST",
+        headers={"content-type": "application/json", "User-Agent": STUDIO_USER_AGENT,
+                 "x-ds-key": key},
+    )
+    with urllib.request.urlopen(req, timeout=NETWORK_BUDGET_S) as resp:
+        return json.loads(resp.read().decode("utf-8") or "{}")
 
 
 def cmd_link(a):
@@ -142,10 +167,33 @@ def cmd_link(a):
     if not url:
         sys.stderr.write("%s refused: no studio address yet; pair this computer first\n" % AF_FAILED)
         return 3
-    sys.stdout.write("Drama Studio: %s\n" % url)
-    if (not getattr(a, "print_only", False) and sys.platform == "darwin"
-            and os.environ.get("DRAMA_STUDIO_FAKE") != "1"):
-        subprocess.run(["open", url], check=False)
+    rotate = bool(getattr(a, "new", False))
+    link = read_private(LINK_FILE)
+    if rotate or not link:
+        key = read_private(KEY_FILE)
+        if not key:
+            sys.stderr.write("%s refused: no machine key; pair this computer first\n" % AF_FAILED)
+            return 3
+        try:
+            out = call_link(url, key, rotate)
+        except Exception as exc:
+            sys.stderr.write("%s refused: %s\n" % (AF_FAILED, type(exc).__name__))
+            return 2
+        if not out.get("link"):
+            if out.get("exists") and not link and not rotate:
+                sys.stdout.write("Your link was made on another computer. Run `/drama-studio link new` "
+                                 "to make a new one (the old one stops working).\n")
+                return 0
+            sys.stderr.write("%s refused: %s\n" % (AF_FAILED, out.get("code") or "no link returned"))
+            return 2
+        link = out["link"]
+        write_private(os.path.join(state_dir(), LINK_FILE), link + "\n")
+    sys.stdout.write("Your Drama Studio link: %s\n" % link)
+    if not getattr(a, "print_only", False) and os.environ.get("DRAMA_STUDIO_FAKE") != "1":
+        try:
+            webbrowser.open(link)
+        except Exception:
+            pass
     return 0
 
 
@@ -158,6 +206,7 @@ def main(argv):
     p.add_argument("--dry-run", action="store_true")
     l = sub.add_parser("link")
     l.add_argument("--studio")
+    l.add_argument("--new", action="store_true")
     l.add_argument("--print", dest="print_only", action="store_true")
     try:
         a = ap.parse_args(argv)

@@ -1,3 +1,232 @@
+# TWIN-SYNC receipt — W3-twin-sync-U1 (Drama Fixes batch, 2026-10-13)
+
+Unit `W3-twin-sync-U1` (BUILD-PLAN.md section W3-twin-sync-U1, Drama Fixes Oct 13):
+skill 75 core twin sync with fingerprints and receipt. This file, the regenerated
+`scripts/core/` and the regenerated core blocks of
+`references/twin-sync-fingerprints.json` are this unit's whole change.
+
+## What was compared
+
+| Side | Repository | Tree | Commit |
+|---|---|---|---|
+| Canonical (source of truth) | `trevorotts1/openclaw-onboarding` | `75-drama-song-ad-factory/scripts/core/` | `26d49681bcba1f760817f6c0c3cefa56092c2ae7` (branch `batch/DSF-3`, head of PR #1957) |
+| Packaged copy (this repo) | `trevorotts1/999-setup` | `.claude/skills/drama-song-ad-factory/scripts/core/` | `75ba61ca59427e9dae3ec550eb0e07f2ead53fa0` (`main`), packaged on branch `unit/DSF-W3-twin-sync-U1` |
+
+**The source is a PENDING batch head, not `main`.** Trevor's order 2026-10-13 15:36:
+"building never waits for a merge" — this sync copies from `origin/batch/DSF-3`, the
+head of the still-open PR #1957, instead of waiting for it to land. The source SHA
+above was read live (`git -C ~/openclaw-onboarding rev-parse origin/batch/DSF-3`) at
+build time. **Conductor action after #1957 merges:** re-run
+`tests/twin_sync_prove.py` with `--canonical` pointed at the new `origin/main`
+`scripts/core`; if it reports any `only-canonical` path, re-run this unit's packager
+against the new main before the batch merges.
+
+Both checkouts are read-only for this unit. The source tree used here was exported
+read-only with `git -C ~/openclaw-onboarding archive <sha> -- 75-drama-song-ad-factory/scripts/core`
+into this unit's lane; `~/openclaw-onboarding` itself was neither branched, checked
+out nor written.
+
+## In scope vs deliberately out of scope
+
+**In scope** — `scripts/core/` on both sides (the scope `references/parity-contract.md`
+names and `tests/test_parity_layout.py` / `tests/twin_sync_prove.py` enforce), plus the
+two metadata files this unit owns (`references/twin-sync-fingerprints.json` and this
+receipt) and the one layout-alias symlink described below. Nothing else.
+
+**Deliberately out of scope** (unchanged by this commit, each with its reason):
+
+- `references/twin-sync-fingerprints.json` -> `studio_bridge_twin` block — that block
+  pins `.claude/skills/drama-studio/`, owned by **W3-twin-sync-U2**, which copies the
+  bridge bytes. Measured on this branch, and left for that unit:
+  `shared-bridge/studio_claim.py` is already byte-identical to `batch/DSF-3`;
+  `shared-bridge/studio_bridge.py` and the new `shared-bridge/approvals_bridge.py` are
+  NOT (`studio_bridge.py` live sha256 `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`
+  vs packaged `9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e`).
+  `tests/test_studio_bridge_twin.py` therefore passes as written (recorded fingerprints
+  enforced, live compare UNDETERMINED) and fails its optional live compare until U2 lands.
+- `references/twin-sync-fingerprints.json` -> `round3_*` blocks and `layout_alias_added`
+  — historical record of sync round 3 (unit TWINR3-U1). Carried through byte-for-byte.
+- `VERSION`, `skill-version.txt`, `CHANGELOG.md`, `SKILL.md`, `INSTRUCTIONS.md`,
+  `INSTALL.md`, `PREREQS.json` — per-repo wrapper documents that legitimately differ;
+  the Drama Fixes batch adds one version bump and one CHANGELOG entry for the whole
+  batch (SWARM-PLAN.md section 7). No version or CHANGELOG edit is in this commit.
+- `adapters/`, `assets/`, `references/**` (other than the two files above), `tests/**`
+  other than the provers' own behaviour, `mini-app/`, `shared-bridge/`,
+  `timer-artifacts/`, `installer-registration/**` — onboarding-owned trees with no
+  999 counterpart, or owned by other units.
+- Skill 68/66/67/74 helper re-pins — the helper pins did not move with `scripts/core`;
+  `installer-registration/helper-deps.py` was not run and `installer-registration/helpers/`
+  is untouched.
+
+## How it was regenerated
+
+The repository's own packager, no hand edits (directive 2.4):
+
+```
+python3 installer-registration/package_core.py \
+  --source <lane>/src/75-drama-song-ad-factory/scripts/core \
+  --dest  <worktree>/.claude/skills/drama-song-ad-factory/scripts/core
+-> package_core: OK  493 files (15 written, 0 stale removed) ...
+   tree sha256 packaged=canonical=de72330e9227772853babb05477f0ffc5f0f4595ac68dba64a15ec95a8404b8c
+python3 installer-registration/package_core.py ... --check
+-> package_core --check: OK  493 files match canonical     (exit 0)
+```
+
+## Layout alias added (1 symlink, no bytes)
+
+The canonical core's `scripts/core/choice_card/intake_card/channel_send.py` (the
+`studio` channel from W1-box-bridge-U4) resolves `approvals_bridge` and
+`studio_bridge` at `<skill root>/shared-bridge` — the onboarding layout. This
+distribution mirrors `scripts/core/` only (`parity-contract.md`) and has never
+shipped a `shared-bridge/` tree (`git log --all --diff-filter=A -- '*shared-bridge*'`
+is empty). Synced as-is, the two canonical tests that exercise the channel's key
+lookup therefore died here with
+`ModuleNotFoundError: No module named 'studio_bridge'` (channel_send.py:126),
+a failure the canonical tree cannot see.
+
+Repair, one symlink inside this unit's own folder, the same shape and reason as the
+`68-kie-audio` layout alias the last sync added:
+
+| Alias | Target | Why |
+|---|---|---|
+| `.claude/skills/drama-song-ad-factory/shared-bridge` | `../drama-studio` | points the canonical `<skill root>/shared-bridge` at the 999 bridge copy in `.claude/skills/drama-studio/`, which **W3-twin-sync-U2** refreshes byte-for-byte from the same canonical `shared-bridge/` tree |
+
+No bytes are duplicated, `scripts/core/` stays byte-identical, and nothing under
+`.claude/skills/drama-studio/` is touched by this unit. Recorded in
+`twin-sync-fingerprints.json` -> `layout_alias_added`. On a 999 install that has not
+yet received `drama-studio` the link dangles and the studio channel fails loudly with
+the same `ModuleNotFoundError` it would have raised anyway — no behaviour is removed.
+
+## Regression (same command, before vs after)
+
+`HOME=$(mktemp -d) python3 -m pytest -q .claude/skills/drama-song-ad-factory/scripts`
+(the `drama-song-tests.yml` CI command), run on a detached `origin/main` worktree and
+on this branch:
+
+| Side | Result |
+|---|---|
+| `origin/main` `75ba61ca5` (baseline) | `1847 passed, 3 skipped, 58 subtests passed in 124.68s` |
+| this branch | `1900 passed, 3 skipped, 58 subtests passed in 125.19s` |
+
++53 new tests (the 53 test functions the synced core carries that main did not),
+zero new failures. `python3 -m pytest -q .claude/skills/drama-song-ad-factory/tests`
+→ `13 passed`. `for p in .claude/skills/drama-studio/prove/*.py; do python3 "$p"; done`
+→ all six provers exit 0 (`prove_heartbeat.py`, `prove_option2_monitor.py`,
+`prove_option3_runner.py`, `prove_plugin_behaviour.py`, `prove_user_agent.py`,
+`test_upload.py`).
+
+## Normalisation
+
+Exclusions `__pycache__/` and `*.pyc`, applied **identically on both sides** (the same
+rule `tests/test_parity_layout.py` uses). **No other normalisation**: raw file bytes
+hashed with sha256. No line-ending, whitespace or generated-marker rewriting, so no
+real content difference can be hidden.
+
+## Result
+
+- Pre-sync (999 `main` vs canonical `batch/DSF-3`): **in_scope=493, same=478, differ=4,
+  only-canonical=11, only-packaged=0 -> PARITY BROKEN** (this is the gap the unit closes;
+  the 15 divergent paths are the tables below).
+- Post-sync (branch `unit/DSF-W3-twin-sync-U1` vs canonical `batch/DSF-3`):
+  **in_scope=493, match=493, differ=0, only-canonical=0, only-packaged=0 -> PARITY PROVEN.**
+- Packaged tree sha256 == canonical == `de72330e9227772853babb05477f0ffc5f0f4595ac68dba64a15ec95a8404b8c`.
+- The prover discriminates: `twin_sync_prove.py --selftest` -> `SELFTEST: PASS`
+  (one planted byte and one planted extra file both caught).
+
+### Added in-scope paths (11, absent on 999 main)
+
+| In-scope path | canonical sha256 |
+|---|---|
+| `choice_card/intake_card/optional_extras.py` | `88799d3d97dee03aea0aac0c85d65523a85ea7e5415b90a87fafee49888cd75f` |
+| `choice_card/intake_card/person_question.py` | `f7afd75f5043955e759e329a40bb878530e0059dc02faa4c0295251bf153e5c5` |
+| `choice_card/intake_card/person_question_fixtures.json` | `7c7c7269a40ce5a5a338d9884bab005ca76c68d5bb1c3d98c6e491dad29875cb` |
+| `choice_card/intake_card/test_channel_send_studio.py` | `6093a71e3e723a6d9a9bf66db317489604e475addead5c20bb33f01a656cc5a7` |
+| `choice_card/intake_card/test_optional_extras_u10x.py` | `ca9c4ec6941100602011e098938a6e47e76cbfa14bb511f852aef3e9c810aad3` |
+| `choice_card/intake_card/test_person_question_u9.py` | `589536cffb361450d295a0c9360c9db2f00713d9d2daabfbe85edd0cfefc8b37` |
+| `ghl_sender/README.md` | `120eafc14c2acf1aef7a61ceab3f00f7f5b0245fcb8102b532255bc5f1771a77` |
+| `ghl_sender/__init__.py` | `3d0374612594df14c5d8c45df97f7f1d119512a202d689132f730f722f6bd39b` |
+| `ghl_sender/ghl_sender.py` | `c262a0040f209ad4250dff1d1380c3c2b9d665960174ae828cda702d4b3199fa` |
+| `intake_preflight/test_factory_studio.py` | `56daa029d0186ae826b4680ad606dc32fac532af7beb93789c44aee110e3926b` |
+| `test_cc_sync_studio.py` | `b16c030b3620f6d6f40fe8f3b0df4c5e0b708d913f72d83eb8af8ab1c01b9a5a` |
+
+These are exactly the "8 onboarding files + the stale `music_qc/test_wwfix_u1.py`"
+gap BUILD-PLAN.md names (`optional_extras.py`, `test_optional_extras_u10x.py`,
+`person_question.py`, `person_question_fixtures.json`, `test_person_question_u9.py`,
+`ghl_sender/README.md`, `ghl_sender/__init__.py`, `ghl_sender/ghl_sender.py`), plus the
+three `batch/DSF-3` test files for the studio wiring merged by PR #1957
+(`test_channel_send_studio.py`, `test_factory_studio.py`, `test_cc_sync_studio.py`).
+
+### Changed in-scope paths (4, copied byte-for-byte from canonical)
+
+| In-scope path | canonical sha256 | packaged sha256 (pre-sync) |
+|---|---|---|
+| `cc_sync.py` | `c1beb16f7678cc20b512edfe4e65b99a7d045f9927c73d4476d5befe4e9fff50` | `6d8d1ecc22f3174aa8b2a5c9f5f2cbe26551b5e0e99f545812b368e7415087e5` |
+| `choice_card/intake_card/channel_send.py` | `5878cb15c990afd087933784ffe3245b8f323ab319c08470d80ddaeb56eb884e` | `1a0067bbc2d8f719cc7942db5f0cacd1947da0327ad6e205368ab8e65e6fac88` |
+| `intake_preflight/factory.py` | `274dd5fc405f00b375e4c5e2bab1aff73626079812b46621a9174fc194edfbe2` | `b9963bd56d4f16e64c14e0270646c9648ee5e6d5bec8906f0b30a46bfdac94da` |
+| `music_qc/test_wwfix_u1.py` | `8a621d291a6bff7b63b2c935423006a9898883e81622c0fef9816ec7715e907d` | `963fd0274794f61dc906dde130c0da7781e0b63347dc832195f325af8ae20b9f` |
+
+Deleted in-scope paths: **0**. The full per-path two-sided table for all 493 in-scope
+files is in `twin-sync-fingerprints.json` -> `files`; the pre-sync divergence is in
+`pre_sync_999_main_divergence_from_canonical` (15 paths) and `pre_sync_summary`.
+
+---
+
+## Fingerprints refresh on the batch head (batch/DSF-5, 2026-10-13)
+
+The `studio_bridge_twin` block above was **deliberately out of scope** for
+W3-twin-sync-U1 and was left to W3-twin-sync-U2 (see "In scope vs deliberately out of
+scope"). This section records the refresh the batch itself performs, because merging
+U2 without it leaves `tests/test_studio_bridge_twin.py` red: U2 copies the packaged
+`.claude/skills/drama-studio/studio_bridge.py` forward to the newer canonical bytes
+while the fingerprint block still pinned the older pair.
+
+**The single entry changed** (`twin-sync-fingerprints.json` -> `studio_bridge_twin.files.studio_bridge.py`,
+both fields; every other entry in the file, including `files`, `pre_sync_*`, `round3_*`,
+`layout_alias_added` and `studio_bridge_twin.files.studio_claim.py`, is untouched):
+
+| Field | Before | After |
+|---|---|---|
+| `canonical_sha256` | `9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e` | `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956` |
+| `packaged_sha256` | `9dcef59746601dc7cb708835b790ae05228c0df437107e643c94930cec98597e` | `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956` |
+
+Both sides were read live on the batch head, not copied from either document:
+
+- **packaged** — `shasum -a 256 .claude/skills/drama-studio/studio_bridge.py` in the
+  batch worktree (`/Users/blackceomacmini/dsf-wt/batch-N-5`) after all seven member
+  merges: `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`.
+- **canonical** — `git -C ~/openclaw-onboarding show origin/main:75-drama-song-ad-factory/shared-bridge/studio_bridge.py | shasum -a 256`
+  (`origin/main` = `5cd1d6145306d83cf8a9cbc532f4d64c22c7137e`): the same
+  `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`.
+
+The two digests agree, so the sync and the canonical side have **not** diverged — no
+BLOCKED condition. `batch/DSF-3` (`26d49681bcba1f760817f6c0c3cefa56092c2ae7`), the
+source this unit synced from, is an ancestor of `origin/main`, so the receipt's
+"re-run against the new origin/main" action above has been satisfied: the canonical
+core and the canonical bridge are now on `main`.
+
+Proven on the batch head, both ways:
+
+```
+# recorded-fingerprints mode (no canonical tree on the machine)
+python3 -I .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py   -> exit 0
+# live canonical compare (DSAF_CANONICAL_SHARED_BRIDGE = throwaway
+# `git archive origin/main 75-drama-song-ad-factory/shared-bridge` export)
+python3 -I .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py   -> exit 0
+```
+
+`studio_claim.py` needed no edit — its recorded pair
+`b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42` still matches both
+the packaged file and `origin/main`. The third bridge U2 ships,
+`approvals_bridge.py` (`f2a61598dff3b2ec013ff6977e55c3a2acf6cdd9ae3f1c5778944c88d0a90e1a`,
+identical on both sides), is not part of this block: `test_studio_bridge_twin.py`
+enforces exactly the entries `studio_bridge_twin.files` carries, and the record was
+never extended beyond those two — extending it is a change to the contract, not a
+refresh, and is left to its own unit.
+
+---
+
+## Archive — the previous core receipt (unit TWINR3-U1, kept verbatim)
+
 # TWINR3-U1 twin-sync commit receipt
 
 Unit `TWINR3-U1` ("Round-3 twin re-sync, same-scope fingerprints, 999/helper

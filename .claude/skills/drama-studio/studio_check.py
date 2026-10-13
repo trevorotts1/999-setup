@@ -6,6 +6,11 @@
 #   studio_check.py --desktop              # the heartbeat job's desktop notice (opt-in only)
 #   studio_check.py --watch [--every N] [--once] [--option N]   # the Option-2 watcher (U14)
 #   studio_check.py --claim ORDER_ID       # record an order as picked up (claimed), U14
+#   studio_check.py --order                # the fresh order check for /drama-studio start:
+#                                          # ORDER <id> "<title>" or NO-ORDER. It spends a
+#                                          # network call every time (no 60-second cache, no
+#                                          # dedup) and writes no state; a failed check-in
+#                                          # raises rather than printing a false NO-ORDER.
 #   studio_check.py --print-root           # the skill root, refused when it is not this plugin
 #   studio_check.py --print-state          # the protected state folder
 #
@@ -180,8 +185,9 @@ def machine_key():
 def fetch_checkin():
     """Ask the studio for the one waiting order. Returns the check-in body (never a key).
 
-    The body carries `line` (the waiting order, or null). U14's watcher also reads the
-    machine's `option` from here when the studio sends one; the hook ignores it.
+    The body carries `line` (the waiting order, or null). U14's watcher reads the machine's
+    `option` from here when the studio sends one, and so does the hook — that is the only
+    place Option 2 can switch on from the studio's own record.
     """
     if fake_mode():
         _fake_calls()
@@ -237,10 +243,19 @@ def hook_work(session_id, sd):
     fresh = isinstance(last, (int, float)) and (now - last) < CACHE_SECONDS
     if fresh:
         line = st.get("cached_line")
+        option = as_option(st.get("cached_option"))
     else:
-        line = check_network()          # may raise -> the caller silences
+        body = check_network_full()       # may raise -> the caller silences
+        line = body.get("line")
+        option = as_option(body.get("option"))
         st["cached_line"] = line
+        st["cached_option"] = option
         st["last_check_at"] = now
+        save_state(sd, st)
+    if option is not None:
+        # the studio's own record decides the option; without this the watcher never
+        # switches on (it returns before any network call unless the state already says 2)
+        st["option"] = option
         save_state(sd, st)
     order = parse_order(line)
     if not order:
@@ -423,6 +438,20 @@ def claim_order(sd, order_id):
     return 0
 
 
+# ---------------------------------------------------------------- the fresh order check (--order)
+def order_check():
+    """`/drama-studio start`: one fresh check-in, never the 60-second cache and never dedup.
+
+    Returns the one line to print: `ORDER <id> "<title>"` or `NO-ORDER`. It writes no state,
+    so it can neither poison the hook's cache nor hide an order the watcher already saw.
+    """
+    body = check_network_full()
+    order = parse_order(body.get("line"))
+    if not order:
+        return "NO-ORDER"
+    return 'ORDER %s "%s"' % (order[0], order[1])
+
+
 # ---------------------------------------------------------------- CLI
 def main(argv):
     ap = argparse.ArgumentParser(add_help=True)
@@ -433,6 +462,7 @@ def main(argv):
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--option", default=None)
     ap.add_argument("--claim", default=None)
+    ap.add_argument("--order", action="store_true")
     ap.add_argument("--print-root", action="store_true")
     ap.add_argument("--print-state", action="store_true")
     ap.add_argument("--root")
@@ -483,10 +513,15 @@ def main(argv):
             return 2
         return claim_order(sd, a.claim)
 
+    if a.order:
+        sys.stdout.write(order_check() + "\n")
+        sys.stdout.flush()
+        return 0
+
     if a.watch:
         return run_watch(sd, a.option, a.every, a.once)
 
-    sys.stderr.write("%s need one of --hook, --desktop, --watch, --claim, --print-root, --print-state\n" % AF_ARGS)
+    sys.stderr.write("%s need one of --hook, --desktop, --watch, --claim, --order, --print-root, --print-state\n" % AF_ARGS)
     return 2
 
 

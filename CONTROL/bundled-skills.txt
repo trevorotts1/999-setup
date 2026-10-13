@@ -11,3 +11,4 @@ hook-skill
 kiss
 motion-video-plus
 drama-song-ad-factory
+drama-studio
