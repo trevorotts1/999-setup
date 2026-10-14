@@ -1,0 +1,2269 @@
+"""GoHighLevel CLI — Agent-usable command-line interface to the GHL API."""
+from __future__ import annotations
+
+import json
+import os
+import re  # SEND_INTEGRITY_CODE_GATES_V1
+import sys
+
+import click
+import requests
+
+from cli_anything.gohighlevel.utils import ghl_client as api
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _output(ctx: click.Context, data, label: str = ""):
+    """Print data respecting --json flag."""
+    as_json = ctx.obj.get("json", False)
+    if as_json:
+        click.echo(json.dumps(data, indent=2, default=str))
+    else:
+        if label:
+            click.echo(f"\n{label}")
+            click.echo("-" * len(label))
+        click.echo(api.format_output(data))
+
+
+def _handle_error(e: Exception):
+    """Handle API errors with clear messages."""
+    if isinstance(e, requests.exceptions.HTTPError):
+        resp = e.response
+        try:
+            body = resp.json()
+            msg = body.get("message") or body.get("msg") or json.dumps(body)
+        except Exception:
+            msg = resp.text
+        click.echo(f"API Error ({resp.status_code}): {msg}", err=True)
+    else:
+        click.echo(f"Error: {e}", err=True)
+    sys.exit(1)
+
+
+def _loc(ctx: click.Context) -> str:
+    """Get location ID from context or env."""
+    return ctx.obj.get("location_id") or api._get_location_id()
+
+
+def _emit_build_result(ctx: click.Context, builder, stats) -> None:
+    """Print a build result and FAIL LOUD when the build recorded errors.
+
+    A rejected step-save (e.g. GHL 400 'corrupted order') lands in
+    stats['errors'].  Previously the CLI printed the summary and exited 0
+    even when nothing saved — a silent false success.  Now any non-empty
+    errors list prints to stderr and exits non-zero so the failure can never
+    be mistaken for Steps:0/Errors:0/exit-0.
+    """
+    errors = stats.get("errors") or []
+    if ctx.obj["json"]:
+        click.echo(json.dumps(stats, indent=2, default=str), err=bool(errors))
+    else:
+        summary = builder.format_summary()
+        click.echo(summary, err=bool(errors))
+    if errors:
+        click.echo(
+            f"BUILD FAILED: {len(errors)} error(s) during workflow build.",
+            err=True,
+        )
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Main CLI Group
+# ---------------------------------------------------------------------------
+
+@click.group(invoke_without_command=True)
+@click.option("--json", "use_json", is_flag=True, help="Output as JSON")
+@click.option("--location-id", envvar="GHL_LOCATION_ID", default=None, help="GHL Location/Sub-account ID")
+@click.option("--experimental", is_flag=True, help="Enable experimental commands (internal GHL API)")
+@click.option(
+    "--dry-run", is_flag=True, default=False,
+    help="Print every write's method+URL+payload and exit — no data is sent to GHL.",
+)
+@click.version_option("2.1.1", prog_name="cli-anything-gohighlevel")
+@click.pass_context
+def cli(ctx, use_json, location_id, experimental, dry_run):
+    """GoHighLevel CLI — manage contacts, workflows, calendars, and more."""
+    ctx.ensure_object(dict)
+    ctx.obj["json"] = use_json
+    ctx.obj["location_id"] = location_id
+    ctx.obj["experimental"] = experimental
+    ctx.obj["dry_run"] = dry_run
+
+    # Thread --dry-run into the safety gate via env so every write path picks it up
+    # without having to pass ctx everywhere.  The gate reads this at call time.
+    if dry_run:
+        os.environ["CAF_DRY_RUN"] = "true"
+
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(repl)
+
+
+# ---------------------------------------------------------------------------
+# REPL Command
+# ---------------------------------------------------------------------------
+
+@cli.command(hidden=True)
+@click.pass_context
+def repl(ctx):
+    """Interactive REPL mode."""
+    try:
+        from cli_anything.gohighlevel.utils.repl_skin import ReplSkin
+        skin = ReplSkin("gohighlevel", version="1.0.0")
+        skin.print_banner()
+        pt_session = skin.create_prompt_session()
+
+        commands = {
+            "contacts": "Manage contacts (list, get, create, update, delete, search, tags)",
+            "opportunities": "Manage pipeline opportunities (list, get, create, update, delete)",
+            "calendars": "Manage calendars and appointments (list, slots, book)",
+            "workflows": "List and manage workflows",
+            "conversations": "Manage conversations and messages",
+            "emails": "Email campaigns (list, get, send)",
+            "payments": "Transactions, invoices, orders (list = transactions)",
+            "forms": "Forms and submissions",
+            "social": "Social media posts and analytics",
+            "locations": "Location/sub-account management",
+            "help": "Show this help",
+            "exit": "Exit REPL",
+        }
+
+        while True:
+            try:
+                line = skin.get_input(pt_session, project_name="ghl")
+                if not line or not line.strip():
+                    continue
+                parts = line.strip().split()
+                cmd = parts[0].lower()
+
+                if cmd in ("exit", "quit", "q"):
+                    skin.print_goodbye()
+                    break
+                elif cmd == "help":
+                    skin.help(commands)
+                else:
+                    # Pass through to Click CLI
+                    try:
+                        cli.main(parts, standalone_mode=False, obj=ctx.obj)
+                    except SystemExit:
+                        pass
+                    except click.exceptions.UsageError as e:
+                        skin.error(str(e))
+            except (EOFError, KeyboardInterrupt):
+                skin.print_goodbye()
+                break
+    except ImportError:
+        click.echo("REPL requires prompt-toolkit. Install with: pip install prompt-toolkit")
+        click.echo("Use subcommands directly instead: ghl contacts list")
+
+
+# ===========================================================================
+# CONTACTS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def contacts(ctx):
+    """Manage contacts — list, get, create, update, delete, search, tags."""
+    pass
+
+
+@contacts.command("list")
+@click.option("--limit", default=20, help="Number of contacts to return")
+@click.option("--offset", "skip", default=0, help="Number to skip (for pagination)")
+@click.option("--query", default=None, help="Search query string")
+@click.pass_context
+def contacts_list(ctx, limit, skip, query):
+    """List contacts in the location."""
+    try:
+        params = {"locationId": _loc(ctx), "limit": limit, "startAfterId": skip if skip else None}
+        if query:
+            params["query"] = query
+        data = api.get("/contacts/", params=params)
+        contacts_data = data.get("contacts", data)
+        _output(ctx, contacts_data if ctx.obj["json"] else data, "Contacts")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("get")
+@click.argument("contact_id")
+@click.pass_context
+def contacts_get(ctx, contact_id):
+    """Get a single contact by ID."""
+    try:
+        data = api.get(f"/contacts/{contact_id}")
+        _output(ctx, data, "Contact Details")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("create")
+@click.option("--email", default=None, help="Contact email")
+@click.option("--phone", default=None, help="Contact phone")
+@click.option("--first-name", default=None, help="First name")
+@click.option("--last-name", default=None, help="Last name")
+@click.option("--name", default=None, help="Full name")
+@click.option("--company", "company_name", default=None, help="Company name")
+@click.option("--tag", "tags", multiple=True, help="Tags to add (repeatable)")
+@click.option("--source", default=None, help="Contact source")
+@click.pass_context
+def contacts_create(ctx, email, phone, first_name, last_name, name, company_name, tags, source):
+    """Create a new contact."""
+    try:
+        body = {"locationId": _loc(ctx)}
+        if email:
+            body["email"] = email
+        if phone:
+            body["phone"] = phone
+        if first_name:
+            body["firstName"] = first_name
+        if last_name:
+            body["lastName"] = last_name
+        if name:
+            body["name"] = name
+        if company_name:
+            body["companyName"] = company_name
+        if tags:
+            body["tags"] = list(tags)
+        if source:
+            body["source"] = source
+        data = api.post("/contacts/", data=body)
+        _output(ctx, data, "Contact Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("upsert")
+@click.option("--email", default=None, help="Match key: contact email")
+@click.option("--phone", default=None, help="Match key: contact phone (E.164)")
+@click.option("--first-name", default=None, help="First name")
+@click.option("--last-name", default=None, help="Last name")
+@click.option("--name", default=None, help="Full name")
+@click.option("--company", "company_name", default=None, help="Company name")
+@click.option("--tag", "tags", multiple=True, help="Tags to MERGE in (repeatable, additive)")
+@click.option("--source", default=None, help="Contact source")
+@click.option("--create-new-if-duplicate-allowed", "create_new", is_flag=True, default=False,
+              help="EXPLICIT-ONLY: send createNewIfDuplicateAllowed=true. Use ONLY when the "
+                   "owner explicitly asked for a NEW record even if a duplicate match exists. "
+                   "Generic add/save MUST omit this (it defaults to false/omitted).")
+@click.pass_context
+def contacts_upsert(ctx, email, phone, first_name, last_name, name, company_name, tags,
+                    source, create_new):
+    """Create-or-update a contact WITHOUT destroying existing data.
+
+    SEND_INTEGRITY_CODE_GATES_V1 — the merge-safe replacement for
+    `contacts update --tag`. HighLevel's Upsert endpoint resolves whether to
+    create or update according to the Location-level Allow Duplicate Contact
+    configuration and its configured matching priority.
+    Tags are NEVER sent in the upsert body (an upsert `tags` array can replace the
+    set); they are applied afterwards via POST /contacts/{id}/tags, which is
+    strictly additive. No existing tag can be dropped by this command.
+    """
+    try:
+        if not email and not phone:
+            click.echo("REFUSED: upsert needs a match key — pass --email and/or --phone.",
+                       err=True)
+            sys.exit(2)
+        body = {"locationId": _loc(ctx)}
+        if email:
+            body["email"] = email
+        if phone:
+            body["phone"] = phone
+        if first_name:
+            body["firstName"] = first_name
+        if last_name:
+            body["lastName"] = last_name
+        if name:
+            body["name"] = name
+        if company_name:
+            body["companyName"] = company_name
+        if source:
+            body["source"] = source
+        # createNewIfDuplicateAllowed is FALSE-or-OMITTED for generic add/save;
+        # TRUE only travels when the owner explicitly requested a new record.
+        if create_new:
+            body["createNewIfDuplicateAllowed"] = True
+        # NOTE: `tags` deliberately NOT placed in the upsert body — see docstring.
+        data = api.post("/contacts/upsert", data=body)
+        contact_id = None
+        if isinstance(data, dict):
+            rec = data.get("contact") or data
+            if isinstance(rec, dict):
+                contact_id = rec.get("id") or rec.get("contactId") or rec.get("_id")
+        if tags:
+            if not contact_id:
+                click.echo("WARNING: upsert succeeded but returned no contact id — tags were "
+                           "NOT applied. Apply them explicitly with `caf contacts add-tag`.",
+                           err=True)
+            else:
+                api.post("/contacts/%s/tags" % contact_id, data={"tags": list(tags)})
+        # VERIFY AFTER WRITE: read the record back and confirm the intended
+        # fields landed. A failed read NEVER re-POSTs — that could create a
+        # duplicate. The read is retried read-only (one retry); an unrecoverable
+        # read is reported accurately, not hidden.
+        intended = {k: v for k, v in body.items() if k != "locationId"}
+        verified = False
+        if contact_id:
+            read_back, read_err = None, None
+            for _attempt in range(2):
+                try:
+                    read_back = api.get("/contacts/%s" % contact_id)
+                    read_err = None
+                    break
+                except Exception as exc:  # noqa: BLE001 — transient read, retry once
+                    read_err = exc
+            if read_back is None:
+                click.echo("WRITE SUCCEEDED — VERIFICATION INCOMPLETE: POST /contacts/upsert "
+                           "succeeded but GET /contacts/%s failed (%s). The write is NOT "
+                           "confirmed. DO NOT re-run upsert blindly — read the record "
+                           "first (`caf contacts get %s`)."
+                           % (contact_id, read_err, contact_id), err=True)
+            else:
+                if isinstance(read_back, dict):
+                    seen = read_back.get("contact") if isinstance(
+                        read_back.get("contact"), dict) else read_back
+                else:
+                    seen = {}
+                missing = [k for k, v in intended.items() if seen.get(k) != v]
+                if missing:
+                    click.echo("WRITE SUCCEEDED — VERIFICATION MISMATCH: these intended "
+                               "fields were not observed on read-back: %s. Confirm the "
+                               "record before reporting done." % ", ".join(missing),
+                               err=True)
+                else:
+                    verified = True
+        else:
+            click.echo("WRITE SUCCEEDED — VERIFICATION INCOMPLETE: upsert returned no "
+                       "contact id, so the record could not be read back. Confirm the "
+                       "record before reporting done.", err=True)
+        label = "Contact Upserted (tags merged additively, none replaced)"
+        if verified:
+            label += " + VERIFIED (fields read back from GHL)"
+        _output(ctx, data, label)
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("update")
+@click.argument("contact_id")
+@click.option("--email", default=None)
+@click.option("--phone", default=None)
+@click.option("--first-name", default=None)
+@click.option("--last-name", default=None)
+@click.option("--company", "company_name", default=None)
+@click.option("--tag", "tags", multiple=True,
+              help="REFUSED — destructive. Use add-tag / remove-tag / upsert.")
+@click.pass_context
+def contacts_update(ctx, contact_id, email, phone, first_name, last_name, company_name, tags):
+    """Update a contact by ID (NON-TAG fields only — --tag is refused)."""
+    try:
+        # SEND_INTEGRITY_CODE_GATES_V1 (2026-09-03, operator standing order).
+        # --tag sent a `tags` array to PUT /contacts/{id}; GoHighLevel REPLACES the
+        # entire tag set, destroying every tag not listed. Implicated in a ~3,000
+        # contact tag loss. Fail closed and point at the merge-safe paths.
+        if tags:
+            click.echo(
+                "REFUSED: `contacts update --tag` REPLACES ALL TAGS on the contact.\n"
+                "PUT /contacts/{id} overwrites the tag set — every tag you did not\n"
+                "list is destroyed. This has already cost a client 3,000 contacts'\n"
+                "tags. Use a merge-safe path instead:\n"
+                "  caf contacts add-tag <id> \"<tag>\"          # additive, safe\n"
+                "  caf contacts remove-tag <id> \"<tag>\"       # targeted removal\n"
+                "  caf contacts upsert --email <e> --tag <t>   # merges, never replaces\n"
+                "Non-tag fields (--email/--phone/--first-name/--last-name/--company)\n"
+                "still work on this command.",
+                err=True,
+            )
+            sys.exit(2)
+        body = {}
+        if email:
+            body["email"] = email
+        if phone:
+            body["phone"] = phone
+        if first_name:
+            body["firstName"] = first_name
+        if last_name:
+            body["lastName"] = last_name
+        if company_name:
+            body["companyName"] = company_name
+        if tags:
+            body["tags"] = list(tags)
+        data = api.put(f"/contacts/{contact_id}", data=body)
+        _output(ctx, data, "Contact Updated")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("delete")
+@click.argument("contact_id")
+@click.pass_context
+def contacts_delete(ctx, contact_id):
+    """Delete a contact by ID."""
+    try:
+        data = api.delete(f"/contacts/{contact_id}")
+        _output(ctx, data, "Contact Deleted")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("search")
+@click.argument("query")
+@click.option("--limit", default=20)
+@click.pass_context
+def contacts_search(ctx, query, limit):
+    """Search contacts with advanced filters."""
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "pageSize": limit,
+            "searchAfter": [],
+            "filters": [{"field": "firstNameLowerCase", "operator": "contains", "value": query.lower()}],
+        }
+        data = api.post("/contacts/search", data=body)
+        _output(ctx, data, f"Search: '{query}'")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("add-tag")
+@click.argument("contact_id")
+@click.argument("tags", nargs=-1, required=True)
+@click.pass_context
+def contacts_add_tag(ctx, contact_id, tags):
+    """Add tags to a contact."""
+    try:
+        data = api.post(f"/contacts/{contact_id}/tags", data={"tags": list(tags)})
+        _output(ctx, data, "Tags Added")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("remove-tag")
+@click.argument("contact_id")
+@click.argument("tags", nargs=-1, required=True)
+@click.pass_context
+def contacts_remove_tag(ctx, contact_id, tags):
+    """Remove tags from a contact."""
+    try:
+        # GHL's DELETE /contacts/{id}/tags takes the tags in the request BODY.
+        # Without a body the call cannot know which tags to remove (400/no-op),
+        # so pass {"tags": [...]} the same way add-tag POSTs them.
+        data = api.delete(f"/contacts/{contact_id}/tags", body={"tags": list(tags)})
+        _output(ctx, data, "Tags Removed")
+    except Exception as e:
+        _handle_error(e)
+
+
+@contacts.command("send-sms")
+@click.argument("contact_id")
+@click.option("--message", required=True, help="Message text")
+@click.pass_context
+def contacts_send_sms(ctx, contact_id, message):
+    """Send an SMS directly to a contact by contactId — no conversationId lookup needed.
+
+    THIS IS THE CANONICAL SMS-SEND PATH. It exists to close the gap that was
+    causing fleet-wide 403s: `conversations send` (below) requires a
+    conversationId, which an agent often doesn't have on hand (e.g. it only
+    has a contactId from a webhook or a contact lookup) — so agents were
+    hand-rolling a one-off `urllib.request` POST to /conversations/messages
+    instead. That bare-urllib call gets 403'd by GHL's Cloudflare edge WAF,
+    which fingerprints and blocks the default "Python-urllib/x.y" User-Agent
+    signature BEFORE the request ever reaches GHL (proven live 2026-07-19:
+    Cloudflare error 1010 in the body, `server: cloudflare` + `cf-ray`
+    present, zero GHL response headers). This command uses api.post(), which
+    is backed by the `requests` library (default UA `python-requests/x.y`) —
+    that UA is NOT on Cloudflare's blocklist here and passes straight through
+    to GHL, exactly like curl does. NEVER hand-roll `urllib.request` against
+    this endpoint; use this command (or the MCP `send_sms` tool) instead.
+    """
+    try:
+        body = {
+            "type": "SMS",
+            "contactId": contact_id,
+            "message": message,
+        }
+        data = api.post("/conversations/messages", data=body)
+        _output(ctx, data, "SMS Sent")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# OPPORTUNITIES
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def opportunities(ctx):
+    """Manage pipeline opportunities — list, get, create, update, delete."""
+    pass
+
+
+@opportunities.command("list")
+@click.option("--pipeline-id", default=None, help="Filter by pipeline ID")
+@click.option("--limit", default=20)
+@click.option("--status", default=None, type=click.Choice(["open", "won", "lost", "abandoned"]))
+@click.pass_context
+def opportunities_list(ctx, pipeline_id, limit, status):
+    """List opportunities."""
+    try:
+        # GET /opportunities/search is the one search endpoint that expects
+        # snake_case query params (location_id/pipeline_id).  Sending camelCase
+        # locationId leaves the required location_id unset -> 422.  The
+        # create/update BODIES still use camelCase and are untouched.
+        params = {"location_id": _loc(ctx), "limit": limit}
+        if pipeline_id:
+            params["pipeline_id"] = pipeline_id
+        if status:
+            params["status"] = status
+        data = api.get("/opportunities/search", params=params)
+        _output(ctx, data, "Opportunities")
+    except Exception as e:
+        _handle_error(e)
+
+
+@opportunities.command("get")
+@click.argument("opportunity_id")
+@click.pass_context
+def opportunities_get(ctx, opportunity_id):
+    """Get opportunity details."""
+    try:
+        data = api.get(f"/opportunities/{opportunity_id}")
+        _output(ctx, data, "Opportunity Details")
+    except Exception as e:
+        _handle_error(e)
+
+
+@opportunities.command("create")
+@click.option("--pipeline-id", required=True, help="Pipeline ID")
+@click.option("--stage-id", required=True, help="Stage ID")
+@click.option("--name", required=True, help="Opportunity name")
+@click.option("--contact-id", required=True, help="Contact ID")
+@click.option("--value", "monetary_value", default=None, type=float, help="Monetary value")
+@click.option("--status", default="open", type=click.Choice(["open", "won", "lost", "abandoned"]))
+@click.pass_context
+def opportunities_create(ctx, pipeline_id, stage_id, name, contact_id, monetary_value, status):
+    """Create a new opportunity."""
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "pipelineId": pipeline_id,
+            "pipelineStageId": stage_id,
+            "name": name,
+            "contactId": contact_id,
+            "status": status,
+        }
+        if monetary_value is not None:
+            body["monetaryValue"] = monetary_value
+        data = api.post("/opportunities/", data=body)
+        _output(ctx, data, "Opportunity Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+@opportunities.command("update")
+@click.argument("opportunity_id")
+@click.option("--name", default=None)
+@click.option("--stage-id", default=None, help="Move to stage")
+@click.option("--status", default=None, type=click.Choice(["open", "won", "lost", "abandoned"]))
+@click.option("--value", "monetary_value", default=None, type=float)
+@click.pass_context
+def opportunities_update(ctx, opportunity_id, name, stage_id, status, monetary_value):
+    """Update an opportunity."""
+    try:
+        body = {}
+        if name:
+            body["name"] = name
+        if stage_id:
+            body["pipelineStageId"] = stage_id
+        if status:
+            body["status"] = status
+        if monetary_value is not None:
+            body["monetaryValue"] = monetary_value
+        data = api.put(f"/opportunities/{opportunity_id}", data=body)
+        _output(ctx, data, "Opportunity Updated")
+    except Exception as e:
+        _handle_error(e)
+
+
+@opportunities.command("delete")
+@click.argument("opportunity_id")
+@click.pass_context
+def opportunities_delete(ctx, opportunity_id):
+    """Delete an opportunity."""
+    try:
+        data = api.delete(f"/opportunities/{opportunity_id}")
+        _output(ctx, data, "Opportunity Deleted")
+    except Exception as e:
+        _handle_error(e)
+
+
+@opportunities.command("pipelines")
+@click.pass_context
+def opportunities_pipelines(ctx):
+    """List all pipelines."""
+    try:
+        data = api.get("/opportunities/pipelines", params={"locationId": _loc(ctx)})
+        _output(ctx, data, "Pipelines")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# CALENDARS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def calendars(ctx):
+    """Manage calendars, appointments, and availability slots."""
+    pass
+
+
+@calendars.command("list")
+@click.pass_context
+def calendars_list(ctx):
+    """List all calendars."""
+    try:
+        data = api.get("/calendars/", params={"locationId": _loc(ctx)})
+        _output(ctx, data, "Calendars")
+    except Exception as e:
+        _handle_error(e)
+
+
+@calendars.command("get")
+@click.argument("calendar_id")
+@click.pass_context
+def calendars_get(ctx, calendar_id):
+    """Get calendar details."""
+    try:
+        data = api.get(f"/calendars/{calendar_id}")
+        _output(ctx, data, "Calendar Details")
+    except Exception as e:
+        _handle_error(e)
+
+
+@calendars.command("slots")
+@click.argument("calendar_id")
+@click.option("--start", required=True, help="Start date (YYYY-MM-DD or epoch ms)")
+@click.option("--end", required=True, help="End date (YYYY-MM-DD or epoch ms)")
+@click.option("--timezone", default="America/New_York")
+@click.pass_context
+def calendars_slots(ctx, calendar_id, start, end, timezone):
+    """Get available appointment slots."""
+    try:
+        params = {
+            "calendarId": calendar_id,
+            "startDate": start,
+            "endDate": end,
+            "timezone": timezone,
+        }
+        data = api.get(f"/calendars/{calendar_id}/free-slots", params=params)
+        _output(ctx, data, "Available Slots")
+    except Exception as e:
+        _handle_error(e)
+
+
+@calendars.command("appointments")
+@click.option("--calendar-id", default=None, help="Filter by calendar ID")
+@click.option("--contact-id", default=None, help="Filter by contact ID")
+@click.option("--start", default=None, help="Start date filter")
+@click.option("--end", default=None, help="End date filter")
+@click.pass_context
+def calendars_appointments(ctx, calendar_id, contact_id, start, end):
+    """List appointments."""
+    try:
+        params = {"locationId": _loc(ctx)}
+        if calendar_id:
+            params["calendarId"] = calendar_id
+        if contact_id:
+            params["contactId"] = contact_id
+        if start:
+            params["startTime"] = start
+        if end:
+            params["endTime"] = end
+        data = api.get("/calendars/events/appointments", params=params)
+        _output(ctx, data, "Appointments")
+    except Exception as e:
+        _handle_error(e)
+
+
+@calendars.command("book")
+@click.option("--calendar-id", required=True, help="Calendar ID")
+@click.option("--contact-id", required=True, help="Contact ID")
+@click.option("--slot-id", required=True, help="Slot ID from 'slots' command")
+@click.option("--start", required=True, help="Start time (ISO 8601)")
+@click.option("--end", required=True, help="End time (ISO 8601)")
+@click.option("--title", default=None, help="Appointment title")
+@click.pass_context
+def calendars_book(ctx, calendar_id, contact_id, slot_id, start, end, title):
+    """Book an appointment."""
+    try:
+        body = {
+            "calendarId": calendar_id,
+            "locationId": _loc(ctx),
+            "contactId": contact_id,
+            "selectedSlot": slot_id,
+            "startTime": start,
+            "endTime": end,
+        }
+        if title:
+            body["title"] = title
+        data = api.post("/calendars/events/appointments", data=body)
+        _output(ctx, data, "Appointment Booked")
+    except Exception as e:
+        _handle_error(e)
+
+
+@calendars.command("groups")
+@click.pass_context
+def calendars_groups(ctx):
+    """List calendar groups."""
+    try:
+        data = api.get("/calendars/groups", params={"locationId": _loc(ctx)})
+        _output(ctx, data, "Calendar Groups")
+    except Exception as e:
+        _handle_error(e)
+
+
+@calendars.command("create")
+@click.option("--name", required=True, help="Calendar name (will be ZHC-prefixed for standing approval)")
+@click.option("--slot-duration", default=30, type=int, help="Slot duration in minutes (default 30)")
+@click.option("--slot-interval", default=30, type=int, help="Slot interval in minutes (default 30)")
+@click.option("--description", default=None, help="Calendar description")
+@click.option("--team-member", "team_members", multiple=True,
+              help="User ID of a team member assigned to this calendar (repeatable)")
+@click.option("--timezone", default="America/New_York", help="Calendar timezone")
+@click.pass_context
+def calendars_create(ctx, name, slot_duration, slot_interval, description, team_members, timezone):
+    """Create a new calendar (POST /calendars/, Version 2021-04-15).
+
+    The public Calendars API requires the calendar ``name`` plus a non-empty
+    ``teamMembers`` list (each ``{userId}``) on most accounts. ``slotDuration``
+    and ``slotInterval`` carry minute granularity. The safety gate
+    (CAF_ALLOWED_LOCATION_IDS + approval) runs inside ``api.post``; a non-ZHC
+    name with no CAF_APPROVAL_TOKEN is refused.
+    """
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "name": name,
+            "slotDuration": slot_duration,
+            "slotInterval": slot_interval,
+            "timezone": timezone,
+        }
+        if description:
+            body["description"] = description
+        if team_members:
+            body["teamMembers"] = [{"userId": uid} for uid in team_members]
+        # Version 2021-04-15 is auto-resolved by VERSION_MAP for /calendars/.
+        data = api.post("/calendars/", data=body)
+        _output(ctx, data, "Calendar Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# WORKFLOWS
+# ===========================================================================
+
+def _require_experimental(ctx: click.Context):
+    """Guard: exit if --experimental flag not set."""
+    if not ctx.obj.get("experimental"):
+        click.echo(
+            "Error: This command requires --experimental flag (uses internal GHL API).\n"
+            "Usage: ghl --experimental workflows create ...",
+            err=True,
+        )
+        sys.exit(1)
+
+
+def _get_internal_client(ctx: click.Context, location_id: str | None = None):
+    """Get an InternalGHLClient (lazy import to avoid dep when not needed).
+
+    location_id override: agency ops that target no existing sub-account
+    (locations create) pass an explicit id so they don't trip the
+    GHL_LOCATION_ID env requirement of _loc(ctx).  When omitted, the location
+    is resolved the usual way.
+    """
+    from cli_anything.gohighlevel.utils.ghl_internal_client import TokenManager, InternalGHLClient
+    token_mgr = TokenManager()
+    loc = location_id if location_id is not None else _loc(ctx)
+    return InternalGHLClient(token_mgr, loc)
+
+
+@cli.group()
+@click.pass_context
+def workflows(ctx):
+    """List and manage workflows. Create commands require --experimental."""
+    pass
+
+
+@workflows.command("list")
+@click.pass_context
+def workflows_list(ctx):
+    """List all workflows."""
+    try:
+        data = api.get("/workflows/", params={"locationId": _loc(ctx)})
+        _output(ctx, data, "Workflows")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("enroll")
+@click.option("--contact-id", required=True, help="Contact ID to enroll")
+@click.option("--workflow-id", required=True, help="Workflow ID")
+@click.pass_context
+def workflows_enroll(ctx, contact_id, workflow_id):
+    """Enroll a contact in a workflow (public API)."""
+    try:
+        data = api.post(f"/contacts/{contact_id}/workflow/{workflow_id}")
+        _output(ctx, data, "Contact Enrolled")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("remove")
+@click.option("--contact-id", required=True, help="Contact ID to remove")
+@click.option("--workflow-id", required=True, help="Workflow ID")
+@click.pass_context
+def workflows_remove(ctx, contact_id, workflow_id):
+    """Remove a contact from a workflow (public API)."""
+    try:
+        data = api.delete(f"/contacts/{contact_id}/workflow/{workflow_id}")
+        _output(ctx, data, "Contact Removed from Workflow")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("create")
+@click.option("--name", required=True, help="Workflow name")
+@click.option("--folder", default=None, help="Folder name (created if needed)")
+@click.option("--from-json", "json_file", required=True, type=click.Path(exists=True),
+              help="Campaign JSON file path")
+@click.pass_context
+def workflows_create(ctx, name, folder, json_file):
+    """Create workflows from a campaign JSON file (experimental, internal API).
+
+    The JSON file should contain a campaign dict where each key is a workflow
+    with 'name', 'templates' (linked steps), and optional 'tag' (trigger).
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+
+        with open(json_file) as f:
+            campaign = json.load(f)
+
+        client = _get_internal_client(ctx)
+        builder = CampaignBuilder(client)
+        stats = builder.build(campaign, folder or name)
+
+        _emit_build_result(ctx, builder, stats)
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("create-step")
+@click.option("--type", "step_type", required=True,
+              type=click.Choice(["email", "sms", "wait", "tag", "webhook", "ai"]))
+@click.option("--name", required=True, help="Step name")
+@click.option("--output-file", "out_file", required=True, type=click.Path(),
+              help="JSON file to append step to")
+@click.option("--subject", default=None, help="Email subject (email type)")
+@click.option("--body", default=None, help="Message body (email/sms type)")
+@click.option("--from-name", default="", help="Sender name (email type)")
+@click.option("--value", default=None, type=int, help="Wait value (wait type)")
+@click.option("--unit", default="days", type=click.Choice(["minutes", "hours", "days"]),
+              help="Wait unit (wait type)")
+@click.option("--tags", default=None, help="Comma-separated tags (tag type)")
+@click.option("--remove-tags", is_flag=True, help="Remove tags instead of add (tag type)")
+@click.option("--url", default=None, help="Webhook URL (webhook type)")
+@click.option("--method", default="POST", help="HTTP method (webhook type)")
+@click.option("--prompt", default=None, help="AI prompt (ai type)")
+@click.option("--model", default="gpt-4o",
+              help="GHL ChatGPT-action model (ai type) — a GHL-PLATFORM model, not the "
+                   "client's OpenClaw model; default gpt-4o. Anthropic/Claude ids are rejected.")
+@click.pass_context
+def workflows_create_step(ctx, step_type, name, out_file, subject, body, from_name,
+                          value, unit, tags, remove_tags, url, method, prompt, model):
+    """Build a workflow step and append to a JSON file (experimental).
+
+    Use repeatedly to build up a workflow step-by-step, then pass the
+    file to 'workflows create --from-json'.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils import workflow_builder as wb
+
+        if step_type == "email":
+            if not subject or not body:
+                click.echo("Error: --subject and --body required for email step", err=True)
+                sys.exit(1)
+            step = wb.email_step(name, subject, body, from_name)
+        elif step_type == "sms":
+            if not body:
+                click.echo("Error: --body required for sms step", err=True)
+                sys.exit(1)
+            step = wb.sms_step(name, body)
+        elif step_type == "wait":
+            if value is None:
+                click.echo("Error: --value required for wait step", err=True)
+                sys.exit(1)
+            step = wb.wait_step(name, value, unit)
+        elif step_type == "tag":
+            if not tags:
+                click.echo("Error: --tags required for tag step", err=True)
+                sys.exit(1)
+            step = wb.tag_step(name, [t.strip() for t in tags.split(",")], remove=remove_tags)
+        elif step_type == "webhook":
+            if not url:
+                click.echo("Error: --url required for webhook step", err=True)
+                sys.exit(1)
+            step = wb.webhook_step(name, url, method)
+        elif step_type == "ai":
+            if not prompt:
+                click.echo("Error: --prompt required for ai step", err=True)
+                sys.exit(1)
+            step = wb.ai_step(name, prompt, model)
+        else:
+            click.echo(f"Error: Unknown step type: {step_type}", err=True)
+            sys.exit(1)
+
+        # Load existing or start fresh
+        import os
+        if os.path.exists(out_file):
+            with open(out_file) as f:
+                steps = json.load(f)
+        else:
+            steps = []
+
+        steps.append(step)
+
+        # Auto-link all steps
+        linked = wb.link_steps(steps)
+        with open(out_file, "w") as f:
+            json.dump(linked, f, indent=2)
+
+        if ctx.obj["json"]:
+            click.echo(json.dumps(step, indent=2))
+        else:
+            click.echo(f"Step added: {step['name']} ({step['type']})")
+            click.echo(f"Total steps in {out_file}: {len(linked)}")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("create-n8n")
+@click.option("--name", required=True, help="Workflow name")
+@click.option("--webhook-url", required=True, help="n8n webhook URL")
+@click.option("--tag", default=None, help="Trigger tag (creates tag trigger)")
+@click.option("--folder", default=None, help="Folder name")
+@click.pass_context
+def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
+    """Create a minimal GHL workflow that triggers an n8n webhook (experimental).
+
+    Creates: [tag trigger] → [webhook POST to n8n URL]
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils import workflow_builder as wb
+
+        steps = [wb.webhook_step(f"n8n: {name}", webhook_url, "POST")]
+        if tag:
+            steps.insert(0, wb.tag_step(f"Tag: {tag}", [tag]))
+
+        linked = wb.link_steps(steps)
+        campaign = {
+            "n8n_bridge": {
+                "name": name,
+                "templates": linked,
+                "tag": tag,
+            }
+        }
+
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+        client = _get_internal_client(ctx)
+        builder = CampaignBuilder(client)
+        stats = builder.build(campaign, folder or f"n8n-{name}")
+
+        _emit_build_result(ctx, builder, stats)
+    except Exception as e:
+        _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# PHASE 3: Surgical workflow commands (PRD Section 0 / AC Criteria 1, 19-21)
+# ---------------------------------------------------------------------------
+
+@workflows.command("get")
+@click.option("--workflow-id", required=True, help="Workflow ID to fetch")
+@click.pass_context
+def workflows_get(ctx, workflow_id):
+    """Get a workflow by ID (internal API, read-only).
+
+    Returns the full workflow JSON.
+    """
+    try:
+        client = _get_internal_client(ctx)
+        result = client.get_workflow(workflow_id)
+        if not result.ok:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, result.data, f"Workflow {workflow_id}")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("export")
+@click.option("--workflow-id", required=True, help="Workflow ID to export")
+@click.option("--out", "out_file", required=True, type=click.Path(), help="Output JSON file path")
+@click.pass_context
+def workflows_export(ctx, workflow_id, out_file):
+    """Export a workflow to a JSON file (internal API, read-only)."""
+    try:
+        client = _get_internal_client(ctx)
+        result = client.get_workflow(workflow_id)
+        if not result.ok:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
+        with open(out_file, "w") as f:
+            json.dump(result.data, f, indent=2)
+        if ctx.obj["json"]:
+            click.echo(json.dumps({"exported": out_file, "workflow_id": workflow_id}))
+        else:
+            click.echo(f"Exported workflow {workflow_id} to {out_file}")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("update")
+@click.option("--workflow-id", required=True, help="Workflow ID to update")
+@click.option("--from-json", "json_file", required=True, type=click.Path(exists=True),
+              help="JSON file with updated workflow body")
+@click.pass_context
+def workflows_update(ctx, workflow_id, json_file):
+    """Update a workflow from a JSON file (internal API, write-gated).
+
+    Requires --experimental. A pre-write snapshot is captured automatically
+    before the PUT — use 'workflows restore' to revert.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture, restore as sm_restore
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        # 1. Pre-write snapshot (AC 20 — HARD RULE)
+        snap_path = capture(client, workflow_id)
+        if snap_path is None:
+            click.echo(f"Error: Failed to capture pre-write snapshot for {workflow_id} — aborting.", err=True)
+            sys.exit(1)
+        if ctx.obj["json"]:
+            pass
+        else:
+            click.echo(f"[snapshot] {snap_path}")
+        # 2. Load new body
+        with open(json_file) as f:
+            body = json.load(f)
+        # 3. Serialized write (AC 21)
+        with WriteLock(location_id):
+            result = client.put_workflow(workflow_id, body)
+        if not result.ok:
+            click.echo(f"Error: {result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, result.data or {"ok": True, "workflow_id": workflow_id}, "Workflow Updated")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("build")
+@click.option("--from-plan", "plan_file", required=True, type=click.Path(exists=True),
+              help="JSON plan file describing the workflow(s) to build")
+@click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
+@click.pass_context
+def workflows_build(ctx, plan_file, folder):
+    """Build a workflow from a plan JSON file (internal API, write-gated).
+
+    Requires --experimental. Supports conversational and mechanical workflows.
+    A TRINITY check is enforced for conversational plans (plans with a
+    'conversational' flag or 'playbook' key).
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        with open(plan_file) as f:
+            campaign = json.load(f)
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+
+        # Bug 2b — a top-level "folder": "<name>" key in the plan is a folder
+        # NAME, not a workflow definition.  CampaignBuilder.build() iterates the
+        # dict treating every value as a workflow dict (wf_def["name"]); the
+        # bare string folder value crashed the build with
+        # `TypeError: string indices must be integers`.  POP the folder key out
+        # of the plan before iterating: use it as the folder name when --folder
+        # was not given; --folder wins when both are present.  After the pop,
+        # every remaining entry MUST be a workflow dict — fail loud with a clear
+        # message on any non-dict entry instead of a raw TypeError downstream.
+        plan_folder = campaign.pop("folder", None)
+        if folder:
+            folder_name = folder
+        elif isinstance(plan_folder, str) and plan_folder.strip():
+            folder_name = plan_folder
+        else:
+            folder_name = "caf-build"
+
+        bad = [
+            f"{k!r} ({type(v).__name__})"
+            for k, v in campaign.items()
+            if not isinstance(v, dict)
+        ]
+        if bad:
+            click.echo(
+                "Error: plan contains non-workflow entries — every top-level "
+                "key (other than 'folder') must map to a workflow object.\n"
+                f"Offending entries: {', '.join(bad)}",
+                err=True,
+            )
+            sys.exit(1)
+
+        with WriteLock(location_id):
+            builder = CampaignBuilder(client)
+            stats = builder.build(campaign, folder_name)
+        _emit_build_result(ctx, builder, stats)
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("patch-email")
+@click.option("--workflow-id", required=True, help="Workflow ID")
+@click.option("--step-id", required=True, help="Step/action ID within the workflow")
+@click.option("--subject", default=None, help="New email subject")
+@click.option("--body-file", "body_file", default=None, type=click.Path(exists=True),
+              help="HTML file with new email body (must render >= 200 chars of text)")
+@click.option("--allow-short", is_flag=True, default=False,
+              help="Permit a body under 200 rendered chars (owner must have approved it)")
+@click.pass_context
+def workflows_patch_email(ctx, workflow_id, step_id, subject, body_file, allow_short):
+    """Patch a single email step in a workflow (internal API, write-gated).
+
+    Requires --experimental. A pre-write snapshot is captured automatically.
+    SEND_INTEGRITY_CODE_GATES_V1: an empty/placeholder body is REFUSED before any
+    write, and the body is READ BACK from GHL after the write to prove it survived.
+    """
+    _require_experimental(ctx)
+    # ---- SEND_INTEGRITY_CODE_GATES_V1 pre-write body validation -------------
+    # This command previously accepted an EMPTY --body-file, wrote "" to BOTH
+    # attributes.body and attributes.html, printed {"ok": true}, and never read the
+    # workflow back. That is how ~3,000 emails went out with a subject and no body.
+    new_body = None
+    if body_file:
+        with open(body_file, encoding="utf-8", errors="replace") as _bf:
+            new_body = _bf.read()
+        _txt = re.sub(r"<[^>]+>", " ", new_body).replace("&nbsp;", " ")
+        _txt = " ".join(_txt.split())
+        if not _txt:
+            click.echo("REFUSED: --body-file '%s' renders to an EMPTY email body. "
+                       "Refusing to blank this email. Fix the file and re-run."
+                       % body_file, err=True)
+            sys.exit(2)
+        if len(_txt) < 200 and not allow_short:
+            click.echo("REFUSED: --body-file '%s' renders to only %d characters of text "
+                       "(minimum 200). This is almost always truncated or placeholder copy. "
+                       "Pass --allow-short ONLY if the owner approved a short body."
+                       % (body_file, len(_txt)), err=True)
+            sys.exit(2)
+        for _tok in ("TODO", "TBD", "LOREM IPSUM", "PLACEHOLDER", "XXXX"):
+            if _tok in _txt.upper():
+                click.echo("REFUSED: body contains placeholder text '%s'. That is not "
+                           "finished copy — do not ship it." % _tok, err=True)
+                sys.exit(2)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        from cli_anything.gohighlevel.internal.contract import strip_for_put
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        # 1. Get current workflow
+        get_result = client.get_workflow(workflow_id)
+        if not get_result.ok:
+            click.echo(f"Error fetching workflow: {get_result.error}", err=True)
+            sys.exit(1)
+        # 2. Pre-write snapshot (AC 20)
+        snap_path = capture(client, workflow_id)
+        if not ctx.obj["json"]:
+            click.echo(f"[snapshot] {snap_path}")
+        # 3. Patch the step
+        wf_body = get_result.data
+        templates = wf_body.get("workflowData", {}).get("templates", [])
+        patched = False
+        for tmpl in templates:
+            if tmpl.get("id") == step_id or tmpl.get("name") == step_id:
+                attrs = tmpl.setdefault("attributes", {})
+                if subject is not None:
+                    attrs["subject"] = subject
+                if body_file:
+                    # SEND_INTEGRITY_CODE_GATES_V1 — validated above, never re-read raw
+                    attrs["body"] = new_body
+                    attrs["html"] = new_body
+                patched = True
+                break
+        if not patched:
+            click.echo(f"Error: step '{step_id}' not found in workflow {workflow_id}", err=True)
+            sys.exit(1)
+        # 4. Serialized PUT (AC 21)
+        with WriteLock(location_id):
+            put_result = client.put_workflow(workflow_id, strip_for_put(wf_body))
+        if not put_result.ok:
+            click.echo(f"Error: {put_result.error}", err=True)
+            sys.exit(1)
+        # ---- SEND_INTEGRITY_CODE_GATES_V1 MANDATORY POST-WRITE READ-BACK -----
+        # A PUT that returns ok is NOT proof the body survived. Re-read the
+        # workflow and assert the email body is actually non-empty in GHL.
+        verify = client.get_workflow(workflow_id)
+        observed_len, observed_snippet, observed_subject = -1, "", ""
+        if verify.ok and isinstance(verify.data, dict):
+            for _t in verify.data.get("workflowData", {}).get("templates", []):
+                if _t.get("id") == step_id or _t.get("name") == step_id:
+                    _a = _t.get("attributes", {}) or {}
+                    observed_subject = _a.get("subject") or ""
+                    _raw = _a.get("body") or _a.get("html") or ""
+                    _v = re.sub(r"<[^>]+>", " ", _raw).replace("&nbsp;", " ")
+                    _v = " ".join(_v.split())
+                    observed_len, observed_snippet = len(_v), _v[:200]
+                    break
+        if observed_len <= 0:
+            click.echo("VERIFY FAILED: after the write, the email body for step '%s' read "
+                       "back EMPTY (or the step could not be re-read). DO NOT report this "
+                       "as done. Restore the pre-write snapshot:\n"
+                       "    caf workflows restore %s" % (step_id, workflow_id), err=True)
+            sys.exit(3)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id, "step_id": step_id,
+                      "verified_subject": observed_subject,
+                      "verified_body_chars": observed_len,
+                      "verified_body_snippet": observed_snippet},
+                "Email Step Patched + VERIFIED (body read back from GHL)")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("patch-trigger")
+@click.option("--workflow-id", required=True, help="Workflow ID")
+@click.option("--trigger-json", "trigger_file", required=True, type=click.Path(exists=True),
+              help="JSON file with new trigger definition")
+@click.pass_context
+def workflows_patch_trigger(ctx, workflow_id, trigger_file):
+    """Replace the trigger on a workflow (internal API, write-gated).
+
+    Requires --experimental. A pre-write snapshot is captured automatically.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import capture
+        from cli_anything.gohighlevel.utils.write_lock import WriteLock
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        # 1. Pre-write snapshot (AC 20 — HARD RULE; also gets current state)
+        snap_path = capture(client, workflow_id)
+        if snap_path is None:
+            click.echo(f"Error: Failed to capture pre-write snapshot for {workflow_id} — aborting.", err=True)
+            sys.exit(1)
+        if not ctx.obj["json"]:
+            click.echo(f"[snapshot] {snap_path}")
+        # 2. Load new trigger
+        with open(trigger_file) as f:
+            new_trigger = json.load(f)
+        # 3. Build updated workflow body with newTriggers key
+        import json as _json
+        wf_body = _json.loads(snap_path.read_text(encoding="utf-8"))
+        wf_body["newTriggers"] = [new_trigger]
+        # 4. Serialized PUT (AC 21)
+        with WriteLock(location_id):
+            put_result = client.put_workflow(workflow_id, wf_body)
+        if not put_result.ok:
+            click.echo(f"Error: {put_result.error}", err=True)
+            sys.exit(1)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id}, "Trigger Patched")
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("restore")
+@click.option("--workflow-id", required=True, help="Workflow ID to restore")
+@click.option("--snapshot", "snapshot_file", required=True, type=click.Path(exists=True),
+              help="Snapshot JSON file to restore from")
+@click.pass_context
+def workflows_restore(ctx, workflow_id, snapshot_file):
+    """Restore a workflow to a captured pre-write snapshot.
+
+    Requires --experimental. Replays the snapshot via PUT — the workflow
+    is returned to its state at snapshot capture time.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.snapshot_manager import restore as sm_restore
+        client = _get_internal_client(ctx)
+        sm_restore(client, workflow_id, snapshot_file)
+        _output(ctx, {"ok": True, "workflow_id": workflow_id, "restored_from": snapshot_file},
+                "Workflow Restored")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# DOCUMENTS / CONTRACTS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def documents(ctx):
+    """Documents, contracts, and proposals — list, send, templates."""
+    pass
+
+
+@documents.command("list")
+@click.option("--status", default=None, type=click.Choice(["draft", "sent", "viewed", "completed", "accepted"]))
+@click.option("--payment-status", default=None, type=click.Choice(["waiting_for_payment", "paid", "no_payment"]))
+@click.option("--limit", default=20)
+@click.option("--offset", "skip", default=0)
+@click.option("--query", default=None, help="Search by name")
+@click.pass_context
+def documents_list(ctx, status, payment_status, limit, skip, query):
+    """List documents/contracts."""
+    try:
+        params = {"locationId": _loc(ctx), "limit": limit, "skip": skip}
+        if status:
+            params["status"] = status
+        if payment_status:
+            params["paymentStatus"] = payment_status
+        if query:
+            params["query"] = query
+        data = api.get("/proposals/document", params=params)
+        _output(ctx, data, "Documents")
+    except Exception as e:
+        _handle_error(e)
+
+
+@documents.command("templates")
+@click.option("--type", "template_type", default=None, type=click.Choice(["proposal", "estimate", "contentLibrary"]))
+@click.option("--name", default=None, help="Filter by template name")
+@click.option("--limit", default=20)
+@click.pass_context
+def documents_templates(ctx, template_type, name, limit):
+    """List document/contract templates."""
+    try:
+        params = {"locationId": _loc(ctx), "limit": limit}
+        if template_type:
+            params["type"] = template_type
+        if name:
+            params["name"] = name
+        data = api.get("/proposals/templates", params=params)
+        _output(ctx, data, "Document Templates")
+    except Exception as e:
+        _handle_error(e)
+
+
+@documents.command("send")
+@click.option("--document-id", required=True, help="Document ID to send")
+@click.option("--sent-by", required=True, help="User ID of sender")
+@click.option("--medium", default="email", type=click.Choice(["email", "link"]), help="Delivery method")
+@click.option("--name", "document_name", default=None, help="Document name override")
+@click.pass_context
+def documents_send(ctx, document_id, sent_by, medium, document_name):
+    """Send an existing document to its recipients."""
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "documentId": document_id,
+            "sentBy": sent_by,
+            "medium": medium,
+        }
+        if document_name:
+            body["documentName"] = document_name
+        data = api.post("/proposals/document/send", data=body)
+        _output(ctx, data, "Document Sent")
+    except Exception as e:
+        _handle_error(e)
+
+
+@documents.command("send-template")
+@click.option("--template-id", required=True, help="Template ID")
+@click.option("--contact-id", required=True, help="Contact ID to send to")
+@click.option("--user-id", required=True, help="User ID (sender)")
+@click.option("--opportunity-id", default=None, help="Link to opportunity")
+@click.option("--send/--no-send", "send_document", default=True, help="Send immediately or just create")
+@click.pass_context
+def documents_send_template(ctx, template_id, contact_id, user_id, opportunity_id, send_document):
+    """Create and send a contract from a template."""
+    try:
+        body = {
+            "templateId": template_id,
+            "contactId": contact_id,
+            "userId": user_id,
+            "locationId": _loc(ctx),
+            "sendDocument": send_document,
+        }
+        if opportunity_id:
+            body["opportunityId"] = opportunity_id
+        data = api.post("/proposals/templates/send", data=body)
+        _output(ctx, data, "Template Sent")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# CONVERSATIONS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def conversations(ctx):
+    """Manage conversations and messages."""
+    pass
+
+
+@conversations.command("list")
+@click.option("--limit", default=20)
+@click.option("--status", default=None, type=click.Choice(["all", "read", "unread", "starred"]))
+@click.option("--type", "msg_type", default=None,
+              type=click.Choice(["Email", "SMS", "WhatsApp", "GMB", "IG", "FB", "Live_Chat", "Custom"]),
+              help="Filter by last message type")
+@click.pass_context
+def conversations_list(ctx, limit, status, msg_type):
+    """List conversations. Use --type Email to see email conversations."""
+    try:
+        # API uses TYPE_EMAIL format for lastMessageType filter
+        TYPE_MAP = {
+            "Email": "TYPE_EMAIL", "SMS": "TYPE_SMS", "WhatsApp": "TYPE_WHATSAPP",
+            "GMB": "TYPE_GMB", "IG": "TYPE_INSTAGRAM", "FB": "TYPE_FACEBOOK",
+            "Live_Chat": "TYPE_LIVE_CHAT", "Custom": "TYPE_CUSTOM",
+        }
+        params = {"locationId": _loc(ctx), "limit": limit}
+        if status:
+            params["status"] = status
+        if msg_type:
+            params["lastMessageType"] = TYPE_MAP.get(msg_type, f"TYPE_{msg_type.upper()}")
+        data = api.get("/conversations/search", params=params)
+        _output(ctx, data, "Conversations")
+    except Exception as e:
+        _handle_error(e)
+
+
+@conversations.command("get")
+@click.argument("conversation_id")
+@click.pass_context
+def conversations_get(ctx, conversation_id):
+    """Get conversation details."""
+    try:
+        data = api.get(f"/conversations/{conversation_id}")
+        _output(ctx, data, "Conversation Details")
+    except Exception as e:
+        _handle_error(e)
+
+
+@conversations.command("messages")
+@click.argument("conversation_id")
+@click.option("--limit", default=20)
+@click.option("--type", "msg_type", default=None,
+              type=click.Choice(["Email", "SMS", "WhatsApp", "GMB", "IG", "FB", "Live_Chat", "Custom"]),
+              help="Filter messages by type")
+@click.pass_context
+def conversations_messages(ctx, conversation_id, limit, msg_type):
+    """Get messages in a conversation. Use --type Email for email messages only."""
+    try:
+        TYPE_MAP = {
+            "Email": "TYPE_EMAIL", "SMS": "TYPE_SMS", "WhatsApp": "TYPE_WHATSAPP",
+            "GMB": "TYPE_GMB", "IG": "TYPE_INSTAGRAM", "FB": "TYPE_FACEBOOK",
+            "Live_Chat": "TYPE_LIVE_CHAT", "Custom": "TYPE_CUSTOM",
+        }
+        params = {"limit": limit}
+        if msg_type:
+            params["type"] = TYPE_MAP.get(msg_type, f"TYPE_{msg_type.upper()}")
+        data = api.get(f"/conversations/{conversation_id}/messages", params=params)
+        _output(ctx, data, "Messages")
+    except Exception as e:
+        _handle_error(e)
+
+
+@conversations.command("get-email")
+@click.argument("email_message_id")
+@click.pass_context
+def conversations_get_email(ctx, email_message_id):
+    """Get full email details (subject, body, headers, attachments).
+
+    Two-step workflow: list conversations --type Email → get message IDs → get-email <id>
+    """
+    try:
+        data = api.get(f"/conversations/messages/email/{email_message_id}")
+        _output(ctx, data, "Email Details")
+    except Exception as e:
+        _handle_error(e)
+
+
+@conversations.command("send")
+@click.argument("conversation_id")
+@click.option("--type", "msg_type", default="SMS", type=click.Choice(["SMS", "Email", "WhatsApp", "GMB", "IG", "FB", "Live_Chat"]))
+@click.option("--message", required=True, help="Message text")
+@click.pass_context
+def conversations_send(ctx, conversation_id, msg_type, message):
+    """Send a message in a conversation."""
+    try:
+        body = {
+            "type": msg_type,
+            "message": message,
+            "conversationId": conversation_id,
+        }
+        data = api.post(f"/conversations/messages", data=body)
+        _output(ctx, data, "Message Sent")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# EMAILS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def emails(ctx):
+    """Email campaigns and templates."""
+    pass
+
+
+@emails.command("list-campaigns")
+@click.option("--status", default=None, help="Filter by status")
+@click.pass_context
+def emails_list_campaigns(ctx, status):
+    """List email campaigns. Note: Uses the campaigns API."""
+    try:
+        params = {"locationId": _loc(ctx)}
+        if status:
+            params["status"] = status
+        data = api.get("/campaigns/", params=params)
+        _output(ctx, data, "Email Campaigns")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# PAYMENTS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def payments(ctx):
+    """Payments, invoices, transactions, and orders.
+
+    `payments list` is an alias for `payments transactions` so the uniform
+    `<group> list` pattern works across every resource group.
+    """
+    pass
+
+
+@payments.command("list")
+@click.option("--limit", default=20)
+@click.option("--offset", default=0)
+@click.option("--contact-id", default=None)
+@click.pass_context
+def payments_list(ctx, limit, offset, contact_id):
+    """Alias for `payments transactions` (the canonical <group> list verb)."""
+    ctx.invoke(
+        payments_transactions, limit=limit, offset=offset, contact_id=contact_id
+    )
+
+
+@payments.command("transactions")
+@click.option("--limit", default=20)
+@click.option("--offset", default=0)
+@click.option("--contact-id", default=None)
+@click.pass_context
+def payments_transactions(ctx, limit, offset, contact_id):
+    """List transactions."""
+    try:
+        params = {"altId": _loc(ctx), "altType": "location", "limit": limit, "offset": offset}
+        if contact_id:
+            params["contactId"] = contact_id
+        data = api.get("/payments/transactions", params=params)
+        _output(ctx, data, "Transactions")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("orders")
+@click.option("--limit", default=20)
+@click.option("--offset", default=0)
+@click.pass_context
+def payments_orders(ctx, limit, offset):
+    """List orders."""
+    try:
+        params = {"altId": _loc(ctx), "altType": "location", "limit": limit, "offset": offset}
+        data = api.get("/payments/orders", params=params)
+        _output(ctx, data, "Orders")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("invoices")
+@click.option("--limit", default=20)
+@click.option("--offset", default=0)
+@click.option("--status", default=None, type=click.Choice(["draft", "sent", "paid", "void"]))
+@click.option("--contact-id", default=None)
+@click.pass_context
+def payments_invoices(ctx, limit, offset, status, contact_id):
+    """List invoices."""
+    try:
+        params = {"altId": _loc(ctx), "altType": "location", "limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+        if contact_id:
+            params["contactId"] = contact_id
+        data = api.get("/invoices/", params=params)
+        _output(ctx, data, "Invoices")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("create-invoice")
+@click.option("--contact-id", required=True, help="Contact ID")
+@click.option("--name", required=True, help="Invoice name/title")
+@click.option("--amount", required=True, type=float, help="Total amount in cents")
+@click.option("--due-date", required=True, help="Due date (YYYY-MM-DD)")
+@click.pass_context
+def payments_create_invoice(ctx, contact_id, name, amount, due_date):
+    """Create a new invoice."""
+    try:
+        body = {
+            "altId": _loc(ctx),
+            "altType": "location",
+            "contactId": contact_id,
+            "name": name,
+            "total": amount,
+            "dueDate": due_date,
+        }
+        data = api.post("/invoices/", data=body)
+        _output(ctx, data, "Invoice Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("create-product")
+@click.option("--name", required=True, help="Product name (ZHC-prefixed for standing approval)")
+@click.option("--type", "product_type", default="SERVICE",
+              type=click.Choice(["SERVICE", "PHYSICAL", "DIGITAL"]),
+              help="Product type (default SERVICE)")
+@click.option("--description", default=None, help="Product description")
+@click.option("--image-url", default=None, help="Public image URL for the product")
+@click.pass_context
+def payments_create_product(ctx, name, product_type, description, image_url):
+    """Create a product (POST /products/, Version 2021-07-28).
+
+    A product is the catalog entry; attach one or more prices with
+    ``payments create-price --product-id <id>``. The safety gate runs inside
+    ``api.post``. ``locationId`` targets the sub-account (also the gate's
+    whitelist key). Per the GHL Products API the product lives under
+    ``/products/`` (NOT ``/payments/``, which only holds orders/transactions/
+    coupons) and takes ``locationId`` — not the payments-API altId/altType.
+    """
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "name": name,
+            "productType": product_type,
+        }
+        if description:
+            body["description"] = description
+        if image_url:
+            body["image"] = image_url
+        data = api.post("/products/", data=body)
+        _output(ctx, data, "Product Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+@payments.command("create-price")
+@click.option("--product-id", required=True, help="Product ID from 'payments create-product'")
+@click.option("--name", required=True, help="Price name (e.g. 'Workshop Seat')")
+@click.option("--amount", required=True, type=int, help="Amount in the SMALLEST currency unit (cents)")
+@click.option("--currency", default="USD", help="ISO currency code (default USD)")
+@click.option("--type", "price_type", default="one_time",
+              type=click.Choice(["one_time", "recurring"]),
+              help="Price type (default one_time)")
+@click.pass_context
+def payments_create_price(ctx, product_id, name, amount, currency, price_type):
+    """Create a price on a product (POST /products/{id}/price).
+
+    ``amount`` is in the smallest currency unit (cents) — $49.00 = 4900. The
+    safety gate runs inside ``api.post``. Returns the created price record
+    (carries its own ``_id``). Per the GHL Products API the price endpoint is
+    SINGULAR ``/products/{id}/price`` and takes ``locationId`` + ``product`` —
+    not the payments-API altId/altType.
+    """
+    try:
+        body = {
+            "locationId": _loc(ctx),
+            "product": product_id,
+            "name": name,
+            "type": price_type,
+            "currency": currency,
+            "amount": amount,
+        }
+        data = api.post(f"/products/{product_id}/price", data=body)
+        _output(ctx, data, "Price Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# FORMS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def forms(ctx):
+    """Forms and form submissions."""
+    pass
+
+
+@forms.command("list")
+@click.option("--limit", default=20)
+@click.option("--offset", "skip", default=0)
+@click.option("--type", "form_type", default=None, help="Form type filter")
+@click.pass_context
+def forms_list(ctx, limit, skip, form_type):
+    """List forms."""
+    try:
+        params = {"locationId": _loc(ctx), "limit": limit, "skip": skip}
+        if form_type:
+            params["type"] = form_type
+        data = api.get("/forms/", params=params)
+        _output(ctx, data, "Forms")
+    except Exception as e:
+        _handle_error(e)
+
+
+@forms.command("submissions")
+@click.argument("form_id")
+@click.option("--limit", default=20)
+@click.option("--page", default=1)
+@click.pass_context
+def forms_submissions(ctx, form_id, limit, page):
+    """Get form submissions."""
+    try:
+        params = {"locationId": _loc(ctx), "limit": limit, "page": page}
+        data = api.get(f"/forms/submissions", params={"formId": form_id, **params})
+        _output(ctx, data, f"Submissions for form {form_id}")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# SOCIAL MEDIA
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def social(ctx):
+    """Social media posts and analytics."""
+    pass
+
+
+@social.command("accounts")
+@click.pass_context
+def social_accounts(ctx):
+    """List connected social media accounts."""
+    try:
+        data = api.get(f"/social-media-posting/{_loc(ctx)}/accounts")
+        _output(ctx, data, "Social Accounts")
+    except Exception as e:
+        _handle_error(e)
+
+
+@social.command("posts")
+@click.option("--limit", default=20)
+@click.option("--offset", "skip", default=0)
+@click.option("--type", "post_type", default=None, help="Filter by post type")
+@click.pass_context
+def social_posts(ctx, limit, skip, post_type):
+    """List social media posts."""
+    try:
+        # NOTE (U88/GK-26 live-proof, 2026-07-19): the real GHL `posts/list`
+        # endpoint 422s on two things the original body got wrong, discovered
+        # by a genuine live call (never caught by any fixture/mock test,
+        # since none of them talk to the real API): (1) it rejects a
+        # `locationId` key in the body -- the location is already the URL
+        # path segment; (2) `limit`/`skip` must be NUMBER STRINGS, not JSON
+        # integers ("property X must be a number string"). Fixed here from
+        # the real, reproduced error text.
+        params = {"limit": str(limit), "skip": str(skip)}
+        if post_type:
+            params["type"] = post_type
+        data = api.post(f"/social-media-posting/{_loc(ctx)}/posts/list", data=params)
+        _output(ctx, data, "Social Posts")
+    except Exception as e:
+        _handle_error(e)
+
+
+@social.command("create-post")
+@click.option("--account-id", required=True, multiple=True, help="Social account IDs (repeatable)")
+@click.option("--text", required=True, help="Post text content")
+@click.option("--media-url", default=None, multiple=True, help="Media URLs (repeatable)")
+@click.option("--schedule", default=None,
+              help="Schedule time (ISO 8601), sent as the real API's `scheduleDate` field. "
+                   "FIXED (U88/GK-26 re-run, 2026-07-19): the field is `scheduleDate`, NOT "
+                   "`scheduledAt` -- the earlier live attempt sent the wrong name and got a real "
+                   "422 ('property scheduledAt should not exist'). The correct name is sourced "
+                   "from GHL's own published marketplace API docs (create-post body field list) "
+                   "and independently confirmed against a real, working third-party GHL "
+                   "integration app that posts to this same endpoint. Passing --schedule implies "
+                   "--status scheduled unless --status is given explicitly.")
+@click.option("--status", "post_status", default=None,
+              type=click.Choice(["draft", "scheduled", "published"]),
+              help="Explicit lifecycle state for the real API's own `status` field. SOURCED "
+                   "(U88/GK-26 re-run, 2026-07-19): GHL's own marketplace docs list a `status` "
+                   "body field with example value 'draft'; a real, working third-party GHL "
+                   "integration app exposes the same field as a draft/scheduled/published select "
+                   "against this exact endpoint. `--status draft` is the safe, non-publishing, "
+                   "non-schedule-required state -- passing it satisfies the fail-closed gate "
+                   "below without needing --confirm-publish-now or --schedule.")
+@click.option("--post-user-id", envvar="GOHIGHLEVEL_SOCIAL_USER_ID", default=None,
+              help="GHL userId the post is authored as (required by the real API). Resolve it "
+                   "once via `caf --experimental contacts create ...` -> response.contact.createdBy.sourceId "
+                   "(or any existing contact/post's createdBy field) for this integration, then set "
+                   "GOHIGHLEVEL_SOCIAL_USER_ID so this flag does not need to be passed every call.")
+@click.option("--confirm-publish-now", is_flag=True, default=False,
+              help="Required to publish immediately with no --status draft and no --schedule. "
+                   "Without one of the three, GHL's real API PUBLISHES THE POST IMMEDIATELY AND "
+                   "PUBLICLY on the real connected account (confirmed live, 2026-07-19: an "
+                   "unscheduled, status-less create-post call went live on a real Facebook page "
+                   "in ~17 seconds, and GHL's own DELETE endpoint for an already-published post "
+                   "returns success:true but does NOT actually retract it -- deleted stays false, "
+                   "status stays published, on repeated re-reads over 5+ minutes). This flag "
+                   "exists so that outcome can never happen silently again.")
+@click.pass_context
+def social_create_post(ctx, account_id, text, media_url, schedule, post_status, post_user_id, confirm_publish_now):
+    """Create a social media post.
+
+    FAIL-CLOSED BY DESIGN (see --confirm-publish-now): omitting --status draft, --schedule,
+    AND --confirm-publish-now used to silently publish immediately with no draft state and
+    no reliable way to undo it. Prefer `--status draft` for a genuinely non-publishing post.
+    """
+    try:
+        if post_status == "draft" and schedule:
+            raise SystemExit(
+                "REFUSED: --schedule was given together with --status draft, which is "
+                "contradictory. Use --status scheduled (or omit --status) with --schedule, "
+                "or use --status draft alone with no --schedule."
+            )
+        if post_status == "draft":
+            pass  # inherently safe: no schedule/confirm needed, never publishes.
+        elif schedule:
+            if post_status not in (None, "scheduled"):
+                raise SystemExit(
+                    f"REFUSED: --schedule was given together with --status {post_status!r}, "
+                    "which is contradictory. Use --status scheduled (or omit --status) with "
+                    "--schedule, or use --status draft alone with no --schedule."
+                )
+            post_status = "scheduled"
+        elif confirm_publish_now:
+            pass  # explicit, intentional immediate-publish opt-in (pre-existing behavior).
+        else:
+            raise SystemExit(
+                "REFUSED: none of --status draft, --schedule, or --confirm-publish-now was "
+                "given. Without one of these, GHL publishes this post IMMEDIATELY AND "
+                "PUBLICLY on the real connected account -- there is no draft state by default, "
+                "and GHL's own delete endpoint does not reliably retract an already-published "
+                "post (confirmed live, 2026-07-19). Pass --status draft for a genuine, "
+                "non-publishing draft (recommended), --schedule <ISO-8601> for a scheduled "
+                "post, or --confirm-publish-now if you explicitly intend an immediate live "
+                "publish."
+            )
+        if not post_user_id:
+            raise SystemExit(
+                "REFUSED: --post-user-id (or GOHIGHLEVEL_SOCIAL_USER_ID) is required -- the "
+                "real GHL API 422s on `userId must be a string` without it. See --help for how "
+                "to resolve it once for this integration."
+            )
+        # NOTE (U88/GK-26 live-proof, 2026-07-19): the real API also 422s on a
+        # `locationId` key in the body (redundant with the URL path segment) and
+        # requires `type` + `media` (empty array is accepted, but the key must be
+        # present) in addition to `userId` above. None of this was reachable by
+        # the prior fixture-only test suite (FixtureAdapters never calls the real
+        # API by design) -- fixed here from the real, reproduced 422 error text.
+        body = {
+            "accountIds": list(account_id),
+            "summary": text,
+            "type": "post",
+            "media": [{"url": u, "type": "image"} for u in media_url] if media_url else [],
+            "userId": post_user_id,
+        }
+        if post_status:
+            body["status"] = post_status
+        if schedule:
+            body["scheduleDate"] = schedule
+        data = api.post(f"/social-media-posting/{_loc(ctx)}/posts", data=body)
+        _output(ctx, data, "Post Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# LOCATIONS
+# ===========================================================================
+
+@cli.group()
+@click.pass_context
+def locations(ctx):
+    """Location/sub-account management."""
+    pass
+
+
+@locations.command("get")
+@click.pass_context
+def locations_get(ctx):
+    """Get current location details."""
+    try:
+        data = api.get(f"/locations/{_loc(ctx)}")
+        _output(ctx, data, "Location Details")
+    except Exception as e:
+        _handle_error(e)
+
+
+@locations.command("search")
+@click.option("--company-id", required=True, help="Company/Agency ID")
+@click.option("--limit", default=20)
+@click.option("--offset", "skip", default=0)
+@click.option("--query", default=None, help="Search query")
+@click.pass_context
+def locations_search(ctx, company_id, limit, skip, query):
+    """Search locations (requires company-level access)."""
+    try:
+        params = {"companyId": company_id, "limit": limit, "skip": skip}
+        if query:
+            params["query"] = query
+        data = api.get("/locations/search", params=params)
+        _output(ctx, data, "Locations")
+    except Exception as e:
+        _handle_error(e)
+
+
+def _emit_adapter_result(ctx: click.Context, result, label: str) -> None:
+    """Print an AdapterResult and FAIL LOUD (exit 1) when ok=False.
+
+    Mirrors _emit_build_result: a refused/failed internal-API write must never
+    look like a success.  On ok=False the error is printed to stderr and the
+    process exits non-zero.
+    """
+    if result.ok:
+        _output(ctx, result.data, label)
+        return
+    detail = result.error or "internal API call failed"
+    if result.http_code:
+        detail = f"({result.http_code}) {detail}"
+    click.echo(f"FAILED: {detail}", err=True)
+    sys.exit(1)
+
+
+@locations.command("create")
+@click.option("--name", required=True, help="Sub-account (location) name")
+@click.option("--company-id", required=True,
+              help="Agency company FIRESTORE document id (NOT the relationNumber)")
+@click.option("--phone", default=None, help="Sub-account phone (optional)")
+@click.option("--address", default=None, help="Street address (optional)")
+@click.option("--timezone", default=None, help="IANA timezone, e.g. America/New_York (optional)")
+@click.pass_context
+def locations_create(ctx, name, company_id, phone, address, timezone):
+    """Create a sub-account / location (experimental, internal API).
+
+    Requires --experimental and the standard safety gate (approval token or a
+    ZHC- prefixed name).  company-id must be the agency FIRESTORE document id.
+    """
+    _require_experimental(ctx)
+    try:
+        body = {"name": name, "companyId": company_id}
+        if phone:
+            body["phone"] = phone
+        if address:
+            body["address"] = address
+        if timezone:
+            body["timezone"] = timezone
+
+        # No target sub-account exists yet, so do not require GHL_LOCATION_ID;
+        # the whitelist is skipped for create (approval gate still applies).
+        client = _get_internal_client(ctx, location_id="")
+        result = client.create_location(body)
+        _emit_adapter_result(ctx, result, "Sub-account Created")
+    except Exception as e:
+        _handle_error(e)
+
+
+# Public-API user-create version (CreateUserDto). NOT the internal/Firebase
+# version (2021-07-28) — this is the agency PIT + public services API.
+_USERS_API_VERSION = "2023-02-21"
+
+# Default permission map for a sub-account ("account") user. GHL accepts a
+# permissions object on CreateUserDto; an empty/omitted map yields a user with
+# no granular permissions, so we grant a sane read/write default for a normal
+# sub-account team member. Override nothing here for agency users — agency
+# users are a deliberately-gated, separate path (see --agency).
+_DEFAULT_ACCOUNT_PERMISSIONS = {
+    "campaignsEnabled": True,
+    "contactsEnabled": True,
+    "workflowsEnabled": True,
+    "opportunitiesEnabled": True,
+    "appointmentsEnabled": True,
+    "conversationsEnabled": True,
+    "dashboardStatsEnabled": True,
+    "settingsEnabled": False,
+}
+
+
+@locations.command("add-user")
+@click.option("--location-id", required=True,
+              help="Sub-account id the user is added to (must be on the whitelist)")
+@click.option("--company-id", required=True,
+              help="Agency company FIRESTORE document id (NOT the relationNumber)")
+@click.option("--first-name", required=True, help="User first name")
+@click.option("--last-name", required=True, help="User last name")
+@click.option("--email", required=True, help="User login email")
+@click.option("--password", default=None,
+              help="OPTIONAL. Omit to send GHL's invite email (user sets their "
+                   "OWN password). Only set this to force a specific password.")
+@click.option("--role", default="user", type=click.Choice(["user", "admin"]),
+              help="Role WITHIN the sub-account (default: user). With the default "
+                   "--type account, role=admin means admin of THAT sub-account ONLY.")
+@click.option("--type", "user_type", default="account",
+              type=click.Choice(["account", "agency"]),
+              help="account = SUB-ACCOUNT user (default; lives only in --location-id). "
+                   "agency = AGENCY user (controls the WHOLE agency) — requires "
+                   "--i-understand-this-is-an-agency-user.")
+@click.option("--i-understand-this-is-an-agency-user", "agency_ack", is_flag=True,
+              default=False,
+              help="Explicit acknowledgement required for --type agency. Without it, "
+                   "--type agency is REFUSED so you can never accidentally make a "
+                   "sub-account user an agency-wide admin.")
+@click.option("--internal-firebase-fallback", "use_internal", is_flag=True,
+              default=False,
+              help="NON-DEFAULT fallback: route through the internal Firebase API "
+                   "instead of the agency PIT public API. Requires --experimental "
+                   "and a Firebase token. Only for the rare case the PIT path fails.")
+@click.pass_context
+def locations_add_user(ctx, location_id, company_id, first_name, last_name,
+                       email, password, role, user_type, agency_ack, use_internal):
+    """Add a user — DEFAULT: agency PIT + PUBLIC API (the proven path).
+
+    DEFAULT PATH (recommended): POST https://services.leadconnectorhq.com/users/
+    with Authorization: Bearer <agency PIT> and Version: 2023-02-21. Body is a
+    CreateUserDto: companyId (agency FIRESTORE id), locationIds=[--location-id],
+    firstName, lastName, email, type, role, permissions. No Firebase token and
+    no Chrome extension are needed for this path.
+
+    USER TYPE — read carefully (this is the difference that matters):
+      --type account (DEFAULT) + locationIds=[--location-id]
+          => a SUB-ACCOUNT user. They live ONLY in that one sub-account.
+             --role admin here = admin of THAT SUB-ACCOUNT ONLY.
+      --type agency
+          => an AGENCY user. They control the WHOLE agency and EVERY
+             sub-account under it. This is almost never what you want when
+             "adding a user to a client's sub-account." It is gated behind
+             --i-understand-this-is-an-agency-user and will be REFUSED without it.
+
+    PASSWORD: omit --password to trigger GHL's invite email (the user sets
+    their own password). Only pass --password to force a specific one.
+
+    FALLBACK: --internal-firebase-fallback routes through the internal Firebase
+    API (requires --experimental + a Firebase token). This is NOT the default
+    and should only be used if the PIT path is unavailable.
+    """
+    # Hard guard: an agency user is a different, dangerous thing. Adding a user
+    # to a client's sub-account must NEVER silently make them an agency user.
+    if user_type == "agency" and not agency_ack:
+        click.echo(
+            "REFUSED: --type agency creates an AGENCY-WIDE user (controls the "
+            "WHOLE agency + all sub-accounts), NOT a sub-account user.\n"
+            "If that is genuinely intended, re-run with "
+            "--i-understand-this-is-an-agency-user.\n"
+            "To add a normal user to a client's sub-account, drop --type agency "
+            "(the default --type account scopes them to --location-id only).",
+            err=True,
+        )
+        sys.exit(1)
+
+    # ── NON-DEFAULT fallback: internal Firebase path ──────────────────────────
+    if use_internal:
+        _require_experimental(ctx)
+        try:
+            body = {
+                "companyId": company_id,
+                "firstName": first_name,
+                "lastName": last_name,
+                "email": email,
+                "type": user_type,
+                "role": role,
+                "locationIds": [location_id],
+            }
+            if password:
+                body["password"] = password
+            # The target sub-account comes from --location-id (also the whitelist
+            # key inside create_user), so don't require GHL_LOCATION_ID here.
+            client = _get_internal_client(ctx, location_id=location_id)
+            result = client.create_user(body)
+            _emit_adapter_result(ctx, result, "User Added (internal Firebase fallback)")
+        except Exception as e:
+            _handle_error(e)
+        return
+
+    # ── DEFAULT: agency PIT + PUBLIC API (services.leadconnectorhq.com/users/) ─
+    try:
+        body = {
+            "companyId": company_id,
+            "locationIds": [location_id],
+            "firstName": first_name,
+            "lastName": last_name,
+            "email": email,
+            "type": user_type,
+            "role": role,
+            "permissions": dict(_DEFAULT_ACCOUNT_PERMISSIONS),
+        }
+        # Omit password entirely to trigger GHL's invite email. Only include it
+        # when the operator explicitly forces a password.
+        if password:
+            body["password"] = password
+
+        # Whitelist enforcement: the public post() gate reads the target location
+        # from data["locationId"] or GHL_LOCATION_ID. CreateUserDto carries the
+        # target in locationIds[] (not locationId), so point the gate at the
+        # --location-id via the env it already honours. A user can therefore only
+        # be created on an approved sub-account.
+        os.environ["GHL_LOCATION_ID"] = location_id
+        data = api.post("/users/", data=body, version=_USERS_API_VERSION)
+        _output(ctx, data, "User Added")
+    except Exception as e:
+        _handle_error(e)
+
+
+@locations.command("tags")
+@click.pass_context
+def locations_tags(ctx):
+    """List tags for current location."""
+    try:
+        data = api.get(f"/locations/{_loc(ctx)}/tags")
+        _output(ctx, data, "Location Tags")
+    except Exception as e:
+        _handle_error(e)
+
+
+@locations.command("custom-fields")
+@click.pass_context
+def locations_custom_fields(ctx):
+    """List custom fields for current location."""
+    try:
+        data = api.get(f"/locations/{_loc(ctx)}/customFields")
+        _output(ctx, data, "Custom Fields")
+    except Exception as e:
+        _handle_error(e)
+
+
+@locations.command("custom-values")
+@click.pass_context
+def locations_custom_values(ctx):
+    """List custom values for current location."""
+    try:
+        data = api.get(f"/locations/{_loc(ctx)}/customValues")
+        _output(ctx, data, "Custom Values")
+    except Exception as e:
+        _handle_error(e)
+
+
+# ===========================================================================
+# DOCTOR — read-only adapter health probe (contract-probe entry point)
+# ===========================================================================
+
+@cli.command("doctor")
+@click.pass_context
+def doctor(ctx):
+    """Run the read-only contract probe and report adapter health.
+
+    Operator-only health check (no client-facing output). Issues NO writes:
+    run_contract_probe is called WITHOUT allow_write_probe, so it only performs
+    the Firebase token exchange and read-only shape assertions.
+
+    Exit codes:
+      0  PASS — adapter healthy, contract probe OK.
+      0  WARN — Firebase token absent/dead, or credentials/location not yet
+         configured. A missing/expired token is a nudge, not a hard failure
+         (INSTALL.md: "WARN not FAIL"); reads still work, only writes need it.
+      1  FAIL — backend contract drift or a hard probe failure.
+    """
+    from cli_anything.gohighlevel.internal.adapter_types import AdapterError
+    try:
+        from cli_anything.gohighlevel.internal.adapter import get_adapter
+        from cli_anything.gohighlevel.internal.probe import run_contract_probe
+        adapter = get_adapter(ctx)
+        result = run_contract_probe(adapter)  # read-only: NO allow_write_probe
+    except SystemExit:
+        # get_adapter -> _loc -> _get_location_id() exits when the location id is
+        # unset. That is a provisioning gap, not contract drift: WARN, exit 0,
+        # never a traceback.
+        click.echo(
+            "WARN doctor: GoHighLevel credentials/location not configured "
+            "(set GOHIGHLEVEL_LOCATION_ID) — probe skipped.",
+            err=True,
+        )
+        sys.exit(0)
+    except AdapterError as e:
+        # Defensive: the probe catches AdapterError internally, but never let a
+        # credential error surface as a traceback.
+        click.echo(
+            f"WARN doctor: {e.message or e.code or 'credentials not configured'} "
+            "— probe skipped.",
+            err=True,
+        )
+        sys.exit(0)
+    except Exception as e:  # noqa: BLE001 — doctor must never raise a traceback
+        click.echo(f"WARN doctor: probe could not run ({e}).", err=True)
+        sys.exit(0)
+
+    reason = (result.reason or "").strip()
+
+    if result.ok:
+        line = "PASS doctor: adapter healthy; contract probe OK."
+        if reason:
+            line += f" ({reason})"
+        click.echo(line)
+        sys.exit(0)
+
+    if result.scope == "token":
+        click.echo(
+            "WARN doctor: Firebase token absent or dead "
+            f"({reason or result.failed_assertion or 'token_health'}). "
+            "Reads are unaffected; workflow writes need a live token — re-grab "
+            "it with the Convert and Flow Token Grabber.",
+            err=True,
+        )
+        sys.exit(0)
+
+    click.echo(
+        "FAIL doctor: contract drift or hard failure "
+        f"({reason or result.failed_assertion or 'unknown'}). "
+        "Workflow writes are degraded until the adapter is refreshed.",
+        err=True,
+    )
+    sys.exit(1)
+
+
+# ===========================================================================
+# Entry point
+# ===========================================================================
+
+def main():
+    cli(obj={})
+
+
+if __name__ == "__main__":
+    main()

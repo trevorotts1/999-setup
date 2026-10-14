@@ -1,0 +1,79 @@
+#!/bin/bash
+# Convert and Flow CLI wrapper
+# Maps canonical GOHIGHLEVEL_* / CAF_* env vars -> GHL_* at runtime.
+# Engine source code stays untouched.
+#
+# Credential sources (first match wins):
+#   1. ~/.openclaw/secrets/.env
+#   2. $SECRETS_ENV (override path)
+#   3. Already-exported GOHIGHLEVEL_* or GHL_* vars
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV_PYTHON="$HOME/.openclaw/tools/convert-and-flow-cli/.venv/bin/python"
+
+# Activate venv (prefer installed venv, fall back to local). Track the exact
+# interpreter so we can exec it directly rather than trusting PATH after source.
+if [ -f "$VENV_PYTHON" ]; then
+    source "$HOME/.openclaw/tools/convert-and-flow-cli/.venv/bin/activate"
+elif [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
+    VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
+    source "$SCRIPT_DIR/.venv/bin/activate"
+else
+    VENV_PYTHON="python3"
+fi
+
+# Load canonical secrets file
+SECRETS_FILE="${SECRETS_ENV:-$HOME/.openclaw/secrets/.env}"
+if [ -f "$SECRETS_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$SECRETS_FILE"
+    set +a
+fi
+
+# --- Map canonical -> engine names (engine code untouched) ---
+# Priority: CAF_ > GOHIGHLEVEL_ > already-set GHL_
+export GHL_API_KEY="${CAF_API_KEY:-${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
+export GHL_LOCATION_ID="${CAF_LOCATION_ID:-${GOHIGHLEVEL_LOCATION_ID:-${GHL_LOCATION_ID:-}}}"
+export GHL_FIREBASE_REFRESH_TOKEN="${CAF_FIREBASE_REFRESH_TOKEN:-${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-${GHL_FIREBASE_REFRESH_TOKEN:-}}}"
+
+# --- Safety config (passed through env for the safety wrapper layer) ---
+# CAF_ALLOWED_LOCATION_IDS: default to the client's own GOHIGHLEVEL_LOCATION_ID when
+# neither GOHIGHLEVEL_ALLOWED_LOCATION_IDS nor CAF_ALLOWED_LOCATION_IDS is set.
+# Blank defaults = all writes blocked, which is the wrong fail-mode for a single-location install.
+_caf_allowed_raw="${GOHIGHLEVEL_ALLOWED_LOCATION_IDS:-${CAF_ALLOWED_LOCATION_IDS:-}}"
+if [ -z "$_caf_allowed_raw" ] && [ -n "$GHL_LOCATION_ID" ]; then
+    _caf_allowed_raw="$GHL_LOCATION_ID"
+    echo "[convertandflow] Allowed write locations set to ${_caf_allowed_raw}; add more in CAF_ALLOWED_LOCATION_IDS" >&2
+fi
+export CAF_ALLOWED_LOCATION_IDS="$_caf_allowed_raw"
+unset _caf_allowed_raw
+export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
+export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
+# Write-approval token: canonical GOHIGHLEVEL_APPROVAL_TOKEN -> CAF_APPROVAL_TOKEN.
+# The safety gate requires it for surgical update/patch writes (ZHC-/ZHC_ names are
+# standing-approved without it). Stays in secrets/.env; never wired into
+# openclaw.json env.vars. Empty when unset = surgical writes stay gated (safe).
+export CAF_APPROVAL_TOKEN="${GOHIGHLEVEL_APPROVAL_TOKEN:-${CAF_APPROVAL_TOKEN:-}}"
+
+# Validate required vars
+if [ -z "$GHL_API_KEY" ]; then
+    echo "ERROR: GOHIGHLEVEL_API_KEY is not set. Add it to $SECRETS_FILE" >&2
+    exit 1
+fi
+
+# Belt-and-braces: guarantee cli_anything importable even with no venv at all
+# (the "else" branch above falls back to bare `python3`). The package should
+# normally be `pip install -e`'d into the venv, but if that never ran /
+# partially failed, this still lets the CLI run straight from source. Prepend
+# (never overwrite) so a caller's own PYTHONPATH still wins on conflicts.
+export PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
+# NOTE: the urllib3 NotOpenSSLWarning noise (Python 3.9 + LibreSSL, i.e. stock
+# macOS python3) is suppressed inside the package itself
+# (cli_anything/__init__.py) rather than here — a PYTHONWARNINGS env var
+# naming a third-party category is parsed at interpreter bootstrap, before
+# site-packages is importable, so it can't resolve 'urllib3.exceptions' and
+# the warning fires anyway (proven live: "Invalid -W option ignored").
+
+exec "$VENV_PYTHON" -m cli_anything.gohighlevel "$@"

@@ -782,12 +782,12 @@ main() {
   VERCEL_BIN="$NINE_PREFIX/bin/vercel"
   if ! "$VERCEL_BIN" --version >/dev/null 2>&1; then
     log "Installing the Vercel CLI into $NINE_PREFIX..."
-    "$NPM_BIN" install -g --prefix "$NINE_PREFIX" vercel@latest >&2 || true
+    "$NPM_BIN" install -g --prefix "$NINE_PREFIX" vercel@64.0.2 >&2 || true
   fi
   if VERCEL_VER="$("$VERCEL_BIN" --version 2>/dev/null | tail -1)" && [ -n "$VERCEL_VER" ]; then
     DEP_SUMMARY+=("$(printf '%-14s OK   %s (%s)' vercel "$VERCEL_VER" "$VERCEL_BIN")")
   else
-    DEP_SUMMARY+=("$(printf '%-14s MISSING — npm install -g --prefix %s vercel@latest failed; publishing falls back to npx vercel' vercel "$NINE_PREFIX")")
+    DEP_SUMMARY+=("$(printf '%-14s MISSING — npm install -g --prefix %s vercel@64.0.2 failed; publishing falls back to npx vercel' vercel "$NINE_PREFIX")")
   fi
 
   log "Dependency preflight complete:"
