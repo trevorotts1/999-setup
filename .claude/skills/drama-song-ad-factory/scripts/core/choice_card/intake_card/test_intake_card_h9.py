@@ -2,6 +2,10 @@
 """H9 tests: the intake card keeps one question per block, one option per line,
 a blank line between questions, and the send payloads keep those newlines.
 
+Companion contract for the 9 -> 14 card change (item 10): the live source
+count, the rendered card and every help/docstring claim are the same number,
+so a box can never re-diverge onto a stale total.
+
 Run: python3 core/choice_card/intake_card/test_intake_card_h9.py
 """
 import json
@@ -17,6 +21,26 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 N = len(IC.QUESTIONS)
 CARD = IC.render_card()
+
+#: Every count word the regex below accepts, as a number (one source of truth).
+NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+    "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+}
+#: A stated TOTAL of questions: "nine questions", "14 questions". Plural on
+#: purpose — "one question at a time" is a format note, not a count of the card.
+COUNT_CLAIM = re.compile(r"\b(\d+|" + "|".join(NUMBER_WORDS) + r") questions\b")
+
+#: The only help/docstring text that may state the card's total. The CHANGELOG
+#: is history and stays as written; comments (#) document sub-counts, so a line
+#: comment is dropped before matching.
+COUNT_SOURCES = [
+    os.path.join(HERE, "__init__.py"),
+    os.path.join(HERE, "intake_card.py"),
+    os.path.join(CORE, "intake_preflight", "factory.py"),
+]
 
 
 def _blocks(text):
@@ -34,6 +58,40 @@ def test_fourteen_questions_each_own_block():
     assert labels == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS",
                       "AI MODELS", "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
                       "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"]
+
+
+def test_module_count_equals_rendered_count():
+    """Item 10: the live source count, the card, and every header agree on 14.
+
+    This is the one that goes red if anyone re-hardcodes a total: change the
+    module's QUESTIONS, the rendered header total, or the block count and the
+    numbers stop lining up.
+    """
+    assert len(IC.QUESTIONS) == 14                       # module count
+    assert N == len(IC.QUESTIONS)                        # N is never its own number
+    heads = re.findall(r"^Question (\d+) of (\d+) - ", CARD, flags=re.M)
+    assert len(heads) == len(IC.QUESTIONS)               # every question rendered, no extra
+    assert [int(i) for i, _ in heads] == list(range(1, len(IC.QUESTIONS) + 1))
+    assert {int(t) for _, t in heads} == {len(IC.QUESTIONS)}   # no header carries another total
+    assert len(_blocks(CARD)) == len(IC.QUESTIONS) + 1    # fourteen questions + closing
+
+
+def test_no_help_or_docstring_claims_a_different_count():
+    """Item 10: no help text or docstring may state a total other than the live
+    one. A stale "nine questions" is exactly how a box's copy diverged from the
+    card it ships, so the assertion reads the source files it never edits."""
+    stale = []
+    for path in COUNT_SOURCES:
+        with open(path, encoding="utf-8") as fh:
+            for no, line in enumerate(fh, 1):
+                code = line.split("#", 1)[0]              # line comments carry sub-counts
+                for m in COUNT_CLAIM.finditer(code):
+                    word = m.group(1)
+                    value = int(word) if word.isdigit() else NUMBER_WORDS[word]
+                    if value != N:
+                        rel = os.path.relpath(path, CORE)
+                        stale.append(f"{rel}:{no}: {m.group(0)!r} states {value}, live {N}")
+    assert not stale, "stale question count:\n  " + "\n  ".join(stale)
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
