@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.54
+version: 2.7.55
 ---
 
 # Drama Song Ad Factory
@@ -20,12 +20,15 @@ brand name the public product identity.
 
 > "People don't care about the hero until they meet the villain." - Trevor Otts
 
-These are **not music videos**. They are compelling true stories told through
-the animation, the music and the lyrics - songs strong enough to sell as a
+These are **not music videos**. They are dramatizations told through the
+animation, the music and the lyrics - songs strong enough to sell as a
 soundtrack on their own (the Grey's Anatomy standard: you watch the show and
-you buy the music). Every ad has a compelling plot and a villain that evokes
-a visceral response, and every ad carries the **pain AND the rise**, so the
-audience feels the pain and the problem in the depth of their soul.
+you buy the music). A dramatization may be fiction, nonfiction or based on a
+true story; which of the three it is never changes how this skill treats it
+(intake doctrine, "Start here: the enforced flow"). Every ad has a compelling
+plot and a villain that evokes a visceral response, and every ad carries the
+**pain AND the rise**, so the audience feels the pain and the problem in the
+depth of their soul.
 
 - **The villain contract.** Every ad names its VILLAIN in the story plan. A
   villain is a person OR not a person: cancer, debt, a layoff, a lie,
@@ -116,6 +119,65 @@ intake -> preflight -> claim eligible stage -> perform authorized stage work
 Nothing skips a gate. A runtime prompt or worker cannot bypass a failed
 shared guard: every adapter invokes the same Python control entrypoint and
 the same exit codes before the affected action, not as an after-the-fact audit.
+
+### Intake doctrine: ads are dramatizations (five provisions, in force)
+
+These five bind every intake, every brief and every client message. Doctrine,
+not style advice.
+
+1. **Ads are DRAMATIZATIONS.** Fiction, nonfiction and based-on-true are all
+   allowed - no preference, no penalty, no extra scrutiny for any of them.
+   A story never has to be factual to be used, and no kind of story ranks
+   above another.
+2. **This skill never runs a reality test on a story.** It never asks a client
+   whether a story is real, and it never demands whose real story it is. The
+   forbidden patterns are named so they can be caught and refused:
+   *"every ad is a true story"* / *"every ad in this factory is a true story
+   with a real villain. I cannot invent one"* and *"whose story is this
+   really?"* / *"whose real story is this?"*. Never say, write, imply or hint
+   either one, and never make either a condition of continuing the run.
+3. **Client-supplied claims are accepted verbatim AS THE CLIENT'S CLAIM.**
+   A scale claim, a testimonial, a number, a benefit statement - anything the
+   client writes is recorded as the client's own claim and used as theirs. No
+   questions about it, no proof requests, no "prove your claim", no "is this
+   true", no flagging, no offered rewording. This skill is never a
+   fact-checker of the client.
+4. **The no-fabricate rule binds ONLY what the AGENT invents.** The agent
+   never invents a testimonial, clinical result, credential or product fact
+   of its own. That is the whole rule: it says nothing about material the
+   client supplied, and it never becomes a licence to interrogate it.
+5. **The permission rule stays.** A story about an identifiable real person
+   needs that person's permission. It is the only story-content rule that can
+   stop a run, and it turns on identification, never on whether the story
+   happened.
+
+### Count truth: the card's own total is the only number
+
+- The intake card's own total is the ONLY question count anyone may say. The
+  agent renders the card from the tool (`factory.py card`) and quotes the
+  total the card prints, including the card's own `Question i of N`.
+- The agent never announces a total of its own ("there are N things I need",
+  "Question 1 of N" counted in chat) and never runs a parallel chat sequence
+  with its own numbering on top of the card. There is one counter: the card's.
+- If a remembered or assumed count disagrees with the card, **the card wins**.
+  Re-render the card and use its number; never reconcile the two by explaining
+  them.
+
+### Overwork rule: the card's questions are the whole load
+
+- The card's questions are the whole client load. The agent stacks nothing on
+  top of them: no extra questions in chat, no bundled follow-ups, no
+  "one more thing" asks while the card is still open.
+- **One screen ask = one question.** A question that arrives as one screen
+  holds exactly one question. It never carries sub-asks (a second spelling of
+  the name, an age, a look, the clothes, the wardrobe, a likeness yes/no and
+  the like) - anything else is its own card question or it is not asked.
+- **Answers are plain details, never polished prose.** Rough fragments are a
+  finished answer. Keep the plain reassurance that the client does not have to
+  write it that well.
+- Example answers stay one short line. No long showcase example on the card or
+  in chat - never an ~80-word model answer, which tells the client this is a
+  writing assignment.
 
 ## The control CLI (one entrypoint)
 
@@ -530,13 +592,19 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
   rule this replaces read "no lip-sync by default"; it is kept here only so
   the change is visible.
 - Never fabricate testimonials, clinical results, credentials or product
-  facts. Creative beats stay separate from production stages.
+  facts **of the agent's own**. It binds what the agent invents and nothing
+  else: a client-supplied claim is accepted verbatim as the client's claim,
+  with no question, no proof request and no fact-check (intake doctrine,
+  "Start here: the enforced flow"). Creative beats stay separate from
+  production stages.
 
 ## Song approval (FU-SONG-APPROVAL)
 
-The intake card's eighth question is SONG APPROVAL: "Do you want to hear and
+SONG APPROVAL is an intake card question: "Do you want to hear and
 pick the song before any video is made?" (1. Yes, send me 3 versions to choose
-from (recommended), 2. No, just make it). On Yes the song stage makes THREE
+from (recommended), 2. No, just make it). Quote its number exactly as the card
+prints it - never a position remembered or counted by the agent (count truth,
+"Start here: the enforced flow"). On Yes the song stage makes THREE
 versions of the same lyric sheet in parallel, each a different arrangement of
 the client's music style (the variant table is `scripts/core/song_choices/
 variants.json`). Each version passes the same song checks as a single song
@@ -598,8 +666,12 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   video_model_rates.json`) and one price function shared by the question and
   the final card; the pick is stored in run state, shown on the card and
   submitted by dispatch with that model's provider id and resolution.
-
-  client with their own story. At most three questions total, and ONE choice
+- **Intake (brief clarification only, not the card).** Quick mode by default
+  (one sentence), Concept mode for a
+  client with their own story. At most three clarification questions total
+  about a changed or thin brief - this cap is on the intake conversation, NOT
+  on the intake card, whose question count is the card's own (count truth,
+  "Start here: the enforced flow") - and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
@@ -924,8 +996,10 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   model the user has not set up.
 - If the user names a model or agent, use exactly that one.
 
-The one AI MODELS question on the intake card (first question) asks which AI
-builds and which AI checks, with OpenRouter recommended and Ollama allowed. It
+The one AI MODELS question on the intake card asks which AI
+builds and which AI checks, with OpenRouter recommended and Ollama allowed. Its
+number is whatever the card prints for it - never a position asserted by the
+agent (count truth, "Start here: the enforced flow"). It
 only RECORDS the answer as `ai_models` in the approved intake summary, as a
 preference for the operator. The run itself still uses the session's own model;
 nothing here switches models. Names that are not routable are refused, and the
@@ -1024,9 +1098,21 @@ python3 tests/test_parity_layout.py    # layout, registry, adapter hygiene,
                                        # byte parity with the OpenClaw core
 ```
 
-`test_parity_layout.py` prints `PARITY UNDETERMINED` and exits 0 when the
-canonical OpenClaw tree is not on this machine; that is an undetermined
-check, not a pass. Run it where the canonical source exists to prove parity.
+`test_parity_layout.py` prints `PARITY UNDETERMINED` and skips the parity
+half when the canonical OpenClaw tree is not on this machine. That line is not
+the verdict: the process exit code covers the WHOLE run, so an undetermined
+parity half can still leave the run red. Measured on a throwaway of `origin/main`
+in the absent-canonical configuration (2026-10-14):
+
+- repo checkout, `CONTROL/bundled-skills.txt` resolvable from the repo root:
+  every other check ok -> `ALL PASS (parity undetermined)`, **exit 0**.
+- clean / standalone install, skill at `<root>/.claude/skills/...` with no
+  `CONTROL/bundled-skills.txt` above it: the registry half fails FIRST, 11
+  `FAIL` rows, then `PARITY UNDETERMINED` -> **exit 1**.
+
+Neither is a parity pass. Read the exit code of the whole run, not the
+`PARITY UNDETERMINED` line, and run it where the canonical source exists to
+prove parity.
 
 ## Version and provenance
 

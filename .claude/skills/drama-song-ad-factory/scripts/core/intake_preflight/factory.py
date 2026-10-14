@@ -609,6 +609,18 @@ def cmd_next(a):
                     data=nxt, evidence=["%s" % db, runbook_path])
 
 
+def _card_summary():
+    """The intake card's own question total, read live from the card module
+    (W1-U4). Every CLI help string quotes this instead of a literal, so the
+    printed count can never drift from the card that is actually rendered."""
+    import os
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+    return _card.CARD_SUMMARY
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="factory.py",
                                  description="Drama-song factory control CLI (intake/preflight/next).")
@@ -663,8 +675,8 @@ def main(argv=None):
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
     sr.add_argument("--target", default="")
-    c = sub.add_parser("card", help="Print the intake card (nine questions, ten with a saved character) as raw "
-                                    "text (not JSON), or as send payloads (H9).")
+    card_help = "Print %s as raw text (not JSON), or as send payloads (H9)." % _card_summary()
+    c = sub.add_parser("card", help=card_help, description=card_help)
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json", "studio-json"),
                    help="text: raw card for the chat. openclaw-json / telegram-json: "

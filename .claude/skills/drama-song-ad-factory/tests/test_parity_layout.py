@@ -12,6 +12,8 @@
 
 Run: python3 tests/test_parity_layout.py
 Override canonical path: DSAF_CANONICAL_CORE=/path/to/scripts/core
+Override repo root: DSAF_REPO_ROOT=/path/to/999-setup (only needed when this
+  copy runs from a config root that holds no checkout above it)
 stdlib only, no framework, no network.
 """
 import hashlib
@@ -20,11 +22,48 @@ import re
 import sys
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parents[1]
-REPO = SKILL.parents[2]                    # .../999-setup
-BUILD = SKILL.parents[3]                   # build tree here; unrelated dir on a clean install
-DEFAULT_CANONICAL = BUILD / "onboarding" / "75-drama-song-ad-factory" / "scripts" / "core"
-CANONICAL = Path(os.environ.get("DSAF_CANONICAL_CORE", DEFAULT_CANONICAL))
+HERE = Path(__file__).resolve().parent      # .../<skill>/tests
+SKILL = HERE.parent
+REGISTRY = Path("CONTROL") / "bundled-skills.txt"
+CANONICAL_SUBPATH = Path("onboarding") / ("75-" + SKILL.name) / "scripts" / "core"
+
+
+def repo_root(start: Path):
+    """The real repo root: the nearest ancestor of this file that carries the
+    installer registry, else DSAF_REPO_ROOT, else None.
+
+    A fixed depth (`SKILL.parents[2]`) only holds inside a checkout. On a
+    packaged install under a config root that same depth lands on the user's
+    home, and every registry check then reports a path failure that says
+    nothing about parity. Resolve upward from this file instead, so a clone, a
+    worktree, a packaged install and a throwaway copy all land on the same root.
+    """
+    env = os.environ.get("DSAF_REPO_ROOT")
+    if env and (Path(env) / REGISTRY).is_file():
+        return Path(env)
+    for d in (start, *start.parents):
+        if (d / REGISTRY).is_file():
+            return d
+    return None
+
+
+def resolve_canonical():
+    """Same source rule package_core.py documents: the env override, then the
+    onboarding staging area up the parent chain of the repo root."""
+    env = os.environ.get("DSAF_CANONICAL_CORE")
+    if env:
+        return Path(env)
+    if REPO is None:
+        return None
+    for base in (REPO, *REPO.parents):
+        cand = base / CANONICAL_SUBPATH
+        if cand.is_dir():
+            return cand
+    return REPO.parent / CANONICAL_SUBPATH   # the build-tree guess, for the message
+
+
+REPO = repo_root(HERE)
+CANONICAL = resolve_canonical()
 
 REQUIRED = [
     "SKILL.md", "INSTRUCTIONS.md", "CHANGELOG.md", "VERSION",
@@ -87,25 +126,39 @@ def main():
     check("frontmatter matches VERSION", f"version: {version}" in header, version)
 
     # --- registry --------------------------------------------------------
-    manifest = REPO / "CONTROL" / "bundled-skills.txt"
-    check("bundled-skills.txt present", manifest.is_file())
-    names = set()
-    if manifest.is_file():
-        for raw in manifest.read_text(encoding="utf-8").splitlines():
-            line = raw.split("#", 1)[0].strip()
-            if line:
-                names.add(line)
-    for name in NEW_MANIFEST_ENTRIES:
-        check(f"manifest lists {name}", name in names)
-    for name in PRIOR_MANIFEST_ENTRIES:
-        check(f"manifest still lists prior entry {name}", name in names)
+    if REPO is None:
+        # No checkout above this file: a packaged install under a config root
+        # carries no registry. Asserting against a fabricated root (the old
+        # fixed depth) reported 11 path failures that said nothing about
+        # parity; absence of the fixture is undetermined, not a pass and
+        # not a fail.
+        SKIPPED.append(f"registry (no {REGISTRY} above {HERE})")
+        print(f"REGISTRY UNDETERMINED: no {REGISTRY} above this test file "
+              f"(looked up from {HERE}) and DSAF_REPO_ROOT is unset")
+        print("  (packaged install with no checkout above it; not a pass and not a fail)")
+    else:
+        manifest = REPO / REGISTRY
+        check("bundled-skills.txt present", manifest.is_file())
+        names = set()
+        if manifest.is_file():
+            for raw in manifest.read_text(encoding="utf-8").splitlines():
+                line = raw.split("#", 1)[0].strip()
+                if line:
+                    names.add(line)
+        for name in NEW_MANIFEST_ENTRIES:
+            check(f"manifest lists {name}", name in names)
+        for name in PRIOR_MANIFEST_ENTRIES:
+            check(f"manifest still lists prior entry {name}", name in names)
 
     # --- parity ----------------------------------------------------------
-    if not CANONICAL.is_dir():
-        SKIPPED.append(str(CANONICAL))
-        print(f"PARITY UNDETERMINED: canonical core not on this machine: {CANONICAL}")
+    parity_proven = False
+    if CANONICAL is None or not CANONICAL.is_dir():
+        where = CANONICAL if CANONICAL is not None else "no repo root to search from"
+        SKIPPED.append(str(where))
+        print(f"PARITY UNDETERMINED: canonical core not on this machine: {where}")
         print("  (clean install; this is not a parity pass)")
     else:
+        parity_proven = True
         ours_hash, ours_lines = tree_hash(SKILL / "scripts" / "core")
         canon_hash, canon_lines = tree_hash(CANONICAL)
         ours = {ln.split("  ", 1)[1] for ln in ours_lines}
@@ -130,11 +183,11 @@ def main():
     check(f"hygiene scan covered skill text files ({scanned})", scanned > 0)
 
     if SKIPPED:
-        print(f"SKIPPED: {len(SKIPPED)} check (canonical absent) — record as undetermined")
+        print(f"SKIPPED: {len(SKIPPED)} check (fixture absent) — record as undetermined")
     if FAILS:
         print(f"\n{len(FAILS)} FAILED: " + ", ".join(FAILS))
         return 1
-    print("\nALL PASS" + (" (parity undetermined)" if SKIPPED else " (parity proven)"))
+    print("\nALL PASS" + (" (parity proven)" if parity_proven else " (parity undetermined)"))
     return 0
 
 

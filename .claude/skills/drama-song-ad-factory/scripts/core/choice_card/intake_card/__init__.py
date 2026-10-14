@@ -1,4 +1,7 @@
-"""choice_card.intake_card: the readable intake card (nine questions, ten with a saved character) (Part H9)."""
+"""choice_card.intake_card: the readable intake card questions (Part H9).
+
+The card's total is read live from ``intake_card.CARD_QUESTION_COUNT``; this
+docstring states no number, because a number typed here would go stale."""
 from .intake_card import (  # noqa: F401
     CLOSING_LINE,
     QUESTIONS,
