@@ -49,10 +49,16 @@ and there is never a status report unless the client asks for one.
    `python3 ${CLAUDE_PLUGIN_ROOT}/studio.py link` — it mints a link when the
    computer has none, prints `Your Drama Studio link: <url>` and opens it in the
    browser. The link is the client's own; opening it on this computer shows the
-   page as the phone would (a QR code the client can scan).
+   page as the phone would (a QR code the client can scan). If it refuses with
+   `AF-DS-PAIR-FAILED … pair this computer first`, this computer has never been
+   paired: stop and run **`/drama-studio pair CODE`** below (step 2 would only
+   say the same thing more quietly).
 2. **Check for a waiting order.** Run
    `python3 ${CLAUDE_PLUGIN_ROOT}/studio_check.py --order` — a fresh check, no
-   cache. It prints `ORDER <id> "<title>"` or `NO-ORDER`.
+   cache. It prints `ORDER <id> "<title>"`, `NO-ORDER`, or `NOT-PAIRED … pair it
+   first` with exit status 3 when this computer has no studio address at all —
+   in that case go to **`/drama-studio pair CODE`** below, do not report "no
+   order waiting".
 3. **An order waits → start it** (same as `start`, below).
 4. **No order waits → one line, then offer the questions:** "Tap **Order a new
    video** on your studio page — or answer the questions here." If the client
@@ -84,10 +90,36 @@ working immediately. Only do this when the client asks for a new link.
 
 ### `/drama-studio pair CODE`
 
+One code, one time. The operator issues it and the client hands it over (the
+install guide calls this the pairing code: four and four, `ABCD-2345`, no
+look-alike characters). Ask the client to paste it straight from wherever they
+received it.
+
 1. `python3 ${CLAUDE_PLUGIN_ROOT}/studio.py pair <CODE>` — burns the one-time
    code, stores the machine key (600) in `~/.drama-studio/`, never prints it.
+   **No `--studio` flag is needed.** The command finds the studio address on its
+   own, in this order: `--studio URL` if given, then `DRAMA_STUDIO_URL`, then
+   the address already stored in `~/.drama-studio/studio.url`, and finally this
+   distribution's own address, `https://studio.zerohumanworkforce.com`. That
+   last one is why the plain command above works on a computer that was never
+   paired during install. It writes the address it used back to `studio.url`.
 2. Then show the link: the pair step mints one when the computer has none and
    prints it; open it the same way as `link`.
+3. **If it refuses.** Read the refusal — it is the whole instruction:
+   - `AF-DS-PAIR-SHAPE` — the code is not four and four. Read it back to the
+     client character by character; ask for it again.
+   - `AF-DS-PAIR-FAILED` with a code name or an error type — the code was
+     already burned, expired or never existed. Ask the operator for a fresh one
+     and run the command again.
+   - `AF-DS-PAIR-FAILED … this build carries no studio address` — only a build
+     with no default address can say this. Ask the operator for the studio
+     address and run the command once more with `--studio URL`, or set
+     `DRAMA_STUDIO_URL` for this session. **Never invent an address**, and
+     never hand the client an exit code as an answer: tell them in words that
+     the pairing needs one more piece from the operator.
+4. The code is consumed by this one call and is never printed back. Pairing this
+   computer a second time needs a fresh code and writes a fresh key over the one
+   already here, so only do it on the client's say-so.
 
 The hook (`studio_check.py --hook`), the opt-in desktop notice, the Option 2
 watcher and the Option 3 background runner are described under Reference; nothing
@@ -98,9 +130,10 @@ in this procedure asks the client to run them.
 ```bash
 # this skill — the root is the folder holding this file
 python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" pair ABCD-2345              # burn a one-time code, then show the link
+python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" pair ABCD-2345 --studio URL # same, naming the studio address explicitly (rare)
 python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" link                        # print and open the personal link
 python3 "${CLAUDE_PLUGIN_ROOT}/studio.py" link --new                  # make a new link (old one stops working)
-python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --order               # fresh order check: ORDER <id> "<title>" | NO-ORDER
+python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --order               # fresh order check: ORDER <id> "<title>" | NO-ORDER | NOT-PAIRED (exit 3)
 python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --hook                # the SessionStart hook
 python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --desktop             # the opt-in desktop notice
 python3 "${CLAUDE_PLUGIN_ROOT}/studio_check.py" --watch --every 120   # the Option-2 watcher
