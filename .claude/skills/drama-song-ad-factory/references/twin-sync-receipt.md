@@ -871,3 +871,301 @@ its hits against pre-existing lines of this repo (old CHANGELOG/SKILL.md text,
 this batch adds** — the added lines are the `2.7.53` CHANGELOG entry, the `VERSION`
 file, the `SKILL.md` frontmatter `version:` line, the fingerprint metadata and
 `drama-studio/studio_bridge.py`. Neither guard was modified.
+
+---
+
+## R2-B twin re-sync — 2026-10-14 (batch/DSF-11, unit DSR-206)
+
+Unit `DSR-206` is the N batch workflow (SWARM-PLAN.md section 7, repo
+`trevorotts1/999-setup`, head `batch/DSF-11`). This batch has **no member PR**; its whole
+job is the R2-B twin re-sync. One version bump (`2.7.53` -> `2.7.54`), one CHANGELOG
+entry, one content commit.
+
+### What was compared
+
+| Side | Repository | Tree | Commit |
+|---|---|---|---|
+| Canonical (source of truth) | `trevorotts1/openclaw-onboarding` | `75-drama-song-ad-factory/scripts/core/` and `75-drama-song-ad-factory/shared-bridge/` | `82e34384042a3312c17318285c4bd71965204ec7` (**`origin/main`**, read live — also the merge commit of batch PR #2026 on `batch/DSF-10`) |
+| Packaged copy (this repo) | `trevorotts1/999-setup` | `.claude/skills/drama-song-ad-factory/scripts/core/` and `.claude/skills/drama-studio/` | `d504e753a9a56584f7013a9bc6c8c1e6bd614aed` (`origin/main`, the commit `batch/DSF-11` was cut from — the packaged side *before* this commit, the same convention the R2-A section above uses for `3ef046276`) |
+
+**The source is `main`, not a pending batch head.** Unlike the two syncs above, nothing is
+waited on: release group R2-B (`DSR-105`, the studio page collecting the story brief) has
+already landed, and its ancestry was verified live before anything was copied:
+
+```
+$ git -C ~/openclaw-onboarding fetch -q origin
+$ git -C ~/openclaw-onboarding merge-base --is-ancestor 4d730e5b45e6828ff914709604fc65797ebd93c0 origin/main
+   (exit 0 — PR #2003's head is an ancestor of origin/main)
+$ git -C ~/openclaw-onboarding log --oneline -3 origin/main
+82e343840 Merge pull request #2026 from trevorotts1/batch/DSF-10
+5d8af1c44 Merge origin/main into batch/DSF-10; re-cut at v2.9.51 (batch #8 took v2.9.50)
+a9808bc4c Merge pull request #2019 from trevorotts1/batch/auto-merge (merge train: #1981 #1996 #2010)
+$ git -C ~/openclaw-onboarding log --oneline -1 82e34384042a3312c17318285c4bd71965204ec7
+82e343840 Merge pull request #2026 from trevorotts1/batch/DSF-10
+```
+
+Both checkouts are read-only for this unit. The source was exported with
+`git -C ~/openclaw-onboarding archive 82e34384 -- 75-drama-song-ad-factory/scripts/core 75-drama-song-ad-factory/shared-bridge | tar -x`
+into this unit's lane (`run/lanes/DSR-206-lane/src/`); `~/openclaw-onboarding` was never
+branched, checked out or written.
+
+### What changed in skill 75 — and what that means here
+
+R2-B (`DSR-105`) changed four things in skill 75:
+
+1. `scripts/core/choice_card/intake_card/intake_card.py` stays the only question source and
+   gains five typed **BRIEF** questions, so the card asks **14** instead of 9:
+   `BRIEF_IDS = ("offer", "link", "audience", "character", "photos")`, built by
+   `QUESTIONS = _brief_questions() + _questions()`.
+2. `mini-app/ui/questions.json` regenerated from it; the drift check passes.
+3. `mini-app/ui/studio.js` passes the question into `answerBox`, so the textarea shape comes
+   from the typed contract rather than from sniffing option wording.
+4. `mini-app/service/src/index.js` reads the brief out of the leading replies and stores it
+   **beside** the replies, marking `brief_complete` false with `brief_missing` rather than
+   refusing an order.
+
+Only (1) lives under `scripts/core/`, the scope `parity-contract.md` names and the packager
+mirrors. (2)-(4) are all under `mini-app/`, which this distribution has never shipped:
+`find . -name mini-app` in this worktree is empty, `git ls-files | grep mini-app` is empty,
+and `grep -rn 'questions.json'` over `.claude/` and the whole repo returns nothing.
+`round3_non_core_left_unsynced` already records `mini-app/**` as "onboarding-only tree; no
+999 counterpart".
+
+### What this re-sync changed
+
+| Change | Detail |
+|---|---|
+| Re-package | `python3 -I installer-registration/package_core.py --source <lane>/src/75-drama-song-ad-factory/scripts/core` -> `package_core: OK  496 files (17 written, 0 stale removed)`, then `--check` -> `package_core --check: OK  496 files match canonical`, tree sha256 `f4f4d68f8d075a9ab54faf612e959191f94bd91a7258564efaa5c1867b2983cd` on both sides, exit 0 |
+| The 17 written | 16 changed + 1 new: `choice_card/intake_card/test_story_brief_dsr105.py` (the new DSR-105 test). The 16 are the paths listed under "Pre-sync divergence" below, plus nothing else |
+| Bridges | `studio_bridge.py`, `approvals_bridge.py` and `studio_claim.py` copied byte-for-byte from the same archive. **All three were already byte-identical, so no byte moved** — `studio_bridge.py` did **not** change in this batch, and its recorded fingerprint is deliberately left where it is |
+| Fingerprints | `references/twin-sync-fingerprints.json` refreshed (table below) |
+| Version | `VERSION` `2.7.53` -> `2.7.54`, `SKILL.md` frontmatter `version:` alongside it, one `CHANGELOG.md` entry `## [2.7.54]` |
+
+### Fingerprints refresh — exactly what moved
+
+Changed top-level keys (structural diff against `HEAD`, nothing else):
+
+| Key | Before | After |
+|---|---|---|
+| `unit` | `DSR-202` | `DSR-206` |
+| `canonical.base_sha` / `.branch` | `cdef72c46944ecf2718b28df2f67219cdaa263fc` / `batch/DSF-8` | `82e34384042a3312c17318285c4bd71965204ec7` / `origin/main` |
+| `packaged.base_sha` / `.branch` | `3ef04627619405c51f86061e1ff8011ae087aad1` / `batch/DSF-9` | `d504e753a9a56584f7013a9bc6c8c1e6bd614aed` / `batch/DSF-11` |
+| `summary` | `495 / 495 / 0 / 0 / 0` | `496 / 496 / 0 / 0 / 0` |
+| `files` | 495 entries | 496 entries; **17 re-digested**, 478 unchanged |
+
+Added keys (appended, same position the DSF-521 and DSR-202 blocks were appended in):
+`pre_sync_DSR206_999_main_divergence_from_canonical` (17 paths) and
+`pre_sync_DSR206_summary` (`in_scope=496, match=479, differ=16, only_canonical=1,
+only_packaged=0`).
+
+**Not touched, asserted programmatically before the file was written:** `artifact`,
+`scope`, `exclusions`, `normalisation`, `algorithm`, `studio_bridge_twin`, `files`-adjacent
+`round3_*`, `layout_alias_added`, `pre_sync_999_main_*`, `pre_sync_summary`,
+`pre_sync_DSF521_*`, `pre_sync_DSR202_*`. In particular
+`studio_bridge_twin` compares **equal** before and after — `studio_bridge.py`'s recorded
+pair `4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5` on both sides is
+still the live truth, proved in Proof (2) below rather than assumed.
+
+#### Pre-sync divergence (999 `origin/main` core vs canonical `origin/main` core) — 17 paths
+
+| In-scope path | state |
+|---|---|
+| `choice_card/intake_card/intake_card.py` | differ |
+| `choice_card/intake_card/test_ai_models.py` | differ |
+| `choice_card/intake_card/test_intake_card_h9.py` | differ |
+| `choice_card/intake_card/test_intake_step_i7.py` | differ |
+| `choice_card/intake_card/test_intro_message.py` | differ |
+| `choice_card/intake_card/test_length_question_flc.py` | differ |
+| `choice_card/intake_card/test_one_spend_question.py` | differ |
+| `choice_card/intake_card/test_studio_json_u1.py` | differ |
+| `choice_card/intake_card/test_style_questions.py` | differ |
+| `character_library/test_character_library_i6.py` | differ |
+| `character_library/test_saved_character_question.py` | differ |
+| `choice_card/video_models/test_video_models.py` | differ |
+| `script_approval/test_script_approval.py` | differ |
+| `script_approval/test_script_wiring.py` | differ |
+| `song_choices/test_song_choices_fu_song.py` | differ |
+| `storyboard_director/test_approval_runner.py` | differ |
+| `choice_card/intake_card/test_story_brief_dsr105.py` | only-canonical (new) |
+
+Exactly the 17 files the packager reported writing; `only_packaged=0`, so nothing stale
+was dropped.
+
+### Proof (1) — packaged core == canonical core
+
+Pasted outputs below are verbatim except that the operator home prefix is written
+`~` instead of its absolute spelling: `scripts/qc-assert-no-client-names.sh` carries
+the operator machine home path as an always-on token that must never enter a committed file,
+and this section's own four path lines were caught by it on the first run. The guard
+was not changed; the file was.
+
+
+```
+$ DSAF_CANONICAL_CORE=<lane>/src/75-drama-song-ad-factory/scripts/core \
+  python3 -I .claude/skills/drama-song-ad-factory/tests/twin_sync_prove.py
+[parity] scope=scripts/core/ (excl __pycache__/*.pyc) on both sides
+[parity] canonical=~/Downloads/DRAMA FIXES OCT 13/run/lanes/DSR-206-lane/src/75-drama-song-ad-factory/scripts/core
+[parity] packaged =~/dsf-wt/batch-N-11/.claude/skills/drama-song-ad-factory/scripts/core
+  summary: same=496 differ=0 only-canonical=0 only-packaged=0
+[parity] PARITY: PROVEN (byte-identical over same scope)
+                                                                   (exit 0)
+```
+
+### Proof (2) — `test_studio_bridge_twin.py`, both modes, from a permanent path
+
+Run from the batch worktree `~/dsf-wt/batch-N-11` (never `/tmp`, where
+the prover fails closed with `VACUOUS PLANT`):
+
+```
+$ env -u DSAF_CANONICAL_SHARED_BRIDGE python3 -I .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py
+ok: approvals_bridge.py packaged sha256 1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3 == recorded canonical
+UNDETERMINED: approvals_bridge.py live byte compare skipped, canonical shared-bridge absent: …/dsf-wt/onboarding/…
+ok: studio_bridge.py packaged sha256 4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5 == recorded canonical
+UNDETERMINED: studio_bridge.py live byte compare skipped, canonical shared-bridge absent
+ok: studio_claim.py packaged sha256 b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42 == recorded canonical
+UNDETERMINED: studio_claim.py live byte compare skipped, canonical shared-bridge absent
+SUMMARY: 0 live compares (canonical absent) - recorded twin fingerprints enforced, live byte compare UNDETERMINED
+                                                                   (exit 0)
+
+$ DSAF_CANONICAL_SHARED_BRIDGE=<lane>/src/75-drama-song-ad-factory/shared-bridge \
+  python3 -I .claude/skills/drama-song-ad-factory/tests/test_studio_bridge_twin.py
+ok: approvals_bridge.py packaged sha256 1061783b… == recorded canonical
+ok: approvals_bridge.py bytes == live canonical 1061783b…
+ok: studio_bridge.py packaged sha256 4ea9f8f3… == recorded canonical
+ok: studio_bridge.py bytes == live canonical 4ea9f8f3…
+ok: studio_claim.py packaged sha256 b2d83671… == recorded canonical
+ok: studio_claim.py bytes == live canonical b2d83671…
+                                                                   (exit 0)
+```
+
+### Proof (3) — `cmp` against onboarding's own `origin/main` originals
+
+Each original read straight out of git, not from the lane export:
+
+```
+$ git -C ~/openclaw-onboarding show origin/main:75-drama-song-ad-factory/shared-bridge/<f> > /tmp/dsr206-onb-<f>
+$ cmp /tmp/dsr206-onb-<f> .claude/skills/drama-studio/<f>
+cmp studio_bridge.py      (packaged vs onboarding origin/main) exit=0
+cmp approvals_bridge.py   (packaged vs onboarding origin/main) exit=0
+cmp studio_claim.py       (packaged vs onboarding origin/main) exit=0
+```
+
+**`studio_bridge.py` did not change in this batch** — `cmp` exit 0 and its recorded
+fingerprint untouched, both ways.
+
+### Proof (4) — the story brief reached the packaged copy
+
+```
+$ grep -n 'BRIEF_IDS = ' .claude/skills/drama-song-ad-factory/scripts/core/choice_card/intake_card/intake_card.py
+252:BRIEF_IDS = ("offer", "link", "audience", "character", "photos")
+$ python3 -I -c '…print BRIEF_IDS…'
+BRIEF_IDS = ['offer', 'link', 'audience', 'character', 'photos']
+all five present: True
+missing: []
+$ python3 -I -c '…import intake_card; print(len(intake_card.QUESTIONS))…'
+len(QUESTIONS) = 14
+ids = ['offer', 'link', 'audience', 'character', 'photos', 'models', 'length', 'music',
+       'look', 'model', 'spend', 'storyboard', 'song', 'script']
+```
+
+**Reported plainly, not papered over:** the second check the batch spec asks for —
+`mini-app/ui/questions.json` in the packaged tree listing 14 questions — **cannot be run
+here, because 999-setup ships no `mini-app/`.** `find ~/dsf-wt/batch-N-11 -name mini-app`
+and `find … -name questions.json` are both empty, `grep -rn 'questions.json' …/.claude` is
+empty, and the parity contract records `mini-app/**` as onboarding-only with no 999
+counterpart. The equivalent is proved on both sides instead: the **packaged**
+`intake_card.py` builds 14 questions itself (above), and the **canonical**
+`origin/main` `mini-app/ui/questions.json` carries
+`{"question_count": …, "questions": [ … 14 entries … ]}` —
+`git -C ~/openclaw-onboarding show origin/main:75-drama-song-ad-factory/mini-app/ui/questions.json`
+parsed with `python3 -I` prints `questions len 14`. So the brief is present in this repo
+where it belongs, and the file the spec names to check it does not exist here at all.
+
+### Regression (this branch)
+
+Run like-with-like: same interpreter, same `HOME` (`/tmp/dsr206-DSR-206-home`), the only
+difference being which tree is on disk — a fresh `origin/main` clone in a path that does
+**not** contain `Downloads`, and this batch worktree.
+
+| Side | Command | Result |
+|---|---|---|
+| control, `origin/main` `d504e753a` | `HOME=/tmp/dsr206-DSR-206-home python3 -m pytest -q .claude/skills/drama-song-ad-factory/scripts` | `1917 passed, 3 skipped, 1 warning, 58 subtests passed in 115.14s`, `checks: 404 ok, 0 failed`, exit 0 |
+| control, `origin/main` `d504e753a` | same, `.claude/skills/drama-song-ad-factory/tests` | `13 passed in 1.12s`, exit 0 |
+| **this branch** | `HOME=/tmp/dsr206-DSR-206-home python3 -m pytest -q .claude/skills/drama-song-ad-factory/scripts` | `1928 passed, 3 skipped, 1 warning, 58 subtests passed in 113.95s`, `checks: 404 ok, 0 failed`, exit 0 |
+| **this branch** | same, `.claude/skills/drama-song-ad-factory/tests` | `13 passed in 1.11s`, exit 0 |
+
+**+11 tests, zero new failures** — the 11 test functions the re-synced core carries that
+`origin/main` did not, including the new `choice_card/intake_card/test_story_brief_dsr105.py`.
+
+**Instrument correction, recorded rather than buried.** The first control run was done in a
+checkout under `~/Downloads` and came back `1 failed, 1916 passed` with
+`AssertionError: ['no-operator-path-in-candidates']` from
+`scripts/core/catalog_calculator/test_card_render.py`, whose check is literally
+`all("Downloads" not in p for p in paths)`. That failure was a property of **where the
+control sat**, not of `origin/main` — the target code was never at fault. Re-run from a
+path with no `Downloads` component, control and branch are both green (table above).
+| `for p in .claude/skills/drama-studio/prove/*.py; do python3 "$p"; done` | all ten exit 0: `prove_heartbeat` 6/6, `prove_option2_monitor` 6/6, `prove_option3_runner` 9 checks, `prove_plugin_behaviour` 12/12, `prove_user_agent` 4 checks, `test_check_option` 4 tests, `test_link` 5 tests, `test_option3_wired` 3 checks, `test_pair_address` 9 tests, `test_upload` 6 tests — `PROVE_ALL_rc=0` |
+| `bash installer-registration/verify-registration.sh` | `RESULT: 27 passed, 0 failed`, exit 0 |
+
+No prover printed `VACUOUS PLANT`; their planted-bad controls really ran.
+
+### Version and guards
+
+`VERSION` `2.7.53` -> `2.7.54` and the `SKILL.md` frontmatter `version:`, with one
+`CHANGELOG.md` entry (`## [2.7.54]`), all in this one content commit. No other version
+marker moves: there is no `scripts/bump-version.sh` in this repo, so the documented
+equivalent is `scripts/check-docs-fresh.sh`, which pins only the eight named bundled skills
+(`spec-protocol`, `nine-router-setup`, `kaizen`, `eli5`, `bro`, `blackceo-signature-page`,
+`hook-skill`, `kiss`) — none of them changes here, and drama-song-ad-factory's `VERSION` is
+not among them at all.
+
+`check-docs-fresh.sh` run **in this local clone** exits 1 with 1041 failures, every one of
+them a foreign tag (`FAIL: latest tag v27.1.1 != spec-protocol VERSION (1.37.0)` plus 1040
+`has no CHANGELOG.md entry`); **none mentions this skill**, and the same 1041 lines are
+produced on a clean `origin/main` in this clone. It is an artefact of this clone's tag set
+(the same finding the R2-A section records), not of this batch. Judged the way CI judges it
+— a checkout from `origin` carrying only `origin`'s tags — the control is clean and the
+batch will be re-run there after push:
+
+```
+$ git clone https://github.com/trevorotts1/999-setup.git <lane>/ci-checkout && git fetch --tags --unshallow
+$ (control, clean origin/main d504e753a) bash scripts/check-docs-fresh.sh
+check-docs-fresh: OK                                                          (exit 0)
+```
+
+### The two pre-push guards, as CI judges them
+
+Both guards live in `openclaw-onboarding` (`scripts/check-docs-language.py`,
+`scripts/qc-assert-no-client-names.sh`), not in this repo, so both are run *against this
+worktree* — `--repo-root <worktree>` — from the onboarding copy, exactly as the R2-A
+receipt did.
+
+**Guard 1 — docs language, must exit 0:**
+
+```
+$ python3 -I ~/openclaw-onboarding/scripts/check-docs-language.py --repo-root <worktree>
+check-docs-language: 4 changed doc file(s) vs HEAD^1 — 0 new unexplained occurrences — PASS.
+                                                                   (exit 0)
+```
+
+**Guard 2 — no client names, `GITHUB_ACTIONS=true`, no roster.** It exits 1 on this repo
+and on clean `origin/main` alike: 142 hit lines across 17 files, **the same 142 and the
+same 17 on both sides**, and **zero hits on any line this batch adds**.
+
+| | hit lines | hit files |
+|---|---|---|
+| this batch (`GITHUB_ACTIONS=true`, `env -u OPENCLAW_CLIENT_ROSTER`) | 142 | 17 |
+| control, clean `origin/main` `d504e753a`, same mode | 142 | 17 |
+| batch-only hit files | — | **none** (`comm -23` empty both ways) |
+| hits falling on a line this batch adds | — | **0 of 142** |
+
+The 142 are pre-existing repository content — old `CHANGELOG.md` / `SKILL.md` history,
+`FIX-LEDGER.md`, `CONTROL/backup-*`, `evidence/`, `nine-router-setup/SKILL.md` — none of
+which this batch touches on a line basis.
+
+**The guard caught this receipt, and the receipt was fixed, not the guard.** The first run
+reported 4 hits on lines this section had just added, all of them absolute paths spelled
+with the operator home prefix, which the guard carries as an always-on token ("operator
+machine path — must never appear in committed files"). Those four lines were rewritten to
+use `~`, and the note explaining that was written without spelling the token out; the
+re-run is the 142/142 row above. `qc-assert-no-client-names.sh` was not modified.
