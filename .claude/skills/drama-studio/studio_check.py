@@ -7,7 +7,9 @@
 #   studio_check.py --watch [--every N] [--once] [--option N]   # the Option-2 watcher (U14)
 #   studio_check.py --claim ORDER_ID       # record an order as picked up (claimed), U14
 #   studio_check.py --order                # the fresh order check for /drama-studio start:
-#                                          # ORDER <id> "<title>" or NO-ORDER. It spends a
+#                                          # ORDER <id> "<title>", NO-ORDER, or NOT-PAIRED
+#                                          # (this computer has no studio address, so no
+#                                          # order can ever be waiting — exit 3). It spends a
 #                                          # network call every time (no 60-second cache, no
 #                                          # dedup) and writes no state; a failed check-in
 #                                          # raises rather than printing a false NO-ORDER.
@@ -37,7 +39,8 @@
 # EXIT CODES
 #   0  fine (the hook also exits 0 on every error — silence is the contract)
 #   2  a named refusal: AF-DS-ROOT (wrong skill root), AF-DS-ARGS
-#   3  the hook could not run at all (no python3, unreadable state) — only outside --hook
+#   3  the hook could not run at all (no python3, unreadable state), or --order found no
+#      studio address on this computer (NOT-PAIRED) — never inside --hook
 import argparse
 import json
 import os
@@ -439,12 +442,23 @@ def claim_order(sd, order_id):
 
 
 # ---------------------------------------------------------------- the fresh order check (--order)
+#: `--order` on a computer that was never paired: it has no studio address, so no order can
+#: ever be waiting. Printing NO-ORDER there would be a false answer the agent cannot act on,
+#: which is the same rule as "a failed check-in raises rather than printing a false NO-ORDER".
+NOT_PAIRED = ("NOT-PAIRED this computer has no studio address; pair it first with "
+              "/drama-studio pair <CODE>")
+
 def order_check():
     """`/drama-studio start`: one fresh check-in, never the 60-second cache and never dedup.
 
-    Returns the one line to print: `ORDER <id> "<title>"` or `NO-ORDER`. It writes no state,
-    so it can neither poison the hook's cache nor hide an order the watcher already saw.
+    Returns the one line to print: `ORDER <id> "<title>"`, `NO-ORDER`, or `NOT_PAIRED` when
+    there is no address to ask. It writes no state, so it can neither poison the hook's cache
+    nor hide an order the watcher already saw.
     """
+    if not fake_mode() and not studio_url():
+        # Fake mode answers from its knobs and never reads an address, so the guard belongs
+        # to the real transport alone; run the fake with an empty state folder on purpose.
+        return NOT_PAIRED
     body = check_network_full()
     order = parse_order(body.get("line"))
     if not order:
@@ -514,9 +528,10 @@ def main(argv):
         return claim_order(sd, a.claim)
 
     if a.order:
-        sys.stdout.write(order_check() + "\n")
+        out = order_check()
+        sys.stdout.write(out + "\n")
         sys.stdout.flush()
-        return 0
+        return 3 if out == NOT_PAIRED else 0
 
     if a.watch:
         return run_watch(sd, a.option, a.every, a.once)

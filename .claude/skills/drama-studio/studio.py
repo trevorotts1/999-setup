@@ -12,14 +12,18 @@
 #   Windows:   the DPAPI folder beside it (this file writes the plain path; the
 #              encryption helper is nine-router-setup/scripts/windows/Protect-LocalState.ps1)
 # The key is NEVER printed and NEVER written into any settings.json (decision 11).
-# The studio address is not a secret and lives beside the key as studio.url.
+# The studio address is not a secret and lives beside the key as studio.url. `pair`
+# resolves it as --studio, then DRAMA_STUDIO_URL, then the stored studio.url, then this
+# distribution's own documented DEFAULT_STUDIO_URL, so the documented command
+# `studio.py pair ABCD-2345` works on a computer that was never paired during install.
 # The client's personal link (the #k= address) lives beside both as client.url (600);
 # `link` shows it and opens it, `link --new` makes a new one (the old one stops working).
 #
 # EXIT CODES
 #   0  paired, or the link was shown
 #   2  a named refusal: AF-DS-PAIR-SHAPE, AF-DS-PAIR-FAILED, AF-DS-ARGS
-#   3  the command could not run (no studio address, no network module)
+#   3  nothing could be done without the caller acting (a computer with no address and
+#      no key to pair it; a build carrying no default studio address)
 import argparse
 import json
 import os
@@ -40,6 +44,13 @@ KEY_FILE = "machine.key"
 URL_FILE = "studio.url"
 LINK_FILE = "client.url"
 NETWORK_BUDGET_S = 3.0
+#: The studio address this distribution ships with — the one AGENT_INSTALL.md pairs
+#: against. It is the same constant studio_bridge.py names STUDIO_BASE_URL. `pair`
+#: falls back to it so `/drama-studio pair CODE` works on a computer that was never
+#: paired during install, where DRAMA_STUDIO_URL is unset and studio.url does not
+#: exist yet (there is nothing to have stored it). It is a documented address, never
+#: a guess; DRAMA_STUDIO_URL, --studio and studio.url still all win over it.
+DEFAULT_STUDIO_URL = "https://studio.zerohumanworkforce.com"
 
 # The studio sits behind Cloudflare, which refuses Python's default User-Agent
 # ("Python-urllib/3.x") with HTTP 403 "error code: 1010". Every request from this
@@ -119,7 +130,10 @@ def cmd_pair(a):
     if not a.code or not validate_code(a.code):
         sys.stderr.write("%s refused: a pairing code is four and four, ABCD-2345, no look-alikes\n" % AF_SHAPE)
         return 2
-    url = studio_url(a.studio)
+    # The address resolves the same way its siblings resolve one: --studio, then
+    # DRAMA_STUDIO_URL, then the stored studio.url, then this distribution's own
+    # documented default. Only a build carrying no default can still come up short.
+    url = studio_url(a.studio) or DEFAULT_STUDIO_URL
     canned = os.environ.get("DRAMA_STUDIO_FAKE_PAIR")
     if canned:                                   # the prover drives this path; no network, no browser
         out = json.loads(canned)
@@ -129,7 +143,10 @@ def cmd_pair(a):
         sys.stdout.write("AF-DS-PAIR-DRY %s\n" % json.dumps(body, sort_keys=True))
         return 0
     elif not url:
-        sys.stderr.write("%s refused: no studio address; run once with --studio URL\n" % AF_FAILED)
+        sys.stderr.write(
+            "%s refused: this build carries no studio address. Ask the operator for it, then run "
+            "this command once more with --studio URL, or set DRAMA_STUDIO_URL. Never invent one.\n"
+            % AF_FAILED)
         return 3
     else:
         try:
@@ -145,8 +162,12 @@ def cmd_pair(a):
     write_private(os.path.join(sd, URL_FILE), url + "\n")
     sys.stdout.write("Drama Studio paired (%s). The key is stored on this computer and was not printed.\n"
                      % out.get("client_id", "client"))
-    if url:
-        cmd_link(a)          # best effort: the pair itself already succeeded, so exit 0 either way
+    if url and not canned:
+        # best effort: the pair itself already succeeded, so exit 0 either way. A canned
+        # pair is the no-network knob (the prover drives it), so it never reaches out for
+        # the link either — with no --studio it would otherwise dial the real studio with
+        # a key that does not exist.
+        cmd_link(a)
     return 0
 
 
