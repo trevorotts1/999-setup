@@ -1,5 +1,49 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.53] — 2026-10-13 — BATCH-DSF-9: drama-studio pair fix (#216) + the R2-A twin re-sync
+
+One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-9`, one member unit
+merged with `--no-ff`. Version `2.7.52` -> `2.7.53`, in `VERSION` and the `SKILL.md`
+frontmatter `version:`, with this entry, all in this one commit.
+
+**The member:**
+
+| PR | Unit | What it does |
+|---|---|---|
+| #216 | `DSR-106` | `/drama-studio pair CODE` works from the documented command (no `--studio` needed): `drama-studio/studio.py`, `drama-studio/studio_check.py`, `drama-studio/SKILL.md`, the new `drama-studio/prove/test_pair_address.py`, and the skill's own CI file `.github/workflows/drama-studio-tests.yml`. |
+
+**The R2-A twin re-sync (this commit).** Release group R2-A ships on onboarding
+`origin/batch/DSF-8` at `cdef72c46944ecf2718b28df2f67219cdaa263fc` — DSR-101..DSR-104
+(#1998 #1993 #1997 #2000): enrollment at install and update, the client link hand-over,
+`--register` timer installation, and the pickup handoff. Those changes all land
+*outside* `scripts/core/` (`install.sh`, `update-skills.sh`, `INSTALL.md`,
+`INSTRUCTIONS.md`, `SKILL.md`, `timer-artifacts/`, `shared-bridge/`), so the packaged
+core was already byte-identical to that canonical cut — it was re-generated anyway with
+this repo's own packager and re-proved. The one byte in this repo that moved is
+`.claude/skills/drama-studio/studio_bridge.py`, the handoff fix, copied byte-for-byte
+from canonical `shared-bridge/`: `b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956`
+-> `4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5`.
+`approvals_bridge.py` (`1061783b…`) and `studio_claim.py` (`b2d83671…`) are unchanged.
+
+**Deliberately not copied.** `shared-bridge/enroll-on-install.sh` and its test
+`shared-bridge/checks/test_enroll_on_install.py` stay onboarding-only, for the reason
+the twin receipt already records for `wake_agent.sh`: 999 carries no `shared-bridge/`
+tree (only the three Python bridges the runtime imports, behind the
+`.claude/skills/drama-song-ad-factory/shared-bridge -> ../drama-studio` layout alias),
+its caller is onboarding's `install.sh` / `update-skills.sh` which 999 does not ship,
+and a repo-wide grep finds no 999 caller for it. The repo's packager
+(`installer-registration/package_core.py`) writes `scripts/core/` only, and
+`studio_bridge_twin` records packaged bridge bytes only.
+
+**Parity on this batch head** (read-only `git archive origin/batch/DSF-8`):
+
+- `tests/twin_sync_prove.py` -> `summary: same=495 differ=0 only-canonical=0 only-packaged=0`,
+  `PARITY: PROVEN`, exit 0 (`--selftest` also `SELFTEST: PASS`).
+- `tests/test_studio_bridge_twin.py` -> exit 0 in BOTH modes: with
+  `DSAF_CANONICAL_SHARED_BRIDGE` set (3 × `bytes == live canonical`) and unset
+  (recorded fingerprints enforced, live compare `UNDETERMINED`).
+- `cmp` of the three bridges against the DSF-8 originals -> exit 0, 0, 0.
+
 ## [2.7.52] — 2026-10-13 — BATCH-DSF-6: the 999 twin re-sync after the client-folder fixes (#214)
 
 One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-6`, one member unit

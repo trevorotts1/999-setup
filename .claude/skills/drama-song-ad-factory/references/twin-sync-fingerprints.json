@@ -1,6 +1,6 @@
 {
   "artifact": "twin-sync-fingerprints",
-  "unit": "DSF-521",
+  "unit": "DSR-202",
   "scope": "scripts/core/",
   "exclusions": [
     "__pycache__/",
@@ -11,15 +11,15 @@
   "canonical": {
     "repo": "trevorotts1/openclaw-onboarding",
     "tree": "75-drama-song-ad-factory/scripts/core/",
-    "base_sha": "37344f5cd23fc51bf2a2603ebc8c7090b9b649f0",
-    "branch": "main",
+    "base_sha": "cdef72c46944ecf2718b28df2f67219cdaa263fc",
+    "branch": "batch/DSF-8",
     "label": "ONBOARDING_CANONICAL"
   },
   "packaged": {
     "repo": "trevorotts1/999-setup",
     "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-    "base_sha": "7ec07b782145d99529ca7be49ae8352980a0c058",
-    "branch": "unit/DSF-521",
+    "base_sha": "3ef04627619405c51f86061e1ff8011ae087aad1",
+    "branch": "batch/DSF-9",
     "label": "999_PACKAGED"
   },
   "summary": {
@@ -2661,14 +2661,14 @@
     "canonical": {
       "repo": "trevorotts1/openclaw-onboarding",
       "tree": "75-drama-song-ad-factory/shared-bridge/",
-      "base_sha": "37344f5cd23fc51bf2a2603ebc8c7090b9b649f0",
-      "branch": "main",
+      "base_sha": "cdef72c46944ecf2718b28df2f67219cdaa263fc",
+      "branch": "batch/DSF-8",
       "label": "ONBOARDING_CANONICAL"
     },
     "packaged": {
       "repo": "trevorotts1/999-setup",
       "tree": ".claude/skills/drama-studio/",
-      "branch": "unit/DRAMA-UPLOADS-TWIN",
+      "branch": "batch/DSF-9",
       "label": "999_PACKAGED"
     },
     "algorithm": "sha256",
@@ -2684,8 +2684,8 @@
       "studio_bridge.py": {
         "packaged": ".claude/skills/drama-studio/studio_bridge.py",
         "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
-        "canonical_sha256": "b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956",
-        "packaged_sha256": "b8d3706cc49de4ba4b07515d82dcdfc8fae5e282da70366bf3b97dc1a5cb4956"
+        "canonical_sha256": "4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5",
+        "packaged_sha256": "4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5"
       },
       "studio_claim.py": {
         "packaged": ".claude/skills/drama-studio/studio_claim.py",
@@ -2742,6 +2742,14 @@
     "match": 486,
     "differ": 7,
     "only_canonical": 2,
+    "only_packaged": 0
+  },
+  "pre_sync_DSR202_999_main_divergence_from_canonical": {},
+  "pre_sync_DSR202_summary": {
+    "differ": 0,
+    "in_scope_files": 495,
+    "match": 495,
+    "only_canonical": 0,
     "only_packaged": 0
   }
 }
