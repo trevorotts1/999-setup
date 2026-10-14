@@ -76,6 +76,14 @@ jobs:
           [ "$rc" -eq 0 ]
       - name: Direct upload transport tests (no network)
         run: python3 "$SKILL/prove/test_upload.py"
+      - name: Pair address resolution tests (no network)
+        # DSR-106: `/drama-studio pair CODE` documented without `--studio` exited 3 on a
+        # computer that was never paired during install. The suite pins the documented
+        # command pairing against a fake studio on 127.0.0.1, the fallback being the
+        # distribution's own address (equal to studio_bridge.py's STUDIO_BASE_URL and
+        # present in AGENT_INSTALL.md) rather than a guess, every explicit source winning
+        # over it, and the two remaining no-address answers being actionable words.
+        run: python3 "$SKILL/prove/test_pair_address.py"
       - name: The studio User-Agent prover is RED against a drifted copy
         shell: bash
         run: |
