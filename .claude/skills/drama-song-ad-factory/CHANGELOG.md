@@ -1,5 +1,46 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.54] — 2026-10-14 — BATCH-DSF-11: the R2-B story-brief twin re-sync (DSR-105)
+
+One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-11`, carrying **no
+member PR** — its whole job is the R2-B twin re-sync. Version `2.7.53` -> `2.7.54`, in
+`VERSION` and the `SKILL.md` frontmatter `version:`, with this entry, all in this one
+commit.
+
+**The sync source.** Release group R2-B is **`DSR-105`**, the studio page collecting the
+story brief. It landed on onboarding `origin/main` as PR **#2003** (head
+`4d730e5b45e6828ff914709604fc65797ebd93c0`, verified an ancestor of `origin/main`), carried
+by batch PR **#2026** on branch `batch/DSF-10`, merged as
+`82e34384042a3312c17318285c4bd71965204ec7`. That merge commit *is* `origin/main`'s head, and
+it is the tree this re-sync was packaged from — read live with
+`git -C ~/openclaw-onboarding archive 82e34384 …`, never from a document.
+
+**What changed in skill 75 (why the twin drifted).** `scripts/core/choice_card/intake_card/intake_card.py`
+stays the only question source and gains five typed **BRIEF** questions —
+`BRIEF_IDS = ("offer", "link", "audience", "character", "photos")` — so the card asks **14**
+instead of 9 (`QUESTIONS = _brief_questions() + _questions()`); `mini-app/ui/questions.json`
+was regenerated from it and `mini-app/ui/studio.js` now passes the question into `answerBox`
+so the textarea shape comes from the typed contract; and `mini-app/service/src/index.js`
+reads the brief out of the leading replies and stores it *beside* them, marking
+`brief_complete` false with `brief_missing` rather than refusing an order. `mini-app/**` is
+onboarding-only and has no 999 counterpart (see `parity-contract.md` and the receipt), so
+only the `scripts/core/` half of that change reaches this repo.
+
+**What this commit does.**
+
+| Change | Detail |
+|---|---|
+| Re-package the core | the repo's own `installer-registration/package_core.py --source <read-only git archive of origin/main>`: `496 files (17 written, 0 stale removed)`, `--check: OK 496 files match canonical`, tree sha256 `f4f4d68f8d075a9ab54faf612e959191f94bd91a7258564efaa5c1867b2983cd` on both sides |
+| Re-copy the bridges | `drama-studio/{studio_bridge,approvals_bridge,studio_claim}.py` copied byte-for-byte from the same archive; all three were already identical, so **`studio_bridge.py` did not move** and its recorded fingerprint is untouched |
+| Refresh the fingerprints | `references/twin-sync-fingerprints.json`: `unit` `DSR-202` -> `DSR-206`, `canonical` re-pinned to `82e34384` / `origin/main`, `packaged` to `d504e753a` / `batch/DSF-11`, `summary` 496/496/0/0/0, 17 `files` entries re-digested, `pre_sync_DSR206_*` added. Nothing else touched |
+| Refresh the receipt | `references/twin-sync-receipt.md` gains the R2-B section below the R2-A one |
+
+**Proof.** `DSAF_CANONICAL_CORE=<archive> python3 -I tests/twin_sync_prove.py` ->
+`summary: same=496 differ=0 only-canonical=0 only-packaged=0` / `PARITY: PROVEN`, exit 0.
+`tests/test_studio_bridge_twin.py` exits 0 in both modes, run from the permanent batch
+worktree (never `/tmp`). `cmp` of each bridge against `origin/main`'s original -> exit 0
+all three. The packaged card carries all five brief ids and `len(QUESTIONS) == 14`.
+
 ## [2.7.53] — 2026-10-13 — BATCH-DSF-9: drama-studio pair fix (#216) + the R2-A twin re-sync
 
 One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-9`, one member unit
