@@ -1,5 +1,30 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.56] — 2026-10-14 — SWI-202: build hygiene never reaches the client (drift reports operator-only, silent)
+
+`#226` (`unit/SWI-202`, W2-item12-U1) — the SPEC.md item-12 doctrine provision, mirrored into this
+packaged twin because `references/parity-contract.md` lists **creative doctrine** and **the
+enforced flow** among the items that must be identical across both distributions (its
+byte-for-byte parity test covers `scripts/core/`, so this is the contract's identical-content
+rule, not the re-copy rule).
+
+`SKILL.md`, inside "Start here: the enforced flow" directly after the no-skip-gate paragraph,
+now states that drift between the installed tree and its source is build hygiene and, during
+a client run, the drift report is OPERATOR-ONLY and SILENT: no decision menu, no numbered
+report-only / add-files / full-re-sync / type-your-own choice, no prompt that waits for an
+answer, nothing about drift in the client's chat; the sync continues non-interactively on its
+documented default and the drift is reported to the operator only, by named file and path.
+The decision menu stays available on the explicit operator path (a named flag or an
+operator-run sync outside a client run).
+
+No code emitter exists to change in either repository: the four menu phrases ("Report only" /
+"Add 5 files" / "Full re-sync" / "Type something") are absent from onboarding `origin/main`,
+from this repo's `origin/main`, from the client box's `~/.claude/tools`, `~/.claude/skills`
+and `~/.openclaw`, and from the installed OpenClaw package — the menu was composed at run time
+by the agent. Version `2.7.55` -> `2.7.56`, in `VERSION` and the `SKILL.md` frontmatter
+`version:`, with this single entry; no older entry was rewritten. `scripts/scrub-operator-chat-id.py`
+does not exist in this repo (that guard is onboarding-only); it was recorded as absent, not created.
+
 ## [2.7.55] — 2026-10-14 — BATCH-SWI-N-1: count truth, intake doctrine, parity test hygiene (999)
 
 One release batch for repo `trevorotts1/999-setup`, head `batch/SWI-N-1`, carrying three

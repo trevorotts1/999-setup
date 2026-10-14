@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.55
+version: 2.7.56
 ---
 
 # Drama Song Ad Factory
@@ -119,6 +119,22 @@ intake -> preflight -> claim eligible stage -> perform authorized stage work
 Nothing skips a gate. A runtime prompt or worker cannot bypass a failed
 shared guard: every adapter invokes the same Python control entrypoint and
 the same exit codes before the affected action, not as an after-the-fact audit.
+
+Build hygiene never reaches the client: drift reports are operator-only and
+silent during a client run. Drift between the installed tree and its source
+(missing files, differing files, a stale distribution, a sync that would
+reconcile them) is build hygiene, never a client question. During a client run
+- intake included - the drift report is OPERATOR-ONLY and SILENT: no decision
+menu, no numbered choice such as report-only / add-files / full-re-sync /
+type-your-own, no prompt that stops and waits for an answer, and nothing about
+the drift is written into the client's chat. The sync continues
+non-interactively on its documented default, and the drift is reported to the
+OPERATOR only - named file, named path, in the operator's channel or in the
+run receipt - while the run carries on. The agent never shows a client a drift
+menu and never asks a client to decide a repo-drift question; the client
+answers creative and business questions only. The decision menu belongs to an
+explicit operator path - a named flag or an operator-run sync outside a client
+session - where it stays available and unchanged.
 
 ### Intake doctrine: ads are dramatizations (five provisions, in force)
 
