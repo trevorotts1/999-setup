@@ -1,0 +1,28 @@
+{
+  "generated_by": "scripts/sync_skill71_to_999.py (Item 27 sync)",
+  "model_source_note": "In the 999 edition the pin that names where a model id came from is the user's own pin (recorded as user-pin); the onboarding edition records the same fact as department-pin. The gate accepts user-pin on claude-nine runs under the Item 28 step 3 alias.",
+  "model_sources": [
+    "latest-family",
+    "explicit-request",
+    "user-pin",
+    "legacy-ratio-route"
+  ],
+  "n43_legacy_only": [
+    "3:1",
+    "1:3",
+    "9:21"
+  ],
+  "n43_substitutions": {
+    "1:2": "9:16",
+    "2:1": "16:9",
+    "4:5": "3:4",
+    "5:4": "4:3"
+  },
+  "precedence": [
+    "explicit request",
+    "user pin",
+    "default family"
+  ],
+  "precedence_note": "Model resolution in 999 runs through the native kie skill's lookup (Row 3 MAP); this file carries the law the lookup is judged by, not model data.",
+  "source_gate_sha256": "90381a0dd0b5635fe2acd785f9c92eabc665c2aa8d446b61d3d0cb3aa5af68ae"
+}

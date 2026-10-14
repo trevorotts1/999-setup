@@ -1,90 +1,102 @@
-# Skill 71 image and video generation route (KIE)
+# Skill 71 image and video generation route (KIE, claude-nine edition)
 
-Authority: `07-kie-setup/references/kie-common-rules.md` (the KIE common rules, merged by PR #1497).
-Where this file and that file disagree, that file wins. This file only says how Skill 71 uses it.
+This is the 999 edition's rewrite of the generation route (adapter
+class, Item 28). The onboarding edition routes policy to Skill 66/67
+and transport to Skill 74 in the OpenClaw skills tree. Nothing in
+this harness may borrow from that tree, so every reference below
+resolves inside this repo: the native `kie` skill (a front door at
+`.claude/skills/kie/`), its vendored helpers under
+`installer-registration/helpers/` (66-kie-image, 67-kie-video,
+68-kie-audio, 46-kie-callback-relay, 07-kie-setup,
+74-kie-live-adapter), and this skill's own vendored modules. The
+step-zero capability audit (S8) verified the native system against
+the route's checklist before this rewrite was written; the two gaps
+it proved are named in section 2 with the module that fills them.
 
-Skill 71 never calls KIE itself. Every generated image or video follows one path:
+## 1. Policy: which model (the native kie policy helpers)
 
-```
-Skill 71 stage -> policy owner (Skill 66 image, Skill 67 video) -> transport (Skill 74) -> save -> receipt
-```
+Model policy is the native kie skill's: 66-kie-image for images,
+67-kie-video for video, 07-kie-setup's common rules for both. The law
+Skill 71's gate enforces (latest-family lookup, alias normalization,
+cap status, the N43 ratio rules, the separate GPT Image 2 and 2.5
+payload rules, the visual QC retry ladder, the offline models.json
+default, the stated createTask rate limit) is copied into this skill
+as data in `references/kie-policy-999.json`, generated from the
+onboarding gate's constants by the Item 27 sync. Read the generated
+file in this skill; never reach across repos for it.
 
-## 1. Policy: which model (Skill 66 or 67)
+Model choice follows the standing rule: the client selects their
+model, or their configured default applies (in this harness, the
+install's 9Router configuration); recommendations may be offered
+with reasons. Where the onboarding law says a department pin, this
+harness's receipts say a user pin; the gate maps the value at
+validation time and the stored receipt keeps `user-pin`.
 
-- Skill 71 never writes a model id from memory (rule 10). It hands the final prompt, the ratio and the
-  reference files to Skill 66 (image) or Skill 67 (video), which select the model from their registry.
-- Authority order (rule 1): owner rulings, department pins, Skills 66/67/68, Skill 74 (mechanics), static tables.
-  An explicit client request for a model or a department pin wins over the default.
-- The GPT Image default is the newest GPT Image generation in KIE's live catalog (rule 13). Skill 66
-  resolves it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image`.
-  Today that is GPT Image 2.5 Sunburst. If it changes, the adapter writes a receipt and the operator is told.
-- Ratio rules from AGENTS.md N43 (rule 11), applied by Skill 66 before dispatch and recorded on the receipt:
-  3:1, 1:3 and 9:21 go to the legacy `gpt-image-2-*` route only; on the default route 5:4 becomes 4:3,
-  4:5 becomes 3:4, 2:1 becomes 16:9 and 1:2 becomes 9:16; every other ratio is used as asked.
-  The page slot ratio comes from the wireframe image inventory. When a substitution happens, write the
-  prompt's composition for the ratio that will be generated, and record both ratios in the receipt.
-- Constraint sets are per generation and never merged (rule 11).
+## 2. Transport: how (the native adapter, plus two audited gaps)
 
-## 2. Transport: how (Skill 74 only)
+Transport is the native adapter, 74-kie-live-adapter
+(`installer-registration/helpers/74-kie-live-adapter/scripts/kie_live_adapter.py`):
+validate, preflight at price x 1.30, prompt-budget check, submit,
+wait, save immediately. Its mode system (off, shadow, active) is its
+own; the receipts this skill writes name the adapter `kie` and carry
+no adapter_mode, and the gate's claude-nine alias accepts exactly
+that shape.
 
-Run these from the Skill 74 folder, once per image or clip. `--mode active` is required on every
-dispatching call; the default mode is `shadow`, which never spends. Rule-Zero approval (USD announce plus
-budget cap) and the per-job image cap still apply before the first paid call.
+The audit proved two pieces absent from the native system, and only
+those two are supplied by this skill, in `scripts/kie_transport.py`:
 
-1. Validate the payload against the live schema:
-   `python3 scripts/kie_live_adapter.py validate --model <id> --payload input.json`
-2. Preflight credits, price times 1.30 (rules 6 and 7); stop on a shortfall:
-   `python3 scripts/kie_live_adapter.py preflight --model <id> [--units N]`
-3. Prompt budget (rule 12): 95 to 100 percent of the model's character maximum, never below 80 percent:
-   `python3 scripts/kie_live_adapter.py prompt-budget --model <id> --check --prompt-file <prompt.txt>`
-   Exit 3 prints the exact characters to add; exit 4 prints the exact characters to cut. Fix and re-run.
-   Descriptive prompt fields only; spoken text and lyrics have their own rule.
-4. Submit: `python3 scripts/kie_live_adapter.py submit --request req.json --mode active`
-   (or `run --request req.json --save-dir DIR --mode active`, which submits, waits and saves in one call).
-5. Wait and save immediately (rule 8; result links can expire within 24 hours):
-   `python3 scripts/kie_live_adapter.py wait --task-id <id>` then `save --task-id <id> --save-dir DIR`.
+1. **The credits pair.** The adapter reads credits singly (its
+   `credits` command, the preflight balance read); nothing pairs a
+   before read with an after read around a dispatch. kie_transport.py
+   reads credits immediately before dispatch and immediately after
+   completion and records both figures per task.
+2. **The per-task receipt files.** The adapter writes receipt lines
+   only for drift events. kie_transport.py writes the per-task files
+   the gate reads, at `private/receipts/kie74/<task_id>.json`,
+   carrying task_id, model_id, model_source, requested ratio,
+   generated ratio measured from the saved file, preflight_ok, and
+   budget_exit.
 
-The adapter never retries createTask after a network error, makes one attempt on a 401 or 403 (stop and
-report), and never prints the key (rules 6 and 9). The key is the client's own. Prices are never typed
-into a Skill 71 file: ask `price`. Endpoints are never typed either (rule 2).
+Hand-rolled KIE calls are forbidden in this harness exactly as in
+the onboarding one: a generation with no adapter task id and no
+receipt file cannot close the stage.
 
-Never copy `kie_live_adapter.py` into a run folder, and never write a `curl`, `requests` or `urllib`
-createTask or recordInfo call. A hand-rolled call is outside the single approved path.
-
-Account limit (rule 3): 20 createTask requests per 10 seconds, shared by every agent on the account.
+The prompt enforcer is this repo's own `shared-utils/kie_prompt_enforcer.py`
+at the repo root (vendored byte-identical from the onboarding repo,
+Item 28 Row 1; the nested copy under installer-registration/helpers
+is the installer's own and is byte-identical today, verified at
+audit time by git blob sha). The vendored enforcer's adapter hunt is
+an environment decision of this install: it searches
+KIE_LIVE_ADAPTER_PATH first, then the skills roots; setting
+KIE_LIVE_ADAPTER_PATH to an empty string disables the adapter, which
+makes budget answers UNKNOWN rather than unavailable; callers that
+must distinguish the two call the enforcer's `check`, never
+`budget_for` alone.
 
 ## 3. Receipt (stage `image-generation-qc`)
 
-`scripts/stage_gate.py` closes `image-generation-qc` only when the stage receipt carries a `transport`
-block that matches this route. Example (values are placeholders):
-
-```json
-"transport": {
-  "skill": "74-kie-live-adapter",
-  "policy": "66-kie-image",
-  "mode": "active",
-  "tasks": [
-    {"file": "image-generation-qc/Image-001.png", "task_id": "<KIE task id>",
-     "model_id": "<id returned by Skill 66>", "model_source": "latest-family",
-     "requested_ratio": "16:9", "generated_ratio": "16:9",
-     "preflight_ok": true, "budget_exit": 0}
-  ]
-},
-"cost": {"provider": "kie", "credits_before": 0, "credits_after": 0}
-```
-
-`model_id` and `model_source` are per task because one page can use the legacy route for a 3:1 slot and
-the default for the rest. `model_source` is one of `latest-family`, `explicit-request`, `department-pin`,
-`legacy-ratio-route`. The gate checks the N43 ratio rule on every task: a requested 3:1, 1:3 or 9:21 must be
-generated as asked on the legacy route; on the default route 5:4, 4:5, 2:1 and 1:2 must be generated as
-4:3, 3:4, 16:9 and 9:16; every other ratio must be generated as requested. An explicit request or a pin may
-override the substitution.
-Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.json` (a successful active Skill 74 result, recorded with the Skill 49/56 `kie74_receipt.py` pattern or written by the run's own recorder) and be unique across tasks and files. A task whose `model_source` is `explicit-request` or `department-pin` carries `evidence` (the request text or the pin id); without it the N43 substitution cannot be skipped. `evidence` must be at least 12 characters and not a placeholder. The intake stage writes `intake.json` with `scripts/write_intake.py`, whose `--image-engine` is `kie` (default) or `agnes`; the Agnes route is accepted only when `intake.json` has `image_engine: "agnes"`.
-`credits_before` and `credits_after` come from `kie_live_adapter.py credits`, never from an estimate.
-When the client selected Agnes, `skill` and `policy` are both `63-agnes-image` and `cost.provider` is `agnes`.
+The stage receipt's transport block names `skill: "kie"` and
+`policy: "kie"` on a claude-nine run (intake records
+`runtime: "claude-nine"`), one task entry per generated file, each
+with file, task_id, model_id, model_source (one of latest-family,
+explicit-request, user-pin, legacy-ratio-route), requested_ratio,
+generated_ratio, preflight_ok true, and budget_exit 0. The cost block
+names provider `kie` with the credits_before and credits_after
+figures kie_transport.py recorded. A run whose intake declares any
+other runtime does not get the alias: on the OpenClaw side the same
+receipt is refused, by design.
 
 ## 4. Video
 
-Skill 71 has no video stage today. If an approved page plan includes a hero or background clip, the same
-path applies with Skill 67 as the policy owner and the same Skill 74 commands; use `price --units` for
-duration based prices and pass the total seconds when input and output duration are billed.
+Video routes to the native `motion-video-plus` skill (Item 28
+Row 4's MAP disposition), with 67-kie-video as its policy helper.
+
+## 5. Agnes
+
+When the client explicitly selects Agnes, `scripts/agnes_route.py`
+in this skill is the route (submit, poll, save, cost over the
+synchronous Agnes image endpoint). Intake refuses the selection in
+writing when AGNES_AI_API_KEY is not configured in the environment.
+Receipts name the route honestly: transport skill `63-agnes-image`
+(the gate's route name), adapter `agnes`, receipt files under
+`private/receipts/agnes/`.
