@@ -1,5 +1,33 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.55] — 2026-10-14 — BATCH-SWI-N-1: count truth, intake doctrine, parity test hygiene (999)
+
+One release batch for repo `trevorotts1/999-setup`, head `batch/SWI-N-1`, carrying three
+QC-PASS member pull requests. Version `2.7.54` -> `2.7.55`, in `VERSION` and the `SKILL.md`
+frontmatter `version:`, with this single entry.
+
+**Members, merged in this deliberate order** (SWI-004 first, because SWI-007's companion
+test reads the very strings SWI-004 repairs, so #222 stays red until #221 is in the tree):
+
+- **`unit/SWI-004`** (#221, head `87f6a313e`) — count truth in the card strings: the
+  `intake_card` package docstring, the `intake_card.py` argparse help and the `factory.py`
+  card help derive their total from the live source, plus the 14-question companion
+  assertions and the AST sweep of every help/description literal.
+- **`unit/SWI-003`** (#220, head `e9bbe8648`) — intake doctrine in this `SKILL.md`:
+  dramatizations, the never-ask-real rule, the client-claim carve-out, the permission rule,
+  count truth and the overwork rule, plus item 9's parity exit-code documentation.
+- **`unit/SWI-007`** (#222, head `fe2beb79b`) — `tests/test_parity_layout.py` resolves its
+  root from the file location so the 2 real parity FAILs stay visible instead of silently
+  skipping, and `test_intake_card_h9.py` gains the public `NUMBER_WORDS` / `COUNT_CLAIM` /
+  `COUNT_SOURCES` companion contract with `test_no_help_or_docstring_claims_a_different_count`.
+
+**The one conflict and how it was resolved.** `test_intake_card_h9.py` was edited by two
+members at once. Both companion suites were kept: SWI-007's public helpers and its
+`test_no_help_or_docstring_claims_a_different_count` survive unchanged, and SWI-004's
+AST-based helpers survive renamed with an `_AST_` prefix alongside its sweep and live
+`--help` count tests, with the colliding module-count test renamed
+`test_module_count_equals_rendered_count_item10`. No assertion, helper or test was dropped.
+
 ## [2.7.54] — 2026-10-14 — BATCH-DSF-11: the R2-B story-brief twin re-sync (DSR-105)
 
 One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-11`, carrying **no
