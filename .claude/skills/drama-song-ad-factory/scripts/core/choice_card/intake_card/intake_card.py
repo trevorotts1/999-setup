@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""intake_card: the intake questions (fourteen: the five story-brief questions
-then the nine production choices) as a card a client can read (H9).
+"""intake_card: the intake questions (the story-brief questions then the
+production choices) as a card a client can read (H9).
+
+The card's total is read from ``CARD_QUESTION_COUNT`` -- never from a literal
+typed into a docstring or a help string -- so no distribution can quote a stale
+count again.
 
 DSR-105: the studio page used to ask only the nine production choices, so an
 order placed on the page carried no brief at all -- no offer, no link, no
@@ -15,13 +19,16 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 1 of 9 - LENGTH
+    Question 1 of <total> - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
     <blank line>
     ...
     How to answer: reply with one number per question ...
+
+``<total>`` is the live count (``CARD_QUESTION_COUNT``); nothing in this file
+writes a literal total, so the header cannot go stale.
 
 Plain text only: no Markdown, no HTML, no parse mode, so nothing is stripped
 or escaped on the way out. ``render_messages`` splits on question boundaries
@@ -285,6 +292,12 @@ def _brief_questions():
 
 
 QUESTIONS = _brief_questions() + _questions()
+
+#: The one count anyone may quote. Every help string and docstring formats from
+#: this, so the printed total cannot drift from the rendered card (W1-U4).
+CARD_QUESTION_COUNT = len(QUESTIONS)
+#: The phrase the CLIs print, e.g. "the intake card (N questions)".
+CARD_SUMMARY = "the intake card (%d questions)" % CARD_QUESTION_COUNT
 
 
 def example_replies(questions=None):
@@ -736,8 +749,10 @@ def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question where the brief's typed
     CHARACTER question sat when the client has saved characters (Part I, I6).
     Exactly one "who stars" question is ever asked: the pick replaces the typed
-    description. With a client folder but no saved characters the fourteen open
-    with one short line (``NO_SAVED_LINE``). No folder: plain fourteen."""
+    description rather than adding one, so the card keeps
+    ``CARD_QUESTION_COUNT`` questions either way. With a client folder but no
+    saved characters the card opens with one short line (``NO_SAVED_LINE``)
+    instead."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
@@ -866,7 +881,7 @@ def studio_json(questions=None, guide=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the intake card (nine questions, ten with a saved character).")
+    ap = argparse.ArgumentParser(description="Print %s." % CARD_SUMMARY)
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json", "studio-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "
