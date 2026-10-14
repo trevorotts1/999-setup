@@ -8,7 +8,14 @@
     "operatorControlledOnly": true,
     "note": "GitHub Releases in trevorotts1/999-setup is the default channel. Active components are the bundled skills registry (CONTROL/bundled-skills.txt); repo-tree skill entries must stay in lockstep with bundled-skills.txt. A new component is added only by a signed release-manifest build."
   },
-  "runtimePins": {},
+  "runtimePins": {
+    "vercel": {
+      "version": "64.0.2",
+      "installSpec": "vercel@64.0.2",
+      "pinFile": ".claude/skills/blackceo-signature-page/references/vercel-cli-pin.json",
+      "note": "Fix plan Item 28 Row 7: replaces the floating vercel@latest install in nine-router-setup; parity flags drift between this pin and scripts/vercel_deploy.py MIN_VERCEL_CLI."
+    }
+  },
   "components": {
     "nine-router-setup": [
       {

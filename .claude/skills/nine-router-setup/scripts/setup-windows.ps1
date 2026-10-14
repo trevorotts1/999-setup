@@ -471,14 +471,14 @@ try {
     $vercelCmd = Get-Command vercel -ErrorAction SilentlyContinue
     if (-not $vercelCmd) {
         Write-Log 'Installing the Vercel CLI (npm global)...'
-        & $NpmBin install -g vercel@latest 2>&1 | Out-Host
+        & $NpmBin install -g vercel@64.0.2 2>&1 | Out-Host
         Refresh-Path
         $vercelCmd = Get-Command vercel -ErrorAction SilentlyContinue
     }
     $vercelVer = if ($vercelCmd) { (& $vercelCmd.Source --version 2>$null | Select-Object -Last 1) } else { $null }
     $ErrorActionPreference = $prevEap
     if ($vercelVer) { $DepSummary += "vercel          OK   $vercelVer ($($vercelCmd.Source))" }
-    else { $DepSummary += 'vercel          MISSING - npm install -g vercel@latest failed; publishing falls back to npx vercel' }
+    else { $DepSummary += 'vercel          MISSING - npm install -g vercel@64.0.2 failed; publishing falls back to npx vercel' }
 
     Write-Log 'Dependency preflight complete:'
     foreach ($line in $DepSummary) { Write-Log "  $line" }
