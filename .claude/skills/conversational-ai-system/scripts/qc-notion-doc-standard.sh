@@ -77,10 +77,10 @@ declare -a ITEM_KEYS=(
   "FLAT 23-key Raw Body|23-key Raw Body|ghl-raw-body-json-standard"
   "tags FIRST|Build-with-AI builds the SHAPE only|SHAPE only|post-build VERIFY"
   "Your Communication Playbooks|Help me build a .purpose. playbook|trigger word|I Do / You Do"
-  "VPS-vs-Mac|VPS .Hostinger Docker. vs Mac|vps-vs-mac-install-considerations"
+  "Install points|Things to consider when installing|SECRETS_ENV"
   "How-it-works explanation LAST|how-it-works LAST|Full Reference"
   "every copyable value in its own code block|its own code block|own copy button"
-  "delivered to the client via Telegram|via Telegram"
+  "delivered to the client|configured notification channel|SURFACES"
   "UNIVERSAL|no personal/client data|generic placeholder"
 )
 declare -a ITEM_NAMES=(
@@ -91,10 +91,10 @@ declare -a ITEM_NAMES=(
   "(5) FLAT 23-key Raw Body — own code block"
   "(6) Build step: tags-first + manual-fill + Build-with-AI-shape-only + post-build VERIFY"
   "(7) Your Communication Playbooks (CTA + trigger word + I-Do/You-Do + brainstorm)"
-  "(8) VPS-vs-Mac install-considerations"
+  "(8) Install-points section (this harness)"
   "(9) How-it-works explanation LAST"
   "(10) every copyable value in its own code block"
-  "(11) delivered to the client via Telegram"
+  "(11) delivered to the client (surfaced for the configured channel)"
   "(12) UNIVERSAL — no personal/client data"
 )
 i=0

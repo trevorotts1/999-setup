@@ -75,7 +75,7 @@ If operator says yes:
    - Workflow ID (derived from name)
    - Layer 0 (routing check)
    - Layer 1 (GHL side — tags, Workflow AI prompt, verification checklist)
-   - Layer 2 (OpenClaw playbook — conversation behavior)
+   - Layer 2 (the conversation playbook — conversation behavior)
 2. Save drafts to `<MASTER_FILES_DIR>/conversation-workflows/drafts/`
    (NOT directly to active workflows — operator must review first)
 3. Notify operator: "Drafted N workflows. Review them at

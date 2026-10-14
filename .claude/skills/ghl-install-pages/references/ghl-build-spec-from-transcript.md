@@ -135,8 +135,9 @@ The reason an agent gets into the page easily is the seeded **Firebase refresh t
 explicit instruction:
 - **Never assume** a client lacks a **private integration token**, a **location ID**, or a **Firebase
   refresh token.** `source=transcript`.
-- **Search ALL environments** before concluding you lack a credential: OpenClaw secrets, the box's
-  `.env`, and — on a VPS — the **Docker** environment area AND the **OpenClaw** environment area. Do a
+- **Search ALL environments** before concluding you lack a credential: the install's
+  secrets env (the file `$SECRETS_ENV` designates), the exported process environment, and the
+  box's `.env`. Do a
   thorough search; only then state clearly that the info is missing. `source=transcript`.
 
 > The harden run owns the **3 auth-seed fixes**; this run only records the transcript instruction.

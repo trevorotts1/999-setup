@@ -39,7 +39,7 @@ was discussed, what was decided, what's pending.]
 
 ## Daily Summaries (3 to 14 days ago)
 [Per-day rollups for the 3-to-14-day window. Each entry dated. Written
-by the 11:30 PM cron job once activity has aged out of the 72-hour
+by the 11:30 PM scheduled job once activity has aged out of the 72-hour
 verbatim window.]
 
 ## Verbatim — Last 72 Hours
@@ -85,7 +85,7 @@ the classification filter in AGENTS.md):
    again, Sarah — did the consultation we discussed last month work
    out?"
 
-## Daily summarization (11:30 PM nightly via OpenClaw cron)
+## Daily summarization (11:30 PM nightly via the operator's scheduler)
 
 A scheduled job runs every night at 11:30 PM local time. For each file in
 `conversational-logs/`:
@@ -115,25 +115,15 @@ A scheduled job runs every night at 11:30 PM local time. For each file in
    verbatim entries get truly deleted (after the 72-hour cutoff during
    summarization). Daily summaries promote to historical and persist.
 
-## Cron job definition
+## Scheduled job definition
 
-Add this to OpenClaw's cron configuration so the daily summarization
+Register this job on the operator's scheduler so the daily summarization
 runs automatically:
 
-```json
-{
-  "cron": {
-    "jobs": [
-      {
-        "id": "conversation-log-summarizer",
-        "schedule": "30 23 * * *",
-        "agentId": "<ROUTING_AGENT_ID>",
-        "message": "Run the daily conversation log summarization per the protocol at <MASTER_FILES_DIR>/conversation-log-protocol.md. Process every file in <MASTER_FILES_DIR>/conversational-logs/. Apply the 72-hour, 14-day, and 90-day retention rules. Report a brief summary of what was processed."
-      }
-    ]
-  }
-}
-```
+- **id:** `conversation-log-summarizer`
+- **schedule:** `30 23 * * *`
+- **agent:** `<ROUTING_AGENT_ID>`
+- **message:** "Run the daily conversation log summarization per the protocol at <MASTER_FILES_DIR>/conversation-log-protocol.md. Process every file in <MASTER_FILES_DIR>/conversational-logs/. Apply the 72-hour, 14-day, and 90-day retention rules. Report a brief summary of what was processed."
 
 ## Safety rules
 
@@ -176,32 +166,14 @@ the inbound and outbound messages to the log file per the full protocol at:
   <MASTER_FILES_DIR>/conversation-log-protocol.md
 ```
 
-### D. Schedule the daily summarization cron job
+### D. Schedule the daily summarization job
 
-Add the cron entry to `~/.openclaw/openclaw.json` (the cron config block, not the hooks block). Use the existing Backup Protocol fallback before editing. If the cron block doesn't exist, create it:
+Register the job from the definition above on the operator's scheduler
+(the pack ships no scheduler registration machinery; recurring host
+scheduling is the operator's own setup in this harness).
 
-```json
-{
-  "cron": {
-    "enabled": true,
-    "jobs": [
-      {
-        "id": "conversation-log-summarizer",
-        "schedule": "30 23 * * *",
-        "agentId": "<ROUTING_AGENT_ID>",
-        "message": "Run the daily conversation log summarization per the protocol at <MASTER_FILES_DIR>/conversation-log-protocol.md. Process every file in <MASTER_FILES_DIR>/conversational-logs/. Apply the 72-hour, 14-day, and 90-day retention rules. Report a brief summary of what was processed."
-      }
-    ]
-  }
-}
-```
-
-Validate the config and confirm the cron job appears in `openclaw status`:
-
-```bash
-openclaw config validate
-openclaw cron list | grep conversation-log-summarizer
-```
+Confirm afterwards that the `conversation-log-summarizer` job appears in
+the operator's scheduler listing.
 
 ### E. Tell the operator what was set up
 
@@ -209,5 +181,5 @@ Add to the Client Reference Sheet and the final chat summary:
 
 - Folder: `<MASTER_FILES_DIR>/conversational-logs/`
 - Protocol: `<MASTER_FILES_DIR>/conversation-log-protocol.md`
-- Cron: runs nightly at 11:30 PM
+- Schedule: runs nightly at 11:30 PM
 - Retention: 72 hours verbatim → 14 days daily summary → 90 days historical summary (summaries kept forever)

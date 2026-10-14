@@ -94,12 +94,9 @@ fi
 
 # ── Resolve skill dir (for snapshot path) ─────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM="${OPENCLAW_PLATFORM:-mac}"
-if [ "$PLATFORM" = "mac" ]; then
-  CAF_DATA="$HOME/.openclaw/tools/convert-and-flow-cli/data"
-else
-  CAF_DATA="/data/.openclaw/tools/convert-and-flow-cli/data"
-fi
+# Data root mirrors the engine's data_dir() resolution (guards.py): the
+# CAF_DATA_DIR override wins; otherwise the engine's in-tree data directory.
+CAF_DATA="${CAF_DATA_DIR:-$SCRIPT_DIR/tools/engine/data}"
 SNAPSHOT_DIR="$CAF_DATA/snapshots"
 BUILD_EVENTS_LEDGER="$CAF_DATA/build-events.jsonl"
 
@@ -475,9 +472,7 @@ record_human "WF-20" "Hallucination detection (WF-20) requires QC agent to recon
 if [ "$CONVERSATIONAL" -eq 1 ]; then
   _TRINITY=""
   for _cand in \
-    "$SCRIPT_DIR/../38-conversational-ai-system/scripts/qc-trinity-registry.sh" \
-    "$HOME/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh" \
-    "/data/.openclaw/skills/38-conversational-ai-system/scripts/qc-trinity-registry.sh"; do
+    "$SCRIPT_DIR/../conversational-ai-system/scripts/qc-trinity-registry.sh"; do
     if [ -f "$_cand" ]; then _TRINITY="$_cand"; break; fi
   done
   if [ -z "$_TRINITY" ]; then

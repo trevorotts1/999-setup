@@ -21,7 +21,7 @@ Command-line interface for the GoHighLevel CRM and Marketing API. Manage contact
 - `GOHIGHLEVEL_API_KEY` — your GHL Private Integration Token
 - `GOHIGHLEVEL_LOCATION_ID` — your GHL location/sub-account ID (required, no default)
 - `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` — comma-separated whitelist of approved location IDs (required for writes)
-- Installed at `~/.openclaw/tools/convert-and-flow-cli/.venv`
+- Installed in-tree at `tools/engine/.venv` inside the convert-and-flow-operator skill
 
 ## Installation
 

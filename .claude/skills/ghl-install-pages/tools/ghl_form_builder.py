@@ -823,7 +823,7 @@ def _ensure_agent_browser_path(env: dict) -> dict:
     """Guarantee `~/.npm-global/bin` (where the `agent-browser` CLI lives) is on
     `env['PATH']`, at the FRONT, prepending ONLY if it is missing.
 
-    On the operator box, sourcing `~/.openclaw/secrets/.env` can clobber PATH and
+    On the operator box, sourcing the install's secrets env file can clobber PATH and
     drop `~/.npm-global/bin`, so spawning a browser subprocess fails with
     'command not found'. This is purely defensive — it NEVER reads or touches the
     secrets file; it only repairs the PATH of the env dict handed to a spawn."""

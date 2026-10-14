@@ -134,8 +134,9 @@ per-call `AB --session`) directly, and NEVER invent a per-iteration session name
 357M, on the operator box). The gateway owns the ONE canonical session
 (`bm_session_name` = `ghl-skill6-<location-id>`), the box-wide lock (lock=1), the
 lease, the per-call + per-session TTL, the pool ceiling, the circuit-breaker, and
-a GUARANTEED `trap _bm_teardown EXIT` (close + state clear). The host reaper
-(`scripts/agent-browser-reaper.sh`, hourly cron — `13 * * * *`) is the backstop for a hard crash.
+a GUARANTEED `trap _bm_teardown EXIT` (close + state clear). Orphan sessions
+are reaped under Item 33 browser hygiene (the blackceo-signature-page session
+registry and reaper) as the backstop for a hard crash.
 
 Core commands (full surface in `agent-browser skills get core --full`).
 **Note the `--headed false` on EVERY line (D6) — it is mandatory, not optional —
@@ -211,7 +212,7 @@ bash tools/browser_manager.sh run-detached -- <build-cmd>
 ```
 The agent then EXITS — resume via the per-page ledger (§5). The circuit-breaker
 PARKS a flaky build (qc-failed) after `AB_BREAKER_MAX` opens without a verified
-pass (loud STOP via Rescue Rangers, parked NOT re-fired); the hourly reaper sweeps
+pass (loud STOP, parked NOT re-fired); the Item 33 hygiene reaper sweeps
 any descriptor a hard crash still leaks. Never hijack a screen, never babysit.
 
 ---
@@ -419,7 +420,7 @@ non-interactive element inside a cross-origin child frame.
 |------|-------|-----------------------------------|--------|
 | 1 | agent-browser via `browser_manager` (pin 0.27.0) | **Partial** without Playwright | PRIMARY |
 | 1b | agent-browser **+** Playwright CDP hybrid | **Yes** — required for iframe drag/drop | Full class |
-| 2 | OpenClaw managed `openclaw browser` + `--frame` | (proposed — better native frame refs) | NOT wired as Skill 6 PRIMARY yet; experimental upgrade |
+| 2 | OpenClaw managed browser | n/a | NOT AVAILABLE in this harness — structurally absent, never selected |
 | 3 | Playwright-only | Degraded | Escape hatch; never Step 1 |
 | 4 | REST / fallback-ladder | Content ops without UI drag | `GHL_FALLBACK_LADDER=1` (default OFF) |
 | 5 | CUA / computer-use | — | NOT in Skill 6 yet; optional future last resort only |

@@ -103,7 +103,7 @@ LOCKs them via the full create-then-deactivate procedure).
 
 ## 3. §capture_procedure (run to LOCK — mirrors the 2026-07-02 form/survey runs)
 
-1. Confirm the box is FREE and NOT parked: `ls ~/.openclaw/workspace/.park/` shows no
+1. Confirm the box is FREE and NOT parked: `ls <PARK_DIR>` (the browser_manager park dir, <durable root>/workspace/.park) shows no
    `*.parked` / `*.BLOCKED`; no live `agent-browser` processes; else STOP.
 2. Bring up the token-only seeded session (headless, singleton gateway) to the
    operator **test** sub-account — reuse `ghl_form_builder._seed_and_land` (never a

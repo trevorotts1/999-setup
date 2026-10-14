@@ -107,17 +107,18 @@ Reply IGNORE to dismiss.
 
 ## Recommended model
 
-This is an analytical task requiring deep reasoning. Use the highest-
-reasoning model available — typically DeepSeek V4.1 Flash with thinking:max,
-or Kimi 2.6+ via Ollama Cloud, or the latest top-reasoning model at
-execution time. Configure in openclaw.json under `tuneup.model`.
+This is an analytical task requiring deep reasoning. Use the client's
+selected model or their configured default; a top-tier reasoning model is
+RECOMMENDED for this pass (guidance only, never a prescription). The
+client may pin a choice in the install's skill38 configuration under
+`tuneup.model`.
 
 ## Implementation
 
-Register a cron job:
+Register a job on the operator's scheduler that runs the weekly tune-up:
 
 ```
-openclaw cron add weekly-tune-up "0 2 * * 0" "openclaw run weekly-tune-up"
+schedule: "0 2 * * 0"  ->  run the weekly tune-up
 ```
 
 Cron expression `0 2 * * 0` = "minute 0, hour 2, any day, any month,
@@ -133,10 +134,10 @@ Operator can manually run the tune-up at any time:
 Agent runs the same analysis on-demand.
 ```
 
-**B. Register cron:**
+**B. Register the scheduled job (on the operator's scheduler):**
 
 ```bash
-openclaw cron add weekly-tune-up "0 2 * * 0" "openclaw run weekly-tune-up"
+schedule: "0 2 * * 0"  ->  run the weekly tune-up
 ```
 
 **C. Create the tune-ups folder:**

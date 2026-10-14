@@ -159,7 +159,7 @@ if [ -f "$PROTO" ]; then
 
   # Honest scope: NOT a new sending service / scheduler / CRM.
   if grep -qiE 'does NOT build a new|NOT (build|a new).*(sending|service|scheduler|CRM)' "$PROTO"; then
-    pass "protocol is honest about scope (reuses GHL send + openclaw cron + Communication Playbooks; NOT a new sending service/scheduler/CRM)"
+    pass "protocol is honest about scope (reuses GHL send + the operator scheduler + Communication Playbooks; NOT a new sending service/scheduler/CRM)"
   else
     fail "protocol must be honest about scope (NOT a new sending service / scheduler / CRM)"
   fi
@@ -172,7 +172,7 @@ echo ""
 # 2. AGENTS.md is INTENTIONALLY not given an inbound-reply step; the protocol must
 #    document the cron + event wiring instead, and there must be NO STEP_9_46 inbound marker.
 if [ -f "$PROTO" ] && grep -qi 'cron + event wiring\|cron/event-driven\|cron-driven\|event-driven' "$PROTO" \
-   && grep -qi 'openclaw cron' "$PROTO"; then
+   && grep -qi "operator's scheduler" "$PROTO"; then
   pass "protocol documents the cron + event wiring (this engine is cron/event-driven, not an inbound-reply step)"
 else
   fail "protocol must document the cron + event wiring (no AGENTS.md inbound-reply step — cron/event-driven)"

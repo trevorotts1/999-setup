@@ -2,16 +2,16 @@
 # 10-generate-capabilities-playbook.sh
 #
 # Reads the skill's templates/agent-capabilities-playbook-template.md,
-# substitutes placeholders with values pulled from openclaw.json and
-# company-config.json, and writes the result to
+# substitutes placeholders with values pulled from company-config.json and
+# the harness bindings below, and writes the result to
 # $MASTER_FILES_DIR/agent-capabilities-playbook.md.
 #
 # Substitution map (extend as needed):
 #   <CLIENT_NAME>           ← $MASTER_FILES_DIR/company-config.json .name (else "this client")
-#   <MODEL_TIER_REAL_TIME>  ← openclaw.json .agents.list[id=main].model
-#   <MODEL_TIER_ASYNC>      ← openclaw.json .agents.async.model (else "(same as real-time)")
-#   <MODEL_TIER_BATCH>      ← openclaw.json .agents.batch.model (else "(same as real-time)")
-#   <CHANNELS_ENABLED>      ← derived from openclaw.json .hooks.mappings (comma-separated)
+#   <MODEL_TIER_REAL_TIME>  ← env SKILL38_MODEL_TIER_REAL_TIME (else the client-configured model)
+#   <MODEL_TIER_ASYNC>      ← env SKILL38_MODEL_TIER_ASYNC (else "(same as real-time)")
+#   <MODEL_TIER_BATCH>      ← env SKILL38_MODEL_TIER_BATCH (else "(same as real-time)")
+#   <CHANNELS_ENABLED>      ← company-config.json .channels (comma-separated)
 #   <INSTALL_TIMESTAMP>     ← date -u +%Y-%m-%dT%H:%M:%SZ
 #
 # Idempotent: if the output file already exists, it is backed up to
@@ -34,10 +34,13 @@ fi
 # -----------------------------------------------------------------------------
 # Resolve MASTER_FILES_DIR
 # -----------------------------------------------------------------------------
-POINTER_FILE="${HOME}/.openclaw/.skill-38-master-files-dir"
+# Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+# pointer is the master-files-dir file inside this skill directory (the
+# OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+POINTER_FILE="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
 if [[ ! -f "$POINTER_FILE" ]]; then
   echo "[10-generate-capabilities-playbook] pointer file missing: $POINTER_FILE" >&2
-  echo "[10-generate-capabilities-playbook] run 01-locate-master-files-folder.sh first." >&2
+  echo "[10-generate-capabilities-playbook] set MASTER_FILES_DIR or write the pointer file (master-files-dir in this skill directory)." >&2
   exit 1
 fi
 MASTER_FILES_DIR="$(cat "$POINTER_FILE")"
@@ -46,15 +49,13 @@ MASTER_FILES_DIR="${MASTER_FILES_DIR%$'\n'}"
 OUTPUT="$MASTER_FILES_DIR/agent-capabilities-playbook.md"
 
 # -----------------------------------------------------------------------------
-# Resolve openclaw.json
+# Resolve the harness configuration values
 # -----------------------------------------------------------------------------
-OS_NAME="$(uname -s)"
-if [[ "$OS_NAME" == "Darwin" ]]; then
-  OPENCLAW_JSON="${OPENCLAW_JSON:-$HOME/.openclaw/openclaw.json}"
-else
-  OPENCLAW_JSON="${OPENCLAW_JSON:-/data/.openclaw/openclaw.json}"
-fi
-
+# 999 harness binding: there is no openclaw.json here. Model tiers are the
+# client's configured models (model-selection doctrine: the client selects
+# their model or their configured default applies); declare them via env
+# SKILL38_MODEL_TIER_REAL_TIME / _ASYNC / _BATCH when the playbook needs the
+# concrete values. Channels come from the client's own company-config.json.
 COMPANY_CONFIG="$MASTER_FILES_DIR/company-config.json"
 
 # -----------------------------------------------------------------------------
@@ -75,17 +76,11 @@ get_json() {
 }
 
 CLIENT_NAME="$(get_json "$COMPANY_CONFIG" '.name' 'this client')"
-# main's model from either roster shape: agents.entries.main (OpenClaw 2026.9.x)
-# or the legacy agents.list[] row.
-MODEL_TIER_REAL_TIME="$(get_json "$OPENCLAW_JSON" '(.agents.entries.main.model? // ([.agents.list[]? | select(.id=="main") | .model][0]))' 'unknown')"
-MODEL_TIER_ASYNC="$(get_json "$OPENCLAW_JSON" '.agents.async.model' '(same as real-time)')"
-MODEL_TIER_BATCH="$(get_json "$OPENCLAW_JSON" '.agents.batch.model' '(same as real-time)')"
+MODEL_TIER_REAL_TIME="${SKILL38_MODEL_TIER_REAL_TIME:-the client-configured model}"
+MODEL_TIER_ASYNC="${SKILL38_MODEL_TIER_ASYNC:-(same as real-time)}"
+MODEL_TIER_BATCH="${SKILL38_MODEL_TIER_BATCH:-(same as real-time)}"
 
-CHANNELS_ENABLED='unknown'
-if [[ -f "$OPENCLAW_JSON" ]] && command -v jq >/dev/null 2>&1; then
-  derived="$(jq -r '.hooks.mappings // {} | keys | join(", ")' "$OPENCLAW_JSON" 2>/dev/null || true)"
-  [[ -n "$derived" && "$derived" != "null" ]] && CHANNELS_ENABLED="$derived"
-fi
+CHANNELS_ENABLED="$(get_json "$COMPANY_CONFIG" '(.channels // []) | if type=="array" then join(", ") else . end' 'unknown')"
 
 INSTALL_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

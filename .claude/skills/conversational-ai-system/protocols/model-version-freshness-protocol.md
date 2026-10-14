@@ -98,8 +98,8 @@ For each model the client uses:
 1. Weekly Saturday report includes any detected version updates
 2. Operator replies YES / NO / DEFER per model
 3. For YES responses, the agent:
-   a. Backs up current `openclaw.json` config to
-      `<MASTER_FILES_DIR>/model-config-backups/openclaw-<timestamp>.json`
+   a. Backs up the current install configuration to
+      `<MASTER_FILES_DIR>/model-config-backups/config-<timestamp>.json`
    b. Updates the model reference in the config
    c. Tests with a synthetic request (sends a test message through
       the new model — checks response, latency, cost)
@@ -120,8 +120,8 @@ updates:
 1. Detection still happens weekly
 2. Update process is more deliberate:
    a. Operator approves update
-   b. Agent triggers full re-index of all Knowledge Sources via
-      `openclaw memory index --rebuild --path "<MASTER_FILES_DIR>/KnowledgeBases"`
+   b. Agent triggers a full re-index of all Knowledge Sources through
+      the runtime's memory tooling (rebuild over `"<MASTER_FILES_DIR>/KnowledgeBases"`)
    c. Agent verifies semantic search still works (runs test queries
       against known content)
    d. ONLY THEN switches the configured embedding model
@@ -130,20 +130,20 @@ updates:
 
 ## Cron registration
 
-This step does NOT register its own cron. It registers a HOOK into
-the existing Saturday 11pm Proactive Suggestions Scan cron from
+This step does NOT register its own scheduled job. It hooks into
+the existing Saturday 11pm Proactive Suggestions Scan job from
 Step 9.34. The combined run produces ONE consolidated report:
 
 ```
-openclaw run proactive-suggestions-scan
+run the proactive-suggestions scan
   -> 7 proactive analyzers (Step 9.34)
   -> model version freshness check (this step)
   -> aggregates results
   -> delivers via notification-routing-protocol.md
 ```
 
-Implementation: extend `proactive-suggestions-scan` cron action to
-include freshness check as a final step.
+Implementation: extend the `proactive-suggestions-scan` scheduled
+action to include the freshness check as a final step.
 
 ## Allow-list
 
@@ -157,16 +157,15 @@ allow-list refresh.
 ## Backups
 
 Every model config update creates a timestamped backup at
-`<MASTER_FILES_DIR>/model-config-backups/openclaw-<timestamp>.json`.
+`<MASTER_FILES_DIR>/model-config-backups/config-<timestamp>.json`.
 Backups kept indefinitely (small files). Operator can manually
 restore from any backup.
 ```
 
-**B. Extend the Saturday cron to include freshness check:**
+**B. Extend the Saturday scheduled job to include the freshness check:**
 
-```bash
-openclaw cron update proactive-suggestions-scan --command "openclaw run proactive-suggestions-scan && openclaw run model-version-freshness-check"
-```
+Update the job on the operator's scheduler so its command runs the
+proactive-suggestions scan followed by the model-version-freshness check.
 
 **C. Create the backup folder:**
 

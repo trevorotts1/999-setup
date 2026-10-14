@@ -102,11 +102,11 @@ ALLOWED_LOCATIONS_ENV = "CAF_ALLOWED_LOCATION_IDS"
 
 # Env names that may carry the LOCATION Private Integration Token (Bearer) for
 # the services.* ecosystem REST. First non-empty wins; the CANONICAL
-# GOHIGHLEVEL_API_KEY is preferred (matches ghl_media.py + openclaw.json), with
+# GOHIGHLEVEL_API_KEY is preferred (the ADAPTER contract name, matches ghl_media.py), with
 # the legacy GHL_API_KEY and the Skill-44 engine name CAF_API_KEY accepted as
 # aliases so the pre-flight passes whether invoked via the wrapper or directly.
 PIT_ENV_CANDIDATES = (
-    "GOHIGHLEVEL_API_KEY",             # preferred — matches openclaw.json + ghl_media.py
+    "GOHIGHLEVEL_API_KEY",             # preferred — the ADAPTER contract name, matches ghl_media.py
     "GHL_API_KEY",                     # legacy short alias
     "GHL_PIT",                         # canonical short alias
     "GHL_TOKEN",                       # alternate alias

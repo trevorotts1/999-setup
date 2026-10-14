@@ -22,7 +22,7 @@ Ground rules for every step:
       Use the Convert and Flow Token Grabber (Skill 44 operator extension,
       `44-convert-and-flow-operator/tools/chrome-extension/`) to mint a fresh
       refresh token; store it ONLY in the operator env store
-      (`~/.openclaw/secrets/.env` as `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`,
+      (the install's secrets env as `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`,
       `chmod 600`). Never print the value.
       Verify (exit 0 = token present, exit 2 = none — it never echoes the value):
       ```bash
@@ -46,17 +46,12 @@ Ground rules for every step:
       lane 1 healthy) + the build receipt (preview URL curl 200 + marker present
       + draft-not-published) written under `<EVIDENCE_ROOT>/`.
 
-- [ ] **3. One OpenClaw-managed-browser build — IF probe lane 2 is available.**
-      Only if the capability probe reports the OpenClaw managed-browser lane
-      available (skip and note otherwise; `tools/openclaw_browser_adapter.sh` is
-      a parallel-unit landing — do not hand-roll its job). Frame-scoped proof
-      that the same build works under the managed browser:
-      ```bash
-      openclaw browser snapshot --frame "iframe#<builder-frame-id>" --interactive
-      ```
-      Expected evidence: frame-scoped snapshot/act receipt + an updated
-      `<EVIDENCE_ROOT>/working/iframe-map.json` entry recording the frame id and
-      epoch for the managed-browser lane.
+- [ ] **3. Lane 2 (OpenClaw managed browser) confirmed ABSENT.**
+      The capability probe must report the `openclaw_managed_browser` lane
+      structurally absent in this harness (it is never available here and
+      `tools/openclaw_browser_adapter.sh` refuses every verb, exit 75).
+      Expected evidence: the probe JSON's lane-2 entry showing the structural
+      absence; no lane-2 build is attempted.
 
 - [ ] **4. One VPS mount proof (live).**
       ```bash

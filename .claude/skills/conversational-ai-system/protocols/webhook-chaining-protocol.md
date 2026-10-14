@@ -19,7 +19,7 @@ starts a conversation — same idea, opposite direction.
 > OPERATOR-DEFINED and operator-only (see "Operator-only / never customer-invoked").
 > Lowest priority of the Round-2 backlog six.
 
-## openclaw.json toggle — global default OFF
+## Configuration toggle — in the install's skill38 configuration (global default OFF)
 
 ```json
 {

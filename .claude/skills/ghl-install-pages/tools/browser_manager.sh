@@ -95,9 +95,9 @@ case "${AGENT_BROWSER_HEADED:-false}" in
   *) echo "REFUSE: AGENT_BROWSER_HEADED='${AGENT_BROWSER_HEADED}' would open a VISIBLE window. Headless is mandatory (D6). Aborting." >&2; exit 75 ;;
 esac
 
-# ── Tunables (env-overridable; advisory defaults mirror openclaw.json
-#    browser.agentBrowser — that config is ADVISORY-ONLY, agent-browser ignores
-#    it natively, so the REAL cap lives here in the manager + the reaper). ──────
+# ── Tunables (env-overridable; the defaults below are the pack's own. On the
+#    OpenClaw side an advisory gateway config existed; nothing here reads a
+#    harness config, so the REAL cap lives here in the manager + the reaper). ──
 AB_LOCK_WAIT="${AB_LOCK_WAIT:-900}"          # flock -w seconds
 AB_SESSION_TTL="${AB_SESSION_TTL:-1800}"     # whole-phase wall (s); self-kill timer
 AB_CALL_TIMEOUT="${AB_CALL_TIMEOUT:-90}"     # per-call wall (s)
@@ -123,10 +123,14 @@ mkdir -p "$LOCKDIR/leases" 2>/dev/null || true
 # qc-failed build silently un-parks the instant the box restarts: TMPDIR is wiped
 # on boot (/var/folders/* on macOS, tmpfs /tmp on most Linux). So the breaker
 # counter + BLOCKED marker, and the canonical box-level PARK marker, live in the
-# box's DURABLE OpenClaw state dir, NOT TMPDIR. Detection mirrors every pipeline
-# script (VPS /data first, then Mac $HOME). When no onboarded root exists (CI / a
-# dev checkout) we fall back to the ephemeral LOCKDIR so the hermetic tests keep
-# their old TMPDIR-only behavior.
+# box's DURABLE state root, NOT TMPDIR.
+#
+# 999 harness binding: the durable root is (1) $GHL_DURABLE_ROOT when set,
+# else (2) this skill's own state/ directory. There is no OpenClaw root on
+# this harness (the OpenClaw side detected /data/.openclaw on VPS, then
+# ~/.openclaw on Mac, and fell back to the ephemeral LOCKDIR when neither
+# existed; here the in-tree state dir always exists, so the fallback only
+# engages under the test-isolation override below).
 _bm_durable_root() {
   # TEST-ISOLATION OVERRIDE (v18.1.8): when BM_DURABLE_ROOT_OVERRIDE is SET
   # (even to the empty string) it wins verbatim. The hermetic suite sets it to
@@ -136,24 +140,22 @@ _bm_durable_root() {
   # circuit-breaker tripped and PARKED the box's real workforce-build rail
   # (live 2026-07-07 on the operator box; marker read
   # 'location=abortloc' — pure test provenance). Production callers never set
-  # this variable; /data-then-$HOME detection below is unchanged.
+  # this variable.
   if [ -n "${BM_DURABLE_ROOT_OVERRIDE+x}" ]; then printf '%s' "${BM_DURABLE_ROOT_OVERRIDE}"; return; fi
-  if [ -d /data/.openclaw ]; then printf '%s' "/data/.openclaw"
-  elif [ -d "${HOME:-}/.openclaw" ]; then printf '%s' "${HOME}/.openclaw"
-  else printf '%s' ""; fi
+  if [ -n "${GHL_DURABLE_ROOT:-}" ]; then printf '%s' "${GHL_DURABLE_ROOT}"; return; fi
+  printf '%s' "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/state"
 }
 _BM_DURABLE_ROOT="$(_bm_durable_root)"
 if [ -n "$_BM_DURABLE_ROOT" ]; then
   PARK_DIR="$_BM_DURABLE_ROOT/workspace/.park"
 else
-  PARK_DIR="$LOCKDIR/breaker"   # fallback: ephemeral (no onboarded root — CI/tests)
+  PARK_DIR="$LOCKDIR/breaker"   # fallback: ephemeral (test-isolation override only)
 fi
 mkdir -p "$PARK_DIR" 2>/dev/null || true
 chmod 700 "$PARK_DIR" 2>/dev/null || true
-# Canonical BOX-LEVEL park marker — the SINGLE file the Skill-23 resume cron
-# (resume-workforce-build.sh) and the cron registrar (ensure-pipeline-crons.sh)
-# both read before they re-fire a build. A breaker trip writes it; ONLY an
-# operator (scripts/unpark-build.sh) clears it. Auto-resume never happens.
+# Canonical BOX-LEVEL park marker — the SINGLE file the resume tooling reads
+# before it re-fires a build. A breaker trip writes it; ONLY an operator
+# (the operator, by removing the marker from PARK_DIR) clears it. Auto-resume never happens.
 BM_BOX_PARK_MARKER="$PARK_DIR/workforce-build.parked"
 
 # Stable box id (host + the agent-browser engine root) for lease provenance.
@@ -382,11 +384,10 @@ _bm_pool_ceiling_check() {
 # advisory AB_MAX_OPENS_PER_HOUR) WITHOUT a verified QC pass in the window, the
 # breaker OPENS: REFUSE (exit 75), write a DURABLE BLOCKED/qc-failed marker AND
 # the canonical box-level PARK marker (both under PARK_DIR, which survives a
-# reboot) that the */15 resume cron (resume-workforce-build.sh) + the registrar
-# (ensure-pipeline-crons.sh) BOTH read and STOP on (parked, NOT re-fired —
-# FAIL-LOUD doctrine), and escalate to Rescue Rangers. The per-location breaker
+# reboot) that any operator-registered resume schedule reads and STOPs on
+# (parked, NOT re-fired — FAIL-LOUD doctrine). The per-location breaker
 # resets on window-clear or a verified gate pass (bm_breaker_pass); the box-level
-# PARK marker is operator-cleared ONLY (scripts/unpark-build.sh) — auto-resume
+# PARK marker is operator-cleared ONLY (remove the marker from PARK_DIR) — auto-resume
 # never happens silently.
 _bm_breaker_file() { printf '%s' "$PARK_DIR/agent-browser-${GHL_LOCATION_ID:-default}.count"; }
 _bm_breaker_marker() { printf '%s' "$PARK_DIR/agent-browser-${GHL_LOCATION_ID:-default}.BLOCKED"; }
@@ -422,7 +423,7 @@ bm_breaker_check() {
   #   (b) the canonical box-level PARK marker exists (an operator park, or a
   #       Skill-23 stuck-build park) — so a parked box never opens a browser.
   if [ -f "$(_bm_breaker_marker)" ] || [ -f "$BM_BOX_PARK_MARKER" ]; then
-    echo "REFUSE: build is PARKED (durable marker present). Parked != re-fired — the */15 resume cron (resume-workforce-build.sh) and the cron registrar both read this SAME marker and STOP too. Un-park is operator-only: scripts/unpark-build.sh." >&2
+    echo "REFUSE: build is PARKED (durable marker present). Parked != re-fired — any scheduled resume the operator registered reads this SAME marker and STOPs too. Un-park is operator-only: remove the marker from ${PARK_DIR}." >&2
     exit 75
   fi
   local cnt limit
@@ -435,15 +436,15 @@ bm_breaker_check() {
     # and the registrar STOP re-firing this box's build, not just the browser path.
     printf 'BLOCKED: %s opens in %ss window without a verified QC pass (location=%s)\n' \
       "$cnt" "$AB_BREAKER_WINDOW" "${GHL_LOCATION_ID:-default}" > "$(_bm_breaker_marker)" 2>/dev/null || true
-    printf 'PARKED %s: agent-browser circuit-breaker tripped (%s opens / %ss, location=%s). Un-park: scripts/unpark-build.sh\n' \
+    printf 'PARKED %s: agent-browser circuit-breaker tripped (%s opens / %ss, location=%s). Un-park: remove the marker from the park dir (PARK_DIR).\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$cnt" "$AB_BREAKER_WINDOW" "${GHL_LOCATION_ID:-default}" > "$BM_BOX_PARK_MARKER" 2>/dev/null || true
     # close --all is reserved for the reaper / a breaker trip (blast-radius safety).
     AB close --all 2>/dev/null || true
     # Escalate to Rescue Rangers via the n8n webhook — the ONLY path the rescue
-    # agent reads. Never use openclaw message send to a Telegram group for escalation:
+    # agent reads. Never escalate by messaging a Telegram group instead:
     # bots cannot read other bots, so that path is silently dropped.
     if [ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" ]; then
-      local _bm_msg="browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so the */15 resume cron will STOP too. Needs a human — un-park with scripts/unpark-build.sh."
+      local _bm_msg="browser_manager circuit-breaker OPEN: $cnt agent-browser opens in ${AB_BREAKER_WINDOW}s without a QC pass (location=${GHL_LOCATION_ID:-default}). Skill-6 build PARKED (qc-failed) + box-level PARK marker written, so auto-resume will STOP too. Needs a human — un-park by removing the marker from the park dir (PARK_DIR)."
       local _bm_esc="${_bm_msg//\\/\\\\}"; _bm_esc="${_bm_esc//\"/\\\"}"
       # F47/F50: identify the box by its canonical fleet slug, NEVER the hostname --
       # RR-01 answers 400 "unresolvable box" to a post with no boxName, and a hostname
@@ -588,9 +589,9 @@ bm_stale_env_preflight() {
 bm_capability_preflight() {
   # Test-isolation defer: BM_DURABLE_ROOT_OVERRIDE set (even empty) marks a
   # harness context (production callers never set it). The probe shells out to
-  # `openclaw`, which bootstraps ~/.openclaw state under the caller's HOME —
+  # a host CLI, which may bootstrap host state under the caller's HOME —
   # under a harness fake HOME that violates test isolation (the singleton
-  # suite asserts the fake HOME gains no .openclaw). Ensure is advisory and
+  # suite asserts the fake HOME gains no host state dirs). Ensure is advisory and
   # re-probes on the next REAL build, so deferring is free.
   [ "${BM_DURABLE_ROOT_OVERRIDE+x}" = x ] && return 0
   local py
@@ -706,7 +707,7 @@ _bm_self_heal_reseed() {
   if [ "$mint_rc" -ne 0 ]; then
     case "$mint_rc" in
       2) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: no usable Firebase refresh token (checked GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / CAF_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN). Not transient — supply a fresh refresh token (Convert and Flow Token Grabber) and re-run. STOP." >&2 ;;
-      3) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: refresh token REVOKED/EXPIRED (INVALID_REFRESH_TOKEN / TOKEN_EXPIRED / USER_DISABLED). Re-grab it via the Convert and Flow Token Grabber Chrome extension from the client's own logged-in browser and update ~/.openclaw/secrets/.env. STOP." >&2 ;;
+      3) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: refresh token REVOKED/EXPIRED (INVALID_REFRESH_TOKEN / TOKEN_EXPIRED / USER_DISABLED). Re-grab it via the Convert and Flow Token Grabber Chrome extension from the client's own logged-in browser and update the install's secrets env file. STOP." >&2 ;;
       *) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: seed-ghl-auth.py exited $mint_rc (unclassified). STOP." >&2 ;;
     esac
     rm -rf "$seed_dir" 2>/dev/null || true
@@ -770,7 +771,7 @@ _bm_guard_session_or_heal() {
     return 0
   fi
   if [ "$_BM_REESEED_ATTEMPTED" -ge "$_BM_REESEED_MAX" ]; then
-    echo "REFUSE (session-expired circuit breaker): navigation on session '$session' landed on the GHL login page again, after the one permitted re-seed already ran this operation. STOP — no second re-seed, no retry, no new page. Re-authenticate the OpenClaw browser profile (~/.openclaw/browser/openclaw/user-data): re-run seed-ghl-auth.py + inject-ghl-auth.sh (or re-grab the refresh token if that fails too), then re-run the build." >&2
+    echo "REFUSE (session-expired circuit breaker): navigation on session '$session' landed on the GHL login page again, after the one permitted re-seed already ran this operation. STOP — no second re-seed, no retry, no new page. Re-authenticate: re-run seed-ghl-auth.py + inject-ghl-auth.sh (or re-grab the refresh token if that fails too), then re-run the build." >&2
     return 79
   fi
   _BM_REESEED_ATTEMPTED=$(( _BM_REESEED_ATTEMPTED + 1 ))

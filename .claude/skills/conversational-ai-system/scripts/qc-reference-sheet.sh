@@ -17,8 +17,8 @@
 # HOW IT CHECKS (two modes):
 #   * --sheet <path>  → static-check an already-generated reference sheet file.
 #   * (default)       → drive 21-generate-client-reference-sheet.sh in a sandbox
-#                       (no `openclaw` on PATH, dummy env → Layer-3 markdown
-#                       fallback, no network), then check the markdown it writes.
+#                       (dummy env, no NOTION_API_KEY → markdown fallback,
+#                       no network), then check the markdown it writes.
 #     The default mode is what CI runs: it proves the GENERATOR emits both
 #     artifacts, so a template/script regression that drops them fails the build.
 #
@@ -58,17 +58,15 @@
 #     good playbook takes ~15-30 minutes); and the brainstorm PREP ("what to think
 #     about" — goal/audience/channel/offer/tone/timing/win action + "if you're
 #     unsure, that's what I'm here to brainstorm")
-#   - the "⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac
-#     mini" section (after Quick Start, before the deep Full Reference) covering
-#     BOTH targets: the VPS points (host /docker/<project>/.env; `docker compose
-#     up -d --force-recreate`, NOT plain restart; GHL/provider creds ALSO in
-#     container /data/.openclaw/secrets/.env; the /hostinger/server.mjs hooks.token
-#     rewrite-on-boot + OPENCLAW_HOOKS_TOKEN persistence point); the Mac points
-#     (provider keys in the openclaw.json TOP-LEVEL env block — ~/.openclaw/.env
-#     alone is insufficient; restart via `launchctl kickstart -k
-#     gui/$(id -u)/ai.openclaw.gateway`); and the COMMON points (FLAT 23-key body;
-#     conversational-logs node-owned; deliver:false; Ollama Cloud :cloud maxTokens
-#     hard-cap 65536)
+#   - the "⚙️ Things to consider when installing" section (after Quick Start,
+#     before the deep Full Reference) covering the harness install points:
+#     credentials live in the install's own secrets env file; the HOOKS_TOKEN
+#     set at generation time must match the token the agent endpoint expects;
+#     env changes need a fresh agent session to take effect; the endpoint is
+#     the client's own agent endpoint (PUBLIC_HOSTNAME); and the COMMON
+#     points (FLAT 23-key body; conversational-logs writable by the install
+#     user; deliver:false; the Raw Body model is the client's selected or
+#     configured model, never one the sheet picks)
 #
 # Exit codes: 0 = sheet carries all required markers;
 #             1 = one or more markers missing;
@@ -109,8 +107,8 @@ GEN_SCRIPT="$SKILL_DIR/scripts/21-generate-client-reference-sheet.sh"
 
 # ---------------------------------------------------------------------------
 # If no --sheet was passed, generate one in a sandbox and check that output.
-# We strip `openclaw` from PATH so the generator takes the Layer-3 markdown
-# fallback (no network, no Telegram sends) and writes a plain .md we can read.
+# The generator runs offline in the sandbox (no NOTION_API_KEY -> markdown
+# fallback, sends surfaced not sent) and writes a plain .md we can read.
 # ---------------------------------------------------------------------------
 TMP=""
 cleanup() { [ -n "$TMP" ] && rm -rf "$TMP"; }
@@ -131,14 +129,9 @@ if [ -z "$SHEET" ]; then
   MASTER_FILES_DIR="$TMP/master-files"
   mkdir -p "$MASTER_FILES_DIR"
 
-  # Sandbox PATH without `openclaw` so the generator stays offline (Layer 3).
-  SANDBOX_PATH=""
-  IFS=':' read -ra _parts <<< "$PATH"
-  for p in "${_parts[@]}"; do
-    [ -x "$p/openclaw" ] && continue
-    if [ -z "$SANDBOX_PATH" ]; then SANDBOX_PATH="$p"; else SANDBOX_PATH="$SANDBOX_PATH:$p"; fi
-  done
-  [ -n "$SANDBOX_PATH" ] || SANDBOX_PATH="$PATH"
+  # The generator stays offline in the sandbox by construction (env -i below
+  # carries no NOTION_API_KEY, so it takes the markdown fallback).
+  SANDBOX_PATH="$PATH"
 
   GEN_LOG="$TMP/gen.log"
   set +e
@@ -366,64 +359,47 @@ if [ "$REQUIRE_MANUAL_FILL" = "1" ]; then
     MISSING+=('the "Your Communication Playbooks" section must come BEFORE the deep Full Reference & Explanation')
   fi
 
-  # --- ⚙️ VPS (Hostinger Docker) vs Mac mini install-considerations section ---
-  # The generated doc MUST carry a prominent "Things to consider when installing:
-  # VPS (Hostinger Docker) vs Mac mini" section that covers BOTH targets. Getting
-  # the box-specific steps wrong (env var in the wrong place, plain `restart` not
-  # reloading env_file, hooks.token rewritten on boot, provider key not in the
-  # openclaw.json env block on Mac) is the most common fleet install failure, so
-  # the section is machine-enforced here. We require:
-  #   • a heading naming the VPS-vs-Mac consideration
-  #   • the VPS points: host /docker/<project>/.env; `docker compose up -d
-  #     --force-recreate` (plain restart does NOT reload env_file); GHL/provider
-  #     creds ALSO in container /data/.openclaw/secrets/.env; the hooks.token
-  #     rewrite-on-boot + OPENCLAW_HOOKS_TOKEN persistence point
-  #   • the Mac points: provider keys in the openclaw.json TOP-LEVEL env block
-  #     (~/.openclaw/.env alone is insufficient); `launchctl kickstart -k
-  #     gui/$(id -u)/ai.openclaw.gateway`
-  #   • the COMMON points: FLAT 23-key body; conversational-logs node-owned;
-  #     deliver:false; Ollama Cloud :cloud maxTokens cap 65536
+  # --- ⚙️ Install-considerations section (999 harness form) ---
+  # The generated doc MUST carry a prominent "Things to consider when
+  # installing" section. Getting the install points wrong (credentials in
+  # the wrong file, a webhook token that does not match the endpoint, env
+  # edits that never reach the running session) is the most common install
+  # failure, so the section is machine-enforced here. We require:
+  #   • a heading naming the install considerations
+  #   • credentials live in the install's own secrets env file
+  #   • the HOOKS_TOKEN must match the token the agent endpoint expects
+  #   • env changes take effect in a fresh agent session
+  #   • the endpoint is the client's own agent endpoint (PUBLIC_HOSTNAME)
+  #   • the COMMON points: FLAT 23-key body; conversational-logs writable
+  #     by the install user; deliver:false; the model is the client's
+  #     selected or configured model (the sheet never picks one)
   # The section must sit AFTER Quick Start and BEFORE the deep Full Reference.
-  grep -qiE '^#+[[:space:]].*(Things to consider when installing|VPS \(Hostinger Docker\) vs Mac|VPS .* vs Mac mini)' "$SHEET" || \
-    MISSING+=('a "⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini" section (covering BOTH install targets)')
-  # VPS point 1: host /docker/<project>/.env env-var location.
-  grep -qF '/docker/<project>/.env' "$SHEET" || \
-    MISSING+=('the VPS point: env vars live in the HOST /docker/<project>/.env')
-  # VPS point 2: docker compose up -d --force-recreate (plain restart ignored).
-  grep -qiE 'docker compose up -d --force-recreate' "$SHEET" || \
-    MISSING+=('the VPS point: apply env changes with `docker compose up -d --force-recreate` (plain restart ignores env_file)')
-  grep -qiE 'restart.*(does not|not).*(reload|env_file)|plain.*restart' "$SHEET" || \
-    MISSING+=('the VPS point: a plain `docker compose restart` does NOT reload env_file changes')
-  # VPS point 3: GHL/provider creds ALSO in container /data/.openclaw/secrets/.env.
-  grep -qF '/data/.openclaw/secrets/.env' "$SHEET" || \
-    MISSING+=('the VPS point: GHL/provider creds ALSO go in the container /data/.openclaw/secrets/.env (the GHL skill reads there)')
-  # VPS point 4: hooks.token rewritten on boot + OPENCLAW_HOOKS_TOKEN to persist.
-  grep -qiE 'hooks.token.*(rewrit|rewrite)|rewrit.*hooks.token|hooks_\$\{?OPENCLAW_GATEWAY_TOKEN' "$SHEET" || \
-    MISSING+=('the VPS point: the /hostinger/server.mjs wrapper REWRITES hooks.token each boot')
-  grep -qF 'OPENCLAW_HOOKS_TOKEN' "$SHEET" || \
-    MISSING+=('the VPS point: set OPENCLAW_HOOKS_TOKEN in the host .env to make the hooks token persist')
-  # Mac point 1: provider keys in the openclaw.json TOP-LEVEL env block.
-  grep -qiE 'openclaw\.json.*top-level.*env|top-level[[:space:]]+`?env`?[[:space:]]+block|TOP-LEVEL `?env`? block' "$SHEET" || \
-    MISSING+=('the Mac point: provider keys MUST go in the openclaw.json TOP-LEVEL env block (~/.openclaw/.env alone is insufficient)')
-  # Mac point 2: launchctl kickstart restart.
-  grep -qiE 'launchctl kickstart -k gui/.*ai\.openclaw\.gateway' "$SHEET" || \
-    MISSING+=('the Mac point: restart via `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`')
+  grep -qiE '^#+[[:space:]].*(Things to consider when installing)' "$SHEET" || \
+    MISSING+=('a "⚙️ Things to consider when installing" section')
+  grep -qiE 'secrets env' "$SHEET" || \
+    MISSING+=('the install point: credentials live in the install secrets env file')
+  grep -qiE 'HOOKS_TOKEN.*(must match|match the token)|token.*must match' "$SHEET" || \
+    MISSING+=('the install point: the HOOKS_TOKEN must match the token the agent endpoint expects')
+  grep -qiE 'fresh (agent )?session|new session|restart.*session' "$SHEET" || \
+    MISSING+=('the install point: env changes take effect in a fresh agent session')
+  grep -qF 'PUBLIC_HOSTNAME' "$SHEET" || \
+    MISSING+=('the install point: the endpoint is the client agent endpoint (PUBLIC_HOSTNAME)')
   # COMMON points.
   grep -qiE 'FLAT 23-key|23-key.*FLAT|flat.*23 key' "$SHEET" || \
-    MISSING+=('the COMMON point: the FLAT 23-key body applies to both targets')
-  grep -qiE 'conversational-logs.*node-owned|node-owned.*conversational-logs|node-owned' "$SHEET" || \
-    MISSING+=('the COMMON point: the conversational-logs directory is node-owned')
+    MISSING+=('the COMMON point: the FLAT 23-key body')
+  grep -qiE 'conversational-logs.*writable|writable.*conversational-logs' "$SHEET" || \
+    MISSING+=('the COMMON point: the conversational-logs directory stays writable by the install user')
   grep -qiE 'deliver:?[[:space:]]*false' "$SHEET" || \
     MISSING+=('the COMMON point: the inbound hook mapping uses deliver:false')
-  grep -qF '65536' "$SHEET" || \
-    MISSING+=('the COMMON point: Ollama Cloud :cloud models hard-cap maxTokens at 65536')
-  # Ordering: VPS-vs-Mac section sits AFTER Quick Start, BEFORE the deep Full Reference.
-  VM_LN="$(grep -nE '^#+[[:space:]].*(Things to consider when installing|VPS .* vs Mac)' "$SHEET" | head -1 | cut -d: -f1)"
+  grep -qiE 'model you (selected|chose)|your configured (default )?model|you selected' "$SHEET" || \
+    MISSING+=('the COMMON point: the Raw Body model is the client selected or configured model (the sheet never picks one)')
+  # Ordering: the install section sits AFTER Quick Start, BEFORE the deep Full Reference.
+  VM_LN="$(grep -nE '^#+[[:space:]].*(Things to consider when installing)' "$SHEET" | head -1 | cut -d: -f1)"
   if [ -n "$QS_LN" ] && [ -n "$VM_LN" ] && [ "$VM_LN" -le "$QS_LN" ]; then
-    MISSING+=('the "VPS vs Mac" install-considerations section must come AFTER the Quick Start')
+    MISSING+=('the install-considerations section must come AFTER the Quick Start')
   fi
   if [ -n "$VM_LN" ] && [ -n "$EXPL_LN" ] && [ "$VM_LN" -ge "$EXPL_LN" ]; then
-    MISSING+=('the "VPS vs Mac" install-considerations section must come BEFORE the deep Full Reference & Explanation')
+    MISSING+=('the install-considerations section must come BEFORE the deep Full Reference & Explanation')
   fi
 
 

@@ -388,9 +388,10 @@ class TestGroundTruthComparator:
     @staticmethod
     def _fixture(**overrides) -> dict:
         base = {
-            "box_label": "fixture-mac", "platform": "darwin",
-            "durable_root": "/Users/fixture/.openclaw", "is_vps": False,
-            "supervisor": "launchd", "run_id": "gt-1",
+            "box_label": "fixture-a", "platform": "darwin",
+            "durable_root": "/home/fixture/skills/ghl-install-pages/state",
+            "is_vps": False,
+            "supervisor": "none", "run_id": "gt-1",
             "dispatch_ok": True, "build_ok": True, "verify_passed": True,
             "fab_qc_score": 9.0, "fab_qc_gate": "PASS", "receipts_total": 3,
         }
@@ -398,16 +399,16 @@ class TestGroundTruthComparator:
         return base
 
     def test_cli_compare_matching_pair_exits_0(self, tmp_path):
-        mac = self._fixture()
-        vps = self._fixture(box_label="fixture-vps", platform="linux", is_vps=True,
-                             supervisor="pm2-or-systemd", durable_root="/data/.openclaw",
-                             run_id="gt-2")
-        mac_path = tmp_path / "mac.json"
-        vps_path = tmp_path / "vps.json"
-        mac_path.write_text(json.dumps(mac))
-        vps_path.write_text(json.dumps(vps))
+        a = self._fixture()
+        b = self._fixture(box_label="fixture-b", platform="linux",
+                          durable_root="/opt/install/.claude/skills/ghl-install-pages/state",
+                          run_id="gt-2")
+        a_path = tmp_path / "a.json"
+        b_path = tmp_path / "b.json"
+        a_path.write_text(json.dumps(a))
+        b_path.write_text(json.dumps(b))
         res = subprocess.run(
-            [sys.executable, str(_GROUND_TRUTH_PY), "compare", str(mac_path), str(vps_path)],
+            [sys.executable, str(_GROUND_TRUTH_PY), "compare", str(a_path), str(b_path)],
             capture_output=True, text=True, timeout=30,
         )
         assert res.returncode == 0, res.stdout + res.stderr
@@ -415,18 +416,19 @@ class TestGroundTruthComparator:
         assert result["pass"] is True
 
     def test_cli_compare_divergent_pair_exits_1(self, tmp_path):
-        mac = self._fixture()
-        # VPS receipt with a Mac-shaped durable_root — the exact false-parity
-        # bug this comparator exists to catch.
-        vps = self._fixture(box_label="bad-vps", platform="linux", is_vps=True,
-                             supervisor="pm2-or-systemd",
-                             durable_root="/Users/fixture/.openclaw", run_id="gt-3")
-        mac_path = tmp_path / "mac.json"
-        vps_path = tmp_path / "vps.json"
-        mac_path.write_text(json.dumps(mac))
-        vps_path.write_text(json.dumps(vps))
+        a = self._fixture()
+        # A receipt whose durable_root resolved to the OTHER harness's
+        # OpenClaw convention — the exact false-parity bug this comparator
+        # exists to catch in the 999 harness.
+        b = self._fixture(box_label="bad-b", platform="linux", is_vps=True,
+                          supervisor="pm2-or-systemd",
+                          durable_root="/data/.openclaw", run_id="gt-3")
+        a_path = tmp_path / "a.json"
+        b_path = tmp_path / "b.json"
+        a_path.write_text(json.dumps(a))
+        b_path.write_text(json.dumps(b))
         res = subprocess.run(
-            [sys.executable, str(_GROUND_TRUTH_PY), "compare", str(mac_path), str(vps_path)],
+            [sys.executable, str(_GROUND_TRUTH_PY), "compare", str(a_path), str(b_path)],
             capture_output=True, text=True, timeout=30,
         )
         assert res.returncode == 1
@@ -481,12 +483,12 @@ class TestGroundTruthEmitter:
         g = self._mod()
         receipt = g.run_fixture_ground_truth(
             str(tmp_path),
-            env={"HOME": "/Users/fixture"},
-            isdir=lambda p: p == "/data/.openclaw",
+            env={"GHL_DURABLE_ROOT": "/home/fixture/durable"},
+            isdir=lambda p: False,
         )
-        assert receipt["is_vps"] is True
-        assert receipt["durable_root"] == "/data/.openclaw"
-        assert receipt["supervisor"] in ("launchd", "pm2-or-systemd")
+        assert receipt["is_vps"] is False
+        assert receipt["durable_root"] == "/home/fixture/durable"
+        assert receipt["supervisor"] == "none"
 
     def test_run_fixture_ground_truth_default_run_id_is_unique(self, tmp_path):
         g = self._mod()
@@ -504,16 +506,15 @@ class TestGroundTruthEmitter:
         fields under test (durable_root/is_vps/supervisor) are exercised for
         real, just under the platform this fixture is simulating."""
         g = self._mod()
-        mac_receipt = g.run_fixture_ground_truth(
-            str(tmp_path / "mac"), box_label="fixture-mac",
-            env={"HOME": "/Users/fixture"}, isdir=lambda p: p == "/Users/fixture/.openclaw",
+        a_receipt = g.run_fixture_ground_truth(
+            str(tmp_path / "a"), box_label="fixture-a",
+            env={"GHL_DURABLE_ROOT": "/home/fixture/durable-a"},
         )
-        monkeypatch.setattr(sys, "platform", "linux")
-        vps_receipt = g.run_fixture_ground_truth(
-            str(tmp_path / "vps"), box_label="fixture-vps",
-            env={"HOME": "/root"}, isdir=lambda p: p == "/data/.openclaw",
+        b_receipt = g.run_fixture_ground_truth(
+            str(tmp_path / "b"), box_label="fixture-b",
+            env={"GHL_DURABLE_ROOT": "/home/fixture/durable-b"},
         )
-        result = g.compare_ground_truth(mac_receipt, vps_receipt)
+        result = g.compare_ground_truth(a_receipt, b_receipt)
         assert result["pass"] is True, result["checks"]
 
     def test_write_and_read_ground_truth_receipt_round_trip(self, tmp_path):

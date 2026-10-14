@@ -1,6 +1,6 @@
 # Skill 06 — GHL Install Pages: Day-0 Install Card
 
-**What this skill is:** browser-control skill that builds and verifies GHL (Convert and Flow) funnels/websites/forms/surveys/courses/pipelines through the Skill 03 agent-browser gateway (Playwright = fallback only).
+**What this skill is:** browser-control skill that builds and verifies GHL (Convert and Flow) funnels/websites/forms/surveys/courses/pipelines through the browser-engine contract agent-browser lane driven by tools/browser_manager.sh (Playwright = fallback only).
 
 **Prerequisites — in this exact order (hard rule):** 01 TYP → 02 Backup → **03 agent-browser → 06**, and **05 GHL Setup → 06**. Skill 06 MUST NOT start until 03 and 05 are complete.
 

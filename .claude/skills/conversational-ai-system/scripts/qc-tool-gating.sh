@@ -45,7 +45,10 @@ fi
 
 # Auto-locate the client's conversation-workflows dir via the pointer file.
 if [ -z "$WF_DIR" ]; then
-  POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+  # Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+  # pointer is the master-files-dir file inside this skill directory (the
+  # OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+  POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
   if [ -f "$POINTER" ]; then
     MFD="$(cat "$POINTER")"; MFD="${MFD%$'\n'}"
     [ -n "$MFD" ] && WF_DIR="$MFD/conversation-workflows"
@@ -54,7 +57,9 @@ fi
 
 # ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
 if [ -z "${AGENTS_MD:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+  # Workspace binding (999 harness): the core file lives at the install repo
+  # root (env GHL_WORKSPACE wins; AGENTS_MD may be set directly).
+  if [ -z "${AGENTS_MD:-}" ]; then WS_ROOT="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"; AGENTS_MD="$WS_ROOT/AGENTS.md"; fi
 fi
 
 export SKILL_ROOT ENGINE WF_DIR JSON_MODE AGENTS_MD

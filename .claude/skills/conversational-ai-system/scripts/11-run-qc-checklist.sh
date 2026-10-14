@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # 11-run-qc-checklist.sh — Skill 38 Pre-Handoff QC (mechanical checks)
-# Automates the file-existence / cron / config-validate / tunnel-curl
-# items from protocols/pre-handoff-qc-protocol.md. Human-judgment items
-# (tone, copy, agent behavior) stay in the markdown checklist.
+# Automates the file-existence items and the shipped machine gates from
+# protocols/pre-handoff-qc-protocol.md. Human-judgment items (tone, copy,
+# agent behavior) stay in the markdown checklist.
+#
+# 999 harness scope: the OpenClaw host-layer checks (host cron list, gateway
+# config validate, public tunnel probe, hooks.mappings backend readiness)
+# and the gates whose checker scripts are NOT part of this scoped pack copy
+# are reported as visible [SKIP] lines with the reason named. Nothing is
+# silently dropped, and no substitute check is invented for them.
 #
 # OS-aware (Darwin + Linux). Exit 0 on full pass, 1 if any item fails.
 
@@ -19,7 +25,10 @@ case "$OS_KERNEL" in
 esac
 
 # -------- Master files dir --------
-MASTER_FILES_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+# Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+# pointer is the master-files-dir file inside this skill directory (the
+# OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+MASTER_FILES_POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
 if [ -f "$MASTER_FILES_POINTER" ]; then
   MASTER_FILES_DIR="$(cat "$MASTER_FILES_POINTER")"
 else
@@ -88,24 +97,26 @@ else
 fi
 
 section "File existence — scripts/ (install + QC)"
+# Only the scripts that ship in this scoped pack copy are asserted. The
+# host-layer scripts (04-register-crons.sh, 15-configure-hooks-mappings.sh,
+# 22-notify-client-doc.sh, 24-self-test-hook.sh, 33-runtime-tool-gating-
+# prover.sh, qc-23-key-bodies.sh, qc-backend-ready.sh, qc-config-schema-
+# safety.sh, qc-conversation-memory.sh, qc-ghl-raw-body-standard.sh,
+# qc-communications-playbook-standard.sh, qc-lattice-pointer.sh,
+# qc-model-fallback.sh, qc-notify-client-doc.sh, qc-playbook-engine.sh,
+# qc-runtime-tool-gating.sh, qc-self-test.sh, qc-voice-phone.sh,
+# qc-zhc-pixel.sh) are excluded from the pack by design; their gates are
+# reported as [SKIP] below where this checklist carries them.
 SCRIPT_FILES=(
   "scripts/11-run-qc-checklist.sh"
   "scripts/12-scaffold-channel-playbooks.sh"
-  "scripts/qc-23-key-bodies.sh"
   "scripts/qc-trinity-registry.sh"
   "scripts/qc-send-directive.sh"
-  "scripts/qc-conversation-memory.sh"
   "scripts/qc-playbook-doc.sh"
   "scripts/qc-reference-sheet.sh"
-  "scripts/22-notify-client-doc.sh"
-  "scripts/qc-notify-client-doc.sh"
   "scripts/24-update-tools-md.sh"
   "scripts/qc-tools-md-ghl-ref.sh"
-  "scripts/qc-communications-playbook-standard.sh"
-  "scripts/qc-ghl-raw-body-standard.sh"
   "scripts/qc-notion-doc-standard.sh"
-  "scripts/33-runtime-tool-gating-prover.sh"
-  "scripts/qc-runtime-tool-gating.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -119,74 +130,28 @@ for f in "${REFERENCE_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
 done
 
-# -------- openclaw cron list --------
-# These are the exact names 04-register-crons.sh registers via `openclaw cron add`
-# (model-version-freshness is BUNDLED into proactive-suggestions-scan; the monthly
-# comprehensive review IS system-health-heartbeat — there is no separate cron for them).
-section "openclaw cron list — 5 expected crons"
-EXPECTED_CRONS=(
-  "conversation-log-summarizer"
-  "analytics-weekly-digest"
-  "weekly-tune-up"
-  "proactive-suggestions-scan"
-  "system-health-heartbeat"
-)
-if command -v openclaw >/dev/null 2>&1; then
-  CRON_OUT="$(openclaw cron list 2>&1 || true)"
-  for name in "${EXPECTED_CRONS[@]}"; do
-    if printf '%s\n' "$CRON_OUT" | grep -q "$name"; then
-      report_pass "cron present: $name"
-    else
-      report_fail "cron MISSING: $name"
-    fi
-  done
-  # Runtime credential watcher (INFORMATIONAL, non-blocking — registered by
-  # 04-register-crons.sh; does NOT affect the FAIL count so it can never break a
-  # green build on a box that predates it).
-  if printf '%s\n' "$CRON_OUT" | grep -q "ghl-pit-liveness"; then
-    echo "  [PASS] cron present: ghl-pit-liveness (daily runtime-PIT liveness watcher)"
-  else
-    echo "  [INFO] cron ghl-pit-liveness not found — run scripts/04-register-crons.sh to register the daily runtime-PIT watcher (non-blocking)"
-  fi
-else
-  report_fail "openclaw CLI not on PATH — cannot verify cron list"
-fi
+# -------- Host scheduling (NOT part of this pack copy) --------
+# The five standing runs (conversation-log-summarizer, analytics-weekly-
+# digest, weekly-tune-up, proactive-suggestions-scan, system-health-
+# heartbeat) plus the ghl-pit-liveness watcher were registered on the
+# OpenClaw side by the excluded host step 04-register-crons.sh via
+# `openclaw cron add`. Host scheduling is outside this harness's pack
+# scope (the fifth-seam question); the cadence belongs to the operator's
+# scheduler in this install.
+section "Host scheduling — standing protocol runs"
+echo "  [SKIP] host cron registration is not part of this pack copy (OpenClaw host layer, excluded step 04); the five standing runs and the PIT liveness watcher run on the operator's scheduler in this harness"
 
-# -------- openclaw config validate --------
-section "openclaw config validate"
-if command -v openclaw >/dev/null 2>&1; then
-  if openclaw config validate >/dev/null 2>&1; then
-    report_pass "config validates clean"
-  else
-    report_fail "openclaw config validate exited non-zero"
-  fi
-else
-  report_fail "openclaw CLI not on PATH — cannot run config validate"
-fi
+# -------- Harness config validation --------
+section "Harness config validation"
+echo "  [SKIP] no openclaw.json exists in this harness; there is no gateway config to validate (the OpenClaw-side 'openclaw config validate' check does not apply here)"
 
-# -------- Public tunnel curl --------
+# -------- Public tunnel reachability --------
 section "Public tunnel reachability"
-if [ -n "${PUBLIC_HOSTNAME:-}" ] && [ -n "${ROUTE_ID:-}" ]; then
-  URL="https://${PUBLIC_HOSTNAME}/hooks/${ROUTE_ID}"
-  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || echo "000")"
-  case "$HTTP_CODE" in
-    200|401|403|404|405)
-      report_pass "tunnel live ($URL → HTTP $HTTP_CODE)"
-      ;;
-    000)
-      report_fail "tunnel UNREACHABLE ($URL → connect/DNS failure)"
-      ;;
-    *)
-      report_pass "tunnel responds ($URL → HTTP $HTTP_CODE)"
-      ;;
-  esac
-else
-  echo "  [SKIP] PUBLIC_HOSTNAME or ROUTE_ID not set; cannot probe tunnel"
-fi
+echo "  [SKIP] the public tunnel is host provisioning (excluded from this pack copy); webhook reachability for the conversational layer is verified on the pack's own rails during the live install, not by this checklist"
 
 # -------- AGENTS.md marker blocks --------
 section "AGENTS.md marker blocks"
-AGENTS_MD="${AGENTS_MD:-${HOME}/.openclaw/AGENTS.md}"
+AGENTS_MD="${AGENTS_MD:-${GHL_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}/AGENTS.md}"
 [ -f "$AGENTS_MD" ] || AGENTS_MD="${MASTER_FILES_DIR:-}/AGENTS.md"
 # DEFECT FIX: several of the qc-*.sh gates this checklist invokes below (F17
 # segmentation, F21 multi-tenant, U-1 tool-gating, U-2 workflow-exits, U-6
@@ -211,7 +176,7 @@ fi
 
 # -------- MEMORY.md marker block --------
 section "MEMORY.md marker block"
-MEMORY_MD="${MEMORY_MD:-${HOME}/.openclaw/MEMORY.md}"
+MEMORY_MD="${MEMORY_MD:-${GHL_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}/MEMORY.md}"
 [ -f "$MEMORY_MD" ] || MEMORY_MD="${MASTER_FILES_DIR:-}/MEMORY.md"
 if [ -f "$MEMORY_MD" ]; then
   if grep -q "skill-38" "$MEMORY_MD" || grep -q "SKILL38_MEMORY_RULES" "$MEMORY_MD"; then
@@ -223,19 +188,9 @@ else
   report_fail "MEMORY.md not found"
 fi
 
-# -------- 23-key GHL body linter (machine-enforced) --------
+# -------- 23-key GHL body linter --------
 section "23-key GHL RAW BODY linter (qc-23-key-bodies.sh)"
-QC_23="$SCRIPT_DIR/qc-23-key-bodies.sh"
-[ -f "$QC_23" ] || QC_23="$SKILL38_ROOT/scripts/qc-23-key-bodies.sh"
-if [ -f "$QC_23" ]; then
-  if bash "$QC_23" >/dev/null 2>&1; then
-    report_pass "all GHL RAW BODY examples are 23-key, flat, placeholder-free"
-  else
-    report_fail "qc-23-key-bodies.sh found 23-key-rule violation(s) — run it directly for detail"
-  fi
-else
-  report_fail "qc-23-key-bodies.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-23-key-bodies.sh is not part of this pack copy (host layer); the FLAT 23-key standard itself ships in references/ghl-raw-body-json-standard.md"
 
 # -------- THE TRINITY registry completeness (machine-enforced) --------
 section "THE TRINITY registry completeness (qc-trinity-registry.sh)"
@@ -267,19 +222,9 @@ else
   report_fail "qc-send-directive.sh not found (looked in scripts/)"
 fi
 
-# -------- Conversation-memory read/append gate (machine-enforced) --------
+# -------- Conversation-memory read/append gate --------
 section "Conversation-memory gate (qc-conversation-memory.sh)"
-QC_MEM="$SCRIPT_DIR/qc-conversation-memory.sh"
-[ -f "$QC_MEM" ] || QC_MEM="$SKILL38_ROOT/scripts/qc-conversation-memory.sh"
-if [ -f "$QC_MEM" ]; then
-  if bash "$QC_MEM" >/dev/null 2>&1; then
-    report_pass "every GHL inbound SERVER messageTemplate carries the conversation-memory read-before + append-after steps (single-turn sessions remember via the per-contact log)"
-  else
-    report_fail "qc-conversation-memory.sh found a GHL inbound server template missing the read-before/append-after conversation-log steps — run it directly for detail"
-  fi
-else
-  report_fail "qc-conversation-memory.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-conversation-memory.sh is not part of this pack copy (host layer); the read-before/append-after rule itself ships in protocols/conversation-log-protocol.md and the shipped send-directive gate above"
 
 # -------- Per-playbook human-facing doc gate (machine-enforced) --------
 section "Per-playbook human-facing doc gate (qc-playbook-doc.sh)"
@@ -312,151 +257,47 @@ else
   report_fail "qc-reference-sheet.sh not found (looked in scripts/)"
 fi
 
-# -------- Mandatory Telegram doc-delivery gate (machine-enforced) --------
-section "Mandatory Telegram doc-delivery gate (qc-notify-client-doc.sh)"
-QC_NOTIFY="$SCRIPT_DIR/qc-notify-client-doc.sh"
-[ -f "$QC_NOTIFY" ] || QC_NOTIFY="$SKILL38_ROOT/scripts/qc-notify-client-doc.sh"
-if [ -f "$QC_NOTIFY" ]; then
-  if bash "$QC_NOTIFY" >/dev/null 2>&1; then
-    report_pass "mandatory Telegram doc-delivery is wired (22-notify-client-doc.sh sends via gateway, discovers chat from transcripts, LOUD-fails on no chat)"
-  else
-    report_fail "qc-notify-client-doc.sh: the mandatory Telegram doc-delivery step is missing/unwired (every client gets their link via Telegram, no matter what) — run it directly for detail"
-  fi
-else
-  report_fail "qc-notify-client-doc.sh not found (looked in scripts/)"
-fi
+# -------- Client doc-delivery gate --------
+section "Client doc-delivery gate (qc-notify-client-doc.sh)"
+echo "  [SKIP] qc-notify-client-doc.sh and 22-notify-client-doc.sh are not part of this pack copy (host layer, OpenClaw gateway send); in this harness the doc link is delivered from the client's own session via their configured channel, and the delivery fact is asserted by the run-state section below"
 
 # -------- Runtime assertion: the client doc link was actually delivered --------
-# Step 6.5 records clientDocDelivered=true in the run-state file once the link is
-# sent. At pre-handoff QC the install is NOT complete unless this is true. The
-# state file lives next to the master files (or in the OpenClaw data dir).
-section "Client doc delivered via Telegram (clientDocDelivered=true)"
+# The install records clientDocDelivered=true in the run-state file once the
+# link is sent. At pre-handoff QC the install is NOT complete unless this is
+# true. The state file lives next to the master files.
+section "Client doc delivered (clientDocDelivered=true)"
 RUN_STATE_CANDIDATES=()
 [ -n "${RUN_STATE_FILE:-}" ] && RUN_STATE_CANDIDATES+=("$RUN_STATE_FILE")
 [ -n "${MASTER_FILES_DIR:-}" ] && RUN_STATE_CANDIDATES+=("$MASTER_FILES_DIR/.skill38-run-state.env")
-RUN_STATE_CANDIDATES+=("${HOME}/.openclaw/.skill38-run-state.env" "/data/.openclaw/.skill38-run-state.env")
 STATE_FOUND=""
 for sf in "${RUN_STATE_CANDIDATES[@]}"; do
   [ -f "$sf" ] && { STATE_FOUND="$sf"; break; }
 done
 if [ -n "$STATE_FOUND" ]; then
   if grep -q '^clientDocDelivered=true' "$STATE_FOUND"; then
-    report_pass "clientDocDelivered=true (client was sent their setup-doc link via Telegram) — $STATE_FOUND"
+    report_pass "clientDocDelivered=true (client was sent their setup-doc link via their configured channel) — $STATE_FOUND"
   else
-    report_fail "clientDocDelivered is NOT true in $STATE_FOUND — the client was never sent their doc link via Telegram (run scripts/22-notify-client-doc.sh; the install is not complete)"
+    report_fail "clientDocDelivered is NOT true in $STATE_FOUND — the client was never sent their doc link (deliver it from the client's own session via their configured channel; the install is not complete)"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert clientDocDelivered (run scripts/22-notify-client-doc.sh during the live install)"
+  echo "  [SKIP] run-state file not found; cannot assert clientDocDelivered (the delivery step runs during the live install)"
 fi
 
-# -------- Backend-ready gate: the agent is ready to RECEIVE --------
-# The install is not "complete" until the backend can RECEIVE inbound: a live
-# hooks.mappings entry for HOOK_NAME with deliver:false and a working model, AND
-# /healthz returns 200. Testing only happens after BOTH the doc AND this pass.
-section "Backend ready to receive (hooks.mappings live + deliver:false + model + /healthz 200)"
-OC_CONFIG=""
-for cfg in "${OPENCLAW_CONFIG:-}" "${HOME}/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json" "/root/.openclaw/openclaw.json"; do
-  [ -n "$cfg" ] && [ -f "$cfg" ] && { OC_CONFIG="$cfg"; break; }
-done
-if [ -n "$OC_CONFIG" ] && command -v python3 >/dev/null 2>&1; then
-  BACKEND_OUT="$(HOOK_NAME="${HOOK_NAME:-${ROUTE_ID:-}}" python3 - "$OC_CONFIG" <<'PY_BACKEND_EOF' 2>/dev/null || true
-import json, os, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception as e:
-    print("ERR:cannot-parse-config"); sys.exit(0)
-hooks = d.get("hooks") or {}
-maps = hooks.get("mappings") or []
-if isinstance(maps, dict):
-    maps = list(maps.values())
-want = (os.environ.get("HOOK_NAME") or "").strip()
-chosen = None
-for m in maps:
-    if not isinstance(m, dict):
-        continue
-    mid = str(m.get("id") or m.get("match") or "")
-    if want and mid == want:
-        chosen = m; break
-if chosen is None and maps:
-    # No HOOK_NAME provided (or no exact match): assert at least one agent mapping is live.
-    for m in maps:
-        if isinstance(m, dict) and (m.get("action") == "agent" or m.get("agent_id")):
-            chosen = m; break
-if chosen is None:
-    print("ERR:no-live-hooks-mapping"); sys.exit(0)
-deliver = chosen.get("deliver", None)
-model = (chosen.get("model") or "").strip()
-problems = []
-if deliver is not False:
-    problems.append("deliver-not-false")
-if not model:
-    problems.append("no-model")
-if problems:
-    print("ERR:" + ",".join(problems)); sys.exit(0)
-print("OK")
-PY_BACKEND_EOF
-)"
-  case "$BACKEND_OUT" in
-    OK) report_pass "hooks.mappings is live with deliver:false and a model set ($OC_CONFIG)" ;;
-    ERR:no-live-hooks-mapping) report_fail "no live hooks.mappings agent entry — the backend cannot RECEIVE inbound (run scripts/15-configure-hooks-mappings.sh)" ;;
-    ERR:*) report_fail "hooks.mappings is not receive-ready: ${BACKEND_OUT#ERR:} (need deliver:false + a working model)" ;;
-    *) report_fail "could not evaluate hooks.mappings readiness from $OC_CONFIG" ;;
-  esac
-else
-  echo "  [SKIP] openclaw.json not found (or python3 missing); cannot assert hooks.mappings readiness"
-fi
+# -------- Backend-ready gate --------
+# On the OpenClaw side this asserted a live hooks.mappings entry
+# (deliver:false + a working model) in openclaw.json and a gateway
+# /healthz 200. That inbound-hook backend is the host layer and is not
+# part of this harness: in this pack the conversational layer receives
+# through the pack's own GHL wiring (Skill 44 rails + Skill 71 stage
+# gates), so there is no hooks.mappings surface to assert here.
+section "Backend ready to receive"
+echo "  [SKIP] the OpenClaw hooks.mappings backend is not part of this harness (host layer); receive-readiness is proven on the pack's own rails during the live install"
 
-# /healthz 200 — the gateway is up and ready to receive.
-if [ -n "${PUBLIC_HOSTNAME:-}" ]; then
-  HZ_URL="https://${PUBLIC_HOSTNAME}/healthz"
-  HZ_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$HZ_URL" 2>/dev/null || echo 000)"
-  if [ "$HZ_CODE" = "200" ]; then
-    report_pass "/healthz returns 200 ($HZ_URL) — gateway is up and ready to receive"
-  else
-    report_fail "/healthz did not return 200 ($HZ_URL → HTTP $HZ_CODE) — gateway not confirmed receiving; do NOT test inbound yet"
-  fi
-elif command -v openclaw >/dev/null 2>&1; then
-  LOCAL_HZ="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${OPENCLAW_PORT:-3000}/healthz" 2>/dev/null || echo 000)"
-  if [ "$LOCAL_HZ" = "200" ]; then
-    report_pass "/healthz returns 200 (localhost) — gateway is up and ready to receive"
-  else
-    echo "  [SKIP] PUBLIC_HOSTNAME unset and localhost /healthz not 200 (HTTP $LOCAL_HZ); cannot assert gateway readiness here"
-  fi
-else
-  echo "  [SKIP] PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
-fi
-
-# -------- Backend ready to RECEIVE (live gate; SKIPs with no install) --------
-# hooks.mappings live + deliver:false + a working model + healthz 200. On a box
-# with no install this exits 3 (SKIP).
 section "Backend ready to RECEIVE (qc-backend-ready.sh)"
-QC_BACKEND="$SCRIPT_DIR/qc-backend-ready.sh"
-[ -f "$QC_BACKEND" ] || QC_BACKEND="$SKILL38_ROOT/scripts/qc-backend-ready.sh"
-if [ -f "$QC_BACKEND" ]; then
-  BACKEND_RC=0
-  bash "$QC_BACKEND" >/dev/null 2>&1 || BACKEND_RC=$?
-  case "$BACKEND_RC" in
-    0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + a working model + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
-    3) echo "  [SKIP] no openclaw.json on this box — cannot verify backend readiness here" ;;
-    *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / model / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
-  esac
-else
-  report_fail "qc-backend-ready.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-backend-ready.sh is not part of this pack copy (host layer); see the backend note above"
 
-# -------- install-script config-invalidating pattern gate (machine-enforced) --------
-section "Config schema-safety — no config-invalidating install scripts (qc-config-schema-safety.sh)"
-QC_CFG="$SCRIPT_DIR/qc-config-schema-safety.sh"
-[ -f "$QC_CFG" ] || QC_CFG="$SKILL38_ROOT/scripts/qc-config-schema-safety.sh"
-if [ -f "$QC_CFG" ]; then
-  if bash "$QC_CFG" >/dev/null 2>&1; then
-    report_pass "no install script writes a config-invalidating shape (no agents.defaults.async/.batch, no cron.jobs JSON, no jq-1.7-invalid '//= ;', no pointer-sourcing, no hardcoded legacy skill path)"
-  else
-    report_fail "qc-config-schema-safety.sh found an install script that would invalidate the config or break a fresh install — run it directly for detail"
-  fi
-else
-  report_fail "qc-config-schema-safety.sh not found (looked in scripts/)"
-fi
+section "Config schema-safety (qc-config-schema-safety.sh)"
+echo "  [SKIP] qc-config-schema-safety.sh is not part of this pack copy; its subject was the shape of the OpenClaw gateway config, which does not exist in this harness"
 
 # -------- F52 JSONL data contract (machine-enforced) --------
 section "F52 JSONL data contract (qc-feature-logs.sh)"
@@ -502,13 +343,8 @@ fi
 
 # Also assert the block is actually present in the installed client TOOLS.md.
 section "GHL quick-reference present in client TOOLS.md"
-case "$OS" in
-  mac)   WS_DEFAULT_TOOLS="$HOME/clawd/TOOLS.md" ;;
-  linux) WS_DEFAULT_TOOLS="/data/clawd/TOOLS.md" ;;
-  *)     WS_DEFAULT_TOOLS="$HOME/clawd/TOOLS.md" ;;
-esac
-TOOLS_MD_CHECK="${TOOLS_MD:-${OPENCLAW_WORKSPACE:+$OPENCLAW_WORKSPACE/TOOLS.md}}"
-[ -n "$TOOLS_MD_CHECK" ] || TOOLS_MD_CHECK="$WS_DEFAULT_TOOLS"
+WS_ROOT_TOOLS="${GHL_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+TOOLS_MD_CHECK="${TOOLS_MD:-$WS_ROOT_TOOLS/TOOLS.md}"
 if [ -f "$TOOLS_MD_CHECK" ]; then
   if grep -qF "SKILL38: GHL_API_QUICK_REFERENCE" "$TOOLS_MD_CHECK"; then
     report_pass "client TOOLS.md contains the GHL API quick-reference block: $TOOLS_MD_CHECK"
@@ -527,7 +363,7 @@ if [ -n "${MASTER_FILES_DIR:-}" ]; then
     if [ -w "$LOGS_DIR" ]; then
       report_pass "conversational-logs dir exists and is writable by this user: $LOGS_DIR"
     else
-      report_fail "conversational-logs dir exists but is NOT writable (agent cannot append = silent memory loss): $LOGS_DIR — chown to the gateway runtime user"
+      report_fail "conversational-logs dir exists but is NOT writable (agent cannot append = silent memory loss): $LOGS_DIR — make it writable by the invoking user"
     fi
   else
     report_fail "conversational-logs dir MISSING: $LOGS_DIR — run 09-install-conversation-workflows.sh"
@@ -537,19 +373,9 @@ else
 fi
 
 
-# -------- Backend self-test gate (machine-enforced, REQ 5) --------
+# -------- Backend self-test gate --------
 section "Backend self-test standard (qc-self-test.sh)"
-QC_SELFTEST="$SCRIPT_DIR/qc-self-test.sh"
-[ -f "$QC_SELFTEST" ] || QC_SELFTEST="$SKILL38_ROOT/scripts/qc-self-test.sh"
-if [ -f "$QC_SELFTEST" ]; then
-  if bash "$QC_SELFTEST" >/dev/null 2>&1; then
-    report_pass "backend self-test is wired (24-self-test-hook.sh POSTs a synthetic flat-23-key inbound, verifies 200/{ok:true} + model + log read + GHL send, cleans up, and is a blocking readiness gate)"
-  else
-    report_fail "qc-self-test.sh: the backend self-test is missing/unwired (the agent must self-test by ground truth BEFORE the client) — run it directly for detail"
-  fi
-else
-  report_fail "qc-self-test.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-self-test.sh and 24-self-test-hook.sh are not part of this pack copy (host layer: they POST to the OpenClaw inbound hook); the ground-truth self-test standard itself ships in the protocols, and the selfTestPassed run-state assertion below still applies"
 
 # -------- No-personal-data gate (machine-enforced, REQ 7) --------
 section "UNIVERSAL skill — no personal/client data (qc-no-personal-data.sh)"
@@ -579,19 +405,8 @@ else
   report_fail "qc-zhc-tag-prefix.sh not found (looked in scripts/)"
 fi
 
-# -------- ZHC Pixel (F49) invariant gate (machine-enforced) --------
 section "ZHC Pixel rule (qc-zhc-pixel.sh)"
-QC_PIXEL="$SCRIPT_DIR/qc-zhc-pixel.sh"
-[ -f "$QC_PIXEL" ] || QC_PIXEL="$SKILL38_ROOT/scripts/qc-zhc-pixel.sh"
-if [ -f "$QC_PIXEL" ]; then
-  if bash "$QC_PIXEL" >/dev/null 2>&1; then
-    report_pass "F49 ZHC Pixel invariants hold (hook pixel-visitor-signal registered, Pixel Concierge protocol + AGENTS Step 1.45, ZHC-/ZHC_ prefixes, GDPR/CCPA/DNT/deletion privacy controls, scope precheck + gated deploy, no personal data)"
-  else
-    report_fail "qc-zhc-pixel.sh found an F49 invariant violation — run it directly for detail"
-  fi
-else
-  report_fail "qc-zhc-pixel.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-zhc-pixel.sh is not part of this pack copy (host layer); the pixel protocol, renderer (27-render-pixel-js.sh) and template ship in this copy, and the protocol carries the scoped-copy capability note"
 
 # -------- Runtime assertion: the backend self-test PASSED (selfTestPassed=true) --------
 # REQ 5(e): the install is NOT complete until the agent's own backend self-test
@@ -601,44 +416,22 @@ ST_STATE_FOUND=""
 for sf in "${RUN_STATE_CANDIDATES[@]:-}"; do
   [ -n "$sf" ] && [ -f "$sf" ] && { ST_STATE_FOUND="$sf"; break; }
 done
-[ -n "$ST_STATE_FOUND" ] || { for sf in "${HOME}/.openclaw/.skill38-run-state.env" "/data/.openclaw/.skill38-run-state.env" "${MASTER_FILES_DIR:-}/.skill38-run-state.env"; do [ -f "$sf" ] && { ST_STATE_FOUND="$sf"; break; }; done; }
+[ -n "$ST_STATE_FOUND" ] || { for sf in "${MASTER_FILES_DIR:-}/.skill38-run-state.env"; do [ -f "$sf" ] && { ST_STATE_FOUND="$sf"; break; }; done; }
 if [ -n "$ST_STATE_FOUND" ]; then
   if grep -q '^selfTestPassed=true' "$ST_STATE_FOUND"; then
     report_pass "selfTestPassed=true (the agent self-tested the backend by ground truth before any client test) — $ST_STATE_FOUND"
   else
-    report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — run scripts/24-self-test-hook.sh until it passes; do NOT mark complete or tell the client to test"
+    report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — the ground-truth self-test must pass before handoff; do NOT mark complete or tell the client to test"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/24-self-test-hook.sh during the live install)"
+  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (the self-test runs during the live install)"
 fi
 
-# -------- Communication Playbook Standard gate (machine-enforced) --------
 section "Communication Playbook Standard (qc-communications-playbook-standard.sh)"
-QC_COMMS_STD="$SCRIPT_DIR/qc-communications-playbook-standard.sh"
-[ -f "$QC_COMMS_STD" ] || QC_COMMS_STD="$SKILL38_ROOT/scripts/qc-communications-playbook-standard.sh"
-if [ -f "$QC_COMMS_STD" ]; then
-  if bash "$QC_COMMS_STD" >/dev/null 2>&1; then
-    report_pass "communications-playbook-standard.md carries the 'EVERY COMMUNICATION PLAYBOOK MUST INCLUDE ALL OF THE FOLLOWING' mandatory checklist + every required item (a)-(i)"
-  else
-    report_fail "qc-communications-playbook-standard.sh found a missing mandatory item in the communication playbook standard — run it directly for detail"
-  fi
-else
-  report_fail "qc-communications-playbook-standard.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-communications-playbook-standard.sh is not part of this pack copy (host layer); the standard itself ships in references/communications-playbook-standard.md"
 
-# -------- GHL Raw Body JSON Standard gate (machine-enforced) --------
 section "GHL Raw Body JSON Standard (qc-ghl-raw-body-standard.sh)"
-QC_BODY_STD="$SCRIPT_DIR/qc-ghl-raw-body-standard.sh"
-[ -f "$QC_BODY_STD" ] || QC_BODY_STD="$SKILL38_ROOT/scripts/qc-ghl-raw-body-standard.sh"
-if [ -f "$QC_BODY_STD" ]; then
-  if bash "$QC_BODY_STD" >/dev/null 2>&1; then
-    report_pass "ghl-raw-body-json-standard.md codifies the FLAT 23-key body (23 is the minimum AND the standard) + the canonical body is lint-clean (composes qc-23-key-bodies.sh)"
-  else
-    report_fail "qc-ghl-raw-body-standard.sh found a missing rule or a body violating the 23-key/flat rule — run it directly for detail"
-  fi
-else
-  report_fail "qc-ghl-raw-body-standard.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-ghl-raw-body-standard.sh is not part of this pack copy (host layer); the standard itself ships in references/ghl-raw-body-json-standard.md"
 
 # -------- Notion Client-Doc Standard gate (machine-enforced) --------
 section "Notion Client-Doc Standard (qc-notion-doc-standard.sh)"
@@ -711,17 +504,7 @@ else
 fi
 
 section "Voice / phone integration rule (qc-voice-phone.sh)"
-QC_VOICE="$SCRIPT_DIR/qc-voice-phone.sh"
-[ -f "$QC_VOICE" ] || QC_VOICE="$SKILL38_ROOT/scripts/qc-voice-phone.sh"
-if [ -f "$QC_VOICE" ]; then
-  if bash "$QC_VOICE" >/dev/null 2>&1; then
-    report_pass "F14 voice/phone invariants hold (protocol + MEMORY Rule 30 + setup wizard, STT Whisper-large-v3 via OpenRouter/Groq/Ollama -> brain -> TTS ElevenLabs Flash 2.5/OSS over Twilio Media Streams + /hooks/voice-call-event scaffolding + greeting->listen->respond->handoff/booking state machine + < 800ms first-audio target + degrade-to-text fallback + operator-only outbound-dial guard + ZHC-voice-* tags + the HONEST live-telephony gap, PII-free voice-call-events.jsonl seeded, toggle default OFF)"
-  else
-    report_fail "qc-voice-phone.sh found an F14 invariant violation — run it directly for detail"
-  fi
-else
-  report_fail "qc-voice-phone.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-voice-phone.sh is not part of this pack copy (host layer); protocols/voice-phone-protocol.md ships with its scoped-copy capability note (live telephony rides the client's configured voice stack, arranged outside this pack)"
 
 section "Webhook chaining rule (qc-webhook-chaining.sh)"
 QC_WEBHOOK="$SCRIPT_DIR/qc-webhook-chaining.sh"
@@ -737,17 +520,7 @@ else
 fi
 
 section "Model fallback chain + model tier (qc-model-fallback.sh)"
-QC_MODELFB="$SCRIPT_DIR/qc-model-fallback.sh"
-[ -f "$QC_MODELFB" ] || QC_MODELFB="$SKILL38_ROOT/scripts/qc-model-fallback.sh"
-if [ -f "$QC_MODELFB" ]; then
-  if bash "$QC_MODELFB" >/dev/null 2>&1; then
-    report_pass "U-8 + U-10 wiring holds (references/model-fallback-chain.md documents skill38.model_chain.primary/.fallbacks + the three model-tier enum values, scripts/32-verify-model-failover-support.sh present, MEMORY Rule 38, the Saturday freshness cron reviews the whole chain, model-failover-events.jsonl seeded, every playbook model-tier is realtime-light/realtime-standard/reasoning-max)"
-  else
-    report_fail "qc-model-fallback.sh found a model-fallback/model-tier violation - run it directly for detail"
-  fi
-else
-  report_fail "qc-model-fallback.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-model-fallback.sh and 32-verify-model-failover-support.sh are not part of this pack copy (host layer); references/model-fallback-chain.md ships, reworded to the model-selection doctrine"
 
 section "Workflow visual, Part 4 truth diagram (qc-workflow-visual.sh)"
 QC_VISUAL="$SCRIPT_DIR/qc-workflow-visual.sh"
@@ -763,17 +536,7 @@ else
 fi
 
 section "Canonical playbook engine unit tests (qc-playbook-engine.sh)"
-QC_ENGINE="$SCRIPT_DIR/qc-playbook-engine.sh"
-[ -f "$QC_ENGINE" ] || QC_ENGINE="$SKILL38_ROOT/scripts/qc-playbook-engine.sh"
-if [ -f "$QC_ENGINE" ]; then
-  if bash "$QC_ENGINE" >/dev/null 2>&1; then
-    report_pass "U-16 holds (tools/playbook_engine.py + tools/tests/test_playbook_engine.py present; python3 -m unittest green; the canonical parser every gate shells out to is sound)"
-  else
-    report_fail "qc-playbook-engine.sh: the playbook_engine.py unit tests failed or the engine/tests are missing - run it directly for detail"
-  fi
-else
-  report_fail "qc-playbook-engine.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-playbook-engine.sh is not part of this pack copy (host layer); the engine and its tests ship under tools/ and run under that tree's own test entry"
 
 section "Per-phase tool gating (qc-tool-gating.sh)"
 QC_TOOLGATE="$SCRIPT_DIR/qc-tool-gating.sh"
@@ -789,17 +552,7 @@ else
 fi
 
 section "Runtime tool-gating prover (qc-runtime-tool-gating.sh)"
-QC_RTGATE="$SCRIPT_DIR/qc-runtime-tool-gating.sh"
-[ -f "$QC_RTGATE" ] || QC_RTGATE="$SKILL38_ROOT/scripts/qc-runtime-tool-gating.sh"
-if [ -f "$QC_RTGATE" ]; then
-  if bash "$QC_RTGATE" >/dev/null 2>&1; then
-    report_pass "U-1 RUNTIME proof wired (scripts/33-runtime-tool-gating-prover.sh drives a synthetic conversation whose active phase grants check_availability but NOT book_appointment, tempts the agent to book, and asserts by ground truth that it REFUSED the ungranted tool; Layer-A boundary green; wired into the box-level self-test cron)"
-  else
-    report_fail "qc-runtime-tool-gating.sh found the runtime tool-gating prover missing/unwired or its Layer-A boundary broken - run it directly for detail"
-  fi
-else
-  report_fail "qc-runtime-tool-gating.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] 33-runtime-tool-gating-prover.sh and qc-runtime-tool-gating.sh are not part of this pack copy (host layer: the prover drives a live gateway session); the tool-gating wiring gate above stays live"
 
 section "Tag-driven workflow exits (qc-workflow-exits.sh)"
 QC_EXITS="$SCRIPT_DIR/qc-workflow-exits.sh"
@@ -854,17 +607,7 @@ else
 fi
 
 section "Relationship lattice pointer + citation tripwire (qc-lattice-pointer.sh, GK-27/U89)"
-QC_LATTICE="$SCRIPT_DIR/qc-lattice-pointer.sh"
-[ -f "$QC_LATTICE" ] || QC_LATTICE="$SKILL38_ROOT/scripts/qc-lattice-pointer.sh"
-if [ -f "$QC_LATTICE" ]; then
-  if bash "$QC_LATTICE" >/dev/null 2>&1; then
-    report_pass "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations (inbound ownership, build-path ladder) still hold"
-  else
-    report_fail "qc-lattice-pointer.sh found a missing pointer or a stale/drifted citation - run it directly for detail"
-  fi
-else
-  report_fail "qc-lattice-pointer.sh not found (looked in scripts/)"
-fi
+echo "  [SKIP] qc-lattice-pointer.sh is not part of this pack copy (host layer); the content-conversation lattice lives on the OpenClaw side"
 
 # -------- Final summary --------
 section "QC SUMMARY"
@@ -877,7 +620,7 @@ if [ "$FAIL" -eq 0 ]; then
   # `review` so the INDEPENDENT CC auto-scorer can promote it (the builder never
   # self-grades to done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true`
   # guarantees it cannot change this script's exit code. No-ops when CC is absent.
-  bash "$SCRIPT_DIR/cc-task.sh" review || true
+  [ -f "$SCRIPT_DIR/cc-task.sh" ] && bash "$SCRIPT_DIR/cc-task.sh" review || true
   exit 0
 else
   echo ""
@@ -886,6 +629,6 @@ else
   # so the failure is VISIBLE on the board (never left stranded at in_progress, never
   # wrongly marked done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true` keeps it
   # from changing this script's exit code. No-ops when CC is absent. (FIX-XC-06)
-  bash "$SCRIPT_DIR/cc-task.sh" fail "mechanical QC: $FAIL item(s) failed" || true
+  [ -f "$SCRIPT_DIR/cc-task.sh" ] && bash "$SCRIPT_DIR/cc-task.sh" fail "mechanical QC: $FAIL item(s) failed" || true
   exit 1
 fi

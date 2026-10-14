@@ -131,17 +131,19 @@ class ImagePipelineError(RuntimeError):
 def _load_secret_helper():
     """Import shared-utils/secret_helper.py (the ONE secret-name canon reader).
 
-    shared-utils is not a package, so probe the repo sibling and the well-known
-    fleet install locations (Mac ``~/.openclaw/skills`` and VPS
-    ``/data/.openclaw/skills``).  Returns the module, or None when unreadable."""
+    shared-utils is not a package, so probe the in-tree repo siblings and
+    $SKILL6_SHARED_UTILS_DIR. Returns the module, or None when unreadable
+    (callers fail open to the canonical name only)."""
     if "secret_helper" in sys.modules:
         return sys.modules["secret_helper"]
     import importlib.util
-    for base in (
+    _bases = [
         os.path.join(_TOOLS_DIR, "..", "..", "shared-utils"),
-        os.path.expanduser("~/.openclaw/skills/shared-utils"),
-        "/data/.openclaw/skills/shared-utils",
-    ):
+        os.path.join(_TOOLS_DIR, "..", "..", "..", "shared-utils"),
+    ]
+    if os.environ.get("SKILL6_SHARED_UTILS_DIR"):
+        _bases.append(os.environ["SKILL6_SHARED_UTILS_DIR"])
+    for base in _bases:
         path = os.path.normpath(os.path.join(base, "secret_helper.py"))
         if not os.path.isfile(path):
             continue
@@ -175,11 +177,10 @@ def _kie_value_ok(value: str) -> bool:
 
 
 _KIE_KEY_ENV_NAMES = _kie_key_names()
-_KIE_ENV_STORES = (
-    "~/.openclaw/workspace/.env",
-    "~/clawd/secrets/.env",
-    "~/.openclaw/secrets/.env",
-)
+# The env STORE for the KIE key fallback: exactly the install's secrets env
+# file designated by $SECRETS_ENV (the pack's secrets binding); empty when
+# undesignated (process-env only).
+_KIE_ENV_STORES = (os.environ["SECRETS_ENV"],) if os.environ.get("SECRETS_ENV") else ()
 
 
 def _resolve_kie_api_key(env: dict | None = None) -> str:
@@ -499,17 +500,16 @@ _DIU_LIBRARY_ENV = "DIU_LIBRARY_DIR"
 _DIU_LIBRARY_RELCANDIDATES = (
     os.path.join("..", "..", "45-design-intelligence-library", "library"),
 )
-_DIU_LIBRARY_HOMECANDIDATES = (
-    "~/.openclaw/skills/45-design-intelligence-library/library",
-    "~/.openclaw/onboarding/45-design-intelligence-library/library",
-)
+_DIU_LIBRARY_HOMECANDIDATES = ()
 
 
 def _diu_library_dir() -> Path | None:
     """Resolve Skill 45's ``library/`` dir, or None when the library is absent.
 
     Honors the ``DIU_LIBRARY_DIR`` env override (must itself contain INDEX.md),
-    then the sibling-skill repo path, then the materialized ``~/.openclaw`` paths.
+    then the sibling-skill repo path. (The OpenClaw-side materialized home
+    paths are not resolved in this harness; designate the library via
+    ``DIU_LIBRARY_DIR`` when it lives outside the repo tree.)
     """
     override = os.environ.get(_DIU_LIBRARY_ENV, "").strip()
     if override:

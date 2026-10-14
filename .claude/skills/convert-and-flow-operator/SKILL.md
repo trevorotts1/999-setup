@@ -221,7 +221,7 @@ The CLI has NO media upload commands. Media NEVER routes to Tier 0 — always Ti
 | `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` | Write whitelist | comma-separated; empty = single-location default |
 | `GOHIGHLEVEL_DRAFT_ONLY` | Write safety | `true` = no live publishes without approval |
 
-The wrapper at `~/.openclaw/tools/convert-and-flow-cli/caf` maps the canonical env names
+The wrapper at `tools/engine/caf` in this skill (`.claude/skills/convert-and-flow-operator/tools/engine/caf`) maps the canonical env names
 to whatever the engine expects at runtime (engine internals untouched).
 
 **Unified 11-alias scan (as of this update):** `ghl_client._get_token()` now scans all 11
@@ -246,7 +246,7 @@ on separate paths.
    41's contract; all other programmatic creates surface to the owner for confirmation.
 5. **Workflow-write data rollback** — every `workflows update`/`patch-email`/`patch-trigger`
    writes a timestamped snapshot to
-   `~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<location>/<workflow-id>/<ts>.json`
+   `<engine>/data/snapshots/<location>/<workflow-id>/<ts>.json` (the engine's in-tree data directory)
    BEFORE mutating. `workflows restore <snapshot-path>` replays the snapshot.
 6. **Internal-write serialization** — a lock file under the data dir prevents concurrent builds
    from the same box.
@@ -329,7 +329,7 @@ For walking an OWNER through grabbing the token (warm, plain-English, 8 steps + 
 public download link), send or read from `references/owner-token-grabber-guide.md`.
 That doc is what a client agent uses to get a non-technical owner from zero to a working
 Firebase token; it also carries a clearly-separated **FOR THE AGENT** section on wiring
-the pasted token into the gateway-inherited env and building the first DRAFT-only,
+the pasted token into the install's secrets env and building the first DRAFT-only,
 `ZHC-` prefixed test workflow.
 
 ### Fleet announcement (standardized owner message + send runbook)
@@ -341,20 +341,20 @@ Once a box has been **given Skill 44**, the owner gets the standardized announce
 above). The same file carries the **operator-facing fleet-send runbook**: the GATE (only
 announce when the box's ledger shows skill44 remediation complete — engine ≥ 2.1.1 with a
 live `caf` read, or explicitly token-pending), SEND MECHANICS (always the client's own
-gateway via `openclaw message send`, one client at a time, verify each send), and per-client
+install/session, one client at a time, verify each send), and per-client
 RECEIPTS to the operator ledger. Do NOT paste the runbook section to an owner.
 
 ---
 
 ## Daily Firebase Token Liveness Check (Skills 44 + 46)
 
-A daily cron (`ghl-token-liveness`, registered by `scripts/ensure-pipeline-crons.sh` at
-08:00 UTC) runs `tools/check-ghl-token-liveness.sh` on every client box where Skill 44
-is installed. The check:
+A daily run of `tools/check-ghl-token-liveness.sh` (on the OpenClaw side a
+registered host cron at 08:00 UTC; in this harness, whatever scheduler the
+operator wires) checks every install where Skill 44 is present. The check:
 
-1. Resolves `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (env-store order: `secrets/.env` →
-   `openclaw.json env.vars` → `workspace/.env`, matching the same order as
-   `seed-ghl-auth.py` and the transport engine).
+1. Resolves `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (env-store order: the
+   install's secrets env file, $SECRETS_ENV, first, then the session process
+   env, matching the same order as `seed-ghl-auth.py` and the transport engine).
 2. POSTs a `grant_type=refresh_token` exchange to
    `securetoken.googleapis.com/v1/token?key=FIREBASE_API_KEY` (the public Firebase web
    API key hardcoded in transport.py — not a secret).
@@ -363,9 +363,11 @@ is installed. The check:
      exits 0. No notification is sent.
    - **INVALID** (HTTP 400, error codes `TOKEN_EXPIRED` / `USER_DISABLED` /
      `INVALID_REFRESH_TOKEN`) → sends a plain-English re-grab notification to the
-     **CLIENT's own Telegram chat** (never to operator IDs) and exits 1.
-4. Is idempotent: a `~/.openclaw/workspace/ghl-token-liveness/ghl-token-liveness-<date>.ok`
-   stamp prevents the notification from firing more than once per calendar day.
+     **CLIENT** (surfaced as a state-dir artifact plus script output, for
+     delivery through the client's configured channel) and exits 1.
+4. Is idempotent: a `ghl-token-liveness-<date>.ok` stamp in the check's own
+   state directory (`tools/state/ghl-token-liveness/` by default) prevents the
+   notification from being surfaced more than once per calendar day.
 
 **What the client sees if their token dies:**
 
@@ -404,7 +406,7 @@ discoverability.
 12. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
 13. tools/chrome-extension/ — Token Grabber Chrome extension (client-facing; load unpacked)
 14. tools/check-ghl-token-liveness.sh — daily Firebase token health check (Skills 44 + 46);
-    VALID → exit 0 + day-stamp; INVALID → client notification via `openclaw message send`
+    VALID → exit 0 + day-stamp; INVALID → the client notification is surfaced (state-dir artifact + output) for delivery through the client's configured channel
 15. references/owner-token-grabber-guide.md — owner-facing Token Grabber walkthrough (8 steps + download link) + agent wiring notes
 16. references/fleet-announcement-template.md — standardized owner announcement (canonical 3-message template, `[OWNER_NAME]`/`[AGENT_NAME]`) + operator fleet-send runbook (gate, send mechanics, receipts)
 17. references/workflow-build-checklist-template.md — canonical WF-1..WF-21 reusable checklist

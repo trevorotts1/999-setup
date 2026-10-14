@@ -6,7 +6,7 @@
 
 # GHL Raw Body JSON Standard (Skill 38)
 
-The **GHL Custom Webhook Raw Body** is the JSON payload GHL (Convert and Flow) POSTs to the OpenClaw
+The **GHL Custom Webhook Raw Body** is the JSON payload GHL (Convert and Flow) POSTs to the agent endpoint
 public hook URL when an inbound message fires a workflow. This file is the **single standard** for what
 that body must be. The authoritative source-of-truth spec lives in
 `references/GHL-INBOUND-AND-PLAYBOOKS.md` §0-§2 (the 23-key section); this doc codifies it as the single,
@@ -14,7 +14,7 @@ human-readable standard, and the rule is **machine-enforced** by `scripts/qc-23-
 new `scripts/qc-ghl-raw-body-standard.sh`.
 
 > Do not confuse the GHL RAW BODY (this standard, "object A": snake_case `agent_id`, FLAT) with the
-> OpenClaw `hooks.mappings` server entry ("object B": camelCase `agentId`, a nested `match:{path}`, and a
+> the endpoint's server mapping entry ("object B": camelCase `agentId`, a nested `match:{path}`, and a
 > TEMPLATED `messageTemplate`). They are different objects in different systems. This standard governs the
 > RAW BODY only. See `references/GHL-INBOUND-AND-PLAYBOOKS.md` §4 for the server mapping.
 

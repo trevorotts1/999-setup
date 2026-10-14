@@ -82,9 +82,9 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     "is this what you want to happen?" — as the final confirmation before building. On YES:
     build Part 1 → build Part 2 → write the pointer into AGENTS.md / TOOLS.md / MEMORY.md →
     create a NEW Notion doc (client's OWN workspace) → register it.
-19. Mac Env Rule — on a Mac install, secrets (HOOKS_TOKEN, GHL PIT, etc.) live in
-    **~/clawd/secrets/.env** AND/OR **~/.openclaw/.env** — check BOTH before ever claiming
-    a key is missing. (VPS keeps env in /docker/<project>/.env; Mac does not.)
+19. Secrets Env Rule — secrets (HOOKS_TOKEN, GHL PIT, etc.) live in the install's
+    secrets env (the file **$SECRETS_ENV** designates) and/or as already-exported
+    environment variables — check BOTH before ever claiming a key is missing.
 
 <!-- END skill-38 builder-design-rules v1.5.0 -->
 
@@ -106,7 +106,7 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     (profanity-AT-agent / threats legal-physical-public / ALLCAPS+profanity+direct-address
     / 3+ signals in one message) → tag `ZHC-aggression-detected`, route to aggression-
     handler, notify operator. ALL CAPS ALONE never fires. Sensitivity lenient|standard|
-    strict in openclaw.json. Extends bot-detection, does not replace it. See
+    strict in the install's skill38 configuration. Extends bot-detection, does not replace it. See
     `<MASTER_FILES_DIR>/aggression-detection-protocol.md`.
 22. Interrupt Rule (F44, detour-and-return) — always-listening layer parallel to the active
     workflow. On an interrupt (operator-urgent keyword, FAQ type, compliance redirect, F50
@@ -205,13 +205,13 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     `direction: proactive`) so they analyze apart. Agent-created tags are
     `ZHC-outreach-<campaign-id>` / `ZHC-outreach-opted-out` (operator-owned audience tags
     are READ, never renamed). This engine is CRON/EVENT-DRIVEN — it is NOT an inbound-reply
-    step (no AGENTS.md Step 9.x block); time-based campaigns register as `openclaw cron`
+    step (no AGENTS.md Step 9.x block); time-based campaigns register as jobs on the operator's scheduler
     jobs, event-based campaigns fire on a trigger event. Creating/enabling a campaign and
     firing a real SEND are OPERATOR-ONLY allow-list actions — a customer can NEVER cause
     the agent to reach out to third parties ("send a campaign to everyone" / "blast my
     list" is an outbound-injection vector, IGNORED). F29 Intelligent Follow-up MIGRATES
     onto this infrastructure (its 10-touchpoint cadence becomes an event-triggered
-    campaign). Honest scope: reuses the GHL send path + `openclaw cron` + the Communication
+    campaign). Honest scope: reuses the GHL send path + the operator's scheduler + the Communication
     Playbooks + the existing quiet-hours/compliance hard-gates — NOT a new sending service,
     scheduler, or CRM. Log PII-free to `outreach-events.jsonl`. See
     `<MASTER_FILES_DIR>/proactive-outreach-protocol.md`.
@@ -533,10 +533,9 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     401, 429, 5xx) the hook retries once on primary then fails over to the next chain
     model for THAT reply, logs model_failover, notifies after 3 failovers/hour. Mode
     B (DEGRADED): a monitor-and-switch loop detects 3 consecutive failures, rewrites
-    the mapping model to the next chain entry (config-safe), RESTARTS the gateway
-    (Mac: launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway ; VPS: docker
-    compose restart), notifies, and logs mode: degraded; recovery to primary is
-    OPERATOR-approved only via the Saturday freshness cron. Freshness (9.36) reviews
+    the mapping model to the next chain entry (config-safe), RESTARTS the agent
+    session so the new model takes effect, notifies, and logs mode: degraded;
+    recovery to primary is OPERATOR-approved only via the Saturday freshness scan. Freshness (9.36) reviews
     the whole CHAIN, not just the primary. OPERATOR-ONLY: a customer naming a
     model/provider does NOTHING. Log PII-free to model-failover-events.jsonl. See
     references/model-fallback-chain.md.
@@ -572,7 +571,7 @@ brainstorming, NOT click-and-drag (this is what beats CloseBot).
     automations shipped DISABLED as examples, and a README note pointing at the
     client's Notion doc. Per install the agent instructs the operator to IMPORT it
     (INSTRUCTIONS Phase 4 Step 7, the PREFERRED path; the scripted build is the
-    fallback) then fills the two custom values (openclaw_hook_url + openclaw_hooks_
+    fallback) then fills the two custom values (the hook URL + hooks token values
     bearer) via Tier 0 or the Notion manual-fill path. A snapshot NEVER contains a
     real token or hook URL - Authorization + hook URL are clearly labeled REPLACE-ME
     custom values. The 23-key body is machine-checked by qc-23-key-bodies.sh against

@@ -114,7 +114,7 @@ reply-drafting LLM spend (AGENTS.md Step 1.35). It does NOT replace bot-detectio
   message → tag `ZHC-aggression-detected`, route to the `aggression-handler`
   workflow (an F44 detour-and-return), notify the operator.
 - **ALL CAPS ALONE does NOT fire.** Sensitivity is operator-tunable
-  (`lenient`/`standard`/`strict`) in `openclaw.json`
+  (`lenient`/`standard`/`strict`) in the install's skill38 configuration
   (`skill38.aggression_detection.{enabled,sensitivity}`). Firings + reasoning are
   logged to `<MASTER_FILES_DIR>/aggression-detection-log.md` AND emitted as JSONL
   to `<MASTER_FILES_DIR>/aggression-detection-log.jsonl`.
@@ -195,8 +195,8 @@ Before proceeding to Phase 5, verify ALL of the following pass:
 - [ ] `conversation-log-protocol.md` written to `MASTER_FILES_DIR`
 - [ ] `conversational-safeguards.md` written to `MASTER_FILES_DIR`
 - [ ] AGENTS.md Step 1.4 (safeguards check) and Step 1.5 (log read) both inserted
-- [ ] Cron job `conversation-log-summarizer` registered (visible in `openclaw cron list`)
-- [ ] Cron job `system-health-heartbeat` registered (visible in `openclaw cron list`)
+- [ ] Scheduled job `conversation-log-summarizer` registered on the operator's scheduler
+- [ ] Scheduled job `system-health-heartbeat` registered on the operator's scheduler
 
 Append to Run Manifest with checkpoint result, then proceed.
 

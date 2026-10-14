@@ -22,6 +22,7 @@
 #   2 = INCONCLUSIVE (no evidence / verifier unavailable / verify deferred: no public URL)
 set -u
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"  # install repo root (999 layout)
 TOOLS="$SKILL_DIR/tools"
 
 if [ "${1:-}" = "--selftest" ]; then
@@ -81,7 +82,7 @@ if [ -z "$ARG" ]; then
 fi
 EVIDENCE="$ARG"
 if [ ! -d "$EVIDENCE" ]; then
-  for c in "$PWD/working/communities/$ARG" "$HOME/clawd/working/communities/$ARG"; do
+  for c in "$PWD/working/communities/$ARG" "$REPO_ROOT/working/communities/$ARG"; do
     [ -d "$c" ] && EVIDENCE="$c" && break
   done
 fi

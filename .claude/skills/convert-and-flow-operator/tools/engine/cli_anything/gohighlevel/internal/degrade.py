@@ -6,19 +6,21 @@ Implements adapter-design §8.4:
   - LOCAL: write data_dir()/degrade/workflow-write.disabled containing the
     ProbeResult.  adapter._call(is_write=True) checks is_write_disabled()
     and refuses cleanly.
-  - FLEET-WIDE: Sunday cron / release agent calls disable_writes() on every
-    box + fires the owner alert.
   - RE-ENABLE: clear_write_disable() removes the flag.
 
 Dead token is NOT a degrade event — it nudges the owner instead.
 
-The FLEET-WIDE propagation (cron / release.sh) calls these three functions:
+The three functions:
   disable_writes(scope, reason)  -> writes flag + emits alert
   is_write_disabled()            -> returns bool (adapter checks before writing)
   clear_write_disable()          -> removes flag (after probe passes again)
 
-Boundary: this module writes the local flag and emits the alert.  The cron
-wiring that calls disable_writes() on every box is unit 13's responsibility.
+Boundary: this module writes the local flag and emits the alert. Harness
+note (Claude Code / 999): the OpenClaw-side design propagated the disable
+fleet-wide via a Sunday cron / release agent calling disable_writes() on
+every box. This harness has no fleet propagation and no such scheduler;
+the flag and the alert are LOCAL to this install, and any scheduled
+re-probe that calls these functions lives outside this module.
 """
 from __future__ import annotations
 
@@ -77,8 +79,9 @@ def disable_writes(scope: str, reason: str, probe_result: Optional["ProbeResult"
 def clear_write_disable() -> None:
     """Remove the disable flag — re-enables workflow writes.
 
-    Called by the Sunday update after a re-probe passes (PRD §8:
-    're-enables Tier 0 writes fleet-wide once the probe passes again').
+    Called after a re-probe passes (PRD §8: writes re-enable once the probe
+    passes again). On the OpenClaw side a Sunday update called this; here
+    the operator or a scheduled re-probe does.
     """
     flag = _degrade_flag_path()
     try:
@@ -105,7 +108,7 @@ def _emit_owner_alert(
     reason: str,
     probe_result: Optional["ProbeResult"] = None,
 ) -> None:
-    """Emit a structured owner alert via the OpenClaw notification channel.
+    """Emit a structured owner alert.
 
     Alert content (PRD §8.5) includes:
     - Which assertion failed
@@ -113,9 +116,11 @@ def _emit_owner_alert(
     - Box id / hostname
     - One-line remediation instruction
 
-    The actual send uses the OPENCLAW_NOTIFY_CHANNEL env var if set; falls
-    back to stderr so the alert is never silent (PRD §3.2 transparency rule).
-    Alert is logged; never suppressed.
+    Harness note: the OpenClaw side could also send this alert through the
+    gateway's notification channel (`openclaw message send`). No such
+    channel exists in this harness, so the alert is emitted to stderr,
+    where the running session surfaces it — never silent (PRD §3.2
+    transparency rule). Alert is logged; never suppressed.
     """
     import socket
     box_id = socket.gethostname()
@@ -132,39 +137,17 @@ def _emit_owner_alert(
         f"  fixture_captured: {fixture_ts or 'unknown'}",
         f"  disabled_at:      {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
         "",
-        "  Workflow writes are now DISABLED fleet-wide until the adapter is refreshed.",
+        "  Workflow writes are now DISABLED on this install until the adapter",
+        "  is refreshed.",
         "  REMEDIATION: engineering must re-capture golden fixtures from the canonical",
-        "  account, update internal/fixtures/, bump skill 44 version, and ship via",
-        "  release.sh.  The Sunday update re-enables Tier 0 writes after probe passes.",
+        "  account, update internal/fixtures/, bump skill 44 version, and re-enable",
+        "  writes with clear_write_disable() after a passing re-probe.",
     ]
     alert_text = "\n".join(lines)
-
-    notify_channel = os.environ.get("OPENCLAW_NOTIFY_CHANNEL", "").strip()
-    if notify_channel:
-        try:
-            # Attempt OpenClaw notification (best-effort; stderr fallback always runs)
-            _send_to_openclaw(notify_channel, alert_text)
-        except Exception:
-            pass
 
     # Always log to stderr — never silent
     import sys
     print(alert_text, file=sys.stderr)
-
-
-def _send_to_openclaw(channel: str, message: str) -> None:
-    """Best-effort send to the OpenClaw notification channel.
-
-    Uses subprocess to call `openclaw message send` if available.
-    Failure here is non-fatal — the stderr fallback in _emit_owner_alert
-    ensures the alert is always visible.
-    """
-    import subprocess
-    subprocess.run(
-        ["openclaw", "message", "send", "--channel", channel, "--text", message],
-        timeout=15,
-        capture_output=True,
-    )
 
 
 def _read_fixture_capture_date() -> Optional[str]:

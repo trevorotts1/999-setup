@@ -1,3 +1,11 @@
+> **999 harness adaptation note (2026-10-14):** this changelog is the skill's
+> provenance record from its OpenClaw-side life and is carried verbatim as
+> history. Entries below describe the OpenClaw harness (paths under
+> `.openclaw`, gateway config, host cron) because that is where those
+> changes happened; they are a record, not instructions for this harness.
+> In this pack the bindings are: engine in-tree at `tools/engine/`,
+> credentials from the install's own secrets env, no gateway config.
+
 # Changelog — convert-and-flow-operator (Skill 44)
 
 ## [2.1.2] - 2026-09-17 - fix(shell): qc-built-workflow.sh re-execs under bash 4+ on macOS

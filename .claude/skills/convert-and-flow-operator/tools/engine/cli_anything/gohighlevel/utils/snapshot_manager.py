@@ -4,7 +4,8 @@ HARD RULE (PRD Section 0 / Acceptance Criterion 20):
   Before EVERY workflows update/patch-email/patch-trigger the CLI must:
   1. GET the current workflow from the internal API.
   2. Save a timestamped snapshot to:
-       ~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<location>/<workflow-id>/<timestamp>.json
+       <engine>/data/snapshots/<location>/<workflow-id>/<timestamp>.json
+       (the engine's in-tree data directory; see _data_root below)
   3. Return the snapshot path so callers can print it.
 
   No live workflow is ever mutated without a captured rollback artifact on disk.
@@ -29,12 +30,12 @@ def _data_root() -> Path:
     """Base directory for snapshots.
 
     Overridable: set CAF_DATA_DIR=<path> in env (used by tests to avoid
-    writing to the real ~/.openclaw tree).
+    writing into the in-tree data directory).
     """
     override = os.environ.get("CAF_DATA_DIR", "").strip()
     if override:
         return Path(override)
-    return Path.home() / ".openclaw" / "tools" / "convert-and-flow-cli" / "data"
+    return Path(__file__).resolve().parents[3] / "data"
 
 
 def snapshot_dir(location_id: str, workflow_id: str) -> Path:

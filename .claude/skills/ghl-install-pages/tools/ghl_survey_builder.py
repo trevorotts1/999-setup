@@ -791,7 +791,7 @@ def _http_get_status(url: str, timeout: float = 15.0) -> tuple:
     import urllib.request
 
     req = urllib.request.Request(url, method="GET", headers={
-        "User-Agent": "openclaw-skill6-survey-builder/1.0 (url-receipt)",
+        "User-Agent": "ghl-install-pages-survey-builder/1.0 (url-receipt)",
     })
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:

@@ -162,7 +162,7 @@ hung (HTTP 000), so no build ever fired.
 > agent-discretionary and is NOT the default); do not fall back to it implicitly.
 
 ### Option B — the bounded coded dispatcher (REQUIRED DEFAULT)
-A small, bounded loop/cron that pulls `backlog` tasks off the department board
+A small, bounded loop that pulls `backlog` tasks off the department board
 and runs them on the department model, driven by `tools/v2_dispatcher.py`
 (`dispatch_one`) — never an unbounded ad-hoc loop. **Bounded** = it MUST have:
 
@@ -415,7 +415,7 @@ time; the agent simply ran in a clean shell where the store had never been sourc
 
 | Credential | Env var (preferred → alias) | Store (resolution order) |
 |---|---|---|
-| LOCATION PIT (media-scoped) | `GOHIGHLEVEL_API_KEY` → `GHL_API_KEY` → `GOHIGHLEVEL_LOCATION_PIT` → `GHL_LOCATION_PIT` | `~/.openclaw/secrets/.env` → `~/clawd/secrets/.env` → `~/.openclaw/workspace/.env` |
+| LOCATION PIT (media-scoped) | `GOHIGHLEVEL_API_KEY` → `GHL_API_KEY` → `GOHIGHLEVEL_LOCATION_PIT` → `GHL_LOCATION_PIT` | the live process env → the install's secrets env store (the file `$SECRETS_ENV` designates) |
 | Location id | `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID` → `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` → `CAF_ALLOWED_LOCATION_IDS` | same stores |
 | KIE image key | `KIE_API_KEY` | same stores |
 
@@ -429,7 +429,7 @@ agency token.
 ```bash
 # The gateway/launchd wrapper exports secrets/.env in a real fleet build, but an
 # isolated agent shell may start clean — so LOAD IT EXPLICITLY first.
-set -a; source ~/.openclaw/secrets/.env 2>/dev/null; set +a
+set -a; source "$SECRETS_ENV" 2>/dev/null; set +a
 
 # Then assert BOTH the LOCATION PIT and location id resolve. The resolver itself
 # also searches the stores, so this fails ONLY if the credential is truly absent.
@@ -718,12 +718,12 @@ never a hand-written "preview" HTML that was never fetched.
 PIT + location id + `KIE_API_KEY` resolved. These live in the env stores per the
 §2.0.1 table; the image pipeline resolves them via
 `ghl_media.resolve_location_pit()` / `resolve_location_id()`, which search EVERY
-known alias across the live env AND the stores (`~/.openclaw/secrets/.env` →
-`~/clawd/secrets/.env` → `~/.openclaw/workspace/.env`) before declaring anything
+known alias across the live env AND the store (the install's secrets env
+file, designated by `$SECRETS_ENV`) before declaring anything
 missing. A "GHL LOCATION PIT not found" honest_fail is VALID **only** when that
 search came back empty — and the error already names every var + store it checked.
 If the live env is empty, the store was simply not sourced; run the §2.0.1 step-0
-`source ~/.openclaw/secrets/.env` and retry — NEVER record the credential as
+`source "$SECRETS_ENV"` and retry — NEVER record the credential as
 missing on an empty env var alone (that was the six-month false-fail bug).
 
 The dispatcher invokes the image pipeline via the NAMED callable entrypoint
@@ -800,7 +800,7 @@ Pre-req (resolved by the §2.0.1 credential preflight — do that step 0 first):
 `export CAF_ALLOWED_LOCATION_IDS="${GOHIGHLEVEL_LOCATION_ID:-$GHL_LOCATION_ID}"`
 (the configured GHL location id) + the **LOCATION** PIT (`GOHIGHLEVEL_API_KEY`,
 never the agency PIT) so the Skill-44 safety gate passes. If either is empty,
-`source ~/.openclaw/secrets/.env` first — they live there per the §2.0.1 table;
+`source "$SECRETS_ENV"` first — they live there per the §2.0.1 table;
 do NOT declare them missing on an empty env var alone. **Auth-model split:**
 calendars / products / forms / contacts are the `services.*` origin + Bearer PIT —
 **bare Python OK** (the Skill-44 CLI), NOT the WAF-gated funnels origin.

@@ -1,3 +1,12 @@
+# CHANGELOG — 999 adaptation note (2026-10-14)
+
+> This file's entries are the skill's OpenClaw-side history, carried
+> verbatim as the provenance record. They describe that harness's files,
+> paths, and machinery; they are a record, not instructions for this
+> harness. The live, adapted doctrine for the Claude Code harness is the
+> pack's SKILL.md, INSTALL.md, ENV-MATRIX.md, and tools/ as adapted in
+> this copy, under the four-seam ADAPTER.md contract.
+
 # Changelog - ghl-install-pages
 
 All notable changes to this skill wrapper are documented here.

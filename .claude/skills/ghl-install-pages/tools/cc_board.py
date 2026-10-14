@@ -100,8 +100,9 @@ _DEFAULT_TIMEOUT = 8
 # U27 (Skill-6 board reconcile) — evidence-root layout constants.
 #
 # Skill 6 evidence roots live at ``<base>/v2-<RUN_ID>/`` (never /tmp;
-# v2-autonomous-build-sop.md documents ``<OPERATOR_HOME>/clawd/skill6-fix/`` as
-# the operator-box base). ``routing/intake-receipt.json`` (written by
+# v2-autonomous-build-sop.md documents the evidence base: the
+# ``SKILL6_EVIDENCE_BASE_DIR`` override, defaulting to the skill's in-tree
+# ``state/skill6-fix``). ``routing/intake-receipt.json`` (written by
 # v2_dispatcher._run_intake) is the "this run went through intake" signal;
 # ``routing/board-ingest-receipt.json`` (written below, U27) is the NEW
 # "this run's board card either landed or was recorded as never having tried"
@@ -2343,44 +2344,26 @@ def _ingest_persona_selftest() -> int:
 def resolve_evidence_base(env: Optional[dict] = None) -> str:
     """Resolve the Skill-6 evidence-root base directory to sweep.
 
-    Resolution order:
+    Resolution order (999 harness binding):
       1. ``SKILL6_EVIDENCE_BASE_DIR`` env override (explicit, highest precedence).
-      2. Per-platform persistent default (SK6002). Docker ``$HOME`` is not
-         always persistent, so the default follows the volume:
-           * Hostinger Docker (``/data/.openclaw`` exists, ``/data`` is not a
-             symlink): ``/data/clawd/skill6-fix`` (``/data`` is the volume).
-           * Contabo Docker (``$HOME`` is ``/home/node`` and ``$HOME/.openclaw``
-             exists): ``$HOME/.openclaw/clawd/skill6-fix`` -- only
-             ``~/.openclaw`` survives a container recreate.
-           * Mac and anything else: ``$HOME/clawd/skill6-fix`` (the convention in
-             ``v2-autonomous-build-sop.md``).
-         ``SKILL6_DATA_ROOT`` / ``SKILL6_CONTABO_HOME`` replace ``/data`` and
-         ``/home/node`` (tests only).
-      3. ``""`` -- no resolvable base (CI / a bare checkout with no HOME); callers
-         treat this as "not applicable", never as an error.
+      2. The skill's own in-tree evidence dir, ``state/skill6-fix`` beside the
+         skill root. (The OpenClaw-side fleet layouts this default used to
+         probe, Hostinger ``/data`` volumes, Contabo ``~/.openclaw`` homes,
+         and ``$HOME/clawd``, are not resolved in this harness; designate the
+         base explicitly via the override when evidence lives elsewhere.)
 
     The Command Center's ``resolveSkill6EvidenceBaseDir()``
-    (``src/lib/health/deep-checks.ts``) still reads env then
-    ``$HOME/clawd/skill6-fix``; on Contabo the reconcile-cron installer leaves
-    ``$HOME/clawd/skill6-fix`` pointing at the persistent folder so both agree.
+    (``src/lib/health/deep-checks.ts``) honors the same env override first,
+    so both sides agree wherever the override is set.
 
-    Never raises; never touches the network; does no I/O beyond env reads and
-    directory existence checks.
+    Never raises; never touches the network.
     """
     env = env if env is not None else os.environ
     explicit = (env.get("SKILL6_EVIDENCE_BASE_DIR") or "").strip()
     if explicit:
         return explicit
-    home = (env.get("HOME") or "").strip()
-    if not home:
-        return ""
-    data = (env.get("SKILL6_DATA_ROOT") or "/data").strip()
-    if os.path.isdir(os.path.join(data, ".openclaw")) and not os.path.islink(data):
-        return os.path.join(data, "clawd", "skill6-fix")
-    contabo_home = (env.get("SKILL6_CONTABO_HOME") or "/home/node").strip()
-    if os.path.normpath(home) == os.path.normpath(contabo_home) and os.path.isdir(os.path.join(home, ".openclaw")):
-        return os.path.join(home, ".openclaw", "clawd", "skill6-fix")
-    return os.path.join(home, "clawd", "skill6-fix")
+    skill_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(skill_root, "state", "skill6-fix")
 
 
 def list_evidence_runs(base_dir: str) -> List[str]:
@@ -2490,7 +2473,7 @@ def _reconcile_cli(argv: Optional[list] = None) -> int:
     ALWAYS exits 0 — this is a non-gating, fail-soft, read-only sweep (mirrors
     ``mc_board.py``'s ``cmd_reconcile``: "reconcile stays exit 0 even with the
     board down"). The verdict lives in the printed report's ``all_clean`` /
-    ``drift`` fields for the caller (operator, cron, or the Command Center's
+    ``drift`` fields for the caller (operator, scheduled caller, or the Command Center's
     health probe) to read — never in the process exit code.
     """
     import argparse
@@ -2561,7 +2544,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "reconcile":
         sys.exit(_reconcile_cli(sys.argv[2:]))
     # SK6002 -- ``cc_board.py evidence-base`` prints the resolved evidence base
-    # (one line, no newline games) so shell callers (the reconcile-cron
+    # (one line, no newline games) so shell callers (the reconcile scheduler's
     # installer) share this one resolver instead of re-implementing it.
     if len(sys.argv) > 1 and sys.argv[1] == "evidence-base":
         print(resolve_evidence_base())

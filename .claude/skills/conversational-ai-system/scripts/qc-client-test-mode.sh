@@ -55,7 +55,9 @@ AG="$SKILL_DIR/scripts/05-update-agents-md.sh"
 MEM="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 # ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
 if [ -z "${AGENTS_MD:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+  # Workspace binding (999 harness): the core file lives at the install repo
+  # root (env GHL_WORKSPACE wins; AGENTS_MD may be set directly).
+  if [ -z "${AGENTS_MD:-}" ]; then WS_ROOT="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"; AGENTS_MD="$WS_ROOT/AGENTS.md"; fi
 fi
 
 echo "=== qc-client-test-mode: U-6 Client Test Mode surface gate ==="

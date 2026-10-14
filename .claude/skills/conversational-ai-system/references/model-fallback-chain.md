@@ -35,33 +35,37 @@ out the whole chain.
 Example chain (illustrative, not a mandate; the operator picks from the client's OWN provider
 capabilities per the never-substitute-model rule):
 
-- primary: Ollama Cloud DeepSeek V4.1 Flash (thinking:max)
-- fallback 1: OpenRouter Kimi 2.6+
+- primary: the client's selected model on their primary provider
+- fallback 1: a model on a SECOND provider the client already pays for
 - fallback 2: a third provider the client already pays for
+
+(No model is named here on purpose: the client selects their models, or
+their configured defaults apply; the wizard may RECOMMEND with reasons,
+never prescribe.)
 
 ### 2. Config shape
 
-The chain lives in `openclaw.json` under the `skill38.model_chain` key:
+The chain lives in the install's skill38 configuration under the `model_chain` key:
 
     skill38.model_chain.primary    = "<provider/model:tag>"
     skill38.model_chain.fallbacks  = ["<provider/model:tag>", "<provider/model:tag>"]
 
 `primary` is a single model string. `fallbacks` is an array of zero, one, or two model strings, in
-priority order. Write these ONLY via the config-safe pattern (`openclaw config set
-skill38.model_chain.primary "<value>"` and `openclaw config set skill38.model_chain.fallbacks
-'["a","b"]'`); never hand-edit a jq `//= ;` mutation and never write a legacy `.cron.jobs` or
-`agents.defaults.async/.batch` shape. `scripts/qc-config-schema-safety.sh` knows this shape is
-sanctioned (see its ALLOW-KNOWLEDGE note) and stays exit 0.
+priority order. Write these ONLY through the install's configuration using the config-safe
+pattern; never hand-mutate the configuration file and never write a legacy scheduled-jobs or
+async/batch defaults shape. (On the source side, the config-schema-safety checker sanctioned
+exactly this shape in its ALLOW-KNOWLEDGE note; that checker is not part of this scoped pack
+copy.)
 
 ### 3. HONEST RUNTIME DEPENDENCY - verify, never assume
 
-Per-reply failover requires the OpenClaw gateway to support selecting an ALTERNATE model for a hook
+Per-reply failover requires the agent runtime to support selecting an ALTERNATE model for a hook
 session AFTER a provider error. That capability MUST be verified on the installed version, never
-assumed. The install runs a preflight, `scripts/32-verify-model-failover-support.sh`, which inspects
-`openclaw --version`, the `hooks.mappings` schema, and the agents model documentation on the
-installed version for a per-session or per-mapping model override. The preflight resolves ONE of two
-modes and records it as `failover_mode` in the run manifest so the client doc and QC know which
-behavior is actually live.
+assumed. At install time a preflight inspects the runtime version, the endpoint server-mapping
+schema, and the runtime's model documentation for a per-session or per-mapping model override.
+(The preflight script itself is not part of this scoped pack copy.) The preflight resolves ONE of
+two modes and records it as `failover_mode` in the run manifest so the client doc and QC know
+which behavior is actually live.
 
 ### 4. Mode A, FULL (per-session override supported)
 
@@ -78,19 +82,18 @@ retry. A lightweight health check wrapped around the reply path detects repeated
 (3 CONSECUTIVE), then:
 
 1. rewrites the mapping's model to the NEXT chain entry via the config-safe pattern,
-2. RESTARTS the gateway service so the new model takes effect:
-   - Mac: `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`
-   - VPS (Docker): `docker compose restart` (run from the project dir that holds the compose file)
+2. RESTARTS the agent session so the new model takes effect (configuration
+   changes take effect in a fresh agent session in this harness),
 3. NOTIFIES the operator, and
 4. logs `model_failover` with `mode: degraded`.
 
-Recovery back to the primary is OPERATOR-APPROVED ONLY. The Saturday freshness cron (9.36) surfaces
+Recovery back to the primary is OPERATOR-APPROVED ONLY. The Saturday freshness scan (9.36) surfaces
 that the standing model is a fallback and asks the operator whether to switch back, so a degraded
 switch is never silently permanent and never auto-reverts mid-incident.
 
 ### 6. failover_mode in the run manifest
 
-`scripts/32-verify-model-failover-support.sh` writes `failover_mode: full` or `failover_mode:
+The install-time preflight writes `failover_mode: full` or `failover_mode:
 degraded` into the run manifest. The client doc states which behavior is live so expectations are
 honest (Mode A = seamless per-reply, Mode B = a brief restart on a sustained outage). QC reads the
 same field.
@@ -145,14 +148,14 @@ SEND, quiet hours, compliance, or the never-substitute-a-client's-chosen-model r
 
 ## Enforcement
 
-- `scripts/32-verify-model-failover-support.sh` - the Mode A vs Mode B preflight; records
-  `failover_mode`.
-- `scripts/qc-model-fallback.sh` (+ `qc-model-fallback.test.sh`) - FAILS if this reference doc, the
-  `skill38.model_chain` config-keys documentation, or the `model-failover-events.jsonl` sink is
-  missing, and validates the `model-tier` enum.
-- `scripts/qc-config-schema-safety.sh` - stays exit 0; its ALLOW-KNOWLEDGE note sanctions the
-  `skill38.model_chain.primary` / `skill38.model_chain.fallbacks` shape.
-- `protocols/model-version-freshness-protocol.md` - the Saturday cron reviews the whole chain.
+- The install-time failover preflight (not part of this scoped pack copy) - the Mode A vs
+  Mode B decision; records `failover_mode`.
+- The model-fallback QC gate (not part of this scoped pack copy) - fails if this reference
+  doc, the `model_chain` config-keys documentation, or the `model-failover-events.jsonl`
+  sink is missing, and validates the `model-tier` enum.
+- The config-schema-safety checker (not part of this scoped pack copy) - its ALLOW-KNOWLEDGE
+  note sanctions the `model_chain.primary` / `model_chain.fallbacks` shape.
+- `protocols/model-version-freshness-protocol.md` - the Saturday scan reviews the whole chain.
 - MEMORY Rule 38.
 - Log sink: `model-failover-events.jsonl` (PII-free; event_type `model_failover`), seeded by
   `scripts/25-seed-round3-feature-files.sh`.

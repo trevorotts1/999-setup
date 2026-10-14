@@ -2,7 +2,7 @@
   Client Reference Sheet template — verbatim playbook v5.14, Parts 2 + 3 (lines 8224-8527).
   Rendering paths:
     1. Notion-first  → scripts/21-generate-client-reference-sheet.sh (agent #5) writes this to a fresh page in the client's Notion workspace, substituting <PLACEHOLDER> tokens with captured run values.
-    2. Markdown fallback → if Notion is unavailable, the same script saves the rendered file to $MASTER_FILES_DIR/openclaw-ghl-webhook-setup-<timestamp>.md.
+    2. Markdown fallback → if Notion is unavailable, the same script saves the rendered file to $MASTER_FILES_DIR/agent-ghl-webhook-setup-<timestamp>.md.
   The six channel-specific Raw Body JSONs (SMS, Email, Facebook, Instagram, Live Chat, All-in-One) live below in Part 3 — copy the one matching each GHL workflow's "Custom Webhook" body.
 -->
 
@@ -13,11 +13,11 @@ This is the content the agent generates and saves. Every code block in the refer
 ## Reference Sheet structure
 
 ```
-# OpenClaw Inbound Webhook Setup — Client Reference Sheet
+# Agent Endpoint Inbound Webhook Setup — Client Reference Sheet
 
 **Setup completed:** <date and time>
 **Hostname:** <PUBLIC_HOSTNAME>
-**OpenClaw version at setup time:** <OPENCLAW_VERSION>
+**Agent runtime version at setup time:** <RUNTIME_VERSION>
 **Hook name (mapping id):** <HOOK_NAME>
 **Endpoint URL:** https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>
 
@@ -37,7 +37,7 @@ These have also been saved to <SECRETS_ENV_FILE>.
 
 ## 🚀 GHL CUSTOM WEBHOOK SETUP (copy-paste sections)
 
-For EACH channel you want OpenClaw to handle, build a separate workflow in GHL. Copy the matching JSON block from Part 3 below. Use these same values across all workflows:
+For EACH channel you want the agent to handle, build a separate workflow in GHL. Copy the matching JSON block from Part 3 below. Use these same values across all workflows:
 
 ### URL field (same for every channel)
 
@@ -88,7 +88,7 @@ Set to: application/json
 (Verbatim click-by-click — see Part 3 for the matching Raw Body per channel)
 
 1. GHL sub-account → **Automation → Workflows → + Create Workflow → Start from Scratch**
-2. Name it `OpenClaw — Inbound [Channel]` (e.g. `OpenClaw — Inbound SMS`)
+2. Name it `Inbound [Channel] (agent)` (e.g. `Inbound SMS (agent)`)
 3. **+ Add New Trigger** → choose **Customer Replied**
 4. In the trigger filter: **+ Add Filter** → choose **Reply Channel** → select the matching channel (SMS, Email, Facebook, Instagram, Live Chat, or All-in-One Chat)
 5. Hit **Save Trigger**
@@ -126,9 +126,9 @@ Set to: application/json
 - ✅ Cloudflare tunnel: <TUNNEL_ID>
 - ✅ DNS CNAME created at <PUBLIC_HOSTNAME>
 - ✅ cloudflared service: auto-start flags verified, Restart Survival Test passed
-- ✅ OpenClaw config: backup at <CONFIG_BACKUP_PATH>, hooks.mappings active for <HOOK_NAME>
+- ✅ Endpoint config: backup at <CONFIG_BACKUP_PATH>, server mapping active for <HOOK_NAME>
 - ✅ End-to-end test: 200 OK at https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>
-- ✅ OpenClaw version at time of setup: <OPENCLAW_VERSION> (schema verified against docs.openclaw.ai on <date>)
+- ✅ Agent runtime version at time of setup: <RUNTIME_VERSION> (schema verified against the runtime documentation on <date>)
 - ✅ Agent classification rules installed in AGENTS.md (spam/marketing filtering active)
 - ✅ Communication playbooks created (links below)
 
@@ -164,7 +164,7 @@ When everything is built and published, test it end-to-end yourself. Do these in
 Paste this into any AI session with access to this machine to retrieve your URL + Bearer token later:
 
 [code block]
-Look up my OpenClaw hooks.mappings setup in ~/.openclaw/openclaw.json.
+Look up my endpoint server mapping setup in the install's endpoint configuration.
 Tell me the URL pattern (https://<hostname>/hooks/<id>), the Bearer token
 (hooks.token), and the agent session key pattern (mappings[].sessionKey).
 Resolve the hostname from my Cloudflare tunnel if not in memory. Output
@@ -173,7 +173,7 @@ ready-to-paste headers and URL for an external service.
 
 ## 🔌 Adding other services later
 
-To wire Stripe, n8n, Calendly, Zapier, or any other service into the same OpenClaw, add another entry to the `hooks.mappings` array in `~/.openclaw/openclaw.json` with its own `id`, `match.path`, and a `messageTemplate` shaped for that service's payload. Reuses the same `HOOKS_TOKEN`. URL becomes `https://<PUBLIC_HOSTNAME>/hooks/<new-id>`.
+To wire Stripe, n8n, Calendly, Zapier, or any other service into the same agent endpoint, add another server mapping entry in the install's endpoint configuration with its own `id`, `match.path`, and a `messageTemplate` shaped for that service's payload. Reuses the same `HOOKS_TOKEN`. URL becomes `https://<PUBLIC_HOSTNAME>/hooks/<new-id>`.
 ```
 
 ---

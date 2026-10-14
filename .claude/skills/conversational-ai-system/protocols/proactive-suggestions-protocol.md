@@ -142,7 +142,7 @@ Dreaming.
 Each sub-feature runs its own analyzer during the cron pass:
 
 ```
-openclaw run proactive-suggestions-scan
+run the proactive-suggestions scan
   -> 34.1 analyzer
   -> 34.2 analyzer
   -> 34.3 analyzer
@@ -172,10 +172,10 @@ recorded.
 ## Recommended model
 
 Like Weekly Tune-up (Step 9.32), this is analytical work requiring
-deep reasoning. Use highest-reasoning model available — DeepSeek V4
-Pro with thinking:max, Kimi 2.6+, or current top-reasoning model at
-execution time. Configure in `openclaw.json` under
-`proactive.model`.
+deep reasoning. Use the client's selected model or their configured
+default; a top-tier reasoning model is RECOMMENDED for this pass
+(guidance only, never a prescription). The client may pin a choice in
+the install's skill38 configuration under `proactive.model`.
 
 ## Allow-list
 
@@ -189,10 +189,10 @@ All seven sub-features rely on existing allow-list actions:
 No new allow-list actions needed.
 ```
 
-**B. Register cron:**
+**B. Register the scheduled job (on the operator's scheduler):**
 
 ```bash
-openclaw cron add proactive-suggestions-scan "0 23 * * 6" "openclaw run proactive-suggestions-scan"
+schedule: "0 23 * * 6"  ->  run the proactive-suggestions scan
 ```
 
 Cron expression `0 23 * * 6` = "minute 0, hour 23, any day, any month, Saturday".

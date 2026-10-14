@@ -5,15 +5,15 @@ platform: vps
 
 # Skill 44 — Convert and Flow Operator (VPS overlay)
 
-Venv root: `/data/.openclaw/tools/convert-and-flow-cli/.venv`
-Wrapper: `/data/.openclaw/tools/convert-and-flow-cli/caf`
+Venv root: `tools/engine/.venv` (in-tree, inside the skill; per-container on fleet-contabo)
+Wrapper: `tools/engine/caf` (in-tree, inside the skill)
 
-## Firebase token on VPS
+## Firebase token on a container install
 
-There is no Chrome in the Docker container. When the Firebase refresh token is expired or missing:
-1. The agent sends a Telegram nudge to the owner: "I need you to grab the Convert and Flow token to build workflows directly."
+There is no Chrome profile in the container. When the Firebase refresh token is expired or missing:
+1. The agent surfaces a nudge for the owner (delivered through the client's configured channel): "I need you to grab the Convert and Flow token to build workflows directly."
 2. The owner copies the token from their browser at https://app.gohighlevel.com
-3. The owner pastes it to the agent in Telegram
-4. The agent writes it to `/data/.openclaw/secrets/.env` and wires it via `openclaw config set`
+3. The owner pastes it to the agent
+4. The agent writes it to that container's own secrets env file (the file $SECRETS_ENV names) and runs tools/engine/wire-ghl-env.sh --write so the session environment carries it
 
 See parent SKILL.md for the full skill description.

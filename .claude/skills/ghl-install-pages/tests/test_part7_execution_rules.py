@@ -13,10 +13,11 @@ guard-rail over the already-shipped fail-closed suites:
   * tests/test_iframe_router.py              (wrong-frame / stale / ambiguous fail)
   * tests/test_cua_last_resort_adapter.py    (CUA never-default, opt-in gate)
   * tests/test_browser_manager_capability_wire.py (receipt freshness STATE_WAITING)
-  * tests/test_openclaw_browser_adapter.py   (Lane-2 75 refusals, CLI-absent 64)
+  * tests/test_openclaw_browser_adapter.py   (Lane-2 GATE 0 refusals: every verb 75)
 
 Rules under guard (fix-plan lines 388-400):
-  1. Do not require OpenClaw 2.0 or CUA for Skill 6 to be considered installed
+  1. Do not require the OpenClaw managed browser or CUA for Skill 6 to be
+     considered installed (in this harness the managed lane does not exist)
   2. Do not remove agent-browser PRIMARY until Lane 2 is proven equivalent on GHL
   3. Do not silent-fallback CUA
   4. Fail closed when zero browser lanes
@@ -78,17 +79,17 @@ def test_rule1_agent_browser_only_box_is_qc_passable():
 
 
 def test_rule1_install_step1_does_not_require_openclaw_2x_or_cua():
-    """INSTALL.md Step 1 must not name OpenClaw 2.x or CUA as an install gate.
-    Mentions are allowed ONLY in the negative/doctrine form (the literal
-    'Do NOT require OpenClaw 2.0 or CUA' sentence and the pre-2.0 lane row)."""
+    """INSTALL.md Step 1 must not name the managed browser or CUA as an
+    install gate. Harness form of rule 1: the OpenClaw managed-browser lane
+    does not exist here, and INSTALL.md must SAY so in the never-required
+    form (999 adaptation; the source form pinned a pre-2.0 lane row and a
+    'Do NOT require OpenClaw 2.0 or CUA' sentence)."""
     src = _read(_INSTALL_MD)
-    # The pre-2.0 row is REQUIRED to exist: an old OpenClaw does not block.
-    assert "Pre-2.0 OpenClaw + agent-browser" in src, (
-        "INSTALL.md lost its pre-2.0-OpenClaw lane row (rule 1)")
-    # The doctrine sentence is REQUIRED to exist (the guard text itself).
-    assert re.search(
-        r"Do NOT require OpenClaw 2\.0 or CUA", src), (
-        "INSTALL.md lost the 'Do NOT require OpenClaw 2.0 or CUA' doctrine")
+    # The absence + never-required statement is REQUIRED to exist.
+    assert "managed-browser lane is not available in this harness" in src, (
+        "INSTALL.md lost the lane-absence statement (rule 1)")
+    assert re.search(r"never required", src), (
+        "INSTALL.md lost the 'never required' doctrine (rule 1)")
     # The Prerequisites Verification list (the actual install gate) must not
     # demand CUA or OpenClaw 2.x. Extract that list and assert absence.
     block = src.split("## Prerequisites Verification", 1)[1]
@@ -112,7 +113,8 @@ def test_rule2_lane_selection_priority_keeps_agent_browser_primary():
 
 def test_rule2_install_names_agent_browser_primary():
     """INSTALL.md Step 1 keeps agent-browser as the PRIMARY lane header, and
-    the OpenClaw managed browser stays marked not-yet-PRIMARY (alt/experimental)."""
+    the OpenClaw managed browser stays marked unavailable (structurally
+    absent in this harness — never PRIMARY, never selected)."""
     src = _read(_INSTALL_MD)
     assert re.search(
         r"Step 1: Set Up the Browser Lane — agent-browser \(PRIMARY\)", src), (
@@ -120,10 +122,11 @@ def test_rule2_install_names_agent_browser_primary():
     assert re.search(
         r"agent-browser \(Vercel Labs\) is the PRIMARY engine", src), (
         "INSTALL.md no longer states agent-browser is the PRIMARY engine (rule 2)")
-    # Lane 2 downgrade marker (experimental, not Skill 6 PRIMARY) must remain.
+    # Lane 2 marker must remain — in harness form: the lane is structurally
+    # absent here, which is stronger than the source's not-yet-PRIMARY note.
     assert re.search(
-        r"not yet wired as Skill 6 PRIMARY", src), (
-        "INSTALL.md lost the 'managed browser not yet Skill 6 PRIMARY' marker (rule 2)")
+        r"structurally absent", src), (
+        "INSTALL.md lost the lane-2 structural-absence marker (rule 2)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -13,17 +13,21 @@
 # -------------------------------------------------------------------------
 #   1. CREDENTIAL RESOLUTION PICKED A DOCUMENTATION PLACEHOLDER. The candidate
 #      list took `GHL_PRIVATE_INTEGRATION_TOKEN` first no matter WHERE it came
-#      from, and on a real box that name is present in openclaw.json `env.vars`
-#      carrying the documentation placeholder `pit-abc123` (10 characters). THREE
-#      of the five candidate names hold that same placeholder there. Meanwhile the
-#      box's REAL tokens sat in `secrets/.env` and tested HTTP 200 the same day.
-#      The monitor therefore probed a fake token, got 401, and announced the
-#      client's live credential was expired — a false alarm the operator had to
+#      from, and on a real box that name is present in the harness config's
+#      env block carrying the documentation placeholder `pit-abc123` (10
+#      characters). THREE of the five candidate names hold that same
+#      placeholder there. Meanwhile the box's REAL tokens sat in the secrets
+#      env file and tested HTTP 200 the same day. The monitor therefore
+#      probed a fake token, got 401, and announced the client's live
+#      credential was expired — a false alarm the operator had to
 #      personally challenge.
 #      FIX: placeholder-shaped values are SKIPPED (shorter than 20 characters, or
-#      beginning `pit-abc`, or a known dummy word), and a value that came from a
-#      SECRETS ENV-FILE outranks one that came from openclaw.json `env.vars`,
-#      because a box's config env.vars are placeholders BY DESIGN.
+#      beginning `pit-abc`, or a known dummy word), and a value that came from
+#      the install's SECRETS ENV-FILE outranks one that came from the process
+#      environment, because config-injected env values are placeholders BY
+#      DESIGN on a real box. (999 harness form: the canonical source is the
+#      secrets env file designated by $SECRETS_ENV; there is no gateway
+#      config file to read values from.)
 #
 #   2. A BARE 401 WAS REPORTED AS "DEAD/EXPIRED". GoHighLevel returns 401 for
 #      SCOPE failures on perfectly live tokens — proven: live agency PITs returned
@@ -62,9 +66,12 @@
 #
 # NOTIFICATION TARGET
 # -------------------
-# A client-facing refresh message is sent ONLY on a confirmed CREDENTIAL failure,
-# and only to the CLIENT's own configured Telegram chat (operator ids are
-# hard-excluded). CONFIG problems are operator-logged and NEVER reach the client.
+# A client-facing refresh message is SURFACED only on a confirmed CREDENTIAL
+# failure: written as a dated artifact in the state dir and printed, for the
+# session/scheduler to deliver via the client's configured channel (this
+# harness has no gateway send). It is addressed to the CLIENT only (operator
+# ids are hard-excluded). CONFIG problems are operator-logged and NEVER
+# reach the client.
 #
 # bash-not-zsh: always invoke via `bash`, never `zsh`.
 #
@@ -98,18 +105,12 @@ OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-}"
 _log() { echo "[ghl-pit-liveness] $*"; }
 
 # ---------------------------------------------------------------------------
-# OpenClaw root (VPS /data first, then Mac $HOME).
+# State dir (999 harness): inside this skill's own tree by default
+# (tools/state/ghl-pit-liveness); override with SKILL38_LIVENESS_STATE_DIR.
+# The OpenClaw side kept state under its workspace dir.
 # ---------------------------------------------------------------------------
-if [[ -d /data/.openclaw ]]; then
-  OC_ROOT="/data/.openclaw"
-elif [[ -d "${HOME}/.openclaw" ]]; then
-  OC_ROOT="${HOME}/.openclaw"
-else
-  _log "WARN no OpenClaw root found; skipping check."
-  exit 0
-fi
-
-STATE_DIR="${OC_ROOT}/workspace/ghl-pit-liveness"
+SKILL38_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE_DIR="${SKILL38_LIVENESS_STATE_DIR:-$SKILL38_ROOT/tools/state/ghl-pit-liveness}"
 mkdir -p "$STATE_DIR"
 TODAY=$(date -u +%Y-%m-%d)
 PASS_STAMP="${STATE_DIR}/ghl-pit-liveness-${TODAY}.ok"
@@ -124,13 +125,13 @@ if [[ -f "$PASS_STAMP" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Resolve creds from the standard env-store order (process env wins over files).
-# Search path mirrors seed-ghl-auth.py + MEMORY client-box-env-stores.
+# Resolve creds: the install's secrets env file (designated by $SECRETS_ENV)
+# first, then the process environment. The file outranks the process env
+# because config-injected env values are placeholders by design (defect 1).
 # ---------------------------------------------------------------------------
-# Values are loaded into NAMESPACED variables, never straight into the candidate
-# names, so the resolver below can tell WHERE each value came from. That
-# distinction is load-bearing: a box's openclaw.json env.vars legitimately carry
-# documentation placeholders, while secrets/.env carries the real credential.
+# Values from the file are loaded into NAMESPACED variables, never straight
+# into the candidate names, so the resolver below can tell WHERE each value
+# came from.
 _load_env_file() {
   local f="$1"
   [[ -f "$f" ]] || return 0
@@ -151,36 +152,8 @@ _load_env_file() {
   done < "$f"
 }
 
-for ENV_FILE in \
-  "${OC_ROOT}/secrets/.env" \
-  "${HOME}/.openclaw/secrets/.env" \
-  "/data/.openclaw/secrets/.env" \
-  "${OC_ROOT}/secrets.env" \
-  "${HOME}/.openclaw/secrets.env" \
-  "${OC_ROOT}/.env" \
-  "${HOME}/.openclaw/.env" \
-  "${OC_ROOT}/workspace/.env" \
-  "${HOME}/.openclaw/workspace/.env"; do
-  _load_env_file "$ENV_FILE" 2>/dev/null || true
-done
-
-# openclaw.json env.vars — loaded into a SEPARATE namespace and treated as the
-# LOWEST-priority source (see the header: these are placeholders by design).
-if command -v python3 >/dev/null 2>&1 && [[ -f "${OC_ROOT}/openclaw.json" ]]; then
-  while IFS='=' read -r k v; do
-    [[ -n "$k" && -n "$v" ]] && eval "JSONVAL_${k}=\$v"
-  done < <(python3 - "${OC_ROOT}/openclaw.json" 2>/dev/null <<'JSONVARS_EOF'
-import json, sys
-try:
-    cfg = json.load(open(sys.argv[1]))
-    env_vars = (cfg.get("env", {}) or {}).get("vars", {}) or {}
-    for k, v in env_vars.items():
-        if isinstance(v, str) and v:
-            print(f"{k}={v}")
-except Exception:
-    pass
-JSONVARS_EOF
-  )
+if [[ -n "${SECRETS_ENV:-}" ]]; then
+  _load_env_file "$SECRETS_ENV" 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -210,11 +183,9 @@ _is_placeholder() {
 }
 
 # ---------------------------------------------------------------------------
-# Resolve the token. TWO passes, so a real secret always beats a placeholder:
-#   pass 1 — process env, then a secrets ENV-FILE   (trusted sources)
-#   pass 2 — openclaw.json env.vars                 (placeholders by design)
-# Within a pass the candidate names are tried in priority order, and any
-# placeholder-shaped value is SKIPPED rather than selected.
+# Resolve the token. Candidate names are tried in priority order, the
+# secrets env file before the process env, and any placeholder-shaped
+# value is SKIPPED rather than selected.
 # ---------------------------------------------------------------------------
 PIT=""
 PIT_VAR=""
@@ -241,14 +212,9 @@ _consider() { # <var-name> <value> <source-label>
 }
 
 for VAR in $CANDIDATE_VARS; do
-  _consider "$VAR" "${!VAR:-}" "process-env" && break
   _consider "$VAR" "$(eval "printf '%s' \"\${FILEVAL_${VAR}:-}\"")" "secrets-env-file" && break
+  _consider "$VAR" "${!VAR:-}" "process-env" && break
 done
-if [[ -z "$PIT" ]]; then
-  for VAR in $CANDIDATE_VARS; do
-    _consider "$VAR" "$(eval "printf '%s' \"\${JSONVAL_${VAR}:-}\"")" "openclaw.json env.vars" && break
-  done
-fi
 
 # Token CLASS decides which endpoint may legitimately be probed (defect 3).
 case "$PIT_VAR" in
@@ -257,12 +223,11 @@ case "$PIT_VAR" in
 esac
 
 # Ids — same source preference.
-_resolve_id() { # <var-name...> -> prints the first non-empty value
+_resolve_id() { # <var-name...> -> prints the first non-empty value (file first)
   local var val
   for var in "$@"; do
-    val="${!var:-}"
-    [[ -n "$val" ]] || val="$(eval "printf '%s' \"\${FILEVAL_${var}:-}\"")"
-    [[ -n "$val" ]] || val="$(eval "printf '%s' \"\${JSONVAL_${var}:-}\"")"
+    val="$(eval "printf '%s' \"\${FILEVAL_${var}:-}\"")"
+    [[ -n "$val" ]] || val="${!var:-}"
     if [[ -n "$val" ]]; then printf '%s' "$val"; return 0; fi
   done
   printf ''
@@ -278,8 +243,8 @@ if [[ -z "$PIT" && "$SAW_PLACEHOLDER" -eq 1 ]]; then
   _log "CONFIG PROBLEM: no USABLE GHL credential is configured on this box."
   _log "  Every candidate that exists holds a documentation PLACEHOLDER, not a credential: ${PLACEHOLDER_VARS}"
   _log "  This is NOT an expired token and the client has NOT been notified."
-  _log "  Operator action: put the real Private Integration Token in ${OC_ROOT}/secrets/.env"
-  _log "  under one of: ${CANDIDATE_VARS}. openclaw.json env.vars are placeholders by design."
+  _log "  Operator action: put the real Private Integration Token in the install"
+  _log "  secrets env file (the one designated by the SECRETS_ENV env var) under one of: ${CANDIDATE_VARS}."
   exit 2
 fi
 
@@ -381,113 +346,35 @@ case "$HTTP_CODE" in
     ;;
 esac
 
-_log "Resolving client notification target for the confirmed credential failure..."
+_log "Confirmed credential failure — surfacing the client notification..."
 
 # ---------------------------------------------------------------------------
-# 401 path: resolve the CLIENT's Telegram chat (never an operator id).
-# Mirrors the resolver in Skill 44's check-ghl-token-liveness.sh.
+# 401 path: surface the client notification ONCE PER DAY (the .notified
+# stamp). 999 harness form: there is no gateway send here. The notification
+# is written as a dated artifact in the state dir and printed, for the
+# session/scheduler to deliver via the client's configured channel. The
+# target is the CLIENT's own configured chat (env CLIENT_TELEGRAM_CHAT_ID
+# when the channel is Telegram); an id equal to the operator's is refused.
 # ---------------------------------------------------------------------------
 if [[ -f "$NOTIFIED_STAMP" ]]; then
-  _log "already notified the client today (${TODAY}) — not re-sending. Delete ${NOTIFIED_STAMP} to force."
+  _log "already surfaced the notification today (${TODAY}) — not re-surfacing. Delete ${NOTIFIED_STAMP} to force."
   exit 1
 fi
 
 CLIENT_CHAT_ID=""
-# 1) Explicit client target from env wins (never the excluded operator id).
 if [[ -n "$CLIENT_TELEGRAM_CHAT_ID" ]] && \
    { [[ -z "$OPERATOR_TELEGRAM_CHAT_ID" ]] || [[ "$CLIENT_TELEGRAM_CHAT_ID" != "$OPERATOR_TELEGRAM_CHAT_ID" ]]; }; then
   CLIENT_CHAT_ID="$CLIENT_TELEGRAM_CHAT_ID"
 fi
-# 2) Else resolve from openclaw.json allowFrom, EXCLUDING the operator id supplied
-#    via $OPERATOR_TELEGRAM_CHAT_ID (empty by default — no id is hardcoded).
-if [[ -z "$CLIENT_CHAT_ID" ]] && command -v python3 >/dev/null 2>&1 && [[ -f "${OC_ROOT}/openclaw.json" ]]; then
-  CLIENT_CHAT_ID=$(python3 - "${OC_ROOT}/openclaw.json" 2>/dev/null <<'PYEOF'
-import json, os, sys
 
-# The single operator id to exclude comes from the environment (default empty);
-# a UNIVERSAL skill hardcodes NO chat ids.
-_op = os.environ.get("OPERATOR_TELEGRAM_CHAT_ID", "").strip()
-OPERATOR_IDS = {_op} if _op else set()
-
-def valid_client_chat(v, bot_id=""):
-    if not isinstance(v, (str, int)):
-        return ""
-    s = str(v).strip().replace("telegram:", "").replace("tg:", "")
-    if not s:
-        return ""
-    digits = s.lstrip("-")
-    if not (digits.isdigit() and 6 <= len(digits) <= 20):
-        return ""
-    if bot_id and s == bot_id:
-        return ""
-    if s in OPERATOR_IDS:
-        return ""
-    return s
-
-cfg = {}
-try:
-    cfg = json.load(open(sys.argv[1]))
-except Exception:
-    pass
-
-# D26c tg-token-resolve BEGIN (mirrors OpenClaw resolveTelegramToken; keep identical in every reader)
-def tg_token(cfg, acct="default"):
-    tg = (cfg.get("channels") or {}).get("telegram") or {}
-    acc = (tg.get("accounts") or {}).get(acct) or {}
-    for src in (acc, tg):
-        f = src.get("tokenFile")
-        if isinstance(f, str) and f.strip():
-            try:
-                t = open(os.path.expanduser(f.strip())).read().strip()
-                if t:
-                    return t
-            except Exception:
-                pass
-        t = src.get("botToken")
-        if isinstance(t, str) and t.strip():
-            return t.strip()
-    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() if acct == "default" else ""
-# D26c tg-token-resolve END
-bot_id = ""
-bt = tg_token(cfg)
-if ":" in bt:
-    bot_id = bt.split(":")[0]
-
-s0 = os.environ.get("OPENCLAW_OWNER_CHAT_ID", "").strip()
-if s0:
-    cid = valid_client_chat(s0, bot_id)
-    if cid:
-        print(cid); raise SystemExit(0)
-
-for v in (cfg.get("channels", {}).get("telegram", {}) or {}).get("allowFrom", []) or []:
-    cid = valid_client_chat(v, bot_id)
-    if cid:
-        print(cid); raise SystemExit(0)
-
-for v in (cfg.get("commands", {}) or {}).get("ownerAllowFrom", []) or []:
-    cid = valid_client_chat(v, bot_id)
-    if cid:
-        print(cid); raise SystemExit(0)
-
-print("")
-PYEOF
-  )
-fi
-
-if [[ -z "${CLIENT_CHAT_ID:-}" ]]; then
-  _log "WARN no client chat ID resolved — cannot send notification. Check openclaw.json allowFrom."
-  _log "     Operator action required: the runtime credential ${PIT_VAR} (source ${PIT_SOURCE}, class ${PIT_CLASS}) is expired/invalid (HTTP 401)."
-  exit 1
-fi
-
-if [[ -n "$OPERATOR_TELEGRAM_CHAT_ID" && "$CLIENT_CHAT_ID" == "$OPERATOR_TELEGRAM_CHAT_ID" ]]; then
-  _log "WARN resolved chat ID matches the excluded operator id (OPERATOR_TELEGRAM_CHAT_ID) — refusing to send there."
+if [[ -n "$OPERATOR_TELEGRAM_CHAT_ID" && -n "$CLIENT_TELEGRAM_CHAT_ID" && "$CLIENT_TELEGRAM_CHAT_ID" == "$OPERATOR_TELEGRAM_CHAT_ID" ]]; then
+  _log "WARN the configured client chat id matches the excluded operator id (OPERATOR_TELEGRAM_CHAT_ID) — refusing to address the client notice there."
   _log "     Operator action required: the runtime credential ${PIT_VAR} (source ${PIT_SOURCE}, class ${PIT_CLASS}) is expired/invalid (HTTP 401)."
   exit 1
 fi
 
 # ---------------------------------------------------------------------------
-# Send the client-facing refresh message (plain English, no jargon).
+# The client-facing refresh message (plain English, no jargon). VERBATIM.
 # ---------------------------------------------------------------------------
 NOTIFICATION_MSG="Hi — a quick heads-up from your AI agent.
 
@@ -504,13 +391,14 @@ Here is how to refresh it:
 
 That is it — once you send it, I will update your settings and confirm replies are flowing again. If anything looks different from your original setup, just reply and I will walk you through it."
 
-_log "Sending PIT-expired notification to client chat ${CLIENT_CHAT_ID}..."
-if command -v openclaw >/dev/null 2>&1 && \
-   openclaw message send --channel telegram --target "$CLIENT_CHAT_ID" --message "$NOTIFICATION_MSG" >/dev/null 2>&1; then
-  _log "DONE notification sent to client chat ${CLIENT_CHAT_ID}."
-  touch "$NOTIFIED_STAMP"
-else
-  _log "WARN openclaw message send failed (or CLI absent) — client was NOT notified. Check Telegram config."
-fi
+NOTIFICATION_FILE="${STATE_DIR}/ghl-pit-liveness-${TODAY}.notification.txt"
+{
+  printf 'CLIENT NOTIFICATION — SURFACED, NOT SENT by this script.\n'
+  printf 'Deliver via the client configured channel (Telegram chat id on file: %s).\n\n' "${CLIENT_CHAT_ID:-none}"
+  printf '%s\n' "$NOTIFICATION_MSG"
+} > "$NOTIFICATION_FILE"
+_log "notification surfaced at ${NOTIFICATION_FILE} (client chat id on file: ${CLIENT_CHAT_ID:-none}) — deliver via the client configured channel:"
+printf '%s\n' "$NOTIFICATION_MSG"
+touch "$NOTIFIED_STAMP"
 
 exit 1

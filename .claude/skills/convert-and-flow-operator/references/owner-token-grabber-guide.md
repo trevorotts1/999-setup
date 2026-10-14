@@ -121,28 +121,25 @@ road (keys can expire), your agent will let you know, and you'll simply repeat s
 When the owner pastes their token with a message like *"Here is the Convert and Flow GHL
 Firebase token: …"*, do the following:
 
-### 1. Wire the token into the gateway-inherited environment
+### 1. Wire the token into the install's secrets env
 
 The canonical env var is **`GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`** (the wrapper also accepts
 `CAF_FIREBASE_REFRESH_TOKEN` as an alias; write the canonical name).
 
-- **All boxes** — set it in OpenClaw's config so the gateway inherits it:
-  ```bash
-  openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "<pasted-token>"
+- **All installs** — add it to this install's secrets env file (the file `$SECRETS_ENV`
+  names), replacing any empty placeholder line rather than appending a duplicate, then
+  run `tools/engine/wire-ghl-env.sh --write` so the session environment carries it too:
   ```
-- **Hostinger VPS boxes (additionally)** — the wrapper at `/hostinger/server.mjs` rebuilds
-  env from `/docker/<project>/.env` on every boot, so the token must also live there.
-  **Replace the empty placeholder** (do not append a duplicate):
+  GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<redacted>
   ```
-  GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<pasted-token>
-  ```
-  then `docker compose up -d --force-recreate` so the container picks it up.
+  On per-container installs (fleet-contabo), the value lives in that container's own
+  secrets env; it is never shared across containers.
 
 Do not invent new key paths. Use the canonical var name above exactly.
 
 ### 2. Verify on the INHERITED env with a real `caf` read
 
-Do not trust the `config set` return value alone — confirm the *running gateway* actually
+Do not trust a file edit alone — confirm the *running session* actually
 inherited the token by exercising a real workflow-write-capable read:
 
 ```bash

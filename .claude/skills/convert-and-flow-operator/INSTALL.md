@@ -2,112 +2,106 @@
 
 ## Prerequisites
 
-- Skill 01 (TYP) installed
-- Skill 02 (BYUP) installed — back up config before editing
-- Skill 36 (GHL MCP Setup) installed — skill 44 is Tier 0 in skill 36's chain
-- Skill 41 (Build With AI Playbook) installed — skill 44 consumes its dependency-first contract
 - Python 3.9+ on the install box
 - Active GHL / Convert and Flow account with a Location PIT
+- This install's own secrets env file designated by `$SECRETS_ENV` (the file the
+  999 installer provisions per install; per-container on fleet-contabo, never
+  shared across containers)
+- The pack rails in the sibling `ghl-install-pages` ADAPTER.md: Skill 36's tier
+  doctrine ships in this pack as vendored data, and Skill 29 maps onto the
+  pack's rails by reference, so no separate OpenClaw-side skill installs are
+  prerequisites in this harness. (On the OpenClaw side this skill also asked
+  for Skills 01, 02, 36 and 41 to be installed first; those are that
+  harness's own onboarding steps, not this pack's.)
 
 ---
 
-## Action 1: Detect platform
+## Action 1: Resolve the in-tree install layout
+
+In this harness the engine ships and installs IN-TREE: there is no separate
+installed copy elsewhere on the box. Resolve the layout once:
 
 ```bash
-if [[ "$(uname)" == "Darwin" ]]; then
-  PLATFORM="mac"
-  TOOLS_ROOT="$HOME/.openclaw/tools"
-else
-  PLATFORM="vps"
-  TOOLS_ROOT="/data/.openclaw/tools"
-fi
-CAF_DIR="$TOOLS_ROOT/convert-and-flow-cli"
+# Run from the 999 repo root.
+SKILL44_DIR=".claude/skills/convert-and-flow-operator"
+CAF_DIR="$SKILL44_DIR/tools/engine"          # the engine dir IS the install dir
 ```
+
+`CAF_DIR` may be overridden to a separate install root when an operator
+deliberately installs the CLI outside the repo; the default (and the layout
+every other step here assumes) is the in-tree one.
 
 ## Action 2: Create venv and install engine
 
 ```bash
-mkdir -p "$CAF_DIR"
-python3 -m venv "$CAF_DIR/.venv"
-source "$CAF_DIR/.venv/bin/activate"
-
-# Copy engine from master files (includes wire-ghl-env.sh + verify-ghl-live.sh)
-cp -r "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/." "$CAF_DIR/engine/"
-chmod +x "$CAF_DIR/engine/wire-ghl-env.sh" "$CAF_DIR/engine/verify-ghl-live.sh" 2>/dev/null || true
-cd "$CAF_DIR/engine"
-pip install -e . --quiet
-deactivate
+# Single source: the committed installer creates the venv in-tree at
+# tools/engine/.venv and pip-installs the engine editable from source.
+bash "$SKILL44_DIR/tools/engine/install.sh"
 ```
 
-## Action 3: Install the wrapper (single source — copies committed engine wrapper)
+## Action 3: Install the wrapper (single source — committed engine wrapper)
 
-> **Why copy instead of heredoc?** The committed wrapper at
-> `tools/engine/caf` is the single source of truth. Copying it to the install
-> directory means there is exactly one place to edit the wrapper logic; the
-> INSTALL.md heredoc approach created a second copy that could silently diverge
-> (as happened with the `gohighlevel.main` entrypoint bug fixed in PR #167).
+> **Why the wrapper is not copied by default:** the committed wrapper at
+> `tools/engine/caf` is the single source of truth and, in the in-tree
+> layout, it is already at its installed location. Copying it elsewhere
+> would create a second copy that could silently diverge (the drift class
+> behind the `gohighlevel.main` entrypoint bug fixed in PR #167). Just make
+> the committed wrappers executable:
 
 ```bash
-# Copy the committed wrapper + aliases from the engine directory
-cp "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/caf"          "$CAF_DIR/caf"
-cp "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/convertandflow" "$CAF_DIR/convertandflow"
-cp "$MASTER_FILES_DIR/44-convert-and-flow-operator/tools/engine/ghl"           "$CAF_DIR/ghl"
 chmod +x "$CAF_DIR/caf" "$CAF_DIR/convertandflow" "$CAF_DIR/ghl"
+
+# ONLY when CAF_DIR was overridden to a separate install root, mirror the
+# wrappers there instead:
+#   cp "$SKILL44_DIR/tools/engine/caf"          "$CAF_DIR/caf"
+#   cp "$SKILL44_DIR/tools/engine/convertandflow" "$CAF_DIR/convertandflow"
+#   cp "$SKILL44_DIR/tools/engine/ghl"           "$CAF_DIR/ghl"
 ```
 
 > **What the wrapper does:** maps canonical `GOHIGHLEVEL_*` env vars to the engine's
 > internal `GHL_*` names, auto-seeds `CAF_ALLOWED_LOCATION_IDS` from
 > `GOHIGHLEVEL_LOCATION_ID` on a blank whitelist, enforces `CAF_DRAFT_ONLY=true` by
 > default, and invokes the engine via `python -m cli_anything.gohighlevel`.
+> Credential sources, in order: the install's secrets env file (`$SECRETS_ENV`)
+> when designated, then already-exported env vars. No OpenClaw secrets file
+> is read in this harness.
 
-## Action 4: Add wrapper dir to PATH (persistent)
+## Action 4: Make the wrapper reachable (persistent)
 
-### Mac
 ```bash
-# Add to .zshrc (or .bash_profile)
-echo "export PATH=\"$CAF_DIR:\$PATH\"" >> "$HOME/.zshrc"
-source "$HOME/.zshrc"
+# Option A (per-operator): link the wrappers into a bin dir already on PATH.
+ln -sf "$PWD/$CAF_DIR/caf"          "$HOME/.local/bin/caf"
+ln -sf "$PWD/$CAF_DIR/convertandflow" "$HOME/.local/bin/convertandflow"
+ln -sf "$PWD/$CAF_DIR/ghl"           "$HOME/.local/bin/ghl"
 
-# Also wire via openclaw config
-openclaw config set env.vars.PATH "$CAF_DIR:\${PATH}"
+# Option B: add the engine dir to PATH in your shell profile.
+echo "export PATH=\"$PWD/$CAF_DIR:\$PATH\"" >> "$HOME/.zshrc"   # or .bash_profile
 ```
 
-### VPS
-```bash
-# Add to openclaw gateway env
-openclaw config set env.vars.PATH "$CAF_DIR:/usr/local/bin:/usr/bin:/bin"
-```
+There is no gateway config to wire PATH into in this harness; the session
+environment is the wiring surface.
 
-## Action 5: Wire credentials into the gateway-inherited env (single source)
+## Action 5: Wire credentials into the session env (single source)
 
-> **WHY A SCRIPT, NOT INLINE `openclaw config set` (VPS env-inheritance bug, 2026-06-11):**
-> The previous install left the `GOHIGHLEVEL_*` creds **only** in
-> `~/.openclaw/secrets/.env` — a file the OpenClaw gateway/agent **process never
-> loads.** When the agent invoked `caf`, the gateway's process env had no
-> `GOHIGHLEVEL_LOCATION_ID`, so the engine died at
-> `Error: GHL_LOCATION_ID environment variable is not set.` while the install had
-> already reported success. On the Hostinger VPS it was worse: the docker-compose
-> `env_file` (`/docker/<project>/.env`) carried **empty placeholder lines**
-> (`GOHIGHLEVEL_API_KEY=` with no value, no FIREBASE line). docker injects an empty
-> `env_file` value as an **empty string** into the container process env, and an
-> empty string still wins against the secrets file for any consumer that reads
-> `os.environ` — so it **masked** the real value everywhere.
->
-> The committed script `tools/engine/wire-ghl-env.sh` is the **single source** for
-> all of this so the logic can never drift from an inline heredoc (the same drift
-> class as the `gohighlevel.main` bug). It:
-> 1. Wires all **5** canonical vars into `openclaw.json` `env.vars` (the block the
->    gateway inherits at process start). It tries `openclaw config set` first and
->    **falls back to a direct JSON deep-merge** into `openclaw.json` when
->    `config set` rejects the nested key — the supported pattern on OpenClaw
->    2026.5.20+ (same approach as `31-upgraded-memory-system/scripts/activate-memory-stack.sh`).
-> 2. **VPS only:** ALSO populates the host `/docker/<project>/.env`, **replacing
->    any empty `GOHIGHLEVEL_*=` placeholder line in place** (an empty placeholder
->    overrides the real value with an empty string). Reached only when `/docker`
->    is visible (i.e. run on the host, not inside the container).
-> 3. **Mac only:** wires `env.vars` but does **NOT** restart the gateway
->    (rescue-Mac rule); it prints that a `launchctl kickstart` may be needed for
->    the running gateway to inherit the new `env.vars`.
+> **WHY A SCRIPT, NOT INLINE EDITS (env-inheritance bug, 2026-06-11):**
+> The previous install left the `GOHIGHLEVEL_*` creds **only** in a secrets
+> file the agent process never loaded, while empty placeholder env lines
+> masked the real values — so the install reported success while `caf` died
+> at `Error: GHL_LOCATION_ID environment variable is not set.` The committed
+> script `tools/engine/wire-ghl-env.sh` is the **single source** for the
+> wiring so the logic can never drift from an inline copy. It:
+> 1. Resolves all **5** canonical vars with engine parity (the secrets env
+>    file wins over the inherited process env, exactly as the `caf` wrapper
+>    resolves them), using the full 11-alias PIT chain.
+> 2. Emits the resolved vars as `export` lines for the caller to eval, or,
+>    with `--write`, upserts them into the env file named by `$SECRETS_ENV`,
+>    **replacing any empty `GOHIGHLEVEL_*=` placeholder line in place** (an
+>    empty placeholder in a sourced env file masks the real value with an
+>    empty string, the same failure as the original bug).
+> 3. Also resolves the funnel/automation matcher catalog vars
+>    (`GHL_FUNNEL_*`, `CAF_AUTOMATION_*`) against the sibling
+>    `ghl-install-pages` skill in this repo, including each only when its
+>    target exists.
 
 The 5 canonical vars (engine wrapper maps `GOHIGHLEVEL_*` → `GHL_*`):
 `GOHIGHLEVEL_API_KEY` (PIT, required), `GOHIGHLEVEL_LOCATION_ID` (required),
@@ -116,39 +110,28 @@ The 5 canonical vars (engine wrapper maps `GOHIGHLEVEL_*` → `GHL_*`):
 client's own location), `GOHIGHLEVEL_DRAFT_ONLY` (write-safety default — `true`).
 
 ```bash
-# Single-source wiring. Reads values from the process env OR ~/.openclaw/secrets/.env.
-bash "$CAF_DIR/engine/wire-ghl-env.sh"
+# Single-source wiring. Reads values from the process env OR the install's
+# secrets env file ($SECRETS_ENV).
+bash "$CAF_DIR/wire-ghl-env.sh" --write
 WIRE_RC=$?
 
 if [ "$WIRE_RC" -eq 2 ]; then
   # Required creds (API key / location id) are genuinely absent everywhere.
   # This is NOT a hard failure and NOT a silent success: the CLI is installed but
   # cannot reach GHL yet. Mark it installed-with-missing-prereqs and tell the
-  # operator EXACTLY which vars to add to ~/.openclaw/secrets/.env, then re-run.
+  # operator EXACTLY which vars to add to the install's secrets env file, then re-run.
   echo "[skill44] INSTALLED-WITH-MISSING-PREREQS: add GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID"
-  echo "[skill44] to ~/.openclaw/secrets/.env, then re-run: bash \"$CAF_DIR/engine/wire-ghl-env.sh\""
+  echo "[skill44] to this install's secrets env file (the file \$SECRETS_ENV names), then re-run: bash \"$CAF_DIR/wire-ghl-env.sh\" --write"
 elif [ "$WIRE_RC" -ne 0 ]; then
   echo "ERROR: wire-ghl-env.sh failed (rc=$WIRE_RC)"; exit 1
 fi
 ```
-
-> **VPS host context:** if you run the installer on the Hostinger **host** (so
-> `/docker` is visible), the script auto-finds and updates the OpenClaw project's
-> `/docker/<project>/.env`. Then apply with a **force-recreate** so the container
-> re-reads `env_file` (a plain `docker restart` does NOT re-read it):
-> ```bash
-> docker compose -f /docker/<project>/docker-compose.yml up -d --force-recreate
-> ```
-> If the installer is running **inside** the container (where `/docker` is not
-> visible), the `env.vars` wiring above is the gateway-inherited path; populate
-> the host `env_file` from the host separately if needed.
 
 Firebase token (workflow writes — OPTIONAL at install time): the script wires it
 automatically when present in the env / secrets file; absence is a no-op, never a
 failure. If the client captures it later, just re-run `wire-ghl-env.sh`.
 
 ---
-
 ## Action 5b: Load the Token Grabber Chrome Extension (first time)
 
 > **What this does:** The Token Grabber is a small Chrome extension that reads your
@@ -160,7 +143,7 @@ failure. If the client captures it later, just re-run `wire-ghl-env.sh`.
 
 The extension folder is already included in this skill at:
 ```
-44-convert-and-flow-operator/tools/chrome-extension/
+.claude/skills/convert-and-flow-operator/tools/chrome-extension/
 ```
 It contains four files: `manifest.json`, `popup.html`, `popup.js`, `icon48.png`.
 
@@ -192,9 +175,9 @@ Paste the value into your secrets file:
 GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<paste token here>
 ```
 
-Then wire it into OpenClaw:
+Then wire it into the session env:
 ```bash
-openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN"
+bash tools/engine/wire-ghl-env.sh --write   # wires the token from the secrets env file into the session env
 ```
 
 ### After editing extension files
@@ -243,7 +226,7 @@ bash tools/engine/wire-ghl-env.sh                              # wires CAF_AUTOM
 > Never mark skill 44 success when `caf` can't reach GHL.
 
 ```bash
-bash "$CAF_DIR/engine/verify-ghl-live.sh"
+bash "tools/engine/verify-ghl-live.sh"
 VERIFY_RC=$?
 
 case "$VERIFY_RC" in
@@ -254,7 +237,7 @@ case "$VERIFY_RC" in
     # Required creds genuinely absent. Installed-with-missing-prereqs — the gate
     # already printed exactly which vars. NOT a success, NOT a hard crash.
     echo "[skill44] INSTALLED-WITH-MISSING-PREREQS (see verify output for the exact vars)."
-    echo "[skill44] Add them to ~/.openclaw/secrets/.env, re-run wire-ghl-env.sh, then re-run this gate."
+    echo "[skill44] Add them to this install's secrets env file, re-run wire-ghl-env.sh, then re-run this gate."
     ;;
   *)
     # rc=1: creds present but the live read FAILED. This FAILS the install step.
@@ -280,9 +263,9 @@ esac
 > MEMORY.md the agent does NOT know Skill 44 is installed and will not use Tier 0.
 
 ```bash
-WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
+WORKSPACE="${GHL_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 SENTINEL="<!-- skill:44-convert-and-flow-operator:core-update-applied -->"
-CORE_UPDATES="$MASTER_FILES_DIR/44-convert-and-flow-operator/CORE_UPDATES.md"
+CORE_UPDATES=".claude/skills/convert-and-flow-operator/CORE_UPDATES.md"
 
 # Guard: skip if already applied
 if grep -qF "$SENTINEL" "$WORKSPACE/AGENTS.md" 2>/dev/null; then
@@ -324,7 +307,7 @@ AGENTS_BLOCK
 
 Commands: caf / convertandflow / ghl
 
-Installed at: ~/.openclaw/tools/convert-and-flow-cli/caf (Mac) or /data/.openclaw/tools/convert-and-flow-cli/caf (VPS)
+Installed at: tools/engine/caf (Mac) or tools/engine/caf (VPS)
 Health: caf doctor
 
 | Domain | Commands |
@@ -351,7 +334,7 @@ TOOLS_BLOCK
 
 ## Convert and Flow Operator — Installed ${INSTALL_DATE}
 
-Skill 44 (Tier 0) installed. CLI at ~/.openclaw/tools/convert-and-flow-cli/.
+Skill 44 (Tier 0) installed. CLI at tools/engine/.
 Credentials: GOHIGHLEVEL_API_KEY (PIT), GOHIGHLEVEL_LOCATION_ID.
 Firebase token for workflow writes: GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (optional at install).
 Write safety: GOHIGHLEVEL_DRAFT_ONLY=true, location whitelist, approval gate.
@@ -410,7 +393,7 @@ configuration. If you manage multiple sub-accounts under one agent, add them
 as a comma-separated list:
 
 ```bash
-openclaw config set env.vars.GOHIGHLEVEL_ALLOWED_LOCATION_IDS \
+bash tools/engine/wire-ghl-env.sh --write
   "$GOHIGHLEVEL_LOCATION_ID,<second-location-id>"
 ```
 
@@ -422,12 +405,12 @@ approved and published.
 
 ## Done When
 
-- [ ] `wire-ghl-env.sh` wired all present GHL vars into `openclaw.json` `env.vars` (Action 5)
+- [ ] `wire-ghl-env.sh` wired all present GHL vars into the session env / the install secrets env file (Action 5)
 - [ ] VPS: `/docker/<project>/.env` has NO empty `GOHIGHLEVEL_*=` placeholder lines (replaced in place)
 - [ ] `verify-ghl-live.sh` exits 0 (live) — or exit 2 (installed-with-missing-prereqs, vars listed); NEVER reported success on exit 1 (Action 6b)
 - [ ] `caf doctor` exits green (or WARN for missing Firebase token — not FAIL)
 - [ ] `caf contacts list --limit 3` returns real contacts
 - [ ] `caf workflows list` returns the workflow list
-- [ ] `caf` resolves on PATH inside openclaw gateway
+- [ ] `caf` resolves on PATH inside the harness session
 - [ ] `qc-convert-and-flow.sh` exits 0
 - [ ] CORE_UPDATES sentinel present in AGENTS.md (auto-applied by Action 7)

@@ -32,7 +32,7 @@
 set -u
 
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"  # install repo root (999 layout: .claude/skills/<skill> -> repo root)
 TOOLS="$SKILL_DIR/tools"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ fi
 # Resolve the evidence root: a path as-is, or working/forms/<slug>/.
 EVIDENCE="$ARG"
 if [ ! -d "$EVIDENCE" ]; then
-  for cand in "$PWD/working/forms/$ARG" "$HOME/clawd/working/forms/$ARG"; do
+  for cand in "$PWD/working/forms/$ARG" "$REPO_ROOT/working/forms/$ARG"; do
     if [ -d "$cand" ]; then EVIDENCE="$cand"; break; fi
   done
 fi

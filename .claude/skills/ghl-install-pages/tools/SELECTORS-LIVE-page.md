@@ -15,9 +15,9 @@ write** was live-executed (HTTP 201), and everything was **DELETED** via REST
 > UI login, no 2FA — see §D). Mid-session, `browser_manager.sh`'s circuit
 > breaker tripped (6 `agent-browser open`s / 7200s window on the `default`
 > location bucket — real threshold, see §D.4) and wrote the DURABLE box-wide
-> PARK marker (`~/.openclaw/workspace/.park/workforce-build.parked`), which
+> PARK marker (`<PARK_DIR>/workforce-build.parked`, PARK_DIR = <durable root>/workspace/.park; in this harness the durable root defaults to the skill's `state/` dir), which
 > REFUSES every subsequent `bm_ensure`-gated call fleet-wide (incl. the box's
-> `*/15` resume cron) until an **operator** runs `scripts/unpark-build.sh`. Per
+> any operator-registered `*/15` resume schedule) until an **operator** removes the marker from PARK_DIR. Per
 > the operator's own STOP-and-report doctrine this run stopped rather than
 > route around the breaker. **No scratch website/page was ever created** (0
 > live objects made, 0 to delete, 0 residue by construction). §D below is 100%
@@ -167,13 +167,13 @@ push to a websites path with an `undefined` location segment landed on
 `browser_manager.sh`'s `bm_ensure` tracks `agent-browser open` calls per
 location (`GHL_LOCATION_ID`, default bucket `"default"`) in a rolling window:
 `AB_BREAKER_WINDOW=7200`s (2h), `AB_BREAKER_MAX=6` opens trips it. On trip it
-writes `~/.openclaw/workspace/.park/agent-browser-<loc>.BLOCKED` **and** the
-box-level `~/.openclaw/workspace/.park/workforce-build.parked` marker. Every
+writes `<PARK_DIR>/agent-browser-<loc>.BLOCKED` **and** the
+box-level `<PARK_DIR>/workforce-build.parked` marker. Every
 subsequent `bm_ensure`-gated call (ALL of `browser_manager.sh
 {ensure,eval,open,snapshot,wait,find,fill}`, and anything that `source`s it,
 e.g. `inject-ghl-auth.sh`) then hard-REFUSEs (`exit 75`) with "build is PARKED
-… Un-park is operator-only: `scripts/unpark-build.sh`" — and the box's `*/15`
-resume cron reads the SAME marker and stops too. **This tripped live this run**
+… Un-park is operator-only: remove the marker from PARK_DIR" — and any
+operator-registered `*/15` resume schedule reads the SAME marker and stops too. **This tripped live this run**
 (6 opens accrued across two `inject-ghl-auth.sh --pre-open` seed/re-seed calls
 + manual `agent-browser open` navigation attempts, all inside the 2h window,
 `location=default` because `GHL_LOCATION_ID` was never exported by this
@@ -231,7 +231,7 @@ chrome, Settings/SEO/Stats, Actions-menu, template gallery) were NOT reached.
 Honest partial credit: real, live-verified, previously-undocumented
 session-lifecycle depth was added (§D), and the STOP was a genuine
 infrastructure gate (durable box-wide circuit-breaker PARK), not a shortcut or
-a fabrication. **Follow-up required:** operator runs `scripts/unpark-build.sh`,
+a fabrication. **Follow-up required:** operator removes the park marker from PARK_DIR,
 then a fresh run should export `GHL_LOCATION_ID`, drive exclusively via raw
 `agent-browser --session <name> <verb>` calls post-seed (§D.1), navigate only
 via `$router.push` (§D.2), resolve the location id before any location-scoped
