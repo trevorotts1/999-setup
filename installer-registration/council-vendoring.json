@@ -4,9 +4,9 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "b98c231a83fd1ff7aebdc1e86282dae95ff88795",
-    "canonical_aggregate_sha256": "caea4cee3e2f48e98438bce28bc6503fb2c0c0d5adce6ebb3734a1250dbae4be",
-    "canonical_file_count": 290,
+    "source_commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6",
+    "canonical_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
+    "canonical_file_count": 291,
     "skill_version": "v1.0.0"
   },
   "intentional_distribution_differences": [
@@ -59,6 +59,13 @@
       ]
     },
     {
+      "kind": "generated_archive_not_vendored",
+      "file": "council-of-wise-elders.skill",
+      "archive_sha256": "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e",
+      "archive_bytes": 917960,
+      "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
+    },
+    {
       "kind": "file_added",
       "file": "DISTRIBUTION-RECONCILIATION.json",
       "rule": "This reconciliation report ships with the bundle (directive Section 25.2 step 4)."
@@ -69,16 +76,21 @@
       "rule": "Regenerated over the distribution tree with the canonical hash method; the canonical aggregate it derives from is recorded above and inside manifest.json."
     }
   ],
+  "canonical_archive": {
+    "file": "council-of-wise-elders.skill",
+    "sha256": "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e",
+    "bytes": 917960
+  },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "998fb7d55f70902e64fe7f1515afef6a9b96cbfef87e7d7192396d055deeffbe",
-    "distribution_file_count": 291
+    "distribution_aggregate_sha256": "2a6f672514c23ac8660ede34bb2b30b25d93a62e9c143529a4736abd9068e7ff",
+    "distribution_file_count": 292
   },
   "canonical_files": {
-    "CHANGELOG.md": "4ff3702aff5a0bc4f91ae8d3e3304bec991e4eb08ff8e485d7c62375f77fa888",
+    "CHANGELOG.md": "a4b5a578d0a240790d6b58c30d32d5c7e3a5b0a1983d66953f798f9c04ae1161",
     "CORE_UPDATES.md": "8bc13df4b108300fd678a192ea676d1f5236505385ae44cba0b25803908434e4",
     "EXAMPLES.md": "d812d8b1e57b22aec9dd3003d029db85403dc914dd4780e359ecb26a5f23497a",
-    "INSTALL.md": "ddf499d30e46417b9f1ef6c8ea65416c997404b6d9a57e4da827af033359c0c5",
+    "INSTALL.md": "0e0e947ce13a5f7006edf9af90073a38c6a3f73f400d6e5cbcee01efba720dbe",
     "INSTRUCTIONS.md": "0bd197814538cfbce7c38331361daf00006b809cee863abdf6bb5caeb4750bee",
     "PREREQS.json": "109f69aaf58b4930c9947e6e5920d287cc4d221038bc39200ee850f46acb3519",
     "QC.md": "3dc60a071dc498d5dca4e2177e3cdefc99c81c874fa122812d5411123a5e4230",
@@ -177,7 +189,7 @@
     "assets/icons/README.md": "da64aa789bd5cd240b6e529018c0b87187eb02db1e33d392a7f3edfb4cdc4aff",
     "assets/portrait-manifest.json": "56277727394e993fd08ad2372ea9838b519ccd90fbd3383fe1ed158598f29dbc",
     "assets/portraits/README.md": "dbf8e3b1342af96f25eaba5e4927cdd4877ee871a97955c7dc0b4741d4356991",
-    "config/advisors.json": "bfa2ce4be8265125b079b9acf2afe4d348e893eaee85294095becd5eb7e3cf90",
+    "config/advisors.json": "3b0aa4507da82b7469e18a691c76dbd13546d2e24c0fb6b41ac7217ed403705c",
     "config/defaults.json": "62fdbb73baf336d9e22ecb9882e86ed221f3b4d6e377e219ee43f11b55e20530",
     "qc-council-of-wise-elders.sh": "f90560b7858cb36927815fd87d13871f845eb2251eb1bc0d15412e16ca9c4e1f",
     "references/install-matrix.md": "eff0ceb9056f3e8f88ce13c2cc1bcc35429dcb6309163b78165763282391926c",
@@ -190,7 +202,8 @@
     "runtime/.gitignore": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0",
     "runtime/README.md": "3e5985bdce94e424d0cb7c0098a7c660e56932928afd58e2dda2c1824fdafee7",
     "runtime/package-lock.json": "08a7f02f44354fd11d6f453b2214744953765a4b5a1c15998c79f405fe46238d",
-    "runtime/package.json": "8a4f0f6a0428c863f5c5179ecab6c2f59d2c5d48ee9769e63cb92a9cefae17d6",
+    "runtime/package.json": "6ed05ad0526b36b58130c08995a1cdcd59d95de0cd0909e8b454f3338223e07f",
+    "runtime/scripts/copy-runtime-assets.mjs": "c5babc2f4c29ca77fd1644bbadb022cb3223602bf8144e56054665496f066684",
     "runtime/src/README.md": "a83e812589ee2b0b4c369a4699b32febdbb54a9e67944c29392c6feee2f1f957",
     "runtime/src/authorization/admission.ts": "d615c69b951b9242ab34ded82d1648ed21e2ff6b2483c49f0eaec236b9f2f038",
     "runtime/src/authorization/index.ts": "760052dd4fbc09e30816752c5f93be0c0ba9b2d295c10726835b75a69ff3cb0e",
@@ -354,13 +367,13 @@
     "runtime/tsconfig.json": "1917cac0638da2acd5deb92a075d12b60978b916eccb6f2afdd0122ebf7b3406",
     "schemas/README.md": "f2cf06bfad1ef3a2a74e7a723c7cde1dd7a9aab2f956553013e452bc741f3e85",
     "schemas/json-schemas.json": "4f64da0a61aa58f46c9c63da56f31e0c7ddb827971e76dc03bf298f50c559b70",
-    "scripts/build-bundles.mjs": "299a55121f9e8b596017307037f50f1c6a55674187b55474e6b951aa9aa5c963",
+    "scripts/build-bundles.mjs": "b656fccbf1c23c46e1f1c3124ebee3fda0721b868163fe9c6e8dea2767acd2c4",
     "scripts/doctor.mjs": "d792c4e38afd24f97e9ec4ac93b3fd6203d8dc542a288712d284c29df4bbfb09",
     "scripts/export-skill22.mjs": "26b723d60dc9dc9fadbf60508d4563806fd0304d24e49954ad70516d8927619b",
-    "scripts/install-runtime.mjs": "82f3954e12cc47f7a7ecde4ea4728a20c82a03f7136b46b3f268ce50c792b842",
+    "scripts/install-runtime.mjs": "3cddc9ff5ea4ef96f1b661e88ac5e6fa288c31fe51a36087f9801896b148c26b",
     "scripts/qc-council-of-wise-elders.ps1": "7d407045c21c31f8e28fd8f266a3288e8c87cc8a78a75a733d123b354f0a1863",
     "scripts/qc-council-of-wise-elders.sh": "8c7b7e90fd7299c518c2b08c1ab2666f609c36edbf7589b1161f735b186473cb",
-    "scripts/verify-bundles.mjs": "c41c2e1143e3d503ca0f24032861d7bd31a60197e258ed5bec213c5d9741c427",
+    "scripts/verify-bundles.mjs": "ede6d2870be2242a38320ea44de8481e5ce70fe23df02e6db8f428933886cba0",
     "skill-version.txt": "86f0555bccd069ac54e4c54a19a0f1aed9d328e13aa34aa090f3f3d43aaad441",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
