@@ -1,0 +1,48 @@
+#!/bin/bash
+# blackceo-council (CWE-040): Council of Wise Elders CLI executable.
+#
+# Installed by scripts/council-runtime-install.sh into ~/.local/bin.
+# It execs the runtime prefix entry (run-council.mjs) through the
+# per-user data profile's `current` link, so the executable never
+# points into a synchronized skill folder and an update swaps the
+# whole prefix atomically (directive Section 25.2 step 6).
+#
+# The runtime prefix lives under the data profile root recorded at
+# install time in blackceo-council.profile beside this executable.
+# That root is NOT the CLI's data directory: BLACKCEO_COUNCIL_DATA_DIR
+# and --data-dir override where council STATE lives (Section 16.1),
+# never where the installed runtime lives.
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PROFILE_ROOT=""
+if [ -f "$SELF_DIR/blackceo-council.profile" ]; then
+  PROFILE_ROOT="$(head -1 "$SELF_DIR/blackceo-council.profile" 2>/dev/null || true)"
+fi
+if [ -z "$PROFILE_ROOT" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then
+    PROFILE_ROOT="$HOME/Library/Application Support/BlackCEO/WiseElders"
+  else
+    PROFILE_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/blackceo/wise-elders"
+  fi
+fi
+
+ENTRY="$PROFILE_ROOT/runtime/current/run-council.mjs"
+if [ ! -f "$ENTRY" ]; then
+  echo "blackceo-council: the council runtime is not installed (no $ENTRY)." >&2
+  echo "  Install it from the 999-setup checkout: scripts/council-runtime-install.sh" >&2
+  exit 4
+fi
+
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+if [ -z "$NODE_BIN" ] && [ -f "$HOME/.local/share/999/node-path" ]; then
+  _nd="$(head -1 "$HOME/.local/share/999/node-path" 2>/dev/null || true)"
+  [ -n "$_nd" ] && [ -x "$_nd/node" ] && NODE_BIN="$_nd/node"
+  unset _nd
+fi
+if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+  echo "blackceo-council: Node.js is not runnable on PATH; the council runtime cannot start." >&2
+  exit 4
+fi
+
+exec "$NODE_BIN" "$ENTRY" "$@"

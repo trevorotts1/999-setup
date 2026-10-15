@@ -23,9 +23,11 @@
 //   - Bibliographic records (sources.json, coverage.json) stay
 //     byte-identical: references stay, the private material goes.
 //   - The source tree is refused if it is dirty: no node_modules, no
-//     runtime/dist, no .skill archive, no council state files, and its
-//     manifest aggregate must recompute exactly. When the source sits
-//     in a git worktree, HEAD must equal --source-commit.
+//     runtime/dist, no council state files, and its manifest aggregate
+//     must recompute exactly. The tree's generated .skill archive is
+//     recorded by hash and deliberately not vendored (the vendored
+//     folder is itself the distribution). When the source sits in a
+//     git worktree, HEAD must equal --source-commit.
 //
 // Usage:
 //   node scripts/vendor-council-bundle.mjs \
@@ -116,14 +118,30 @@ if (!existsSync(join(source, "manifest.json"))) {
 const srcFiles = walk(source);
 for (const rel of srcFiles) {
   if (rel.includes("node_modules/") || rel.startsWith("runtime/dist/")
-    || rel.endsWith(".skill") || /\.(sqlite3?|db)$/i.test(rel)
+    || /\.(sqlite3?|db)$/i.test(rel)
     || /^(state|sessions|data)\//.test(rel)) {
     fail(`source tree is dirty, refusing to vendor: ${rel}`);
+  }
+  if (rel.endsWith(".skill") && rel !== "council-of-wise-elders.skill") {
+    fail(`unexpected archive in the source tree, refusing to vendor: ${rel}`);
   }
 }
 const canonicalManifest = JSON.parse(readFileSync(join(source, "manifest.json"), "utf8"));
 const srcHashes = treeHashes(source);
 srcHashes.delete("manifest.json");
+// The generated distributable archive is a sibling artifact of the same
+// tree (the canonical hash method excludes it from the tree identity).
+// It is recorded here and deliberately NOT vendored: the vendored
+// folder is itself the 999 distribution of this tree.
+let canonicalArchive = null;
+if (srcHashes.has("council-of-wise-elders.skill")) {
+  canonicalArchive = {
+    file: "council-of-wise-elders.skill",
+    sha256: srcHashes.get("council-of-wise-elders.skill"),
+    bytes: statSync(join(source, "council-of-wise-elders.skill")).size,
+  };
+  srcHashes.delete("council-of-wise-elders.skill");
+}
 const srcAgg = aggregateOf(srcHashes);
 if (srcAgg.aggregate !== canonicalManifest.aggregate_sha256
   || srcAgg.count !== canonicalManifest.file_count) {
@@ -143,8 +161,11 @@ if (failures > 0) process.exit(1);
 // ---- Copy ----------------------------------------------------------------
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
-cpSync(source, out, { recursive: true });
-pass(`copied canonical tree to ${out}`);
+cpSync(source, out, {
+  recursive: true,
+  filter: (p) => !p.endsWith(".skill"),
+});
+pass(`copied canonical tree to ${out} (generated .skill archive excluded)`);
 
 // ---- Brunson private-scope strip ------------------------------------------
 // Sentence split that keeps terminators; a string with no terminator is
@@ -331,6 +352,13 @@ const reconciliation = {
       fields: scrubbedFields,
     },
     {
+      kind: "generated_archive_not_vendored",
+      file: "council-of-wise-elders.skill",
+      archive_sha256: canonicalArchive ? canonicalArchive.sha256 : null,
+      archive_bytes: canonicalArchive ? canonicalArchive.bytes : null,
+      rule: "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record.",
+    },
+    {
       kind: "file_added",
       file: RECONCILIATION_FILE,
       rule: "This reconciliation report ships with the bundle (directive Section 25.2 step 4).",
@@ -379,6 +407,7 @@ try {
 // ---- Vendoring record ------------------------------------------------------------
 const record = {
   ...reconciliation,
+  canonical_archive: canonicalArchive,
   distribution: {
     vendored_path: ".claude/skills/council-of-wise-elders",
     distribution_aggregate_sha256: distAgg.aggregate,

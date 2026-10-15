@@ -270,7 +270,7 @@ than duplicating providers, combos, PATH entries, or keys.
 
 ## Bundled skills
 
-This repository installs **six** personal Claude Code skills, all visible to `claude`
+This repository installs **seven** personal Claude Code skills, all visible to `claude`
 and `claude-nine`:
 
 - **`nine-router-setup`** — provisions and repairs the 9Router / `claude-nine`
@@ -291,6 +291,16 @@ and `claude-nine`:
 - **`kiss`** — asks Claude to answer the current message twice: first a friendly, casual
   version (the /bro style — simpler, not necessarily shorter), then a plain, brief short
   version. Put `/kiss` at the start of a message; it is one-shot and leaves no mode on.
+- **`council-of-wise-elders`**: the Council of Wise Elders (Skill 77): a nine-seat,
+  source-grounded advisory council for consequential decisions. This copy is VENDORED
+  from the canonical package in `trevorotts1/openclaw-onboarding`
+  (`77-council-of-wise-elders`) by `scripts/vendor-council-bundle.mjs`; it is a generated
+  distribution artifact, never a second source tree. Provenance and the declared
+  distribution differences live in `installer-registration/council-vendoring.json` and
+  in the bundle's own `DISTRIBUTION-RECONCILIATION.json`. After the skill is linked,
+  `scripts/council-runtime-install.sh` (Windows: `scripts/council-runtime-install.ps1`)
+  installs its runtime into the per-user WiseElders data profile, outside every config
+  root, and installs the `blackceo-council` command.
 
 The authoritative list lives in [`CONTROL/bundled-skills.txt`](CONTROL/bundled-skills.txt);
 the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) carry
@@ -305,6 +315,10 @@ spec-protocol launch, `tools/check-update.sh` checks all bundled skills (exit 0 
 spec-protocol itself; the other skills refresh by re-running the
 nine-router-setup installer (`/nine-router-setup`). A skill whose `VERSION` cannot be
 read from `main` reports UNDETERMINED — by design, never a false "current".
+`council-of-wise-elders` carries its canonical `version` and `skill-version.txt`
+markers instead of a `VERSION` file, so check-update reports it UNDETERMINED by that
+same design; its identity is proven by the manifest aggregate recorded in
+`installer-registration/council-vendoring.json`, not by the update checker.
 
 ### Kaizen tests
 
