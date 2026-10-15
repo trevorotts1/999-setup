@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-11T23:20:04Z",
+  "generatedAt": "2026-10-15T07:48:01Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -165,6 +165,38 @@
           "sha256": "a6d53cc5a375c1f0c744e0167021ca656733a58407fb584cae0ee93ab2bc9112"
         }
       ]
+    },
+    {
+      "id": "63",
+      "name": "63-agnes-image",
+      "skillName": "agnes-image",
+      "role": "Agnes image: one POST synchronous text/image generation, prompt policy, domain QC",
+      "kind": "skill",
+      "required": false,
+      "version": "v2.1.4",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/63-agnes-image",
+      "installPath": "skills/63-agnes-image",
+      "fileCount": 21,
+      "sizeBytes": 195374,
+      "treeSha256": "fc1c4747d3d56afa2da8683732fcc390edeb5005dd5124b57fa976ac73640fd3",
+      "skillMdSha256": "5b829ef7189714448e66754f8ce3666c69290f2f35e44758a66f533dfd8589a4"
+    },
+    {
+      "id": "64",
+      "name": "64-agnes-video",
+      "skillName": "agnes-video",
+      "role": "Agnes video: approved model router plus the create-task/poll-result workflow",
+      "kind": "skill",
+      "required": false,
+      "version": "v2.0.3",
+      "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
+      "sourcePath": "openclaw-onboarding/64-agnes-video",
+      "installPath": "skills/64-agnes-video",
+      "fileCount": 15,
+      "sizeBytes": 173032,
+      "treeSha256": "5d5ef2b210100b2609164d2e945eadff5aa28c667eaa31e1fcd5ff058e01fbd8",
+      "skillMdSha256": "67950c53ad499bd039ac467431d7d2bf288989ac3855f7242afd58d9c8773212"
     }
   ]
 }
