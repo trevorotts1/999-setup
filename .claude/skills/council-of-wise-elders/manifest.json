@@ -2,10 +2,10 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "e055667dfa17ec4e807837bd49d9a47341d09d4c",
-  "canonical_aggregate_sha256": "185cbcb485ac0c99a99d872693493a9145bd598f0f85b5501646ebf4b1b29287",
-  "file_count": 303,
-  "aggregate_sha256": "239b7f189f1d664c4883c9de6bb631cb28624645bc78f989c24fcbe33806c4f0",
+  "source_commit": "e38394ee42df57da22659e1f3f4889e5aacc74da",
+  "canonical_aggregate_sha256": "3c80af05a81cc9d9eaa441ca0a5ade9d76e07e29799e8bb772e84dc4c67faa69",
+  "file_count": 307,
+  "aggregate_sha256": "a1b96bf05c24388b8c718411fdb139731203395ffe148c1a36a7b964156101bf",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -25,7 +25,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "b4b76cd79800aa839fc1f988a41aa19aefe62d97cfdf7b1108e0f13dbc6c11e2",
+      "sha256": "0af51bc952aa52f1891526601ba8292d99499a16bfbad15ba736955ea1d758f7",
       "bytes": 3884
     },
     {
@@ -690,8 +690,8 @@
     },
     {
       "path": "runtime/src/cli/dispatcher.ts",
-      "sha256": "777fcf1f72888c4726419e9cfbbcb0ba2e5479f8c534e317f561a00a141e4205",
-      "bytes": 27731
+      "sha256": "7df3c1dcac9da6ef14e8c93736f4a403a2c602ee83659aef5a9cddea18fe78f8",
+      "bytes": 28715
     },
     {
       "path": "runtime/src/cli/engine.ts",
@@ -709,6 +709,11 @@
       "bytes": 7749
     },
     {
+      "path": "runtime/src/cli/host-call-transport.ts",
+      "sha256": "1f8d4bd92f446928316bf67361d7195c3a591186cf5cc262cbf5987e2647367a",
+      "bytes": 8995
+    },
+    {
       "path": "runtime/src/cli/host-ports.ts",
       "sha256": "386076a728d983506b4823cd706be60bfc3bc58fcdf2644d2f8b8faa2f3c8a45",
       "bytes": 8998
@@ -720,8 +725,8 @@
     },
     {
       "path": "runtime/src/cli/local-host.ts",
-      "sha256": "acf1893d3266c68ca891718d4abc11cdf23d0dcf898bcf4234ff4c51c3cf3fab",
-      "bytes": 5799
+      "sha256": "df41125427f1ede72b154e94070bb88ca3e908d392f050c6ca0e72cf4ee0f64e",
+      "bytes": 14465
     },
     {
       "path": "runtime/src/cli/local-store.ts",
@@ -735,13 +740,18 @@
     },
     {
       "path": "runtime/src/cli/paths.ts",
-      "sha256": "84247127681cc4586c9d237302fe5a41b7ab34c013e6ac458ab3493b42ee37e0",
-      "bytes": 2563
+      "sha256": "548cde7e7d76c9bc6d7ab9d1def683b34d0e243fd4f55291f5fc7cff75e7915e",
+      "bytes": 4104
     },
     {
       "path": "runtime/src/cli/report-export.ts",
       "sha256": "26875b7141723da9b142cc373386b7ddc19c2741c661e36aac8cde229e4711b5",
       "bytes": 7257
+    },
+    {
+      "path": "runtime/src/cli/route-discovery.ts",
+      "sha256": "4ebe1a4849e8d5f29d78a2c2dfb91000b9d7a8e176e74c2a9d8a72161af0af76",
+      "bytes": 13734
     },
     {
       "path": "runtime/src/context/README.md",
@@ -1264,6 +1274,11 @@
       "bytes": 6120
     },
     {
+      "path": "runtime/tests/cli-route-composition.test.ts",
+      "sha256": "56fbda06a54a80f2bd56d707f0cd03796e304f049e835fac17fa3af2fb91d431",
+      "bytes": 20136
+    },
+    {
       "path": "runtime/tests/cli.test.ts",
       "sha256": "96128252f1743b24987f3d9b29d71c7627e653fe7761288d248cf82998ddb6c1",
       "bytes": 7498
@@ -1292,6 +1307,11 @@
       "path": "runtime/tests/data-dir-boundary.test.ts",
       "sha256": "6507ecf32806dede908a9b7481a1be68ff1cd51cbaa4f85e99279352a34e70e3",
       "bytes": 3028
+    },
+    {
+      "path": "runtime/tests/data-dir-symlink-boundary.test.ts",
+      "sha256": "5e2d78600a85a64520c6f00d9ee303d92f344040124225b9a0c18edb5a7d86fc",
+      "bytes": 6667
     },
     {
       "path": "runtime/tests/engine.test.ts",

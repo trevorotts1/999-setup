@@ -4,9 +4,9 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "e055667dfa17ec4e807837bd49d9a47341d09d4c",
-    "canonical_aggregate_sha256": "185cbcb485ac0c99a99d872693493a9145bd598f0f85b5501646ebf4b1b29287",
-    "canonical_file_count": 302,
+    "source_commit": "e38394ee42df57da22659e1f3f4889e5aacc74da",
+    "canonical_aggregate_sha256": "3c80af05a81cc9d9eaa441ca0a5ade9d76e07e29799e8bb772e84dc4c67faa69",
+    "canonical_file_count": 306,
     "skill_version": "v1.0.0"
   },
   "intentional_distribution_differences": [
@@ -61,8 +61,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "51e030dafabf053b9ae20ea8f1a06eeb89bc25e2d1c746fbba9244d5f6d27d1d",
-      "archive_bytes": 943052,
+      "archive_sha256": "7c9414815f9c42e3515baf280f551c46aaf7104a1f26476890d0dbb41a428836",
+      "archive_bytes": 962422,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -78,13 +78,13 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "51e030dafabf053b9ae20ea8f1a06eeb89bc25e2d1c746fbba9244d5f6d27d1d",
-    "bytes": 943052
+    "sha256": "7c9414815f9c42e3515baf280f551c46aaf7104a1f26476890d0dbb41a428836",
+    "bytes": 962422
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "239b7f189f1d664c4883c9de6bb631cb28624645bc78f989c24fcbe33806c4f0",
-    "distribution_file_count": 303
+    "distribution_aggregate_sha256": "a1b96bf05c24388b8c718411fdb139731203395ffe148c1a36a7b964156101bf",
+    "distribution_file_count": 307
   },
   "canonical_files": {
     "CHANGELOG.md": "a4b5a578d0a240790d6b58c30d32d5c7e3a5b0a1983d66953f798f9c04ae1161",
@@ -221,17 +221,19 @@
     "runtime/src/budgets/service.ts": "8c75ace526c4b6566aa4f761208bf9bc6f94af4508d32900443f3213e4f9c751",
     "runtime/src/cli/authorization.ts": "2402183fabc09fd9ebe9dba82e9c3c6c089dd6ef20eace2087b3215333656077",
     "runtime/src/cli/budget.ts": "25c1cd0d2ec28a6bc8c9d1fbb1f0eb756e0c5e5c668bee559e24e9b0d2d1cc8d",
-    "runtime/src/cli/dispatcher.ts": "777fcf1f72888c4726419e9cfbbcb0ba2e5479f8c534e317f561a00a141e4205",
+    "runtime/src/cli/dispatcher.ts": "7df3c1dcac9da6ef14e8c93736f4a403a2c602ee83659aef5a9cddea18fe78f8",
     "runtime/src/cli/engine.ts": "3a27ffb27580652d1b8a9917b76ea0229ae4666c80b73478dbdfe49f3e9e70b1",
     "runtime/src/cli/errors.ts": "7a067db8d1321c24d4d87137ecb1567e1ea653bdcb1bdb7bb0d8c3aae50a9831",
     "runtime/src/cli/fixture-transport.ts": "77be38fcc55cd361009f64056ccb9b7850b2a2281cea1dc8f4bcaee989039418",
+    "runtime/src/cli/host-call-transport.ts": "1f8d4bd92f446928316bf67361d7195c3a591186cf5cc262cbf5987e2647367a",
     "runtime/src/cli/host-ports.ts": "386076a728d983506b4823cd706be60bfc3bc58fcdf2644d2f8b8faa2f3c8a45",
     "runtime/src/cli/leases.ts": "efa71191624e48c8854d1d5254fa5f9a905d39786513348fce5dfb89444660a0",
-    "runtime/src/cli/local-host.ts": "acf1893d3266c68ca891718d4abc11cdf23d0dcf898bcf4234ff4c51c3cf3fab",
+    "runtime/src/cli/local-host.ts": "df41125427f1ede72b154e94070bb88ca3e908d392f050c6ca0e72cf4ee0f64e",
     "runtime/src/cli/local-store.ts": "4198526e765361ffcbacd93ee25ccbf7a89a4628343577f7bea3265e802cf6a4",
     "runtime/src/cli/main.ts": "889f2cbf125a4b1f6a919392805aa39570beb68897ae929aa048ee37c5026511",
-    "runtime/src/cli/paths.ts": "84247127681cc4586c9d237302fe5a41b7ab34c013e6ac458ab3493b42ee37e0",
+    "runtime/src/cli/paths.ts": "548cde7e7d76c9bc6d7ab9d1def683b34d0e243fd4f55291f5fc7cff75e7915e",
     "runtime/src/cli/report-export.ts": "26875b7141723da9b142cc373386b7ddc19c2741c661e36aac8cde229e4711b5",
+    "runtime/src/cli/route-discovery.ts": "4ebe1a4849e8d5f29d78a2c2dfb91000b9d7a8e176e74c2a9d8a72161af0af76",
     "runtime/src/context/README.md": "68c4bf238ce2048b7e1672e8b16ee437fc06cabbb828bab044c92a267a7906bd",
     "runtime/src/context/assembly.ts": "8b33384bfdaced8c1aa2b7139bc257080f07c80d0a6f7672c521cb347811c756",
     "runtime/src/context/index.ts": "0bd0306dda55c2ad45d244b285616a3f8c182d5f0296db1509b701b8181f3e3f",
@@ -336,12 +338,14 @@
     "runtime/tests/budget-capacity.test.ts": "9809d4df035a6a2bf1c18dd988a0bfd7f64174429c8b45a067c9dd5075eae067",
     "runtime/tests/cli-authorization.test.ts": "a68200b3558149edbd756bd34742e6cc7cb95e9b8726a4a3f6566de22d88ed10",
     "runtime/tests/cli-composition.test.ts": "ac95db9d74cc6bc2fc357f581d35b91111ca4820196966b1b5226ddb85a2b50b",
+    "runtime/tests/cli-route-composition.test.ts": "56fbda06a54a80f2bd56d707f0cd03796e304f049e835fac17fa3af2fb91d431",
     "runtime/tests/cli.test.ts": "96128252f1743b24987f3d9b29d71c7627e653fe7761288d248cf82998ddb6c1",
     "runtime/tests/composition.test.ts": "b894e555438141bd274475e42a4b28bb47c10f728e31ed9686fe982e840a5852",
     "runtime/tests/context-integration.test.ts": "20e7aec0a3b7b75dbc9077bc8f96cd4fd3bac96e8a3ecbf0804313feb4ef961d",
     "runtime/tests/context.test.ts": "0aba20b1a1bf59c6f2846db2bb22e3341e326eca8c6d3f4845483f9d16c32164",
     "runtime/tests/core.test.ts": "16a480061ee711d7525527d1d014fefc0c0bba0e3dd4a750e225e8c06a018990",
     "runtime/tests/data-dir-boundary.test.ts": "6507ecf32806dede908a9b7481a1be68ff1cd51cbaa4f85e99279352a34e70e3",
+    "runtime/tests/data-dir-symlink-boundary.test.ts": "5e2d78600a85a64520c6f00d9ee303d92f344040124225b9a0c18edb5a7d86fc",
     "runtime/tests/engine.test.ts": "6d21b9823a6580f93b9ad007564eba54228b79a8949252f0446eeee63b1d1438",
     "runtime/tests/export-adapter.test.ts": "5956c362326246431fcaad2f7635bb0bdf0a2651943cb42cc402b27fed2b7d0b",
     "runtime/tests/fault-security-cwe043.test.ts": "9e41f9530a146c438bf0395ffa8ee692defb1f5cc41f4e15a58c3af837146145",
