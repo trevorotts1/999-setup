@@ -2,21 +2,21 @@
 """H9 tests: the intake card keeps one question per block, one option per line,
 a blank line between questions, and the send payloads keep those newlines.
 
-The companion contract (SPEC item 10, both halves kept side by side) lives
-here too: the card is the only source of its own total, so the module count,
-the rendered count and every help string and docstring the CLIs print must all
-say the same number, and that number is 14 today -- and no help text or
-docstring anywhere in the shipped card files may state a different total, so a
-box can never re-diverge onto a stale count.
-
 Run: python3 core/choice_card/intake_card/test_intake_card_h9.py
+
+SWI-002 (SPEC item 10): this file is also the companion test that encodes the
+card's total. The card prints its own total from len(QUESTIONS); this file is
+the one place the number 14 is written down, and it fails every string in the
+three card-facing files that claims a different one.
 """
-import ast
+import contextlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(os.path.dirname(HERE))
@@ -25,78 +25,6 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 N = len(IC.QUESTIONS)
 CARD = IC.render_card()
-
-#: Every count word the regex below accepts, as a number (one source of truth).
-NUMBER_WORDS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-    "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
-    "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
-}
-#: A stated TOTAL of questions: "nine questions", "14 questions". Plural on
-#: purpose — "one question at a time" is a format note, not a count of the card.
-COUNT_CLAIM = re.compile(r"\b(\d+|" + "|".join(NUMBER_WORDS) + r") questions\b")
-
-#: The only help/docstring text that may state the card's total. The CHANGELOG
-#: is history and stays as written; comments (#) document sub-counts, so a line
-#: comment is dropped before matching.
-COUNT_SOURCES = [
-    os.path.join(HERE, "__init__.py"),
-    os.path.join(HERE, "intake_card.py"),
-    os.path.join(CORE, "intake_preflight", "factory.py"),
-]
-
-#: ---- AST half (kept alongside the line-based half above) ----
-#: The text a human reads as the card's total: every help/description literal
-#: and every module docstring in the files that ship the card.
-_AST_SOURCES = (os.path.join(HERE, "__init__.py"),
-                os.path.join(HERE, "intake_card.py"),
-                os.path.join(CORE, "intake_preflight", "factory.py"))
-
-_AST_NUMWORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-                 "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
-                 "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
-                 "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
-                 "twenty": 20}
-
-#: A total-count claim: a count on the word "questions" (plural only, so "ONE
-#: question as its own message" is not one), on the saved-character wording, or
-#: in a rendered "Question 1 of N" header.
-_AST_CLAIM = re.compile(r"Question 1 of (\d+)\b"
-                        r"|\b(\d+|[a-z]+)\s+questions\b"
-                        r"|\b(\d+|[a-z]+)\s+with a saved character\b", re.I)
-
-
-def _AST_as_count(token):
-    return int(token) if token.isdigit() else _AST_NUMWORDS.get(token.lower())
-
-
-def _AST_claims(text):
-    """(phrase, count) for every total-count claim in `text`. A word that is
-    not a number ("story-brief questions") names a kind, not a total: skipped."""
-    out = []
-    for m in _AST_CLAIM.finditer(text):
-        count = _AST_as_count(m.group(1) or m.group(2) or m.group(3))
-        if count is not None:
-            out.append((m.group(0), count))
-    return out
-
-
-def _AST_readable_strings(path):
-    """The help/description literals and the module docstring of `path` --
-    the strings a human actually reads. Comments and code are not scanned."""
-    tree = ast.parse(open(path, encoding="utf-8").read())
-    where = os.path.basename(path)
-    out = []
-    doc = ast.get_docstring(tree)
-    if doc:
-        out.append((where + " docstring", doc))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.keyword) and node.arg in ("help", "description"):
-            for s in ast.walk(node.value):
-                if isinstance(s, ast.Constant) and isinstance(s.value, str):
-                    out.append(("%s:%d" % (where, node.lineno), s.value))
-    return out
 
 
 def _blocks(text):
@@ -114,82 +42,6 @@ def test_fourteen_questions_each_own_block():
     assert labels == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS",
                       "AI MODELS", "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
                       "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"]
-
-
-def test_module_count_equals_rendered_count():
-    """One total, read from the module, printed by the card -- never a second
-    number. A hardcoded count anywhere in this chain breaks one of these."""
-    headers = re.findall(r"^Question (\d+) of (\d+) - ", CARD, re.M)
-    assert [int(i) for i, _ in headers] == list(range(1, N + 1))
-    assert {int(t) for _, t in headers} == {N}            # one total, the live one
-    assert len(headers) == len(IC.QUESTIONS) == IC.CARD_QUESTION_COUNT
-    assert IC.CARD_SUMMARY.endswith("(%d questions)" % N)
-    assert IC.studio_json()["question_count"] == N
-    assert len(IC._with_saved_character(None)) == N      # no client folder: the plain card
-
-
-def test_module_count_equals_rendered_count_item10():
-    """Item 10: the live source count, the card, and every header agree on 14.
-
-    This is the one that goes red if anyone re-hardcodes a total: change the
-    module's QUESTIONS, the rendered header total, or the block count and the
-    numbers stop lining up.
-    """
-    assert len(IC.QUESTIONS) == 14                       # module count
-    assert N == len(IC.QUESTIONS)                        # N is never its own number
-    heads = re.findall(r"^Question (\d+) of (\d+) - ", CARD, flags=re.M)
-    assert len(heads) == len(IC.QUESTIONS)               # every question rendered, no extra
-    assert [int(i) for i, _ in heads] == list(range(1, len(IC.QUESTIONS) + 1))
-    assert {int(t) for _, t in heads} == {len(IC.QUESTIONS)}   # no header carries another total
-    assert len(_blocks(CARD)) == len(IC.QUESTIONS) + 1    # fourteen questions + closing
-
-
-def test_no_help_or_docstring_claims_a_count_other_than_the_live_one():
-    """Goes red the moment a help string or docstring hardcodes a total that is
-    not the card's own -- the "nine questions" lie cannot come back."""
-    for path in _AST_SOURCES:
-        for where, text in _AST_readable_strings(path):
-            wrong = [(w, c) for w, c in _AST_claims(text) if c != N]
-            assert not wrong, "%s in %s: %s" % (where, path, wrong)
-
-
-def test_no_help_or_docstring_claims_a_different_count():
-    """Item 10: no help text or docstring may state a total other than the live
-    one. A stale "nine questions" is exactly how a box's copy diverged from the
-    card it ships, so the assertion reads the source files it never edits."""
-    stale = []
-    for path in COUNT_SOURCES:
-        with open(path, encoding="utf-8") as fh:
-            for no, line in enumerate(fh, 1):
-                code = line.split("#", 1)[0]              # line comments carry sub-counts
-                for m in COUNT_CLAIM.finditer(code):
-                    word = m.group(1)
-                    value = int(word) if word.isdigit() else NUMBER_WORDS[word]
-                    if value != N:
-                        rel = os.path.relpath(path, CORE)
-                        stale.append(f"{rel}:{no}: {m.group(0)!r} states {value}, live {N}")
-    assert not stale, "stale question count:\n  " + "\n  ".join(stale)
-
-
-def test_the_nine_questions_lie_is_gone_from_every_shipped_string():
-    for path in _AST_SOURCES:
-        src = open(path, encoding="utf-8").read().lower()
-        assert "nine questions" not in src, path
-        assert "ten with a saved character" not in src, path
-
-
-def test_cli_help_prints_the_live_count():
-    """Both entry points must say the number the card renders, in the same
-    words, or the agent has nothing accurate to repeat to the client."""
-    live = "%d questions" % N
-    runs = ((os.path.join(HERE, "intake_card.py"), ["--help"]),
-            (os.path.join(CORE, "intake_preflight", "factory.py"), ["--help"]),
-            (os.path.join(CORE, "intake_preflight", "factory.py"), ["card", "--help"]))
-    for script, argv in runs:
-        out = subprocess.run([sys.executable, script] + argv, cwd=CORE,
-                             capture_output=True, text=True).stdout
-        assert live in out, (script, argv, out[:600])
-        assert not [c for c in _AST_claims(out) if c[1] != N], (script, argv, out[:600])
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
@@ -298,6 +150,119 @@ def test_a_card_with_typed_questions_closes_with_its_own_sentence():
     priced = [IC.spend_question(18.5) if q["id"] == "spend" else q for q in IC.QUESTIONS]
     assert 'Say "all recommended"' in IC._closing(priced)
     assert IC.CLOSING_LINE == IC._closing(IC.QUESTIONS)     # the exported line is the real one
+
+
+# --- SWI-002: the companion test that encodes 14 -------------------------------
+#: The card's total, written down ONCE, here. Every string the client or the
+#: operator reads is printed from len(QUESTIONS) instead, so this literal is
+#: the assertion the card is held to -- never a second source of the answer.
+CARD_TOTAL = 14
+
+#: Numbers that can read as a card total in prose. "one" is deliberately absent:
+#: "one question per message" is not a total and must never be scored as one.
+_CARD_NUMBERS = {"zero": 0, "two": 2, "three": 3, "four": 4, "five": 5,
+                 "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                 "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+                 "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+                 "nineteen": 19, "twenty": 20}
+_NUMBER = r"(?:\d+|" + "|".join(sorted(_CARD_NUMBERS, key=len, reverse=True)) + r")"
+#: The shapes this codebase uses to state a card total: "N questions",
+#: "six-question", "N production choices", "N with a saved character", and the
+#: header's own "Question i of N". One word may sit between the number and the
+#: noun ("five story-brief questions"); "one question per message" stays out
+#: because "one" is not in _CARD_NUMBERS.
+_CLAIM_PATTERNS = (r"\b" + _NUMBER + r"(?:\s+[\w-]+)?[\s-]+questions?\b",
+                   r"\bquestion\s+\d+\s+of\s+(\d+)\b",
+                   r"\b" + _NUMBER + r"(?:\s+[\w-]+)?[\s-]+(?:production\s+)?choices\b",
+                   r"\b" + _NUMBER + r"\s+with a saved character\b")
+
+
+def _count_claims(text):
+    """(value, matched text) for every card total written as a literal in text."""
+    found = []
+    for pattern in _CLAIM_PATTERNS:
+        for m in re.finditer(pattern, text, re.I):
+            if m.lastindex:                       # "Question i of N" carries only N
+                found.append((int(m.group(1)), m.group(0)))
+                continue
+            raw = m.group(0)
+            digits = re.match(r"\d+", raw)
+            word = re.search(r"[a-z]+", raw, re.I).group(0).lower()
+            found.append((int(digits.group(0)) if digits else _CARD_NUMBERS[word], raw))
+    return found
+
+
+def _capture_help(runner, argv):
+    """What --help prints, whitespace flattened (argparse exits 0 on --help and
+    wraps long help to the terminal width, which would split a count claim)."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            runner(argv)
+        except SystemExit:
+            pass
+    return re.sub(r"\s+", " ", buf.getvalue())
+
+
+def test_the_card_renders_exactly_fourteen_questions():
+    assert CARD_TOTAL == 14                         # the number this file encodes
+    assert len(IC.QUESTIONS) == CARD_TOTAL          # module count
+    headers = re.findall(r"^Question (\d+) of (\d+) - ", CARD, re.M)
+    assert len(headers) == CARD_TOTAL               # rendered count == module count
+    assert {n for _, n in headers} == {str(CARD_TOTAL)}
+    assert [int(i) for i, _ in headers] == list(range(1, CARD_TOTAL + 1))
+    assert IC.studio_json()["question_count"] == CARD_TOTAL   # third surface, same list
+
+
+def test_a_saved_character_swaps_in_and_never_moves_the_total():
+    # both --help strings promise "the same total with a saved character".
+    with tempfile.TemporaryDirectory() as tmp:
+        client, empty = os.path.join(tmp, "client-a"), os.path.join(tmp, "client-b")
+        img = os.path.join(tmp, "face.png")
+        with open(img, "wb") as fh:
+            fh.write(b"\x89PNG-fake-bytes")
+        from character_library import character_library as CL   # noqa: PLC0415
+        CL.save_character(client, "Maya Lee", "Warm, 40s, silver braids.", [img])
+        assert CL.saved_character_question(client), "fixture saved no character"
+        assert len(IC._with_saved_character(client)) == CARD_TOTAL
+        assert len(IC._with_saved_character(empty)) == CARD_TOTAL   # NO_SAVED_LINE preface
+    assert len(IC._with_saved_character("")) == CARD_TOTAL          # no folder at all
+
+
+def test_the_help_strings_state_the_live_total_and_no_other():
+    card_help = _capture_help(IC.main, ["--help"])
+    assert "(%d questions" % N in card_help, card_help
+    for value, hit in _count_claims(card_help):
+        assert value == N, "intake_card --help claims %r, the card says %d" % (hit, N)
+
+    sys.path.insert(0, os.path.join(CORE, "intake_preflight"))
+    import factory  # noqa: PLC0415, E402 -- the sub-parser help lives here
+    root_help = _capture_help(factory.main, ["--help"])
+    assert "(%d questions" % N in root_help, root_help
+    for value, hit in _count_claims(root_help):
+        assert value == N, "factory --help claims %r, the card says %d" % (hit, N)
+
+
+def test_the_init_docstring_claims_no_other_total():
+    import choice_card.intake_card as package  # noqa: PLC0415, E402
+    doc = re.sub(r"\s+", " ", package.__doc__ or "")
+    assert "questions" in doc                   # it still says what it holds
+    for value, hit in _count_claims(doc):
+        assert value == N, "the package docstring claims %r, the card says %d" % (hit, N)
+
+
+def test_the_card_string_sources_hold_no_other_total():
+    """The hard guard: re-introduce a hardcoded total anywhere in the three
+    card-facing files and this goes red on the exact line."""
+    paths = (os.path.join(CORE, "choice_card", "intake_card", "__init__.py"),
+             os.path.join(HERE, "intake_card.py"),
+             os.path.join(CORE, "intake_preflight", "factory.py"))
+    for path in paths:
+        with open(path, encoding="utf-8") as fh:
+            for line_no, line in enumerate(fh.read().splitlines(), 1):
+                for value, hit in _count_claims(line):
+                    assert value == N, "%s:%d claims %r; the card says %d" % (
+                        os.path.basename(path), line_no, hit, N)
 
 
 if __name__ == "__main__":

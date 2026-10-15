@@ -50,6 +50,55 @@ depth of their soul.
   seconds and rise seconds. The approval card carries
   `Villain: <name>, shown in N shots`.
 
+## Drama-to-Demand Method (supersedes the doctrine above where they differ)
+
+Trevor's method ships with this skill as `references/drama-to-demand-method.md`
+(his guide, v1.0, 2026-10-13, byte for byte). Where the method and the creative
+doctrine above differ, the method wins on the seven points below (C1-C7). Everything
+the doctrine above says that the method does not touch - the villain contract, pain
+AND the rise, ads are dramatizations, never a reality test on a client, permission -
+stands unchanged.
+
+- **C1 - no sung word before the ERM.** The first sung line lands at the ERM apex,
+  inside the method's window for that length, measured from the song's own words. On
+  a method run this replaces the "first sung line by 15% of the runtime" target.
+- **C2 - the opener carries the backstory.** Backstory narration is allowed over a
+  light instrumental opening, up to the backstory seconds at the spoken rate; the
+  three-word spoken-opener cap does not apply to a method run.
+- **C3 - the ERM Drop is at the ERM**, where the pain first becomes personal, not
+  "at the lowest point".
+- **C4 - the Hero Shift is when the solution enters**, before the breakthrough, and
+  the second pace change goes in whatever direction the story calls for (faster,
+  slower, heavier, bigger, darker, dramatic, cinematic). Returning to the opening
+  groove is one way, not the only way.
+- **C5 - both music turns are mandatory and measured on every run** (Trevor
+  2026-10-13). A turn that was only asked for in the prompt is `planned`, never
+  `inspected`, and never PASS.
+- **C6 - the hook is earned.** The build toward the hook may start once the solution
+  has at least been introduced (`the_turn`), never before; at 60 seconds the hook's
+  `lowest_point` anchor is `the_turn`, not the lowest point.
+- **C7 - trailers sell the episode.** A campaign trailer opens on the master's own
+  instrumental opening, keeps ERM -> pain -> Hero Shift order, uses the hook only
+  after a local breakthrough, and ends on an end card with show, episode and where to
+  watch. Its destination is the episode/channel, never the checkout.
+
+**The five uses - PURPOSE is question 1 of the card.** 1 Grow my business (a full
+campaign: a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad clips),
+2 tell a client's success story, 3 teach a lesson, 4 a social media video (a paid ad
+or a free post). The purpose picks the lengths offered, the shape, the pacing profile
+and the destinations, so the client never answers a second steering question; the
+method's own outputs are `MASTER_EPISODE`, `TRAILER_CLIP` and `STANDALONE_SALES_EDIT`.
+
+The method is **inert unless the run carries `control/method.json`** - a run without
+that record behaves exactly as it did before this section existed. Its gates A-F sit
+on stops the card and the stage machine already have (recap, script approval, song
+approval, storyboard approval, final QC, delivery), and every method row in the
+receipt carries an evidence level of `planned` / `generated` / `inspected` /
+`approved`, where `approved` needs a recorded human answer. UNAVAILABLE is never
+PASS, and a high score never averages away a failed required check.
+
+Full guide: `references/drama-to-demand-method.md`.
+
 ## Route boundaries
 
 Use this skill for song-driven direct-response video ads: a twelve-stage
@@ -419,6 +468,55 @@ cap refuses `STYLE_TOO_LONG` rather than dropping a clause. See "Prompt template
 R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measured rhythmic rap before any intro/outro allocation, and each rap verse on the sheet must itself reach a real budget: at least 8 seconds and at least ceil(8 seconds × the style's rap rate) words. Story-bearing lexical content starts within 5 seconds, and no opening wordless span may exceed 3 seconds. Real lexical word timing covers at least 70% of the delivered runtime; vocalise and music-only time never count. Every approved plot beat must be heard, in order, and each take is bound to the exact approved sheet revision it was generated from. Two pace changes are ordered, each separately bound to its own story beat and never merged into one. The first, the problem shift, belongs to the beat where the story hits the problem: it must be written into the submitted music style and must then pass a measured onset and energy drop check. The second, the rise shift, belongs to the beat where the story reaches the solution, the rise: it must be written into the submitted music style and must then pass its own measured rise check. Each pace change must additionally pass an independent smooth-transition review. Required rap evidence that is unmeasured, unavailable or unknown cannot pass; only an independent timed listening review or a calibrated classifier may grant it. These are new acceptance rules; the owner's existing spoken/sung 5/10 band is unchanged. The recommended SONG APPROVAL answer is Yes and an explicit No stays one song, but no assistant may answer a card question on the client's behalf: an answer with no recorded author and no recorded authority is treated as unspecified and routes to the recommended Yes.
 
 **Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until Trevor approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
+
+## Agnes path (optional)
+
+An optional second picture and clip provider for a client who pays for an Agnes AI
+plan (Starter, Plus or Pro). It is chosen only by the AGNES question on the card and
+only while a key is present; a run without that answer behaves exactly as today.
+
+- **Agnes makes the stills and the motion segments; the song and the talking
+  close-ups stay where they are.** Music stays Suno through KIE, lip-sync close-ups
+  stay KIE Kling, and every approval, gate and QC stop is unchanged. Agnes never
+  opens a second paid door and never rides Skill 74: there is no dollar spend inside
+  the daily quota, but every Agnes job still gets a ledger row at cost 0 so receipts,
+  prompt compliance and resume work as they always did.
+- **Fixed 10-second segments.** The delivered timeline is cut into 10-second clips;
+  one still per segment is approved with the storyboard and used as that clip's first
+  frame. **Agnes runs are capped at 5 minutes** (Trevor 2026-10-13) - 7- and
+  10-minute episodes are KIE-only - and no run is ever split across days.
+- **Quota, not spend:** 500 video seconds and 4,000 images per day per key pool,
+  resetting 00:00 UTC, tracked by one ledger per pool. A run that does not fit today
+  waits as a whole for the next reset; a vendor 402 always beats the local count.
+- **Pacing:** at most 2 video jobs in flight per key pool, polls no faster than every
+  15 seconds, a queue-full 503 is backed off and resubmitted (never counted as
+  submitted), a 429 is backed off and resubmitted, and an unknown job state is polled,
+  never resubmitted. Every failure is reported by name; the run never switches
+  provider on its own and asks the one fallback question instead.
+- **No words in the generated pictures** by default. A word that will not bake in is
+  overlaid at assembly (`TEXT_OVERLAID`), never delivered garbled; without tesseract
+  the OCR check reads `OCR_UNAVAILABLE`, which is never a PASS.
+- **Conform:** clips arrive 704x1280 at 24 fps carrying their own audio, which is
+  stripped - the song is the only audio - and the master is cover-scaled to its
+  export size and 30 fps.
+- **Progress, because it takes hours:** the video stage runs as a background job that
+  writes the run's progress record, the studio page shows "Making your video clips:
+  N of M done - about X to go" (or the waiting reason), and the stage answers
+  `waiting` with `agnes-video-running` while it runs. A resumed session never
+  resubmits a job the ledger already knows.
+- **Price lines:** with Agnes chosen the video and image lines read "included in your
+  Agnes plan", plus "Agnes video time: about N of your 500 seconds today". No dollar
+  figure on an Agnes line.
+- **Prerequisites:** `PREREQS.json` declares `agnes-key` (presence only) and
+  `tool-tesseract`, both optional and both gated `when: agnes-path`, so a box that
+  never uses Agnes reports nothing missing. The key value is never printed, logged or
+  written to a receipt.
+
+Reference: `references/agnes-path.md` - the Agnes door, quota tracker, progress writer
+and the Agnes/OCR codes named above ship with the Agnes core batch in this release
+group. Uses available on it: campaign episodes up to 5 minutes, testimonials, lessons,
+paid ads (30 / 60 / 90 s) and short posts; 7- and 10-minute episodes stay on the KIE
+path.
 
 ## What the storyboard is
 
