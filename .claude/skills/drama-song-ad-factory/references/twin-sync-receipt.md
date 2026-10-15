@@ -1,3 +1,195 @@
+# TWIN-SYNC receipt — W3-twin-sync-U1 (Agnes Drama Ad Factory run, 2026-10-15)
+
+Unit `W3-twin-sync-U1` (BUILD-PLAN.md section W3-twin-sync-U1, Agnes run): skill 75 core
+twin copied into 999-setup from the **exact pinned green onboarding candidate** while the
+O batch merges, with the method / purposes / Agnes doc sections copied with it, fingerprints
+regenerated and final parity re-verified against merged onboarding `origin/main` before
+release. This section, the regenerated `scripts/core/`, the two copied reference guides,
+the regenerated `references/twin-sync-fingerprints.json` and this receipt are the unit's
+whole change.
+
+## What was compared
+
+| Side | Repository | Tree | Commit |
+|---|---|---|---|
+| Canonical (source of truth) | `trevorotts1/openclaw-onboarding` | `75-drama-song-ad-factory/scripts/core/` | `1e1c12dcc0ad336d24c13986973e885e58d95954` (`origin/main`, the pinned candidate at W3 launch) |
+| Packaged copy (this repo) | `trevorotts1/999-setup` | `.claude/skills/drama-song-ad-factory/scripts/core/` | base `6d7d0cde5c705c7f9c7609d6d8494daa55439e57` (`origin/main`), packaged on branch `unit/AGN-W3-twin-sync-U1` |
+
+The source is the **pinned candidate**, per the BUILD-PLAN Wave 3 rule ("package from that
+exact O head while O batch merges"). The pin is also, at build time, literally `origin/main`:
+`git -C ~/openclaw-onboarding fetch https://github.com/trevorotts1/openclaw-onboarding.git
+refs/heads/main` on 2026-10-15 returned `FETCH_HEAD=1e1c12dcc0ad336d24c13986973e885e58d95954`,
+and `git diff --stat 1e1c12dcc FETCH_HEAD -- 75-drama-song-ad-factory/` is empty (recorded in
+`run/lanes/W3-twin-sync-U1-lane/omain.txt`). Note: `~/openclaw-onboarding` had lost its
+`origin` remote by another session at build time, so the fetch was taken straight from the
+`https` URL into `FETCH_HEAD`; no remote, ref or working file of that clone was written by
+this unit, and the clone was never branched or checked out.
+
+Both checkouts are read-only for this unit. The canonical tree was exported as a detached
+read-only worktree `~/agnes-wt/.W3-twin-sync-U1-osrc` at `1e1c12dcc` (never a branch, never
+a checkout of the main clone), and everything below was read from it.
+
+## How the core was packaged (the matching method)
+
+1. Read the packager's own help first rather than guessing its arguments:
+   `python3 installer-registration/package_core.py --help` → `--source DIR`, `--dest DIR`,
+   `--check` (verify only; exit 1 on drift), source resolution `--source` →
+   `DSAF_CANONICAL_CORE` → build-tree default.
+2. Ran it with an explicit source, so no default-path or environment guess was involved:
+
+```
+$ python3 installer-registration/package_core.py \
+    --source /Users/blackceomacmini/agnes-wt/.W3-twin-sync-U1-osrc/75-drama-song-ad-factory/scripts/core
+package_core: OK  501 files (11 written, 0 stale removed) source=... dest=...
+  tree sha256 packaged=c9d70abfd7d888b620cd6491fbc480a1391faa7dc785962fb9920221de507f91 canonical=c9d70abfd7d888b620cd6491fbc480a1391faa7dc785962fb9920221de507f91
+  packaged tree only — no Claude config root was read or written
+exit=0
+```
+
+`11 written, 0 stale removed`: 6 tracked files changed and 5 canonical files were absent
+from 999 main; nothing 999 shipped was dropped (`only_packaged = 0`). The tool writes only
+the packaged tree inside the repository.
+
+**Nothing in `scripts/core/` was hand-edited.** Per `references/parity-contract.md`, a
+difference is fixed by re-running the packager, never by editing the copy.
+
+## Matching method (how the two sides are proven equal)
+
+Three independent checks, all run on the packaged tree at this branch's head:
+
+| # | Command | Exit | Result |
+|---|---|---|---|
+| 1 | `python3 .claude/skills/drama-song-ad-factory/tests/test_parity_layout.py` (the BUILD-PLAN **Prove** line), with `DSAF_CANONICAL_CORE` at the pinned source | 0 | `ALL PASS (parity proven)` — file set and bytes match, `tree sha256 packaged=c9d70abf…507f91 canonical=c9d70abf…507f91`, hygiene scan covered 584 skill text files, frontmatter still matches untouched `VERSION` |
+| 2 | `python3 installer-registration/package_core.py --source <pinned> --check` | 0 | `package_core --check: OK  501 files match canonical`, same tree sha256 both sides |
+| 3 | `python3 .claude/skills/drama-song-ad-factory/tests/twin_sync_prove.py --canonical <pinned> --selftest` | 0 | `SELFTEST: PASS` (identical copy proven, one-byte change caught, extra file caught) and `PARITY: PROVEN (byte-identical over same scope)` — `same=501 differ=0 only-canonical=0 only-packaged=0` |
+
+Full output: `run/lanes/W3-twin-sync-U1-lane/prove.txt`.
+
+**The Prove line's file-by-file comparison against O `origin/main`** was run a fourth way, so
+it does not depend on the packager's own accounting: every blob id in
+`git ls-tree -r 1e1c12dcc -- 75-drama-song-ad-factory/scripts/core/` (501 paths, `__pycache__`
+and `*.pyc` excluded on both sides) was compared with the git blob SHA-1 recomputed locally
+from the packaged file bytes (`sha1("blob <len>\0" + data)`):
+
+```
+O origin/main SHA: 1e1c12dcc0ad336d24c13986973e885e58d95954
+canonical core files: 501   packaged core files: 501
+same=501 differ=0 only-canonical=0 only-packaged=0
+RESULT: 0 DIFFERENCES
+```
+
+i.e. **0 differences against O `origin/main`**, proven per file, not by aggregate count
+(`run/lanes/W3-twin-sync-U1-lane/core-filecompare.txt`).
+
+## The method / purposes / Agnes doc sections
+
+Source of the text: the pinned candidate's own diff, `git diff 1e1c12dcc 2f3e3b6e7 --
+75-drama-song-ad-factory/`, where `2f3e3b6e7f099fe005b604bf5b139e229e3c1c5b` is the head of
+PR **#2106** (`AGN W2-wiring-U5: skill 75 documents: agnes-path and method references,
+SKILL.md method and Agnes sections, INSTRUCTIONS.md purpose flow, PREREQS entries`) — the
+O-card-wiring document unit this twin mirrors. That diff is 5 files / +1321 lines and its
+`scripts/core/` part is empty, so it carries **no** core change and cannot disagree with the
+packaged core. Every block below was re-extracted from that unified diff (`lane/u5-full.diff`,
+`lane/blocks.json`) and inserted as the candidate's own bytes — nothing was retyped.
+
+| File in 999 | Change | Where it was put | Verified |
+|---|---|---|---|
+| `SKILL.md` | +98 (two 49-line blocks) | `## Drama-to-Demand Method (supersedes…)` immediately **before** `## Route boundaries`; `## Agnes path (optional)` immediately **before** `## What the storyboard is` | each anchor unique (hits=1); order `method=52 < route=101`, `agnes=471 < storyboard=520`; heading counts 1 each; `references/drama-to-demand-method.md` cited twice, `references/agnes-path.md` once |
+| `INSTRUCTIONS.md` | +27 | after the F15 card-gate paragraph ending `` `CARD_UNANSWERED` until the record exists). `` (preceding line contains `card_gate.py`), blank line preserved before `1. **One card…**` | `**PURPOSE flow and the AGNES question…**` present once; the 27 lines are byte-identical to the candidate block |
+| `PREREQS.json` | +18 | the two entries (`agnes-key`, `tool-tesseract`) inserted immediately before `    {"id": "numpy-optional"` | file still parses; `"id": "agnes-key"` and `"id": "tool-tesseract"` present once each; both `severity: optional`, `when: agnes-path` |
+| `references/agnes-path.md` | new, 12354 bytes | copied from the candidate export | sha256 `4b85227db98981379143f3f39565a2f553ba6d84cca9f3a3b55213bd3e5c473c` before == after |
+| `references/drama-to-demand-method.md` | new, 82096 bytes | copied from the candidate export | sha256 `9a4728edc146c9552ca3a89963ab56c35551ba4c5537d4d6c91ba9cdc1171d6e` before == after |
+
+The resulting `git diff --stat` for those three files is `INSTRUCTIONS.md | 27 ++`,
+`PREREQS.json | 18 ++`, `SKILL.md | 98 ++++` — exactly the candidate's own stat for them, so
+the twin carries the same method / purposes / Agnes sections as onboarding's candidate, line
+for line. Evidence: `lane/apply-clean.txt`, `lane/preq.txt`, `lane/verify-docs.txt`,
+`lane/u5-hunks.json`.
+
+## Fingerprints refresh
+
+`references/twin-sync-fingerprints.json` (was 147819 bytes, sha256 `271f391b…a6040`) was
+rewritten with `indent=2` (the file's own formatting, all prior keys and their order kept):
+
+- `unit` → `W3-twin-sync-U1`
+- `canonical` → `base_sha 1e1c12dcc0ad336d24c13986973e885e58d95954`, `branch origin/main`
+- `packaged` → `base_sha 6d7d0cde5c705c7f9c7609d6d8494daa55439e57`, `branch unit/AGN-W3-twin-sync-U1`
+- `summary` → `{in_scope_files 501, match 501, differ 0, only_canonical 0, only_packaged 0}`
+- `files` → 501 entries, every `canonical_sha256 == packaged_sha256`, `match: true`
+- `pre_sync_W3twinU1_999_main_divergence_from_canonical` (11) + `pre_sync_W3twinU1_summary`
+  = `{in_scope_files 501, match 490, differ 6, only_canonical 5, only_packaged 0}` — what
+  999 `origin/main` looked like against the canonical core **before** this sync: 6 changed
+  files (`choice_card/intake_card/{__init__,intake_card}.py`,
+  `test_intake_card_h9.py`, `intake_preflight/factory.py`,
+  `research_engine/{__init__,research}.py`) and 5 canonical files missing
+  (`research_engine/{gather,test_research_gather}.py`, `research_engine/fixtures/*.html`).
+
+Same algorithm and exclusions as every earlier round: sha256 of raw bytes, `__pycache__/` and
+`*.pyc` dropped identically on both sides, no normalisation. Every earlier `pre_sync_*` block
+and the round-3 / studio-bridge records are carried through untouched.
+
+## Regression (run in this repo's packaged tree, same commands as the area list)
+
+`python3 -m pytest -q .claude/skills/drama-song-ad-factory/scripts/core/<area>` — all 10
+areas green (`lane/reg-1.txt`, `lane/reg-2.txt`):
+
+| Area | Result | Area | Result |
+|---|---|---|---|
+| Intake card | 114 passed | Length | 50 passed |
+| Dispatch + lock | 45 passed | Story/board | 15 passed |
+| Calculator | 3 passed | Clips | 28 passed |
+| Assembler | 163 passed | Lip-sync | 103 passed |
+| Song | 226 passed (1 warning) | Checklist | 66 passed |
+
+Plus the skill's own suite: `test_loud_failure` 4 passed, `test_master_provenance_h12` 6,
+`test_model_choice` 2, `test_studio_bridge_twin` 1 (all exit 0), and as scripts
+`test_parity_layout.py`, `test_cli_smoke.py`, `test_launcher_plain_claude.py`,
+`test_single_config_root.py`, `twin_sync_prove.py` — see `lane/skill-tests.txt` and
+`lane/script-tests.txt`.
+
+## Release gate: final parity against MERGED onboarding main (open at build time)
+
+At build time the O-card-wiring batch had not merged: O `origin/main` was still `1e1c12dcc`,
+which is the pinned candidate and is what this unit packaged — proven above, both by
+`FETCH_HEAD` and by the per-file blob comparison. The doc sections, however, exist only on
+candidate head `2f3e3b6e7` (PR #2106) until that batch lands.
+
+**Before release**, re-run, on the merged O `origin/main`:
+
+```
+python3 installer-registration/package_core.py --check --source <merged O main>/75-drama-song-ad-factory/scripts/core
+DSAF_CANONICAL_CORE=<merged O main>/75-drama-song-ad-factory/scripts/core python3 .claude/skills/drama-song-ad-factory/tests/test_parity_layout.py
+python3 installer-registration/package_core.py --source <merged O main>/75-drama-song-ad-factory/scripts/core   # only if --check reports drift
+git diff <merged O main> 2f3e3b6e7 -- 75-drama-song-ad-factory/{SKILL.md,INSTRUCTIONS.md,PREREQS.json}   # if non-empty, re-copy these three hunks too
+```
+
+If any reports drift, re-run the packager / re-apply the three doc hunks in this same branch
+and refresh `twin-sync-fingerprints.json`. Release is still gated on that re-run: the receipt
+above records what was proven at the pinned candidate, and says so.
+
+## In scope vs deliberately out of scope
+
+**In scope** — `.claude/skills/drama-song-ad-factory/` (the unit's `Owns`), and within it only:
+`scripts/core/` (regenerated), `SKILL.md`, `INSTRUCTIONS.md`, `PREREQS.json`,
+`references/agnes-path.md`, `references/drama-to-demand-method.md` (both new),
+`references/twin-sync-fingerprints.json`, `references/twin-sync-receipt.md` (this section).
+
+**Deliberately out of scope**, each with its reason:
+
+- `VERSION`, `skill-version.txt`, `CHANGELOG.md`, the `version:` frontmatter — the batch
+  workflow does one bump for the whole batch (builder standard step 4).
+- `installer-registration/**` — helper pins, `helper-deps.py repin`, skills 63/64 vendoring
+  are **W3-twin-sync-U2**; that unit owns `helper-dependencies.json` and `helpers/`.
+- `adapters/`, `assets/`, `mini-app/`, `shared-bridge/` (the `studio_bridge_twin` fingerprint
+  block stays with its owner), `mini-app/**`, `CONTROL/bundled-skills.txt` — onboarding-owned
+  or another unit's; the layout/manifest checks in `test_parity_layout.py` prove the manifest
+  still carries every prior entry.
+- No live Agnes call, no KIE call, no network to either vendor (builder standard step 5); the
+  only network in this unit was the read-only `git fetch` of O `main` quoted above.
+- No write to `~/openclaw-onboarding`, no LEDGER/TODO/SWARM-PLAN edit, no merge.
+
+## Archive
+
 # TWIN-SYNC receipt — W3-twin-sync-U1 (Drama Fixes batch, 2026-10-13)
 
 Unit `W3-twin-sync-U1` (BUILD-PLAN.md section W3-twin-sync-U1, Drama Fixes Oct 13):
