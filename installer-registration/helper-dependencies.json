@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-15T07:48:01Z",
+  "generatedAt": "2026-10-15T16:57:50Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -135,13 +135,13 @@
       "role": "KIE key resolver, prompt rule 12 enforcer, declared gate list and its test",
       "kind": "files",
       "required": true,
-      "version": "sha256:db74be3114ae",
+      "version": "sha256:7acba1cf6bb8",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
       "fileCount": 4,
-      "sizeBytes": 67865,
-      "treeSha256": "db74be3114ae589a69e28f565f864436766df8032e0aa0fa2e53980f928d208c",
+      "sizeBytes": 68329,
+      "treeSha256": "7acba1cf6bb8895a35123f328ebfa54fe37fb5e977aaa39c27c3da38f0284242",
       "skillMdSha256": null,
       "files": [
         {
@@ -157,7 +157,7 @@
         {
           "path": "kie_prompt_gates.json",
           "sourcePath": "shared-utils/kie_prompt_gates.json",
-          "sha256": "c3cd47e3cae0fbad04599b1f70808ed3bf90d19b9c8189a9ff6b6b081a04531f"
+          "sha256": "4222e988116cd38f819affc413be8ef5b8d3146eb5f863dea988397b627b70f3"
         },
         {
           "path": "kie-prompt-enforcer-and-gates.test.py",
