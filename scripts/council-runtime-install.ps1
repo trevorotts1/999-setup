@@ -227,9 +227,27 @@ if (-not $reused) {
 }
 
 # --- current junction swap --------------------------------------------------
+# F-046-2 hardening (CWE-048): never delete `current` before its
+# replacement exists. The old junction is renamed aside first (a
+# rename moves the link itself, never its target), the new junction is
+# created at `current`, and only then is the renamed-aside link
+# removed. If creating the new junction fails, the old link is moved
+# back and the swap dies with COUNCIL_SWAP_FAILED, so a failed swap
+# leaves the previous current in place instead of none.
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-if (Test-Path $current) { Remove-Item $current -Force -Recurse }
-New-Item -ItemType Junction -Path $current -Target $prefix | Out-Null
+$previous = Join-Path $runtimeDir ".current.previous.$PID"
+if (Test-Path $previous) { Remove-Item $previous -Force }
+$hadCurrent = Test-Path $current
+if ($hadCurrent) { Move-Item $current $previous }
+try {
+    New-Item -ItemType Junction -Path $current -Target $prefix | Out-Null
+} catch {
+    if ($hadCurrent -and (Test-Path $previous) -and -not (Test-Path $current)) {
+        Move-Item $previous $current
+    }
+    Die 'COUNCIL_SWAP_FAILED' 'could not swap the current junction' 7
+}
+if (Test-Path $previous) { Remove-Item $previous -Force }
 Say "current -> $aggregate"
 
 # --- the blackceo-council executable pair -----------------------------------

@@ -222,11 +222,22 @@ else
 fi
 
 # --- atomic current swap ---------------------------------------------------
+# F-046-2 (CWE-048): the swap must replace the current symlink itself,
+# atomically. mv -f onto a symlink-to-directory follows the link and
+# drops the staged link inside the old prefix instead (the mini-swap
+# defect: stray .current.tmp links left inside the previous prefix and
+# current still pointing at the old tree). rename(2) replaces the link
+# itself without following it; it runs through the preflighted node
+# binary so the semantics are identical on Linux and macOS, and no new
+# platform dependency enters the install path.
 mkdir -p "$RUNTIME_DIR"
 TMP_LINK="$RUNTIME_DIR/.current.tmp.$$"
 rm -f "$TMP_LINK"
 ln -s "$AGGREGATE" "$TMP_LINK" || die COUNCIL_SWAP_FAILED "could not stage the current link" 7
-mv -f "$TMP_LINK" "$CURRENT" || die COUNCIL_SWAP_FAILED "could not swap the current link" 7
+if ! "$NODE_BIN" -e 'require("node:fs").renameSync(process.argv[1], process.argv[2])' "$TMP_LINK" "$CURRENT"; then
+  rm -f "$TMP_LINK"
+  die COUNCIL_SWAP_FAILED "could not swap the current link" 7
+fi
 say "current -> $AGGREGATE"
 
 # --- the blackceo-council executable ---------------------------------------
