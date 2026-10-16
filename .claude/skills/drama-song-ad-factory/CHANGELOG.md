@@ -1,5 +1,40 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [v2.9.61] — 2026-10-16 — BATCH-AGN-24H-N2: canonical sync of this twin from onboarding main `b16266d9`
+
+Batch `BATCH-AGN-24H-N2` — one batch PR, one entry, no older entry rewritten. Window:
+`2026-10-15T23:54:34Z` - `2026-10-16T23:54:34Z`. Sync source of truth: `trevorotts1/openclaw-onboarding`
+`origin/main` `b16266d9dfc2d9aabcef40e1d780137350080df4` (repo tree
+`7f2ae6c86c55a6e865690d562524b17b6038af98`; its `75-drama-song-ad-factory/` subtree is
+`0994cb127b5317dc40b34edf6c4123a0d26a7f9d`, which live main `c0930ca6e1d9733525694a7c763fa78a56c9e7c7`
+at build time still carries byte for byte).
+
+- `scripts/core/` regenerated with `installer-registration/package_core.py`: 82 files written
+  (48 canonical files this twin did not yet ship, 34 content updates), 0 removed, 501 -> 549 files,
+  one tree sha256 `7c8c0d2f1b69feb35819d690555b122e2fd2a2acd23b502a71588c8638462d5a` on both sides.
+  That carries the pace-order dispatch requirement (`music_qc/pace_change.py`,
+  `music_qc/test_method_pace.py`, `song_dispatch/song_dispatch.py`, `song_dispatch/test_method_song.py`)
+  plus the method and Agnes core batch that landed on canonical main after the previous sync pin.
+- `references/` refreshed byte for byte where this twin mirrors the canonical tree: three proof
+  receipts that are new since that pin (`agnes-platform-proof.md`, `agnes-proof-receipt.md`,
+  `method-proof-receipt.md`) plus the updated `CLIENT-GUIDE.md` and `stage-runbook.md`.
+  `agnes-path.md`, `drama-to-demand-method.md` and `QC.md` were already identical and are unchanged.
+  One canonical receipt is deliberately NOT mirrored: `lipsync-cartoon-proof.md` names judge models
+  six times and `tests/test_model_choice.py` fails any model pin in `references/*.md`, so carrying it
+  would be a red build here while the guard itself may not be weakened. It stays canonical-side only.
+- Version markers move together onto the canonical version of record: `VERSION` `2.7.57` -> `v2.9.61`,
+  the `SKILL.md` frontmatter `version:` -> `v2.9.61`, and this twin gains the `skill-version.txt`
+  the canonical skill carries, byte-identical at `v2.9.61`, so `QC.md`'s
+  "skill-version.txt matches SKILL.md frontmatter version" line holds here as well. The three now
+  agree, which is what `tests/test_parity_layout.py` ("frontmatter matches VERSION") and
+  `scripts/qc-assert-skill-frontmatter-version.sh` check.
+- Not synced as whole files, exactly as every earlier round recorded: this distribution's own
+  `SKILL.md`, `INSTRUCTIONS.md`, `PREREQS.json` and `CHANGELOG.md` keep their Claude-Nine / Claude
+  Code framing (only the canonical doc hunks and this entry were carried over), `VERSION` is this
+  twin's own marker line, `adapters/`, `assets/`, `mini-app/` and `shared-bridge/` stay with their
+  owners.
+
+
 ## [2.7.57] — 2026-10-15 — BATCH-AGN-24H-N: 24-hour batch window, member `#227` folded in
 
 Batch bookkeeping release for repo `trevorotts1/999-setup`, head `batch/AGN-24H-N`, carrying
