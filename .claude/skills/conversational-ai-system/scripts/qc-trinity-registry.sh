@@ -45,9 +45,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Auto-locate via the pointer file written by 01-locate-master-files-folder.sh.
+# Auto-locate via the master-files pointer file (see the pointer binding below).
 if [ -z "$WF_DIR" ]; then
-  POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+  # Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+  # pointer is the master-files-dir file inside this skill directory (the
+  # OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+  POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
   if [ -f "$POINTER" ]; then
     MFD="$(cat "$POINTER")"; MFD="${MFD%$'\n'}"
     [ -n "$MFD" ] && WF_DIR="$MFD/conversation-workflows"
@@ -59,7 +62,7 @@ if [ -z "$WF_DIR" ] || [ ! -d "$WF_DIR" ]; then
     printf '{"verdict":"NO_FOLDER","dir":"%s"}\n' "${WF_DIR:-<unset>}"
   else
     echo "qc-trinity-registry: no conversation-workflows folder at '${WF_DIR:-<unset>}'."
-    echo "  Pass --dir <path>, or run after 01-locate-master-files-folder.sh has written the pointer."
+    echo "  Pass --dir <path>, or set SKILL38_MASTER_FILES_POINTER / write the pointer file (master-files-dir in this skill directory)."
   fi
   exit 3
 fi

@@ -25,10 +25,10 @@ it before building anything; the rest of this protocol uses these terms precisel
 | **Channel communication playbook** | The baseline tone/voice/signature for ONE channel (SMS, email, FB, IG, WhatsApp, Live Chat, etc.). Applies to EVERY reply on that channel. | `<MASTER_FILES_DIR>/` channel playbooks (scaffolded by `scripts/12-scaffold-channel-playbooks.sh`); pointer in AGENTS.md Step 4. | The AI (read at reply time) | channel |
 | **Communications playbook** (a.k.a. Layer 2 conversation-workflow playbook) | A SCENARIO-specific behavior override (pricing inquiry, booking, refund, FAQ…). Phases + edge cases + on-success/escalation. Overrides the channel playbook's body when its trigger fires, but still honors the channel's tone. | `<MASTER_FILES_DIR>/conversation-workflows/<slug>.md`, registered in `registry.md`. Standard: `references/communications-playbook-standard.md`. | The AI (read at reply time when the scenario fires) | scenario (many per client) |
 | **Workflow-AI prompt** (a.k.a. Build-with-AI prompt) | A natural-language INSTRUCTION SET the OPERATOR pastes into GHL to build the routing. It is text the human copies; it is NOT what the AI runs. | `<MASTER_FILES_DIR>/conversation-workflows/<slug>--build-with-ai-prompt.md`. Standard: `references/workflow-ai-instructions-standard.md`. | The HUMAN operator (paste-once) | scenario needing new GHL routing |
-| **GHL automation / workflow** | The actual built thing inside GHL (Convert and Flow) Automations — trigger + filters + Custom Webhook — that DELIVERS the inbound conversation to OpenClaw. Built by skill 44's internal-API path when the Firebase token is present, else by pasting the workflow-AI prompt into **Automations → "Build with AI"** (no PUBLIC API/MCP). | Inside the client's GHL account (Automations area). Mirrored for reference in `<slug>--ghl-side.md`. | The GHL platform (runs server-side) | scenario / channel route |
+| **GHL automation / workflow** | The actual built thing inside GHL (Convert and Flow) Automations — trigger + filters + Custom Webhook — that DELIVERS the inbound conversation to the agent endpoint. Built by skill 44's internal-API path when the Firebase token is present, else by pasting the workflow-AI prompt into **Automations → "Build with AI"** (no PUBLIC API/MCP). | Inside the client's GHL account (Automations area). Mirrored for reference in `<slug>--ghl-side.md`. | The GHL platform (runs server-side) | scenario / channel route |
 
 **The relationship in one line:** the operator pastes the **workflow-AI (Build-with-AI) prompt** to
-build the **GHL automation**, which routes inbound messages to OpenClaw, where the AI runs the
+build the **GHL automation**, which routes inbound messages to the agent endpoint, where the AI runs the
 **communications playbook** (scenario override) on top of the **channel communication playbook**
 (baseline tone). THE TRINITY below binds three of these (GHL automation + communications playbook +
 workflow-AI prompt) so they always ship together.
@@ -107,7 +107,7 @@ when the AI built it.
 **Part 2 — The conversation playbook itself (Layer 2 markdown).**
 Saved to `conversation-workflows/<id>.md` and registered in `conversation-workflows/registry.md`.
 The hook path is what wires the GHL automation (Part 1) → this playbook (Part 2). That hook path is how
-the two halves connect: GHL fires the Custom Webhook → OpenClaw receives it on the mapped hook path →
+the two halves connect: GHL fires the Custom Webhook → the agent endpoint receives it on the mapped hook path →
 the agent loads this playbook.
 
 **Part 3 — The brainstorm trigger.**
@@ -138,7 +138,7 @@ THE VISUAL, is generated from the finished playbook and has no historical layer)
 - **Part 1 (Workflow AI instruction set)** = **Layer 0 routing check** + **Layer 1 GHL side**. Layer 0
   decides whether a new GHL automation is even needed; if it is, Layer 1 produces the Build-with-AI prompt,
   the manual-build fallback, and the verification checklist.
-- **Part 2 (conversation playbook)** = **Layer 2 OpenClaw side**, always built.
+- **Part 2 (conversation playbook)** = **Layer 2 agent side**, always built.
 - **Part 3 (brainstorm trigger)** = the operator-invoked entry point (Section B + Section J) that produces
   Parts 1 and 2 in the first place.
 - **Part 4 (THE VISUAL, U-11)** = generated deterministically from the finished Layer 2 playbook after
@@ -149,17 +149,17 @@ THE VISUAL, is generated from the finished playbook and has no historical layer)
 Every workflow has potentially three layers. The agent decides which layers apply for each workflow build:
 
 **Layer 0 — Routing check (does this workflow even need new GHL setup?)**
-- Does an existing GHL workflow already deliver this conversation to OpenClaw?
-- If YES → only Layer 2 is needed. The OpenClaw playbook handles the scenario inside an already-routed inbound conversation. Skip Layer 1 entirely.
+- Does an existing GHL workflow already deliver this conversation to the agent endpoint?
+- If YES → only Layer 2 is needed. The agent-side playbook handles the scenario inside an already-routed inbound conversation. Skip Layer 1 entirely.
 - If NO → Layer 1 is needed. New GHL routing must be built.
 
-**Layer 1 — GHL Side (how the conversation gets to OpenClaw)**
+**Layer 1 — GHL Side (how the conversation gets to the agent endpoint)**
 - Tags the customer needs (auto-created by the agent via GHL skill — NOT manually by the operator)
 - Build-with-AI prompt (generated by the agent, copy-pasteable for the operator)
 - Verification checklist (brutally specific, matches what the prompt should have produced)
 - Saved as separate file: `<workflow-id>--ghl-side.md`
 
-**Layer 2 — OpenClaw Side (what the AI does once the conversation lands)**
+**Layer 2 — Agent Side (what the AI does once the conversation lands)**
 - The conversation playbook itself (phases, edge cases, tone, success/escalation)
 - Saved as: `<workflow-id>.md`
 
@@ -187,7 +187,7 @@ The subagent asks:
 >
 > Instead of building visual node-based workflows, you and I just TALK
 > about what you want the AI to do, and I'll build the whole thing —
-> the GHL routing AND the OpenClaw playbook.
+> the GHL routing AND the agent-side playbook.
 >
 > Let's start with your most important workflow. What's a conversation
 > pattern that happens often in your business that you'd like the AI
@@ -230,7 +230,7 @@ After gathering the workflow's scenario details, the subagent determines whether
 - The workflow triggers from a NEW source not already wired (e.g., a different Facebook page, a new ad form, a webinar platform) OR
 - The workflow needs tag-based filtering (e.g., "only fire this for customers tagged `vip`") OR
 - The workflow needs a different webhook trigger than "Customer Replied" (e.g., "FB Comment", "Form Submitted", "Tag Added") OR
-- The workflow needs if/else branching at the GHL level before reaching OpenClaw
+- The workflow needs if/else branching at the GHL level before reaching the agent endpoint
 
 **The agent makes this decision and tells the operator:**
 
@@ -239,10 +239,10 @@ After gathering the workflow's scenario details, the subagent determines whether
 > [If yes:] Here's what needs to happen:
 > - [Specific reason]
 > - I'll build the GHL side (tags + Build-with-AI prompt + verification checklist)
-> - Then I'll build the OpenClaw playbook.
+> - Then I'll build the agent-side playbook.
 >
 > [If no:] Good news — this workflow uses existing routing. I'll build
-> the OpenClaw playbook only, and your existing inbound webhook will
+> the agent-side playbook only, and your existing inbound webhook will
 > deliver the conversation to me."
 
 ### D. Layer 1 — GHL Side (if needed)
@@ -365,7 +365,7 @@ Each field is filled in with the EXACT values from the operator's setup (`PUBLIC
 > "must-appear" checklist when generating any workflow-AI prompt — the block above is the SMS starter
 > shape; the standard covers every channel + multi-action funnel.
 
-> **⚠️ GHL HOOK STRUCTURE (owner directive — 23 keys, FLAT) — verified live on a live client (OpenClaw 2026.5.27).**
+> **⚠️ GHL HOOK STRUCTURE (owner directive — 23 keys, FLAT) — verified live on a live client (verified 2026-05-29).**
 > The body MUST have **ALL 23 keys** (23 is the minimum — no stripped bodies) and be **FLAT** — no nested
 > `contact:{…}` / `customer_message:{…}` (a nested body makes EVERY field arrive EMPTY at the hook, even a
 > hardcoded `"channel"`). The body's `messageTemplate` VALUE MUST stay **placeholder-free** (no `{{…}}`) — if it
@@ -536,7 +536,7 @@ can surface workflows that were delivered (registered, Trinity-complete) but nev
 
 Each verification item is generated from the same source-of-truth as the prompt — so they're guaranteed to match.
 
-### E. Layer 2 — OpenClaw Side (always built)
+### E. Layer 2 — Agent Side (always built)
 
 > **caf-path verify mandate.** If Layer 1 was built via caf (Skill 44, Option 1 — PRIMARY), the End-to-end
 > test step of D.3's verification checklist requires running `44-convert-and-flow-operator/qc-built-workflow.sh
@@ -776,7 +776,7 @@ The agent maintains a registry at `<MASTER_FILES_DIR>/conversation-workflows/reg
 ```markdown
 # Conversation Workflows Registry
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) | Verification completed |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) | Verification completed |
 |---|---|---|---|---|---|---|---|---|
 | pricing-inquiry | New lead asks about pricing | "price", "cost", "how much" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | https://www.notion.so/client/pricing-inquiry-abc123 | n/a (Layer 1 not built) |
 | webinar-followup | Lead from Tuesday webinar | New tag `webinar-attendee` | Yes | webinar-followup.md | webinar-followup--workflow-ai-prompt.md | webinar-followup--verification-checklist.md | https://docs.google.com/document/d/xyz/edit | Yes — end-to-end pass (2026-05-30, caf qc-built-workflow.sh JSON attached) |
@@ -817,12 +817,12 @@ playbook. This is NOT optional prose — it is a gated deliverable, like the sen
 conversation-memory gates.
 
 **How Parts 1 and 2 connect (the hook path).** The registry's `GHL prompt` column points at the Part 1
-artifact; the `OpenClaw playbook` column points at the Part 2 artifact. The thing that physically links
+artifact; the `Communications playbook` column points at the Part 2 artifact. The thing that physically links
 them at runtime is the **hook path**: the GHL automation's Custom Webhook (Part 1) POSTs to
-`https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`; OpenClaw's `hooks.mappings` maps that path to a session; the
+`https://<PUBLIC_HOSTNAME>/hooks/<HOOK_NAME>`; the endpoint's server mapping maps that path to a session; the
 agent then loads the matching Part 2 playbook from the registry. Record the hook path in the Reusable Tunnel
 Values hook-path registry (see `references/GHL-INBOUND-AND-PLAYBOOKS.md` §6) so the GHL side and the
-OpenClaw side never drift apart.
+agent side never drift apart.
 
 ### G. Initial workflow creation during setup
 
@@ -851,7 +851,7 @@ Workflows created during setup:
 - <workflow-1-id>: <name>
   - Layer 0: <existing routing | new routing required>
   - Layer 1: [tags created: <list> | Build-with-AI prompt: <path> | verification checklist: <path>] (or "skipped")
-  - Layer 2: <path to OpenClaw playbook>
+  - Layer 2: <path to the agent-side playbook>
   - Human-facing doc (Notion → Google Docs → text): <recorded URL or path>  ← MANDATORY, gated by qc-playbook-doc.sh
 - ...
 
@@ -1080,7 +1080,7 @@ When editing any one of the three, check the other two for consistency.
 ### L. Mac env note (where keys live)
 
 When the brainstorm flow (or any Part 1/Part 2 step) needs a secret (HOOKS_TOKEN, GHL PIT, etc.) on a
-**Mac** install, the keys live in **`~/clawd/secrets/.env`** AND/OR **`~/.openclaw/.env`** — check BOTH
-before claiming a key is missing. This differs from a VPS (Docker) install, where env lives in
-`/docker/<project>/.env`. See Step O.5 and `references/GHL-INBOUND-AND-PLAYBOOKS.md` §1 for the full
+install, the keys live in the install's **secrets env** (the file `$SECRETS_ENV` designates) AND/OR as
+already-exported environment variables — check BOTH
+before claiming a key is missing. See Step O.5 and `references/GHL-INBOUND-AND-PLAYBOOKS.md` §1 for the full
 token map. Never tell the operator a key is missing without first checking both Mac locations.

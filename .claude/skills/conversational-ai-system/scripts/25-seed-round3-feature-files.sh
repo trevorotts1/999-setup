@@ -23,11 +23,14 @@ set -euo pipefail
 
 # Resolve MASTER_FILES_DIR the same way the other numbered scripts do: READ the
 # pointer file (it holds a bare directory string — do NOT source it).
-MASTER_FILES_POINTER="$HOME/.openclaw/.skill-38-master-files-dir"
+# Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+# pointer is the master-files-dir file inside this skill directory (the
+# OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+MASTER_FILES_POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
 if [ -f "$MASTER_FILES_POINTER" ]; then
   MASTER_FILES_DIR="$(cat "$MASTER_FILES_POINTER")"
 fi
-: "${MASTER_FILES_DIR:?MASTER_FILES_DIR not set — run 01-locate-master-files-folder.sh first}"
+: "${MASTER_FILES_DIR:?MASTER_FILES_DIR not set — set MASTER_FILES_DIR or write the pointer file (master-files-dir in this skill directory)}"
 
 KB_ROOT="$MASTER_FILES_DIR/KnowledgeBases"
 mkdir -p "$KB_ROOT/sales" "$KB_ROOT/business"
@@ -281,7 +284,7 @@ seed_file "$MASTER_FILES_DIR/segment-map.md" <<'MD'
 
 The per-client GHL tag → segment mapping the agent consults BEFORE drafting a reply
 (AGENTS.md Step 1.85) when `skill38.segmentation.enabled` is true. This is the
-human-readable companion to `skill38.segmentation.tag_map` in openclaw.json — keep
+human-readable companion to `skill38.segmentation.tag_map` in the install skill38 configuration — keep
 the two in sync. Segments are read from the operator's GHL tags; a CUSTOMER can never
 claim a segment. See protocols/customer-segmentation-protocol.md (Step 9.45).
 
@@ -415,7 +418,7 @@ seed_file "$ABTEST_ROOT/README.md" <<'MD'
 
 This directory only matters when `skill38.ab_testing.enabled` is true. Each `<channel>.md`
 file here is the human-readable companion to `skill38.ab_testing.experiments.<channel>` in
-openclaw.json — keep the two in sync. An experiment names exactly TWO variants (`a`/`b`),
+the install skill38 configuration — keep the two in sync. An experiment names exactly TWO variants (`a`/`b`),
 each a tone/structure/CTA OVERLAY (`<channel>-variant-<arm>.md`) layered ON TOP of the
 channel Communication Playbook — an overlay shifts only HOW the reply reads, it NEVER
 overrides the playbook's mandatory SEND, conversation memory, escalation+honesty-floor, or
@@ -437,7 +440,7 @@ MD
 seed_file "$ABTEST_ROOT/sms.md" <<'MD'
 # A/B Experiment: sms (F16 — A/B testing of reply variants)
 
-The human-readable companion to `skill38.ab_testing.experiments.sms` in openclaw.json — keep
+The human-readable companion to `skill38.ab_testing.experiments.sms` in the install skill38 configuration — keep
 the two in sync. Two reply-style variants on the SMS channel; each inbound conversation is
 assigned an arm deterministically by contact and stays in it. The winner is decided by a
 two-proportion z-test on the primary metric after both arms hit min_per_arm, then

@@ -60,9 +60,8 @@ GMAIL_MAILBOX_KEY = "GHL_GMAIL_CLIENT_MAILBOX"
 GMAIL_OAUTH_KEY = "GHL_GMAIL_OAUTH_JSON"
 # 2FA method hint (GATE C optional pre-check).
 TWOFA_METHOD_KEY = "GHL_2FA_METHOD"
-# Multi-location target. Canonical name is GOHIGHLEVEL_LOCATION_ID (matches
-# openclaw.json + ~/.openclaw/secrets/.env); GHL_LOCATION_ID is the accepted
-# legacy short alias.
+# Multi-location target. Canonical name is GOHIGHLEVEL_LOCATION_ID (the
+# ADAPTER contract name); GHL_LOCATION_ID is the accepted legacy short alias.
 LOCATION_ID_KEY = "GHL_LOCATION_ID"                    # legacy short alias (accepted)
 LOCATION_ID_KEY_CANONICAL = "GOHIGHLEVEL_LOCATION_ID"  # preferred canonical name
 # Login origin (reuse inject's default).
@@ -131,9 +130,11 @@ class Tier2Result:
 
 # ── CLIENT-STORE-ONLY secret resolver ─────────────────────────────────────────
 class SecretStore:
-    """Resolves credentials from the CLIENT box's own stores ONLY — live env then
-    ~/.openclaw/secrets/.env. NEVER an operator path. The self-heal writer targets
-    the canonical refresh-token key in the same client store.
+    """Resolves credentials from the CLIENT box's own stores ONLY — the live
+    env, with the self-heal writer targeting the install's secrets env file
+    (the file $SECRETS_ENV designates). NEVER an operator path. When no
+    secrets file is designated, the writer records in memory only and no
+    file is written.
 
     Tests inject a mock (MockSecretStore) with the same read_secret/write_secret
     surface, so no real .env is touched.
@@ -141,9 +142,7 @@ class SecretStore:
 
     def __init__(self, env: Optional[Mapping[str, str]] = None, *, secrets_path: Optional[str] = None):
         self._env = dict(env) if env is not None else dict(os.environ)
-        self._secrets_path = secrets_path or os.path.join(
-            os.path.expanduser("~"), ".openclaw", "secrets", ".env"
-        )
+        self._secrets_path = secrets_path or os.environ.get("SECRETS_ENV") or None
         self.written: dict[str, str] = {}
 
     def read_secret(self, key: str) -> str:
@@ -202,6 +201,10 @@ class SecretStore:
 
     def _persist_env_line(self, key: str, value: str) -> None:
         path = self._secrets_path
+        if not path:
+            # No secrets env file designated in this harness: the in-memory
+            # record made by write_secret stands; nothing is written to disk.
+            return
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         lines: list[str] = []
         if os.path.exists(path):

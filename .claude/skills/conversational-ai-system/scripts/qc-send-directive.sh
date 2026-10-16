@@ -7,14 +7,16 @@
 # NOT sending — and the customer gets nothing. This linter proves every GHL
 # inbound SERVER messageTemplate carries the send-directive instead of trusting
 # it. It is LAYER 3 of the 3-layer send enforcement:
-#   Layer 1 = scripts/15-configure-hooks-mappings.sh canonical template (+ guard)
+#   Layer 1 = the canonical template applied to the client's endpoint
+#             configuration at install time (the configuring machinery is
+#             not part of this scoped pack copy)
 #   Layer 2 = scripts/05-update-agents-md.sh AGENTS.md standing base rule
 #   Layer 3 = THIS gate (wired into 11-run-qc-checklist.sh + qc-static.yml CI)
 #
 # WHAT IT SCANS — only GHL INBOUND SERVER-mapping messageTemplates, i.e. the
 # object-B `hooks.mappings` reply templates that resolve `{{…}}` placeholders:
-#   • the installer's jq-built canonical template in
-#     scripts/15-configure-hooks-mappings.sh
+#   • the canonical template recorded in the shipped references (the
+#     install-time original lives in the client's endpoint configuration)
 #   • every GHL server-mapping messageTemplate embedded in references/ +
 #     templates/ + scripts/ (camelCase `agentId` and/or a {{contact_id}}-bearing
 #     messageTemplate that instructs a GHL reply).

@@ -218,7 +218,7 @@ Applied programmatically → `ZHC-` prefix (zhc-tag-prefix-protocol.md):
   from F44's `ZHC-faq-detoured`, which marks a heavier FAQ sub-flow handed up to
   F44 — the inline sentence and the sub-flow detour carry DIFFERENT tags.)
 
-## openclaw.json toggles
+## Configuration toggles — in the install's skill38 configuration
 
 ```json
 {

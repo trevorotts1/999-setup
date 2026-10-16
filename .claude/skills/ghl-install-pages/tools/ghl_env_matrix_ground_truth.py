@@ -2,52 +2,54 @@
 """ghl_env_matrix_ground_truth.py — B-U15 item 2: the receipt SCHEMA +
 COMPARATOR for the matrix's "first-hour ground truth" requirement.
 
-WHY THIS EXISTS
+999 HARNESS FORM
 ----------------
-ENV-MATRIX.md's adaptation contract item 5 (spec §9.4): "The first-hour
-ground truth is run on BOTH one Mac and one VPS before any fix in this
-family is declared fleet-ready." B-U15's BINARY acceptance (b) requires "the
-same fixture build passes end-to-end on one Mac and one VPS ... receipts
-compared."
+On the OpenClaw side this module proved parity between a Mac receipt and a
+VPS receipt (matching build outcome, box-appropriate `durable_root()` /
+`is_vps()` / `supervisor()` resolution per box). In the Claude Code harness
+there is ONE environment form: `is_vps()` is always False, `supervisor()`
+is "none", and `durable_root()` resolves override -> GHL_DURABLE_ROOT ->
+the skill's in-tree `state/` (never an OpenClaw host root). The comparator
+therefore proves that TWO receipts (two runs, or two machines running this
+harness) BOTH show the harness resolution and a passing fixture build,
+rather than two independently-eyeballed "looks fine" claims. A receipt
+claiming VPS resolution or an OpenClaw-shaped durable root FAILS here,
+which is the point: it proves the run did not silently resolve against
+the other harness's conventions.
 
-This module is the COMPARATOR half of that requirement: a receipt SCHEMA
-(``GROUND_TRUTH_REQUIRED_FIELDS``) any per-box fixture-build run emits, plus
-``compare_ground_truth()`` / ``assert_ground_truth_parity()`` that prove the
-two boxes' receipts show REAL behavioral parity (matching build outcome,
-box-appropriate `durable_root()`/`is_vps()`/`supervisor()` resolution) rather
-than two independently-eyeballed "looks fine" claims. It never runs a
-dispatch→build→verify→FAB-QC pipeline itself (that pipeline is
+This module is the COMPARATOR half: a receipt SCHEMA
+(``GROUND_TRUTH_REQUIRED_FIELDS``) any fixture-build run emits, plus
+``compare_ground_truth()`` / ``assert_ground_truth_parity()``. It never
+runs a dispatch→build→verify→FAB-QC pipeline itself (that pipeline is
 `v2_dispatcher.py`, Section B.1.1 — out of this unit's scope) — it consumes
 whatever receipt that pipeline emits.
 
 THE LIVE LEG THIS DOES NOT AND CANNOT CLOSE (operator-gated, owed):
     Actually RUNNING the fixture build (dispatch → build → verify → FAB-QC)
-    on a real Mac AND a real VPS, and producing the two receipts this module
-    compares, requires real boxes with a real GoHighLevel test location —
-    that is the live leg B-U15 defers to the operator (mirrors item 1's
-    mount-proof live leg). This unit's tests prove the comparator's logic is
+    against a real GoHighLevel test location is the live leg, deferred to
+    the operator. This unit's tests prove the comparator's logic is
     correct against FIXTURE receipts (hermetic, no network) — never a
     fabricated pass on a receipt this module invented itself.
 
-    `run_fixture_ground_truth()` / the `run` CLI subcommand (below) CLOSE the
-    "which script actually produces a compare()-ready receipt" gap: they
-    drive `v2_dispatcher.dispatch_one()` with a deterministic, no-network
-    fixture builder/verifier and assemble a receipt in the EXACT
-    `GROUND_TRUTH_REQUIRED_FIELDS` shape. This is still the OFFLINE/FIXTURE
-    tier (same fixture-injection contract `tests/test_v2_dispatcher.py`
-    already proves) — running this SAME command unmodified on a real Mac and
-    a real VPS (swapping the fixture builder/verifier for the real
-    `ghl_survey_builder`/`ghl_verify` pair against a designated GHL test
-    location) is the genuine live leg, still owed to the operator, never
-    fabricated here. `browser_manager` / `v2_dispatcher` are imported LAZILY
-    inside `run_fixture_ground_truth()` (not at module top-level) so
-    `validate`/`compare` — the pure, dependency-free comparator this module
-    started as — never pay for the heavier dispatcher import graph.
+    `run_fixture_ground_truth()` / the `run` CLI subcommand (below) CLOSE
+    the "which script actually produces a compare()-ready receipt" gap:
+    they drive `v2_dispatcher.dispatch_one()` with a deterministic,
+    no-network fixture builder/verifier and assemble a receipt in the
+    EXACT `GROUND_TRUTH_REQUIRED_FIELDS` shape. This is still the
+    OFFLINE/FIXTURE tier (same fixture-injection contract
+    `tests/test_v2_dispatcher.py` already proves) — running this SAME
+    command unmodified with the real `ghl_survey_builder`/`ghl_verify`
+    pair against a designated GHL test location is the genuine live leg,
+    still owed to the operator, never fabricated here.
+    `browser_manager` / `v2_dispatcher` are imported LAZILY inside
+    `run_fixture_ground_truth()` (not at module top-level) so
+    `validate`/`compare` — the pure, dependency-free comparator this
+    module started as — never pay for the heavier dispatcher import graph.
 
 CLI
 ---
     python3 ghl_env_matrix_ground_truth.py validate <receipt.json>
-    python3 ghl_env_matrix_ground_truth.py compare <mac_receipt.json> <vps_receipt.json>
+    python3 ghl_env_matrix_ground_truth.py compare <receipt_a.json> <receipt_b.json>
     python3 ghl_env_matrix_ground_truth.py run --evidence-root <dir> [--box-label <name>] [--run-id <id>]
     python3 ghl_env_matrix_ground_truth.py --selftest
 """
@@ -108,70 +110,78 @@ def _check(checks: List[dict], name: str, ok: bool, detail: str) -> None:
     checks.append({"check": name, "pass": bool(ok), "detail": detail})
 
 
-def compare_ground_truth(mac_receipt: dict, vps_receipt: dict) -> dict:
-    """Compare a Mac-box and a VPS-box ground-truth receipt for the parity
-    B-U15 acceptance (b) requires. Returns ``{"pass": bool, "checks": [...],
-    "ts": ...}`` — the same shape as the existing `routing/form-preflight.json`
-    convention elsewhere in this skill, so any consumer that already knows how
-    to read a preflight-style receipt reads this one too."""
+def _harness_root_ok(root: Any) -> bool:
+    """A durable root is in harness form when it is a non-empty string that
+    carries no OpenClaw host convention (no /data/.openclaw, no ~/.openclaw
+    or any *.openclaw path segment)."""
+    if not isinstance(root, str) or not root.strip():
+        return False
+    if root == "/data/.openclaw" or root.startswith("/data/.openclaw"):
+        return False
+    if "/.openclaw" in root or root.endswith(".openclaw"):
+        return False
+    return True
+
+
+def compare_ground_truth(receipt_a: dict, receipt_b: dict) -> dict:
+    """Compare two ground-truth receipts (two runs in this harness).
+
+    Parity in the 999 harness means: both receipts are well-formed, BOTH
+    show the harness resolution (is_vps False, supervisor "none", durable
+    root in harness form), and both builds actually passed (dispatch,
+    build, verify, FAB-QC gate + threshold, non-zero receipts)."""
     checks: List[dict] = []
 
-    mac_problems = validate_ground_truth_receipt(mac_receipt)
-    _check(checks, "GT-01:mac_receipt_schema", not mac_problems,
-           "well-formed" if not mac_problems else "; ".join(mac_problems))
-    vps_problems = validate_ground_truth_receipt(vps_receipt)
-    _check(checks, "GT-02:vps_receipt_schema", not vps_problems,
-           "well-formed" if not vps_problems else "; ".join(vps_problems))
+    a_problems = validate_ground_truth_receipt(receipt_a)
+    _check(checks, "GT-01:a_receipt_schema", not a_problems,
+           "well-formed" if not a_problems else "; ".join(a_problems))
+    b_problems = validate_ground_truth_receipt(receipt_b)
+    _check(checks, "GT-02:b_receipt_schema", not b_problems,
+           "well-formed" if not b_problems else "; ".join(b_problems))
 
-    if mac_problems or vps_problems:
-        # Cannot safely compare fields the schema check already flagged as
-        # missing/malformed — fail closed rather than KeyError.
-        return {"pass": False, "checks": checks, "ts": _now()}
+    if a_problems or b_problems:
+        return {"pass": False, "checks": checks}
 
-    _check(checks, "GT-03:mac_is_not_vps", mac_receipt["is_vps"] is False,
-           f"mac_receipt.is_vps={mac_receipt['is_vps']!r} (expected False)")
-    _check(checks, "GT-04:vps_is_vps", vps_receipt["is_vps"] is True,
-           f"vps_receipt.is_vps={vps_receipt['is_vps']!r} (expected True)")
+    _check(checks, "GT-03:a_is_not_vps", receipt_a["is_vps"] is False,
+           f"receipt_a.is_vps={receipt_a['is_vps']!r} (expected False)")
+    _check(checks, "GT-04:b_is_not_vps", receipt_b["is_vps"] is False,
+           f"receipt_b.is_vps={receipt_b['is_vps']!r} (expected False)")
 
-    mac_root = mac_receipt["durable_root"]
-    vps_root = vps_receipt["durable_root"]
-    _check(checks, "GT-05:mac_durable_root_not_vps_convention",
-           mac_root != "/data/.openclaw" and not mac_root.startswith("/data/.openclaw"),
-           f"mac_receipt.durable_root={mac_root!r}")
-    _check(checks, "GT-06:vps_durable_root_is_data_openclaw",
-           vps_root == "/data/.openclaw",
-           f"vps_receipt.durable_root={vps_root!r} (expected '/data/.openclaw')")
+    _check(checks, "GT-05:a_durable_root_harness_form",
+           _harness_root_ok(receipt_a["durable_root"]),
+           f"receipt_a.durable_root={receipt_a['durable_root']!r}")
+    _check(checks, "GT-06:b_durable_root_harness_form",
+           _harness_root_ok(receipt_b["durable_root"]),
+           f"receipt_b.durable_root={receipt_b['durable_root']!r}")
 
-    _check(checks, "GT-07:mac_supervisor_launchd", mac_receipt["supervisor"] == "launchd",
-           f"mac_receipt.supervisor={mac_receipt['supervisor']!r}")
-    _check(checks, "GT-08:vps_supervisor_pm2_or_systemd", vps_receipt["supervisor"] == "pm2-or-systemd",
-           f"vps_receipt.supervisor={vps_receipt['supervisor']!r}")
+    _check(checks, "GT-07:a_supervisor_none", receipt_a["supervisor"] == "none",
+           f"receipt_a.supervisor={receipt_a['supervisor']!r}")
+    _check(checks, "GT-08:b_supervisor_none", receipt_b["supervisor"] == "none",
+           f"receipt_b.supervisor={receipt_b['supervisor']!r}")
 
-    for label, receipt in (("mac", mac_receipt), ("vps", vps_receipt)):
+    for label, receipt in (("a", receipt_a), ("b", receipt_b)):
         _check(checks, f"GT-09:{label}_dispatch_ok", receipt["dispatch_ok"] is True,
-               f"{label}_receipt.dispatch_ok={receipt['dispatch_ok']!r}")
+               f"{label}.dispatch_ok={receipt['dispatch_ok']!r}")
         _check(checks, f"GT-10:{label}_build_ok", receipt["build_ok"] is True,
-               f"{label}_receipt.build_ok={receipt['build_ok']!r}")
+               f"{label}.build_ok={receipt['build_ok']!r}")
         _check(checks, f"GT-11:{label}_verify_passed", receipt["verify_passed"] is True,
-               f"{label}_receipt.verify_passed={receipt['verify_passed']!r}")
+               f"{label}.verify_passed={receipt['verify_passed']!r}")
         _check(checks, f"GT-12:{label}_fab_qc_gate_pass", receipt["fab_qc_gate"] == "PASS",
-               f"{label}_receipt.fab_qc_gate={receipt['fab_qc_gate']!r}")
-        score = receipt["fab_qc_score"]
+               f"{label}.fab_qc_gate={receipt['fab_qc_gate']!r}")
         _check(checks, f"GT-13:{label}_fab_qc_score_meets_threshold",
-               score >= FAB_QC_PASS_THRESHOLD,
-               f"{label}_receipt.fab_qc_score={score!r} (threshold {FAB_QC_PASS_THRESHOLD})")
+               isinstance(receipt["fab_qc_score"], (int, float))
+               and receipt["fab_qc_score"] >= FAB_QC_PASS_THRESHOLD,
+               f"{label}.fab_qc_score={receipt['fab_qc_score']!r} (threshold {FAB_QC_PASS_THRESHOLD})")
         _check(checks, f"GT-14:{label}_receipts_total_nonzero", receipt["receipts_total"] > 0,
-               f"{label}_receipt.receipts_total={receipt['receipts_total']!r} — a build that "
-               f"wrote zero object receipts proves nothing (F6 'no receipt = not created')")
+               f"{label}.receipts_total={receipt['receipts_total']!r}")
 
-    overall = all(c["pass"] for c in checks)
-    return {"pass": overall, "checks": checks, "ts": _now()}
+    return {"pass": all(c["pass"] for c in checks), "checks": checks}
 
 
-def assert_ground_truth_parity(mac_receipt: dict, vps_receipt: dict) -> None:
+def assert_ground_truth_parity(receipt_a: dict, receipt_b: dict) -> None:
     """Raise ``GroundTruthMismatch`` unless every comparator check passes —
     the fail-closed entrypoint a build-unit gate calls."""
-    result = compare_ground_truth(mac_receipt, vps_receipt)
+    result = compare_ground_truth(receipt_a, receipt_b)
     if not result["pass"]:
         failed = [c for c in result["checks"] if not c["pass"]]
         detail = "; ".join(f"{c['check']}: {c['detail']}" for c in failed)
@@ -325,11 +335,11 @@ def _selftest() -> int:
 
     def _fixture(**overrides) -> dict:
         base = {
-            "box_label": "fixture-mac",
+            "box_label": "fixture-a",
             "platform": "darwin",
-            "durable_root": "/Users/fixture/.openclaw",
+            "durable_root": "/home/fixture/skills/ghl-install-pages/state",
             "is_vps": False,
-            "supervisor": "launchd",
+            "supervisor": "none",
             "run_id": "gt-fixture-1",
             "dispatch_ok": True,
             "build_ok": True,
@@ -341,72 +351,72 @@ def _selftest() -> int:
         base.update(overrides)
         return base
 
-    mac = _fixture()
-    vps = _fixture(
-        box_label="fixture-vps", platform="linux",
-        durable_root="/data/.openclaw", is_vps=True, supervisor="pm2-or-systemd",
+    a = _fixture()
+    b = _fixture(
+        box_label="fixture-b", platform="linux",
+        durable_root="/opt/install/.claude/skills/ghl-install-pages/state",
         run_id="gt-fixture-2",
     )
 
     # 1. Well-formed matching receipts -> overall pass, every check passes.
-    result = compare_ground_truth(mac, vps)
+    result = compare_ground_truth(a, b)
     if not result["pass"]:
-        errors.append(f"matching mac+vps receipts should compare pass=True: {result}")
+        errors.append(f"matching harness receipts should compare pass=True: {result}")
     if not all(c["pass"] for c in result["checks"]):
         errors.append(f"expected all checks to pass on a clean fixture pair: {result['checks']}")
 
     # 2. assert_ground_truth_parity does not raise on a clean pair.
     try:
-        assert_ground_truth_parity(mac, vps)
+        assert_ground_truth_parity(a, b)
     except GroundTruthMismatch as exc:
         errors.append(f"assert_ground_truth_parity should not raise on a clean pair: {exc}")
 
     # 3. validate_ground_truth_receipt: missing field surfaces by name.
-    broken = dict(mac)
+    broken = dict(a)
     del broken["fab_qc_score"]
     problems = validate_ground_truth_receipt(broken)
     if not any("fab_qc_score" in p for p in problems):
         errors.append(f"missing fab_qc_score should be reported: {problems}")
 
     # 4. compare_ground_truth fails closed (never KeyErrors) on a malformed receipt.
-    result = compare_ground_truth(broken, vps)
+    result = compare_ground_truth(broken, b)
     if result["pass"] is not False:
-        errors.append(f"malformed mac receipt should fail the comparison, got {result}")
+        errors.append(f"malformed receipt should fail the comparison, got {result}")
 
-    # 5. Swapped is_vps (Mac box reporting is_vps=True) is caught, not silently passed.
-    bad_mac = _fixture(is_vps=True)
-    result = compare_ground_truth(bad_mac, vps)
+    # 5. A receipt claiming is_vps=True is caught, not silently passed.
+    bad_a = _fixture(is_vps=True)
+    result = compare_ground_truth(bad_a, b)
     if result["pass"] is not False:
-        errors.append("a Mac receipt claiming is_vps=True should fail GT-03")
-    gt03 = next(c for c in result["checks"] if c["check"] == "GT-03:mac_is_not_vps")
+        errors.append("a receipt claiming is_vps=True should fail GT-03")
+    gt03 = next(c for c in result["checks"] if c["check"] == "GT-03:a_is_not_vps")
     if gt03["pass"] is not False:
         errors.append(f"GT-03 should specifically fail: {gt03}")
 
-    # 6. Wrong durable_root convention on the VPS side is caught.
-    bad_vps = _fixture(box_label="bad-vps", platform="linux", is_vps=True,
-                        supervisor="pm2-or-systemd", durable_root="/Users/wrong/.openclaw")
-    result = compare_ground_truth(mac, bad_vps)
+    # 6. An OpenClaw-shaped durable_root is caught on either side.
+    bad_b = _fixture(box_label="bad-b", platform="linux",
+                     durable_root="/data/.openclaw")
+    result = compare_ground_truth(a, bad_b)
     if result["pass"] is not False:
-        errors.append("a VPS receipt with a Mac-shaped durable_root should fail GT-06")
+        errors.append("a receipt with an OpenClaw-shaped durable_root should fail GT-06")
 
     # 7. A sub-threshold FAB-QC score fails the parity check (the standing 8.5 gate).
-    low_score_vps = _fixture(box_label="low-vps", platform="linux", is_vps=True,
-                              supervisor="pm2-or-systemd", durable_root="/data/.openclaw",
-                              fab_qc_score=7.9, fab_qc_gate="FAIL")
-    result = compare_ground_truth(mac, low_score_vps)
+    low_score_b = _fixture(box_label="low-b", platform="linux",
+                           durable_root="/opt/install/.claude/skills/ghl-install-pages/state",
+                           fab_qc_score=7.9, fab_qc_gate="FAIL")
+    result = compare_ground_truth(a, low_score_b)
     if result["pass"] is not False:
         errors.append("a sub-8.5 fab_qc_score should fail the parity comparison")
     try:
-        assert_ground_truth_parity(mac, low_score_vps)
+        assert_ground_truth_parity(a, low_score_b)
         errors.append("assert_ground_truth_parity must raise on a sub-8.5 score")
     except GroundTruthMismatch:
         pass
 
     # 8. Zero receipts_total (vacuous "pass") is caught (F6 discipline).
-    vacuous_vps = _fixture(box_label="vacuous-vps", platform="linux", is_vps=True,
-                            supervisor="pm2-or-systemd", durable_root="/data/.openclaw",
-                            receipts_total=0)
-    result = compare_ground_truth(mac, vacuous_vps)
+    vacuous_b = _fixture(box_label="vacuous-b", platform="linux",
+                         durable_root="/opt/install/.claude/skills/ghl-install-pages/state",
+                         receipts_total=0)
+    result = compare_ground_truth(a, vacuous_b)
     if result["pass"] is not False:
         errors.append("receipts_total=0 should fail the parity comparison (F6: no receipt = not created)")
 
@@ -438,9 +448,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     sp = sub.add_parser("validate", help="Validate one ground-truth receipt file.")
     sp.add_argument("receipt_path")
 
-    sp2 = sub.add_parser("compare", help="Compare a Mac and a VPS ground-truth receipt file.")
-    sp2.add_argument("mac_receipt_path")
-    sp2.add_argument("vps_receipt_path")
+    sp2 = sub.add_parser("compare", help="Compare two ground-truth receipt files (harness parity).")
+    sp2.add_argument("receipt_a_path")
+    sp2.add_argument("receipt_b_path")
 
     sp3 = sub.add_parser(
         "run",
@@ -478,9 +488,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     if args.cmd == "compare":
-        with open(args.mac_receipt_path, encoding="utf-8") as fh:
+        with open(args.receipt_a_path, encoding="utf-8") as fh:
             mac = json.load(fh)
-        with open(args.vps_receipt_path, encoding="utf-8") as fh:
+        with open(args.receipt_b_path, encoding="utf-8") as fh:
             vps = json.load(fh)
         result = compare_ground_truth(mac, vps)
         print(json.dumps(result, indent=2))

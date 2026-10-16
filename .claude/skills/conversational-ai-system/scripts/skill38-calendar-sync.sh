@@ -5,22 +5,22 @@
 # Generic — works for ANY client. Reads creds from the client's env file.
 #
 # Usage: skill38-calendar-sync.sh [TOOLS_MD_PATH]
-# Cron:  Sundays (e.g. "0 9 * * 0").
+# Schedule: weekly on the operator's scheduler (e.g. Sunday 09:00).
 set -uo pipefail
 
-# --- locate env (Mac vs VPS) ---
-for ENVF in "$HOME/clawd/secrets/.env" "/data/.openclaw/.env" "$HOME/.openclaw/.env" "/data/clawd/secrets/.env"; do
-  [ -f "$ENVF" ] && { set -a; . "$ENVF" 2>/dev/null; set +a; break; }
-done
+# --- locate env (999 harness): the install secrets env designated by
+# $SECRETS_ENV; otherwise the process environment. No OpenClaw/clawd paths. ---
+if [ -n "${SECRETS_ENV:-}" ] && [ -f "$SECRETS_ENV" ]; then
+  set -a; . "$SECRETS_ENV" 2>/dev/null; set +a
+fi
 
 PIT="${GHL_PRIVATE_INTEGRATION_TOKEN:-${GHL_API_KEY:-}}"
 LOC="${GHL_LOCATION_ID:-}"
 TOOLS="${1:-}"
 
 if [ -z "$TOOLS" ]; then
-  for T in "/data/.openclaw/workspace/TOOLS.md" "$HOME/.openclaw/workspace/TOOLS.md"; do
-    [ -f "$T" ] && TOOLS="$T" && break
-  done
+  WS_ROOT="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+  [ -f "$WS_ROOT/TOOLS.md" ] && TOOLS="$WS_ROOT/TOOLS.md"
 fi
 
 [ -z "$PIT" ] && { echo "[calendar-sync] ERROR: no GHL token in env"; exit 2; }

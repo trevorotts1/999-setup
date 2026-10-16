@@ -24,11 +24,14 @@ case "$OS_KERNEL" in
 esac
 
 # -------- Inputs --------
-MASTER_FILES_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+# Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+# pointer is the master-files-dir file inside this skill directory (the
+# OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+MASTER_FILES_POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
 if [ -f "$MASTER_FILES_POINTER" ]; then
   MASTER_FILES_DIR="$(cat "$MASTER_FILES_POINTER")"
 else
-  MASTER_FILES_DIR="${MASTER_FILES_DIR:-${HOME}/.openclaw/skill-38-master-files}"
+  MASTER_FILES_DIR="${MASTER_FILES_DIR:-}"
 fi
 
 # Resolve the skill root DYNAMICALLY from this script's own location — this script

@@ -174,7 +174,9 @@ fi
 
 # 2b. AGENTS.md Step 2.9 block — LIVE FILE assertion (content-version-aware).
 if [ -z "${AGENTS_MD:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+  # Workspace binding (999 harness): the core file lives at the install repo
+  # root (env GHL_WORKSPACE wins; AGENTS_MD may be set directly).
+  if [ -z "${AGENTS_MD:-}" ]; then WS_ROOT="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"; AGENTS_MD="$WS_ROOT/AGENTS.md"; fi
 fi
 if [ -f "$AGENTS_MD" ]; then
   if grep -qF 'STEP_2_9_WEBHOOK_CHAINING' "$AGENTS_MD"; then

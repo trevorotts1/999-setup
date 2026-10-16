@@ -46,7 +46,7 @@ protocol.md). Includes:
 ## Monthly comprehensive report
 
 Generated on the 1st of each month at 9 AM. Replaces the standalone
-System Health Heartbeat (Step 3.5H) — same cron job, expanded scope.
+System Health Heartbeat (Step 3.5H) — same scheduled job, expanded scope.
 Includes everything from the weekly digest, plus:
 
 - Knowledge Source utilization (which sources are queried, which
@@ -76,7 +76,7 @@ log.md, and the embeddings-powered semantic clustering for topic
 analysis. No external dependencies beyond what's already configured.
 ```
 
-**B. Update cron job registration** — the existing `system-health-heartbeat` cron (Step 3.5H) becomes the monthly comprehensive report. Add a new cron for the weekly digest:
+**B. Update the scheduled jobs** — the existing `system-health-heartbeat` job on the operator's scheduler (Step 3.5H) becomes the monthly comprehensive report. Add a new scheduled job for the weekly digest:
 
 ```json
 {
@@ -88,5 +88,5 @@ analysis. No external dependencies beyond what's already configured.
 }
 ```
 
-**C. Append to Run Manifest:** "Step 9.17 complete — analytics-dashboard-protocol.md created, weekly digest cron registered, monthly report merged into existing heartbeat."
+**C. Append to Run Manifest:** "Step 9.17 complete — analytics-dashboard-protocol.md created, weekly digest scheduled, monthly report merged into existing heartbeat."
 

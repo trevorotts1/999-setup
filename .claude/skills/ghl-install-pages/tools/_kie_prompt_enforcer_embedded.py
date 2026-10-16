@@ -62,8 +62,9 @@ def find_adapter():
     if env is not None:
         return env if env and os.path.isfile(env) else None
     here = os.path.dirname(os.path.abspath(__file__))
-    roots = [os.path.abspath(os.path.join(here, "..")), os.environ.get("OPENCLAW_SKILLS_DIR") or "",
-             os.path.join(os.path.expanduser("~"), ".openclaw", "skills"), "/data/.openclaw/skills"]
+    # 999 harness: the adapter is designated via KIE_LIVE_ADAPTER_PATH (above)
+    # or SKILL6_KIE_ADAPTER_ROOT; no OpenClaw skills tree is probed.
+    roots = [os.path.abspath(os.path.join(here, "..")), os.environ.get("SKILL6_KIE_ADAPTER_ROOT") or ""]
     for r in roots:
         for name in ("74-kie-live-adapter", "kie-live-adapter"):
             p = os.path.join(r, name, "scripts", "kie_live_adapter.py") if r else ""

@@ -87,14 +87,15 @@ EOF
     """))
     caf_bin.chmod(caf_bin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
-    # Point HOME to a fresh dir so the mac CAF_DATA path has no snapshot.
+    # Point HOME to a fresh dir and CAF_DATA_DIR at a fresh empty data dir
+    # so the snapshot lookup finds no prior snapshot.
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
     env["PATH"] = str(tmp_path) + ":" + env.get("PATH", "")
     env["HOME"] = str(fake_home)
-    env["OPENCLAW_PLATFORM"] = "mac"
+    env["CAF_DATA_DIR"] = str(tmp_path / "caf-data")
     return env, tmp_path
 
 
@@ -102,11 +103,10 @@ EOF
 def stub_caf_env_with_snapshot(tmp_path):
     """Like stub_caf_env but pre-creates a snapshot for WF-18/WF-21 PASS tests.
 
-    The script (qc-built-workflow.sh) computes SNAPSHOT_DIR as:
-      mac:  $HOME/.openclaw/tools/convert-and-flow-cli/data/snapshots
-      vps:  /data/.openclaw/tools/convert-and-flow-cli/data/snapshots
-    We override HOME so the mac path lands under tmp_path, then pre-seed the
-    snapshot at: $HOME/.openclaw/tools/convert-and-flow-cli/data/snapshots/WFTEST001/
+    The script (qc-built-workflow.sh) computes SNAPSHOT_DIR from the
+    engine's data root: $CAF_DATA_DIR/snapshots when CAF_DATA_DIR is set,
+    else the in-tree engine data dir. We set CAF_DATA_DIR under tmp_path,
+    then pre-seed the snapshot at: $CAF_DATA_DIR/snapshots/WFTEST001/
     """
     caf_bin = tmp_path / "caf"
     caf_bin.write_text(textwrap.dedent("""\
@@ -138,20 +138,16 @@ EOF
     """))
     caf_bin.chmod(caf_bin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
-    # Pre-seed snapshot under the mac CAF_DATA path ($HOME-based).
+    # Pre-seed snapshot under the CAF_DATA_DIR the run will use.
     fake_home = tmp_path / "fakehome"
-    snap_dir = (
-        fake_home
-        / ".openclaw" / "tools" / "convert-and-flow-cli" / "data"
-        / "snapshots" / "WFTEST001"
-    )
+    snap_dir = tmp_path / "caf-data" / "snapshots" / "WFTEST001"
     snap_dir.mkdir(parents=True, exist_ok=True)
     (snap_dir / "20260601T000000Z.json").write_text('{"id":"WFTEST001"}')
 
     env = os.environ.copy()
     env["PATH"] = str(tmp_path) + ":" + env.get("PATH", "")
     env["HOME"] = str(fake_home)
-    env["OPENCLAW_PLATFORM"] = "mac"
+    env["CAF_DATA_DIR"] = str(tmp_path / "caf-data")
     return env, tmp_path
 
 

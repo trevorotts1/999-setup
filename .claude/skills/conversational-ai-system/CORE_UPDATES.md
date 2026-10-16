@@ -97,7 +97,7 @@ The system's USP is **communication-driven funnels / automations** — built by 
 16. **Convert-and-Flow Build-Path Rule (CAF-first)** — GHL Automations have no PUBLIC API or MCP, but Skill 44's internal-API path (Tier 0) IS a programmatic build path. When the client's Firebase token is present, Skill 44 builds the workflow directly (Option 1, PRIMARY — the owner does nothing). When the token is absent, fall back to GHL's "Build with AI" button (Option 2, the no-token fallback). (Never claim a PUBLIC GHL Automations API exists.)
 17. **3-PART Build Rule** — every build ships Part 1 (Workflow AI instruction set: Build-with-AI prompt + manual-build fallback + verification checklist), Part 2 (the conversation playbook → registered in `conversation-workflows/registry.md`), and Part 3 (the brainstorm trigger). The prompt nails the SHAPE; tokens are pasted by the operator after — always ship the verification checklist.
 18. **Brainstorm-Not-50-Questions Rule** — run a friendly proactive Q&A: USE what's already known (Typed KBs + USER.md + MEMORY.md), ask ONLY the smart gaps, then regurgitate a CONCISE "is this what you want?" confirmation. On YES → build Part 1 → Part 2 → pointer into AGENTS.md/TOOLS.md/MEMORY.md → NEW Notion doc (client's own workspace) → register.
-19. **Mac Env Rule** — on Mac, secrets live in **`~/clawd/secrets/.env`** AND/OR **`~/.openclaw/.env`** — check BOTH before claiming a key is missing (VPS uses `/docker/<project>/.env`; Mac does not).
+19. **Secrets Env Rule** — secrets live in the install's secrets env (the file `$SECRETS_ENV` designates) or as already-exported environment variables — check BOTH before claiming a key is missing.
 
 ### v1.8.0 CloseBot Alignment Upgrade additions (17 cards U-1..U-17)
 

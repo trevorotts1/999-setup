@@ -11,22 +11,23 @@ reactive reply.
 > **Honest scope.** This ships the campaign-engine PROTOCOL + the campaign-definition
 > format + the example seed campaign + the PII-free F52 log + the cron/event wiring
 > documentation. It is the OUTBOUND counterpart to the inbound reply system: it
-> reuses the existing Communication Playbooks (tone/voice), the existing
-> `openclaw cron` mechanism, the existing GHL tag/contact APIs, and the existing
+> reuses the existing Communication Playbooks (tone/voice), the operator's
+> scheduler, the existing GHL tag/contact APIs, and the existing
 > quiet-hours + compliance hard-gates. It does NOT build a new email/SMS sending
 > service, a new scheduler, or a new CRM — sends go through the same GHL Conversations
-> API path every reply uses, schedules run on the same `openclaw cron` the rest of the
-> skill uses, and the audience is a GHL tag query against the operator's own CRM.
+> API path every reply uses, schedules run on the operator's scheduler the same way
+> the rest of the skill's recurring work is scheduled, and the audience is a GHL tag
+> query against the operator's own CRM.
 > Default OFF (opt-in advanced feature). The actual SEND is operator-gated (see
 > "Operator-only / never customer-invoked").
 
 ## Relationship to F29 Intelligent Follow-up — this is the infrastructure F29 MIGRATES onto
 
 F29 (`intelligent-followup-protocol.md`, Step 9.23 hand-off) currently schedules its
-10-touchpoint stalled-lead cadence with direct `openclaw cron` calls — its own
+10-touchpoint stalled-lead cadence with direct scheduler calls — its own
 "Pre-Feature-15 implementation" note says so explicitly:
 
-> "This protocol uses direct OpenClaw cron scheduling until Feature 15 (Proactive
+> "This protocol uses direct scheduler calls until Feature 15 (Proactive
 > Outreach Campaigns) ships. Once F15 lands, this protocol will migrate to F15's
 > outreach infrastructure for centralized campaign management."
 
@@ -43,11 +44,13 @@ applied; ten time-offset touches; opt-out on negative signal). When F29 migrates
 - Its firings log to `outreach-events.jsonl` (this engine's contract) so cadence
   analytics live alongside every other campaign.
 
-Until F29 is migrated, the two coexist: F29 keeps its direct-cron implementation and
+Until F29 is migrated, the two coexist: F29 keeps its direct-scheduler implementation and
 F15 runs the campaigns defined under `outreach-campaigns/`. This protocol does not
 rip F29 out — it is the destination F29 moves to, on F29's own schedule.
 
-## openclaw.json toggle — default OFF
+## Configuration toggle — default OFF
+
+In the install's skill38 configuration:
 
 ```json
 {
@@ -93,8 +96,8 @@ six required parts:
 1. **trigger** — WHEN the campaign fires. Two kinds:
    - **time-based** (`trigger.type: cron`) — a cron expression (`trigger.cron`) the
      campaign runs on (e.g. a weekly cold-lead re-engagement sweep, a daily
-     appointment-reminder pass). Registered via `openclaw cron` (see "Cron + event
-     wiring").
+     appointment-reminder pass). Registered with the operator's scheduler
+     (see "Cron + event wiring").
    - **event-based** (`trigger.type: event`) — fires when a GHL/agent event occurs
      (`trigger.event`), e.g. a tag is applied (`ZHC-stalled-sales` → the F29 cadence),
      an appointment is booked (→ schedule a reminder), a purchase completes (→
@@ -249,10 +252,12 @@ outreach engine is NOT an inbound-reply step — it has no place in the
 inbound-message Step 9.x pipeline because it does not run on a customer message. It is
 driven two ways:
 
-- **Time-based campaigns** are registered as `openclaw cron` jobs (one cron per
-  time-based campaign, named `outreach-<campaign-id>`), reusing the same
-  `openclaw cron` mechanism `scripts/04-register-crons.sh` uses for the weekly tune-up
-  etc. When the cron fires, the engine loads that campaign, resolves the audience,
+- **Time-based campaigns** are registered as jobs on the operator's scheduler
+  (one job per time-based campaign, named `outreach-<campaign-id>`), the same
+  scheduling route the skill's other recurring work (for example the weekly
+  tune-up) uses. Recurring host scheduling is the operator's own setup in this
+  harness; the pack ships no scheduler registration machinery. When the job
+  fires, the engine loads that campaign, resolves the audience,
   applies quiet-hours + frequency-cap + opt-out filters, renders through the
   Communication Playbook, and (gated by operator approval) sends + tags + logs.
 - **Event-based campaigns** are evaluated when their trigger event fires (a tag
@@ -262,7 +267,7 @@ driven two ways:
 
 Because it is cron/event-driven, F15 documents these hooks here (per the assignment)
 rather than inserting an AGENTS.md inbound-reply marker block — there is intentionally
-NO `STEP_9_46` inbound block in `scripts/05-update-agents-md.sh`.
+NO `STEP_9_46` inbound block in the AGENTS.md standing rules.
 
 ## Logging (the data contract — F52)
 
@@ -310,7 +315,8 @@ The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract 
 
 ## MEMORY.md (Rule 28)
 
-When proactive outreach is ON (`skill38.proactive_outreach.enabled` true, default
+When proactive outreach is ON (the install's skill38 configuration key
+`proactive_outreach.enabled` true, default
 OFF), the agent runs SCHEDULED OUTBOUND campaigns (cold-lead re-engagement, appointment
 reminders, post-purchase follow-up, win-back, birthday/anniversary) defined per file
 under `<MASTER_FILES_DIR>/outreach-campaigns/`. Each campaign = a trigger (cron OR
@@ -335,5 +341,5 @@ Log PII-free to `outreach-events.jsonl`. See
 - Tag namespace: `protocols/zhc-tag-prefix-protocol.md` (Step 9.42).
 - The feature that migrates onto this engine: `protocols/intelligent-followup-protocol.md` (F29).
 - Outbound-injection guard (customer can't drive a campaign): `protocols/prompt-injection-protection-protocol.md`.
-- Cron mechanism reused: `scripts/04-register-crons.sh`.
+- Scheduling: the operator's scheduler (see "Cron + event wiring").
 - INSTRUCTIONS.md Step 9.46.

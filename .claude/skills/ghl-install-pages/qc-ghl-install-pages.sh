@@ -5,7 +5,7 @@ PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
 LIB="$SKILL_DIR/../lib-shared.sh"; [ -f "$LIB" ] && source "$LIB"
 if ! command -v resolve_platform_paths >/dev/null 2>&1; then
-  resolve_platform_paths() { export SECRETS_ENV="$HOME/.openclaw/secrets/.env" WORKSPACE="$HOME/clawd" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"; }
+  resolve_platform_paths() { export SECRETS_ENV="${SECRETS_ENV:-}" WORKSPACE="$(cd "$SKILL_DIR/../../.." && pwd)" SKILLS_DIR_DEFAULT="$(cd "$SKILL_DIR/.." && pwd)"; }
 fi
 resolve_platform_paths
 red(){ printf "\033[31m%s\033[0m\n" "$1"; }; green(){ printf "\033[32m%s\033[0m\n" "$1"; }; yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
@@ -27,17 +27,17 @@ echo ""
 # build-rail file set) still cites real, unchanged ground truth on the
 # committed branch. See docs/tools/check_lattice_citation.py.
 REPO_ROOT_LATTICE="$(cd "$(dirname "$0")/.." && pwd)"
-# LAYOUT NOTE: this is a REPO-integrity check. On a client box the skill lives in
-# ~/.openclaw/skills/, whose parent has no docs/ dir (the updater delivers skills,
-# not repo docs), so the checker is absent there. SKIP VISIBLY, exactly as
-# 35-social-media-planner/qc-skill35.sh does, instead of failing every good box.
+# LAYOUT NOTE: this is a REPO-integrity check. In this harness the skill lives
+# in .claude/skills/, and the repo root here has no docs/ dir (the lattice
+# checker ships with the source repo, not with this pack), so the checker is
+# absent. SKIP VISIBLY instead of failing every good install.
 if [ -f "$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py" ]; then
   assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
     "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 06-ghl-install-pages -q"
 else
   echo "  SKIP: GK-27 lattice citation tripwire -- checker not present in this layout (installed-skill layout, not a repo checkout)"
 fi
-SK="$SKILLS_DIR_DEFAULT/06-ghl-install-pages"
+SK="$SKILLS_DIR_DEFAULT/ghl-install-pages"
 assert "Skill 06 folder present" "[ -d \"$SK\" ]"
 
 # ── Adaptive capability probe (plan 2.4-1 / 9.6): probe → classify → select ──

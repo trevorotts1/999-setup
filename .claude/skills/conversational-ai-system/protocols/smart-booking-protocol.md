@@ -153,7 +153,7 @@ When customer agrees to a slot:
   link, any prep info
 - Tag contact `booked-<date>`
 - If a reminder was offered, schedule a reminder per Feature 15 outreach
-  infrastructure (once shipped) or directly via OpenClaw cron
+  infrastructure (once shipped) or directly via the operator's scheduler
 
 ## Waitlist management
 

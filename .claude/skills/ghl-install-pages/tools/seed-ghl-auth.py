@@ -118,7 +118,7 @@ Primary (silent, unattended): a refresh token resolved from, in order:
     GHL_FIREBASE_REFRESH_TOKEN          (legacy)
   grabbed by the Convert and Flow / Scale-44 Token Grabber Chrome extension
   (44-convert-and-flow-operator/tools/chrome-extension/) from the client's OWN
-  logged-in browser, then stored in ~/.openclaw/secrets/.env.
+  logged-in browser, then stored in the install's secrets env file.
 
 MANUAL last resort (NEVER auto-invoked — operator only): GHL_AGENCY_EMAIL /
   GHL_AGENCY_PASSWORD (or older GHL_EMAIL / GHL_PASSWORD). These exist ONLY so a
@@ -514,7 +514,7 @@ def main() -> int:
             sys.stderr.write(
                 "Refresh token is REVOKED/expired. Re-grab it via the Convert and Flow "
                 "Token Grabber Chrome extension (44-convert-and-flow-operator/tools/chrome-extension/) "
-                "from the CLIENT's own logged-in browser and update ~/.openclaw/secrets/.env.\n"
+                "from the CLIENT's own logged-in browser and update the install's secrets env file.\n"
             )
             return 3
         return 2

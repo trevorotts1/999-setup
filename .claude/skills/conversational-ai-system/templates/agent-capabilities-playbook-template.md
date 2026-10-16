@@ -13,7 +13,7 @@ applies to every outbound response.
 
 **Portability note:** This document describes BEHAVIOR, not platform-
 specific implementation. If the underlying agent platform changes
-(OpenClaw → Hermes → anything else), this playbook travels with the
+(this runtime → any other runtime), this playbook travels with the
 client. The agent on the new platform reads this same document and
 follows the same rules.
 
@@ -191,7 +191,7 @@ moves on. No reply, no engagement.
 ## 5. Model strategy
 
 The agent uses different models for different workloads to balance speed,
-cost, and quality. These preferences are written into the OpenClaw config
+cost, and quality. These preferences are written into the install's runtime configuration
 during setup and re-checked every 30 days by the System Health Heartbeat
 cron job.
 
@@ -230,7 +230,7 @@ material; quality threshold is moderate.
 
 ### 5.4 — Fallback chain
 
-OpenClaw supports per-mapping fallback model chains. When the primary
+The runtime supports per-mapping fallback model chains. When the primary
 model's provider returns an error or times out, the agent retries
 against the fallback. This means a 5-minute OpenRouter outage doesn't
 result in 5 minutes of missed customer replies — the agent fails over
@@ -248,7 +248,7 @@ operator can switch models on the spot or wait it out.
 ### 5.6 — Changing models
 
 The operator can change models any time:
-- Direct edit: edit `model` field in `~/.openclaw/openclaw.json` under
+- Direct edit: edit the `model` field in the install's configuration under
   `hooks.mappings[*]` and `cron.jobs[*]`
 - Via agent: tell the agent "switch my real-time channel model to <new
   model>", and it will update the config with appropriate validation

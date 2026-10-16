@@ -121,8 +121,9 @@ CANARY_VERSION = "v1.3.0"  # P3-04 (c)4: + run_iframe_survival_check / --iframe-
                             # ghl_selector_canary.py; + dedupe_board_notifier /
                             # clear_dedupe_state_for_resolved (idempotent
                             # SELECTOR-MISS card across the daily probe's
-                            # repeat runs); scheduled daily via
-                            # schedule/skill6-selector-drift-probe.cron.json
+                            # repeat runs); scheduled daily in the source
+                            # skill via its cron registration (in this harness
+                            # the operator's scheduler runs the daily probe)
                             # v1.3.0 (U106/E5-1): + notify_once (generic
                             # caller-keyed idempotent card gate, independent
                             # of dedupe_board_notifier's anchor/target-keyed
@@ -211,7 +212,7 @@ def load_iframe_survival_targets(path: Optional[str] = None) -> Dict[str, Any]:
     doc is a config error, not something to silently default around. An
     EMPTY ``targets`` array is valid (the check simply reports zero targets,
     clean) — this repo intentionally ships no live client URLs; the operator
-    populates real published-page URLs on the box that runs the weekly cron."""
+    populates real published-page URLs on the box that runs the weekly scheduled check."""
     p = path or DEFAULT_IFRAME_TARGETS_PATH
     with open(p, "r", encoding="utf-8") as fh:
         data = json.load(fh)
@@ -473,8 +474,7 @@ def notify_once(
 # ---------------------------------------------------------------------------
 # IDEMPOTENT board-notify wrapper (U30/B-U16 item 4) — a PERSISTENT
 # (not-yet-fixed) drift must produce EXACTLY ONE SELECTOR-MISS card across
-# REPEAT scheduled runs of the daily maintenance-window probe (see
-# schedule/skill6-selector-drift-probe.cron.json), never a fresh duplicate
+# REPEAT scheduled runs of the daily maintenance-window probe, never a fresh duplicate
 # card every time the SAME unresolved miss is re-scanned. run_canary()'s own
 # board_notifier is called once per MISS per RUN (correct, run-scoped); this
 # wrapper adds a persisted, cross-RUN ledger on top so the CALLER gets
@@ -778,7 +778,7 @@ def live_finder_over_browser_manager(session: str, ab_eval: Callable[[str, str],
     real seeded agent-browser session. ``ab_eval(session, js_expr) -> str`` is the
     thin wrapper around ``browser_manager.sh eval`` the caller already has (kept
     injectable so this module never shells out itself — same discipline as
-    ghl_object_router). A live capture run (W2) or the weekly cron canary passes
+    ghl_object_router). A live capture run (W2) or the weekly scheduled canary passes
     this factory's output into run_canary(); offline tests never call it."""
 
     def _finder(anchor: Dict[str, Any], candidate: Dict[str, Any]) -> Any:
@@ -810,7 +810,7 @@ def live_page_fetcher_over_http() -> Callable[[str], str]:
     this check makes continuous). Kept as a thin, injectable FACTORY (same
     discipline as live_finder_over_browser_manager) — constructing it performs
     NO network I/O; only calling the returned function does. Deliberately NOT
-    exercised by CI / --selftest; only the weekly cron or a live wiring calls
+    exercised by CI / --selftest; only the weekly scheduled run or a live wiring calls
     the returned callable."""
 
     def _fetch(url: str) -> str:

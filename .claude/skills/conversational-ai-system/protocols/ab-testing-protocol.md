@@ -24,7 +24,7 @@ GUESSING which tone/structure/CTA converts and starts MEASURING it.
 > signals the skill already tracks, and the significance check is a documented closed-form
 > formula computed from the PII-free event counts. Default OFF (opt-in advanced feature).
 
-## openclaw.json toggle — default OFF
+## Configuration toggle — in the install's skill38 configuration (default OFF)
 
 ```json
 {
@@ -70,7 +70,7 @@ When `enabled` is `false`, the whole protocol is a no-op (the `experiments` map 
 An experiment is defined PER CHANNEL, because tone/structure that converts on SMS differs
 from email. The definition lives in two byte-compatible places that say the same thing:
 
-1. `skill38.ab_testing.experiments` in openclaw.json (machine-readable), and
+1. `ab_testing.experiments` in the install's skill38 configuration (machine-readable), and
 2. `<MASTER_FILES_DIR>/ab-experiments/<channel>.md` (the human-readable companion the agent
    reads at the start of a turn, seeded by `scripts/25-seed-round3-feature-files.sh`).
 

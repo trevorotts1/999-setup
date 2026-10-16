@@ -3,6 +3,17 @@
 # the OpenClaw MANAGED browser CLI (`openclaw browser …`). Plan ref P1-12 /
 # 9.7-6 / Appendix A.
 #
+# 999 HARNESS FORM (claude-nine): Lane 2 does not exist in the Claude Code
+# harness — there is no OpenClaw managed browser here, and the capability
+# probe (tools/capability_probe.py) reports the lane structurally absent.
+# Every verb in this adapter therefore refuses with exit 75 and the harness
+# reason, BEFORE any CLI or capability check. The verb vocabulary and the
+# `openclaw browser` translation below are retained verbatim as the
+# documented mapping: if a future plan amendment lands a managed-browser
+# lane in this harness, the harness gate at main() is the only block that
+# changes. Skill 6's working lane in this harness is Lane 1, agent-browser
+# via browser_manager.sh, exactly as the pack ADAPTER.md seam 1 binds.
+#
 # LANE POLICY (load-bearing — read before wiring): Lane 2 is an EXPERIMENTAL
 # UPGRADE ONLY. It is NEVER selected by default. The capability probe
 # (tools/capability_probe.py) is the sole decider: this adapter runs only when
@@ -128,6 +139,18 @@ _ocb_usage_refuse() {
   exit 64
 }
 
+# ── GATE 0: harness gate (999) — Lane 2 is not part of this harness ──────────
+# Runs FIRST on every verb (after --help/--version/--selftest). Exit 75, the
+# capability-refusal code: the lane is not refused for a missing file or a
+# false flag, it is refused because the lane does not exist here.
+require_harness_lane() {
+  echo "REFUSE: Lane 2 (openclaw_managed_browser) is not part of the Claude Code" >&2
+  echo "harness (claude-nine): there is no OpenClaw managed browser here, and the" >&2
+  echo "capability probe reports the lane structurally absent. Skill 6's lane in" >&2
+  echo "this harness is agent-browser via browser_manager.sh. Aborting." >&2
+  exit 75
+}
+
 # ── GATE 1: openclaw CLI present (checked FIRST on every verb; exit 64) ───────
 require_ocb_cli() {
   if ! command -v "$OCB_BIN_NAME" >/dev/null 2>&1; then
@@ -220,6 +243,8 @@ main() {
       exit $?
       ;;
   esac
+  # 999 harness gate: every verb refuses here (see GATE 0 above).
+  require_harness_lane
   # Strip an optional `--` separator before the verb's own args.
   if [ "${1:-}" = "--" ]; then
     shift
@@ -288,10 +313,11 @@ main() {
 }
 
 # ── OFFLINE SELFTEST ──────────────────────────────────────────────────────────
-# Proves the wiring WITHOUT openclaw installed and WITHOUT ever launching a
-# browser: verb calls run either with PATH stripped to /usr/bin:/bin (where the
-# openclaw CLI does not live) or against a throwaway argv-echoing stub named
-# `openclaw`. All temp files live under mktemp (TMPDIR). No network, no secrets.
+# Proves the 999 harness gate WITHOUT ever launching a browser: every verb
+# must refuse with exit 75 + the harness reason, both on a PATH stripped to
+# /usr/bin:/bin and against a throwaway argv-echoing stub named `openclaw`
+# with a cliWorks:true capability JSON. All temp files live under mktemp
+# (TMPDIR). No network, no secrets.
 selftest() {
   _st_fails=0
   _st_pass() { echo "  ok:   $1"; }
@@ -325,21 +351,25 @@ selftest() {
     fi
   done
 
-  # 4. every verb against a PATH WITHOUT openclaw -> exit 64 + names openclaw
+  # 4. 999 harness gate: every verb refuses with exit 75 + the harness
+  #    reason, on a PATH without any openclaw CLI.
   for _st_v in status start open snapshot click type frame-snapshot stop; do
     _st_out="$(PATH="$_st_clean_path" "$_st_self" "$_st_v" arg1 arg2 2>&1)"
     _st_rc=$?
-    if [ "$_st_rc" = "64" ]; then
+    if [ "$_st_rc" = "75" ]; then
       case "$_st_out" in
-        *openclaw*) _st_pass "no-openclaw PATH: verb $_st_v -> exit 64 + names openclaw" ;;
-        *) _st_fail "no-openclaw PATH: verb $_st_v exit 64 but message does not name openclaw" ;;
+        *claude-nine*) _st_pass "harness gate: verb $_st_v -> exit 75 + names claude-nine" ;;
+        *) _st_fail "harness gate: verb $_st_v exit 75 but message does not name the harness" ;;
       esac
     else
-      _st_fail "no-openclaw PATH: verb $_st_v expected exit 64, got $_st_rc"
+      _st_fail "harness gate: verb $_st_v expected exit 75, got $_st_rc"
     fi
   done
 
-  # 5. capability-gate refusals (stub openclaw so Gate 1 passes; Gate 2 must refuse)
+  # 5. The gate precedes EVERYTHING: even with a stub openclaw CLI on PATH
+  #    and a capability JSON claiming cliWorks:true, the verb still
+  #    refuses with exit 75 (the lane does not exist in this harness, so no
+  #    capability state can enable it here).
   _st_dir="$(mktemp -d "${TMPDIR:-/tmp}/ocb-adapter-selftest.XXXXXX")" || _st_dir=""
   if [ -z "$_st_dir" ]; then
     _st_fail "mktemp failed — skipping stub checks"
@@ -348,110 +378,29 @@ selftest() {
       > "$_st_dir/openclaw" 2>/dev/null && chmod 755 "$_st_dir/openclaw" 2>/dev/null
     if [ -x "$_st_dir/openclaw" ]; then
       _st_stub_path="$_st_dir:/usr/bin:/bin"
-
-      # 5a. cliWorks:false -> exit 75, message names the gate field
-      printf '{"lanes":{"openclaw_managed_browser":{"cliWorks":false}}}' \
-        > "$_st_dir/cap-false.json"
-      _st_out="$(PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-false.json" \
-        GHL_SKILL6_SNAPSHOT_MODE=efficient "$_st_self" status 2>&1)"
-      _st_rc=$?
-      if [ "$_st_rc" = "75" ]; then
-        case "$_st_out" in
-          *cliWorks*) _st_pass "cliWorks=false: status -> exit 75 + names cliWorks" ;;
-          *) _st_fail "cliWorks=false: exit 75 but message does not name cliWorks" ;;
-        esac
-      else
-        _st_fail "cliWorks=false: status expected exit 75, got $_st_rc"
-      fi
-
-      # 5b. capability JSON missing -> exit 75, message names the path
-      _st_out="$(PATH="$_st_stub_path" \
-        GHL_SKILL6_CAPABILITY_JSON="$_st_dir/absent.json" "$_st_self" status 2>&1)"
-      _st_rc=$?
-      if [ "$_st_rc" = "75" ]; then
-        case "$_st_out" in
-          *"$_st_dir/absent.json"*) _st_pass "missing capability JSON: exit 75 + names the path" ;;
-          *) _st_fail "missing capability JSON: exit 75 but message does not name the path" ;;
-        esac
-      else
-        _st_fail "missing capability JSON: status expected exit 75, got $_st_rc"
-      fi
-
-      # 5c. mapping checks: stub echoes one argv per line; assert the translation
       printf '{"lanes":{"openclaw_managed_browser":{"cliWorks":true}}}' \
         > "$_st_dir/cap-true.json"
-      _st_env="PATH=$_st_stub_path GHL_SKILL6_CAPABILITY_JSON=$_st_dir/cap-true.json GHL_SKILL6_SNAPSHOT_MODE=efficient"
-
-      # snapshot -> --interactive + --efficient preset
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        GHL_SKILL6_SNAPSHOT_MODE=efficient "$_st_self" snapshot 2>&1)"
-      case "$_st_out" in
-        *"--interactive"*) _st_pass "snapshot passes --interactive" ;;
-        *) _st_fail "snapshot missing --interactive" ;;
-      esac
-      case "$_st_out" in
-        *"--efficient"*) _st_pass "snapshot passes --efficient preset (P1-12 snapshotDefaults)" ;;
-        *) _st_fail "snapshot missing --efficient preset" ;;
-      esac
-
-      # frame-snapshot -> --interactive --frame SELECTOR verbatim
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        "$_st_self" frame-snapshot 'iframe[src*="form-builder-v2"]' 2>&1)"
-      case "$_st_out" in
-        *'--frame'*) _st_pass "frame-snapshot passes --frame" ;;
-        *) _st_fail "frame-snapshot missing --frame" ;;
-      esac
-      case "$_st_out" in
-        *'form-builder-v2'*) _st_pass "frame-snapshot passes SELECTOR verbatim" ;;
-        *) _st_fail "frame-snapshot mangled the selector" ;;
-      esac
-      case "$_st_out" in
-        *"--interactive"*) _st_pass "frame-snapshot passes --interactive" ;;
-        *) _st_fail "frame-snapshot missing --interactive" ;;
-      esac
-
-      # open / click / type / stop / start / status mappings
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        "$_st_self" open 'https://example.test/ghl' 2>&1)"
-      case "$_st_out" in
-        *"https://example.test/ghl"*) _st_pass "open passes URL" ;;
-        *) _st_fail "open did not pass URL" ;;
-      esac
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        "$_st_self" click f1e12 2>&1)"
-      case "$_st_out" in
-        *"f1e12"*) _st_pass "click passes REF" ;;
-        *) _st_fail "click did not pass REF" ;;
-      esac
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        "$_st_self" type f1e12 'hello world' 2>&1)"
-      case "$_st_out" in
-        *"hello"*) _st_pass "type passes TEXT" ;;
-        *) _st_fail "type did not pass TEXT" ;;
-      esac
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        "$_st_self" stop 2>&1)"
-      case "$_st_out" in
-        *close*) _st_pass "stop maps to openclaw browser close" ;;
-        *) _st_fail "stop does not map to close" ;;
-      esac
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-        "$_st_self" start 2>&1)"
-      case "$_st_out" in
-        *start*) _st_pass "start maps to openclaw browser start" ;;
-        *) _st_fail "start does not map to start" ;;
-      esac
-      _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
+      _st_out="$(PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
         "$_st_self" status 2>&1)"
-      case "$_st_out" in
-        *"--browser-profile"*) _st_pass "status passes --browser-profile" ;;
-        *) _st_fail "status missing --browser-profile" ;;
-      esac
+      _st_rc=$?
+      if [ "$_st_rc" = "75" ]; then
+        case "$_st_out" in
+          *claude-nine*) _st_pass "harness gate precedes CLI + capability: status -> exit 75 even with cliWorks=true" ;;
+          *) _st_fail "harness gate precedence: exit 75 but message does not name the harness" ;;
+        esac
+      else
+        _st_fail "harness gate precedence: status expected exit 75, got $_st_rc"
+      fi
     else
       _st_fail "could not create stub openclaw — skipping stub checks"
     fi
     rm -rf "$_st_dir" 2>/dev/null || true
   fi
+
+  # NOTE (999): the verb -> `openclaw browser` mapping checks that used to
+  # run here are not exercisable in this harness — the gate refuses before
+  # any mapping can run. The mapping remains in the dispatch below as the
+  # documented translation for the amendment path.
 
   if [ "$_st_fails" -eq 0 ]; then
     echo "SELFTEST PASS"

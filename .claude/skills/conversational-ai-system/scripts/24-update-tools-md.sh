@@ -20,10 +20,9 @@
 # the whole API — the full per-module detail stays in
 # 29-ghl-convert-and-flow/references/{conversations,calendars,payments}.md.
 #
-# OS-aware (matches 06-append-memory-rules.sh):
-#   Darwin → $HOME/clawd/TOOLS.md
-#   Linux  → /data/clawd/TOOLS.md
-# Override with $TOOLS_MD or $OPENCLAW_WORKSPACE.
+# Workspace binding (999 harness): the workspace is this install's repo root
+# and TOOLS.md lives there. Override with $TOOLS_MD or $GHL_WORKSPACE.
+# (The OpenClaw side wrote into the clawd workspace dirs.)
 #
 # Optional: $PUBLIC_HOSTNAME is emitted ONLY as a comment line (the client's hook
 # host, for orientation) — NEVER a token, never client/personal data.
@@ -43,13 +42,8 @@ if [ ! -f "$REF_FILE" ]; then
   exit 1
 fi
 
-# --- Resolve the CLIENT TOOLS.md (OS-aware, matches 06-append-memory-rules.sh) ---
-case "$(uname -s)" in
-  Darwin) WS_DEFAULT="$HOME/clawd" ;;
-  Linux)  WS_DEFAULT="/data/clawd" ;;
-  *)      WS_DEFAULT="$HOME/clawd" ;;
-esac
-WS="${OPENCLAW_WORKSPACE:-$WS_DEFAULT}"
+# --- Resolve the install TOOLS.md ---
+WS="${GHL_WORKSPACE:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
 TOOLS_MD="${TOOLS_MD:-$WS/TOOLS.md}"
 
 # Create the file if the workspace exists but TOOLS.md doesn't yet (fresh install).
@@ -58,7 +52,7 @@ if [ ! -f "$TOOLS_MD" ]; then
     printf '# TOOLS.md\n\nWhere things live: connected tools, endpoints, and API references.\n' > "$TOOLS_MD"
     echo "[24-update-tools-md] created $TOOLS_MD"
   else
-    echo "[24-update-tools-md] workspace dir $(dirname "$TOOLS_MD") not found — skipping (set \$TOOLS_MD or \$OPENCLAW_WORKSPACE)" >&2
+    echo "[24-update-tools-md] workspace dir $(dirname "$TOOLS_MD") not found — skipping (set \$TOOLS_MD or \$GHL_WORKSPACE)" >&2
     exit 0
   fi
 fi

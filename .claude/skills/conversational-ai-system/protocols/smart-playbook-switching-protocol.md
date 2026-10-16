@@ -135,7 +135,7 @@ F44 for sub-flows.
 If a customer permanently moves on, that is F33. If they need a quick aside and
 then want to finish what they started, that is F44.
 
-## openclaw.json toggles
+## Configuration toggles — in the install's skill38 configuration
 
 ```json
 {

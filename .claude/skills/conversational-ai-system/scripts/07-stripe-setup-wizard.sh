@@ -3,7 +3,10 @@
 # OPERATOR OPT-IN. Wires Stripe API keys + webhooks. Idempotent.
 
 set -euo pipefail
-SECRETS_ENV="${OPENCLAW_SECRETS_ENV:-$HOME/.openclaw/secrets/.env}"
+# Secrets binding (999 harness): the wizard writes into the install secrets
+# env file, designated by $SECRETS_ENV (no OpenClaw default path exists here).
+SECRETS_ENV="${SECRETS_ENV:-}"
+: "${SECRETS_ENV:?SECRETS_ENV must name the install secrets env file to write into}"
 
 echo "[skill 38] Stripe Integration setup wizard (Step 9.27)"
 echo "  This is OPERATOR OPT-IN per v5.14. Skip if you do not use Stripe."

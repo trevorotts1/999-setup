@@ -887,7 +887,7 @@ def workflows_create(ctx, name, folder, json_file):
 @click.option("--prompt", default=None, help="AI prompt (ai type)")
 @click.option("--model", default="gpt-4o",
               help="GHL ChatGPT-action model (ai type) — a GHL-PLATFORM model, not the "
-                   "client's OpenClaw model; default gpt-4o. Anthropic/Claude ids are rejected.")
+                   "client's configured model; default gpt-4o. Anthropic/Claude ids are rejected.")
 @click.pass_context
 def workflows_create_step(ctx, step_type, name, out_file, subject, body, from_name,
                           value, unit, tags, remove_tags, url, method, prompt, model):

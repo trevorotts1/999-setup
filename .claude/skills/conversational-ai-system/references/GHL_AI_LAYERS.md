@@ -19,7 +19,7 @@ systems, and with different owners. **They are not interchangeable.**
 |-------|------|-------------|---------------|---------------|
 | **Layer 0** | GHL Build-with-AI Compile-Time Prompt | **Build time** — once, when creating/editing the workflow | GHL Automations → "Build using AI" text box | Operator (or Skill 44 / Skill 41 via direct-build) |
 | **Layer 1** | GHL Workflow AI Step Prompt | **Run time** — every time the Workflow AI node fires | Inside a "Conversation AI" action node in the published workflow | Operator (or Skill 44 patch-email) |
-| **Layer 2** | OpenClaw Master-Files Playbook | **Run time** — when the agent's brain handles an inbound hook | `<MASTER_FILES_DIR>/conversation-workflows/<id>.md`, registered in AGENTS.md | Skill 38 or the agent itself (brainstorm → build → register) |
+| **Layer 2** | Master-Files Playbook (agent runtime) | **Run time** — when the agent's brain handles an inbound hook | `<MASTER_FILES_DIR>/conversation-workflows/<id>.md`, registered in AGENTS.md | Skill 38 or the agent itself (brainstorm → build → register) |
 
 ---
 
@@ -41,7 +41,7 @@ internal Build API when the Firebase token is available.
 
 **What it CANNOT do:**
 - It cannot set the conversational AI reply logic at runtime (that is Layer 1).
-- It cannot install the OpenClaw brain or configure conversation playbooks (that is Layer 2).
+- It cannot install the agent runtime or configure conversation playbooks (that is Layer 2).
 - It cannot persist between workflow runs.
 
 **Format requirements (Layer 0 only):**
@@ -72,14 +72,14 @@ patches it via `workflows patch-email`. The content is owned by the client's GHL
 
 **When to use:**
 - When the operator wants GHL's native AI to draft a reply inside the workflow (without
-  OpenClaw). This is a SIMPLER path for basic automations that do not need the full
-  OpenClaw brain, conversation memory, or the 32 protocols from Skill 38.
+  the agent runtime). This is a SIMPLER path for basic automations that do not need the full
+  agent runtime, conversation memory, or the 32 protocols from Skill 38.
 - Patching an existing Conversation AI node's instructions without rebuilding.
 
 **What it CANNOT do:**
-- It cannot trigger OpenClaw to handle the message (that requires a Custom Webhook node
-  pointing to the OpenClaw hook URL — see `GHL-INBOUND-AND-PLAYBOOKS.md` Section 1-4).
-- It cannot access OpenClaw's typed knowledge bases, conversation logs, or playbooks.
+- It cannot trigger the agent runtime to handle the message (that requires a Custom Webhook node
+  pointing to the agent endpoint URL — see `GHL-INBOUND-AND-PLAYBOOKS.md` Section 1-4).
+- It cannot access the runtime's typed knowledge bases, conversation logs, or playbooks.
 - It cannot enforce the honesty floor, quiet hours, compliance detection, or any of the
   Skill 38 protocols.
 
@@ -91,20 +91,20 @@ fires, bloating tokens and producing unpredictable output.
 
 ---
 
-## Layer 2 — OpenClaw Master-Files Playbook (Run-Time Brain)
+## Layer 2 — Master-Files Playbook (agent runtime) (Run-Time Brain)
 
 **What it is:** A markdown file under `<MASTER_FILES_DIR>/conversation-workflows/<id>.md`
-that tells the OpenClaw agent HOW to handle a specific conversation type — which playbook
+that tells the agent HOW to handle a specific conversation type — which playbook
 to invoke, what the goal is, what tone to use, what escalation triggers exist, and how to
 handle FAQs within that flow. The agent reads it at run time when the GHL Custom Webhook
-fires the OpenClaw hook.
+fires the agent endpoint hook.
 
 **Owner:** Skill 38 (Conversational AI System). The agent brainstorms, builds, and
 registers Layer 2 playbooks. The `AGENTS.md` Step 1.75 workflow-match block routes the
 agent to the correct Layer 2 playbook based on inbound signals.
 
 **When to use:**
-- For every GHL workflow that has a Custom Webhook node pointed at the OpenClaw hook URL.
+- For every GHL workflow that has a Custom Webhook node pointed at the agent endpoint URL.
 - Whenever the agent needs conversation memory, typed knowledge bases, appointment
   booking, the honesty floor, compliance detection, quiet hours, or any Skill 38 protocol.
 - The first Layer 2 playbook every client gets is the **appointment-booking playbook**
@@ -113,11 +113,11 @@ agent to the correct Layer 2 playbook based on inbound signals.
 **What it CANNOT do:**
 - It does not generate or configure the GHL workflow structure (that is Layer 0).
 - It is not a GHL Conversation AI node prompt and is never pasted into the GHL builder.
-- It does not replace the `messageTemplate` in the OpenClaw `hooks.mappings` entry (that
+- It does not replace the `messageTemplate` in the endpoint's server mapping entry (that
   is the hook's server-side dispatch instruction, a separate concern).
 
 **Key pitfall:** Placing a Layer 2 playbook inside a GHL Conversation AI node (Layer 1
-slot) means GHL's AI reads the OpenClaw protocol markdown verbatim as a reply instruction
+slot) means GHL's AI reads the agent protocol markdown verbatim as a reply instruction
 every time the node fires. The reply will quote protocol headers, "When to invoke"
 sections, and Guardrails blocks at the contact. The client's phone lights up with internal
 documentation.
@@ -205,7 +205,7 @@ truth for every GHL workflow state.
 |-----------|---------------|
 | Need to create a new GHL workflow | Layer 0: use Skill 44 (Option 1) if Firebase token present; else Skill 41 → manual paste (Option 2) |
 | Need to update the Conversation AI node's reply logic | Layer 1: patch the workflow AI step prompt via `caf workflows patch-email` or manually in GHL |
-| Need to add/change a conversation playbook for the OpenClaw brain | Layer 2: use Skill 38 brainstorm → build → register |
+| Need to add/change a conversation playbook for the agent runtime | Layer 2: use Skill 38 brainstorm → build → register |
 | Agent drafts a reply but never sends it to the contact | Missing Layer 2 SEND-DIRECTIVE in `hooks.mappings` messageTemplate — see `GHL-INBOUND-AND-PLAYBOOKS.md` §4 |
 | Build-with-AI produces Steps:0/Errors:0/exit-0 | Engine bug pre-v2.1.0 — upgrade Skill 44 to v1.0.3+ (engine CLI 2.1.0) |
 | GHL 400 error on workflow save | Corrupted step order bug pre-v2.1.0 — `link_steps()` fix in Skill 44 v1.0.3+ (engine CLI 2.1.0) |

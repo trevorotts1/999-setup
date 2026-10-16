@@ -621,11 +621,14 @@ class TestDataDir(unittest.TestCase):
                 os.environ.pop("CAF_DATA_DIR", None)
 
     def test_falls_back_to_home(self):
+        # Harness binding (999): with no CAF_DATA_DIR override, the data root
+        # is the engine's own in-tree data directory — never an OpenClaw tree.
         from cli_anything.gohighlevel.internal.guards import data_dir
         os.environ.pop("CAF_DATA_DIR", None)
         p = data_dir()
-        self.assertIn(".openclaw", str(p))
-        self.assertIn("convert-and-flow-cli", str(p))
+        self.assertNotIn(".openclaw", str(p))
+        self.assertEqual(p.name, "data")
+        self.assertEqual(p.parent.name, "engine")
 
 
 if __name__ == "__main__":

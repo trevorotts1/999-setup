@@ -7,10 +7,10 @@
 # under MASTER_FILES_DIR.
 #
 # What this does:
-#   1. Reads MASTER_FILES_DIR from ~/.openclaw/.skill-38-master-files-dir
+#   1. Reads MASTER_FILES_DIR from the master-files pointer (see pointer binding below)
 #      (this pointer file is written by 01-locate-master-files-folder.sh).
 #   2. Creates `$MASTER_FILES_DIR/conversational-logs/` if missing AND ensures it
-#      is OWNED BY THE RUNTIME USER (the gateway user — `node` on VPS/docker; the
+#      is WRITABLE BY THE INVOKING USER (the OpenClaw side chowned it to its
 #      login user on a Mac/Homebrew install) so the agent can WRITE to it. This is
 #      mandatory: the per-contact conversation log is the ONLY memory a single-turn
 #      GHL hook session has. On a live client the dir was created root-owned and the
@@ -30,10 +30,13 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Resolve MASTER_FILES_DIR
 # -----------------------------------------------------------------------------
-POINTER_FILE="${HOME}/.openclaw/.skill-38-master-files-dir"
+# Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+# pointer is the master-files-dir file inside this skill directory (the
+# OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+POINTER_FILE="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
 if [[ ! -f "$POINTER_FILE" ]]; then
   echo "[09-install-conversation-workflows] pointer file missing: $POINTER_FILE" >&2
-  echo "[09-install-conversation-workflows] run 01-locate-master-files-folder.sh first." >&2
+  echo "[09-install-conversation-workflows] set MASTER_FILES_DIR or write the pointer file (master-files-dir in this skill directory)." >&2
   exit 1
 fi
 
@@ -51,48 +54,29 @@ LOGS_DIR="$MASTER_FILES_DIR/conversational-logs"
 
 # -----------------------------------------------------------------------------
 # Conversation-log system (Step 9): create the per-contact conversational-logs
-# dir and make it WRITABLE BY THE RUNTIME (gateway) USER.
+# dir and make sure the agent can write to it.
 #
 # GHL inbound hook sessions are single-turn / stateless. The agent's only memory
 # of a contact across messages is the per-contact log file in this dir, which it
 # must READ before replying and APPEND to after sending. If this dir does not
-# exist, or exists but is owned by root while the gateway runs as `node`, the
-# agent silently cannot persist memory — exactly the live-client regression this
-# step prevents. So: mkdir -p, then chown to the runtime user.
+# exist, or is not writable by the user running this install, the agent
+# silently cannot persist memory, exactly the live-client regression this step
+# prevents. So: mkdir -p, then verify writability by the invoking user.
+#
+# 999 harness binding: the session runs as the invoking user; there is no
+# separate gateway runtime user to chown to (the OpenClaw side chowned the
+# dir to its gateway user, `node` on VPS/docker). Best-effort: never fail
+# the install on an ownership problem, but always report it.
 # -----------------------------------------------------------------------------
 mkdir -p "$LOGS_DIR"
 
-# Determine the gateway runtime user and chown the logs dir to it so the agent
-# can write. On VPS/Docker the gateway runs as `node`; on a Mac/Homebrew install
-# it runs as the login user (no chown needed there). Best-effort: never fail the
-# install if chown is not permitted — but always report what was (or wasn't) done.
-RUNTIME_USER="${OPENCLAW_RUNTIME_USER:-}"
-if [[ -z "$RUNTIME_USER" ]]; then
-  OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
-  if [[ "$OS_NAME" == "Linux" ]]; then
-    # VPS/Docker default gateway user.
-    RUNTIME_USER="node"
-  else
-    # Mac/Homebrew: the gateway runs as the current login user already.
-    RUNTIME_USER="$(id -un 2>/dev/null || echo "$USER")"
-  fi
-fi
-
-# GNU first: GNU reads `-f FMT` as filesystem status and prints it before
-# failing (multi-line junk on Linux); BSD rejects -c with no stdout.
 CURRENT_OWNER="$(stat -c '%U' "$LOGS_DIR" 2>/dev/null || stat -f '%Su' "$LOGS_DIR" 2>/dev/null || echo "")"
-if [[ -n "$RUNTIME_USER" && "$CURRENT_OWNER" != "$RUNTIME_USER" ]]; then
-  if chown -R "$RUNTIME_USER" "$LOGS_DIR" 2>/dev/null; then
-    echo "[09-install-conversation-workflows] conversational-logs dir chowned to runtime user '$RUNTIME_USER' → $LOGS_DIR"
-  elif command -v sudo >/dev/null 2>&1 && sudo -n chown -R "$RUNTIME_USER" "$LOGS_DIR" 2>/dev/null; then
-    echo "[09-install-conversation-workflows] conversational-logs dir chowned (sudo) to runtime user '$RUNTIME_USER' → $LOGS_DIR"
-  else
-    echo "[09-install-conversation-workflows] WARNING: could not chown $LOGS_DIR to '$RUNTIME_USER' (current owner: '${CURRENT_OWNER:-unknown}')." >&2
-    echo "[09-install-conversation-workflows] The gateway user MUST own this dir or the agent cannot append conversation logs (= silent memory loss)." >&2
-    echo "[09-install-conversation-workflows] Run manually:  sudo chown -R $RUNTIME_USER \"$LOGS_DIR\"" >&2
-  fi
+if [[ -w "$LOGS_DIR" ]]; then
+  echo "[09-install-conversation-workflows] conversational-logs dir ready (owner '${CURRENT_OWNER:-unknown}', writable) → $LOGS_DIR"
 else
-  echo "[09-install-conversation-workflows] conversational-logs dir ready (owner '$CURRENT_OWNER') → $LOGS_DIR"
+  echo "[09-install-conversation-workflows] WARNING: $LOGS_DIR is not writable by the invoking user '$(id -un 2>/dev/null || echo "$USER")' (current owner: '${CURRENT_OWNER:-unknown}')." >&2
+  echo "[09-install-conversation-workflows] The invoking user MUST be able to write this dir or the agent cannot append conversation logs (= silent memory loss)." >&2
+  echo "[09-install-conversation-workflows] Run manually:  sudo chown -R $(id -un 2>/dev/null || echo "$USER") \"$LOGS_DIR\"" >&2
 fi
 
 mkdir -p "$WORKFLOWS_DIR"
@@ -145,7 +129,7 @@ still honored.
 - **Layer 1 — GHL side.** The GHL workflow + tag automations that route
   the inbound message into the agent in the first place. Auto-built
   during workflow setup; mirrored in `<workflow-id>--ghl-side.md`.
-- **Layer 2 — OpenClaw playbook.** The agent-side scenario behavior:
+- **Layer 2 — communications playbook.** The agent-side scenario behavior:
   Phase 1 (acknowledge), Phase 2 (gather), Phase 3 (act), Phase 4
   (handoff). Stored in `<workflow-id>.md`.
 
@@ -157,7 +141,7 @@ Full builder protocol (Layers 0/1/2 walkthrough): see the skill's
 For every workflow with id `<workflow-id>` (kebab-case, alphanumeric +
 hyphens only):
 
-- `<workflow-id>.md` — Layer 2 OpenClaw playbook (Phase 1-4 + edge cases)
+- `<workflow-id>.md` — Layer 2 communications playbook (Phase 1-4 + edge cases)
 - `<workflow-id>--ghl-side.md` — Layer 1 GHL routing mirror (tags,
   triggers, workflow IDs)
 - `<workflow-id>--build-with-ai-prompt.md` — the Build-with-AI prompt
@@ -201,7 +185,7 @@ plain-text. Record that doc's URL/path in this column — a row with an empty /
 `n/a` / placeholder doc cell FAILS QC (the install is NOT complete until the doc
 is created and recorded). See `references/communications-playbook-standard.md` §4.
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 
 <!-- workflows: none yet -->
@@ -422,7 +406,11 @@ create_playbook_doc() {
 
   # (b) Google Docs (per the Google Workspace helper in TOOLS.md, if present).
   local gdocs_helper=""
-  for cand in "$HOME/clawd/google-api.js" "$HOME/clawd/scripts/google-api.js"; do
+  # Helper binding (999 harness): env GOOGLE_API_HELPER wins; else the
+  # install workspace root (env GHL_WORKSPACE, else the repo root).
+  local ws_root="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+  for cand in "${GOOGLE_API_HELPER:-}" "$ws_root/google-api.js" "$ws_root/scripts/google-api.js"; do
+    [[ -n "$cand" ]] || continue
     [[ -f "$cand" ]] && gdocs_helper="$cand" && break
   done
   if [[ -n "$gdocs_helper" ]] && command -v node >/dev/null 2>&1; then

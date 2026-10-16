@@ -84,7 +84,7 @@ Because the parameters travel in the PASS INPUT (not in Skill 19's own protocol)
 Skill 19 stays independent per its "What This Skill Does NOT Do" rule. Skill 19's
 protocol file is NOT edited by this skill.
 
-## openclaw.json toggle
+## Configuration toggle — in the install's skill38 configuration
 
 ```json
 {

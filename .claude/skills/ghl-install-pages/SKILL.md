@@ -3,7 +3,7 @@ name: ghl-install-pages
 description: >
   How to deploy HTML pages into GoHighLevel (Go High Level) or Convert and Flow
   using browser automation. This skill teaches the AI agent how to use
-  agent-browser (Vercel Labs, Skill 03) as the primary engine — Playwright as a
+  agent-browser (Vercel Labs) as the primary engine — Playwright as a
   fallback — to start a session already logged-in via a seeded Firebase token,
   navigate the funnel/website page builder, paste code, save, preview, and
   publish-with-approval, all without the human touching the builder.
@@ -137,13 +137,13 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 
 ## Prerequisites
 
-- Teach Yourself Protocol (TYP) must be learned first (skill 01)
-- Backup Protocol must be learned first (skill 02)
-- agent-browser must be installed (skill 03) - PRIMARY browser engine
-- GHL Setup must be complete (skill 05) - the account must already exist
-- Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
+- Teach Yourself Protocol (TYP) must be learned first
+- Backup Protocol must be learned first
+- agent-browser must be available (the browser-engine contract lane) - PRIMARY browser engine
+- GHL Setup must be complete (the pack's GHL rails) - the account must already exist
+- Vercel Setup - only for Mode 2 iframe-embed of rich payloads
 - Playwright installed - FALLBACK engine for known-hard flows
-- GoHighLevel auth in ~/.openclaw/secrets/.env: a Firebase refresh token
+- GoHighLevel auth in the install's secrets env: a Firebase refresh token
   (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN — the ONLY auth path; seeds a logged-in
   session with NO login form, NO password, NO two-factor). CLIENT keys only.
   GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are a
@@ -156,11 +156,10 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   the policy gates allow; Tier-3 fail-loud — never a silent UI login.
 - **GoHighLevel media/PIT credentials — where they live and how they resolve
   (READ BEFORE the image step).** The image/media pipeline needs three values, all
-  in the env stores (the ONE canonical resolution order, exactly:
-  `~/.openclaw/secrets/.env` → `~/clawd/secrets/.env` →
-  `~/.openclaw/workspace/.env`; `~/clawd/secrets/.env` is
-  **DEPRECATED-COMPAT** — still searched, not canonical, no new writes; every
-  other doc in this skill references this list, never restates its own).
+  in the env stores (the ONE canonical resolution, exactly:
+  the live process env, then the install's secrets env store — the file
+  `$SECRETS_ENV` designates; every other doc in this skill references this
+  binding, never restates its own).
   Skill 6 reads the host-resolved process env
   (`os.environ`) as already resolved by the host; only `ghl_media.py` /
   `ghl_image_stage.py` fall back to parsing the stores above directly:
@@ -171,13 +170,13 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
     `GHL_AGENCY_PIT`) **401s for media** — never substitute it.
   - **Location id**: `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID` →
     `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` → `CAF_ALLOWED_LOCATION_IDS` (first id).
-  - **Image key**: the KIE key (`KIE_API_KEY`; every alias in `shared-utils/secret_names.json` counts). On a client box it is the client's own key; operator keys are never used for client work. Shared KIE rules: `07-kie-setup/references/kie-common-rules.md`.
+  - **Image key**: the KIE key (`KIE_API_KEY`; every alias in the shared secret-name canon counts). On a client box it is the client's own key; operator keys are never used for client work. Shared KIE rules: the harness kie skill's references (kie-common-rules).
   `ghl_media.resolve_location_pit()` / `resolve_location_id()` search EVERY alias
   across the live env AND the stores above before raising; the image stage's
   `_resolve_kie_api_key()` does the same for KIE. **HARD RULE — never record a GHL
   credential as missing (`honest_fail`) on an empty env var alone.** An empty env
   var means "not loaded", not "absent" — the value is almost always sitting in
-  `secrets/.env`. Run `set -a; source ~/.openclaw/secrets/.env; set +a` first, then
+  the secrets env store. Run `set -a; source "$SECRETS_ENV"; set +a` first, then
   retry. An `honest_fail` is valid ONLY after the full alias × store search comes
   back empty, and it MUST name exactly which vars and stores it checked (the
   resolver's RuntimeError already does). This is the fix for the six-month
@@ -462,7 +461,7 @@ Lanes are selected per host by the capability probe — never assumed:
 |---|------|--------------------|
 | 1 | agent-browser via `browser_manager` (PRIMARY, pin 0.27.0) | Partial without Playwright |
 | 1b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
-| 2 | OpenClaw managed browser `openclaw browser` + `--frame` | Proposed upgrade — experimental, not wired as PRIMARY |
+| 2 | OpenClaw managed browser | NOT AVAILABLE in this harness — structurally absent, never selected |
 | 3 | Playwright-only | Degraded escape hatch |
 | 4 | REST / fallback-ladder | Content ops without UI drag |
 | 5 | CUA | NOT in Skill 6 yet — future last resort only |
@@ -590,7 +589,7 @@ is the runtime source of truth. Capability-class mapping and lane detail live in
 - NEVER publish without explicit approval. Default = draft + report the preview
   URL (ghl_builder.py may-publish).
 - Long runs fire detached; the agent exits and resumes via the per-page ledger.
-- Credentials go in ~/.openclaw/secrets/.env. CLIENT keys only. Never hardcode.
+- Credentials go in the install's secrets env file. CLIENT keys only. Never hardcode.
 
 ---
 
@@ -676,41 +675,20 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > (exit 0 = every run's code is confirmed in GitHub; exit 1 = attention
 > needed on at least one run).
 >
-> **Install the cron via the tested installer — never a hand-typed command
-> (U24 rebuild, 2026-07-18).** This repo already has a documented incident of
-> exactly this class of doc bug: `37-zhc-closeout/scripts/install-closeout-
-> resume-cron.sh:85-90` (FIX-XC-08a) — `--schedule` is NOT a real `openclaw`
-> CLI flag (the real one, for `openclaw cron add`, is `--cron`), and omitting
-> `--no-deliver` makes a routine maintenance sweep announce into the client's
-> chat every time it fires. A prior revision of this section carried that
-> exact same bug in a paste-ready `openclaw cron create ... --schedule ...`
-> snippet; it has been removed rather than re-typed correctly, because the
-> installer below is tested end-to-end
-> (`tests/test_github_archive_maintenance_schedule.py` drives it against a
-> fake `openclaw` CLI and pins its exact registered argv) and a doc snippet is
-> not. Run once per box, after Skill 06 is installed:
-> `bash scripts/install-github-archive-reconcile-cron.sh [--idempotent] [evidence-base-dir]`
-> (a leading `--flag` is never the directory; the directory defaults to the
-> PERSISTENT path for the platform - Mac `$HOME/clawd/skill6-fix`, Hostinger
-> `/data/clawd/skill6-fix`, Contabo `$HOME/.openclaw/clawd/skill6-fix`, resolved
-> by `python3 tools/cc_board.py evidence-base` - is created if missing, and an
-> existing job whose `--sweep-base` is a flag, or on Docker a non-persistent
-> `$HOME` path, is repaired in place; a healthy persistent job is left alone).
-> Verify with `openclaw cron list | grep skill6-github-archive-reconcile-sweep`;
-> fire it once by hand (`openclaw cron run <id>`) to confirm the first dated
-> log lands under `github-archive-reconcile-logs/`.
->
-> **The schedule ENTRY ships as a file, not just doctrine text (B-U10 CODE-MERGE
-> gate acceptance (c), amended 2026-07-15).** `schedule/skill6-github-archive-
-> reconcile-sweep.cron.json` is the single source of truth for the name/
-> schedule/tz/command above — both this doctrine text and the installer
-> (which registers it via `openclaw cron add`, by name, never duplicating,
-> and always passes `--no-deliver` — see above) read from it, so the two can
-> never silently drift apart.
-> Proven offline in `tests/test_github_archive_maintenance_schedule.py`
-> (entry-file well-formedness + installer idempotency + the mandatory
-> `--no-deliver` flag against a fake CLI, no network); the LIVE registration +
-> first live dated log are DEFERRED TO U22.
+> **Recurring registration is NOT shipped in this pack (fifth-seam
+> candidate).** The schedule entry file
+> (`schedule/skill6-github-archive-reconcile-sweep.cron.json`, the source of
+> truth for the name/schedule/tz/command) and its installer
+> (`scripts/install-github-archive-reconcile-cron.sh`) are carried VERBATIM
+> as the record of the intended registration, but they are not adapted:
+> registering recurring host jobs is the fifth-seam candidate, which needs
+> the operator's plan-amendment decision. Nothing in this pack registers
+> recurring jobs. Until then, run the sweep on demand
+> (`python3 tools/ghl_github_reconcile.py --sweep-base <dir> --retry`, with
+> the evidence base resolved by `python3 tools/cc_board.py evidence-base`:
+> the `SKILL6_EVIDENCE_BASE_DIR` override, else the in-tree
+> `state/skill6-fix`) or register it with your own scheduler using the
+> entry file as the cadence record.
 >
 > **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
 > `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
@@ -788,14 +766,11 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > GoHighLevel calls) and ships its own schedule ENTRY file
 > (`schedule/skill6-page-inventory-lifecycle.cron.json` — single source of
 > truth, same "entry ships as a file, not just doctrine text" discipline as
-> B-U10's amended acceptance) plus an idempotent installer:
-> `bash scripts/install-page-inventory-lifecycle-cron.sh [evidence-base-dir]`
-> Proven offline in `tests/test_page_inventory_lifecycle_schedule.py` (entry
-> well-formedness + installer idempotency + the mandatory `--no-deliver` flag
-> against a fake CLI, no network — a maintenance-window retention tick must
-> never fan out as a client-facing announcement). The live registration + the
-> live page-enumeration half (blocked on the funnel-discovery gap above) are
-> DEFERRED TO the operator.
+> B-U10's amended acceptance). Its installer is carried verbatim but NOT
+> adapted: recurring registration is the fifth-seam candidate (see the
+> github-archive note above). Run the sweep on demand or register it with
+> your own scheduler from the entry file. The live page-enumeration half
+> (blocked on the funnel-discovery gap above) is DEFERRED TO the operator.
 >
 > **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,
 > `update_status`/`ingest_task`, plus the step-visibility trio `move_task`/

@@ -45,7 +45,7 @@ def _version_for_path(path: str) -> str:
 # First non-empty value wins. AGENCY PITs are intentionally excluded (they 401 on media).
 # GHL PIT aliases: see TERMINOLOGY.md for the full canonical alias set.
 _LOCATION_PIT_ENV_NAMES = (
-    "GOHIGHLEVEL_API_KEY",             # preferred — matches openclaw.json + wire-ghl-env.sh
+    "GOHIGHLEVEL_API_KEY",             # preferred — matches the install's secrets env + wire-ghl-env.sh
     "GHL_API_KEY",                     # legacy short alias
     "GHL_PIT",                         # canonical short alias
     "GHL_TOKEN",                       # alternate alias
@@ -91,8 +91,8 @@ def _get_token() -> str:
     client's token was stored under GOHIGHLEVEL_API_KEY or another canonical alias.
     This resolver closes that gap (root cause: a client-box GHL-MCP crash-loop, 2026-06).
     A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED rather than accepted
-    — the process env is seeded from openclaw.json ``env.vars`` at gateway launch, and
-    those config copies are placeholders by design (see TERMINOLOGY.md); accepting the
+    — the process env can be seeded with placeholder copies by provisioning
+    templates (see TERMINOLOGY.md); accepting the
     first non-empty value regardless of shape produced a false "PIT expired" alarm on
     2026-08-03.
     """
@@ -108,12 +108,13 @@ def _get_token() -> str:
     placeholder_note = (
         "\nNote: at least one candidate was a documentation PLACEHOLDER (short / "
         "dummy-shaped) and was SKIPPED rather than used — put the real value in "
-        "~/.openclaw/secrets/.env, not just openclaw.json."
+        "this install's secrets env (the file $SECRETS_ENV names), not only in a "
+        "provisioning template."
         if saw_placeholder else ""
     )
     print(
         "Error: GHL location PIT not found in any canonical env-var name.\n"
-        "Set one of these in ~/.openclaw/secrets/.env (or as an env var):\n"
+        "Set one of these in this install's secrets env (or as an env var):\n"
         "  " + ", ".join(_LOCATION_PIT_ENV_NAMES) + "\n"
         "Example: GOHIGHLEVEL_API_KEY=pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" + placeholder_note,
         file=sys.stderr,

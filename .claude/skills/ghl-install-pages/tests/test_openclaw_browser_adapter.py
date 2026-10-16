@@ -8,23 +8,24 @@ argv-echoing STUB `openclaw` on a scratch PATH. No verb ever reaches a real
 browser; `--selftest` itself is browser-safe by construction (it runs only
 against stripped PATHs and stubs).
 
-Exit-code contract under test (documented in the adapter header):
-  0   success
-  64  usage error / openclaw CLI absent
-  75  capability gate refusal (JSON missing/unreadable, python3 absent, or
-      lanes.openclaw_managed_browser.cliWorks not true)
+Exit-code contract under test (999 harness form, documented in the adapter
+header): Lane 2 does not exist in the Claude Code harness, so EVERY verb
+refuses with exit 75 + the harness reason, before any CLI or capability
+check. The verb->CLI mapping is retained in the adapter as the documented
+translation for a future amendment and is not exercisable here.
+  0   --help / --version / --selftest success
+  64  no verb at all (usage printed before the gate)
+  75  harness gate refusal (every verb, any PATH, any capability JSON)
 
-Coverage per the P1-12 / 9.7-6 task contract:
+Coverage:
   (a) `--selftest` subprocess exits 0 (offline, timeout 120, no browser)
-  (b) every verb against a PATH WITHOUT openclaw -> exit 64 + stderr names openclaw
-      (CLI-absent refusal fires FIRST, before any capability work)
-  (c) capability gate: cliWorks=false -> exit 75 + names cliWorks;
-      missing JSON -> exit 75 + names the path (tmp capability JSON)
-  (d) verb->CLI mapping through the stub: status/start/open/snapshot/click/
-      type/frame-snapshot/stop all translate per Appendix A, snapshot always
-      carries --interactive (+ --efficient preset by default), --frame
-      SELECTOR passes through verbatim
-  (e) usage errors: unknown verb / open without URL / type with one arg -> 64
+  (b) every verb against a PATH WITHOUT openclaw -> exit 75 + stderr names
+      the harness (claude-nine) and the primary lane
+  (c) the gate precedes capability state: cliWorks=false, missing JSON,
+      and cliWorks=true ALL refuse 75 identically
+  (d) with a stub CLI + cliWorks=true, no verb reaches the stub (no mapped
+      argv is ever produced)
+  (e) unknown verb / missing-arg verbs -> 75 (gate first); no verb -> 64
 
 Run:
     python3 -m pytest tests/test_openclaw_browser_adapter.py -v
@@ -129,13 +130,13 @@ def test_selftest_runs_without_openclaw_on_path():
     assert "SELFTEST PASS" in proc.stdout
 
 
-# ── (b) CLI-absent refusal: exit 64, fires before anything else ──────────────
+# ── (b) harness gate: exit 75 for every verb, fires before anything else ────
 
 @pytest.mark.parametrize("verb", ALL_VERBS)
-def test_verb_without_openclaw_cli_exits_64(tmp_path, verb):
-    """Every verb against a PATH WITHOUT openclaw -> exit 64 + stderr names
-    openclaw. Uses the box's own PATH restriction; the adapter must refuse
-    before ever attempting a browser action."""
+def test_verb_refuses_75_in_this_harness(tmp_path, verb):
+    """Every verb against a PATH WITHOUT openclaw -> exit 75 + stderr names
+    the harness reason (claude-nine). The adapter must refuse before ever
+    attempting a browser action."""
     env = {"PATH": _STRIpped_PATH}
     if verb == "open":
         args = [verb, "https://example.test/ghl"]
@@ -144,12 +145,13 @@ def test_verb_without_openclaw_cli_exits_64(tmp_path, verb):
     else:
         args = [verb]
     proc = _run_adapter(args, env)
-    assert proc.returncode == 64, (
-        f"verb {verb} without openclaw on PATH: expected exit 64, got "
+    assert proc.returncode == 75, (
+        f"verb {verb}: expected exit 75 (harness gate), got "
         f"{proc.returncode}\nstderr:\n{proc.stderr}"
     )
-    assert "openclaw" in (proc.stderr + proc.stdout).lower()
-    assert "REFUSE" in (proc.stderr + proc.stdout)
+    combined = proc.stderr + proc.stdout
+    assert "claude-nine" in combined
+    assert "REFUSE" in combined
 
 
 def test_cli_absent_refusal_mentions_primary_lane():
@@ -160,10 +162,9 @@ def test_cli_absent_refusal_mentions_primary_lane():
     assert "agent-browser" in combined or "browser_manager" in combined
 
 
-# ── (c) capability gate ──────────────────────────────────────────────────────
+# ── (c) the harness gate precedes capability state ───────────────────────────
 
 def test_capability_gate_cliworks_false_exits_75(tmp_path):
-    """cliWorks=false -> exit 75 + names the gate field (one documented code)."""
     stub_dir = _make_stub_dir(tmp_path)
     cap = _cap_json(tmp_path, cliworks=False)
     proc = _run_adapter(
@@ -172,7 +173,7 @@ def test_capability_gate_cliworks_false_exits_75(tmp_path):
          "GHL_SKILL6_CAPABILITY_JSON": str(cap)},
     )
     assert proc.returncode == 75, f"expected 75, got {proc.returncode}\n{proc.stderr}"
-    assert "cliWorks" in (proc.stderr + proc.stdout)
+    assert "claude-nine" in (proc.stderr + proc.stdout)
 
 
 def test_capability_gate_missing_json_exits_75(tmp_path):
@@ -183,113 +184,52 @@ def test_capability_gate_missing_json_exits_75(tmp_path):
          "GHL_SKILL6_CAPABILITY_JSON": str(tmp_path / "absent.json")},
     )
     assert proc.returncode == 75
-    combined = proc.stderr + proc.stdout
-    assert "absent.json" in combined
-    assert "capability" in combined.lower()
+    assert "claude-nine" in (proc.stderr + proc.stdout)
 
 
-def test_capability_gate_cli_absent_beats_capability(tmp_path):
-    """Ordering contract: with NO openclaw on PATH the adapter exits 64 (CLI
-    gate) even though the capability JSON would also refuse (75) — the CLI
-    check runs FIRST per the P1-12 contract."""
+def test_harness_gate_beats_cliworks_true(tmp_path):
+    """Ordering contract (999): even with the stub CLI present AND a
+    capability JSON claiming cliWorks=true, the verb refuses 75 — the
+    lane does not exist in this harness, so no capability state enables
+    it here."""
     cap = _cap_json(tmp_path, cliworks=True)
     proc = _run_adapter(
         ["status"],
         {"PATH": _STRIpped_PATH, "GHL_SKILL6_CAPABILITY_JSON": str(cap)},
     )
-    assert proc.returncode == 64
+    assert proc.returncode == 75
 
 
-# ── (d) verb->CLI mapping through the stub ───────────────────────────────────
+# ── (d) no verb ever reaches the stub CLI ────────────────────────────────────
 
-def test_status_mapping(tmp_path):
-    proc = _run_adapter(["status"], _stub_env(tmp_path))
-    assert proc.returncode == 0
+@pytest.mark.parametrize("verb,args", [
+    ("status", []),
+    ("start", []),
+    ("open", ["https://app.convertandflow.com/"]),
+    ("snapshot", []),
+    ("frame-snapshot", ['iframe[src*="form-builder-v2"]']),
+    ("click", ["f1e12"]),
+    ("type", ["f1e12", "hello world"]),
+    ("stop", []),
+])
+def test_no_verb_reaches_the_stub(tmp_path, verb, args):
+    """With stub CLI + cliWorks=true, every verb still refuses 75 and the
+    stub's argv echo never appears (no mapped command was produced)."""
+    proc = _run_adapter([verb] + args, _stub_env(tmp_path))
+    assert proc.returncode == 75, f"{verb}: expected 75, got {proc.returncode}"
     out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "--browser-profile" in out and "openclaw" in out
-    assert "status" in out
+    for token in ("--browser-profile", "--interactive", "--efficient",
+                  "--frame", "f1e12", "hello world"):
+        assert token not in out, f"{verb}: stub argv token leaked: {token}"
 
 
-def test_start_mapping(tmp_path):
-    proc = _run_adapter(["start"], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "start" in out
+# ── (e) usage surface ────────────────────────────────────────────────────────
 
-
-def test_open_mapping(tmp_path):
-    url = "https://app.convertandflow.com/"
-    proc = _run_adapter(["open", url], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "open" in out and url in out
-
-
-def test_snapshot_mapping_defaults(tmp_path):
-    """P1-12 snapshotDefaults: ALWAYS --interactive; --efficient preset on by
-    default (GHL_SKILL6_SNAPSHOT_MODE=efficient)."""
-    proc = _run_adapter(["snapshot"], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "snapshot" in out
-    assert "--interactive" in out, "snapshotDefaults: --interactive is mandatory"
-    assert "--efficient" in out, "snapshotDefaults.mode: efficient preset expected"
-
-
-def test_snapshot_efficient_mode_off(tmp_path):
-    """A caller can drop the efficient preset via GHL_SKILL6_SNAPSHOT_MODE."""
-    env = _stub_env(tmp_path)
-    env["GHL_SKILL6_SNAPSHOT_MODE"] = "full"
-    proc = _run_adapter(["snapshot"], env)
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "--interactive" in out
-    assert "--efficient" not in out
-
-
-def test_frame_snapshot_mapping(tmp_path):
-    """frame-snapshot -> snapshot --interactive --frame SELECTOR, selector
-    verbatim (plan Appendix A / 9.6: frame-scoped snapshots are Lane 2's point)."""
-    sel = 'iframe[src*="form-builder-v2"]'
-    proc = _run_adapter(["frame-snapshot", sel], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "snapshot" in out
-    assert "--interactive" in out
-    assert "--frame" in out
-    assert sel in out
-
-
-def test_click_mapping(tmp_path):
-    proc = _run_adapter(["click", "f1e12"], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "click" in out and "f1e12" in out
-
-
-def test_type_mapping(tmp_path):
-    proc = _run_adapter(["type", "f1e12", "hello world"], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "type" in out
-    assert "f1e12" in out and "hello world" in out
-
-
-def test_stop_mapping(tmp_path):
-    """stop -> `openclaw browser close` per the P1-12 contract (tab close is
-    the Skill 6 teardown unit; the process-level `stop` is not mapped)."""
-    proc = _run_adapter(["stop"], _stub_env(tmp_path))
-    assert proc.returncode == 0
-    out = (proc.stdout + proc.stderr).splitlines()
-    assert "browser" in out and "close" in out
-
-
-# ── (e) usage errors ─────────────────────────────────────────────────────────
-
-def test_unknown_verb_exits_64():
+def test_unknown_verb_exits_75():
+    """The harness gate precedes verb validation: an unknown verb refuses
+    75 like every other verb."""
     proc = _run_adapter(["frobnicate"], {"PATH": _STRIpped_PATH})
-    assert proc.returncode == 64
-    assert "unknown verb" in (proc.stderr + proc.stdout).lower()
+    assert proc.returncode == 75
 
 
 def test_no_verb_prints_usage_exits_64():
@@ -297,21 +237,19 @@ def test_no_verb_prints_usage_exits_64():
     assert proc.returncode == 64
 
 
-def test_open_without_url_exits_64(tmp_path):
+def test_open_without_url_exits_75(tmp_path):
     proc = _run_adapter(["open"], _stub_env(tmp_path))
-    assert proc.returncode == 64
-    assert "url" in (proc.stderr + proc.stdout).lower()
+    assert proc.returncode == 75
 
 
-def test_type_missing_text_exits_64(tmp_path):
+def test_type_missing_text_exits_75(tmp_path):
     proc = _run_adapter(["type", "f1e12"], _stub_env(tmp_path))
-    assert proc.returncode == 64
+    assert proc.returncode == 75
 
 
-def test_frame_snapshot_without_selector_exits_64(tmp_path):
+def test_frame_snapshot_without_selector_exits_75(tmp_path):
     proc = _run_adapter(["frame-snapshot"], _stub_env(tmp_path))
-    assert proc.returncode == 64
-    assert "selector" in (proc.stderr + proc.stdout).lower()
+    assert proc.returncode == 75
 
 
 def test_help_flag_exits_zero():

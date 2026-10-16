@@ -6,9 +6,13 @@ required, NO network, NO real secrets.  All runners are in-process fakes that
 return synthetic CompletedProcess-like objects; all env is a synthetic dict.
 
 Coverage per the P0-6 + 9.7-4 task contract:
-  (a) lane selection priority per the plan 9.6 REVISED table —
+  (a) lane selection priority per the plan 9.6 REVISED table, 999 harness
+      form (lane 2, the OpenClaw managed browser, is structurally absent
+      in the Claude Code harness and is never probed or selected) —
         * agent-browser-only box          -> selectedLane "agent_browser"
-        * OC 2.0+ + plugin + playwright   -> managed lane available/eligible
+        * OC-looking box + playwright     -> selectedLane "playwright_direct"
+                                             (lane 2 absent despite the fake
+                                             openclaw CLI answering)
         * nothing present                 -> selectedLane null + no-browser-lane
                                              blocker (fail-closed)
   (b) iframeDrag.available False when Playwright missing (fail-closed), True
@@ -126,7 +130,7 @@ def runner_nothing():
 @pytest.mark.parametrize("runner_factory,expected_lane", [
     (runner_ab_only, "agent_browser"),
     (runner_ab_plus_playwright, "agent_browser"),           # 1b = same lane
-    (runner_oc2_managed, "openclaw_managed_browser"),
+    (runner_oc2_managed, "playwright_direct"),  # lane 2 structurally absent here
     (runner_playwright_only, "playwright_direct"),
     (runner_nothing, None),
 ])
@@ -150,22 +154,34 @@ def test_agent_browser_only_box_is_qc_passable():
     assert res["fallbackChain"][-1] == "cua_last_resort"
 
 
-def test_oc_2x_plugin_playwright_managed_lane_available():
-    res = cp.run_probe(runner=runner_oc2_managed(), env={}, now=NOW)
+def test_managed_lane_structurally_absent_in_claude_nine():
+    """999 harness: even with a fake `openclaw` CLI answering every probe
+    (2026.9.2, plugin enabled, browser CLI working), lane 2 is reported
+    structurally absent, the CLI is never invoked, and selection falls to
+    the Playwright lane."""
+    calls = []
+    base = runner_oc2_managed()
+
+    def tracking_runner(cmd, capture_output=False, text=False, timeout=None):
+        calls.append(" ".join(cmd))
+        return base(cmd, capture_output=capture_output, text=text, timeout=timeout)
+
+    res = cp.run_probe(runner=tracking_runner, env={}, now=NOW)
     lane = res["lanes"]["openclaw_managed_browser"]
-    assert lane["pluginEnabled"] is True
-    assert lane["cliWorks"] is True
-    assert lane["playwrightAvailable"] is True
+    assert lane["pluginEnabled"] is False
+    assert lane["cliWorks"] is False
     assert lane["profile"] == "openclaw"
-    assert res["openclaw"]["is2xOrNewer"] is True
-    assert res["openclaw"]["semver"] == [2026, 9, 2]
-    # agent-browser absent -> lane 2 selected
-    assert res["selectedLane"] == "openclaw_managed_browser"
+    assert res["openclaw"]["cliPresent"] is False
+    assert res["openclaw"]["is2xOrNewer"] is False
+    assert res["selectedLane"] == "playwright_direct"
+    assert "openclaw_managed_browser" not in res["fallbackChain"]
+    assert any("claude-nine" in w or "Claude Code harness" in w for w in res["warnings"])
+    assert not any(c.startswith("openclaw") for c in calls), calls
 
 
-def test_oc_pre_2x_managed_lane_not_eligible():
-    """Plan 2.2: OpenClaw < 2026.8.1 must NOT get the managed lane even with
-    plugin + cli; falls to playwright when importable, else fail-closed."""
+def test_oc_pre_2x_fixture_also_structurally_absent():
+    """A pre-2.0-shaped fake OpenClaw gets the same structural absence:
+    lane 2 is a harness property in this build, not a version gate."""
     base = {
         "openclaw --version": _CP(returncode=0, stdout="OpenClaw 2026.7.9 (abc)\n"),
         "openclaw plugins list": _CP(
@@ -174,9 +190,9 @@ def test_oc_pre_2x_managed_lane_not_eligible():
         "import playwright": _CP(returncode=0, stdout=""),
     }
     res = cp.run_probe(runner=_fake_runner(**base), env={}, now=NOW)
+    assert res["openclaw"]["cliPresent"] is False
     assert res["openclaw"]["is2xOrNewer"] is False
     assert res["selectedLane"] == "playwright_direct"
-    assert any("2026.8.1" in w for w in res["warnings"])
 
 
 def test_nothing_present_fails_closed_with_blocker():

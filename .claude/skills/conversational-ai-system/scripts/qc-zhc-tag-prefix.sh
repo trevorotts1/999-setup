@@ -70,7 +70,9 @@ fi
 #     shipped script that CAN write the marker is not proof it EVER ran on
 #     this box's actual AGENTS.md.
 if [ -z "${AGENTS_MD:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+  # Workspace binding (999 harness): the core file lives at the install repo
+  # root (env GHL_WORKSPACE wins; AGENTS_MD may be set directly).
+  if [ -z "${AGENTS_MD:-}" ]; then WS_ROOT="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"; AGENTS_MD="$WS_ROOT/AGENTS.md"; fi
 fi
 if [ -f "$AGENTS_MD" ]; then
   if grep -q 'SKILL38_ZHC_TAG_PREFIX' "$AGENTS_MD"; then

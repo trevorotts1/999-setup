@@ -45,7 +45,7 @@ Operator-facing quiet hours block:
 
 Operator-facing quiet hours do NOT block:
 - Self-harm sentiment escalations (Step 9.6) — these fire immediately
-- Hard system failures (tunnel down, OpenClaw crashed) — these fire
+- Hard system failures (client connection down, the agent runtime crashed) — these fire
   immediately
 - Any notification tagged `urgent`
 
@@ -56,8 +56,8 @@ rules, or disable quiet hours entirely (set `enabled: false`).
 
 ## Time zone
 
-Default: client's local time zone as configured in OpenClaw
-(`agent.timezone` in openclaw.json). If not set, defaults to UTC and
+Default: client's local time zone as configured in the install's
+skill38 configuration (the `timezone` key). If not set, defaults to UTC and
 operator should configure.
 ```
 

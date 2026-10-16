@@ -257,7 +257,7 @@ class TestSafetyGateRefusesUnapproved(unittest.TestCase):
 # _get_token() placeholder-shadow fix (2026-08-03) — see TERMINOLOGY.md and
 # check-ghl-pit-liveness.sh's _is_placeholder() (the reference implementation
 # this resolver's shape rules mirror). A config-seeded placeholder inherited
-# into the live process env at gateway launch must never be accepted as a real
+# into the live process env at session launch must never be accepted as a real
 # credential; the real credential in a lower-priority alias (or the secrets
 # store, via a different resolver layer) must still be found.
 # ---------------------------------------------------------------------------

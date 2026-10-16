@@ -288,7 +288,7 @@ class TestCardDedupe:
 
     def test_dedupe_survives_a_fresh_process_reload_of_the_ledger(self, tmp_path):
         """The event-ledger is ON DISK — a brand-new call (simulating a
-        fresh cron invocation) against the SAME ledger path must still
+        fresh scheduled invocation) against the SAME ledger path must still
         dedupe; nothing may rely on in-memory state."""
         ledger_path = str(tmp_path / "ledger.json")
         candidates = [{"id": "p1"}]

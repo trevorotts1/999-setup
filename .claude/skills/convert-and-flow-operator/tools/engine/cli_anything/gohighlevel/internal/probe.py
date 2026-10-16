@@ -1,8 +1,10 @@
-"""probe.py — ContractProbe: doctor internal-probe + Sunday contract check.
+"""probe.py — ContractProbe: doctor internal-probe + scheduled contract check.
 
 ONE code path, three callers (adapter-design §8.3):
   1. `caf doctor` (acceptance criterion C1: "internal probe passes")
-  2. Sunday 3 AM cron contract check
+  2. A scheduled contract check (on the OpenClaw side, a Sunday 3 AM cron;
+     in this harness, whatever scheduler the operator wires — the probe
+     itself is scheduler-agnostic)
   3. CI (mock transport, replay golden fixture — acceptance criterion C19)
 
 `run_contract_probe(adapter, *, allow_write_probe=False) -> ProbeResult`
@@ -14,9 +16,9 @@ Probe is READ-ONLY by default:
 
 On contract failure (shape drift, not merely dead token):
   - Calls degrade.disable_writes(scope="local", reason=..., probe_result)
-  - The fleet-wide disable is the Sunday cron's job (it calls disable_writes
-    on every box).  This module calls it locally; the cron wiring (unit 13)
-    does the fleet propagation.
+  - This module acts locally only. Fleet-wide propagation was the OpenClaw
+    side's scheduled job; this harness has no fleet propagation (see
+    degrade.py's harness note).
 
 PRD constraint: NEVER raises mid-probe.  All failures are caught and returned
 as ProbeResult(ok=False, ...).  Only the CLI top-level may sys.exit().

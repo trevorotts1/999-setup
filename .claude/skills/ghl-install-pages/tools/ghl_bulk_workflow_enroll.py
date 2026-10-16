@@ -259,12 +259,12 @@ def _get_token() -> str:
     placeholder_note = (
         "\nNote: at least one candidate was a documentation PLACEHOLDER (short / "
         "dummy-shaped) and was SKIPPED rather than used — put the real value in "
-        "~/.openclaw/secrets/.env, not just openclaw.json."
+        "the install's secrets env file, not just a config seed."
         if saw_placeholder else ""
     )
     print(
         "Error: GHL location PIT not found in any canonical env-var name.\n"
-        "Set one of these in ~/.openclaw/secrets/.env (or as an env var):\n"
+        "Set one of these in the install's secrets env file (or as an env var):\n"
         "  " + ", ".join(_LOCATION_PIT_ENV_NAMES) + placeholder_note,
         file=sys.stderr,
     )

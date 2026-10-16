@@ -108,9 +108,10 @@ def _load_crosswalk_module():
 
 def _load_catalog() -> "dict | None":
     """Load persona-categories.json for the per-page TOPIC re-selection.
-    Repo-relative default so an offline fixture run never touches
-    ``~/.openclaw``; honors ``OPENCLAW_PERSONA_CATEGORIES`` exactly like
-    ``persona_blend.load_catalog`` for test overrides."""
+    In this harness the catalog is designated by the operator via
+    ``SKILL6_PERSONA_CATEGORIES`` (the persona library is not part of this
+    pack and is never borrowed from another tree at runtime); without the
+    override the seam degrades to None, exactly like a missing crosswalk."""
     global _CATALOG_CACHE
     if _CATALOG_CACHE is not None:
         return _CATALOG_CACHE or None
@@ -119,14 +120,11 @@ def _load_catalog() -> "dict | None":
         _CATALOG_CACHE = False
         return None
     try:
-        override = os.environ.get("OPENCLAW_PERSONA_CATEGORIES", "").strip()
-        if override:
-            pc_path = override
-        else:
-            pc_path = os.path.join(
-                _REPO_ROOT, "22-book-to-persona-coaching-leadership-system",
-                "persona-categories.json")
-        catalog = _pb.load_catalog({"persona_categories": pc_path})
+        override = os.environ.get("SKILL6_PERSONA_CATEGORIES", "").strip()
+        if not override:
+            _CATALOG_CACHE = False
+            return None
+        catalog = _pb.load_catalog({"persona_categories": override})
         _CATALOG_CACHE = catalog or False
     except Exception:  # noqa: BLE001
         _CATALOG_CACHE = False

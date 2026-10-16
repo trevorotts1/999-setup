@@ -19,7 +19,7 @@ behavior CONTEXT-AWARE of who it is talking to.
 > feature READS that membership and adjusts behavior. Default OFF (opt-in advanced
 > feature).
 
-## openclaw.json toggle — default OFF
+## Configuration toggle — in the install's skill38 configuration (default OFF)
 
 ```json
 {
@@ -71,7 +71,7 @@ Segments are defined PER CLIENT, because what makes someone a VIP differs by
 business. The operator maps which GHL tags mean which segment. The map lives in
 two byte-compatible places that say the same thing:
 
-1. `skill38.segmentation.tag_map` in openclaw.json (machine-readable), and
+1. `segmentation.tag_map` in the install's skill38 configuration (machine-readable), and
 2. `<MASTER_FILES_DIR>/segment-map.md` (the human-readable companion the agent
    reads at the start of a turn, seeded by `scripts/25-seed-round3-feature-files.sh`).
 
@@ -132,7 +132,7 @@ the draft is shaped by who the customer is. Lookup order:
 1. Read the contact's GHL tags (already available on the inbound payload / the
    contact record the agent loaded for this turn — no extra API call needed in the
    common case).
-2. Match those tags against `tag_map` (openclaw.json) / `segment-map.md`.
+2. Match those tags against `tag_map` (the skill38 configuration) / `segment-map.md`.
 3. Resolve to a single segment via the precedence above; un-matched → `default_segment`.
 4. Apply the per-segment OVERRIDES (below) to the reply that is about to be drafted.
 5. Log the lookup + which overrides applied (PII-free — see Logging).

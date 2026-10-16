@@ -232,7 +232,7 @@ class TestSweepBase:
 
     def test_cli_sweep_base_missing_dir_exits_zero_not_attention(self, tmp_path, capsys):
         """Same false-alarm fix, exercised through the CLI entrypoint a
-        scheduled cron actually invokes: a missing/unresolvable base dir must
+        scheduled run actually invokes: a missing/unresolvable base dir must
         exit 0 (clean), never 1 (attention needed)."""
         rc = rec.main(["--sweep-base", str(tmp_path / "does-not-exist"), "--json", "--no-log"])
         assert rc == 0
@@ -299,7 +299,7 @@ class TestSweepBase:
         ('the schedule's first live dated log'): sweep_base's own default
         behavior writes one timestamped JSON log file under
         <base>/github-archive-reconcile-logs/ whose content matches the
-        returned report. The genuine live proof (an actual cron firing on an
+        returned report. The genuine live proof (an actual scheduled firing on an
         operator box) is deferred to U22; the schedule ENTRY itself (this
         unit's own offline acceptance (c)) is proven separately in
         test_github_archive_maintenance_schedule.py."""

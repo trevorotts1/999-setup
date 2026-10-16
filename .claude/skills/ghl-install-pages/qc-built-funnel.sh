@@ -23,7 +23,7 @@
 set -u
 
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"  # install repo root (999 layout: .claude/skills/<skill> -> repo root)
 SCORER="$REPO_ROOT/shared-utils/fab_qc.py"
 
 ARG="${1:-}"
@@ -38,7 +38,7 @@ fi
 # Resolve the evidence root: a path as-is, or working/funnels/<slug>/.
 EVIDENCE="$ARG"
 if [ ! -d "$EVIDENCE" ]; then
-  for cand in "$PWD/working/funnels/$ARG" "$HOME/clawd/working/funnels/$ARG"; do
+  for cand in "$PWD/working/funnels/$ARG" "$REPO_ROOT/working/funnels/$ARG"; do
     if [ -d "$cand" ]; then EVIDENCE="$cand"; break; fi
   done
 fi

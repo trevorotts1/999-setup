@@ -18,8 +18,8 @@
 #
 # BANNED IDENTIFIERS (case-insensitive, word-ish boundaries where it matters):
 #   client names/businesses ... EXTERNALIZED. The real client roster is loaded at
-#                       runtime from $OPENCLAW_CLIENT_ROSTER or
-#                       ~/.openclaw/client-roster.txt (gitignored; template at
+#                       runtime from $SKILL38_CLIENT_ROSTER (a path to a
+#                       gitignored roster file; template at
 #                       scripts/client-roster.example.txt). No real client name is
 #                       hardcoded here anymore.
 #   operator-static tokens (NOT client data — kept inline, always scanned):
@@ -76,8 +76,8 @@ OPERATOR_BANNED='blackceo|5252140759|trevelynotts|Trevor|/Users/christy|/Users/b
 PLACEHOLDER_BANNED='ExampleClientAlpha|ExampleClientBeta|PlaceholderCo|Testclient Sentinel'
 
 _roster_path() {
-  if [ -n "${OPENCLAW_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$OPENCLAW_CLIENT_ROSTER"
-  else printf '%s\n' "${HOME:-/root}/.openclaw/client-roster.txt"; fi
+  if [ -n "${SKILL38_CLIENT_ROSTER:-}" ]; then printf '%s\n' "$SKILL38_CLIENT_ROSTER"
+  else printf '%s\n' ""; fi
 }
 # Join the roster's non-comment lines with '|' into an ERE alternation.
 _roster_regex() {
@@ -92,7 +92,7 @@ BANNED="$OPERATOR_BANNED|$PLACEHOLDER_BANNED"
 if CLIENT_REGEX="$(_roster_regex)"; then
   BANNED="$BANNED|$CLIENT_REGEX"
 else
-  echo "WARNING: client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER," \
+  echo "WARNING: client-name roster not found (looked in \$SKILL38_CLIENT_ROSTER," \
        "then $(_roster_path)); SKIPPING the roster-specific client-name scan. Operator" \
        "and .example placeholder tokens are still enforced. See" \
        "scripts/client-roster.example.txt to enable the full check." >&2
@@ -136,11 +136,9 @@ if [ "$SCAN_GEN" = "1" ] && [ -f "$GEN_SCRIPT" ]; then
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
   MFD="$TMP/master-files"; mkdir -p "$MFD"
-  # PATH without openclaw so the generator stays offline (Layer-3 markdown).
-  SANDBOX_PATH=""; IFS=':' read -ra _p <<< "$PATH"
-  for p in "${_p[@]}"; do [ -x "$p/openclaw" ] && continue
-    if [ -z "$SANDBOX_PATH" ]; then SANDBOX_PATH="$p"; else SANDBOX_PATH="$SANDBOX_PATH:$p"; fi; done
-  [ -n "$SANDBOX_PATH" ] || SANDBOX_PATH="$PATH"
+  # No gateway CLI exists in this harness; the generator is a local script
+  # and stays offline by construction.
+  SANDBOX_PATH="$PATH"
   env -i HOME="$TMP" PATH="$SANDBOX_PATH" \
     MASTER_FILES_DIR="$MFD" \
     PUBLIC_HOSTNAME="claw.example.com" \

@@ -61,7 +61,10 @@ fi
 
 # Resolve the conversation-workflows dir.
 if [ -z "$WF_DIR" ]; then
-  POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+  # Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+  # pointer is the master-files-dir file inside this skill directory (the
+  # OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+  POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
   if [ -f "$POINTER" ]; then
     MFD="$(head -n1 "$POINTER")"
     [ -n "$MFD" ] && WF_DIR="$MFD/conversation-workflows"

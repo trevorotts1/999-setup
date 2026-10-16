@@ -221,7 +221,7 @@ to put if it is missing/wrong. (Per-workflow, brutally-specific version generate
 > `scripts/qc-trinity-registry.sh`. The 23-key rule is a check, not just a human checklist item.
 >
 > **MANDATORY SEND-DIRECTIVE (machine-enforced).** The in-GHL-body `messageTemplate` stays placeholder-free,
-> but the SERVER-mapping `messageTemplate` (the `hooks.mappings` entry in `openclaw.json`) MUST carry the
+> but the SERVER-mapping `messageTemplate` (the server mapping in the client's endpoint configuration) MUST carry the
 > send-directive — the word **SEND**, the **GHL Conversations API** (POST `conversations/messages`), the
 > **drafting-is-NOT-sending** clause, and **"do not end your turn until a messageId/conversationId is
 > returned."** Without it the agent drafts a reply and stops — the customer gets nothing. This is verified by
@@ -292,7 +292,7 @@ The generated Client Reference Sheet carries a prominent **"Your Communication P
 the AI helps them build ADDITIONAL communication playbooks. This is part of the standard so every client doc
 answers it the same way (friendly tone, generous emojis 💬🚀🛠️📅🏷️✅):
 
-- **WHERE they live / are stored** — the working copies are in the client's OpenClaw master-files
+- **WHERE they live / are stored** — the working copies are in the client's master-files
   **`conversation-workflows/`** folder (the source of truth the agent reads on every reply); the
   human-facing copies are **mirrored to their Notion** (Notion → Google Docs → text). Both stay in sync.
 - **"Want another communication playbook? Just ask me!"** — a clear CTA with a concrete COPYABLE example: the

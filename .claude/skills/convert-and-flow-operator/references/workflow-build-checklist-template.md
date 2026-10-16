@@ -26,7 +26,7 @@ Copy this template for each new workflow build. Fill all `[...]` placeholders.
 | QC Agent | `[FILL: MiniMax model slug used for QC, e.g. minimax/minimax-m3]` |
 | Client PUBLISH decision | `[FILL: DRAFT / LIVE — from gating question 1 answer]` |
 | Client RE-ENTRY decision | `[FILL: ONCE / ALLOW-MULTIPLE — from gating question 2 answer]` |
-| Snapshot path | `[FILL: ~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<loc>/<wf-id>/<ts>.json]` |
+| Snapshot path | `[FILL: <engine>/data/snapshots/<loc>/<wf-id>/<ts>.json] (the engine in-tree data dir)` |
 
 ---
 
