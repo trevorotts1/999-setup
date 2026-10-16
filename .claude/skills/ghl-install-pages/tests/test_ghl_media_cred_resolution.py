@@ -2,11 +2,11 @@
 
 These tests lock the behaviour added after the image step false-failed
 ("GHL LOCATION PIT not found") on a LOCATION PIT the operator had used for six
-months — the value was sitting in ``~/.openclaw/secrets/.env`` under
+months — the value was sitting in the install's secrets env store under
 ``GOHIGHLEVEL_API_KEY``, but the old resolver only checked two env-var names in
 the live process environment and never opened the store.
 
-NO real keys, NO real tokens, NO network. The canonical env stores are redirected
+NO real keys, NO real tokens, NO network. The env store is redirected
 to a tmp directory via monkeypatching ``ghl_media._GHL_ENV_STORES`` so a fake
 ``secrets/.env`` (with FAKE values) exercises the store-fallback path without ever
 touching the operator's real store. Every value here is a generic ``pit-FAKE…`` /
@@ -65,7 +65,7 @@ def fake_stores(tmp_path, monkeypatch):
     def _set(**pairs):
         p = _write_store(store, **pairs)
         # Use an ABSOLUTE path so os.path.expanduser is a no-op; only this store
-        # is searched (the real ~/.openclaw/secrets/.env is never read).
+        # is searched (the real designated store is never read).
         monkeypatch.setattr(m, "_GHL_ENV_STORES", (p,))
         return p
 
@@ -113,11 +113,16 @@ class TestPitEnvResolution:
         # NAMES the exact env vars it checked …
         for name in m._PIT_ENV_NAMES:
             assert name in msg
-        # … and the exact store paths, and how to load them.
-        for store in m._GHL_ENV_STORES:
-            assert store in msg
+        # … and the store situation, and how to load the store.
+        if m._GHL_ENV_STORES:
+            for store in m._GHL_ENV_STORES:
+                assert store in msg
+        else:
+            # No store designated in this environment: the message must say
+            # how to designate one (the harness secrets binding).
+            assert "$SECRETS_ENV" in msg
         assert "source" in msg.lower()
-        assert "~/.openclaw/secrets/.env" in msg
+        assert "secrets env" in msg
 
 
 # ── LOCATION PIT — STORE FALLBACK (the actual six-month incident) ─────────────
@@ -212,16 +217,21 @@ class TestAliasSetInvariants:
         assert m._LOCATION_ENV_NAMES[0] == "PODCAST_ENGINE_GHL_LOCATION_ID"
         assert m._LOCATION_ENV_NAMES[1] == "GOHIGHLEVEL_LOCATION_ID"
 
-    def test_secrets_env_is_first_store(self):
-        assert m._GHL_ENV_STORES[0] == "~/.openclaw/secrets/.env"
+    def test_store_is_exactly_the_secrets_env_designated_file(self, monkeypatch):
+        # 999 harness binding: the ONLY file store is the one $SECRETS_ENV
+        # designates; undesignated means no file store at all.
+        monkeypatch.setenv("SECRETS_ENV", "/tmp/fixture-secrets.env")
+        assert m._default_env_stores() == ("/tmp/fixture-secrets.env",)
+        monkeypatch.delenv("SECRETS_ENV")
+        assert m._default_env_stores() == ()
 
 
 # ── PLACEHOLDER-SHADOW FIX (2026-08-03) ────────────────────────────────────────
-# A config-seeded placeholder (openclaw.json env.vars — placeholders by design)
-# is inherited into the live process env at gateway launch. The OLD resolver
+# A config-seeded placeholder (config env copies — placeholders by design)
+# is inherited into the live process env. The OLD resolver
 # treated "first non-empty" as "first real", so a 10-char doc placeholder
 # (pit-abc123) in the live env silently outranked the real credential sitting in
-# ~/.openclaw/secrets/.env — producing a false "PIT is DEAD/EXPIRED" alarm the
+# the install's secrets env store — producing a false "PIT is DEAD/EXPIRED" alarm the
 # operator had to personally disprove. These tests lock BOTH directions of the
 # fix: a placeholder can no longer shadow a live value, and a real value already
 # in the live env is still selected exactly as before (no regression).
@@ -255,7 +265,7 @@ class TestIsPlaceholderShape:
 
 class TestPlaceholderCannotShadowLiveValue:
     """Direction 1: a placeholder-shaped value (however it got into the live
-    process env — e.g. inherited from openclaw.json env.vars at gateway launch)
+    process env — e.g. inherited from a config seed)
     must NEVER be returned, and must never prevent a real value in the secrets
     store from being found."""
 
@@ -277,7 +287,7 @@ class TestPlaceholderCannotShadowLiveValue:
         assert m.resolve_location_pit(env, search_stores=False) == FAKE_LEGACY_PIT
 
     def test_placeholder_in_live_env_falls_through_to_secrets_store(self, fake_stores):
-        """THE EXACT DEFECT: openclaw.json env.vars (inherited into the live
+        """THE EXACT DEFECT: config-seeded env copies (inherited into the live
         process env) holds a placeholder under the preferred alias, while the
         REAL credential sits in the secrets store. The store value must win —
         this is the 2026-08-03 false-alarm scenario, now fixed."""

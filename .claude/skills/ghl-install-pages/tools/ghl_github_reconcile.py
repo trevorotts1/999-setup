@@ -22,7 +22,7 @@ it is deliberately NOT a fleet-wide crawler/daemon on its own. ``sweep_base()``
 evidence-root discovery ``cc_board.py``'s own reconcile (U27) already uses
 (``cc_board.list_evidence_runs`` over a base dir) to sweep every run in one
 pass and writes a dated JSON log proving each scheduled pass actually ran —
-see SKILL.md's Reconciliation section for the `openclaw cron create` wiring.
+see SKILL.md's Reconciliation section for the scheduler wiring (the operator's scheduler runs this tool on the maintenance cadence; the pack ships no scheduler registration machinery).
 
 Reuses ``ghl_receipts`` (the existing F6 store) for both reading the ledger
 and, on retry, writing the updated archive receipt — no new receipt schema.
@@ -161,7 +161,7 @@ def reconcile(evidence_root: str, *, retry: bool = False,
 # reuses the ONE canonical one U27's ``cc_board.reconcile()`` already sweeps
 # (``cc_board.resolve_evidence_base`` / ``cc_board.list_evidence_runs`` — every
 # ``v2-<RUN_ID>`` directory under the base that carries an intake receipt) and
-# simply runs ``reconcile()`` over each one, so scheduling this as ONE cron
+# simply runs ``reconcile()`` over each one, so scheduling this as ONE job
 # entry closes the doctrine gap without a second "where does evidence live"
 # definition to drift out of sync with U27's.
 
@@ -203,7 +203,7 @@ def sweep_base(base_dir: str, *, retry: bool = True,
                 write_log: bool = True, clock=None) -> SweepReport:
     """Run ``reconcile()`` over EVERY Skill-6 evidence run under ``base_dir``
     and (by default) write ONE dated JSON log recording the pass — the
-    on-disk proof a scheduled maintenance-window cron actually fired, every
+    on-disk proof a scheduled maintenance-window run actually fired, every
     time it fires (never overwritten; one new timestamped file per sweep).
 
     Never raises. An unresolvable/absent/empty ``base_dir`` (a bare checkout,

@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # 21-generate-client-reference-sheet.sh
-# Skill 38 — Step 6: Generate the Client Reference Sheet (3-layer Notion-vs-markdown decision tree)
-# AND deliver it to the client via Telegram with the Notion link prominently at the top.
+# Skill 38 — Step 6: Generate the Client Reference Sheet (Notion-vs-markdown)
+# AND surface it for delivery to the client via their configured channel,
+# with the Notion link prominently at the top when one is created.
 #
-# Layer 1: Notion skill installed (openclaw skills list shows notion)  -> use skill
+# 999 harness form: there is no host "notion skill" layer in this harness.
 # Layer 2: NOTION_API_KEY env present                                  -> direct Notion REST API call
-# Layer 3: Neither                                                     -> markdown fallback + recommend Notion
+# Layer 3: Otherwise                                                   -> markdown fallback + recommend Notion
+# Delivery is SURFACED (message files written next to the sheet, printed in
+# the run output) for the session to send via the client's configured
+# channel; this script never sends through a gateway CLI.
 #
 # Code-block fidelity is the highest-priority requirement.
 # Markdown -> Notion blocks is handled by python3 (NOT pure bash) to preserve newlines and chunk safely.
@@ -25,7 +29,15 @@ TEMPLATES_DIR="${SKILL38_TEMPLATES_DIR:-$TEMPLATES_DIR_DEFAULT}"
 : "${ROUTE_ID:?ROUTE_ID must be set (e.g., ZHC)}"
 : "${HOOKS_TOKEN:?HOOKS_TOKEN must be set}"
 : "${CLIENT_BUSINESS_NAME:?CLIENT_BUSINESS_NAME must be set}"
-: "${CLIENT_TELEGRAM_CHAT_ID:?CLIENT_TELEGRAM_CHAT_ID must be set}"
+# CLIENT_TELEGRAM_CHAT_ID is optional in this harness: delivery is surfaced,
+# and the id is recorded in the delivery notice only when the client's
+# configured channel is Telegram.
+CLIENT_TELEGRAM_CHAT_ID="${CLIENT_TELEGRAM_CHAT_ID:-}"
+# WEBHOOK_MODEL: the model named in the generated Raw Body. Model-selection
+# doctrine: the client selects their model or their configured default
+# applies; this sheet never picks one. When unset, a marked placeholder is
+# emitted with a loud warning, like the hooks token.
+WEBHOOK_MODEL="${WEBHOOK_MODEL:-}"
 
 # ----- optional / defaulted inputs -----
 OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_TELEGRAM_CHAT_ID:-}"
@@ -334,61 +346,45 @@ substitute_template "$CHECKLIST_TEMPLATE" > "$SEC4"
 # verification (--require-manual-fill).
 # ============================================================================
 
-# Resolve the actual hooks bearer token, in priority order:
-#   1. HOOKS_TOKEN env (already :?-required above, so normally set)
-#   2. OPENCLAW_HOOKS_TOKEN env
-#   3. hooks.token read from the live openclaw.json config
-# If none resolve, emit a clearly-marked placeholder AND warn loudly (non-fatal
-# so the rest of the sheet still renders, but the operator is told the token is
-# missing and must be filled in before hand-off).
+# Resolve the actual hooks bearer token:
+#   HOOKS_TOKEN env (already :?-required above, so normally set), sourced
+#   from the install's own secrets env. There is no gateway config file in
+#   this harness to read a token from. If it somehow resolves empty, emit a
+#   clearly-marked placeholder AND warn loudly (non-fatal so the rest of the
+#   sheet still renders, but the operator is told the token is missing and
+#   must be filled in before hand-off).
 RESOLVED_HOOKS_TOKEN="${HOOKS_TOKEN:-}"
-if [ -z "$RESOLVED_HOOKS_TOKEN" ]; then
-  RESOLVED_HOOKS_TOKEN="${OPENCLAW_HOOKS_TOKEN:-}"
-fi
-if [ -z "$RESOLVED_HOOKS_TOKEN" ]; then
-  for cfg in "${OPENCLAW_CONFIG:-}" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
-    [ -n "$cfg" ] || continue
-    [ -f "$cfg" ] || continue
-    TOK="$(python3 - "$cfg" <<'PY_TOK_EOF' 2>/dev/null || true
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception:
-    sys.exit(0)
-hooks = d.get("hooks") or {}
-tok = hooks.get("token") or ""
-if isinstance(tok, str) and tok.strip():
-    sys.stdout.write(tok.strip())
-PY_TOK_EOF
-)"
-    if [ -n "$TOK" ]; then
-      RESOLVED_HOOKS_TOKEN="$TOK"
-      break
-    fi
-  done
-fi
 
 TOKEN_IS_PLACEHOLDER=0
 if [ -z "$RESOLVED_HOOKS_TOKEN" ]; then
   RESOLVED_HOOKS_TOKEN="REPLACE_ME__hooks_token_not_resolved_at_generation_time"
   TOKEN_IS_PLACEHOLDER=1
-  echo "[21-generate-client-reference-sheet] WARN: could not resolve the hooks bearer token (HOOKS_TOKEN / OPENCLAW_HOOKS_TOKEN / hooks.token in openclaw.json all empty). Emitting a clearly-marked PLACEHOLDER — fill it in before hand-off." >&2
+  echo "[21-generate-client-reference-sheet] WARN: could not resolve the hooks bearer token (HOOKS_TOKEN empty). Emitting a clearly-marked PLACEHOLDER — fill it in before hand-off." >&2
 fi
 
-# Derive the hook route + routing agent id in a way that works across both
-# repo variants (Mac uses ROUTING_AGENT_ID; VPS uses HOOK_NAME/AGENT_ID).
+# Derive the hook route + routing agent id from the install's own inputs
+# (AGENT_ID wins, then ROUTING_AGENT_ID, else the default agent "main").
+# The OpenClaw side resolved this via the excluded host lib
+# lib-docker-tenant.sh (per-container tenant routing); no such layer
+# exists in this harness, so the resolution is inline here.
 REF_HOOK_NAME="${HOOK_NAME:-$ROUTE_ID}"
-# shellcheck source=/dev/null
-. "$(dirname "${BASH_SOURCE[0]}")/lib-docker-tenant.sh"
-REF_AGENT_ID="${AGENT_ID:-$(s38_resolve_routing_agent 2>/dev/null || echo main)}"
+REF_AGENT_ID="${AGENT_ID:-${ROUTING_AGENT_ID:-main}}"
 REF_ENDPOINT_URL="https://${PUBLIC_HOSTNAME}/hooks/${REF_HOOK_NAME}"
+
+# Resolve the model named in the Raw Body (client-selected or configured
+# default; never picked by this sheet). Placeholder + loud warning when unset.
+RESOLVED_MODEL="$WEBHOOK_MODEL"
+if [ -z "$RESOLVED_MODEL" ]; then
+  RESOLVED_MODEL="<YOUR_CONFIGURED_MODEL>"
+  echo "[21-generate-client-reference-sheet] WARN: WEBHOOK_MODEL is unset — the Raw Body names the placeholder <YOUR_CONFIGURED_MODEL>. Set WEBHOOK_MODEL to the model the client selected (or their configured default) before hand-off." >&2
+fi
 
 # Build the LEAD block in spec order, then PREPEND it to SEC1 (the rest of the
 # rendered reference-sheet template becomes the explanation/reference that follows).
 LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
 {
   printf '# 🚀 Quick Start\n\n'
-  printf 'Everything you need to wire OpenClaw into GHL is in this Quick Start, in order. Do these steps top-to-bottom: create your tag(s), build the workflow with the prompt, then open the Custom Webhook action and paste the values by hand, verify, and publish. Each value below is its OWN copy block — tap the copy button and paste it straight into the matching GHL field. **The full explanation and reference (how it works, what each piece is, troubleshooting) is in the "📖 Full Reference & Explanation" section further down** — you do not need it to get live, but it is there when you want it.\n\n'
+  printf 'Everything you need to wire your AI agent into GHL is in this Quick Start, in order. Do these steps top-to-bottom: create your tag(s), build the workflow with the prompt, then open the Custom Webhook action and paste the values by hand, verify, and publish. Each value below is its OWN copy block — tap the copy button and paste it straight into the matching GHL field. **The full explanation and reference (how it works, what each piece is, troubleshooting) is in the "📖 Full Reference & Explanation" section further down** — you do not need it to get live, but it is there when you want it.\n\n'
   printf '> READ THIS FIRST: GHL'\''s **"Build with AI"** only builds the workflow SHAPE (the trigger + an EMPTY Custom Webhook action). It does **NOT** fill in the URL, the Authorization/Bearer header, the Content-Type header, or the Raw Body JSON for you. You **MUST** open the Custom Webhook action yourself and paste the values below by hand. Build with AI will not fill these for you.\n\n'
   printf -- '---\n\n'
 
@@ -410,7 +406,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   # (2) Authorization header — TWO separate code blocks (key + value, NEVER combined)
   printf '## 2. Authorization header (TWO separate copy blocks)\n\n'
   if [ "$TOKEN_IS_PLACEHOLDER" = "1" ]; then
-    printf '> WARNING: the hooks bearer token could not be read at generation time. The value block below is a PLACEHOLDER — replace it with your real `hooks.token` (from `~/.openclaw/openclaw.json`) before using this sheet.\n\n'
+    printf '> WARNING: the hooks bearer token could not be read at generation time. The value block below is a PLACEHOLDER — replace it with your real hooks token (the HOOKS_TOKEN from your install secrets env) before using this sheet.\n\n'
   fi
   printf 'Add this as a **manual header** on the Custom Webhook (leave the AUTHORIZATION dropdown set to "None"). The header has TWO parts — the **Key** and the **Value** — each in its own copy block so you can paste them into the two separate boxes GHL gives you. Copy each exactly — no leading/trailing spaces.\n\n'
   printf '**Header Key** (paste into the "Key" box):\n\n'
@@ -444,7 +440,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "match": "%s",\n' "$REF_HOOK_NAME"
   printf '  "action": "agent",\n'
   printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
-  printf '  "model": "ollama/deepseek-v4.1-flash:cloud",\n'
+  printf '  "model": "%s",\n' "$RESOLVED_MODEL"
   printf '  "wakeMode": "now",\n'
   printf '  "name": "GHL Sales Inbound",\n'
   printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'
@@ -509,7 +505,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "match": "%s",\n' "$REF_HOOK_NAME"
   printf '  "action": "agent",\n'
   printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
-  printf '  "model": "ollama/deepseek-v4.1-flash:cloud",\n'
+  printf '  "model": "%s",\n' "$RESOLVED_MODEL"
   printf '  "wakeMode": "now",\n'
   printf '  "name": "GHL Sales Inbound",\n'
   printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'
@@ -571,7 +567,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '# 🗂️ Your Communication Playbooks\n\n'
   printf '> **Where are my workflows / communication playbooks?** 💬 Right here is the answer — read this before your first test.\n\n'
   printf '**Your communication playbooks live in two places, and they stay in sync:** 🔄\n\n'
-  printf -- '- 🛠️ **The working copies** are stored in your OpenClaw master-files **`conversation-workflows/`** folder. That is the folder your AI reads on every reply to decide how to handle a conversation — it is the source of truth the agent runs from.\n'
+  printf -- '- 🛠️ **The working copies** are stored in your master-files **`conversation-workflows/`** folder. That is the folder your AI reads on every reply to decide how to handle a conversation — it is the source of truth the agent runs from.\n'
   printf -- '- 📖 **The human-facing copies** (the ones YOU read) are in your **Notion** — and from Notion you can export to **Google Docs → plain text** any time. Same content, formatted for people instead of for the agent.\n\n'
   printf 'So: the agent runs from `conversation-workflows/`, and you read/share the Notion copy. Every playbook you have is recorded in your `conversation-workflows/registry.md` with a link to its human-facing doc. ✅\n\n'
   printf -- '---\n\n'
@@ -628,55 +624,44 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf -- '---\n\n'
 
   # ============================================================================
-  # ⚙️ THINGS TO CONSIDER WHEN INSTALLING: VPS (Hostinger Docker) vs Mac mini
-  # Placed AFTER the Quick Start + Communication Playbooks, BEFORE the deep Full
-  # Reference. Two install targets diverge in WHERE env vars live, HOW to apply
-  # them, HOW to restart, and HOW the public hook is exposed. Getting this wrong
-  # is the single most common fleet install failure (env var written in the wrong
-  # place, plain `restart` not reloading env_file, hooks.token rewritten on boot,
-  # provider key not in the openclaw.json env block on Mac). Machine-enforced by
-  # qc-reference-sheet.sh --require-manual-fill: the gate FAILs unless the doc
-  # carries BOTH the VPS points (host /docker/<project>/.env + force-recreate +
-  # container /data/.openclaw/secrets/.env + the hooks.token rewrite-on-boot
-  # /OPENCLAW_HOOKS_TOKEN persistence point) AND the Mac points (provider keys in
-  # the openclaw.json top-level env block + launchctl kickstart).
+  # ⚙️ THINGS TO CONSIDER WHEN INSTALLING (999 harness form)
+  # Placed AFTER the Quick Start + Communication Playbooks, BEFORE the deep
+  # Full Reference. Machine-enforced by qc-reference-sheet.sh
+  # --require-manual-fill: the gate FAILs unless the doc carries the
+  # harness install points (credentials in the install secrets env; the
+  # HOOKS_TOKEN must match the token the agent endpoint expects; env
+  # changes take effect in a fresh agent session; the endpoint is the
+  # client's own agent endpoint, PUBLIC_HOSTNAME) AND the common points
+  # (FLAT 23-key body; conversational-logs writable by the install user;
+  # deliver:false; the model is the one the client selected or their
+  # configured default).
   # ============================================================================
-  printf '# ⚙️ Things to consider when installing: VPS (Hostinger Docker) vs Mac mini\n\n'
-  printf 'OpenClaw runs on two kinds of box, and they handle config in **different places**. Most install failures come from doing a VPS step on a Mac (or vice-versa). Use the table that matches YOUR box. (If you do not know which you have: a **Hostinger Docker VPS** is a Linux server managed in the Hostinger panel with a `/docker/<project>/` folder; a **Mac mini** is a physical/virtual Mac running OpenClaw via Homebrew + launchd.)\n\n'
+  printf '# ⚙️ Things to consider when installing\\n\\n'
+  printf 'Your AI agent runs from YOUR install, and its settings live in a few specific places. Most install failures come from putting a value in the wrong file or expecting a running session to pick up a change it cannot see. Use this checklist against your own setup.\\n\\n'
 
-  printf '## 🐧 VPS (Hostinger Docker)\n\n'
-  printf -- '- 🔑 **Env vars (API keys, tokens) live in the HOST file** `/docker/<project>/.env`. The Hostinger Docker Manager UI writes there — NOT to files inside the container under `/data/`.\n'
-  printf -- '- 🔁 **Apply env changes with `docker compose up -d --force-recreate`** (run from `/docker/<project>/`). A plain `docker compose restart` does **NOT** reload `env_file` changes — the new vars never reach the running container. Always `up -d --force-recreate` after editing `.env`.\n'
-  printf -- '- 🔐 **GHL + provider creds ALSO go in the container** `/data/.openclaw/secrets/.env` — that is where the GHL skill reads them. (The host `.env` is the canonical place for keys like Anthropic/OpenAI/Gemini; the GHL/secrets the skill reads at runtime live in the container `secrets/.env`. Both persist via the bind mount.)\n'
-  printf -- '- 🪝 **The hooks token gets REWRITTEN on every boot.** The `/hostinger/server.mjs` wrapper rewrites `hooks.token` to `hooks_${OPENCLAW_GATEWAY_TOKEN}` on every container boot — so a token you set by hand silently reverts. **To make your hooks token persistent, set `OPENCLAW_HOOKS_TOKEN` in the host `/docker/<project>/.env`** (then `up -d --force-recreate`); the wrapper honors it instead of rewriting.\n'
-  printf -- '- 🔌 **The gateway port is often NOT 18789.** Read the actual `PORT` env var (or run `openclaw gateway status`) before assuming a port — Hostinger frequently maps a different one.\n'
-  printf -- '- 🌐 **Public hook URL** is exposed either via a **`cloudflared` tunnel** (run it under **PM2** and `pm2 save` so it survives reboot) **OR** via an existing **Traefik route** (`*.hstgr.cloud`). You do NOT need `sudo cloudflared service install` on a VPS.\n'
-  printf -- '- 📦 **`apt` is a brew shim** on these containers (and brew is off PATH). Install packages with the full path: `/data/linuxbrew/.linuxbrew/bin/brew install <pkg>` — `apt`/`apt-get` will not do what you expect.\n\n'
+  printf '## 🔑 Where your settings live\\n\\n'
+  printf -- '- 🔑 **Credentials (API keys, tokens) live in your install secrets env file** — the secrets env for YOUR install (the file your setup designated, named by `SECRETS_ENV`). That is the one place your agent reads keys from; do not scatter copies in other files.\\n'
+  printf -- '- 🪝 **The hooks token must match on BOTH sides.** The `HOOKS_TOKEN` value in the GHL Custom Webhook header (Section 2) must match the token your agent endpoint expects — the same value, copied exactly, no extra spaces. If they differ, every inbound message is rejected with 401.\\n'
+  printf -- '- 🔁 **Env changes take effect in a fresh agent session.** A running session keeps the values it started with. After editing your secrets env, start a fresh session (restart your agent session) before testing, or you will test the OLD values and chase a ghost.\\n'
+  printf -- '- 🌐 **Your endpoint is your own.** The Webhook URL (Section 1) points at YOUR agent endpoint — the host in `PUBLIC_HOSTNAME` is the public host of your own install, and the `/hooks/` path on it is yours alone. If the host changes, regenerate this sheet so the URL and token on it are current.\\n\\n'
 
-  printf '## 🍎 Mac mini (Homebrew / launchd)\n\n'
-  printf -- '- 🔑 **PROVIDER keys (e.g. `OLLAMA_API_KEY`) MUST go in the `openclaw.json` TOP-LEVEL `env` block.** The launchd service-env file does **NOT** carry provider keys to the gateway, and putting the key in `~/.openclaw/.env` alone is **insufficient** — the provider will fail to authenticate. Add provider keys to the `env` object at the top level of `~/.openclaw/openclaw.json`.\n'
-  printf -- '- 🔐 **GHL creds still live in** `~/.openclaw/secrets/.env` (same as the VPS — the GHL skill reads `secrets/.env`).\n'
-  printf -- '- 🔁 **Restart the gateway with** `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`. (There is NO Hostinger wrapper on a Mac, so the `hooks.token` in `openclaw.json` is **stable** — it is not rewritten on boot, and you do NOT need the `OPENCLAW_HOOKS_TOKEN` trick.)\n'
-  printf -- '- 🛰️ **Remote access** is via a **Cloudflare tunnel + Access service token** (SSH in as the user'\''s own login; wrap remote commands in `zsh -lc "..."` or `node` is off PATH).\n'
-  printf -- '- 🌐 **Public hook URL** is exposed via `sudo cloudflared service install <connector-token>` (installs a launchd LaunchDaemon). ⚠️ `sudo` prompts for the admin password and needs an interactive Terminal — it cannot run over a non-interactive rescue SSH session.\n\n'
-
-  printf '## 🤝 Common to BOTH (do not skip regardless of box)\n\n'
-  printf -- '- 📨 **The GHL Custom Webhook RAW BODY is the FLAT 23-key body** (Section 3 of the Quick Start) — never a shorter/stripped body, never nested.\n'
-  printf -- '- 🔐 **GHL creds are read from `secrets/.env`** (container `/data/.openclaw/secrets/.env` on VPS, `~/.openclaw/secrets/.env` on Mac).\n'
-  printf -- '- 📁 **The `conversational-logs/` directory is node-owned** (the gateway process creates + appends the per-contact conversation logs there) — do not chown it away from the node user or memory writes fail.\n'
-  printf -- '- 🚫 **The inbound hook mapping uses `deliver: false`** (the agent sends its own reply via the GHL Conversations API; `deliver: true` double-sends and breaks).\n'
-  printf -- '- 🧠 **Ollama Cloud `:cloud` models hard-cap `maxTokens` at 65536** — set `maxTokens: 65536` (a 384k value returns HTTP 400 on every call and silently breaks your primary model).\n\n'
+  printf '## 🤝 Common to every install (do not skip)\\n\\n'
+  printf -- '- 📨 **The GHL Custom Webhook RAW BODY is the FLAT 23-key body** (Section 3 of the Quick Start) — never a shorter/stripped body, never nested.\\n'
+  printf -- '- 🔐 **GHL creds are read from your install secrets env** — keep them current there and nowhere else.\\n'
+  printf -- '- 📁 **The `conversational-logs/` directory must stay writable by the install user** (the user your install runs as creates + appends the per-contact conversation logs there) — if it becomes read-only, memory writes fail silently.\\n'
+  printf -- '- 🚫 **The inbound hook mapping uses `deliver: false`** (the agent sends its own reply via the GHL Conversations API; `deliver: true` double-sends and breaks).\\n'
+  printf -- '- 🧠 **The model in the Raw Body is the model you selected** — or your configured default model when you have not picked one for this workflow. This sheet never picks a model for you; if the value on the sheet is a placeholder, set it to your model before you publish.\\n\\n'
   printf -- '---\n\n'
 
   # ---- THE FULL EXPLANATION / REFERENCE — comes AFTER Quick Start (both, not either) ----
   printf '# 📖 Full Reference & Explanation\n\n'
   printf 'Quick Start above is all you need to get live. This section explains HOW it works, WHAT each piece is, and HOW to troubleshoot — read it when you want the why behind the steps. **The Quick Start does not replace this; both are here on purpose.**\n\n'
   printf '## How the inbound pipe works (the 30-second version)\n\n'
-  printf 'A customer messages your GHL number → your GHL workflow fires → its **Custom Webhook** POSTs the message to your OpenClaw at the **Webhook URL** (Section 1) → OpenClaw checks the **Authorization: Bearer** header (Section 2) to confirm it is really you → your AI agent reads the message, reads that contact'\''s conversation log, drafts a reply, and SENDS it back through the GHL Conversations API. The **Raw Body** (Section 3) is the envelope that carries the customer'\''s message + contact details to OpenClaw — all 23 fields, flat.\n\n'
+  printf 'A customer messages your GHL number → your GHL workflow fires → its **Custom Webhook** POSTs the message to your AI agent at the **Webhook URL** (Section 1) → OpenClaw checks the **Authorization: Bearer** header (Section 2) to confirm it is really you → your AI agent reads the message, reads that contact'\''s conversation log, drafts a reply, and SENDS it back through the GHL Conversations API. The **Raw Body** (Section 3) is the envelope that carries the customer'\''s message + contact details to your agent — all 23 fields, flat.\n\n'
   printf '## What each piece is\n\n'
-  printf -- '- **Webhook URL** — your private OpenClaw address GHL posts to. One tunnel, many hook paths; this one is `/hooks/%s`.\n' "$REF_HOOK_NAME"
+  printf -- '- **Webhook URL** — your private agent address GHL posts to. One tunnel, many hook paths; this one is `/hooks/%s`.\n' "$REF_HOOK_NAME"
   printf -- '- **Authorization header (`Authorization` + `Bearer <token>`)** — the inbound password (your `HOOKS_TOKEN`). It lives in the **Headers** section, NOT the AUTHORIZATION dropdown (leave that dropdown on `None`). Two boxes in GHL = two copy blocks here.\n'
-  printf -- '- **Content-Type header (`Content-Type` + `application/json`)** — tells OpenClaw the body is JSON.\n'
+  printf -- '- **Content-Type header (`Content-Type` + `application/json`)** — tells your agent the body is JSON.\n'
   printf -- '- **Raw Body (23-key, FLAT)** — the message envelope. FLAT (no nested objects) or every field arrives EMPTY. 23 keys is the minimum — never a shorter body. The body'\''s `messageTemplate` stays placeholder-free so GHL never mangles the JSON.\n'
   printf -- '- **Tags** — labels on a contact. If a workflow filters on a tag, that tag must EXIST first (Section 0) or the filter references a blank tag and breaks.\n\n'
   printf '## Troubleshooting (read the GHL execution log first)\n\n'
@@ -693,57 +678,23 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
 cat "$LEAD_BLOCK" "$SEC1" > "$SEC1.withlead" && mv "$SEC1.withlead" "$SEC1"
 
 # ----- detect Notion availability -----
+# 999 harness: only the direct-API layer exists here (the OpenClaw-side
+# "notion skill" layer ran through the host gateway and is not part of
+# this harness). Layer numbers keep their meaning: 2 = direct API,
+# 3 = markdown fallback.
 LAYER="3"
 NOTION_FALLBACK_REASON=""
 
-if command -v openclaw >/dev/null 2>&1; then
-  if openclaw skills list 2>/dev/null | grep -iq notion; then
-    LAYER="1"
-  fi
-fi
-
-if [ "$LAYER" = "3" ] && [ -n "$NOTION_API_KEY" ]; then
+if [ -n "$NOTION_API_KEY" ]; then
   LAYER="2"
 fi
 
 if [ "$LAYER" = "3" ]; then
-  NOTION_FALLBACK_REASON="Neither the OpenClaw Notion skill nor NOTION_API_KEY env var was found. Saved as markdown instead."
+  NOTION_FALLBACK_REASON="No NOTION_API_KEY env var was found. Saved as markdown instead."
 fi
 
 NOTION_PAGE_URL=""
 MD_FALLBACK_PATH=""
-
-# ----- LAYER 1: Notion via openclaw skill -----
-if [ "$LAYER" = "1" ]; then
-  echo "[21-generate-client-reference-sheet] Layer 1 - using OpenClaw Notion skill"
-  COMBINED="$STAGE_DIR/.combined-for-notion.md"
-  {
-    printf '# Conversational AI Brain - Setup Reference and Workflows\n\n'
-    printf '# 1. Setup Reference Sheet\n\n'
-    cat "$SEC1"
-    printf '\n\n# 2. Your First Workflow - SMS Inquiry Responder\n\n'
-    cat "$SEC2"
-    printf '\n\n# 3. Generic Build-with-AI Prompt Template\n\n'
-    cat "$SEC3"
-    printf '\n\n# 4. Workflow Verification Checklist\n\n'
-    cat "$SEC4"
-  } > "$COMBINED"
-
-  set +e
-  NOTION_OUT="$(openclaw skill run notion create-page --parent-search zhc --title "Conversational AI Brain - Setup Reference and Workflows" --markdown-file "$COMBINED" --preserve-code-blocks --print-url 2>/dev/null)"
-  RC=$?
-  set -e
-  NOTION_PAGE_URL="$(printf '%s\n' "$NOTION_OUT" | tail -n1)"
-  if [ $RC -ne 0 ] || [ -z "$NOTION_PAGE_URL" ]; then
-    echo "[21-generate-client-reference-sheet] Notion skill call failed - falling through to Layer 2" >&2
-    LAYER="2"
-    if [ -z "$NOTION_API_KEY" ]; then
-      LAYER="3"
-      NOTION_FALLBACK_REASON="Notion skill call failed and no NOTION_API_KEY available."
-    fi
-    NOTION_PAGE_URL=""
-  fi
-fi
 
 # ----- LAYER 2: direct Notion API via python3 -----
 if [ "$LAYER" = "2" ]; then
@@ -784,8 +735,8 @@ if [ -n "$NOTION_PAGE_URL" ]; then
   printf '%s\n' "$NOTION_PAGE_URL" > "$MASTER_FILES_DIR/.notion-reference-page-url"
 fi
 
-# ----- compose Telegram message to client (Notion link AT THE TOP, prominently) -----
-CLIENT_MSG_FILE="$STAGE_DIR/.client-telegram-message.txt"
+# ----- compose the client delivery message (Notion link AT THE TOP) -----
+CLIENT_MSG_FILE="$STAGE_DIR/.client-message.txt"
 if [ -n "$NOTION_PAGE_URL" ]; then
   {
     printf 'Hi %s, your conversational AI brain is set up.\n\n' "$CLIENT_FIRST_NAME"
@@ -806,7 +757,7 @@ if [ -n "$NOTION_PAGE_URL" ]; then
 else
   {
     printf 'Hi %s, your conversational AI brain is set up.\n\n' "$CLIENT_FIRST_NAME"
-    printf 'I put your setup reference here on your Mac:\n\n'
+    printf 'I put your setup reference here in your install:\n\n'
     printf '    %s\n\n' "$MD_FALLBACK_PATH"
     printf 'Heads up - I recommend you get Notion (notion.so) and ask me to push these into a Notion page next time. It is free and much easier to copy-paste from than markdown files.\n\n'
     printf 'You can read the four files in that folder in order (01, 02, 03, 04). 02 is the prompt you paste into Convert and Flow Automations -> Build with AI. 04 is the checklist you walk after Build with AI builds the workflow.\n\n'
@@ -818,20 +769,12 @@ else
   } > "$CLIENT_MSG_FILE"
 fi
 
-# ----- send to client via openclaw gateway -----
-CLIENT_MSG_ID=""
-if command -v openclaw >/dev/null 2>&1; then
-  set +e
-  CLIENT_OUT="$(openclaw message send --channel telegram -t "$CLIENT_TELEGRAM_CHAT_ID" --file "$CLIENT_MSG_FILE" 2>&1)"
-  RC=$?
-  set -e
-  CLIENT_MSG_ID="$(printf '%s\n' "$CLIENT_OUT" | tail -n1)"
-  if [ $RC -ne 0 ]; then
-    echo "[21-generate-client-reference-sheet] WARN: client Telegram send returned non-zero (out=$CLIENT_MSG_ID)" >&2
-  fi
-else
-  echo "[21-generate-client-reference-sheet] WARN: openclaw CLI not in PATH - Telegram sends skipped" >&2
-fi
+# ----- surface the client message for delivery -----
+# 999 harness: this script never sends. The composed message is surfaced
+# (path printed in the run output and in the operator summary) for the
+# session to deliver via the client's configured channel.
+CLIENT_MSG_ID="surfaced"
+echo "[21-generate-client-reference-sheet] client message surfaced (not sent by this script): $CLIENT_MSG_FILE — deliver it via the client's configured channel"
 
 # ----- operator summary -----
 SECTION_COUNT="4"
@@ -841,10 +784,10 @@ L3=$(wc -l < "$SEC3" 2>/dev/null || echo 0)
 L4=$(wc -l < "$SEC4" 2>/dev/null || echo 0)
 TOTAL_LINES=$(( L1 + L2 + L3 + L4 ))
 
-OP_MSG_FILE="$STAGE_DIR/.operator-telegram-message.txt"
+OP_MSG_FILE="$STAGE_DIR/.operator-message.txt"
 {
   printf '[Skill 38 / Step 6] Client Reference Sheet delivered.\n\n'
-  printf 'Client: %s (chat %s)\n' "$CLIENT_BUSINESS_NAME" "$CLIENT_TELEGRAM_CHAT_ID"
+  printf 'Client: %s (telegram chat id on file: %s)\n' "$CLIENT_BUSINESS_NAME" "${CLIENT_TELEGRAM_CHAT_ID:-none}"
   printf 'Layer chosen: %s\n' "$LAYER"
   if [ -n "$NOTION_PAGE_URL" ]; then
     printf 'Notion page: %s\n' "$NOTION_PAGE_URL"
@@ -854,12 +797,9 @@ OP_MSG_FILE="$STAGE_DIR/.operator-telegram-message.txt"
   fi
   printf 'Sections: %s\n' "$SECTION_COUNT"
   printf 'Total content lines: %s\n' "$TOTAL_LINES"
-  printf 'Client Telegram send result: %s\n' "${CLIENT_MSG_ID:-unknown}"
+  printf 'Client message delivery: %s — composed at %s; deliver via the client configured channel\n' "${CLIENT_MSG_ID:-unknown}" "$CLIENT_MSG_FILE"
 } > "$OP_MSG_FILE"
 
-if command -v openclaw >/dev/null 2>&1; then
-  openclaw message send --channel telegram -t "$OPERATOR_TELEGRAM_CHAT_ID" --file "$OP_MSG_FILE" >/dev/null 2>&1 || \
-    echo "[21-generate-client-reference-sheet] WARN: operator Telegram send failed" >&2
-fi
+echo "[21-generate-client-reference-sheet] operator summary surfaced (not sent by this script): $OP_MSG_FILE"
 
 echo "[21-generate-client-reference-sheet] DONE  layer=$LAYER  url=${NOTION_PAGE_URL:-<none>}  fallback=${MD_FALLBACK_PATH:-<none>}"

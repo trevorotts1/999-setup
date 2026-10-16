@@ -63,7 +63,7 @@ PROTO="$SKILL_DIR/protocols/multi-tenant-isolation-protocol.md"
 AG_SCRIPT="$SKILL_DIR/scripts/05-update-agents-md.sh"
 # ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
 if [ -z "${AGENTS_MD:-}" ]; then
-  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+  WS_ROOT="${GHL_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"; AGENTS_MD="$WS_ROOT/AGENTS.md"
 fi
 MEM_SCRIPT="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 INSTR="$SKILL_DIR/INSTRUCTIONS.md"

@@ -52,9 +52,9 @@ Integration Token (PIT) is read
 by ``resolve_location_pit`` from EVERY known LOCATION-class env-var alias
 (``PODCAST_ENGINE_GHL_PIT`` preferred → ``GOHIGHLEVEL_API_KEY`` → ``GHL_API_KEY`` →
 ``GOHIGHLEVEL_LOCATION_PIT`` → ``GHL_LOCATION_PIT``) AND — when the live env is
-empty — the canonical env STORES (``~/.openclaw/secrets/.env`` →
-``~/clawd/secrets/.env`` → ``~/.openclaw/workspace/.env``), so a clean agent shell
-can never false-fail on a token that physically lives in the store. It NEVER falls
+empty — the install's secrets env STORE (the file ``$SECRETS_ENV`` designates),
+so a clean agent shell can never false-fail on a token that physically lives
+in the store. It NEVER falls
 back to an AGENCY-class PIT (``*_AGENCY_PIT``/``*_AGENCY_API_KEY``) — agency tokens
 401 for media. The location id is resolved the same way by ``resolve_location_id``
 (``PODCAST_ENGINE_GHL_LOCATION_ID`` → ``GOHIGHLEVEL_LOCATION_ID`` →
@@ -88,18 +88,19 @@ from pathlib import Path
 from typing import Any, Callable
 
 def _load_kie_prompt_enforcer():
-    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree) and import it."""
-    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    """Find shared-utils/kie_prompt_enforcer.py (in-tree beside an ancestor of
+    this file, or under $SKILL6_SHARED_UTILS_DIR) and import it. Falls back to
+    the vendored embedded copy beside this file."""
+    envd = os.environ.get("SKILL6_SHARED_UTILS_DIR")
     dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
-    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
-        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    dirs += ([Path(envd) / "shared-utils"] if envd else [])
     for d in dirs:
         if (d / "kie_prompt_enforcer.py").is_file():
             if str(d) not in sys.path:
                 sys.path.insert(0, str(d))
             import kie_prompt_enforcer
             return kie_prompt_enforcer
-    # No shared-utils beside this skill (a box may not ship it): the byte-identical embedded copy of the enforcer,
+    # No shared-utils beside this skill (a box may not ship it): the vendored embedded copy of the enforcer,
     # generated and hash-locked by scripts/embed-kie-prompt-enforcer.py. It enforces the same 80 percent floor and
     # 100 percent ceiling from its last-known limit table, and fails closed for a model it has no limit for.
     import importlib.util
@@ -177,20 +178,20 @@ _KIE_GENERATE_RELPATH = os.path.join(
 # ---------------------------------------------------
 # The image step once raised "GHL LOCATION PIT not found" on a token the operator
 # had used for SIX MONTHS. Root cause: the resolver checked ONLY two env-var names
-# in the LIVE process environment and never opened the canonical secrets store. In
-# an agent shell where the gateway/launchd wrapper had NOT exported secrets/.env,
+# in the LIVE process environment and never opened the secrets store. In
+# an agent shell where the wrapper had NOT exported the secrets env file,
 # both vars read empty and the tool fail-loud — even though the value was sitting
-# in ``~/.openclaw/secrets/.env`` under the very name it checks (GOHIGHLEVEL_API_KEY).
+# in the store under the very name it checks (GOHIGHLEVEL_API_KEY).
 #
 # The fix below mirrors the proven multi-alias pattern already used for the Google
 # key (3 aliases, one value) and the KIE key store-fallback in ``ghl_image_stage``:
 #   1. resolve from EVERY known LOCATION-class alias, in preference order;
-#   2. if the live env is empty, parse the canonical env STORES directly
-#      (``~/.openclaw/secrets/.env`` → ``~/clawd/secrets/.env`` →
-#       ``~/.openclaw/workspace/.env``) — the same files the rest of the skill names;
-#   3. ONLY declare a credential missing AFTER all aliases × all stores are exhausted,
-#      and when it does, the error NAMES exactly which vars and which store paths it
-#      checked, and tells the agent to ``source`` the store.
+#   2. if the live env is empty, parse the install's secrets env STORE directly
+#      (the file ``$SECRETS_ENV`` designates) — the same store the rest of the
+#      pack names;
+#   3. ONLY declare a credential missing AFTER all aliases × the store are exhausted,
+#      and when it does, the error NAMES exactly which vars and which store path it
+#      checked, and tells the agent to load the store.
 #
 # AGENCY vs LOCATION (load-bearing distinction)
 # ---------------------------------------------
@@ -204,13 +205,13 @@ _KIE_GENERATE_RELPATH = os.path.join(
 # solely so the error message can say "I saw an agency PIT but it is NOT media-scoped".
 
 # Canonical LOCATION-PIT env-var aliases, in preference order. GOHIGHLEVEL_API_KEY
-# is the legacy name the closeout script (upload-ghl-media.sh) and the live
-# openclaw.json ghl-mcp config both use for the LOCATION PIT; GHL_API_KEY is the
+# is the name the closeout script (upload-ghl-media.sh) and the pack's ADAPTER
+# contract both use for the LOCATION PIT; GHL_API_KEY is the
 # short alias; GOHIGHLEVEL_LOCATION_PIT / GHL_LOCATION_PIT are explicit names for
 # the same LOCATION token.
 _PIT_ENV_NAMES = (
     "PODCAST_ENGINE_GHL_PIT",          # the Podcast Engine's OWN Location PIT — checked FIRST so the engine tenant always wins over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard)
-    "GOHIGHLEVEL_API_KEY",             # preferred — the LOCATION PIT (medias.write); matches openclaw.json + upload-ghl-media.sh
+    "GOHIGHLEVEL_API_KEY",             # preferred — the LOCATION PIT (medias.write); the ADAPTER contract name, also used by upload-ghl-media.sh
     "GHL_API_KEY",                     # legacy short alias for the same LOCATION PIT
     "GHL_PIT",                         # canonical short alias
     "GHL_TOKEN",                       # alternate alias
@@ -236,22 +237,28 @@ _AGENCY_PIT_ENV_NAMES = (
 # Canonical GHL location-id env-var aliases, in preference order.
 _LOCATION_ENV_NAMES = (
     "PODCAST_ENGINE_GHL_LOCATION_ID",   # the Podcast Engine's OWN subaccount location id — checked FIRST so the engine tenant always wins
-    "GOHIGHLEVEL_LOCATION_ID",   # preferred — matches openclaw.json + secrets/.env
+    "GOHIGHLEVEL_LOCATION_ID",   # preferred — the ADAPTER contract name
     "GHL_LOCATION_ID",           # short alias
     "GOHIGHLEVEL_ALLOWED_LOCATION_IDS",  # single-location allowlist fallback (first id)
     "CAF_ALLOWED_LOCATION_IDS",          # Skill-44 allowlist fallback (first id)
 )
 
-# Canonical env STORES, searched in order when the live process environment is
-# empty for a credential. These are exactly the files the gateway/launchd wrapper
-# sources upstream in a real fleet build (and that ghl_image_stage already reads
-# for KIE_API_KEY); we read them directly so a clean agent shell can never produce
-# a false "credential not found" for a value that physically lives in the store.
-_GHL_ENV_STORES = (
-    "~/.openclaw/secrets/.env",   # canonical operator secrets store (the PIT + location id live here)
-    "~/clawd/secrets/.env",       # symlink target / alternate operator store
-    "~/.openclaw/workspace/.env", # workspace-scoped overrides
-)
+# The env STORE searched when the live process environment is empty for a
+# credential: in this harness that is exactly ONE file, the install's secrets
+# env file designated by $SECRETS_ENV (the pack's secrets binding; there is no
+# OpenClaw-side secrets default in this harness). When $SECRETS_ENV is not designated
+# there is no file store and resolution is process-env only. Computed at
+# import time; tests may rebind the module attribute to a fixture path.
+def _default_env_stores() -> tuple:
+    designated = os.environ.get("SECRETS_ENV")
+    return (designated,) if designated else ()
+
+
+_GHL_ENV_STORES = _default_env_stores()
+
+
+def _stores_display() -> str:
+    return ", ".join(_GHL_ENV_STORES) if _GHL_ENV_STORES else "(none designated — set $SECRETS_ENV)"
 
 
 def _is_placeholder(value: str) -> bool:
@@ -358,20 +365,20 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
          ``GOHIGHLEVEL_API_KEY``, then ``GHL_API_KEY``, then the explicit
          ``*_LOCATION_PIT`` names) — preferred alias wins.
          A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED here, not
-         returned: on a real box the live process env is seeded from openclaw.json
-         ``env.vars`` at gateway launch, and those config copies are placeholders BY
+         returned: on a real box the live process env may carry config-seeded
+         copies of these vars, and those copies are placeholders BY
          DESIGN (they rot / get seeded with the doc example ``pit-abc123``). Accepting
          the first non-empty value — placeholder or not — is exactly the bug that
          produced a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: a 10-char
          placeholder is non-empty, so it silently outranked the real credential.
-      2. If no LIVE (non-placeholder) value resolved, the canonical env STORES in
-         ``_GHL_ENV_STORES`` (``~/.openclaw/secrets/.env`` → ``~/clawd/secrets/.env``
-         → ``~/.openclaw/workspace/.env``) are parsed directly — the SAME file the
-         rest of this skill names, and the AUTHORITATIVE store per TERMINOLOGY.md.
-         This is what makes a clean agent shell (where the gateway never exported
-         secrets/.env) resolve the real token instead of false-failing on an empty
-         env var, AND what lets a real secrets/.env value win over a placeholder
-         that leaked into the live env from openclaw.json.
+      2. If no LIVE (non-placeholder) value resolved, the env STORE in
+         ``_GHL_ENV_STORES`` (the file ``$SECRETS_ENV`` designates) is parsed
+         directly — the SAME store the rest of this pack names, and the
+         AUTHORITATIVE store per TERMINOLOGY.md.
+         This is what makes a clean agent shell (where the wrapper never exported
+         the secrets env file) resolve the real token instead of false-failing on
+         an empty env var, AND what lets a real store value win over a placeholder
+         that leaked into the live env from a config seed.
 
     The LOCATION PIT is what media upload REQUIRES (``medias.write`` scope); an
     AGENCY PIT 401s for media, so this NEVER falls back to an agency-class name.
@@ -427,17 +434,18 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
     placeholder_note = (
         " Note: at least one candidate in the live env was a documentation "
         "PLACEHOLDER (short / dummy-shaped) and was SKIPPED rather than used — "
-        "put the real value in ~/.openclaw/secrets/.env, not just openclaw.json."
+        "put the real value in the install's secrets env file, not just a config seed."
         if saw_placeholder else ""
     )
     raise RuntimeError(
         "GHL LOCATION PIT not found IN THE ENVIRONMENT or in any canonical env "
         "store. Checked env vars (LOCATION-class, in order): "
         f"{', '.join(_PIT_ENV_NAMES)}. Checked stores: "
-        f"{', '.join(_GHL_ENV_STORES)}. "
-        "The LOCATION Private Integration Token normally lives in "
-        "~/.openclaw/secrets/.env under GOHIGHLEVEL_API_KEY — load it first "
-        "(e.g. `set -a; source ~/.openclaw/secrets/.env; set +a`) and retry. "
+        f"{_stores_display()}. "
+        "The LOCATION Private Integration Token normally lives in the "
+        "install's secrets env file (the file $SECRETS_ENV designates) under "
+        "GOHIGHLEVEL_API_KEY — load it first "
+        "(e.g. `set -a; source \"$SECRETS_ENV\"; set +a`) and retry. "
         "Media uploads REQUIRE the LOCATION PIT (medias.write scope); the AGENCY "
         f"PIT 401s for media.{agency_note}{placeholder_note}"
     )
@@ -482,10 +490,11 @@ def resolve_location_id(env: dict | None = None, *, search_stores: bool = True) 
         "GHL location id not found IN THE ENVIRONMENT or in any canonical env "
         "store. Checked env vars (in order): "
         f"{', '.join(_LOCATION_ENV_NAMES)}. Checked stores: "
-        f"{', '.join(_GHL_ENV_STORES)}. "
-        "The location id normally lives in ~/.openclaw/secrets/.env under "
+        f"{_stores_display()}. "
+        "The location id normally lives in the install's secrets env file "
+        "(the file $SECRETS_ENV designates) under "
         "GOHIGHLEVEL_LOCATION_ID — load it first "
-        "(e.g. `set -a; source ~/.openclaw/secrets/.env; set +a`) and retry."
+        "(e.g. `set -a; source \"$SECRETS_ENV\"; set +a`) and retry."
     )
 
 

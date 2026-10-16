@@ -14,7 +14,7 @@
  * requires it at ingress (see protocols/zhc-pixel-protocol.md "Token handling").
  *
  * ARCHITECTURE: every client gets THEIR OWN private pixel that POSTs visitor
- * signals to THEIR OpenClaw via THEIR existing Cloudflare tunnel. There is NO
+ * signals to THEIR agent endpoint via THEIR existing public route. There is NO
  * shared collector service and NO third-party analytics endpoint.
  *
  * PRIVACY (non-negotiable, all enforced below):
@@ -24,7 +24,7 @@
  *     page (or this script's built-in banner) calls window.ZHCPixel.grantConsent().
  *   - CCPA: window.ZHCPixel.optOut() permanently disables + clears local state.
  *   - Data deletion: optOut() also POSTs a `delete_request` event so the client's
- *     OpenClaw can purge stored signals for this visitor id.
+ *     install can purge stored signals for this visitor id.
  *
  * The pixel is anonymous-but-persistent: it assigns a random first-party visitor
  * id (NOT a name, NOT an email). Identity is resolved server-side ONLY by

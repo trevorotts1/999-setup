@@ -36,17 +36,10 @@ TYP FILE STORAGE INSTRUCTIONS (only read this if TYP confirmed)
 WHEN LEARNING THIS DOCUMENT, FOLLOW THIS STRUCTURE:
 
 1. SAVE FULL DOCUMENTATION TO MASTER FILES FOLDER
-   Find the OpenClaw master files folder in ~/Downloads/. It may be named:
-   - OpenClaw Master Files
-   - OpenClaw Master Documents
-   - OpenClaw Documents
-   - openclaw-master-files
-   - openclaw master files
-   - OpenClaw Files
-   - openclaw-documents
-   - Any variation of "openclaw" + "master" or "files" or "documents"
-   Search case-insensitively. One word or two words. Plural or singular.
-   If no folder is found, create: ~/Downloads/OpenClaw Master Files/
+   Find the master files folder in ~/Downloads/ (the folder the install's
+   Teach Yourself Protocol setup designates; search case-insensitively for
+   the master-files folder name variants that setup uses).
+   If no folder is found, create it per that setup.
 
    Save this full document content as a .md file in that folder.
 
@@ -113,7 +106,7 @@ When finished, give the user a clear summary:
 
 # GHL Install Pages - Setup and Prerequisites
 
-> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+> **N24 — Use the teach-yourself-protocol:** Before any action in this skill, the installing sub-agent MUST have been taught the Teach Yourself Protocol in this harness and follow its procedural read-order. No shortcuts.
 
 
 This guide covers everything the AI agent needs to have in place BEFORE deploying pages into GoHighLevel (Convert and Flow). This is about getting the tools ready. For the actual step-by-step deployment process, see INSTRUCTIONS.md.
@@ -131,7 +124,7 @@ This skill enables the AI agent to use browser automation to:
 - Save, preview, and publish pages
 - Update existing pages with new code
 
-**Browser automation tier:** agent-browser (Vercel Labs, Skill 03) is PRIMARY; Playwright is the FALLBACK. Access is always established through the Firebase refresh-token seed path — the builder never renders a login form and never encounters a 2FA prompt under normal operation.
+**Browser automation tier:** agent-browser (Vercel Labs), driven per the browser-engine contract's claude-nine mapping, is PRIMARY; Playwright is the FALLBACK. Access is always established through the Firebase refresh-token seed path — the builder never renders a login form and never encounters a 2FA prompt under normal operation.
 
 
 ## Client Resource Matrix
@@ -140,21 +133,20 @@ Skill 6 does NOT require every host to match the operator's stack. The capabilit
 
 | Client resource | Build quality | What to enable |
 |---|---|---|
-| agent-browser ≥ the Skill 03 pin (0.27.0) | Full (Lane 1, PRIMARY) | The default path — no other requirement; cross-origin iframe drag additionally needs the Playwright CDP hybrid |
-| OpenClaw ≥ 2026.8.1 + browser plugin + Playwright | Full (alt-PRIMARY) | Prefer for iframe-heavy pages (frame-scoped `--frame` snapshots); an experimental upgrade — not yet wired as Skill 6 PRIMARY |
-| OpenClaw ≥ 2026.8.1, no Playwright | Partial | ARIA/role snapshot inspection with limited act — pair with agent-browser |
-| Pre-2.0 OpenClaw + agent-browser | Full (Lane 1) | No managed-browser features needed — an old OpenClaw does NOT block Skill 6 |
+| agent-browser ≥ the harness pin (0.27.0) | Full (Lane 1, PRIMARY) | The default path — no other requirement; cross-origin iframe drag additionally needs the Playwright CDP hybrid |
 | CUA enabled | Optional last resort | Hard-UI / cross-origin pixel path ONLY. Do NOT document or require "everyone must install CUA" |
 | No Firebase refresh token | Tier-2/Tier-3 auth only | Gated Tier-2 bootstrap only if policy allows; fail loud (Tier-3) when unattended |
-| VPS headless | Per the ENV contract | Headless-only rules + durable-root paths: follow `ENV-MATRIX.md` |
+| Headless host | Per the ENV contract | Headless-only rules + durable-root paths: follow `ENV-MATRIX.md` |
+
+The OpenClaw managed-browser lane does not exist in this harness: the capability probe reports it structurally absent and it is never selected or required.
 
 
 ## Prerequisites Verification
 
 The agent must verify ALL of these are in place before proceeding:
 
-1. [ ] Browser automation is available: agent-browser (Vercel Labs, Skill 03) PRIMARY; Playwright FALLBACK — at least one must be installed and working
-2. [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (TOKEN-ONLY, D7) — OR a persistent Playwright browser session exists at `~/.openclaw/playwright-data/ghl-install-pages` (Playwright fallback only)
+1. [ ] Browser automation is available: agent-browser (Vercel Labs) PRIMARY per the browser-engine contract; Playwright FALLBACK — at least one must be installed and working
+2. [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in the install's secrets env (the file `$SECRETS_ENV` designates, or exported in the environment) (TOKEN-ONLY, D7) — OR a persistent Playwright browser session exists under the skill's `state/playwright-data/ghl-install-pages` (Playwright fallback only)
 3. [ ] Finished HTML code is ready to paste (all CSS must be inline or in style tags, no React, no external dependencies)
 4. [ ] Page requirements are documented (page names, URL paths, which HTML code goes where)
 5. [ ] GHL credentials are stored securely (see Step 6: Auth Ladder below)
@@ -163,15 +155,15 @@ The agent must verify ALL of these are in place before proceeding:
 
 ## Step 1: Set Up the Browser Lane — agent-browser (PRIMARY) + Capability Probe
 
-agent-browser (Vercel Labs) is the PRIMARY engine. It comes from Skill 03 (`03-agent-browser/` in this onboarding repo); **Skill 03 (Wave 1) must be complete BEFORE Skill 06 starts** — 06 is not parallel-safe with 03.
+agent-browser (Vercel Labs) is the PRIMARY engine, driven per Skill 71's browser-engine contract (the claude-nine mapping). **The harness's agent-browser lane must be available BEFORE this skill's work starts.**
 
-**1. Install / verify the agent-browser CLI.** Follow the 03-agent-browser skill, then verify the CLI resolves and matches the repo pin:
+**1. Install / verify the agent-browser CLI.** Verify the CLI resolves and matches the harness pin:
 
 ```bash
 agent-browser --version
 ```
 
-The version is **pinned to 0.27.0** — the single source of truth is `tools/gates.json` → `agent_browser_version_pin` (mirrored in `03-agent-browser/agent-browser-cli.pin`). The pin is enforced at runtime: `tools/browser_manager.py::assert_agent_browser_version()` fires at `browser_session()` entry, and `tools/inject-ghl-auth.sh` hard-fails with exit 70 on drift. A deliberate upgrade requires re-capturing the gates, then re-pinning via `GHL_AB_PINNED_VERSION`; `GHL_AB_ALLOW_VERSION_DRIFT=1` downgrades drift to a WARN — it is an operator acknowledgment, never a silent pass.
+The version is **pinned to 0.27.0** — the single source of truth is `tools/gates.json` → `agent_browser_version_pin`. The pin is enforced at runtime: `tools/browser_manager.py::assert_agent_browser_version()` fires at `browser_session()` entry, and `tools/inject-ghl-auth.sh` hard-fails with exit 70 on drift. A deliberate upgrade requires re-capturing the gates, then re-pinning via `GHL_AB_PINNED_VERSION`; `GHL_AB_ALLOW_VERSION_DRIFT=1` downgrades drift to a WARN — it is an operator acknowledgment, never a silent pass.
 
 **2. Run the capability probe (MANDATORY — never skip).** The probe classifies which browser lanes this host actually has (agent-browser, OpenClaw managed browser, Playwright, CUA), which secrets resolve, and which lane to use:
 
@@ -181,7 +173,7 @@ bash tools/browser_manager.sh probe
 python3 tools/capability_probe.py
 ```
 
-It writes `working/skill6-capability.json` (the run-evidence root, never inside the skill dir) with `selectedLane` and the fallback chain. **`selectedLane != null` is the Day-0 acceptance** — a host with zero browser lanes is not installable (fail closed). Do NOT require OpenClaw 2.0 or CUA for this install to pass when Lane 1 (agent-browser) works; a pre-2.0 OpenClaw host with agent-browser has full Skill 6 capability.
+It writes `working/skill6-capability.json` (the run-evidence root, never inside the skill dir) with `selectedLane` and the fallback chain. **`selectedLane != null` is the Day-0 acceptance** — a host with zero browser lanes is not installable (fail closed). Do NOT require CUA for this install to pass when Lane 1 (agent-browser) works; the OpenClaw managed-browser lane is not available in this harness and is never required.
 
 **3. Prove the lane through the gateway:**
 
@@ -228,8 +220,8 @@ absolute path.
 **Fallback-lane launch configuration:**
 
 # PERSISTENT SESSION - user logs in once, session saved automatically
-# Session stored at: ~/.openclaw/playwright-data/ghl-install-pages/
-# To reset and re-login: rm -rf ~/.openclaw/playwright-data/ghl-install-pages/
+# Session stored at: <skill>/state/playwright-data/ghl-install-pages/
+# To reset and re-login: rm -rf <skill>/state/playwright-data/ghl-install-pages/
 
 ```python
 import os
@@ -237,7 +229,7 @@ from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
     browser = p.chromium.launch_persistent_context(
-        user_data_dir=os.path.expanduser("~/.openclaw/playwright-data/ghl-install-pages"),
+        user_data_dir=os.path.join(SKILL_DIR, "state", "playwright-data", "ghl-install-pages"),
         headless=True,   # D6 HEADLESS-ONLY — never open a visible window (dev OR client). NEVER set False.
         viewport={"width": 1440, "height": 900},
         args=[
@@ -252,7 +244,7 @@ Configuration notes:
 - Always use launch_persistent_context (not regular launch). This saves login session so re-authentication is not required on every run.
 - The user_data_dir ("./ghl_session") is where the browser saves cookies and session data. This folder persists between runs.
 - headless MUST stay True (D6 HEADLESS-ONLY). A visible window is forbidden, dev OR client. Authentication on this lane is still the Step 6 auth ladder (token-only primary, gated Tier-2, fail-loud Tier-3) — the fallback lane changes the driver, never the auth doctrine.
-- On the fallback lane only, an existing persistent session at `~/.openclaw/playwright-data/ghl-install-pages` may carry logged-in state while a token is unavailable — note it in MEMORY.md. Tier-1 token seeding remains the only unattended auth path.
+- On the fallback lane only, an existing persistent session under the skill's `state/playwright-data/ghl-install-pages` may carry logged-in state while a token is unavailable — note it in MEMORY.md. Tier-1 token seeding remains the only unattended auth path.
 - Below 1280px width: GHL's left sidebar collapses into a hamburger menu, breaking automation.
 - Below 900px height: Modal dialogs may not fully render, cutting off buttons.
 
@@ -324,23 +316,22 @@ If the user does not specify which one, default to Funnels.
 **ALWAYS check for an existing token before prompting the user. Presence-only checks — NEVER print the token value:**
 
 ```bash
-# Canonical secrets file (sole authoritative path — ~/clawd/secrets/.env is retired)
+# The install's secrets env file (the file $SECRETS_ENV designates)
 # Prints the COUNT of matching lines (1 = present, 0 = absent) — never the value
-grep -c "^GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=" ~/.openclaw/secrets/.env 2>/dev/null
+grep -c "^GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=" "${SECRETS_ENV:-/dev/null}" 2>/dev/null
 # Live process env (token may already be exported) — count only, never the value
 printenv | grep -c "^GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN="
 ```
 
 **Tier-1 outcome:**
 - Token found and non-empty: proceed (Step 3 window settings, then the build).
-- Token missing/empty/revoked: Tier-1 fails → the operator must supply a fresh token (see token recovery below) and add it to `~/.openclaw/secrets/.env` before continuing.
+- Token missing/empty/revoked: Tier-1 fails → the operator must supply a fresh token (see token recovery below) and add it to the install's secrets env file before continuing.
 
 **NEVER prompt for GHL_EMAIL or GHL_PASSWORD. Email/password login is not used by this skill.**
 
-If the token needs to be added, store it in the canonical secrets file:
+If the token needs to be added, store it in the install's secrets env file (the file `$SECRETS_ENV` designates):
 ```bash
-# Mac:
-mkdir -p ~/.openclaw/secrets && nano ~/.openclaw/secrets/.env
+nano "$SECRETS_ENV"
 ```
 
 Add the following line (replace with the actual token value):
@@ -348,7 +339,7 @@ Add the following line (replace with the actual token value):
 GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<your-token-here>
 ```
 
-Save and close the file (Ctrl+O, Enter, Ctrl+X). Set permissions: `chmod 600 ~/.openclaw/secrets/.env`.
+Save and close the file (Ctrl+O, Enter, Ctrl+X). Set permissions: `chmod 600 "$SECRETS_ENV"`.
 
 Load the token in automation scripts:
 ```python
@@ -356,7 +347,7 @@ import os
 firebase_token = os.environ.get("GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN")
 ```
 
-**Token recovery (fixes Tier-1):** re-grab a fresh token using the Convert and Flow Token Grabber Chrome extension (Skill 44 Action 5b), then update `~/.openclaw/secrets/.env` and re-run the seed.
+**Token recovery (fixes Tier-1):** re-grab a fresh token using the Convert and Flow Token Grabber Chrome extension (Skill 44 Action 5b), then update the install's secrets env file and re-run the seed.
 
 **Tier-2 — GATED email-2FA bootstrap (only when Tier-1 fails AND policy allows).** The canonical auth entry point is the orchestrator `python3 tools/ghl_auth.py --session <sess> --out /tmp/<sess>/seed.json` (a 3-tier ladder). It always runs Tier 1 first; ONLY on token-absent/invalid does it evaluate the gated Tier-2 ladder, which requires ALL FOUR gates to pass — (A) recorded client authorization, (B) Gmail-access PROVEN by a live read BEFORE any login, (C) email is the selected 2FA method, (D) agency creds in the client store. It is bounded (<=3 attempts, backoff, hard-stop on lockout/captcha) and on success SELF-HEALS a fresh `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` to the client store so the next run is Tier 1 again. Preview the tier without logging in: `python3 tools/ghl_auth.py --session <sess> --out <path> --check`.
 
@@ -376,7 +367,7 @@ The agent does NOT hand-roll a helper table. The legacy Playwright-era helper li
 
 2. **Nested + cross-origin iframes.** The builder loads inside nested iframes. agent-browser inlines iframe accessibility into the top snapshot and switches frames with `frame @ref` / `frame main` (gate #12). For cross-origin in-frame drag, click, or edit actions, call the frame-scoped entrypoints in `tools/ghl_iframe_drag.py` — `drive_drag(...)`, `drive_frame_click(...)`, `smoke_first(...)` (Playwright over the agent-browser CDP; the `IFRAME_SELECTORS` constant holds the form/survey/page_code presets). Missing Playwright fails CLOSED: `IframeDragError("playwright-unavailable")`, exit 2 — never a fake pass. The agent-browser ladder `tools/ghl_iframe_dragdrop.py` (text-drag → in-frame JS → detect-JS) runs first for same-origin surfaces.
 
-3. **Recovery = the gateway contract itself.** The circuit-breaker PARKS a flaky build and reports loudly (via Rescue Rangers); the hourly reaper `scripts/agent-browser-reaper.sh` (13 * * * *) is the backstop for a hard crash; the guaranteed teardown trap closes the session. A failed action is surfaced, never papered over.
+3. **Recovery = the gateway contract itself.** The circuit-breaker PARKS a flaky build and reports loudly; orphan sessions are reaped under Item 33 browser hygiene (the blackceo-signature-page session registry and reaper) as the backstop for a hard crash; the guaranteed teardown trap closes the session. A failed action is surfaced, never papered over.
 
 
 ## Step 8: Update Core .md Files
@@ -390,44 +381,39 @@ SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reap
 ```
 
 **Add to AGENTS.md** — copy the block `## GHL Page Deployment [PRIORITY: HIGH]` EXACTLY from CORE_UPDATES.md ("AGENTS.md - UPDATE REQUIRED"). It carries, verbatim:
-- Full guide: `[MASTER_FILES_FOLDER]/OpenClaw Onboarding/06-ghl-install-pages/ghl-browser-builder-full.md`
+- Full guide: `.claude/skills/ghl-install-pages/ghl-browser-builder-full.md` (in this install's tree)
 - The engine line: agent-browser (PRIMARY, headless, isolated `--session <client>`); Playwright is FALLBACK only and uses launchPersistentContext (NEVER launch())
-- The SINGLETON POOLED BROWSER gateway paragraph (tools/browser_manager.sh owns the ONE session `ghl-skill6-<location-id>`, the box-wide lock, lease, TTL, circuit-breaker, teardown trap; reaper cron `13 * * * *`)
+- The SINGLETON POOLED BROWSER gateway paragraph (tools/browser_manager.sh owns the ONE session `ghl-skill6-<location-id>`, the box-wide lock, lease, TTL, circuit-breaker, teardown trap; Item 33 hygiene reaper backstop)
 - The TOKEN-ONLY (D7) doctrine block + HARD RULE (never ask for/type/fall back to login/email/password/2FA; token failure = STOP and report; re-grab via the Token Grabber)
-- The TIER-2 EMAIL-2FA FALLBACK block (gated A/B/C/D, bounded, self-heals to TOKEN-ONLY; all login/2FA code in tools/ghl_auth_fallback.py + tools/ghl_login_browser.py; CI guard scripts/guard-ghl-auth-fallback.sh)
+- The TIER-2 EMAIL-2FA FALLBACK block (gated A/B/C/D, bounded, self-heals to TOKEN-ONLY; all login/2FA code in tools/ghl_auth_fallback.py + tools/ghl_login_browser.py; the pack guard test tests/test_guard_ghl_auth_fallback.py)
 - Always verify the correct sub-account before building (refuse on mismatch)
-- Credentials: `~/.openclaw/secrets/.env` — `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (canonical; CLIENT key only). Never the operator's keys on a client box.
+- Credentials: the install's secrets env file — `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (canonical; CLIENT key only). Never the operator's keys on a client box.
 - Surveys + Forms are the SAME ONE GHL rail
 
 **Add to TOOLS.md** — copy the block `## GHL Page Builder (Browser Automation)` EXACTLY from CORE_UPDATES.md ("TOOLS.md - UPDATE REQUIRED"). It carries, verbatim:
 - The same full-guide path and engine line, the three doctrine sentinels, and the gateway 4 steps (`ensure` → `eval|open|snapshot|wait|find|fill` → `run-detached` → `session-name`)
-- The exit-75 refusal outside a `browser_session()` bracket; ADVISORY openclaw.json config vs the REAL cap env vars (AB_MAX_SESSIONS, AB_SESSION_TTL, AB_CALL_TIMEOUT, AB_BREAKER_MAX, AB_MAX_LIVE, AB_HARD_AGE_MIN, AB_PROC_HARD_AGE_MIN); the reaper contract
+- The exit-75 refusal outside a `browser_session()` bracket; the REAL cap env vars (AB_MAX_SESSIONS, AB_SESSION_TTL, AB_CALL_TIMEOUT, AB_BREAKER_MAX, AB_MAX_LIVE, AB_HARD_AGE_MIN, AB_PROC_HARD_AGE_MIN); the reaper contract
 - The token-seed how-to (seed-ghl-auth.py → inject-ghl-auth.sh; env order GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN → CAF_FIREBASE_REFRESH_TOKEN → GHL_FIREBASE_REFRESH_TOKEN; exit 2 = no token, exit 3 = revoked) + the TIER-2 entry `python3 tools/ghl_auth.py`
 - Viewport minimum 1440x900; frame-scoped iframe handling (agent-browser `frame @ref` / `frame main`; cross-origin drag/click/edit via tools/ghl_iframe_drag.py behind the gateway)
 - `zhc` prefix on every name; marker-string verification of every save/preview/publish; NEVER publish without explicit approval; deployment report after every deployment; the survey/form rail
 
 **Add to MEMORY.md** — copy the block `## GHL Page Deployment Skill - Installed [DATE]` EXACTLY from CORE_UPDATES.md ("MEMORY.md - UPDATE REQUIRED"): the TOKEN-ONLY summary + the coverage line, plus the full-guide reference.
 
-Apply the sentinel comment once the blocks are in: `<!-- skill:06-ghl-install-pages:core-update-applied -->`
+Apply the sentinel comment once the blocks are in: `<!-- skill:ghl-install-pages:core-update-applied -->`
 
 ---
 
-## 🔴 GATEWAY RESTART PROTOCOL - NEVER TRIGGER AUTONOMOUSLY
+## 🔴 HOST SERVICE RESTARTS - NEVER TRIGGER AUTONOMOUSLY
 
-**During this installation, you may encounter instructions to restart the OpenClaw gateway.**
+**There is no gateway in this harness, and nothing in this install restarts a host service.**
 
-**YOU ARE FORBIDDEN from triggering gateway restarts yourself.**
+If any step appears to require restarting a host service (a scheduler, a browser host process, or any other machine-level service) to complete:
 
-### Correct Process
-When a gateway restart is needed:
-1. **STOP** - Do NOT execute the restart command
-2. **NOTIFY** the user: "This installation requires an OpenClaw gateway restart to complete."
-3. **INSTRUCT**: "Type `/restart` in Telegram to trigger it"
-4. **WAIT** for user action - do NOT proceed until confirmed
+1. **STOP** - Do NOT execute any restart yourself
+2. **NOTIFY** the operator with exactly what appears to require the restart and why
+3. **WAIT** for the operator's action - do NOT proceed until confirmed
 
 ### Forbidden Actions
-- Do NOT run `openclaw gateway restart` without explicit user permission
-- Do NOT say "I will restart the gateway now" without asking first
-- Do NOT assume the user wants the restart
-
----
+- Do NOT restart any host service as part of this install without explicit operator permission
+- Do NOT say "I will restart it now" without asking first
+- Do NOT assume the operator wants the restart

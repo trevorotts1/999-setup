@@ -1,11 +1,14 @@
-"""test_env_matrix.py — VPS-vs-Mac ENVIRONMENT MATRIX (build unit `envmatrix`,
+"""test_env_matrix.py — ENVIRONMENT MATRIX (build unit `envmatrix`,
 spec §4). Hermetic, offline, no live browser, no GHL write.
+
+999 harness form: there is no VPS-vs-Mac OpenClaw matrix in this harness.
+The durable root resolves (1) BM_DURABLE_ROOT_OVERRIDE, (2)
+GHL_DURABLE_ROOT, (3) the skill's own state/ dir; is_vps() is always
+False. The historical VPS-first detection is recorded in ENV-MATRIX.md.
 
 Proves:
   (a) browser_manager.py::durable_root()/is_vps() agree with the shell
-      gateway's _bm_durable_root() detection order (VPS /data/.openclaw
-      first, Mac ~/.openclaw second, "" third) — via an injectable `isdir`
-      so no real /data directory (root-owned) is ever touched.
+      gateway's _bm_durable_root() under the harness resolution order.
   (b) The shell side's mkdir-lock fallback path (no-flock Mac case) is
       exercised and actually serializes two callers, not just present in
       source.
@@ -86,71 +89,50 @@ class TestDurableRootPython:
         importlib.reload(bm)
         return bm
 
-    def test_vps_wins_when_data_openclaw_present(self):
+    def test_test_isolation_override_wins_verbatim(self):
         bm = self._reload_bm()
+        root = bm.durable_root(env={"BM_DURABLE_ROOT_OVERRIDE": "/tmp/fixture-root"})
+        assert root == "/tmp/fixture-root"
+        # Even the empty string wins (the hermetic suite's isolation form).
+        assert bm.durable_root(env={"BM_DURABLE_ROOT_OVERRIDE": ""}) == ""
 
-        def fake_isdir(p: str) -> bool:
-            return p == "/data/.openclaw"
-
-        root = bm.durable_root(env={"HOME": "/Users/fixture"}, isdir=fake_isdir)
-        assert root == "/data/.openclaw"
-        assert bm.is_vps(env={"HOME": "/Users/fixture"}, isdir=fake_isdir) is True
-
-    def test_mac_fallback_when_no_vps_root(self):
+    def test_ghl_durable_root_wins_over_default(self):
         bm = self._reload_bm()
+        root = bm.durable_root(env={"GHL_DURABLE_ROOT": "/srv/state"})
+        assert root == "/srv/state"
+        assert bm.is_vps(env={"GHL_DURABLE_ROOT": "/srv/state"}) is False
 
-        def fake_isdir(p: str) -> bool:
-            return p == "/Users/fixture/.openclaw"
-
-        root = bm.durable_root(env={"HOME": "/Users/fixture"}, isdir=fake_isdir)
-        assert root == "/Users/fixture/.openclaw"
-        assert bm.is_vps(env={"HOME": "/Users/fixture"}, isdir=fake_isdir) is False
-
-    def test_empty_when_neither_root_exists(self):
-        """Bare CI / dev checkout with no onboarded root — must return "",
-        mirroring the shell side's fallback-to-ephemeral-dir contract, never
-        a guessed or invented path."""
+    def test_default_is_the_skill_state_dir(self):
+        """No overrides: the in-tree state dir, always resolvable, never a
+        host path. is_vps is always False in this harness."""
         bm = self._reload_bm()
-        root = bm.durable_root(env={"HOME": "/Users/nobody"}, isdir=lambda p: False)
-        assert root == ""
-
-    def test_vps_checked_before_mac_even_when_both_exist(self):
-        """VPS convention wins when BOTH would resolve — matches the shell's
-        if/elif ordering (VPS first) exactly."""
-        bm = self._reload_bm()
-
-        def fake_isdir(p: str) -> bool:
-            return p in ("/data/.openclaw", "/Users/fixture/.openclaw")
-
-        root = bm.durable_root(env={"HOME": "/Users/fixture"}, isdir=fake_isdir)
-        assert root == "/data/.openclaw"
+        root = bm.durable_root(env={"HOME": "/Users/nobody"})
+        assert root == str(_SKILL_DIR / "state")
+        assert bm.is_vps(env={"HOME": "/Users/nobody"}) is False
 
     def test_no_home_env_no_crash(self):
         bm = self._reload_bm()
-        root = bm.durable_root(env={}, isdir=lambda p: False)
-        assert root == ""
+        root = bm.durable_root(env={})
+        assert root == str(_SKILL_DIR / "state")
 
     def test_matches_shell_side_for_the_same_simulated_inputs(self, tmp_path, monkeypatch):
-        """Cross-check: build a FAKE HOME with a real ~/.openclaw dir (no real
-        /data touched — that would need root) and assert the shell's
-        _bm_durable_root() and the python durable_root() agree on the
-        Mac-fallback branch, which IS safely reproducible without root."""
-        fake_home = tmp_path / "fixturehome"
-        (fake_home / ".openclaw").mkdir(parents=True)
-        env = dict(os.environ, HOME=str(fake_home))
+        """Cross-check: with GHL_DURABLE_ROOT set to a fixture dir, the
+        shell's _bm_durable_root() and the python durable_root() agree;
+        with no overrides set, both resolve the in-tree state dir."""
+        fixture_root = tmp_path / "durable"
+        fixture_root.mkdir()
+        env = dict(os.environ, GHL_DURABLE_ROOT=str(fixture_root))
+        env.pop("BM_DURABLE_ROOT_OVERRIDE", None)
         res = subprocess.run(
             ["bash", "-c", f'source "{_MANAGER_SH}"; _bm_durable_root'],
             capture_output=True, text=True, env=env, timeout=30,
         )
         assert res.returncode == 0, res.stderr
         shell_root = res.stdout.strip()
-        # Only assert the Mac-fallback branch when this test box truly has no
-        # real /data/.openclaw (true on every Mac and any hermetic CI box).
-        if not os.path.isdir("/data/.openclaw"):
-            assert shell_root == str(fake_home / ".openclaw")
-            bm = self._reload_bm()
-            py_root = bm.durable_root(env={"HOME": str(fake_home)})
-            assert py_root == shell_root
+        assert shell_root == str(fixture_root)
+        bm = self._reload_bm()
+        py_root = bm.durable_root(env={"GHL_DURABLE_ROOT": str(fixture_root)})
+        assert py_root == shell_root
 
 
 class TestSupervisor:
@@ -161,7 +143,9 @@ class TestSupervisor:
         behavior both sides)."""
         import browser_manager as bm
         val = bm.supervisor()
-        assert val in ("launchd", "pm2-or-systemd")
+        # 999 harness: sessions are launched per run by the harness and
+        # reaped under Item 33 hygiene; no host supervisor manages them.
+        assert val == "none"
         # Calling it twice must be side-effect-free / stable.
         assert bm.supervisor() == val
 
@@ -199,6 +183,12 @@ class TestMkdirLockFallbackSerializes:
             TMPDIR=str(tmp_path / "lockdir"),
             HOME=str(tmp_path / "home"),
             GHL_LOCATION_ID="mkdirlockfixture",
+            # Test isolation (the suite's own convention): breaker/park state
+            # must fall back to the ephemeral LOCKDIR, never the durable root.
+            # In this harness the default durable root is the in-tree state
+            # dir, which always resolves — without the override these
+            # fixtures would leak breaker counts into the real skill tree.
+            BM_DURABLE_ROOT_OVERRIDE="",
             AB_MAX_SESSIONS="5",  # avoid pool-ceiling noise; we're testing the LOCK
             AB_LOCK_WAIT="2",
             AB_SESSION_TTL="5",
@@ -300,6 +290,7 @@ def _run_batch(shell: str, tmp_path: Path, spec_path: Path) -> subprocess.Comple
         TMPDIR=str(tmp_path / f"tmpdir-{Path(shell).name.replace('/', '_')}"),
         HOME=str(tmp_path / "home"),
         GHL_LOCATION_ID="envmatrixbatchfixture",
+        BM_DURABLE_ROOT_OVERRIDE="",  # test isolation: no durable-root leakage
         AB_MAX_SESSIONS="1",
         AB_LOCK_WAIT="10",
         AB_SESSION_TTL="30",

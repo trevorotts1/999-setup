@@ -1,28 +1,33 @@
-# GHL Inbound + Conversation Playbooks — Authoritative Reference (Mac mini / Homebrew)
+# GHL Inbound + Conversation Playbooks — Authoritative Reference
 
 > **Scope:** This is the canonical, verified reference for wiring GoHighLevel (Convert and Flow)
-> inbound messages into OpenClaw and building the agent's conversation playbooks, **for the
-> Mac-mini / Homebrew install** (paths `~/clawd/…` and `~/.openclaw/…`, `cloudflared` via launchd).
-> It is derived from a live build and supersedes any conflicting prose in
-> `v6.0-source-playbook.md`. Where the source playbook and this doc disagree, **this doc wins.**
+> inbound messages into the agent endpoint and building the agent's conversation playbooks.
+> It is derived from a live build (verified on a live client install) and supersedes any
+> conflicting prose in `v6.0-source-playbook.md`. Where the source playbook and this doc
+> disagree, **this doc wins.** Harness bindings in this copy: credentials live in the install's
+> secrets env (the file `$SECRETS_ENV` designates); workspace files (AGENTS.md / TOOLS.md /
+> MEMORY.md) live at the install repo root; the client's public route to the endpoint is the
+> client's own infrastructure, set up at install time.
 >
-> **Mac vs VPS divergences are flagged inline.** The biggest two:
-> 1. `cloudflared` runs via **launchd** (`sudo cloudflared service install`) — needs **interactive sudo**.
-> 2. There is **NO Hostinger wrapper**, so the `HOOKS_TOKEN` in `~/.openclaw/openclaw.json` is **stable** —
->    no `OPENCLAW_HOOKS_TOKEN` env trick needed (VPS platform needs it; Mac platform does not).
+> **Two load-bearing facts:**
+> 1. The public route (for example a Cloudflare tunnel on the client's machine) must be running
+>    for GHL to reach the endpoint; installing it can need an interactive session on the
+>    client's machine.
+> 2. The `HOOKS_TOKEN` in the install's secrets env is **stable** — it does not rotate on boot,
+>    and no env trickery is needed around it in this harness.
 
 ---
 
 ## CORRECTED GHL HOOK STRUCTURE (2026-05-29)
 
-> Verified LIVE on a live client, OpenClaw **2026.5.27**. This **supersedes** any older nested-body
+> Verified LIVE on a live client (2026-05-29). This **supersedes** any older nested-body
 > or in-body-`messageTemplate` example anywhere in this skill (this doc, `v6.0-source-playbook.md`, the
 > scripts, and the templates).
 
 **CARDINAL RULE — the GHL Custom Webhook RAW BODY is FLAT (no nesting) and carries ALL 23 keys** (owner
 directive — 23 is the minimum, no stripped bodies). The body's `messageTemplate` value is kept
 **placeholder-free** (no `{{…}}`) so GHL never tries to expand it and never mangles the JSON. The matching
-OpenClaw `hooks.mappings` entry in `openclaw.json` is configured separately; the body is what GHL POSTs.
+The endpoint's server mapping entry in the client's endpoint configuration is configured separately; the body is what GHL POSTs.
 
 **0) THE GHL RAW BODY MUST CONTAIN ALL 23 KEYS (OWNER DIRECTIVE — NON-NEGOTIABLE).** 23 is the MINIMUM.
 No stripped/short bodies (no 8-key, 11-key, or 13-key versions) are allowed ANYWHERE in this skill. Every GHL
@@ -96,7 +101,7 @@ SAME channel the message arrived on — read `{{channel}}` and set the send `typ
 and returns `conversationId`+`messageId`. **`conversationId` is NEVER a send-body field** — it is the READ
 key only (GET `conversations/search?locationId=&contactId=` → GET `conversations/{conversationId}/messages`
 to pull thread history). This is machine-enforced by `scripts/qc-send-directive.sh` (CI + pre-handoff QC).
-Canonical correct mapping (`openclaw.json` `hooks.mappings` entry):
+Canonical correct mapping (the endpoint's server mapping entry):
 
 ```json
 {
@@ -131,7 +136,7 @@ an **APPEND**-after-sending instruction (the canonical mapping above shows them)
 enforces the send-directive. The read/append directive lives ONLY on this SERVER mapping — the in-GHL-body
 `messageTemplate` stays placeholder-free per the 23-key rule.
 
-**5) `deliver` MUST be `false`.** `deliver:true` makes OpenClaw ALSO try to push the reply to a channel,
+**5) `deliver` MUST be `false`.** `deliver:true` makes the endpoint ALSO try to push the reply to a channel,
 conflicting with the agent's own GHL-API reply.
 
 **6) There is NO GHL merge tag for channel / message-type.** Hardcode `"channel":"sms"` in the body (one
@@ -141,7 +146,7 @@ hardcode per branch).
 **7) Body VALUES use GHL's real merge tokens** (`{{contact.id}}`, `{{contact.first_name}}`,
 `{{contact.last_name}}`, `{{contact.email}}`, `{{contact.phone}}`, `{{message.body}}`, `{{message.subject}}`,
 `{{location.id}}`, `{{location.name}}`) and MUST be inserted via GHL's **Custom Values picker** (typed-as-text
-tokens send empty). The body KEY NAMES (`contact_id`, `message_body`, etc.) are what OpenClaw reads/maps.
+tokens send empty). The body KEY NAMES (`contact_id`, `message_body`, etc.) are what the endpoint reads/maps.
 
 **8) A body-supplied or templated `sessionKey` requires `hooks.allowRequestSessionKey=true` AND
 `hooks.allowedSessionKeyPrefixes`** (e.g. `["hook:"]`). Without any `sessionKey`, all contacts collapse into
@@ -173,18 +178,18 @@ This is the #1 source of confusion. There are exactly four secrets. Conflating a
 |---|--------|----------------|-----------|----------------------|
 | 1 | `CLOUDFLARE_API_TOKEN` (= "Cloudflare API key" — the SAME secret, two names) | `cfut_…` | Agent → Cloudflare API (build tunnel + DNS) | Client creates it; agent uses it **ONCE** during setup. |
 | 2 | Tunnel **connector token** | `eyJ…` (long JWT-looking) | `cloudflared` ↔ Cloudflare edge | Created once when the tunnel is created; `cloudflared` runs with it forever. |
-| 3 | `HOOKS_TOKEN` | 64-hex, e.g. `527cef27…` | GHL → OpenClaw (INBOUND `Authorization: Bearer`) | Created once; **shared by ALL hooks**; does not change. This is the token you paste into the Build-with-AI prompt header. |
+| 3 | `HOOKS_TOKEN` | 64-hex, e.g. `527cef27…` | GHL → the agent endpoint (INBOUND `Authorization: Bearer`) | Created once; **shared by ALL hooks**; does not change. This is the token you paste into the Build-with-AI prompt header. |
 | 4 | `GHL_PRIVATE_INTEGRATION_TOKEN` (PIT) | `pit-9f…` | Agent → GHL API (OUTBOUND, send replies / book) | Created once in GHL; the agent uses it as Bearer for every Conversations/Calendar call. |
 
 **Mnemonic:**
 - #1 builds the pipe (once).
 - #2 runs the pipe (forever, via cloudflared/launchd).
-- #3 lets GHL knock on the door (inbound auth, OpenClaw verifies).
+- #3 lets GHL knock on the door (inbound auth, the endpoint verifies).
 - #4 lets the agent talk back to GHL (outbound, send the reply / book the appointment).
 
-**Where they live on a Mac:** `~/clawd/secrets/.env` and/or `~/.openclaw/.env`. The `hooks.token`
-also lives in `~/.openclaw/openclaw.json` and — because there is no Hostinger wrapper — it is **stable**
-(not rewritten on boot). Do **not** use `OPENCLAW_HOOKS_TOKEN` env trickery on Mac.
+**Where they live:** the install's secrets env (the file `$SECRETS_ENV` designates) and/or
+already-exported environment variables. The hooks token also lives in the client's endpoint
+configuration and is **stable** (not rewritten on boot) in this harness.
 
 ---
 
@@ -232,7 +237,7 @@ Tunnel Values record (Section 5). It is Rule 7 of the playbook's Rules of Engage
 
 > **3-layer architecture reference:** `references/GHL_AI_LAYERS.md` is the canonical doc for
 > Layer 0 (compile-time Build-with-AI / CAF direct-build), Layer 1 (runtime Workflow AI step
-> prompt), and Layer 2 (OpenClaw playbook). Read it before any workflow build.
+> prompt), and Layer 2 (agent-side playbook). Read it before any workflow build.
 >
 > **Routing decision:**
 > - **Option 1 (PRIMARY):** when the client has Skill 44 (convert-and-flow-operator) AND a healthy
@@ -296,7 +301,7 @@ ACTIONS (in this exact order):
 PUBLISH: Yes, publish the workflow when done — do not leave it as a draft.
 ```
 
-> **CRITICAL (owner directive + verified live on a live client 2026-05-29, OpenClaw 2026.5.27):** the
+> **CRITICAL (owner directive + verified live on a live client 2026-05-29):** the
 > GHL RAW BODY MUST have ALL 23 keys (23 is the minimum — no stripped bodies) and be FLAT — no nested
 > `contact:{…}` / `customer_message:{…}` objects. A nested body makes EVERY field resolve EMPTY at the hook
 > (even a hardcoded `"channel":"sms"` arrived blank when nested). The body's `messageTemplate` VALUE MUST stay
@@ -336,7 +341,7 @@ this against the built workflow**, item by item. Each item names the failure mod
       `{{contact.id}}`-style tokens send EMPTY. FIX: delete the typed token, re-insert via the merge-field picker.
 - [ ] **Trigger is "Customer Replied"** filtered to the right Reply Channel.
 - [ ] **Workflow is PUBLISHED, not Draft.** FIX: top-right → Publish.
-- [ ] **REAL inbound test performed.** Send an actual message on the channel and confirm OpenClaw received it
+- [ ] **REAL inbound test performed.** Send an actual message on the channel and confirm the endpoint received it
       and the agent replied. **Do NOT rely on GHL's in-builder "Test" button** — it sends empty merge fields and
       passes even when the live payload is broken.
 
@@ -362,7 +367,7 @@ Record:
   "hook_path_registry": [
     {
       "hook_path": "ghl-inbound-sms",
-      "automation_name": "OpenClaw — Inbound SMS",
+      "automation_name": "Inbound SMS (agent)",
       "channel": "SMS",
       "playbook_path": "conversation-workflows/appointment-booking.md"
     }
@@ -371,7 +376,7 @@ Record:
 ```
 
 > For the connector token, store a **reference** to the secrets-env key (not the raw `eyJ…` value) in
-> Notion/AGENTS.md/TOOLS.md. The raw value lives only in `~/clawd/secrets/.env` / `~/.openclaw/.env`.
+> Notion/AGENTS.md/TOOLS.md. The raw value lives only in the install's secrets env.
 
 ---
 
@@ -528,9 +533,9 @@ sudo cloudflared service install <CONNECTOR_TOKEN>   # secret #2 (eyJ…)
 > operator to run in a local Terminal (or an interactive TTY SSH session), then resume once they confirm the
 > LaunchDaemon is installed. This was a real onboarding blocker — don't let the install silently stall here.
 
-On macOS this writes `/Library/LaunchDaemons/com.cloudflare.cloudflared.plist` (`RunAtLoad=true`,
-`KeepAlive=true`). Verify: `sudo launchctl list | grep com.cloudflare.cloudflared` (PID must be a number),
-and run the restart-survival test (`kill -9` the PID, confirm a new PID appears).
+On the client's Mac this writes a LaunchDaemon for the tunnel (`RunAtLoad=true`,
+`KeepAlive=true`). Verify the tunnel process is running (its PID must be a number in the
+service list), and run the restart-survival test (`kill -9` the PID, confirm a new PID appears).
 
 ---
 
@@ -544,35 +549,24 @@ reply, so the hook must not deliver it again. **Always `deliver: false` for API-
 
 ---
 
-## 13. Cron registration on openclaw 2026.5.27 — use the CLI, not `cron.jobs` JSON
+## 13. Scheduled job registration — the operator's scheduler
 
-The `cron.jobs` JSON block does **NOT** validate on openclaw 2026.5.27. Register every cron via the CLI:
+Register every recurring job on the operator's scheduler (this pack ships no scheduler
+registration machinery). Each job carries: a name, a schedule expression, the agent it runs
+as, a message/instruction, light context, and best-effort delivery.
 
-```bash
-openclaw cron add \
-  --name <job-name> \
-  --cron "<cron-expr>" \
-  --agent main \
-  --message "<instruction>" \
-  --light-context \
-  --best-effort-deliver
-```
-
-Example (weekly calendar sync, Section 14):
-```bash
-openclaw cron add --name skill38-calendar-sync --cron "0 9 * * 0" --agent main \
-  --light-context --best-effort-deliver \
-  --message "run ~/clawd/scripts/skill38-calendar-sync.sh ~/.openclaw/workspace/TOOLS.md and report calendar count"
-```
+Example (weekly calendar sync, Section 14): name `skill38-calendar-sync`, schedule
+`0 9 * * 0`, message "run scripts/skill38-calendar-sync.sh against the workspace TOOLS.md
+(the TOOLS.md at the install repo root) and report calendar count".
 
 ---
 
 ## 14. Calendar sync script
 
-`scripts/skill38-calendar-sync.sh` pulls the client's current GHL calendars weekly and rewrites the marked
-`<!-- GHL_CALENDARS_START -->` … `<!-- GHL_CALENDARS_END -->` table in TOOLS.md (adds new calendars, removes
-ones that no longer exist). It auto-detects Mac vs VPS env/paths. Install it to `~/clawd/scripts/` and register
-the Sunday 9am cron per Section 13.
+`scripts/skill38-calendar-sync.sh` (shipped in this skill) pulls the client's current GHL calendars weekly
+and rewrites the marked `<!-- GHL_CALENDARS_START -->` … `<!-- GHL_CALENDARS_END -->` table in TOOLS.md (adds
+new calendars, removes ones that no longer exist). It reads credentials from the install's secrets env.
+Register the Sunday 9am job per Section 13.
 
 ---
 

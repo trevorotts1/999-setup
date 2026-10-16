@@ -172,7 +172,7 @@ When this template is rendered for a real client, the following placeholders are
 - `<CLIENT_BUSINESS_NAME>` — e.g., "Acme Coaching Co."
 - `<CLIENT_FIRST_NAME>` — e.g., "Alex"
 - `<PUBLIC_HOSTNAME>` — e.g., `claw.example.com`
-- `<ROUTE_ID>` — e.g., `ZHC` (the hooks.mappings key configured in Step 3; also the flat body's `match` value)
+- `<ROUTE_ID>` — e.g., `ZHC` (the endpoint route key configured in Step 3; also the flat body's `match` value)
 - `<ROUTING_AGENT_ID>` — the agent the hook routes to (e.g., `main` or `sales`); also the flat body's `agent_id`
 - `<HOOKS_TOKEN>` — the bearer token from `SECRETS_ENV_FILE`
 - `<WORKFLOW_ID>` — `sms-inquiry-responder` (or the matching workflow file under `conversation-workflows/`)

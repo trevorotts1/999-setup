@@ -3,37 +3,35 @@
 # wire-ghl-env.sh — Skill 44 GHL credential env-wiring (single source)
 # ============================================================
 #
-# WHY THIS EXISTS (VPS env-inheritance bug reproduction, 2026-06-11):
-#   The skill-44 installer left the GOHIGHLEVEL_* creds ONLY in
-#   /data/.openclaw/secrets/.env — a file the OpenClaw gateway/agent PROCESS
-#   never loads. When the agent invoked `caf`, the gateway's process env had
-#   no GOHIGHLEVEL_LOCATION_ID, so the engine died at:
-#       "Error: GHL_LOCATION_ID environment variable is not set."
-#   while the install had already reported success.
+# HARNESS BINDING (Claude Code / 999 edition; ADAPTER.md seams 2 and 4).
+# On the OpenClaw side this script wired the canonical GHL vars into
+# openclaw.json `env.vars` (the block the gateway inherited at process
+# start), with a docker-compose env_file step on the VPS and launchctl
+# guidance on the Mac. None of that machinery exists in this harness:
+# there is no gateway process and no openclaw.json. Here, the wiring
+# target IS the harness session's own environment, provisioned from this
+# install's secrets env. So this script now:
 #
-#   Worse, on the Hostinger VPS the docker-compose `env_file`
-#   (/docker/<project>/.env) carried EMPTY placeholder lines —
-#   `GOHIGHLEVEL_API_KEY=` with no value, and no FIREBASE line at all.
-#   docker-compose injects an empty `env_file` value as an EMPTY STRING into
-#   the container process env. An empty string still "wins" against the secrets
-#   file for any consumer that reads os.environ directly, so it MASKED the real
-#   value even after it was added elsewhere. Empty placeholders must be REPLACED,
-#   not merely appended-after.
+#   1. Resolves the 5 canonical GHL vars with ENGINE PARITY (below).
+#   2. Emits them as `export` lines on stdout, for the caller to eval
+#      (`eval "$(bash wire-ghl-env.sh)"`), OR, with `--write`, upserts
+#      them into the env file named by $SECRETS_ENV (or the file given as
+#      the argument to --write), REPLACING empty placeholder lines in
+#      place: an empty `GOHIGHLEVEL_API_KEY=` line in a sourced env file
+#      still masks the real value for any consumer that reads the
+#      environment after sourcing, so placeholders are replaced, never
+#      merely appended after (the VPS env-inheritance bug, 2026-06-11,
+#      applies to any sourced env file, not just docker's).
+#   3. Also resolves the FUNNEL + AUTOMATION matcher catalog vars
+#      (GHL_FUNNEL_* / CAF_AUTOMATION_* / *_LINKS) against the sibling
+#      Skill 6 copy in this repo (.claude/skills/ghl-install-pages) and
+#      includes each var ONLY when its target exists.
 #
-# WHAT THIS SCRIPT DOES (idempotent):
-#   1. Wires all 5 canonical GHL vars into openclaw.json `env.vars` (the block
-#      the gateway inherits at process start). Uses `openclaw config set` first,
-#      and FALLS BACK to a direct JSON deep-merge into openclaw.json when
-#      `config set` rejects the nested key — the supported pattern on
-#      OpenClaw 2026.5.20+ (see 31-upgraded-memory-system/scripts/activate-memory-stack.sh).
-#   2. VPS ONLY: ALSO populates the host docker-compose env_file
-#      (/docker/<project>/.env), REPLACING any empty `GOHIGHLEVEL_*=` placeholder
-#      lines in place (they override real values with empty strings). Reachable
-#      only from the host — skipped automatically when /docker is not visible
-#      (e.g. when running inside the container).
-#   3. MAC ONLY: wires env.vars but does NOT restart the gateway (rescue-Mac
-#      rule). Prints a note that a `launchctl kickstart` may be needed for the
-#      running gateway to inherit the new env.vars.
+# ENGINE PARITY (2026-09-07): the canonical secrets file WINS over the
+# inherited process env for credentials, because the engine wrapper
+# (tools/engine/caf) sources $SECRETS_ENV when it is set. Resolving any
+# other way here would wire a value the engine will never use (the
+# documented 47-day stale-placeholder failure on the OpenClaw side).
 #
 # The 5 canonical vars (engine wrapper maps GOHIGHLEVEL_* -> GHL_*):
 #   GOHIGHLEVEL_API_KEY                 (PIT — required)
@@ -42,85 +40,59 @@
 #   GOHIGHLEVEL_ALLOWED_LOCATION_IDS    (write-location whitelist)
 #   GOHIGHLEVEL_DRAFT_ONLY              (write-safety default)
 #
-# Inputs (read from process env OR the canonical secrets file):
+# Plus the full PIT alias set (all wired so the wiring<->engine alias
+# mismatch that caused the 2026-06 crash-loop cannot recur):
+#   GHL_API_KEY, GHL_PIT, GHL_TOKEN, GHL_PRIVATE_INTEGRATION_TOKEN,
+#   PRIVATE_INTEGRATION_TOKEN, GHL_PRIVATE_TOKEN, PIT_TOKEN,
+#   GHL_PIT_TOKEN, GOHIGHLEVEL_LOCATION_PIT, GHL_LOCATION_PIT
+#
+# Inputs (read from process env OR the install's secrets env file):
 #   GOHIGHLEVEL_API_KEY / GOHIGHLEVEL_LOCATION_ID / GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN
 #   GOHIGHLEVEL_ALLOWED_LOCATION_IDS (defaults to GOHIGHLEVEL_LOCATION_ID)
 #   GOHIGHLEVEL_DRAFT_ONLY (defaults to "true")
 #
 # Env overrides:
-#   OC_JSON           — path to openclaw.json (auto-detected otherwise)
-#   OC_SECRETS_ENV    — path to secrets/.env  (auto-detected otherwise)
-#   DOCKER_ENV_FILE   — explicit host docker-compose env_file path (VPS)
-#   SKILL44_NO_DOCKER_ENV=1 — skip the docker env_file step entirely
+#   SECRETS_ENV       — path to this install's secrets env file
+#   WIRE_ENV_FILE     — explicit file for --write (wins over SECRETS_ENV)
 #
 # Exit codes:
-#   0 — wired what was present (a missing OPTIONAL var is not a failure)
+#   0 — resolved (and emitted / written) what was present; a missing
+#       OPTIONAL var is not a failure
 #   2 — a REQUIRED var (API_KEY or LOCATION_ID) was absent everywhere; the
 #       caller should mark the skill installed-with-missing-prereqs.
 # ============================================================
 
 set -euo pipefail
 
-log() { echo "[wire-ghl-env] $*"; }
+log() { echo "[wire-ghl-env] $*" >&2; }
 
-# ─── Path detection (VPS container layout vs Mac) ────────────────────────────
-if [ -z "${OC_JSON:-}" ]; then
-  if [ -f /data/.openclaw/openclaw.json ]; then
-    OC_JSON="/data/.openclaw/openclaw.json"
-  else
-    OC_JSON="$HOME/.openclaw/openclaw.json"
-  fi
-fi
-if [ -z "${OC_SECRETS_ENV:-}" ]; then
-  if [ -d /data/.openclaw ]; then
-    OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
-  else
-    OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
-  fi
-fi
+MODE="emit"
+WRITE_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --write) MODE="write"
+             if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then WRITE_FILE="$2"; shift 2
+             else WRITE_FILE="${WIRE_ENV_FILE:-${SECRETS_ENV:-}}"; shift 1; fi ;;
+    *) log "unknown argument: $1 (usage: wire-ghl-env.sh [--write [FILE]])"; exit 64 ;;
+  esac
+done
 
-# Platform: vps when the container /data layout is present, else mac.
-if [ -d /data/.openclaw ]; then
-  PLATFORM="vps"
-else
-  PLATFORM="mac"
-fi
+SECRETS_FILE="${SECRETS_ENV:-}"
 
-log "platform: $PLATFORM"
-log "openclaw.json: $OC_JSON"
-log "secrets/.env:  $OC_SECRETS_ENV"
-
-# ─── Load values from the canonical secrets file if not already in env ───────
+# ─── Load values from the secrets env file if not already in env ─────────────
 # We do NOT `set -a; source` the whole file (it may contain syntactically odd
 # lines); we grep each var by name (last hit wins, like the engine wrapper).
 read_secret() {
   local var="$1"
-  [ -f "$OC_SECRETS_ENV" ] || { echo ""; return 0; }
-  # grep may find nothing (exit 1) — that is fine, we want an empty string, not
-  # a non-zero return that would trip `set -e` in the calling `VAR=$(read_secret)`.
+  [ -n "$SECRETS_FILE" ] && [ -f "$SECRETS_FILE" ] || { echo ""; return 0; }
   local out
-  out="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${var}=" "$OC_SECRETS_ENV" 2>/dev/null \
+  out="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${var}=" "$SECRETS_FILE" 2>/dev/null \
     | tail -1 | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${var}=//" \
     | sed -E 's/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' || true)"
   echo "$out"
   return 0
 }
 
-# ─── ENGINE PARITY (2026-09-07) ──────────────────────────────────────────────
-# The CANONICAL SECRETS FILE WINS over the inherited process env for credentials.
-#
-# WHY: this script writes what it resolves into openclaw.json `env.vars`, and the
-# gateway re-inherits env.vars at its next start. With process-env-first, a box
-# whose gateway was started carrying a STALE/PLACEHOLDER credential would resolve
-# that stale value and write it straight back into env.vars — re-planting it on
-# every re-wire, forever, while the correct token sat untouched in secrets/.env.
-# That is a documented production failure: a client was messaged daily for 47+
-# days to "re-grab your token" because a 63-character placeholder in env.vars
-# masked a valid 503-character token in secrets/.env.
-#
-# It also matches the engine: tools/engine/caf does `set -a; source secrets/.env`,
-# so for caf the FILE already overrides the process env. Resolving any other way
-# here means wiring a value the engine will never use.
 _file_first() {                      # file value if the secrets file defines it, else process env
   local _var="$1" _fromfile
   _fromfile="$(read_secret "$_var")"
@@ -148,43 +120,17 @@ MISSING=""
 if [ -n "$MISSING" ]; then
   log "MISSING-PREREQS: required var(s) absent everywhere:${MISSING}"
   log "  Skill 44 is installed-with-missing-prereqs. Add the value(s) to"
-  log "  $OC_SECRETS_ENV (and re-run this script) before caf can reach GHL."
+  log "  this install's secrets env (the file \$SECRETS_ENV names) or export"
+  log "  them, then re-run this script before caf can reach GHL."
   exit 2
 fi
 
-# ─── 1. Wire into openclaw.json env.vars (gateway-inherited) ─────────────────
-# Try `openclaw config set` first; fall back to a direct JSON deep-merge if it
-# rejects the nested key ("Invalid input" on 2026.5.20+ when env.vars is absent).
-wire_var() {
-  local var="$1"; local val="$2"
-  [ -z "$val" ] && return 0   # skip optional vars with no value
-  if command -v openclaw >/dev/null 2>&1 \
-     && openclaw config set "env.vars.$var" "$val" >/dev/null 2>&1; then
-    log "config set env.vars.$var (via openclaw config set)"
-    return 0
-  fi
-  # Fallback: direct JSON deep-merge.
-  VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF'
-import json, os
-from pathlib import Path
-p = Path(os.environ['OC_JSON'])
-try:
-    d = json.loads(p.read_text())
-except Exception:
-    d = {}
-d.setdefault('env', {}).setdefault('vars', {})[os.environ['VAR']] = os.environ['VAL']
-p.parent.mkdir(parents=True, exist_ok=True)
-p.write_text(json.dumps(d, indent=2) + "\n")
-print("[wire-ghl-env] env.vars.%s (via JSON deep-merge fallback)" % os.environ['VAR'])
-PYEOF
-}
+# ─── Collect the var set to wire ─────────────────────────────────────────────
+# Assoc-free (bash 3.2-safe): parallel arrays.
+WIRE_VARS=()
+WIRE_VALS=()
+wire_var() { WIRE_VARS+=("$1"); WIRE_VALS+=("$2"); }
 
-log "wiring env.vars into $OC_JSON ..."
-# ── Canonical LOCATION-PIT alias set (all mean the same credential; first hit wins) ──
-# Wiring all aliases ends the wiring↔engine mismatch: wire-ghl-env.sh previously wrote
-# only GOHIGHLEVEL_* names, but ghl_client.py read only GHL_API_KEY → resolved to empty
-# → 401 crash-loop (root cause: a client-box GHL-MCP crash-loop, 2026-06).
-# GHL PIT aliases: see TERMINOLOGY.md for the canonical alias set.
 wire_var GOHIGHLEVEL_API_KEY                "$API_KEY"    # preferred canonical name
 wire_var GHL_API_KEY                        "$API_KEY"    # legacy short alias
 wire_var GHL_PIT                            "$API_KEY"    # short alias
@@ -199,18 +145,20 @@ wire_var GHL_LOCATION_PIT                   "$API_KEY"    # explicit LOCATION-PI
 wire_var GOHIGHLEVEL_LOCATION_ID            "$LOCATION_ID"
 wire_var GOHIGHLEVEL_ALLOWED_LOCATION_IDS   "$ALLOWED"
 wire_var GOHIGHLEVEL_DRAFT_ONLY             "$DRAFT_ONLY"
-wire_var GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$FIREBASE"   # no-op when absent
+[ -n "$FIREBASE" ] && wire_var GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$FIREBASE"
 
-# ─── 1b. Wire the FUNNEL + AUTOMATION matcher catalog/index/link env vars ────
-# Without these, the Skill-6 STEP-0 funnel matcher (v2_dispatcher) and the Skill-44
-# Step-0.4 automation matcher stay DARK on a real box (env-gated, never activated).
-# Resolve relative to the installed skills (06 and 44 are siblings under the skills
-# dir). Wire each var ONLY when its target exists — a stale path would just be a safe
-# no-op for the matchers, but we keep openclaw.json clean.
+# ─── FUNNEL + AUTOMATION matcher catalog vars ────────────────────────────────
+# Without these, the Skill-6 STEP-0 funnel matcher (v2_dispatcher) and the
+# Skill-44 Step-0.4 automation matcher stay DARK (env-gated, never
+# activated). Resolve relative to the installed skills: in this repo the
+# pack skills are siblings under .claude/skills/ (ghl-install-pages is
+# Skill 6; this skill is Skill 44). Wire each var ONLY when its target
+# exists — a stale path would just be a safe no-op for the matchers, but
+# the environment stays clean this way.
 ENGINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL44_DIR="$(cd "$ENGINE_DIR/../.." && pwd)"            # 44-convert-and-flow-operator
-SKILLS_ROOT="$(cd "$SKILL44_DIR/.." && pwd)"              # skills dir (06 & 44 are siblings)
-SKILL06_DIR="$SKILLS_ROOT/06-ghl-install-pages"
+SKILL44_DIR="$(cd "$ENGINE_DIR/../.." && pwd)"            # convert-and-flow-operator
+SKILLS_ROOT="$(cd "$SKILL44_DIR/.." && pwd)"              # .claude/skills
+SKILL06_DIR="$SKILLS_ROOT/ghl-install-pages"
 FUNNEL_CATALOG="$SKILL06_DIR/funnel-templates"
 FUNNEL_INDEX="$SKILL06_DIR/tools/catalog-index.json"
 AUTO_CATALOG="$SKILL44_DIR/automation-templates"
@@ -233,91 +181,40 @@ wire_var_if_exists CAF_AUTOMATION_CATALOG        "$AUTO_CATALOG"   dir
 wire_var_if_exists CAF_AUTOMATION_INDEX          "$AUTO_INDEX"     file
 wire_var_if_exists CAF_FUNNEL_AUTOMATION_LINKS   "$LINK_MAP"       file
 
-# chown back to the runtime user on the VPS container layout.
-if [ "$PLATFORM" = "vps" ] && [ "$OC_JSON" = "/data/.openclaw/openclaw.json" ]; then
-  chown node:node "$OC_JSON" 2>/dev/null || true
-fi
-
-# ─── 2. VPS: populate the host docker-compose env_file, replacing placeholders ─
-# docker-compose injects empty `env_file` values as empty strings into the
-# container process env, which MASK the real value (VPS env-inheritance bug). So any empty
-# `GOHIGHLEVEL_*=` line MUST be replaced in place, not appended-after.
-wire_docker_env() {
-  local envfile="$1"
-  [ -f "$envfile" ] || return 0
-  log "docker env_file: $envfile"
-
-  # var=value pairs to enforce. Empty values are still written so an empty
-  # placeholder gets overwritten with the real value (or removed below).
-  _upsert() {
-    local var="$1"; local val="$2"
-    # If the value is empty AND there is an existing non-empty line, leave the
-    # existing line. If the value is empty AND the existing line is an empty
-    # placeholder, DELETE the placeholder (an absent var is far safer than an
-    # empty-string override that masks env.vars / secrets).
-    if [ -z "$val" ]; then
-      if grep -qE "^[[:space:]]*${var}=[[:space:]]*$" "$envfile"; then
-        log "  removing empty placeholder ${var}= (would mask real value as empty string)"
-        grep -vE "^[[:space:]]*${var}=[[:space:]]*$" "$envfile" > "$envfile.tmp" && mv "$envfile.tmp" "$envfile"
-      fi
-      return 0
-    fi
-    # Non-empty value: replace any existing line (placeholder or stale) in place.
-    if grep -qE "^[[:space:]]*${var}=" "$envfile"; then
-      grep -vE "^[[:space:]]*${var}=" "$envfile" > "$envfile.tmp" && mv "$envfile.tmp" "$envfile"
-      log "  replacing existing ${var}= line"
-    fi
-    printf '%s=%s\n' "$var" "$val" >> "$envfile"
-  }
-
-  _upsert GOHIGHLEVEL_API_KEY                "$API_KEY"
-  _upsert GOHIGHLEVEL_LOCATION_ID            "$LOCATION_ID"
-  _upsert GOHIGHLEVEL_ALLOWED_LOCATION_IDS   "$ALLOWED"
-  _upsert GOHIGHLEVEL_DRAFT_ONLY             "$DRAFT_ONLY"
-  _upsert GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "$FIREBASE"
-
-  log "  NOTE: apply with: docker compose -f $(dirname "$envfile")/docker-compose.yml up -d --force-recreate"
-  log "        (a plain 'docker restart' does NOT re-read env_file)"
+# ─── Emit or write ───────────────────────────────────────────────────────────
+_shell_quote() { # single-quote a value for safe eval / file storage
+  local v="$1"
+  v="${v//\'/\'\\\'\'}"
+  printf "'%s'" "$v"
 }
 
-if [ "${SKILL44_NO_DOCKER_ENV:-0}" != "1" ]; then
-  if [ -n "${DOCKER_ENV_FILE:-}" ]; then
-    wire_docker_env "$DOCKER_ENV_FILE"
-  elif [ -d /docker ]; then
-    # Host context: find the project dir(s) under /docker that hold an OpenClaw
-    # compose env_file. Only touch ones that already reference OpenClaw/GHL so we
-    # never write into an unrelated project's env.
-    _touched=0
-    for _ef in /docker/*/.env; do
-      [ -f "$_ef" ] || continue
-      if grep -qE 'OPENCLAW|GOHIGHLEVEL|GHL_' "$_ef" 2>/dev/null; then
-        wire_docker_env "$_ef"
-        _touched=1
-      fi
-    done
-    [ "$_touched" = "0" ] && log "no OpenClaw docker env_file found under /docker (running inside container? — env.vars wiring above is the gateway-inherited path)"
-  else
-    log "/docker not visible (likely running inside the container) — skipping host env_file; env.vars wiring above is the gateway-inherited path"
+if [ "$MODE" = "write" ]; then
+  if [ -z "$WRITE_FILE" ]; then
+    log "ERROR: --write needs a target file (pass one, or set \$SECRETS_ENV or \$WIRE_ENV_FILE)."
+    exit 64
   fi
-fi
-
-# ─── 3. Validate + platform-specific restart guidance ────────────────────────
-if command -v openclaw >/dev/null 2>&1; then
-  if ! openclaw config validate >/dev/null 2>&1; then
-    log "WARNING: 'openclaw config validate' reported an issue after wiring — run 'openclaw doctor --fix' and re-validate."
-  else
-    log "openclaw config validate: clean"
-  fi
-fi
-
-if [ "$PLATFORM" = "mac" ]; then
-  log "MAC: env.vars wired. NOT restarting the gateway (rescue-Mac rule)."
-  log "     The RUNNING gateway will not inherit the new env.vars until it is"
-  log "     restarted. If caf reports a missing var from inside the agent, run:"
-  log "       launchctl kickstart -k gui/\$(id -u)/ai.openclaw.gateway"
+  mkdir -p "$(dirname "$WRITE_FILE")"
+  touch "$WRITE_FILE"
+  i=0
+  while [ $i -lt ${#WIRE_VARS[@]} ]; do
+    var="${WIRE_VARS[$i]}"; val="${WIRE_VALS[$i]}"; i=$((i+1))
+    [ -z "$val" ] && continue   # skip optional vars with no value
+    # Replace any existing line (placeholder or stale) in place, else append.
+    if grep -qE "^[[:space:]]*(export[[:space:]]+)?${var}=" "$WRITE_FILE"; then
+      grep -vE "^[[:space:]]*(export[[:space:]]+)?${var}=" "$WRITE_FILE" > "$WRITE_FILE.tmp" && mv "$WRITE_FILE.tmp" "$WRITE_FILE"
+      log "  replacing existing ${var}= line in $WRITE_FILE"
+    fi
+    printf '%s=%s\n' "$var" "$val" >> "$WRITE_FILE"
+  done
+  log "wired ${#WIRE_VARS[@]} vars into $WRITE_FILE"
 else
-  log "VPS: env.vars wired into $OC_JSON; host env_file updated (if reachable)."
-  log "     Apply with a force-recreate so the container re-reads env_file."
+  i=0
+  while [ $i -lt ${#WIRE_VARS[@]} ]; do
+    var="${WIRE_VARS[$i]}"; val="${WIRE_VALS[$i]}"; i=$((i+1))
+    [ -z "$val" ] && continue   # skip optional vars with no value
+    printf 'export %s=%s\n' "$var" "$(_shell_quote "$val")"
+  done
+  log "emitted ${#WIRE_VARS[@]} vars on stdout (eval them, or re-run with --write to upsert an env file)"
 fi
 
 log "DONE."

@@ -22,11 +22,14 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEMPLATE="${ZHC_PIXEL_TEMPLATE:-$SKILL_DIR/templates/zhc-pixel/zhc-pixel.template.js}"
 
 # -------- Master files dir (read the pointer with head, NEVER source it) --------
-MASTER_FILES_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+# Pointer binding (999 harness): SKILL38_MASTER_FILES_POINTER wins; the default
+# pointer is the master-files-dir file inside this skill directory (the
+# OpenClaw side kept it under ~/.openclaw, maintained by excluded host step 01).
+MASTER_FILES_POINTER="${SKILL38_MASTER_FILES_POINTER:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/master-files-dir}"
 if [ -z "${MASTER_FILES_DIR:-}" ] && [ -f "$MASTER_FILES_POINTER" ]; then
   MASTER_FILES_DIR="$(head -n1 "$MASTER_FILES_POINTER")"
 fi
-: "${MASTER_FILES_DIR:?MASTER_FILES_DIR not set (run 01-locate-master-files-folder.sh first)}"
+: "${MASTER_FILES_DIR:?MASTER_FILES_DIR not set (set MASTER_FILES_DIR or write the pointer file: master-files-dir in this skill directory)}"
 
 [ -f "$TEMPLATE" ] || { echo "[27-render-pixel-js] template not found: $TEMPLATE" >&2; exit 2; }
 

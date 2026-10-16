@@ -11,7 +11,7 @@ Skill 38 `references/GHL-INBOUND-AND-PLAYBOOKS.md` §7-9 (full detail there).
 **The 3 headers on EVERY call:**
 `Authorization: Bearer <GHL_PRIVATE_INTEGRATION_TOKEN>` · `Version: 2021-04-15` · `Content-Type: application/json`
 **Required PIT scopes (summary):** `conversations/message.write`, `conversations.readonly`, `calendars.readonly`, `calendars.write`, `calendars/events.readonly`, `calendars/events.write`, `invoices.write`
-**Token:** the raw PIT lives ONLY in the secrets env (`secrets/.env` / `~/.openclaw/.env`) as `GHL_PRIVATE_INTEGRATION_TOKEN`; never inline it. `<LOCATION_ID>` = the sub-account id (also `GHL_LOCATION_ID`).
+**Token:** the raw PIT lives ONLY in the install's secrets env as `GOHIGHLEVEL_API_KEY` (the pack's canonical name; `GHL_PRIVATE_INTEGRATION_TOKEN` is an accepted alias); never inline it. `<LOCATION_ID>` = the sub-account id (`GOHIGHLEVEL_LOCATION_ID`, alias `GHL_LOCATION_ID`).
 
 ### MESSAGING — ONE endpoint, MIRROR the inbound channel's `type`
 `POST /conversations/messages` · scope `conversations/message.write`

@@ -1,3 +1,12 @@
+# CHANGELOG — 999 adaptation note (2026-10-14)
+
+> This file's entries are the skill's OpenClaw-side history, carried
+> verbatim as the provenance record. They describe that harness's files,
+> paths, and machinery; they are a record, not instructions for this
+> harness. The live, adapted doctrine for the Claude Code harness is the
+> pack's SKILL.md, INSTRUCTIONS.md, protocols/, and references/ as
+> adapted in this copy.
+
 ## [2.0.12] - 2026-10-06 - fix: step O.6 accepts the Skill 76 local Ollama embedder
 
 `scripts/19-configure-dreaming-embeddings.sh` failed with "no client-owned embedding provider key" on a

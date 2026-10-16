@@ -41,7 +41,7 @@ cat > "$G/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | OpenClaw playbook |
+| ID | Name | Communications playbook |
 |---|---|---|
 | qualify | Qualify | qualify.md |
 | support-intake | Support intake | support-intake.md |
@@ -80,7 +80,7 @@ cat > "$B/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | OpenClaw playbook |
+| ID | Name | Communications playbook |
 |---|---|---|
 | rogue | Rogue | rogue.md |
 EOF

@@ -12,7 +12,7 @@ This document shows real examples of deploying pages into GoHighLevel (Convert a
 **Step 1 - Verify prerequisites:**
 Agent: "Before I deploy, let me verify everything is ready:
 - HTML code: Ready (I have the SuperDesign export)
-- Token seed: `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` present at `~/.openclaw/secrets/.env`
+- Token seed: `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` present in the install's secrets env
 - Target account: [Client Sub-Account]
 - Browser session: Launching Playwright with persistent context..."
 
@@ -156,7 +156,7 @@ NEXT STEPS:
 
 **What happens when the Firebase refresh token is absent, expired, or revoked:**
 
-This skill uses TOKEN-ONLY access. The builder seeds a session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` in `~/.openclaw/secrets/.env`. It never navigates to a login form and never encounters a 2FA prompt.
+This skill uses TOKEN-ONLY access. The builder seeds a session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` in the install's secrets env. It never navigates to a login form and never encounters a 2FA prompt.
 
 **Token-seed failure output (what the operator sees):**
 
@@ -175,7 +175,7 @@ This skill uses TOKEN-ONLY access. The builder seeds a session from `GOHIGHLEVEL
 **Operator recovery steps:**
 1. Open the Convert and Flow Token Grabber Chrome extension (Skill 44 Action 5b) in your browser while logged into Convert and Flow
 2. Copy the fresh Firebase refresh token it provides
-3. Update `~/.openclaw/secrets/.env`: set `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<new-token>`
+3. Update the install's secrets env file: set `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=<new-token>`
 4. Ensure the file is `chmod 600`
 5. Re-run the builder seed — it will pick up the new token automatically
 

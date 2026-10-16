@@ -61,7 +61,7 @@ from typing import Callable, Iterator, Optional
 # Version marker (kept in sync by scripts/bump-version.sh):
 BROWSER_MANAGER_PY_VERSION = "v27.1.26"
 
-# Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
+# Tunables mirror browser_manager.sh (the pack's own defaults)
 # browser.agentBrowser block (agent-browser ignores that config natively — the
 # real cap lives in the manager + reaper, never in config).
 AB_MAX_SESSIONS_DEFAULT = 1
@@ -318,7 +318,7 @@ def session_expired_message(session: str, profile_hint: Optional[str] = None) ->
     """The ONE actionable message for a detected/unrecovered session expiry.
     Names the profile + session and the exact remedy — never a bare stack
     trace, and NEVER a token/cookie value (only names and paths)."""
-    profile = profile_hint or "the OpenClaw browser profile (~/.openclaw/browser/openclaw/user-data)"
+    profile = profile_hint or "the agent-browser profile this install seeded (seed-ghl-auth.py)"
     return (
         f"SESSION EXPIRED (GHL login bounce) on session '{session}': navigation "
         "landed on the GoHighLevel /login page instead of the requested page. "
@@ -435,7 +435,7 @@ def bounded_retry_with_reseed(
             raise SessionExpiredError(
                 "session still expired after the permitted re-seed attempt(s) "
                 f"({reseed_used}/{max_reseed_attempts}) — STOP, no further retry. "
-                "Re-authenticate the OpenClaw browser profile manually."
+                "Re-authenticate the browser profile manually."
             )
         reseed_used += 1
         if not reseed():
@@ -581,74 +581,65 @@ def assert_session_active(caller: str = "browser command") -> None:
         )
 
 
-# ── ENVIRONMENT MATRIX (spec §4) — VPS-vs-Mac detection, Python side ──────────
-# Mirrors ``_bm_durable_root()`` in browser_manager.sh EXACTLY: VPS's
-# ``/data/.openclaw`` checked FIRST (survives a reboot; PARK markers, receipts
-# and other durable state live there), else the Mac's ``~/.openclaw``, else ""
-# (a bare CI/dev checkout with no onboarded root — callers fall back to an
-# ephemeral dir, same contract as the shell side's PARK_DIR fallback).
+# ── ENVIRONMENT MATRIX (spec §4) — durable-root resolution, Python side ─────
+# Mirrors ``_bm_durable_root()`` in browser_manager.sh EXACTLY.
 #
-# WHY THIS EXISTS: browser_manager.sh has owned this detection since D7/D14,
-# but browser_manager.py (the emitter-only Python mirror) had NO equivalent —
-# any new Python-only tool (the community/course builders planned in §5, or a
-# future receipt writer) that needed to know "am I on the VPS or the Mac" had
-# no sanctioned primitive and would have hand-rolled its own check, risking
-# drift from the shell gateway's canonical detection. This closes that gap
-# additively — it does not change any existing browser_manager.py behavior.
+# 999 harness binding: there is no VPS-vs-Mac OpenClaw matrix in this
+# harness. The durable root is (1) ``BM_DURABLE_ROOT_OVERRIDE`` when set
+# (test isolation, the shell convention), else (2) ``GHL_DURABLE_ROOT``
+# when set, else (3) this skill's own ``state/`` directory. ``is_vps()``
+# is always False here: this harness never resolves an OpenClaw VPS
+# convention. The receipt shape (durable_root string, is_vps bool,
+# supervisor name) is preserved so existing consumers keep working.
 #
-# ``isdir`` is INJECTABLE (defaults to ``os.path.isdir``) so tests can prove
-# both branches (VPS-present, VPS-absent-Mac-present, neither) hermetically
-# without creating a real ``/data`` directory, which requires root.
-_VPS_DURABLE_ROOT = "/data/.openclaw"
+# ``isdir`` stays INJECTABLE for API compatibility with the historical
+# signature; the harness resolution does not probe the filesystem for a
+# host root.
+_SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def durable_root(
     env: Optional[dict] = None,
     isdir: Optional[Callable[[str], bool]] = None,
 ) -> str:
-    """Return the box's durable OpenClaw root, VPS-first.
+    """Return this install's durable state root.
 
     Mirrors ``_bm_durable_root()`` (browser_manager.sh) bit-for-bit:
-      1. ``/data/.openclaw`` if it is a directory (VPS/Docker convention).
-      2. ``$HOME/.openclaw`` if it is a directory (real Mac / Mac mini).
-      3. ``""`` — no onboarded root (CI / a bare dev checkout); callers must
-         fall back to an ephemeral dir, same as ``PARK_DIR`` does on the shell
-         side.
-    Never raises; never touches the network; does no I/O beyond the two
-    ``isdir`` probes.
+      1. ``BM_DURABLE_ROOT_OVERRIDE`` when set in the env (test isolation).
+      2. ``GHL_DURABLE_ROOT`` when set.
+      3. ``<skill>/state`` — the in-tree state directory.
+    Never raises; does no filesystem probing for a host root.
     """
     env = env if env is not None else os.environ
-    _isdir = isdir if isdir is not None else os.path.isdir
-    if _isdir(_VPS_DURABLE_ROOT):
-        return _VPS_DURABLE_ROOT
-    home = env.get("HOME", "")
-    if home:
-        mac_root = os.path.join(home, ".openclaw")
-        if _isdir(mac_root):
-            return mac_root
-    return ""
+    if "BM_DURABLE_ROOT_OVERRIDE" in env:
+        return env["BM_DURABLE_ROOT_OVERRIDE"]
+    if env.get("GHL_DURABLE_ROOT"):
+        return env["GHL_DURABLE_ROOT"]
+    return os.path.join(_SKILL_ROOT, "state")
 
 
 def is_vps(env: Optional[dict] = None, isdir: Optional[Callable[[str], bool]] = None) -> bool:
-    """True iff ``durable_root()`` resolved the VPS convention
-    (``/data/.openclaw``), false for Mac or the no-onboarded-root case."""
-    return durable_root(env, isdir) == _VPS_DURABLE_ROOT
+    """Always False in this harness: no OpenClaw VPS convention exists here
+    (the historical check resolved ``/data/.openclaw`` on Hostinger/Docker
+    boxes). Kept so env-matrix receipts keep their shape."""
+    return False
 
 
 def supervisor(env: Optional[dict] = None) -> str:
     """Best-effort name of the process supervisor for this box — informational
-    only (docs/diagnostics), NEVER used to branch behavior inside a build: the
-    skill's browser/build logic is identical on both sides of the matrix by
-    design (spec §4 adaptation contract item 5). Mac mini boxes run the MCP
-    server + hourly reaper under ``launchd``; VPS/Docker boxes run under
-    ``pm2`` (in-container process manager) or ``systemd`` depending on the
-    box's provisioning. Detected via ``sys.platform`` — 'darwin' -> launchd,
-    anything else -> 'pm2-or-systemd' (Skill 6 does not itself need to
-    disambiguate pm2 vs systemd; it never restarts a supervised service)."""
-    return "launchd" if sys.platform == "darwin" else "pm2-or-systemd"
+    only (docs/diagnostics), NEVER used to branch behavior inside a build.
+    999 harness: browser sessions are launched per run by the harness and
+    reaped under Item 33 hygiene; no host process supervisor manages them,
+    so this reports "none". (The OpenClaw side reported launchd on Mac
+    boxes and pm2-or-systemd on VPS/Docker boxes.)"""
+    return "none"
 
 
 # ── B-U15 item 3: stale-env preflight (WARN-only, VPS/Docker-only) ────────────
+# 999 harness note: this preflight guards a Docker/Hostinger trap from the
+# OpenClaw side. is_vps() is always False in this harness, so the check is
+# structurally silent here; the machinery is retained unchanged for receipt
+# and API compatibility.
 # ENV-MATRIX.md documents two Docker operational traps as prose only
 # ("Operational doctrine, not code inside this skill"). This unit folds ONE of
 # them — `docker compose restart` SKIPPING `env_file` re-read, so a changed

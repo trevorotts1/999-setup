@@ -520,7 +520,7 @@ class TestHermeticConcurrency:
 
         # Isolation (v18.1.9 — same fix as the singleton harnesses in
         # test_browser_manager_singleton.py, commit v18.1.8): a fake HOME alone
-        # is NOT enough — _bm_durable_root() checks /data/.openclaw FIRST, so on
+        # is NOT enough — the durable-root binding honors the env override FIRST, so on
         # a VPS/container box these fake-location runs would write REAL breaker
         # state (agent-browser-test0*.count) into the box's durable park dir.
         # BM_DURABLE_ROOT_OVERRIDE="" (set-even-if-empty) forces the ephemeral

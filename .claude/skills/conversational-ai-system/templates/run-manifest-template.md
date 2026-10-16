@@ -10,7 +10,7 @@
 **Operator:** <operator name or "unspecified">
 **Client:** <client name or "unspecified">
 **Playbook version:** 5.0
-**OpenClaw version detected:** <OPENCLAW_VERSION>
+**Agent runtime version detected:** <RUNTIME_VERSION>
 
 ## Captured values
 
@@ -20,7 +20,7 @@
 
 - [ ] Phase 0 — Orient
 - [ ] Phase 1 — Build network plumbing
-- [ ] Phase 2 — Configure OpenClaw
+- [ ] Phase 2 — Configure the agent runtime
 - [ ] Phase 3 — Persist credentials + deliverables
 - [ ] Phase 4 — Install agent behavior
 - [ ] Phase 5 — Install advanced features

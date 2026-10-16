@@ -33,7 +33,7 @@ rubric **never runs instead of** WF-1..WF-21.
    meets the 10-anchor = 7 or 8).
 3. Multiply each dimension's 1–10 score by its weight, sum the weighted contributions, and
    divide by 100 → a single **weighted 1–10 score**.
-4. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding OpenClaw QC Protocol 8.5
+4. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding QC Protocol 8.5
    threshold). Below 8.5 → loop, **naming the specific low dimension** and the anchor it fell to.
 
 ```

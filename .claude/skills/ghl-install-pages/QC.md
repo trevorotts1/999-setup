@@ -1,32 +1,32 @@
 # QC Checklist: GHL Install Pages
 
 ## 1. Purpose
-This checklist verifies install + readiness for deploying finished HTML pages into Convert and Flow / GHL funnels or websites. PRIMARY lane = **agent-browser** (Skill 03) routed through the mandatory `tools/browser_manager.sh` gateway, classified by the capability probe. Self-hosted Playwright is the **FALLBACK lane only** (known-hard flows, e.g. cross-origin iframe drag) — never the primary, never install Step 1.
+This checklist verifies install + readiness for deploying finished HTML pages into Convert and Flow / GHL funnels or websites. PRIMARY lane = **agent-browser** (browser-engine contract) routed through the mandatory `tools/browser_manager.sh` gateway, classified by the capability probe. Self-hosted Playwright is the **FALLBACK lane only** (known-hard flows, e.g. cross-origin iframe drag) — never the primary, never install Step 1.
 
 ## 2. Installation Checks
 - [ ] Skill folder exists and contains `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, the full reference `.md`, and the `.skill` package.
-- [ ] agent-browser (Skill 03, PRIMARY engine) is installed and matches the repo pin **0.27.0** (`tools/gates.json` → `agent_browser_version_pin`; drift only via the documented `GHL_AB_ALLOW_VERSION_DRIFT=1` / `GHL_AB_PINNED_VERSION` overrides).
+- [ ] agent-browser (PRIMARY engine) is installed and matches the harness pin **0.27.0** (`tools/gates.json` → `agent_browser_version_pin`; drift only via the documented `GHL_AB_ALLOW_VERSION_DRIFT=1` / `GHL_AB_PINNED_VERSION` overrides).
 - [ ] The mandatory gateway `tools/browser_manager.sh` (+ `tools/browser_manager.py`) is present — agent-browser is NEVER invoked directly; every call goes through the gateway.
-- [ ] The credential store exists at the documented location (`~/.openclaw/secrets/.env`).
+- [ ] The credential store exists at the documented location (the install's secrets env file, designated by `$SECRETS_ENV`).
 - [ ] No standalone script in the skill folder is required; if a local deployment helper was created, confirm it is executable.
 
 ## 3. Dependency Checks
-- [ ] TYP, BYUP, GHL setup (skill 05), and agent-browser (skill 03) are already complete.
+- [ ] TYP, BYUP, the pack's GHL setup rails, and the agent-browser lane are already complete.
 - [ ] The capability probe has been run: `working/skill6-capability.json` exists (run-evidence root, never inside the skill dir) with `selectedLane != null` naming a real browser lane.
 - [ ] FALLBACK-lane check — Python 3 and Playwright are installed: `python3 -c "from playwright.sync_api import sync_playwright"` succeeds.
 - [ ] FALLBACK-lane check — Chromium is installed for Playwright: `python3 -m playwright install chromium` (interpreter trap: NEVER bare `playwright`/`pip`, which can bind to a different Python than `python3`).
-- [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in `~/.openclaw/secrets/.env` (canonical path — `~/clawd/secrets/.env` is retired and must not be used). GHL email/password credentials are not used by this skill.
+- [ ] A valid `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` exists in the install's secrets env file (or exported in the environment). GHL email/password credentials are not used by this skill.
 - [ ] Finished HTML is available, self-contained, and ready to paste.
 
 ## 4. Key Detection
-- [ ] Confirm `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` is present at `~/.openclaw/secrets/.env` (canonical path). TOKEN-ONLY (D7) ladder: Tier-1 = the refresh-token seed (the ONLY unattended path); Tier-2 = the GATED email-2FA bootstrap via `tools/ghl_auth.py` (only when Tier-1 fails and all four gates pass); Tier-3 = fail loud. `GHL_EMAIL` and `GHL_PASSWORD` are not used and must not appear in any agent-accessible credential path.
+- [ ] Confirm `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` is present in the install's secrets env file. TOKEN-ONLY (D7) ladder: Tier-1 = the refresh-token seed (the ONLY unattended path); Tier-2 = the GATED email-2FA bootstrap via `tools/ghl_auth.py` (only when Tier-1 fails and all four gates pass); Tier-3 = fail loud. `GHL_EMAIL` and `GHL_PASSWORD` are not used and must not appear in any agent-accessible credential path.
 - [ ] The probe `secrets` block reports `firebaseRefreshToken: true` — presence-only checks only (`grep -c` / `-q`); NEVER print the token value.
-- [ ] FALLBACK lane only: if the Playwright fallback is actually in use, search for existing persistent session data at `~/.openclaw/playwright-data/ghl-install-pages` before declaring credentials missing.
+- [ ] FALLBACK lane only: if the Playwright fallback is actually in use, search for existing persistent session data under the skill's `state/playwright-data/ghl-install-pages` before declaring credentials missing.
 - [ ] Recognize broader GHL credential aliases from setup skill if needed for account context: `GHL_API_KEY`, `GHL_PIT`, `GOHIGHLEVEL_API_KEY`, and `GHL_LOCATION_ID`.
 - [ ] QC fails if the agent hardcodes credentials into a script or ignores an existing reusable session.
 
 ## 5. Functional Checks
-- [ ] Capability probe JSON exists with `selectedLane` non-null naming an available lane, AND at least one browser lane is real: agent-browser present via `browser_manager.sh` OR the OpenClaw managed-browser lane OK.
+- [ ] Capability probe JSON exists with `selectedLane` non-null naming an available lane, AND at least one browser lane is real: agent-browser present via `browser_manager.sh` OR the Playwright lane OK. (The OpenClaw managed-browser lane is structurally absent in this harness and never counts.)
 - [ ] **NO FALSE GREEN: QC cannot pass with zero browser lanes.** `selectedLane == null` (no lane available) is a hard QC FAIL — an assert, never a warning.
 - [ ] `bash tools/browser_manager.sh ensure` succeeds for the selected lane and the singleton session starts and tears down clean (direct `agent-browser` invocation = FAIL).
 - [ ] Open the GHL dashboard and confirm the agent checks the current sub-account before editing any page.
@@ -69,7 +69,7 @@ After install, score yourself honestly against this rubric. **Pass gate: 8.5/10 
 | Prerequisites + INSTALL-CONTRACT.md acknowledged | 1.0 | INSTALL-CONTRACT.md was read this session AND acknowledged in your work log for this specific skill. All prerequisite skills installed. |
 | All skill .md files read before any execution | 1.0 | SKILL.md, INSTALL.md, CORE_UPDATES.md, QC.md (this file), any referenced `references/*.md`. Reading happened BEFORE any command was run. |
 | INSTALL.md steps executed in order | 1.5 | No skipping, no reordering, no improvising. If a step was skipped, owner consent is documented. |
-| Credentials at canonical paths with canonical names | 1.5 | `~/.openclaw/secrets/.env` (Mac) / `~/.openclaw/secrets/.env` (VPS), chmod 600. Canonical env-var names used (not deprecated ones). For GHL: `GOHIGHLEVEL_API_KEY` (a PIT, not an API key) + `GOHIGHLEVEL_LOCATION_ID`. |
+| Credentials at canonical paths with canonical names | 1.5 | The install's secrets env file (designated by `$SECRETS_ENV`), chmod 600. Canonical env-var names used (not deprecated ones). For GHL: `GOHIGHLEVEL_API_KEY` (a PIT, not an API key) + `GOHIGHLEVEL_LOCATION_ID`. |
 | Functional checks pass | 1.5 | The skill's specific smoke tests (API reachability, software present, etc.) all return expected results. No 4xx/5xx unhandled. |
 | CORE_UPDATES.md applied surgically | 1.0 | Only labeled sections added to labeled core files. No SOUL.md / IDENTITY.md / USER.md / HEARTBEAT.md touched unless this skill's CORE_UPDATES.md explicitly labels them. |
 | Skill-specific QC items above all checked | 1.5 | Every checkbox in the skill-specific sections of THIS QC.md is ticked. |
@@ -83,7 +83,7 @@ If score < 8.5:
 2. Apply the smallest fix possible
 3. Re-run only the failed checks
 4. Re-score
-5. After 5 loops, STOP and escalate to owner via Telegram with: which sections failed, what you tried, what's blocking
+5. After 5 loops, STOP and escalate to the owner via the install's configured notification channel with: which sections failed, what you tried, what's blocking
 
 ### Bundled `qc-skill-NN.sh`
 
@@ -110,8 +110,8 @@ The checklist above is **install-level QC** (is the skill set up correctly?). Ev
 **built funnel** is ALSO held to the standing, library-aware **FAB-QC** build-quality
 gate — the Skill-6 parallel of Skill-44's `qc-built-workflow.sh`:
 
-- **Script:** `06-ghl-install-pages/qc-built-funnel.sh <evidence_root|slug>`
-- **Shared scorer:** `shared-utils/fab_qc.py` · **Rubric:** `universal-sops/funnel-automation-build-quality-rubric.md`
+- **Script:** `qc-built-funnel.sh <evidence_root|slug>` (in this skill's folder)
+- **Shared scorer:** the install's shared fab_qc scorer · **Rubric:** the funnel-automation build-quality rubric in the install's SOP library
 - **SUPERSET overlay** on top of the canonical `ghl_verify` render gate (HTTP 200 + marker stays the hard D3 floor).
 - **Six dimensions** (weights 22/20/18/15/13/12): template fidelity, copy substance (no surviving
   placeholders), render/soundness, persona grounding (fail-closed), flexibility honored, funnel↔automation link integrity.

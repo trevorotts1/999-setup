@@ -60,8 +60,8 @@ confirmation, and the tune-up review with the client.
 - Protocol touchpoints: `protocols/client-test-mode-protocol.md` (U-6 safe rehearsal), `references/notion-client-doc-standard.md`
   (the human-facing doc standard), `references/model-fallback-chain.md` (Saturday chain freshness review).
 - Scripts: `scripts/21-generate-client-reference-sheet.sh` (generate the doc), `scripts/22-notify-client-doc.sh`
-  (deliver the link over Telegram and record `clientDocDelivered=true`), the maintenance crons registered by
-  `scripts/04-register-crons.sh` (`weekly-tune-up`, `system-health-heartbeat` monthly review) under the cron
+  (deliver the link over Telegram and record `clientDocDelivered=true`), the maintenance jobs on the operator's scheduler
+  (`weekly-tune-up`, `system-health-heartbeat` monthly review)
   silence doctrine.
 
 ## 3. Persona matching (at task time, never static)

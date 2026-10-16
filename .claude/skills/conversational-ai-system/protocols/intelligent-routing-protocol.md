@@ -146,7 +146,7 @@ Updated Step 1.75 logic:
 - Protocol document: `intelligent-routing-protocol.md`
 - Uses `memory_search` (per O.6 embeddings — Google text-embedding-004
   default) to semantically score messages against workflow trigger phrases
-- Routing threshold configurable in `openclaw.json` under
+- Routing threshold configurable in the install's skill38 configuration under
   `routing.switch_threshold` (default 0.3)
 - Routing cap configurable under `routing.max_switches_per_conversation`
   (default 3)

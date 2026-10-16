@@ -13,7 +13,7 @@ This playbook is long (~3,000 lines) and the work is intensive. The recommended 
 
 Use a subagent in nearly all cases. The exceptions are narrow:
 
-- **Skip subagent ONLY IF** OpenClaw's `sessions_send` (or equivalent agent-to-agent dispatch) is unavailable on this install, OR if the operator explicitly requests single-agent execution.
+- **Skip subagent ONLY IF** the runtime's agent-to-agent dispatch (`sessions_send` or equivalent) is unavailable on this install, OR if the operator explicitly requests single-agent execution.
 - **In all other cases**, the main agent spawns a subagent and supervises.
 
 ### Subagent architecture
@@ -111,13 +111,13 @@ After each phase checkpoint passes (A through G), the subagent posts a brief pro
   "type": "progress_update",
   "subagent_session_id": "<id>",
   "phase_completed": "Phase 2",
-  "checkpoint": "C — OpenClaw responds to inbound webhooks",
+  "checkpoint": "C — the agent runtime responds to inbound webhooks",
   "elapsed_minutes": 18,
-  "summary": "Tunnel built, OpenClaw configured, end-to-end test passed. Moving to credentials persistence."
+  "summary": "Public route built, agent runtime configured, end-to-end test passed. Moving to credentials persistence."
 }
 ```
 
-Main agent displays a concise version to the operator: "✓ Phase 2 complete (18 min) — OpenClaw is now receiving webhooks. Moving to next phase."
+Main agent displays a concise version to the operator: "✓ Phase 2 complete (18 min) — the agent runtime is now receiving webhooks. Moving to next phase."
 
 ### Time budget
 
@@ -126,7 +126,7 @@ Main agent displays a concise version to the operator: "✓ Phase 2 complete (18
 - **Per-phase soft targets** (subagent self-monitors):
   - Phase 0 (Orient): 3-5 minutes
   - Phase 1 (Network plumbing): 8-12 minutes
-  - Phase 2 (OpenClaw config): 8-12 minutes
+  - Phase 2 (agent runtime config): 8-12 minutes
   - Phase 3 (Credentials + deliverables): 3-5 minutes
   - Phase 4 (Agent behavior): 5-8 minutes
   - Phase 5 (Advanced features): 6-10 minutes
@@ -223,7 +223,7 @@ large context). Alternatives:
 Stick with the default, or pick another?"
 ```
 
-Verify the chosen model exists in the OpenClaw config and has an API key available. If not, prompt for the missing credential before spawning.
+Verify the chosen model exists in the install's runtime configuration and has an API key available. If not, prompt for the missing credential before spawning.
 
 **Step 5 — Spawn the subagent (subagent path) OR begin executing (main-agent path)**
 

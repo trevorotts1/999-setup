@@ -1,3 +1,10 @@
+> **ARCHIVE — HISTORICAL v2.0 RECORD (999 adaptation note, 2026-10-14).**
+> This is the Playwright-era (v2.0) full guide from the skill's OpenClaw-side
+> life, retained verbatim as a historical record. It is NOT instructions for
+> this harness: INSTALL.md declares it archive-only and superseded by
+> `ghl-browser-builder-full.md` (v3.0). Paths, stores, and host references
+> inside describe the source installation, not this one.
+
 > **HISTORICAL — DO NOT FOLLOW FOR NEW INSTALLS.** This is the Playwright-era
 > full reference (v2.0), superseded by `ghl-browser-builder-full.md` (v3.0) +
 > `v2-autonomous-build-sop.md`. Kept for archive reference only; the current

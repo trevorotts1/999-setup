@@ -17,7 +17,7 @@ always `true`; the matcher NEVER blocks a build.
 ---
 
 ## (A) Skill-44 STEP 0 — flexible match runs before PLAN MODE
-**Where:** `44-convert-and-flow-operator/INSTRUCTIONS.md`, new **Step 0.4 — Flexible Template
+**Where:** `convert-and-flow-operator/INSTRUCTIONS.md` (this skill, in this pack), new **Step 0.4 — Flexible Template
 Match**, inserted immediately before **Step 0.5 — PLAN MODE**.
 (Patch: `skill44-instructions-step0-flexible-match.patch` — applies cleanly, +49 lines.)
 
@@ -39,7 +39,7 @@ user's spec with the template as reference only; USE builds from the template; C
 net-new. Env-gated: with no catalog set and no injected matcher, Step 0.4 is a no-op (skip).
 
 ## (B) Skill-6 funnel instantiation → triggers Skill-44 to build the LINKED automations
-**Where:** `06-ghl-install-pages/tools/funnel_matcher.py` `step0_match()` (flexibility patch).
+**Where:** `ghl-install-pages/tools/funnel_matcher.py` (in this pack: `.claude/skills/ghl-install-pages/tools/funnel_matcher.py`) `step0_match()` (flexibility patch).
 When a funnel is identified (USE_TEMPLATE, or `task['funnel_template_id']`) and
 `GHL_FUNNEL_AUTOMATION_LINKS` is set, `step0_match` calls `linked_automations(funnel_id, ...)`
 and attaches the RECOMMENDED follow-ups to `task['linked_automations']` — **minus**
@@ -48,7 +48,7 @@ yields pages + `linked_automations` = [webinar-registration-reminder-replay-stac
 indoctrination-multichannel-preframe, perfect-webinar-stack-close, soap-opera-sequence].
 
 **Handoff call-site (the COMPLETE-FUNNEL trigger)** — in
-`06-ghl-install-pages/tools/v2_dispatcher.py` `dispatch_one()`, AFTER a funnel build reaches
+`ghl-install-pages/tools/v2_dispatcher.py` `dispatch_one()`, AFTER a funnel build reaches
 `STATE_VERIFIED`, enqueue one Skill-44 build per linked automation with `build_now: true`:
 ```python
 for a in (task.get("linked_automations") or {}).get("automations", []):
@@ -74,8 +74,8 @@ never mandatory; user-overridden automations are already dropped (`build_now: fa
   invariants), and both patches (apply cleanly, dry-run verified).
 - **SHIP-AGENT STEP (patches/anchors provided, not committed here):**
   1. `git apply` the two patches.
-  2. Vendor `automation_matcher.py` + `flex.py` → `44-convert-and-flow-operator/tools/`, and
-     `funnel_matcher.py` (+ the funnel catalog) → `06-ghl-install-pages/tools/` (the repo
+  2. Vendor `automation_matcher.py` + `flex.py` → `convert-and-flow-operator/tools/`, and
+     `funnel_matcher.py` (+ the funnel catalog) → `ghl-install-pages/tools/` (the repo
      `tools/` does NOT yet contain `funnel_matcher.py`).
   3. Add the `dispatch_one()` complete-funnel handoff call-site in (B) — the canonical
      `v2_dispatcher.py` `dispatch_one()` does NOT yet call any step0 matcher (the README in

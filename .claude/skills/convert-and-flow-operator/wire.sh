@@ -4,31 +4,34 @@
 # Skill-44 wiring installer — (re)builds the `caf` CLI on every update pass.
 #
 # WHY THIS FILE EXISTS (root cause it fixes):
-#   update-skills.sh's wiring loop (the "Wiring installed skills" section) runs a
-#   skill's own installer ONLY if it finds one at the skill ROOT, in this
-#   priority: wire.sh > install.sh > scripts/install.sh > setup-*.sh
-#   (update-skills.sh:1631-1646). Skill 44's engine installer lives at
-#   tools/engine/install.sh — a path the loop never looks at — so `caf` was NEVER
-#   rebuilt by the routine update path and silently drifted behind the synced
-#   skill source fleet-wide. This wire.sh sits at the skill ROOT so the loop DOES
-#   pick it up (first in the priority list) and rebuilds the installed CLI to
-#   match the source.
+#   An installed `caf` CLI that is never rebuilt silently drifts behind the
+#   skill source. On the OpenClaw side this file existed because the fleet
+#   updater's wiring loop only ran installers found at a skill ROOT, and Skill
+#   44's engine installer lives at tools/engine/install.sh, a path that loop
+#   never looked at. In this harness (Claude Code / 999) there is no fleet
+#   updater loop; this wire.sh remains the skill's own single (re)build entry
+#   point at the skill root, run by the operator or the 999 installer.
+#
+# HARNESS BINDING (ADAPTER.md seams 2 and 4): the engine installs IN-TREE.
+#   CAF_DIR defaults to this skill's own tools/engine directory inside the
+#   repo; the venv lives at <CAF_DIR>/.venv; credentials resolve from the
+#   install's own secrets environment, never from an OpenClaw tree.
 #
 # WHAT IT DOES (idempotent, fail-soft):
-#   - replicates the committed install (INSTALL.md Action 2/3): copy the engine
-#     source into <CAF_DIR>/engine, `pip install -e` it in that dir's venv, and
-#     copy the caf/convertandflow/ghl wrappers
-#   - writes <CAF_DIR>/.installed-from so scripts/tool-drift-check.sh can PROVE
-#     the installed binary matches the current skill-version
+#   - ensures the venv exists and `pip install -e` the engine source in it
+#     (when CAF_DIR points at a separate install root, the engine source is
+#     first mirrored into <CAF_DIR>/engine, replicating INSTALL.md Action 2/3)
+#   - writes <CAF_DIR>/.installed-from so a drift check can PROVE the
+#     installed binary matches the current skill-version
 #   - FAST no-op when the stamp version already matches source AND the venv
 #     imports the package (source-on-disk alone is never trusted — that is the
 #     exact drift bug this guards)
-#   - NEVER aborts the overall update: every failure is logged loudly and the
-#     script still exits 0 (the wiring loop continues regardless)
+#   - NEVER aborts the caller: every failure is logged loudly and the script
+#     still exits 0
 #
-# Invoked by update-skills.sh as:  bash wire.sh --idempotent   (arg ignored;
-#   idempotency is unconditional here). Honours VENV_DIR / CAF_DIR env overrides
-#   for tests. No bare `gws`, no destructive ops, no client-specific values.
+# Invoked as:  bash wire.sh --idempotent   (arg ignored; idempotency is
+#   unconditional here). Honours VENV_DIR / CAF_DIR env overrides for tests.
+#   No bare `gws`, no destructive ops, no client-specific values.
 # =============================================================================
 
 # Fail-soft by contract: do NOT use `set -e` / `set -u`. A per-skill installer
@@ -41,13 +44,9 @@ log() { echo "[skill44/wire] $*"; }
 
 ENGINE_SRC="$SCRIPT_DIR/tools/engine"
 
-# ---- platform-aware install root (mirrors INSTALL.md Action 1) --------------
+# ---- install root: in-tree by default (this skill's own tools/engine) ------
 if [ -z "${CAF_DIR:-}" ]; then
-  if [ "$(uname)" = "Darwin" ]; then
-    CAF_DIR="$HOME/.openclaw/tools/convert-and-flow-cli"
-  else
-    CAF_DIR="/data/.openclaw/tools/convert-and-flow-cli"
-  fi
+  CAF_DIR="$SCRIPT_DIR/tools/engine"
 fi
 VENV_DIR="${VENV_DIR:-$CAF_DIR/.venv}"
 STAMP="$CAF_DIR/.installed-from"
@@ -126,45 +125,53 @@ rebuild() {
   # result regardless of prior state). The venv ($VENV_DIR) and the data dir both
   # live OUTSIDE engine/, so this never touches them — but guard against a
   # non-default VENV_DIR placed inside engine/ just in case.
-  case "$VENV_DIR" in
-    "$CAF_DIR/engine"|"$CAF_DIR/engine/"*)
-      log "WARN: VENV_DIR is inside engine/ — skipping mirror-clean (overlay copy only)." ;;
-    *)
-      rm -rf "$CAF_DIR/engine" 2>/dev/null || true ;;
-  esac
-  mkdir -p "$CAF_DIR/engine" || { log "ERROR: mkdir $CAF_DIR/engine failed"; return 1; }
+  if [ "$CAF_DIR" = "$ENGINE_SRC" ]; then
+    # In-tree install (the default in this harness): the source IS the
+    # install. No mirror copy (copying the tree onto itself would delete and
+    # recopy the live source); the committed wrappers are already in place.
+    INSTALL_SRC="$ENGINE_SRC"
+  else
+    case "$VENV_DIR" in
+      "$CAF_DIR/engine"|"$CAF_DIR/engine/"*)
+        log "WARN: VENV_DIR is inside engine/ — skipping mirror-clean (overlay copy only)." ;;
+      *)
+        rm -rf "$CAF_DIR/engine" 2>/dev/null || true ;;
+    esac
+    mkdir -p "$CAF_DIR/engine" || { log "ERROR: mkdir $CAF_DIR/engine failed"; return 1; }
+
+    # sync engine source into the install dir (copy of contents, mirrors INSTALL.md)
+    cp -r "$ENGINE_SRC/." "$CAF_DIR/engine/" || { log "ERROR: engine copy failed"; return 1; }
+    chmod +x "$CAF_DIR/engine/wire-ghl-env.sh" "$CAF_DIR/engine/verify-ghl-live.sh" 2>/dev/null || true
+    INSTALL_SRC="$CAF_DIR/engine"
+
+    # install the committed wrappers (single source of truth = engine dir)
+    local w
+    for w in caf convertandflow ghl; do
+      if [ -f "$ENGINE_SRC/$w" ]; then
+        if cp "$ENGINE_SRC/$w" "$CAF_DIR/$w" && chmod +x "$CAF_DIR/$w"; then
+          :
+        else
+          log "WARN: could not install wrapper '$w' (continuing)"
+        fi
+      fi
+    done
+  fi
 
   if [ ! -x "$VENV_DIR/bin/python" ]; then
     log "creating venv -> $VENV_DIR"
     "$PY" -m venv "$VENV_DIR" || { log "ERROR: venv creation failed"; return 1; }
   fi
 
-  # sync engine source into the install dir (copy of contents, mirrors INSTALL.md)
-  cp -r "$ENGINE_SRC/." "$CAF_DIR/engine/" || { log "ERROR: engine copy failed"; return 1; }
-  chmod +x "$CAF_DIR/engine/wire-ghl-env.sh" "$CAF_DIR/engine/verify-ghl-live.sh" 2>/dev/null || true
-
-  # editable install of the COPY so the binary resolves from the install dir
+  # editable install so the binary resolves from the install source
   # shellcheck disable=SC1091
   . "$VENV_DIR/bin/activate" 2>/dev/null || { log "ERROR: venv activate failed"; return 1; }
   pip install --upgrade pip -q 2>/dev/null || log "WARN: pip self-upgrade warned (continuing)"
-  if ! pip install -e "$CAF_DIR/engine" -q; then
-    log "ERROR: 'pip install -e $CAF_DIR/engine' failed"
+  if ! pip install -e "$INSTALL_SRC" -q; then
+    log "ERROR: 'pip install -e $INSTALL_SRC' failed"
     deactivate 2>/dev/null || true
     return 1
   fi
   deactivate 2>/dev/null || true
-
-  # install the committed wrappers (single source of truth = engine dir)
-  local w
-  for w in caf convertandflow ghl; do
-    if [ -f "$ENGINE_SRC/$w" ]; then
-      if cp "$ENGINE_SRC/$w" "$CAF_DIR/$w" && chmod +x "$CAF_DIR/$w"; then
-        :
-      else
-        log "WARN: could not install wrapper '$w' (continuing)"
-      fi
-    fi
-  done
 
   log "rebuild complete."
   return 0

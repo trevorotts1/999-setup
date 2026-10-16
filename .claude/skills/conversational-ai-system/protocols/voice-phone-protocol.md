@@ -17,7 +17,9 @@ STT/TTS credentials.
 > provider key + a TTS provider key) AND a media-stream bridge that the SETUP
 > WIZARD provisions at install time — until those exist and the bridge is wired,
 > this feature does not place or answer a single live call. What ships in the repo
-> is the brain + the contract + the scaffold + the wizard; what is provisioned at
+> is the brain + the contract + the scaffold; SCOPED-COPY NOTE (999 pack): the
+> setup wizard and the telephony bridge provisioning are NOT part of this scoped
+> copy — this protocol ships as the design and contract. What is provisioned at
 > setup is the actual Twilio Media Streams ⇄ STT/TTS bridge. The "MVP vs production
 > follow-ups" section at the end states exactly what is scaffold and what is live.
 > This feature REUSES the existing conversational model, the existing per-contact
@@ -26,7 +28,7 @@ STT/TTS credentials.
 > existing Cloudflare tunnel — it does NOT build a new telephony platform, a new
 > CRM, a new speech model, or a new media server.
 
-## openclaw.json toggle — default OFF
+## Configuration toggle — in the install's skill38 configuration (default OFF)
 
 ```json
 {
@@ -102,7 +104,7 @@ Caller dials TWILIO_NUMBER (PSTN/SIP)
     the operator's media-stream bridge URL (behind the existing Cloudflare tunnel)
   → Twilio opens a bidirectional WebSocket: caller audio frames IN, agent audio OUT
   → the bridge streams caller audio → STT (Whisper) → partial+final transcript
-  → on an utterance boundary, the bridge fires the OpenClaw hook
+  → on an utterance boundary, the bridge fires the agent endpoint hook
     POST /hooks/voice-call-event  (event: speech, the transcript text + call refs)
   → the agent (brain) drafts the spoken reply under the call-lifecycle state machine
   → reply text → TTS → audio frames streamed back OUT through the same WebSocket
@@ -124,7 +126,7 @@ carries the TRANSCRIPT + the call references):
 ```
 POST /hooks/voice-call-event
 Headers:
-  Authorization: Bearer <OPENCLAW_HOOKS_TOKEN>
+  Authorization: Bearer <HOOKS_TOKEN>
 Body (FLAT, like the GHL inbound body — no nesting):
   {
     "event": "speech",                  // call_started | speech | dtmf | call_ended | call_degraded
@@ -272,14 +274,12 @@ The setup wizard (`scripts/30-voice-phone-setup-wizard.sh`) is the operator-run
 flow that turns the scaffold into a live pipeline. It:
 
 1. Captures the **Twilio credentials** (Account SID + Auth Token) and the
-   **Twilio phone number** (E.164), storing them in the environment the right way
-   for the install type (Mac: the `openclaw.json` top-level env block; VPS: host
-   `/docker/<project>/.env` + `docker compose up -d --force-recreate`) — NEVER
-   committed to the repo.
+   **Twilio phone number** (E.164), storing them in the install's secrets env
+   (the file `$SECRETS_ENV` designates) — NEVER committed to the repo.
 2. Captures the **STT provider choice** (`openrouter_whisper` / `groq_whisper` /
    `ollama_whisper`) + its API key, and the **TTS provider choice**
    (`elevenlabs_flash_2_5` / `oss_tts`) + its API key — stored the same way.
-3. Writes the documented `skill38.voice_phone.*` config (the toggle stays OFF until
+3. Writes the documented `voice_phone.*` keys in the install's skill38 configuration (the toggle stays OFF until
    the operator explicitly enables it after verifying the bridge).
 4. **Provisions the media-stream bridge + the Twilio voice webhook**, and points
    the Twilio number's voice webhook at the bridge URL behind the EXISTING
@@ -359,7 +359,7 @@ The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract 
   transfer on handoff, and the per-region bridge co-location are documented design
   points to harden in production, not fully turnkey in v1.
 
-## openclaw.json toggle (recap)
+## Configuration toggle (recap)
 
 `skill38.voice_phone.enabled` — default **FALSE**. Opt-in advanced feature;
 documentation-only default; the installer writes nothing destructive and never

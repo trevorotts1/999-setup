@@ -105,7 +105,7 @@ def check_write(
     if not allowed:
         raise SafetyRefused(
             "WRITE REFUSED: CAF_ALLOWED_LOCATION_IDS is empty or unset.\n"
-            "Set it in ~/.openclaw/secrets/.env:\n"
+            "Set it in this install's secrets env (the file $SECRETS_ENV names):\n"
             "  GOHIGHLEVEL_ALLOWED_LOCATION_IDS=YOUR_LOCATION_ID\n"
             "Leaving it empty intentionally blocks all writes (fail-closed)."
         )

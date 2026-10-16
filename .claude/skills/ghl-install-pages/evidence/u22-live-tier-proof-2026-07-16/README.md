@@ -1,3 +1,9 @@
+> **EVIDENCE RECORD (999 adaptation note, 2026-10-14).** This directory is
+> the dated receipt of a live-proof run executed on the source (OpenClaw)
+> side on 2026-07-16. Repository names, checkout paths, and host references
+> inside are the historical facts of that run, retained verbatim; they are
+> not paths or instructions in this harness.
+
 # U22 / B-U8 — LIVE-PROOF tier, operator-box run — 2026-07-16
 
 This directory is the dated operator-box receipt for U22's LIVE-PROOF tier

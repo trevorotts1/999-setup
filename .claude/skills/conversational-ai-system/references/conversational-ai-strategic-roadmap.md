@@ -47,7 +47,7 @@ All 18 features below are now implemented as setup steps in the main playbook (`
 
 **Notes:**
 - Feature 23 (Smart Unavailability) merged into Feature 24 (Smart Booking) in v5.3
-- Feature 25 (Conversation Workflow Builder) was significantly upgraded in v5.4 to a 3-layer architecture covering Layer 0 (routing check), Layer 1 (GHL side with auto-tag creation + Workflow AI prompt + verification checklist), Layer 2 (OpenClaw playbook)
+- Feature 25 (Conversation Workflow Builder) was significantly upgraded in v5.4 to a 3-layer architecture covering Layer 0 (routing check), Layer 1 (GHL side with auto-tag creation + Workflow AI prompt + verification checklist), Layer 2 (agent-side playbook)
 
 ---
 
@@ -182,7 +182,7 @@ ALLCAPS+profanity+direct-address, or 3+ signals in one message): tag `ZHC-aggres
 route to the aggression-handler sub-flow as an F44 detour-and-return
 (`ZHC-aggression-handled-and-resumed` on return), and notify the operator. **ALL CAPS ALONE never
 fires** at any sensitivity (people shout in caps). Sensitivity is operator-tunable
-`lenient`/`standard`/`strict` via `openclaw.json` `skill38.aggression_detection.{enabled (default
+`lenient`/`standard`/`strict` via the install's skill38 configuration `aggression_detection.{enabled (default
 true), sensitivity}`; severity is per-message but tension can accumulate across the log. Bot
 detection (Safeguard 3) is NOT rebuilt — only its tag moves to `ZHC-bot-suspected` going forward.
 Firings log to `aggression-detection-log.jsonl` (event_type `aggression_detected`/`tension_detected`)
@@ -258,7 +258,7 @@ an FAQ-type detour (`ZHC-faq-detoured`). Tag `ZHC-faq-answered`. Toggle `skill38
 ## ✅ Feature 49 — ZHC Pixel (shipped v1.5.2)
 
 **Status:** Shipped (Step 9.43). Every client gets THEIR OWN private visitor-signal pixel that POSTs
-anonymous-but-persistent signals (pages/time/scroll/clicks/return-visits) to THEIR OpenClaw via THEIR
+anonymous-but-persistent signals (pages/time/scroll/clicks/return-visits) to THEIR agent endpoint via THEIR
 existing CF tunnel (`pixel.<CLIENT_DOMAIN>` → tunnel → hook `pixel-visitor-signal`), NOT a shared
 service. The pixel JS template (`templates/zhc-pixel/zhc-pixel.template.js`, first-party cookie +
 persistent `visitor_id` + soft fingerprint + batched POST) is rendered per-client by
@@ -381,5 +381,5 @@ Scraper).
 # Portability statement
 
 All features are platform-neutral. The protocols are markdown instruction documents. If
-a client migrates from OpenClaw to another conversational AI platform, these protocols
+a client migrates from this runtime to another conversational AI platform, these protocols
 travel intact.

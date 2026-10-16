@@ -27,8 +27,8 @@ Substitute both everywhere they appear, in all three messages, before sending.
 
 # PART 1 — THE CANONICAL 3-MESSAGE TEMPLATE (owner-facing)
 
-Send these as **three separate messages, in order**, through the client's own OpenClaw
-gateway. Verify each send before the next.
+Send these as **three separate messages, in order**, through the client's own configured messaging channel, from the client's own install/session.
+Verify each send before the next.
 
 ---
 
@@ -148,9 +148,9 @@ skill44 remediation first, update the ledger, then announce.
 
 ## SEND MECHANICS
 
-- **Always via the client's OWN OpenClaw gateway** — never the direct Telegram API:
+- **Always from the client's OWN install/session** - never from the operator's accounts or a shared channel:
   ```bash
-  openclaw message send --channel telegram -t <owner_chat_id> "<message text>"
+  (Send with the messaging tooling configured for that client install; verify the send result before the next message.)
   ```
 - **One client at a time.** Do not batch-blast the fleet.
 - **Substitute `[OWNER_NAME]` / `[AGENT_NAME]`** from the fleet roster before sending.

@@ -85,7 +85,7 @@ cat > "$A/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 | appointment-booking | First playbook | "book","schedule" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appointment-booking-abc123 |
 | pricing-inquiry | Lead asks pricing | "price","cost" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | n/a |
@@ -131,7 +131,7 @@ cat > "$C/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 | appointment-booking | First playbook | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
 | pricing-inquiry | Lead asks pricing | "price" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | /Users/<user>/master-files/conversation-workflows/pricing-inquiry-doc.md |
@@ -152,7 +152,7 @@ cat > "$D/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 
 <!-- workflows: none yet -->
@@ -192,7 +192,7 @@ cat > "$F/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 | appointment-booking | Booking | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
 EOF
@@ -226,7 +226,7 @@ cat > "$Fok/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | Trigger summary | Layer 1? | OpenClaw playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
+| ID | Name | Trigger summary | Layer 1? | Communications playbook | GHL prompt | Verification checklist | Doc (Notion/Docs/text) |
 |---|---|---|---|---|---|---|---|
 | appointment-booking | Booking | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
 EOF

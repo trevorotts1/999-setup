@@ -65,7 +65,7 @@ DeepSeek V4.1 Flash thinking:max — current installed. Check finds DeepSeek V4.
 Categorization: MINOR (incremental improvement). Suggestion sent to operator via the weekly tune-up report.
 
 Operator replies YES to update. Agent:
-1. Backs up current `openclaw.json`.
+1. Backs up the current install configuration.
 2. Updates primary model reference.
 3. Sends a synthetic test message through the new model.
 4. If test passes → notifies "Updated successfully."

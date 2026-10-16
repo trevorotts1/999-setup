@@ -133,12 +133,12 @@ The Sales Brain (Step 9.23) hands off to this protocol when it detects
 stalling. Until v5.7 ships F29 hand-off, agent tags contact
 `ZHC-stalled-sales` for operator manual handling.
 
-## Implementation — cron job per stalled conversation
+## Implementation — one scheduled job per stalled conversation
 
-When a conversation stalls, agent schedules cron jobs for each touchpoint:
+When a conversation stalls, the agent schedules jobs on the operator's scheduler for each touchpoint:
 
 ```bash
-# Pseudocode — actual cron management uses openclaw cron commands.
+# Pseudocode — actual scheduling uses the operator's scheduler.
 # Each touchpoint, when it fires, applies its own ZHC-followup-cadence-N tag
 # (created CREATE-TAG-FIRST per conversation-workflows-protocol.md §D.1) so the
 # operator can see exactly how far a contact got through the sequence.
@@ -156,13 +156,13 @@ schedule_touchpoint("T10", contact_id, now + 30d, tag="ZHC-followup-cadence-10")
 
 When customer responds, all pending touchpoints for that contact are
 canceled. When sequence completes (T10 fires or customer responds), all
-crons are cleaned up. T10 additionally applies `ZHC-cold-lead-released`; a
+jobs are cleaned up. T10 additionally applies `ZHC-cold-lead-released`; a
 negative signal at any touch applies `ZHC-followup-opted-out` and ends the
 sequence immediately.
 
 ## Pre-Feature-15 implementation
 
-This protocol uses direct OpenClaw cron scheduling until Feature 15
+This protocol uses direct scheduler calls until Feature 15
 (Proactive Outreach Campaigns) ships. Once F15 lands, this protocol
 will migrate to F15's outreach infrastructure for centralized campaign
 management.

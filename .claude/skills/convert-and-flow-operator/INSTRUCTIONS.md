@@ -91,8 +91,8 @@ NEVER a rule or a requirement. It assists; it never dominates.
 **Run the matcher** (`automation-templates/_matcher/automation_matcher.py`, stdlib-only, no network):
 
 ```bash
-export CAF_AUTOMATION_CATALOG=~/.openclaw/skills/44-convert-and-flow-operator/automation-templates
-export CAF_FUNNEL_AUTOMATION_LINKS=~/.openclaw/skills/44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json
+export CAF_AUTOMATION_CATALOG=.claude/skills/convert-and-flow-operator/automation-templates
+export CAF_FUNNEL_AUTOMATION_LINKS=.claude/skills/convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json
 python3 automation-templates/_matcher/automation_matcher.py  # importable; step0_match(task, evidence_root)
 ```
 
@@ -114,8 +114,8 @@ customizable, ignorable. The decision + intent mode + matched template + score a
 evidence_root for this build now and pass the SAME path to the QC gate later:
 
 ```
-export CAF_EVIDENCE_ROOT="$HOME/.openclaw/tools/convert-and-flow-cli/data/evidence/<build-slug>"
-# (linux boxes: /data/.openclaw/tools/convert-and-flow-cli/data/evidence/<build-slug>)
+export CAF_EVIDENCE_ROOT="<engine>/data/evidence/<build-slug>"
+# (<engine> = this skill's tools/engine dir; override the data root with CAF_DATA_DIR)
 mkdir -p "$CAF_EVIDENCE_ROOT"
 python3 - <<'PY'  # step0_match writes routing/ + persona-selection-log.md under it
 from automation_templates._matcher.automation_matcher import step0_match  # (import per your PYTHONPATH)
@@ -473,12 +473,12 @@ checklist); omit `--conversational` and WF-19 stays N/A (human-review).
 Every `workflows update`, `patch-email`, or `patch-trigger` writes a timestamped snapshot BEFORE mutating:
 
 ```
-~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<location>/<workflow-id>/<timestamp>.json
+<engine>/data/snapshots/<location>/<workflow-id>/<timestamp>.json
 ```
 
 To revert a workflow to a previous state:
 ```bash
-caf workflows restore ~/.openclaw/tools/convert-and-flow-cli/data/snapshots/<location>/<workflow-id>/<timestamp>.json
+caf workflows restore <engine>/data/snapshots/<location>/<workflow-id>/<timestamp>.json
 ```
 
 ---
@@ -509,15 +509,14 @@ is handed to the client. Done is never declared before a clean QC pass + checkli
 
 ### Step 9.1 — Announce to client (MANDATORY, send before spawning QC)
 
-Send via the client's own gateway (`openclaw message send --channel telegram`):
+Send from the client's own install/session, through the client's configured channel:
 
 > "I've built the workflow. Before I call it done, I'm running an independent QC agent to
 > verify it against the checklist item-by-item. One moment."
 
 ### Step 9.2 — Spawn an independent QC sub-agent on MiniMax
 
-Dispatch a fresh sub-agent via OpenClaw's agent-to-agent dispatch (`sessions_send` — same
-mechanism as skill 38's subagent-delegation-pattern.md), in a fresh session, on an
+Dispatch a fresh sub-agent (a new agent session in this harness), in a fresh session, on an
 INDEPENDENT MiniMax model (independent = a DIFFERENT model than the build agent, so QC cannot
 inherit the builder's own hallucinations).
 
@@ -526,7 +525,7 @@ inherit the builder's own hallucinations).
    per skill 38 Step 9.24).
 2. Or `minimax-m3:cloud` if an Ollama-Cloud MiniMax slug is configured.
 3. VERIFY the MiniMax model is actually configured + reachable before spawning (per
-   subagent-delegation-pattern.md: "Verify the chosen model exists in the OpenClaw config and
+   subagent-delegation-pattern.md: "Verify the chosen model exists in the client's configured model setup and
    has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no MiniMax model is
    available, fall back to the next independent high-reasoning model and RECORD which model QC'd.
 
@@ -571,7 +570,7 @@ back a hard WF FAIL.
    reading the export against the PLAN A1/A2 values, then recomputes the final weighted 1–10
    score:
    `(D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) / 100`.
-3. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding OpenClaw QC Protocol).
+3. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding QC Protocol).
 
 ### Step 9.3c — FAB-QC library-aware overlay (template fidelity / persona / flexibility / link integrity)
 
@@ -639,7 +638,7 @@ a blocker to declaring the (already-verified) build done to the client.
 ### Step 9.7 — Logging (build-events ledger)
 
 Append to the build-events ledger at:
-`~/.openclaw/tools/convert-and-flow-cli/data/build-events.jsonl`
+`<engine>/data/build-events.jsonl`
 
 Each QC run logs: model used, per-item verdicts, pass/fail result, any escalation, workflow id,
 timestamp. This makes a crash/limit mid-QC recoverable (per MEMORY persistent-ledger rule).
@@ -691,7 +690,7 @@ WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
 
 ## Daily Firebase Token Liveness Check (Skills 44 + 46)
 
-A daily cron (`ghl-token-liveness`) runs automatically at 08:00 UTC on every client box.
+A daily run of the `ghl-token-liveness` check runs on every install (on the OpenClaw side a registered host cron at 08:00 UTC; in this harness, whatever scheduler the operator wires).
 It POSTs the box's `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` to Google's
 `securetoken.googleapis.com` exchange endpoint and classifies the result.
 
@@ -700,25 +699,25 @@ day-stamp and exits silently.
 
 **Agent action on INVALID (TOKEN_EXPIRED / USER_DISABLED / INVALID_REFRESH_TOKEN):**
 The check script automatically sends the client a plain-English notification via
-`openclaw message send` pointing them to the Token Grabber re-grab flow
+a surfaced notification pointing them to the Token Grabber re-grab flow
 (`references/owner-token-grabber-guide.md`). The client replies with the new token;
 wire it in using the standard steps (Step 1 of the owner-token-grabber-guide FOR THE
-AGENT section: `openclaw config set env.vars.GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN "<token>"`
+AGENT section: `tools/engine/wire-ghl-env.sh --write` with the token in the install's secrets env
 then `caf doctor` to confirm).
 
 **Do not send the re-grab notification manually if the daily check already sent it today.**
 The check script writes a `.notified` stamp alongside the `.ok` stamp when it fires a
-notification; the agent should inspect `~/.openclaw/workspace/ghl-token-liveness/` before
+notification; the agent should inspect `tools/state/ghl-token-liveness/` before
 sending a duplicate.
 
 **Manual invocation** (e.g. after a client reports workflow writes failing):
 ```bash
-bash ~/.openclaw/skills/44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh
+bash .claude/skills/convert-and-flow-operator/tools/check-ghl-token-liveness.sh
 ```
-Delete the day-stamp file first to force a re-check even if the cron already ran today:
+Delete the day-stamp file first to force a re-check even if today's run already happened:
 ```bash
-rm -f ~/.openclaw/workspace/ghl-token-liveness/ghl-token-liveness-"$(date -u +%Y-%m-%d)".ok
-bash ~/.openclaw/skills/44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh
+rm -f tools/state/ghl-token-liveness/ghl-token-liveness-"$(date -u +%Y-%m-%d)".ok
+bash .claude/skills/convert-and-flow-operator/tools/check-ghl-token-liveness.sh
 ```
 
 ---

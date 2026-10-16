@@ -80,7 +80,7 @@ lock it here.
 ## 6. Test-asset labeling
 
 Any pipeline created as a live test MUST carry the ZHC test convention (e.g.
-`ZHC TEST - OpenClaw Skill6 Verification - DO NOT USE`) and MUST be deleted with
+`ZHC TEST - Skill6 Verification - DO NOT USE`) and MUST be deleted with
 the positive proof above — never left behind on a client account.
 
 ## 7. FIRST LIVE RUN (2026-07-08) — landing STOP + the fix applied

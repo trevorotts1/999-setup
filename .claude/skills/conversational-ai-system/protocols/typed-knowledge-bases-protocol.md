@@ -58,7 +58,7 @@ The agent decides which base(s) to query based on conversation context:
 | Generic / unclear | conversations/ | business/ |
 | Existing customer follow-up | products/, conversations/ | business/ |
 
-Querying is via OpenClaw's `memory_search` with a base-scope parameter:
+Querying is via the agent runtime's memory search with a base-scope parameter:
 
 ```
 memory_search(query: "pricing objections for high-ticket coaching", scope: "knowledgebases/sales")
@@ -77,12 +77,9 @@ last_updated, source) and content body.
 After writing the file, the agent updates the base's `registry.md`
 with a new row.
 
-The agent also triggers a re-index so memory_search picks up the new
-content:
-
-```
-openclaw memory index --path "<MASTER_FILES_DIR>/KnowledgeBases"
-```
+The agent also triggers a re-index of
+`<MASTER_FILES_DIR>/KnowledgeBases` through the runtime's memory tooling
+so memory search picks up the new content.
 
 ## Migration from old Knowledge Sources (Feature 12)
 
@@ -107,9 +104,8 @@ setup, the agent migrates content during this step:
 The KnowledgeBases folder ALWAYS lives at
 `<MASTER_FILES_DIR>/KnowledgeBases/`. The agent uses the
 `MASTER_FILES_DIR` variable resolved during O.2 — never hardcodes
-a path. On Mac Mini this typically resolves to
-`~/Downloads/OpenClaw Master Files/KnowledgeBases/`; on VPS it might
-be `/data/openclaw-master-files/KnowledgeBases/`.
+a path. It resolves wherever the install's master-files pointer
+resolves (see the MASTER_FILES_DIR binding in this pack's SKILL.md).
 
 If MASTER_FILES_DIR isn't set (which shouldn't happen if O.2 completed),
 the agent stops and re-runs O.2 rather than guessing at a path.

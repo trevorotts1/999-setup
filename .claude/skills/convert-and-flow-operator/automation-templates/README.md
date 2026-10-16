@@ -2,7 +2,7 @@
 
 The **28 proven email / SMS / multichannel automation sequences** Skill 44 reuses BEFORE wiring a
 GoHighLevel workflow from scratch. This is the Skill-44 counterpart of the Skill-6 funnel template
-library (`06-ghl-install-pages/funnel-templates/`), and the two are paired by the funnel→automation
+library (`ghl-install-pages/funnel-templates/` in the sibling Skill 6 pack copy), and the two are paired by the funnel→automation
 link map in `_links/`.
 
 ## Categories (28 templates)

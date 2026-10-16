@@ -6,9 +6,10 @@
 # in the same commit — see that module's docstring for the full rename note).
 #
 # Daily-maintenance-window (or pre-build-optional) READ-ONLY selector-drift
-# probe wrapper (U2 / F3; scheduled daily by U30/B-U16 item 4 — see
-# schedule/skill6-selector-drift-probe.cron.json +
-# scripts/install-selector-drift-probe-cron.sh).
+# probe wrapper (U2 / F3; scheduled daily by U30/B-U16 item 4 in the source
+# skill. In this harness the daily run is registered with the operator's
+# scheduler — the pack ships no scheduler registration machinery — and this
+# wrapper is the stable entry point it calls.)
 #
 # WHAT THIS RUNS: ghl_selector_drift_probe.py's --canary walk against the four
 # object docs (form/survey/funnel/page), using the LIVE seeded browser session
@@ -26,7 +27,7 @@
 # What THIS script guarantees, portably on both Mac (bash 3.2, no flock) and
 # VPS (bash 4+, flock): the OFFLINE gate — selectors-live.json loads, its schema
 # is sane, and the resolver/report machinery is exercised end-to-end — runs
-# clean before any live step is attempted, and the cron entry point is stable.
+# clean before any live step is attempted, and the scheduled entry point is stable.
 # A regression here is exactly the class of drift the daily probe exists to
 # catch on the operator's own box BEFORE it ever reaches a client build — on
 # failure this prints a SELECTOR-MISS-prefixed line (cc_board.py's taxonomy;
@@ -37,17 +38,17 @@
 # python3, missing selectors-live.json) is reported PARKED, not silently green.
 #
 # USAGE
-#   scripts/run-selector-drift-probe.sh                 # offline gate only (default, safe for cron)
+#   scripts/run-selector-drift-probe.sh                 # offline gate only (default, safe for scheduled runs)
 #   scripts/run-selector-drift-probe.sh --live           # placeholder for the operator's live wiring
 #                                                          (exits 3, printing the manual command —
-#                                                           no accidental live browser launch from cron)
+#                                                           no accidental live browser launch from a scheduled run)
 #
-# CRON (daily maintenance window — installed by
-#       scripts/install-selector-drift-probe-cron.sh, NOT by this script):
-#   0 5 * * * cd <repo>/06-ghl-install-pages && scripts/run-selector-drift-probe.sh >> \
-#       "$HOME/.openclaw/workspace/.park/selector-drift-probe.log" 2>&1 || true
-#   (mirrors the existing skill6-github-archive-reconcile-sweep daily-maintenance-
-#    window pattern: fail-soft, log-and-continue, a probe outage never blocks
+# SCHEDULING (daily maintenance window — registered with the operator's
+# scheduler, NOT by this script; example entry):
+#   0 5 * * * cd <repo>/.claude/skills/ghl-install-pages && scripts/run-selector-drift-probe.sh >> \
+#       "state/park/selector-drift-probe.log" 2>&1 || true
+#   (mirrors the skill6-github-archive-reconcile-sweep daily-maintenance-window
+#    pattern: fail-soft, log-and-continue, a probe outage never blocks
 #    anything — it is advisory, not a build gate.)
 
 set -euo pipefail
@@ -61,7 +62,7 @@ if [ "${1:-}" = "--live" ]; then
 fi
 
 if [ "${_MODE}" = "live" ]; then
-  echo "run-selector-drift-probe.sh: --live is an operator-run step, not a cron-safe default." >&2
+  echo "run-selector-drift-probe.sh: --live is an operator-run step, not a schedule-safe default." >&2
   echo "Wire a real finder via ghl_selector_drift_probe.live_finder_over_browser_manager()" >&2
   echo "against a seeded session, then call run_canary() directly from Python. Example:" >&2
   echo "  python3 -c 'import ghl_selector_drift_probe as c; ...'  (see module docstring)" >&2

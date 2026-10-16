@@ -1,9 +1,12 @@
 # ZHC Pixel Protocol (Feature 49) — INSTRUCTIONS Step 9.43
 
-**Status:** MVP / scaffold. The pixel JS, the generator, the OpenClaw hook wiring, the
+**Status:** MVP / scaffold. The pixel JS, the generator, the endpoint hook wiring, the
 Pixel Concierge agent + AGENTS.md protocol, the behavioral trigger rules, the privacy
 controls, the JSONL data contract, the scope precheck, and the scope-gated Cloudflare
-deploy are all SHIPPED in this skill. The one thing that is deliberately **GATED, not
+deploy are all SHIPPED in this skill. SCOPED-COPY NOTE (999 pack): the endpoint the
+pixel POSTs to is the client's own agent endpoint on their own public route;
+registering that route is an install-time step on the client's own
+infrastructure and is not machinery this pack ships. The one thing that is deliberately **GATED, not
 auto-run** is the **live per-client Cloudflare deploy** — it requires the operator's CF
 token to carry Pages/Workers scopes; `scripts/26-verify-pixel-prerequisites.sh` HALTS
 with a clear message if they are missing. See "MVP vs production follow-ups" at the end.
@@ -18,7 +21,7 @@ UNIVERSAL — zero personal/client data. Every concrete value below is a placeho
 Every client gets THEIR OWN private visitor-signal pixel. It is **not** a shared
 analytics service. The pixel is a small JavaScript snippet the client pastes on their
 site; it watches anonymous visitor behavior and POSTs batched signals to **their own**
-OpenClaw gateway over **their existing Cloudflare tunnel**:
+agent endpoint over **their existing public route**:
 
 ```
 visitor browser
@@ -27,14 +30,14 @@ visitor browser
 pixel.<CLIENT_DOMAIN>            ← a hostname added to the client's EXISTING tunnel
    │  (Cloudflare edge; optional Worker for batching / rate-limit)
    ▼
-their OpenClaw gateway  /hooks/pixel-visitor-signal
+their agent endpoint  /hooks/pixel-visitor-signal
    │
    ▼
 Pixel Concierge agent (<AGENT_ID>)   ← evaluates behavioral trigger rules
 ```
 
 No visitor data ever touches a shared/operator-owned collector endpoint. The data lives
-in the client's own OpenClaw master-files dir as JSONL (see §7) and, on identification,
+in the client's own master-files dir as JSONL (see §7) and, on identification,
 in the client's own GHL.
 
 The pixel template lives at `templates/zhc-pixel/zhc-pixel.template.js` with the
@@ -78,7 +81,7 @@ fill out anything, I'll connect the dots."* **Never guess a name.**
 
 ---
 
-## 3. The OpenClaw hook — `pixel-visitor-signal`
+## 3. The endpoint hook — `pixel-visitor-signal`
 
 `scripts/28-configure-pixel-hook.sh` registers a `hooks.mappings` entry (idempotent,
 same jq-safe pattern as `15-configure-hooks-mappings.sh`):
@@ -99,7 +102,7 @@ agent does its work out-of-band (GHL tag/field write, widget directive, email sc
 
 ## 4. Behavioral trigger rules (operator-configurable)
 
-Defaults shipped in `openclaw.json` under `skill38.zhc_pixel.triggers.*`. The agent
+Defaults shipped in the install's skill38 configuration under `zhc_pixel.triggers.*`. The agent
 applies them on every `pixel-visitor-signal` envelope, in this order:
 
 1. **Bot-like → SILENTLY DROP (no tokens).** Sub-2-second pageview cadence, impossible
@@ -305,10 +308,10 @@ After deploy, the operator gets a one-line `<script>` snippet to paste on their 
 SHIPPED (working code in this skill):
 
 - Pixel JS template + generator (renders per-client, placeholder substitution).
-- OpenClaw `pixel-visitor-signal` hook registration + Pixel Concierge agent + scoped
+- Endpoint `pixel-visitor-signal` hook registration + Pixel Concierge agent + scoped
   allow-list (`28-configure-pixel-hook.sh`).
 - AGENTS.md `STEP_1_45_PIXEL_CONCIERGE` behavioral protocol (via 05-update-agents-md.sh).
-- Behavioral trigger rules + `openclaw.json` toggles.
+- Behavioral trigger rules + configuration toggles.
 - Privacy controls (GDPR/CCPA/DNT/deletion) in the browser bundle.
 - JSONL data contract (F52) + documented schema.
 - Scope precheck (`26-verify-pixel-prerequisites.sh`) + scope-gated CF deploy

@@ -145,21 +145,19 @@ Reply IGNORE to dismiss permanently.
 
 ## Recommended model
 
-Same as Weekly Tune-up — highest-reasoning model available. This is
-deep analytical work across 30 days of data. Use DeepSeek V4.1 Flash
-thinking:max, Kimi 2.6+ via Ollama Cloud, or current top-reasoning
-model. Configure in `openclaw.json` under `monthly_review.model`.
+Same as Weekly Tune-up — this is deep analytical work across 30 days of
+data. Use the client's selected model or their configured default; a
+top-tier reasoning model is RECOMMENDED (guidance only, never a
+prescription). The client may pin a choice in the install's skill38
+configuration under `monthly_review.model`.
 
 ## Implementation
 
-Cron-wise: the existing `system-health-heartbeat` cron (registered
-during initial setup at `0 9 1 * *` — 9am on the 1st of each month) is
-EXTENDED to invoke this review. If `system-health-heartbeat` doesn't
-exist yet (older setup), register it:
-
-```
-openclaw cron add system-health-heartbeat "0 9 1 * *" "openclaw run monthly-comprehensive-review"
-```
+Schedule-wise: the existing `system-health-heartbeat` job on the
+operator's scheduler (registered during initial setup at `0 9 1 * *` —
+9am on the 1st of each month) is EXTENDED to invoke this review. If
+`system-health-heartbeat` doesn't exist yet (older setup), register it
+with schedule `0 9 1 * *` running the monthly comprehensive review.
 
 If `system-health-heartbeat` already exists, just update its command to
 include the comprehensive review.
@@ -171,17 +169,12 @@ Manual trigger anytime:
 > "Show me last month's comprehensive review"
 ```
 
-**B. Register or extend the cron:**
+**B. Register or extend the scheduled job:**
 
-```bash
-# Check if system-health-heartbeat cron exists
-if openclaw cron list | grep -q "system-health-heartbeat"; then
-  echo "Extending existing system-health-heartbeat to include monthly review"
-  openclaw cron update system-health-heartbeat --command "openclaw run monthly-comprehensive-review"
-else
-  openclaw cron add system-health-heartbeat "0 9 1 * *" "openclaw run monthly-comprehensive-review"
-fi
-```
+Check the operator's scheduler for a `system-health-heartbeat` job. If
+one exists, extend its command to include the monthly comprehensive
+review; if none exists, register it with schedule `0 9 1 * *` running the
+monthly comprehensive review.
 
 **C. Append to Run Manifest:**
 

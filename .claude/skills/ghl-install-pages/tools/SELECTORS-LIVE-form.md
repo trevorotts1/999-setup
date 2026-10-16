@@ -17,7 +17,7 @@ confirms 0 residual occurrences. GHL left clean.
 
 ## 0. Auth (VERIFIED LIVE — the gate that used to burn tokens)
 
-- Refresh token `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (`~/.openclaw/secrets/.env`)
+- Refresh token `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (the install's secrets env file)
   exchanged at `securetoken.googleapis.com` → **VALID** (id_token+refresh_token,
   expires_in 3600). Seed → inject → activate succeeded on **attempt 1**; landed
   logged-in at `/v2/location/<LOCATION_ID>/dashboard`. No UI login, no 2FA.

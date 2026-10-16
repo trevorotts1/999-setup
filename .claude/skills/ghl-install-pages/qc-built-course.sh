@@ -17,6 +17,7 @@
 # Exit:   0 = PASS · 1 = FAIL · 2 = INCONCLUSIVE (no evidence / render read-back deferred)
 set -u
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"  # install repo root (999 layout)
 TOOLS="$SKILL_DIR/tools"
 
 if [ "${1:-}" = "--selftest" ]; then
@@ -72,7 +73,7 @@ if [ -z "$ARG" ]; then
 fi
 EVIDENCE="$ARG"
 if [ ! -d "$EVIDENCE" ]; then
-  for c in "$PWD/working/courses/$ARG" "$HOME/clawd/working/courses/$ARG"; do
+  for c in "$PWD/working/courses/$ARG" "$REPO_ROOT/working/courses/$ARG"; do
     [ -d "$c" ] && EVIDENCE="$c" && break
   done
 fi

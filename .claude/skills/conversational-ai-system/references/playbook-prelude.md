@@ -1,5 +1,6 @@
 <!-- OPERATOR HEADER -->
-<!-- Skill 38 reference: VERBATIM extraction from openclaw-cloudflare-tunnel-prompt v5.14 (lines 25-149). -->
+<!-- Skill 38 reference: extraction from the v5.14 source playbook (lines 25-149), adapted to this
+     harness (999): the runtime is named "the agent runtime" and host machinery is rebound. -->
 <!-- Contains: Terminology, Rules of Engagement (6 rules), Execution Order Map (7 phases). -->
 <!-- Read this BEFORE executing any phase. The Rules of Engagement are gates, not suggestions. -->
 <!-- Source: the operator's original cloudflare-tunnel prompt -->
@@ -10,9 +11,9 @@ This system has a few distinct components with distinct names. Getting them righ
 
 - **Convert and Flow** = the operator's white-label version of GoHighLevel. It IS GHL, with Convert and Flow branding on top. Client-facing materials should refer to "Convert and Flow" rather than "GoHighLevel" when speaking to the operator's clients. Functionally it's identical to GHL — same API endpoints (`services.leadconnectorhq.com`), same workflow builder, same Conversations system. The brand differs; the technology doesn't.
 
-- **OpenClaw** = the AI agent platform that runs the conversational AI. Receives webhooks from Convert and Flow, processes them, replies via the installed GHL skill, takes actions like booking and invoicing.
+- **The agent runtime** = the AI agent platform that runs the conversational AI (in this harness, the Claude Code agent runtime). Receives webhooks from Convert and Flow, processes them, replies via the installed GHL skill, takes actions like booking and invoicing.
 
-- **The Conversational AI System** = the complete deployed setup. This is what this playbook builds — OpenClaw + Convert and Flow + the playbooks, protocols, and capabilities documents created during setup. There's no consumer-facing brand name for this whole stack; it's just "the conversational AI system" or "the operator's AI" when talking to a client.
+- **The Conversational AI System** = the complete deployed setup. This is what this playbook builds — the agent runtime + Convert and Flow + the playbooks, protocols, and capabilities documents created during setup. There's no consumer-facing brand name for this whole stack; it's just "the conversational AI system" or "the operator's AI" when talking to a client.
 
 When the agent is writing client-facing artifacts (Client Reference Sheet, communication playbooks, the overview PDF), it uses **Convert and Flow** to refer to the CRM layer. When writing AI-facing technical instructions (curl commands, API endpoints, JSON schemas), it uses **GHL** or **GoHighLevel** because those are the literal technical names at the API layer. Both refer to the same product — just different audiences.
 
@@ -26,15 +27,15 @@ These rules govern how the agent executes this playbook. They are not suggestion
 
 **Rule 2 — Two and only two reasons to deviate.** The agent has explicit permission to adapt the playbook in exactly these cases, and only these cases:
 
-  (a) **Documented OpenClaw schema change.** The agent has verified at `docs.openclaw.ai` and the OpenClaw GitHub `configuration-reference.md` that a field name, required parameter, or endpoint pattern has changed since this playbook was written. The agent must cite the doc URL and the specific change before adapting. Inference is not proof — only literal contradiction between the playbook and the current docs justifies a deviation.
+  (a) **Documented runtime schema change.** The agent has verified in the runtime's current documentation that a field name, required parameter, or endpoint pattern has changed since this playbook was written. The agent must cite the doc URL and the specific change before adapting. Inference is not proof — only literal contradiction between the playbook and the current docs justifies a deviation.
 
   (b) **Unmet precondition on the client's machine.** A step's prerequisite isn't satisfied (e.g., the expected file doesn't exist, a command returns an unexpected error, an API key is missing). The agent stops, reports the unmet precondition to the operator, and waits for guidance before adapting.
 
 **Rule 3 — No silent deviations.** Every deviation, however small, is logged to the Run Manifest with the reason, the doc evidence (if Rule 2a), and what was done instead. Future agents reading the manifest can audit what happened.
 
-**Rule 4 — Stop at hard failures.** If a step fails irrecoverably (Cloudflare API returns 403 with no recovery path, OpenClaw config validation rejects the new block, the tunnel doesn't connect after 3 retries), the agent STOPS, restores any backups taken, reports the failure, and waits. The agent does NOT keep going hoping the next step compensates.
+**Rule 4 — Stop at hard failures.** If a step fails irrecoverably (Cloudflare API returns 403 with no recovery path, the install's configuration validation rejects the new block, the public route doesn't connect after 3 retries), the agent STOPS, restores any backups taken, reports the failure, and waits. The agent does NOT keep going hoping the next step compensates.
 
-**Rule 5 — Verify before acting on irreversible changes.** Before any operation that's hard to undo (DNS record creation, cron job registration, config file writes), the agent does a dry-run check OR confirms with the operator. Backups must exist before any config edit.
+**Rule 5 — Verify before acting on irreversible changes.** Before any operation that's hard to undo (DNS record creation, scheduled job registration, config file writes), the agent does a dry-run check OR confirms with the operator. Backups must exist before any config edit.
 
 **Rule 6 — The QC checkpoints are gates, not suggestions.** Mid-execution QC checkpoints (after each phase) must pass before moving to the next phase. A failed checkpoint means stop, report, and wait for operator decision.
 
@@ -49,7 +50,7 @@ The full playbook is sequenced into seven phases. Each phase has specific steps 
 │ PHASE 0 — Orient                                                 │
 │   O.1  Apply Teach Yourself Protocol                             │
 │   O.2  Save playbook to master files folder                      │
-│   O.3  Verify OpenClaw version + schema + model freshness        │
+│   O.3  Verify runtime version + schema + model freshness        │
 │   O.4  Execute Backup Protocol                                   │
 │   O.5  Locate secrets env file                                   │
 │   O.6  Verify Dreaming + Embeddings config (v5.3)                │
@@ -63,11 +64,11 @@ The full playbook is sequenced into seven phases. Each phase has specific steps 
 │   Step 2  Install cloudflared as persistent service + restart    │
 │   ✅ Checkpoint B — Tunnel verified end-to-end                    │
 ├──────────────────────────────────────────────────────────────────┤
-│ PHASE 2 — Configure OpenClaw                                     │
+│ PHASE 2 — Configure the agent runtime                                     │
 │   Step 3   Configure hooks.mappings for GHL inbound              │
 │   Step 3.5 Model selection wizard (real-time, async, batch)      │
 │   Step 4   End-to-end test through public tunnel                 │
-│   ✅ Checkpoint C — OpenClaw responds to inbound webhooks         │
+│   ✅ Checkpoint C — The agent runtime responds to inbound webhooks         │
 ├──────────────────────────────────────────────────────────────────┤
 │ PHASE 3 — Persist credentials + deliverables                     │
 │   Step 5  Save secrets to env file                               │

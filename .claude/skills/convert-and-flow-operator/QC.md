@@ -8,9 +8,9 @@ human-readable companion checklist. All items below are machine-asserted by the 
 ## Section A: Installation
 
 - [ ] `caf doctor` exits 0 (all checks green; Firebase WARN is acceptable)
-- [ ] `caf` resolves on PATH inside the openclaw gateway
+- [ ] `caf` resolves on PATH inside the harness session
 - [ ] `convertandflow` and `ghl` aliases resolve (symlinks present)
-- [ ] venv exists at `~/.openclaw/tools/convert-and-flow-cli/.venv` (Mac) or `/data/.openclaw/tools/convert-and-flow-cli/.venv` (VPS)
+- [ ] venv exists in-tree at `tools/engine/.venv`
 
 ## Section B: Credentials
 
@@ -30,7 +30,7 @@ human-readable companion checklist. All items below are machine-asserted by the 
 
 - [ ] `--dry-run` flag recognized (does not fire live API call)
 - [ ] Location whitelist enforced (cross-location write rejected)
-- [ ] Snapshot dir exists at `~/.openclaw/tools/convert-and-flow-cli/data/snapshots/`
+- [ ] Snapshot dir exists at `<engine>/data/snapshots/` (the engine in-tree data dir)
 - [ ] Internal-write lock file mechanism present
 - [ ] `caf contacts upsert --help` documents merge-safe tag behavior and explicit-only `--create-new-if-duplicate-allowed`
 - [ ] `caf contacts update --tag x` REFUSED (exit 2, points at add-tag/remove-tag/upsert)

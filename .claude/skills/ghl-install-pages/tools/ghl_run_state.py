@@ -122,7 +122,11 @@ def default_state_root() -> str:
     env = os.environ.get("GHL_RUN_STATE_ROOT", "").strip()
     if env:
         return env
-    return os.path.join(os.path.expanduser("~"), ".openclaw", "skill6-runs")
+    # Harness default: the skill's own in-tree state dir (no OpenClaw home
+    # tree is resolved in this harness).
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "state", "skill6-runs")
 
 
 def new_run_id(builder: str = "") -> str:

@@ -1,6 +1,6 @@
 # Convert and Flow CLI
 
-A command-line interface for GoHighLevel that lets you (or OpenClaw) drive your CRM from the terminal — contacts, opportunities, calendars, conversations, workflows, emails, payments, forms, social media, locations, and documents.
+A command-line interface for GoHighLevel that lets you (or your agent) drive your CRM from the terminal — contacts, opportunities, calendars, conversations, workflows, emails, payments, forms, social media, locations, and documents.
 
 Part of the BlackCEO fleet — Skill 44: Convert and Flow Operator.
 
@@ -28,7 +28,7 @@ cd gohighlevel-cli
 
 The installer creates a `.venv/`, installs the package, and copies `.env.example` → `.env`.
 
-Open `~/.openclaw/secrets/.env` and fill in:
+Open this install's secrets env file (the file $SECRETS_ENV names) and fill in:
 
 ```env
 GOHIGHLEVEL_API_KEY=pit-xxxxxxxx-...        # GHL Settings -> Private Integrations
@@ -83,7 +83,7 @@ The public GHL API is read-only for workflows. To **create or update** workflows
 2. Click **Load unpacked** → pick the `chrome-extension/` folder in this repo.
 3. Open any `app.gohighlevel.com` page while logged in.
 4. Click the extension icon → **Grab Refresh Token** → **Copy to Clipboard**.
-5. Paste it into `~/.openclaw/secrets/.env` as `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=...`.
+5. Paste it into this install's secrets env file as `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=...`.
 
 ### Step 2 — build a workflow
 
@@ -123,7 +123,7 @@ convert-and-flow-cli/
 │   └── gohighlevel/            # GHL commands
 │       ├── gohighlevel_cli.py  # ~1,260 lines of CLI
 │       ├── utils/              # API clients (public + internal + workflow builder)
-│       └── skills/SKILL.md     # OpenClaw skill manifest
+│       └── skills/SKILL.md     # harness skill manifest
 │
 ├── chrome-extension/           # Firebase token grabber (Convert and Flow Token Grabber)
 │   ├── manifest.json

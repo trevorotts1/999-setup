@@ -40,7 +40,7 @@ cat > "$G/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | OpenClaw playbook |
+| ID | Name | Communications playbook |
 |---|---|---|
 | appointment-booking | Booking | appointment-booking.md |
 EOF
@@ -75,7 +75,7 @@ cat > "$B/registry.md" <<'EOF'
 
 ## Active workflows
 
-| ID | Name | OpenClaw playbook |
+| ID | Name | Communications playbook |
 |---|---|---|
 | rogue | Rogue | rogue.md |
 EOF

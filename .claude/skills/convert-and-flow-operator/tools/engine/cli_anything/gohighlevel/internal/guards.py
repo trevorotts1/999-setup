@@ -2,8 +2,9 @@
 
 Three components (adapter-design §9, §10, §11):
 
-1. data_dir() — single resolver for CAF_DATA_DIR env with ~/.openclaw fallback.
-   Never hardcode the path; always call this function.
+1. data_dir() — single resolver for CAF_DATA_DIR env with the in-tree
+   engine data directory as the default. Never hardcode the path; always
+   call this function.
 
 2. write_lock() — context manager wrapping WriteLock for internal-adapter callers.
    (Re-exports the per-location WriteLock from write_lock.py so the adapter
@@ -41,10 +42,11 @@ def data_dir() -> Path:
     """Return the root data directory for convert-and-flow-cli.
 
     Resolution order (adapter-design §1):
-      1. CAF_DATA_DIR env var (set by platform installer)
-      2. ~/.openclaw/tools/convert-and-flow-cli/data  (Mac fallback)
-      VPS path root /data/.openclaw/... is handled by setting CAF_DATA_DIR
-      in the platform overlay environment.
+      1. CAF_DATA_DIR env var (set by the install / platform overlay)
+      2. The engine's own in-tree data directory: <engine>/data, resolved
+         from this module's location (the engine ships and installs inside
+         this skill's tools/engine directory in this harness; there is no
+         separate installed tree to anchor state to).
 
     This is the ONLY place the data path is computed — never hardcode it elsewhere.
     """
@@ -52,7 +54,7 @@ def data_dir() -> Path:
     if override:
         base = Path(override)
     else:
-        base = Path.home() / ".openclaw" / "tools" / "convert-and-flow-cli" / "data"
+        base = Path(__file__).resolve().parents[3] / "data"
     base.mkdir(parents=True, exist_ok=True)
     return base
 

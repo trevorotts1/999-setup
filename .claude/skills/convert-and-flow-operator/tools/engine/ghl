@@ -4,26 +4,27 @@
 # Engine source code stays untouched.
 #
 # Credential sources (first match wins):
-#   1. ~/.openclaw/secrets/.env
-#   2. $SECRETS_ENV (override path)
-#   3. Already-exported GOHIGHLEVEL_* or GHL_* vars
+#   1. $SECRETS_ENV (this install's own secrets env file, when designated)
+#   2. Already-exported GOHIGHLEVEL_* or GHL_* vars
+# Harness binding (ADAPTER.md seams 2 and 4): credentials resolve from this
+# install's own secrets environment under the documented variable names.
+# No OpenClaw secrets file is read in this harness.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_PYTHON="$HOME/.openclaw/tools/convert-and-flow-cli/.venv/bin/python"
 
-# Activate venv (prefer installed venv, fall back to local). Track the exact
-# interpreter so we can exec it directly rather than trusting PATH after source.
-if [ -f "$VENV_PYTHON" ]; then
-    source "$HOME/.openclaw/tools/convert-and-flow-cli/.venv/bin/activate"
-elif [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
-    VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
+# The engine ships and installs in-tree: the venv lives inside this skill's
+# own tools/engine directory (created by tools/engine/install.sh). Track the
+# exact interpreter so we can exec it directly rather than trusting PATH
+# after source.
+VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
+if [ -f "$SCRIPT_DIR/.venv/bin/activate" ]; then
     source "$SCRIPT_DIR/.venv/bin/activate"
 else
     VENV_PYTHON="python3"
 fi
 
-# Load canonical secrets file
-SECRETS_FILE="${SECRETS_ENV:-$HOME/.openclaw/secrets/.env}"
+# Load the install's secrets env file when one is designated.
+SECRETS_FILE="${SECRETS_ENV:-}"
 if [ -f "$SECRETS_FILE" ]; then
     set -a
     # shellcheck disable=SC1090
@@ -52,13 +53,14 @@ export CAF_DRAFT_ONLY="${GOHIGHLEVEL_DRAFT_ONLY:-${CAF_DRAFT_ONLY:-true}}"
 export CAF_DRY_RUN="${GOHIGHLEVEL_DRY_RUN:-${CAF_DRY_RUN:-}}"
 # Write-approval token: canonical GOHIGHLEVEL_APPROVAL_TOKEN -> CAF_APPROVAL_TOKEN.
 # The safety gate requires it for surgical update/patch writes (ZHC-/ZHC_ names are
-# standing-approved without it). Stays in secrets/.env; never wired into
-# openclaw.json env.vars. Empty when unset = surgical writes stay gated (safe).
+# standing-approved without it). Stays in the install's secrets env; never
+# written into any harness config file. Empty when unset = surgical writes
+# stay gated (safe).
 export CAF_APPROVAL_TOKEN="${GOHIGHLEVEL_APPROVAL_TOKEN:-${CAF_APPROVAL_TOKEN:-}}"
 
 # Validate required vars
 if [ -z "$GHL_API_KEY" ]; then
-    echo "ERROR: GOHIGHLEVEL_API_KEY is not set. Add it to $SECRETS_FILE" >&2
+    echo "ERROR: GOHIGHLEVEL_API_KEY is not set. Add it to this install's secrets env file (the file \$SECRETS_ENV names) or export it before running." >&2
     exit 1
 fi
 

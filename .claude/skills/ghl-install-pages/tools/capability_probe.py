@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """capability_probe.py — Skill 06 adaptive capability probe (plan P0-6 + 9.7-4).
 
+999 HARNESS FORM (claude-nine): this pack copy runs inside the Claude Code
+harness. Lane 2 (the OpenClaw managed browser) does not exist here and is
+NEVER probed or assumed: the probe reports it structurally absent
+(cliPresent False, lane fields False) with the reason in `warnings`, and
+never invokes an `openclaw` binary. Lane selection in this harness is
+agent_browser first, then playwright_direct, then the explicit
+existing_session opt-in. The receipt shape is unchanged.
+
 WHY THIS EXISTS (skill6-fix-plan Part 2 / 2.1 / 9.2 / 9.6):
 Skill 6 must run on OpenClaw pre-2.0 boxes (agent-browser only), OpenClaw 2.0+
 (2026.8.1, managed browser plugin), 2026.9.x+ CUA boxes, Mac or VPS, with or
@@ -16,8 +24,8 @@ no secret VALUE is ever emitted, and env is the only source consulted.
 Lane selection (plan 2.2 + 9.6 REVISED table):
   1  agent_browser            — `agent-browser` on PATH (version reported). Lane 1b is
                               the same lane with playwright hybrid: iframeDrag.available.
-  2  openclaw_managed_browser — ONLY if OpenClaw >= 2026.8.1 AND browser plugin enabled
-                              AND `openclaw browser ...` CLI works.
+  2  openclaw_managed_browser — NOT AVAILABLE in this harness: never probed,
+                              reported structurally absent (see _probe_openclaw).
   3  playwright_direct        — Playwright importable (legacy degraded fallback).
   4  existing_session         — NEVER default; only when env GHL_SKILL6_ALLOW_EXISTING_SESSION=1.
   5  cua_last_resort          — NEVER auto-selected.
@@ -135,7 +143,9 @@ def _secret_bool(env: Dict[str, str], aliases: tuple) -> bool:
 
 
 def _plugin_enabled(plugins_text: str, *names: str) -> bool:
-    """True when any of `names` appears in `openclaw plugins list` as enabled.
+    """True when any of `names` appears as enabled in a plugins-list text.
+    (Pure text helper retained from the source probe; no CLI is invoked in
+    this harness — lane 2 is reported structurally absent without probing.)
 
     Parses line-form `name ... enabled`; falls back to bare-name mention when the
     output is a non-standard format but names the plugin at all (warning covers
@@ -159,18 +169,16 @@ def _plugin_enabled(plugins_text: str, *names: str) -> bool:
 
 def _probe_openclaw(runner: Callable[..., Any], env: Dict[str, str],
                     warnings: List[str]) -> Dict[str, Any]:
-    cp = _run(runner, ["openclaw", "--version"], TO_VERSION_S)
-    text = _out(cp)
-    semver = _semver(text)
-    if cp is None:
-        warnings.append("openclaw --version probe failed (missing, timeout, or error)")
-    elif cp.returncode != 0:
-        warnings.append("openclaw --version exited non-zero")
+    # 999 harness: the OpenClaw CLI / managed browser is not part of the
+    # Claude Code harness and is never probed here. Reported structurally
+    # absent so lane selection and receipts stay truthful on this harness.
+    warnings.append("the OpenClaw managed browser is not part of the Claude "
+                    "Code harness (claude-nine); lane 2 not probed")
     return {
-        "cliPresent": cp is not None and cp.returncode == 0,
-        "version": _semver_str(text.strip().splitlines()[0]) if text else "",
-        "semver": semver,
-        "is2xOrNewer": _is_2x_or_newer(semver),
+        "cliPresent": False,
+        "version": "",
+        "semver": None,
+        "is2xOrNewer": False,
     }
 
 
@@ -228,34 +236,14 @@ def _playwright_available(runner: Callable[..., Any], env: Dict[str, str]) -> bo
 def _probe_openclaw_browser_plugin(runner: Callable[..., Any], env: Dict[str, str],
                                    oc: Dict[str, Any],
                                    warnings: List[str]) -> Dict[str, Any]:
-    lane: Dict[str, Any] = {
+    # 999 harness: structurally absent (see _probe_openclaw). No CLI calls.
+    return {
         "pluginEnabled": False,
         "cliWorks": False,
         "playwrightAvailable": False,
         "profile": "openclaw",
         "doctorOk": False,
     }
-    if not oc["cliPresent"]:
-        warnings.append("openclaw CLI absent — managed-browser lane not probed")
-        return lane
-    pcp = _run(runner, ["openclaw", "plugins", "list"], TO_PLUGINS_S)
-    ptext = _out(pcp)
-    if pcp is None:
-        warnings.append("openclaw plugins list probe failed (timeout or runner error)")
-    elif pcp.returncode != 0:
-        warnings.append("openclaw plugins list exited non-zero")
-    lane["pluginEnabled"] = _plugin_enabled(ptext, "browser", "@openclaw/browser-plugin")
-    lane["playwrightAvailable"] = _playwright_available(runner, env)
-    # CLI works: `openclaw browser status` with the managed profile
-    bcp = _run(runner, ["openclaw", "browser", "--browser-profile", "openclaw",
-                        "status"], TO_VERSION_S)
-    lane["cliWorks"] = bcp is not None and bcp.returncode == 0
-    if bcp is not None and bcp.returncode != 0:
-        warnings.append("openclaw browser status failed for profile 'openclaw'")
-    # doctor --deep is optional and slow: short timeout, failure non-fatal
-    dcp = _run(runner, ["openclaw", "browser", "doctor", "--deep"], 15)
-    lane["doctorOk"] = dcp is not None and dcp.returncode == 0
-    return lane
 
 
 def _probe_existing_session(env: Dict[str, str],
@@ -269,33 +257,23 @@ def _probe_existing_session(env: Dict[str, str],
 
 def _probe_cua(runner: Callable[..., Any], env: Dict[str, str],
                warnings: List[str]) -> Dict[str, Any]:
+    # 999 harness: the CUA lane keys on the CuaDriver app alone. The
+    # OpenClaw-side plugin check (openclaw plugins list) and the OpenClaw.app
+    # presence check do not exist in this harness.
     is_mac = sys.platform == "darwin"
-    pcp = None
-    if not is_mac:
-        pcp = _run(runner, ["openclaw", "plugins", "list"], TO_PLUGINS_S)
-    else:
-        # mac side still parses plugins list when the CLI is present
-        pcp = _run(runner, ["openclaw", "plugins", "list"], TO_PLUGINS_S)
-    ptext = _out(pcp)
-    plugin_enabled = _plugin_enabled(ptext, "cua-computer", "computer")
     app_present = False
     driver_present = False
     if is_mac:
         apps = env.get("GHL_SKILL6_APP_DIRS", "/Applications")
         try:
-            app_present = os.path.isdir(os.path.join(apps, "OpenClaw.app"))
             driver_present = os.path.isdir(os.path.join(apps, "CuaDriver.app"))
         except Exception:
-            app_present = driver_present = False
+            driver_present = False
     provider = "none"
-    if plugin_enabled and driver_present:
-        provider = "cua"
-    elif driver_present:
+    if driver_present:
         provider = "peekaboo"
-    elif plugin_enabled:
-        provider = "unknown"
     return {
-        "pluginEnabled": plugin_enabled,
+        "pluginEnabled": False,
         "appPresent": bool(app_present),
         "driverPresent": bool(driver_present),
         "providerSelected": provider,

@@ -3,7 +3,10 @@
 # OPERATOR OPT-IN. GraphQL-first per v5.14 research. Idempotent.
 
 set -euo pipefail
-SECRETS_ENV="${OPENCLAW_SECRETS_ENV:-$HOME/.openclaw/secrets/.env}"
+# Secrets binding (999 harness): the wizard writes into the install secrets
+# env file, designated by $SECRETS_ENV (no OpenClaw default path exists here).
+SECRETS_ENV="${SECRETS_ENV:-}"
+: "${SECRETS_ENV:?SECRETS_ENV must name the install secrets env file to write into}"
 
 echo "[skill 38] Shopify Integration setup wizard (Step 9.31)"
 echo "  This is OPERATOR OPT-IN. Skip if you do not use Shopify."

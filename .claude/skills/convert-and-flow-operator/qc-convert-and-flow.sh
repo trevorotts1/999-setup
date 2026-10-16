@@ -70,13 +70,13 @@ live_warn() {
 }
 
 # ── PATH bootstrap (non-interactive-shell fix) ───────────────────────────────
-# WHY: the live checks below shell out to `openclaw`. A non-interactive shell
-# (the install harness, cron, `ssh box 'cmd'`) starts with a bare PATH that omits
-# the directories OpenClaw installs into, so `openclaw ...` was "command not
-# found" and its check FAILED on a fully-provisioned box -- the same check PASSED
-# the moment the operator's login-shell PATH was in play. Appending the standard
-# login-shell bin directories that actually exist restores the operator-shell
-# view without inventing one.
+# WHY: the live checks below shell out to `caf`. A non-interactive shell
+# (the install harness, a scheduler, `ssh box 'cmd'`) starts with a bare PATH
+# that omits the directories the wrappers are linked into, so `caf ...` was
+# "command not found" and its check FAILED on a fully-provisioned box -- the
+# same check PASSED the moment the operator's login-shell PATH was in play.
+# Appending the standard login-shell bin directories that actually exist
+# restores the operator-shell view without inventing one.
 #
 # DELIBERATELY NOT ADDED: "$CAF_DIR" / "$TOOLS_ROOT/convert-and-flow-cli", this
 # skill's own install directory. Section A asserts `caf`/`convertandflow`/`ghl`
@@ -98,52 +98,24 @@ SKILL44_DIR="$SCRIPT_DIR"
 # For live-box sections the master-files root may differ; fall back gracefully
 MASTER_FILES_DIR="${MASTER_FILES_DIR:-$(dirname "$SCRIPT_DIR")}"
 
-WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
-PLATFORM="${OPENCLAW_PLATFORM:-mac}"
-if [ "$PLATFORM" = "mac" ]; then
-  TOOLS_ROOT="$HOME/.openclaw/tools"
-else
-  TOOLS_ROOT="/data/.openclaw/tools"
-fi
-CAF_DIR="$TOOLS_ROOT/convert-and-flow-cli"
-SKILL38_DIR="$MASTER_FILES_DIR/38-conversational-ai-system"
-if [ "$PLATFORM" = "mac" ]; then
-  OC_CONFIG_JSON="${OPENCLAW_CONFIG_JSON:-$HOME/.openclaw/openclaw.json}"
-else
-  OC_CONFIG_JSON="${OPENCLAW_CONFIG_JSON:-/data/.openclaw/openclaw.json}"
-fi
+# Harness binding (Claude Code / 999): the engine installs in-tree, the pack
+# skills are siblings under .claude/skills/, and there is no gateway config.
+# WORKSPACE is the install repo root (where the operator's core instruction
+# files live); CAF_DIR is this skill's own tools/engine directory.
+WORKSPACE="${GHL_WORKSPACE:-$(cd "$SKILL44_DIR/../../.." && pwd)}"
+CAF_DIR="$SKILL44_DIR/tools/engine"
+SKILL38_DIR="$MASTER_FILES_DIR/conversational-ai-system"
 
-# Presence check for an openclaw.json env var. PRESENCE ONLY -- never reads,
-# prints, echoes, or logs the VALUE (the python exits 0/1 and emits nothing).
-# Reads the config FILE, which is exactly what `openclaw config get` reads, so
-# the assertion is about the CONFIG's content and no longer about whether a CLI
-# happens to be on PATH. Falls back to the CLI when the file cannot be located
-# (an unusual OPENCLAW_HOME); a genuinely absent var still FAILS either way.
-oc_config_env_var_is_set() {
-  local _name="$1" _j
-  for _j in "$OC_CONFIG_JSON" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
-    [ -n "$_j" ] && [ -f "$_j" ] || continue
-    if python3 -c '
-import json, sys
-try:
-    cfg = json.load(open(sys.argv[1]))
-except Exception:
-    sys.exit(1)
-name = sys.argv[2]
-env = cfg.get("env") or {}
-if not isinstance(env, dict):
-    sys.exit(1)
-vars_ = env.get("vars")
-val = vars_.get(name) if isinstance(vars_, dict) else None
-if not (isinstance(val, str) and val.strip()):
-    val = env.get(name)
-sys.exit(0 if isinstance(val, str) and val.strip() else 1)
-' "$_j" "$_name" >/dev/null 2>&1; then
-      return 0
-    fi
-  done
-  command -v openclaw >/dev/null 2>&1 || return 1
-  openclaw config get "env.vars.$_name" >/dev/null 2>&1
+# Presence check for a credential var. PRESENCE ONLY -- never reads, prints,
+# echoes, or logs the VALUE. A var counts as present when it is set non-empty
+# in this process env OR defined non-empty in the install's secrets env file
+# ($SECRETS_ENV) -- exactly the two sources the adapted caf wrapper resolves.
+env_var_is_set() {
+  local _name="$1"
+  local _v="${!_name:-}"
+  [ -n "$_v" ] && return 0
+  [ -n "${SECRETS_ENV:-}" ] && [ -f "$SECRETS_ENV" ] || return 1
+  grep -qE "^[[:space:]]*(export[[:space:]]+)?${_name}=[^[:space:]].*" "$SECRETS_ENV" 2>/dev/null
 }
 
 echo "══════════════════════════════════════════════"
@@ -167,16 +139,11 @@ echo "── Section S: Static branch checks ──"
 #
 # LAYOUT NOTE (the false-fail this closes): this is a REPO-integrity check, not
 # a runtime/installed-skill check. It needs docs/tools/check_lattice_citation.py
-# + docs/lattice-citations.json, which live at the repo root as SIBLINGS of
-# 44-convert-and-flow-operator/, not inside it. From a plain repo checkout
-# SKILL44_DIR's parent IS that repo root and the checker is found. On a CLIENT
-# BOX the skill installs to ~/.openclaw/skills/44-convert-and-flow-operator/, so
-# the parent is ~/.openclaw/skills -- which has no docs/ directory at all. The
-# checker was invoked unconditionally there and python3 exited 2 ("can't open
-# file"), hard-FAILING every client-box run forever instead of reporting drift.
-# It now SKIPS VISIBLY (counted as a skip, never as a pass) when the checker is
-# absent, and hard-asserts exactly as before when it is present -- the same
-# "absent skips cleanly" convention 03-agent-browser/qc-agent-browser.sh uses.
+# + docs/lattice-citations.json, which live at the OpenClaw-side repo root as
+# SIBLINGS of 44-convert-and-flow-operator/, not inside it. This 999 repo has
+# no such checker, so in this layout the check SKIPS VISIBLY (counted as a
+# skip, never as a pass) -- the same "absent skips cleanly" convention the
+# OpenClaw side used for installed-skill layouts.
 REPO_ROOT_LATTICE="$(cd "$SKILL44_DIR/.." && pwd)"
 LATTICE_CHECKER="$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py"
 if [ -f "$LATTICE_CHECKER" ]; then
@@ -272,14 +239,14 @@ assert "wire-ghl-env.sh present (single-source GHL env wiring)" \
   "[ -f \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" ]"
 assert "verify-ghl-live.sh present (fail-loud post-install verify gate)" \
   "[ -f \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\" ]"
-assert "wire-ghl-env.sh has JSON deep-merge fallback (config-set-rejects-nested-key path)" \
-  "grep -q 'JSON deep-merge fallback' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
+assert "wire-ghl-env.sh reports missing-prereqs (exit 2 contract)" \
+  "grep -q 'MISSING-PREREQS' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
 assert "wire-ghl-env.sh wires all 5 canonical GHL vars" \
   "for v in GOHIGHLEVEL_API_KEY GOHIGHLEVEL_LOCATION_ID GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN GOHIGHLEVEL_ALLOWED_LOCATION_IDS GOHIGHLEVEL_DRAFT_ONLY; do grep -q \"wire_var \$v\" \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" || exit 1; done"
-assert "wire-ghl-env.sh replaces empty docker env_file placeholders in place (VPS)" \
-  "grep -q 'removing empty placeholder' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" && grep -q 'replacing existing' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
-assert "wire-ghl-env.sh does NOT restart the gateway on Mac (rescue-Mac rule)" \
-  "grep -qi 'NOT restarting the gateway' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
+assert "wire-ghl-env.sh upserts a designated env file, replacing lines in place" \
+  "grep -q -- '--write' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" && grep -q 'replacing existing' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
+assert "wire-ghl-env.sh targets the install secrets env only (no gateway config writes)" \
+  "grep -q 'SECRETS_ENV' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\" && ! grep -q 'openclaw config' \"$SKILL44_DIR/tools/engine/wire-ghl-env.sh\""
 assert "verify-ghl-live.sh runs a real read (workflows + contacts PIT-only fallback)" \
   "grep -q 'workflows list' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\" && grep -q 'contacts list' \"$SKILL44_DIR/tools/engine/verify-ghl-live.sh\""
 assert "verify-ghl-live.sh is fail-loud (exit 1) + has missing-prereqs (exit 2) path" \
@@ -294,8 +261,8 @@ assert "INSTALL.md handles installed-with-missing-prereqs (no fabricated success
   "grep -qi 'installed-with-missing-prereqs' \"$SKILL44_DIR/INSTALL.md\""
 
 # v1.0.9 — live-box: prove the wired env is actually inherited + caf reaches GHL.
-live_assert "GOHIGHLEVEL_LOCATION_ID present in openclaw.json env.vars (gateway-inherited)" \
-  "oc_config_env_var_is_set GOHIGHLEVEL_LOCATION_ID"
+live_assert "GOHIGHLEVEL_LOCATION_ID present in the session env or the install's secrets env" \
+  "env_var_is_set GOHIGHLEVEL_LOCATION_ID"
 live_assert "verify-ghl-live.sh exits 0 (caf reaches GHL) or 2 (missing-prereqs) — never 1" \
   "bash \"$CAF_DIR/engine/verify-ghl-live.sh\" >/dev/null 2>&1; rc=\$?; [ \"\$rc\" -eq 0 ] || [ \"\$rc\" -eq 2 ]"
 
@@ -382,8 +349,8 @@ live_assert "wrapper file is executable"          "[ -x \"$CAF_DIR/caf\" ]"
 # ── Section B: Credentials (live-box only) ───────────────────────────────────
 echo ""
 echo "── Section B: Credentials (live-box) ──"
-if [ "$LIVE_MODE" -eq 1 ]; then
-  source "$HOME/.openclaw/secrets/.env" 2>/dev/null || true
+if [ "$LIVE_MODE" -eq 1 ] && [ -n "${SECRETS_ENV:-}" ] && [ -f "$SECRETS_ENV" ]; then
+  source "$SECRETS_ENV" 2>/dev/null || true
 fi
 # 11-alias fallback resolver — passes on pre-v12 boxes where the PIT is stored under a legacy name
 RESOLVED_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
@@ -428,10 +395,10 @@ live_assert "qc-trinity-registry.sh exists and is executable" \
 # --conversational (not just that the script exists) — the claimed hard gate must be wired.
 live_assert "qc-built-workflow.sh wires --conversational to exec qc-trinity-registry.sh + FAIL WF-19" \
   "grep -q -- '--conversational' \"$SKILL44_DIR/qc-built-workflow.sh\" && grep -q 'qc-trinity-registry.sh' \"$SKILL44_DIR/qc-built-workflow.sh\" && grep -q 'record_fail \"WF-19\"' \"$SKILL44_DIR/qc-built-workflow.sh\""
-live_assert "24-self-test-hook.sh exists" \
-  "[ -f \"$SKILL38_DIR/scripts/24-self-test-hook.sh\" ]"
-live_assert "24-self-test-hook.sh credential read is alias-aware (GOHIGHLEVEL_API_KEY)" \
-  "grep -qE 'GOHIGHLEVEL_API_KEY' \"$SKILL38_DIR/scripts/24-self-test-hook.sh\""
+# NOTE (scoped pack): Skill 38's 24-self-test-hook.sh belongs to the excluded
+# OpenClaw host layer and does not ship in this pack, so its former assertions
+# are a visible skip here, not a silent drop.
+echo "  SKIP: 24-self-test-hook.sh checks (subject is in the excluded host layer; not shipped in this pack)"; SKIP=$((SKIP+2))
 
 # ── Section F: Core files (live-box only) ────────────────────────────────────
 echo ""

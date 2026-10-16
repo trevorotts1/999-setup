@@ -209,7 +209,7 @@ operator-authorized account. Any asset it creates as proof (a throwaway
 form/survey) **MUST be unambiguously labeled** so it can never be mistaken for a
 real business asset, e.g.:
 
-    TEST - OpenClaw Skill6 Verification - DO NOT USE
+    TEST - Skill6 Verification - DO NOT USE
 
 and must be **deleted** at the end of the run (the builders already delete their
 scratch asset in `finally`). Never leave a test asset behind under a client's real

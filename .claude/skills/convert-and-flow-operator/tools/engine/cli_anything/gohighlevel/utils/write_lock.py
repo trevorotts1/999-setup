@@ -11,7 +11,7 @@ Usage:
         # all internal-API writes here
 
 The lock file path is:
-    ~/.openclaw/tools/convert-and-flow-cli/data/locks/<location_id>.lock
+    <engine>/data/locks/<location_id>.lock  (the engine's in-tree data dir)
 
 The lock is an advisory file lock (fcntl.flock on POSIX).  A second process
 attempting to acquire the same lock will BLOCK until the first releases it.
@@ -85,7 +85,7 @@ def _get_thread_lock(location_id: str) -> threading.RLock:
 def _locks_dir() -> Path:
     override = os.environ.get("CAF_DATA_DIR", "").strip()
     base = Path(override) if override else (
-        Path.home() / ".openclaw" / "tools" / "convert-and-flow-cli" / "data"
+        Path(__file__).resolve().parents[3] / "data"
     )
     d = base / "locks"
     d.mkdir(parents=True, exist_ok=True)

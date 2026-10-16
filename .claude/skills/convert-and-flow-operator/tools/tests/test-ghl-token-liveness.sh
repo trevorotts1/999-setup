@@ -3,23 +3,33 @@
 #
 # THE BUG THIS EXISTS TO CATCH (production failure, 2026-06-23 -> 2026-08-27):
 # the liveness check resolved credentials with "process env wins over file", but
-# the gateway hands this cron a START-TIME SNAPSHOT of the box env. A 63-character
-# placeholder sitting in openclaw.json env.vars therefore masked a valid
-# 503-character token in secrets/.env. The check failed, and its failure branch
-# messages the CLIENT directly — so a stale-config bug became 65 days of
-# "your Convert and Flow connection expired, go re-grab your token" messages to a
-# paying client whose automations were working the whole time (the engine, caf,
-# does `set -a; source secrets/.env`, so the FILE always won for the engine).
+# the agent process is handed a START-TIME SNAPSHOT of the environment. A
+# 63-character placeholder sitting in the provisioned env therefore masked a
+# valid 503-character token in the secrets env file. The check failed, and its
+# failure branch notified the CLIENT directly — so a stale-config bug became 65
+# days of "your Convert and Flow connection expired, go re-grab your token"
+# messages to a paying client whose automations were working the whole time
+# (the engine, caf, sources the secrets env file, so the FILE always won for
+# the engine).
 #
-# The invariant under test: TEST WHAT caf WILL ACTUALLY USE, and never message the
-# client for anything that is not a CONFIRMED credential failure.
+# The invariant under test: TEST WHAT caf WILL ACTUALLY USE, and never notify
+# the client for anything that is not a CONFIRMED credential failure.
 #
-# SAFETY: runs entirely in a throwaway sandbox HOME. The `openclaw message send`
-# line is sed-stubbed AND the NO_SEND hook is set; python3 is PATH-shadowed by a
-# fake that returns canned results, so no network call and no message is ever made.
-# Asserted below before anything runs.
+# HARNESS FORM (Claude Code / 999): the script under test keeps state in its
+# own state dir (pinned here via GHL_TOKEN_LIVENESS_STATE_DIR), reads the
+# canonical secrets file from $SECRETS_ENV (pinned to the sandbox file), and
+# SURFACES the client notification as a state-dir artifact + stdout instead
+# of sending it through a gateway channel. The suite asserts that surfacing
+# contract: artifact written, .notified stamp set, exit 1 — and, under the
+# NO_SEND hook, neither artifact nor stamp.
 #
-# USAGE:  bash 44-convert-and-flow-operator/tools/tests/test-ghl-token-liveness.sh
+# SAFETY: runs entirely in a throwaway sandbox. There is no send line left in
+# the adapted script to stub (asserted below: zero `openclaw message send`
+# occurrences); the NO_SEND hook is set for the exchange scenarios, and
+# python3 is PATH-shadowed by a fake that returns canned results, so no
+# network call is ever made.
+#
+# USAGE:  bash tools/tests/test-ghl-token-liveness.sh
 # EXIT:   0 all good, non-zero on a failed precondition.
 
 set -uo pipefail
@@ -28,23 +38,16 @@ TARGET="${GHL_LIVENESS_TARGET:-$SELF_DIR/../check-ghl-token-liveness.sh}"
 [ -f "$TARGET" ] || { echo "ABORT: script under test not found: $TARGET"; exit 9; }
 SB="$(mktemp -d "${TMPDIR:-/tmp}/ghl-liveness-test.XXXXXX")"
 trap 'rm -rf "$SB"' EXIT
-mkdir -p "$SB/home/.openclaw/secrets" "$SB/home/.openclaw/workspace" "$SB/state" "$SB/fakebin"
-printf '{"channels":{"telegram":{"allowFrom":["123456789"]}}}\n' > "$SB/home/.openclaw/openclaw.json"
-SEC="$SB/home/.openclaw/secrets/.env"
-[ -d /data/.openclaw ] && { echo "ABORT: /data/.openclaw exists locally"; exit 9; }
-# Use a synthetic operator ID in the sandbox copy and the rejection probe.
-# Production exclusion rules are unchanged; no real recipient is a fixture target.
-sed -e 's/5252140759/990000001/g' \
-    -e 's|^if openclaw message send|if echo STUB \&\& false; then :; elif false|' \
-    -e "s|^STATE_DIR=.*|STATE_DIR=\"$SB/state\"|" "$TARGET" > "$SB/prop.sh"
-echo "neutered: live-send-lines=$(/usr/bin/grep -c '^if openclaw message send' "$SB/prop.sh") stub=$(/usr/bin/grep -c '^if echo STUB' "$SB/prop.sh") state=$(/usr/bin/grep -c "^STATE_DIR=\"$SB/state\"" "$SB/prop.sh")"
-# fake python3: canned exchange result / canned chat id; never touches the network
+mkdir -p "$SB/state" "$SB/fakebin"
+SEC="$SB/secrets.env"
+cp "$TARGET" "$SB/prop.sh"
+echo "adapted-script check: live-send-lines=$(/usr/bin/grep -c 'openclaw message send' "$TARGET" || true) (must be 0)"
+# fake python3: canned exchange result; never touches the network.
 cat > "$SB/fakebin/python3" <<'EOF'
 #!/bin/bash
 IN=$(cat)
 case "$IN" in
   *grant_type*) printf '%s\n' "${FAKE_EXCHANGE:-VALID}" ;;
-  *allowFrom*)  printf '%s\n' "${FAKE_CHAT:-123456789}" ;;
   *) echo "fake-python3: unexpected use" >&2; exit 97 ;;
 esac
 EOF
@@ -59,8 +62,8 @@ run() { # label [VAR=val ...]   (env passed through)
   local label="$1"; shift
   for b in $BASHES; do
     rm -f "$SB/state"/*; local out rc
-    out=$(cd "$SB" && env -i HOME="$SB/home" PATH="$SB/fakebin:/usr/bin:/bin" "$@" "$b" "$SB/prop.sh" 2>&1); rc=$?
-    printf '  [%-7s bash%s] rc=%s stamps=[%s] :: %s\n' "$label" "$($b --version | head -1 | sed -E 's/.*version ([0-9]).*/\1/')" "$rc" "$(ls "$SB/state" 2>/dev/null | sed -E 's/ghl-token-liveness-[0-9-]+//' | tr '\n' ' ')" "$(printf '%s' "$out" | /usr/bin/grep -E 'RESOLVED|SKIP|CONFIG PROBLEM|DRIFT|PASS|FAIL|NO_SEND|already|refusing|STUB|WARN|unbound|error' | cut -c1-150 | tr '\n' '|' | cut -c1-420)"
+    out=$(cd "$SB" && env -i HOME="$SB/home" PATH="$SB/fakebin:/usr/bin:/bin" SECRETS_ENV="$SEC" GHL_TOKEN_LIVENESS_STATE_DIR="$SB/state" "$@" "$b" "$SB/prop.sh" 2>&1); rc=$?
+    printf '  [%-7s bash%s] rc=%s stamps=[%s] :: %s\n' "$label" "$($b --version | head -1 | sed -E 's/.*version ([0-9]).*/\1/')" "$rc" "$(ls "$SB/state" 2>/dev/null | sed -E 's/ghl-token-liveness-[0-9-]+//' | tr '\n' ' ')" "$(printf '%s' "$out" | /usr/bin/grep -E 'RESOLVED|SKIP|CONFIG PROBLEM|DRIFT|PASS|FAIL|NO_SEND|already|CLIENT NOTIFICATION|unbound|error' | cut -c1-150 | tr '\n' '|' | cut -c1-420)"
   done
 }
 hdr() { echo; echo "### $1"; }
@@ -79,11 +82,10 @@ hdr "R10 env only, no file at all (expect source=process-env, drift=yes ABSENT, 
 hdr "R11 unreadable secrets file + env STALE (expect no crash; file unreadable => env used, drift ABSENT)"; printf 'GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=%s\n' "$FILE" > "$SEC"; chmod 000 "$SEC"; run R11 GHL_LIVENESS_RESOLVE_ONLY=1 GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN="$STALE"; chmod 600 "$SEC"
 hdr "S1 exchange VALID, no drift (expect PASS rc0, .ok only)"; printf 'GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN=%s\n' "$FILE" > "$SEC"; run S1 FAKE_EXCHANGE=VALID GHL_LIVENESS_NO_SEND=1
 hdr "S2 exchange VALID + drift (expect PASS + DRIFT PERSISTS rc2, .ok + .drift)"; run S2 FAKE_EXCHANGE=VALID GHL_LIVENESS_NO_SEND=1 GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN="$STALE"
-hdr "S3 TOKEN_EXPIRED (expect FAIL -> NO_SEND would-notify rc1, no stamp since not sent)"; run S3 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED GHL_LIVENESS_NO_SEND=1
+hdr "S3 TOKEN_EXPIRED + NO_SEND (expect FAIL -> NO_SEND would-surface rc1, no artifact, no stamp)"; run S3 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED GHL_LIVENESS_NO_SEND=1
 hdr "S4 NETWORK_ERROR (expect CONFIG PROBLEM rc2, no notify)"; run S4 FAKE_EXCHANGE=NETWORK_ERROR:timeout GHL_LIVENESS_NO_SEND=1
 hdr "S5 HTTP 429/500 shaped INVALID (expect CONFIG PROBLEM rc2)"; run S5 "FAKE_EXCHANGE=INVALID:Too Many Requests" GHL_LIVENESS_NO_SEND=1
-hdr "S6 USER_DISABLED (expect credential path rc1)"; run S6 FAKE_EXCHANGE=INVALID:USER_DISABLED GHL_LIVENESS_NO_SEND=1
-hdr "S7 .notified guard (expect rc1 already-notified, nothing else)"; touch "$SB/state/ghl-token-liveness-$(date -u +%Y-%m-%d).notified"; for b in $BASHES; do out=$(cd "$SB" && env -i HOME="$SB/home" PATH="$SB/fakebin:/usr/bin:/bin" FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED "$b" "$SB/prop.sh" 2>&1); echo "  [S7 $(basename $b)] rc=$? :: $(printf '%s' "$out" | /usr/bin/grep -E 'already|FAIL|NO_SEND' | cut -c1-120)"; done; rm -f "$SB/state"/*
-hdr "S8 operator chat id resolved (expect refusing, rc1, no send)"; run S8 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED FAKE_CHAT=990000001
-hdr "S9 send path WITHOUT NO_SEND hook: stub must be hit (expect STUB + WARN not notified, rc1, no .notified stamp)"; run S9 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED
+hdr "S6 USER_DISABLED + NO_SEND (expect credential path rc1)"; run S6 FAKE_EXCHANGE=INVALID:USER_DISABLED GHL_LIVENESS_NO_SEND=1
+hdr "S7 .notified guard (expect rc1 already-surfaced, nothing else)"; touch "$SB/state/ghl-token-liveness-$(date -u +%Y-%m-%d).notified"; for b in $BASHES; do out=$(cd "$SB" && env -i HOME="$SB/home" PATH="$SB/fakebin:/usr/bin:/bin" SECRETS_ENV="$SEC" GHL_TOKEN_LIVENESS_STATE_DIR="$SB/state" FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED "$b" "$SB/prop.sh" 2>&1); echo "  [S7 $(basename $b)] rc=$? :: $(printf '%s' "$out" | /usr/bin/grep -E 'already|FAIL|NO_SEND' | cut -c1-120)"; done; rm -f "$SB/state"/*
+hdr "S8 surfacing WITHOUT NO_SEND (expect CLIENT NOTIFICATION surfaced, artifact .notification.txt + .notified stamp, rc1)"; run S8 FAKE_EXCHANGE=INVALID:TOKEN_EXPIRED
 echo; echo "leftover state files: $(ls "$SB/state" | wc -l | tr -d ' ')"

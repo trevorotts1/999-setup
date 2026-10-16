@@ -116,18 +116,15 @@ re-drive the canvas per client box.
 
 ---
 
-## 6. OpenClaw managed browser `--frame` path (Lane 2, experimental)
+## 6. Managed-browser `--frame` path (Lane 2 — NOT AVAILABLE in this harness)
 
-OpenClaw 2.0+ ships a managed browser with native frame scoping. This is the
-**experimental upgrade lane** — selected ONLY when the capability probe picks the
-`openclaw_managed_browser` lane. It **NEVER silently substitutes** for the
-agent-browser PRIMARY path (§2) — the 5-rung ladder above stays the Skill 6
-doctrine until the managed lane is proven per client.
-
-```bash
-openclaw browser snapshot --frame "iframe#EDITOR_ID" --interactive
-openclaw browser click e12   # refs scoped to that frame until next role snapshot
-```
+The OpenClaw managed browser's native frame scoping is the source-side
+experimental upgrade lane. In this harness the `openclaw_managed_browser`
+lane is structurally absent: the capability probe never selects it and the
+adapter refuses every verb (exit 75). Frame-scoped work here runs on the
+Lane 1b hybrid (agent-browser + Playwright CDP, §2-§5). The notes below are
+retained as the record of the lane's semantics for the plan-amendment path;
+they are not runnable here.
 
 - Snapshots can return **frame-qualified refs** (`f1e12` = frame 1, element 12).
 - Refs stay scoped to the selected frame **until the next role snapshot** — never

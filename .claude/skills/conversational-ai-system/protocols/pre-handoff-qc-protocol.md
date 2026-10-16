@@ -13,7 +13,7 @@ Before declaring the run complete, the agent runs this exhaustive QC checklist. 
 
 - [ ] Checkpoint A — Orientation complete (Phase 0)
 - [ ] Checkpoint B — Tunnel verified end-to-end (Phase 1)
-- [ ] Checkpoint C — OpenClaw responds to inbound webhooks (Phase 2)
+- [ ] Checkpoint C — the agent runtime responds to inbound webhooks (Phase 2)
 - [ ] Checkpoint D — Operator has copy-paste materials (Phase 3)
 - [ ] Checkpoint E — Agent is safety-ready and memory-ready (Phase 4)
 - [ ] Checkpoint F — Advanced features active (Phase 5)
@@ -26,10 +26,10 @@ Before declaring the run complete, the agent runs this exhaustive QC checklist. 
 - [ ] `cloudflared` service is running AND auto-start flags verified
 - [ ] Restart Survival Test passed (Step 2G — process killed, OS respawned with new PID)
 - [ ] Public tunnel returns a response to `curl https://$PUBLIC_HOSTNAME/` (any 2xx/3xx/4xx)
-- [ ] `openclaw.json` backup exists at `CONFIG_BACKUP_PATH`
-- [ ] `hooks.mappings` entry for `HOOK_NAME` is present in `~/.openclaw/openclaw.json` with the correct `agentId` from Step 3B
+- [ ] Install configuration backup exists at `CONFIG_BACKUP_PATH`
+- [ ] Server mapping entry for `HOOK_NAME` is present in the client's endpoint configuration with the correct `agentId` from Step 3B
 - [ ] Multi-agent routing question (Step 3B) was asked and answered; `ROUTING_AGENT_ID` captured
-- [ ] `openclaw config validate` exits clean
+- [ ] The endpoint configuration validates clean
 - [ ] Localhost smoke test (Step 3E) returned 200
 - [ ] Public end-to-end test (Step 4) returned 200
 
@@ -73,7 +73,7 @@ All of the following exist in `MASTER_FILES_DIR`:
 - [ ] `conversation-workflows/registry.md` (Step 9.20, v5.3)
 - [ ] At least one Conversation Workflow file in `conversation-workflows/` (or operator deferred — noted in manifest)
 - [ ] `humanizer-protocol.md` (Step 9.21, v5.5)
-- [ ] Humanizer skill installed at `~/.openclaw/skills/humanizer*` (or install failure noted for later retry)
+- [ ] Humanizer skill installed in the install's skills directory (or install failure noted for later retry)
 - [ ] `agent-capabilities-playbook.md` (Step 10)
 - [ ] `conversational-logs/` folder
 - [ ] `knowledge-sources/` folder with `registry.md`
@@ -85,19 +85,19 @@ All of the following exist in `MASTER_FILES_DIR`:
 ### Model and cron verification
 
 - [ ] Model selection wizard (Step 3.5) completed: `REALTIME_MODEL_PRIMARY`, `ASYNC_MODEL_PRIMARY`, `BATCH_MODEL` all captured
-- [ ] Chosen models exist in OpenClaw's `agents.defaults.models` catalog
+- [ ] Chosen models exist in the runtime's configured model catalog
 - [ ] `model` field present in hooks.mappings entry; `fallbacks` chain configured
-- [ ] Batch model present in cron job entry for `conversation-log-summarizer`
-- [ ] Cron job `conversation-log-summarizer` registered and visible in `openclaw cron list`
-- [ ] `system-health-heartbeat` cron registered (schedule: `0 9 1 * *`) and visible in `openclaw cron list`
-- [ ] `analytics-weekly-digest` cron registered (schedule: `0 8 * * 1`, v5.3) and visible in `openclaw cron list`
+- [ ] Batch model present in the scheduled job entry for `conversation-log-summarizer`
+- [ ] Scheduled job `conversation-log-summarizer` registered and visible in the operator's scheduler listing
+- [ ] `system-health-heartbeat` job registered (schedule: `0 9 1 * *`) and visible in the operator's scheduler listing
+- [ ] `analytics-weekly-digest` job registered (schedule: `0 8 * * 1`, v5.3) and visible in the operator's scheduler listing
 
 ### v5.3 Dreaming + Embeddings verification
 
 - [ ] Self-Orientation O.6 ran — embeddings provider configured (Google text-embedding-004 default, or operator's existing provider preserved)
 - [ ] `GEMINI_API_KEY` (or other provider key) present in env file
-- [ ] Dreaming enabled in OpenClaw config with cron `0 3 * * *` and standard threshold gates (minScore 0.8, minRecallCount 3, minUniqueQueries 3)
-- [ ] Dreaming cron job visible in `openclaw cron list`
+- [ ] Dreaming enabled in the runtime configuration with a scheduled job `0 3 * * *` and standard threshold gates (minScore 0.8, minRecallCount 3, minUniqueQueries 3)
+- [ ] Dreaming job visible in the operator's scheduler listing
 
 ### v5.3 Smart Booking verification
 

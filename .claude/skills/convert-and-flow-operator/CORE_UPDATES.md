@@ -41,7 +41,7 @@ RUSHING TO A DEFAULT BUILD WITHOUT PLAN MODE IS A VIOLATION.
 After building a workflow, do NOT say "done." STEPS:
   1. Send the verbatim client announce: "I've built the workflow. Before I call it done,
      I'm running an independent QC agent to verify it against the checklist item-by-item.
-     One moment." (via openclaw message send --channel telegram)
+     One moment." (surfaced in the session for delivery through the client's configured channel)
   2. Spawn an independent MiniMax QC sub-agent (via sessions_send, verify model available
      first — prefer minimax/minimax-m3 via OpenRouter or minimax-m3:cloud; fall back to
      next independent high-reasoning model and record which was used).
@@ -111,7 +111,7 @@ Add this section:
 
 Commands: caf / convertandflow / ghl
 
-Installed at: ~/.openclaw/tools/convert-and-flow-cli/caf (Mac) or /data/.openclaw/tools/convert-and-flow-cli/caf (VPS)
+Installed in-tree at: tools/engine/caf (.claude/skills/convert-and-flow-operator/tools/engine/caf)
 Health: caf doctor
 
 | Domain | Commands |
@@ -159,7 +159,7 @@ Credentials: GOHIGHLEVEL_API_KEY (agency PIT — used for add-user via the publi
 ```
 ## Convert and Flow Operator — Installed [DATE]
 
-Skill 44 (Tier 0) installed. CLI at ~/.openclaw/tools/convert-and-flow-cli/.
+Skill 44 (Tier 0) installed. CLI in-tree at tools/engine/ inside the convert-and-flow-operator skill.
 Credentials: GOHIGHLEVEL_API_KEY (PIT), GOHIGHLEVEL_LOCATION_ID.
 Firebase token for workflow writes: GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN (optional at install).
 Write safety: GOHIGHLEVEL_DRAFT_ONLY=true, location whitelist, approval gate.

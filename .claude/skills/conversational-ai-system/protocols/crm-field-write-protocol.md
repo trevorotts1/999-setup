@@ -115,7 +115,7 @@ know the exact id/type/allowed-options for a write.
 
 ## F35 weekly tune-up reviews field usage
 
-The weekly tune-up (F35, `weekly-tune-up-protocol.md`, Sunday 2am cron) reviews
+The weekly tune-up (F35, `weekly-tune-up-protocol.md`, Sunday 2am scheduled run) reviews
 CRM-field usage by reading `crm-field-mappings.md` + the write log
 (`crm-field-writes-log.jsonl`): which `ZHC_`-prefixed fields the agent created,
 how often each is populated, whether any created field is unused (a candidate to
@@ -161,7 +161,7 @@ object per line):
 
 The JSONL schema is also documented in `INSTRUCTIONS.md` (Phase 5 data contract table).
 
-## openclaw.json toggles
+## Configuration toggles — in the install's skill38 configuration
 
 ```json
 {

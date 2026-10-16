@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Convert and Flow CLI installer (Mac path).
-# Installs into ~/.openclaw/tools/convert-and-flow-cli/.venv
-# Credentials go in ~/.openclaw/secrets/.env — NOT in this directory.
+# Convert and Flow CLI installer (Claude Code harness / 999 edition).
+# Installs the venv in-tree, inside this skill's own tools/engine directory
+# (.venv next to the engine source). There is no separate installed copy
+# elsewhere on the box in this harness.
+# Credentials go in this install's own secrets env — NOT in this directory.
 #
 # Usage:
 #   bash install.sh            # install / upgrade
@@ -10,7 +12,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_DIR="${VENV_DIR:-$HOME/.openclaw/tools/convert-and-flow-cli/.venv}"
+VENV_DIR="${VENV_DIR:-$SCRIPT_DIR/.venv}"
 PY=${PYTHON:-python3}
 
 echo "Convert and Flow CLI installer"
@@ -40,7 +42,7 @@ pip install -e "$SCRIPT_DIR" -q
 # instead of trusting source-on-disk. Mirrors the stamp written by the skill's
 # root wire.sh. `set -e` is active, so reaching here means `pip install -e`
 # succeeded; the `|| echo` keeps a failed stamp write non-fatal.
-INSTALL_ROOT="$(dirname "$VENV_DIR")"                    # ~/.openclaw/tools/convert-and-flow-cli
+INSTALL_ROOT="$(dirname "$VENV_DIR")"                    # in-tree engine dir (holds the drift stamp)
 SKILL_SRC="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)" # engine -> tools -> skill root
 SRC_VER="$( (tr -d '[:space:]' < "$SKILL_SRC/skill-version.txt") 2>/dev/null || echo unknown )"
 [ -z "$SRC_VER" ] && SRC_VER="unknown"
@@ -68,7 +70,7 @@ echo
 echo "Install complete."
 echo
 echo "Next steps:"
-echo "  1. Add credentials to ~/.openclaw/secrets/.env:"
+echo "  1. Add credentials to this install's secrets env file (the file \$SECRETS_ENV names):"
 echo "       GOHIGHLEVEL_API_KEY=pit-..."
 echo "       GOHIGHLEVEL_LOCATION_ID=..."
 echo "  2. Smoke test:"

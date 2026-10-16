@@ -43,7 +43,7 @@ One line per tool: what it is + when to reach for it. Files grouped by role; alp
 - `ghl_iframe_drag.py` — shared frame-scoped coordinate-drag primitive; the `IFRAME_SELECTORS` constant (kind → selector map) lives here.
 - `ghl_iframe_dragdrop.py` — cross-origin-iframe drag/drop + ref-less-tab fallbacks; reach for it when the same-origin drag primitive reports a cross-origin canvas.
 - `iframe_router.py` — the SINGLE adaptive iframe entrypoint (`route_drag`/`route_click`): picks the AB ladder vs Playwright CDP from the capability receipt (`iframeDrag.available`); multi-iframe ambiguity and a stale `frame_epoch` fail closed — route through it instead of hand-picking a lane.
-- `iframe-survival-targets.json` — target list for the weekly iframe-survival probe run by `ghl_selector_drift_probe.py`. Ships EMPTY by design: an empty list is a valid clean run, but a zero-target pass proves nothing (loud-empty WARN in the report); the operator populates real published-page URLs from the operator TEST sub-account on the cron box.
+- `iframe-survival-targets.json` — target list for the weekly iframe-survival probe run by `ghl_selector_drift_probe.py`. Ships EMPTY by design: an empty list is a valid clean run, but a zero-target pass proves nothing (loud-empty WARN in the report); the operator populates real published-page URLs from the operator TEST sub-account on the box running the weekly schedule.
 
 ## Capability (probe + browser lifecycle)
 
@@ -51,5 +51,5 @@ One line per tool: what it is + when to reach for it. Files grouped by role; alp
 - `browser_manager.sh` — source it and call `bm_ensure`: breaker-check → lock → lease → TTL → open, with automatic EXIT-trap teardown; always bracket agent-browser calls with it.
 - `ghl_ab_executor.py` — agent-browser 0.27.0 ANCHOR→EXECUTOR resolver; route every builder click/fill through it so Playwright-style anchors become valid `find`/`eval` invocations.
 - `capability_probe.py` — SHIPPED (P0-6): probes the host and writes `working/skill6-capability.json` with the selected lane + fallback chain and per-lane availability (booleans only — never secret values); `--reprobe` refreshes the receipt; Day-0 acceptance is `selectedLane != null`.
-- `openclaw_browser_adapter.sh` — Lane 2 adapter mapping builder verbs onto `openclaw browser …`; runs ONLY when the probe selected `openclaw_managed_browser` AND `lanes.openclaw_managed_browser.cliWorks` is true (refuses exit 75 otherwise) — NEVER selected by default.
+- `openclaw_browser_adapter.sh` — Lane 2 adapter mapping builder verbs onto `openclaw browser …`. In this harness it is GATED OFF: every verb refuses exit 75 naming the claude-nine route (the OpenClaw browser CLI is not available here), and the capability probe reports the lane structurally absent so it is never selected. The verb mapping is retained verbatim as the documented translation for the plan-amendment path.
 - `cua_last_resort_adapter.sh` — CUA/computer-use last-resort CONTRACT wrapper (never a driver): reads the probe's CUA lane fields and, only behind `GHL_SKILL6_ALLOW_CUA=1` explicit operator opt-in, writes a waiver receipt; nothing launches a browser or drives a pointer.
