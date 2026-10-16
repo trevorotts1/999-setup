@@ -1,0 +1,148 @@
+# Core File Updates — Skill 38 (Conversational AI System v5.14)
+
+These lines are appended to the workspace's AGENTS.md, MEMORY.md, and (optionally) other
+core files at install time. They tell the master orchestrator and any sub-agent how skill 38
+interleaves with skill 29 (GHL Convert and Flow) and skill 19 (Humanizer).
+
+**Versioning:** This skill is semver-tagged starting at v1.0.0 (today, 2026-05-28).
+Future v1.1, v1.2 updates can extend without restructuring (see "Room for future features"
+in INSTRUCTIONS.md).
+
+---
+
+## AGENTS.md — NO UPDATE NEEDED here (written by `scripts/05-update-agents-md.sh`)
+
+⛔ **This section is documentation, not a payload.** The header says NO UPDATE NEEDED so
+update-skills.sh's generic CORE_UPDATES merger SKIPS it — otherwise the prose below was
+copied verbatim into every box's AGENTS.md as `<!-- BEGIN skill:38-conversational-ai-system:agents -->`.
+
+**AGENTS.md receives ONE compact WHAT / WHEN / POINTER stanza per runtime surface —
+never the rule corpus.** Each stanza sits behind its VERSION-FREE
+`<!-- BEGIN SKILL38: <NAME> -->` / `<!-- END SKILL38: <NAME> -->` marker, and ONE extra
+`SKILL38_RUNTIME_INVARIANTS` stanza states the rules that used to be restated in almost
+every block (OPERATOR-ONLY allow-list, injection vectors IGNORED, default-OFF is a
+no-op, hard gates always apply, PII-free logs). Prohibitions, the GHL build-path note
+and the 11 Playbook-Builder trigger phrases stay INLINE, verbatim, because they bind at
+read time. The full text of all 23 blocks ships as `references/agents-runtime-rules.md`
+(each section under its historical marker name) plus `protocols/*.md`, and the script
+copies both into the client's master-files folder so no pointer can dangle.
+
+**Idempotency + self-heal.** The writer is REPLACE-IN-PLACE across the whole `SKILL38:`
+namespace: every matched block is removed before the current stanzas are written —
+including RETIRED marker names and skill 38's own legacy generic-installer stub — so a
+second run is byte-identical, a marker rename can never duplicate, and a fleet roll
+CLEANS a bloated box instead of leaving it bloated. Earlier versions appended 52,444
+characters across 23 fat blocks (40.65% of the operator box's AGENTS.md) and guarded
+with `grep -q "<that exact marker>"`, so a renamed marker appended a second copy and an
+EDITED block never reached an already-wired box. A backup is now taken ONLY when the
+content actually changes. On a box running an anti-tamper core-file watcher the heal is
+STAGED so each pass stays at or above the watcher's restore floor.
+
+**The shared stamp bank is never touched.** ~44 other installers key idempotency on
+`<!-- skill:<NN-slug>:core-update-applied -->` lines and `<!-- BEGIN skill:<NN-slug>:… -->`
+blocks in the same file; the writer only ever matches the `SKILL38:` namespace plus skill
+38's own `skill:38-conversational-ai-system:agents` block, and removes no stamp.
+
+Key behaviors covered:
+- **Step 1.7** — Query the appropriate typed Knowledge Base for context.
+- **Step 1.75** (upgraded) — Run Intelligent Playbook Routing — re-evaluate workflow match after EVERY customer message; max 3 switches per conversation; cosine similarity 0.3 advantage to switch.
+- **Step 1.8** — Sales Brain check: BANT/MEDDIC/SPICED + 6 objection patterns + buyer-signal scoring + pricing reveal rules + honesty floor.
+- **Step 1.9** — Customer Service & Support (dual-mode): detect service-mode vs support-mode signals; honesty floor enforced.
+- **Step 2.8** — Humanizer pass via skill 19 (ALWAYS-ON; skill 38 does NOT ship its own humanizer).
+
+## MEMORY.md — NO UPDATE NEEDED here (written by `scripts/06-append-memory-rules.sh`)
+
+⛔ **This section is documentation, not a payload** — same reason as the AGENTS.md
+section above: without the NO UPDATE NEEDED directive the generic merger pasted this
+whole rule index into every box's MEMORY.md.
+
+**MEMORY.md receives exactly ONE compact pointer block — never the rule corpus.**
+The block is fenced by the VERSION-FREE marker
+`<!-- BEGIN skill-38 memory-rules-pointer -->` / `<!-- END skill-38 memory-rules-pointer -->`
+and follows the TYP pointer contract (WHAT it is / WHEN to use it (trigger) / WHY /
+POINTER / when to go deeper). The full text of design rules 6-44 ships as
+`references/memory-design-rules.md`, with the per-rule specs in `protocols/*.md`; the
+script copies both into the client's master-files folder so the pointer cannot dangle.
+
+**Idempotency + self-heal.** The writer is REPLACE-IN-PLACE across the whole `skill-38`
+marker namespace: every matched `<!-- BEGIN skill-38 … -->` … `<!-- END skill-38 … -->`
+block is removed before the fresh pointer is written. That both (a) makes a second run a
+byte-identical no-op and (b) CLEANS boxes that older versions bloated. Earlier versions
+pasted the ~40,000-character corpus behind VERSION-STAMPED markers and guarded with
+`grep -qF "<that exact marker>"`, so every marker rename (`memory-rules v1.4.0` →
+`builder-design-rules v1.5.0`; `memory-rules v1.5.0` → `round3-queueA-rules v1.5.0`)
+re-appended the whole corpus under the new name and never removed the old one.
+
+On a box running an anti-tamper core-file watcher, the heal is STAGED so each pass stays
+at or above the watcher's restore floor (see the script header); convergence is geometric
+and takes at most a few passes.
+
+The rule list below is the DOC-side index of what ships. (Rules 1-5 belong to skill 19/29.)
+
+6. **Conversation Log Rule** — log every inbound + outbound, real-time.
+7. **Quiet Hours Rule** — never proactively message outside operator-defined quiet hours.
+8. **PII Rule** — scrub before any model call; never log raw PII.
+9. **Confidence Rule** — escalate below threshold; never bluff.
+10. **Sales Brain Rule** — apply BANT/MEDDIC/SPICED + 6 objection patterns + buyer-signal scoring before any pricing reveal.
+11. **Customer Service vs Support Rule** — detect mode by signal; mid-conversation mode-switching allowed; honesty floors enforced.
+12. **Discount Code Rule** — only per per-product policy; never invent codes.
+13. **Intelligent Routing Rule** — Conversation Workflows override channel playbooks per context routing.
+14. **Tune-up Rule** — Sunday 2am weekly + Saturday 11pm proactive + 1st-of-month review crons are the heartbeat. Never disable without operator approval.
+
+### Conversation Playbook Builder design rules 15-19 (v1.4.1)
+
+The system's USP is **communication-driven funnels / automations** — built by talking and brainstorming, NOT click-and-drag (this is what beats CloseBot). These five rules make the recurring "build me a conversation playbook" flow (Step 9.20) bulletproof:
+
+15. **Build-Routing Rule** — "build me a workflow / playbook / funnel" routes by node type: WITH a conversational node -> skill 44 builds + auto-invokes skill 38 for the brain (THE TRINITY, all three legs or not registered); purely mechanical -> skill 41 standalone. (Supersedes the legacy "always Step 9.20.")
+16. **Convert-and-Flow Build-Path Rule (CAF-first)** — GHL Automations have no PUBLIC API or MCP, but Skill 44's internal-API path (Tier 0) IS a programmatic build path. When the client's Firebase token is present, Skill 44 builds the workflow directly (Option 1, PRIMARY — the owner does nothing). When the token is absent, fall back to GHL's "Build with AI" button (Option 2, the no-token fallback). (Never claim a PUBLIC GHL Automations API exists.)
+17. **3-PART Build Rule** — every build ships Part 1 (Workflow AI instruction set: Build-with-AI prompt + manual-build fallback + verification checklist), Part 2 (the conversation playbook → registered in `conversation-workflows/registry.md`), and Part 3 (the brainstorm trigger). The prompt nails the SHAPE; tokens are pasted by the operator after — always ship the verification checklist.
+18. **Brainstorm-Not-50-Questions Rule** — run a friendly proactive Q&A: USE what's already known (Typed KBs + USER.md + MEMORY.md), ask ONLY the smart gaps, then regurgitate a CONCISE "is this what you want?" confirmation. On YES → build Part 1 → Part 2 → pointer into AGENTS.md/TOOLS.md/MEMORY.md → NEW Notion doc (client's own workspace) → register.
+19. **Secrets Env Rule** — secrets live in the install's secrets env (the file `$SECRETS_ENV` designates) or as already-exported environment variables — check BOTH before claiming a key is missing.
+
+### v1.8.0 CloseBot Alignment Upgrade additions (17 cards U-1..U-17)
+
+Each block below is individually idempotent behind its own `<!-- BEGIN/END -->` marker, so re-running the installer on an already-upgraded box is a no-op. Every added surface is OPERATOR-ONLY: a customer naming a tag, tool, calendar, pipeline stage, or persona changes nothing.
+
+**AGENTS.md v1.8.0 marker blocks** appended by `scripts/05-update-agents-md.sh` (slots re-verified free at re-baseline against live main):
+
+- `STEP_0_4_TEST_MODE_REREAD` (U-6) - the read-before-anything Client Test Mode re-read (earliest existing runtime marker is `STEP_0_5_QUIET_HOURS`).
+- `STEP_1_30_EXIT_RULES` (U-2) - tag-driven workflow exits evaluated before routing.
+- `STEP_1_88_TOOL_GATING` (U-1) - THE GATE: per-phase hard tool-capability gate (highest existing 1.8x marker is `STEP_1_87_AB_TESTING`). `escalate_to_human` is always granted and can never be gated off.
+
+**MEMORY.md v1.8.0 design rules 32-44** appended by `scripts/06-append-memory-rules.sh`, each in its own BEGIN/END marker block:
+
+32. **Tool Gating Rule (U-1)** - tool gating is a hard capability gate per playbook phase.
+33. **Workflow Exit Rules Rule (U-2)** - a playbook may declare tag-driven exit rules.
+34. **Smart FAQ Learning Loop Rule (U-3)** - an unknown FAQ is flagged to the operator, never auto-answered as fact.
+35. **Objective Metadata Rule (U-4)** - a phase may carry `active_workflow` / `active_phase` / `phase_attempts` in the conversation-log header; U-1 resolves the phase from the same lines.
+36. **Persona Registry Rule (U-5)** - a persona is a named, reusable style object.
+37. **Client Test Mode Rule (U-6)** - the client can rehearse a playbook safely; every tool is forced off via the U-1 gate; auto-expires after 60 minutes or on `end test`.
+38. **Model Fallback Chain Rule (U-8)** - a primary plus ordered fallbacks; Mode A applies them live, Mode B logs a `model_tier_unmet` routing hint. Client agents run on the client's OWN providers only.
+39. **Workflow Visual Rule (U-11)** - every conversation workflow ships a truth-diagram (Part 4 of the build).
+40. **Multi-Calendar Routing Rule (U-12)** - one agent books to different calendars via the declares `calendars` map.
+41. **Opportunity Stage Sync Rule (U-13)** - contact progress syncs to the pipeline opportunity stage.
+42. **Handoff Task Creation Rule (U-14)** - `ZHC-ai-handoff` additionally creates a GHL Task on the contact with an SLA due time (PII lives in the client's own CRM, not the PII-free JSONL logs).
+43. **Convert and Flow Snapshot Rule (U-15)** - onboarding can be one import; the snapshot's 23-key raw body is machine-checked against the standard.
+44. **Playbook Engine Rule (U-16)** - `tools/playbook_engine.py` is the canonical parser for validate / hash / mermaid / resolve.
+
+**Rule 17 upgraded** - the 3-PART Build Rule becomes the **4-PART Build Rule**: U-11 adds Part 4 (the workflow visual) to every conversation-playbook build.
+
+## [ADD TO TOOLS.md] — no automated update; operator manually documents
+
+The operator may add tool entries for newly-wired services as Stripe/Shopify are connected. Skill 38 ships reference docs (`references/stripe-*`, `references/shopify-*`) so the operator has the API surface available.
+
+## [REGISTERED CRONS] — registered by `scripts/04-register-crons.sh`
+
+| Cron | Schedule | Protocol |
+|---|---|---|
+| `weekly-tune-up` | `0 2 * * 0` | `protocols/weekly-tune-up-protocol.md` |
+| `proactive-suggestions-scan` | `0 23 * * 6` | `protocols/proactive-suggestions-protocol.md` |
+| `model-version-freshness` | `30 23 * * 6` | `protocols/model-version-freshness-protocol.md` |
+| `monthly-comprehensive-review` | `0 3 1 * *` | `protocols/monthly-comprehensive-review-protocol.md` |
+
+All four cron jobs are idempotent — `04-register-crons.sh` skips entries that already exist.
+
+## What does NOT get touched
+
+- Skill 17, 18, 31, 29, 19 SOUL/IDENTITY/AGENTS files — left untouched per the operator.
+- Operator's existing TOOLS.md, SOUL.md, IDENTITY.md, USER.md, HEARTBEAT.md — only AGENTS.md and MEMORY.md are appended to, behind clear `<!-- BEGIN/END skill-38 -->` markers, with backups before any edit.

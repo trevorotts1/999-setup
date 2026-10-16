@@ -1,0 +1,151 @@
+# Weekly Conversation AI Tune-up Protocol
+
+> **BUILD path:** caf-direct (Skill 44, Option 1 — PRIMARY) when the Firebase token is present; else Build-with-AI paste (Option 2). See references/GHL_AI_LAYERS.md.
+
+Runs every Sunday at 2:00 AM (operator-configurable). Analyzes the past
+7 days, identifies adjustment opportunities, presents them for operator
+approval.
+
+## What it analyzes
+
+### 1. Recent conversation patterns (past 7 days)
+
+- Topics asked about with no matching Conversation Workflow
+- Conversations where the agent escalated repeatedly for the same reason
+- Conversations where customers expressed frustration despite "successful"
+  outcomes
+- Drift detection events that didn't quite hit thresholds but are
+  trending up
+- Service-to-support mode switches (per Step 9.30) trending up in a
+  specific workflow
+
+### 2. Dreams diary review (past 7 days)
+
+Reads `DREAMS.md` entries from the past week. Dreaming has already done
+pattern-finding work; the tune-up surfaces what Dreaming noticed but
+didn't escalate.
+
+### 3. Bug surface scan
+
+- Knowledge Source fetch failures
+- GHL webhook delivery failures
+- Stripe/Shopify webhook delivery failures (if integrated)
+- Model timeouts or fallback chain triggers
+- Confidence threshold hit rates trending higher than baseline
+- Sentiment escalation events spiking
+- Humanizer skill failures (per Step 9.21)
+
+### 4. Workflow performance check
+
+For each Conversation Workflow:
+- How many times it fired this week
+- Success vs escalation rate
+- Any workflow firing zero times (potentially obsolete)
+- Any workflow firing too often (potentially over-broad)
+
+### 5. CRM auto-created field usage (F46)
+
+Reads `<MASTER_FILES_DIR>/crm-field-mappings.md` (the per-workflow field map) and
+`<MASTER_FILES_DIR>/crm-field-writes-log.jsonl` (the F46 write log — field
+NAME/ID + metadata only, never the raw customer value), and reports, for each
+`ZHC_`-prefixed field the agent auto-created (create-if-missing, F46):
+
+- **Written vs ignored** — how many `field_write` lines targeted it this week vs
+  zero. A `ZHC_` field that was created but never written is an **unused field**:
+  flag it for operator review (a candidate to prune).
+- **Collision with an operator field** — a `ZHC_` field whose name/purpose
+  overlaps an existing operator-owned field (a candidate to consolidate).
+- **Validation-skip patterns** — repeated `field_write_skipped` lines for the
+  same field (its `dataType` keeps rejecting values — maybe it should be a
+  different type).
+
+This closes the F46↔F35 loop: F46 creates fields and logs every write/skip; F35
+reads that log + the mapping and surfaces which auto-created fields earned their
+keep. Findings go into the report's "Adjustments to consider" (no field is
+pruned without operator approval).
+
+## Output
+
+A weekly tune-up report saved to `<MASTER_FILES_DIR>/tune-ups/YYYY-MM-DD-weekly.md`
+and delivered via notification-routing-protocol.md (event type:
+`weekly-tune-up`):
+
+```
+# Weekly Tune-up — <date>
+
+## Quick health summary
+- Conversations this week: <N>
+- New patterns detected: <N>
+- Bugs surfaced: <N>
+- Suggested adjustments: <N>
+
+## Adjustments to consider (no action without your approval)
+
+### High priority
+1. [issue + suggested fix]
+2. ...
+
+### Medium priority
+1. ...
+
+### Low priority / FYI
+1. ...
+
+## Next steps
+Reply YES to any item to authorize the fix.
+Reply DEFER to push it to the monthly review.
+Reply IGNORE to dismiss.
+```
+
+## What it does NOT do
+
+- Does NOT make changes without operator approval
+- Does NOT replace the monthly comprehensive review (Feature 36, when shipped)
+- Does NOT generate full new workflows — only suggests where they might
+  be needed
+- Does NOT touch model configs — that's Feature 37's job (when shipped)
+
+## Recommended model
+
+This is an analytical task requiring deep reasoning. Use the client's
+selected model or their configured default; a top-tier reasoning model is
+RECOMMENDED for this pass (guidance only, never a prescription). The
+client may pin a choice in the install's skill38 configuration under
+`tuneup.model`.
+
+## Implementation
+
+Register a job on the operator's scheduler that runs the weekly tune-up:
+
+```
+schedule: "0 2 * * 0"  ->  run the weekly tune-up
+```
+
+Cron expression `0 2 * * 0` = "minute 0, hour 2, any day, any month,
+day-of-week 0 (Sunday)".
+
+## Operator override
+
+Operator can manually run the tune-up at any time:
+
+> "Run a tune-up now"
+> "Show me this week's tune-up"
+
+Agent runs the same analysis on-demand.
+```
+
+**B. Register the scheduled job (on the operator's scheduler):**
+
+```bash
+schedule: "0 2 * * 0"  ->  run the weekly tune-up
+```
+
+**C. Create the tune-ups folder:**
+
+```bash
+mkdir -p "$MASTER_FILES_DIR/tune-ups"
+```
+
+**D. Append to Run Manifest:**
+
+```markdown

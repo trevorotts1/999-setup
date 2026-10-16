@@ -1,0 +1,75 @@
+{
+  "skill": "38-conversational-ai-system",
+  "prerequisites": [
+    {
+      "id": "skill-05",
+      "type": "skill",
+      "label": "Skill 05 - GHL Setup",
+      "check": {
+        "skill": "05-ghl-setup"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
+    },
+    {
+      "id": "skill-10",
+      "type": "skill",
+      "label": "Skill 10 - GitHub Setup",
+      "check": {
+        "skill": "10-github-setup"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 10 (GitHub Setup) first. It is in the same onboarding package; re-run the installer or install Skill 10 on its own."
+    },
+    {
+      "id": "skill-29",
+      "type": "skill",
+      "label": "Skill 29 - GHL Convert and Flow",
+      "check": {
+        "skill": "29-ghl-convert-and-flow"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 29 (GHL Convert and Flow) first; it is in the same onboarding package. Re-run the installer or install Skill 29 on its own, then re-check prerequisites."
+    },
+    {
+      "id": "skill-07",
+      "type": "skill",
+      "label": "Skill 07 - Kie Setup",
+      "check": {
+        "skill": "07-kie-setup"
+      },
+      "severity": "required",
+      "satisfy": "Install Skill 07 (Kie Setup) first; it provides the Kie.ai account setup and KIE_API_KEY used by the U-11 workflow hero visual. Re-run the installer or install Skill 07 on its own. Without it the build ships the free Mermaid truth diagram only (hero visual skipped)."
+    },
+    {
+      "id": "skill-66",
+      "type": "skill",
+      "label": "Skill 66 - KIE Image",
+      "check": {
+        "skill": "66-kie-image"
+      },
+      "severity": "optional",
+      "satisfy": "Install Skill 66 (KIE Image), the image policy owner: it selects the model and dispatches the U-11 workflow hero visual. Recommended, not required; without it the build ships the free Mermaid truth diagram only (hero visual skipped)."
+    },
+    {
+      "id": "skill-46",
+      "type": "skill",
+      "label": "Skill 46 - Kie Callback Relay",
+      "check": {
+        "skill": "46-kie-callback-relay"
+      },
+      "severity": "optional",
+      "satisfy": "Install Skill 46 (Kie Callback Relay) to route async Kie image jobs via callback instead of polling for the U-11 hero visual. Recommended, not required; without it the generator polls with a 120s timeout."
+    },
+    {
+      "id": "cf-token",
+      "type": "credential",
+      "label": "Cloudflare API Token",
+      "check": {
+        "envVar": "CLOUDFLARE_API_TOKEN"
+      },
+      "severity": "required",
+      "satisfy": "Add CLOUDFLARE_API_TOKEN to the install's secrets env file (the file $SECRETS_ENV designates, chmod 600), or export it in the agent session environment. Create the token at dash.cloudflare.com > My Profile > API Tokens."
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: 2.7.53
+version: v2.9.61
 ---
 
 # Drama Song Ad Factory
@@ -20,12 +20,15 @@ brand name the public product identity.
 
 > "People don't care about the hero until they meet the villain." - Trevor Otts
 
-These are **not music videos**. They are compelling true stories told through
-the animation, the music and the lyrics - songs strong enough to sell as a
+These are **not music videos**. They are dramatizations told through the
+animation, the music and the lyrics - songs strong enough to sell as a
 soundtrack on their own (the Grey's Anatomy standard: you watch the show and
-you buy the music). Every ad has a compelling plot and a villain that evokes
-a visceral response, and every ad carries the **pain AND the rise**, so the
-audience feels the pain and the problem in the depth of their soul.
+you buy the music). A dramatization may be fiction, nonfiction or based on a
+true story; which of the three it is never changes how this skill treats it
+(intake doctrine, "Start here: the enforced flow"). Every ad has a compelling
+plot and a villain that evokes a visceral response, and every ad carries the
+**pain AND the rise**, so the audience feels the pain and the problem in the
+depth of their soul.
 
 - **The villain contract.** Every ad names its VILLAIN in the story plan. A
   villain is a person OR not a person: cancer, debt, a layoff, a lie,
@@ -46,6 +49,55 @@ audience feels the pain and the problem in the depth of their soul.
   `VILLAIN_DOCTRINE` row: villain shots, villain screen seconds, pain
   seconds and rise seconds. The approval card carries
   `Villain: <name>, shown in N shots`.
+
+## Drama-to-Demand Method (supersedes the doctrine above where they differ)
+
+Trevor's method ships with this skill as `references/drama-to-demand-method.md`
+(his guide, v1.0, 2026-10-13, byte for byte). Where the method and the creative
+doctrine above differ, the method wins on the seven points below (C1-C7). Everything
+the doctrine above says that the method does not touch - the villain contract, pain
+AND the rise, ads are dramatizations, never a reality test on a client, permission -
+stands unchanged.
+
+- **C1 - no sung word before the ERM.** The first sung line lands at the ERM apex,
+  inside the method's window for that length, measured from the song's own words. On
+  a method run this replaces the "first sung line by 15% of the runtime" target.
+- **C2 - the opener carries the backstory.** Backstory narration is allowed over a
+  light instrumental opening, up to the backstory seconds at the spoken rate; the
+  three-word spoken-opener cap does not apply to a method run.
+- **C3 - the ERM Drop is at the ERM**, where the pain first becomes personal, not
+  "at the lowest point".
+- **C4 - the Hero Shift is when the solution enters**, before the breakthrough, and
+  the second pace change goes in whatever direction the story calls for (faster,
+  slower, heavier, bigger, darker, dramatic, cinematic). Returning to the opening
+  groove is one way, not the only way.
+- **C5 - both music turns are mandatory and measured on every run** (Trevor
+  2026-10-13). A turn that was only asked for in the prompt is `planned`, never
+  `inspected`, and never PASS.
+- **C6 - the hook is earned.** The build toward the hook may start once the solution
+  has at least been introduced (`the_turn`), never before; at 60 seconds the hook's
+  `lowest_point` anchor is `the_turn`, not the lowest point.
+- **C7 - trailers sell the episode.** A campaign trailer opens on the master's own
+  instrumental opening, keeps ERM -> pain -> Hero Shift order, uses the hook only
+  after a local breakthrough, and ends on an end card with show, episode and where to
+  watch. Its destination is the episode/channel, never the checkout.
+
+**The five uses - PURPOSE is question 1 of the card.** 1 Grow my business (a full
+campaign: a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad clips),
+2 tell a client's success story, 3 teach a lesson, 4 a social media video (a paid ad
+or a free post). The purpose picks the lengths offered, the shape, the pacing profile
+and the destinations, so the client never answers a second steering question; the
+method's own outputs are `MASTER_EPISODE`, `TRAILER_CLIP` and `STANDALONE_SALES_EDIT`.
+
+The method is **inert unless the run carries `control/method.json`** - a run without
+that record behaves exactly as it did before this section existed. Its gates A-F sit
+on stops the card and the stage machine already have (recap, script approval, song
+approval, storyboard approval, final QC, delivery), and every method row in the
+receipt carries an evidence level of `planned` / `generated` / `inspected` /
+`approved`, where `approved` needs a recorded human answer. UNAVAILABLE is never
+PASS, and a high score never averages away a failed required check.
+
+Full guide: `references/drama-to-demand-method.md`.
 
 ## Route boundaries
 
@@ -116,6 +168,81 @@ intake -> preflight -> claim eligible stage -> perform authorized stage work
 Nothing skips a gate. A runtime prompt or worker cannot bypass a failed
 shared guard: every adapter invokes the same Python control entrypoint and
 the same exit codes before the affected action, not as an after-the-fact audit.
+
+Build hygiene never reaches the client: drift reports are operator-only and
+silent during a client run. Drift between the installed tree and its source
+(missing files, differing files, a stale distribution, a sync that would
+reconcile them) is build hygiene, never a client question. During a client run
+- intake included - the drift report is OPERATOR-ONLY and SILENT: no decision
+menu, no numbered choice such as report-only / add-files / full-re-sync /
+type-your-own, no prompt that stops and waits for an answer, and nothing about
+the drift is written into the client's chat. The sync continues
+non-interactively on its documented default, and the drift is reported to the
+OPERATOR only - named file, named path, in the operator's channel or in the
+run receipt - while the run carries on. The agent never shows a client a drift
+menu and never asks a client to decide a repo-drift question; the client
+answers creative and business questions only. The decision menu belongs to an
+explicit operator path - a named flag or an operator-run sync outside a client
+session - where it stays available and unchanged.
+
+### Intake doctrine: ads are dramatizations (five provisions, in force)
+
+These five bind every intake, every brief and every client message. Doctrine,
+not style advice.
+
+1. **Ads are DRAMATIZATIONS.** Fiction, nonfiction and based-on-true are all
+   allowed - no preference, no penalty, no extra scrutiny for any of them.
+   A story never has to be factual to be used, and no kind of story ranks
+   above another.
+2. **This skill never runs a reality test on a story.** It never asks a client
+   whether a story is real, and it never demands whose real story it is. The
+   forbidden patterns are named so they can be caught and refused:
+   *"every ad is a true story"* / *"every ad in this factory is a true story
+   with a real villain. I cannot invent one"* and *"whose story is this
+   really?"* / *"whose real story is this?"*. Never say, write, imply or hint
+   either one, and never make either a condition of continuing the run.
+3. **Client-supplied claims are accepted verbatim AS THE CLIENT'S CLAIM.**
+   A scale claim, a testimonial, a number, a benefit statement - anything the
+   client writes is recorded as the client's own claim and used as theirs. No
+   questions about it, no proof requests, no "prove your claim", no "is this
+   true", no flagging, no offered rewording. This skill is never a
+   fact-checker of the client.
+4. **The no-fabricate rule binds ONLY what the AGENT invents.** The agent
+   never invents a testimonial, clinical result, credential or product fact
+   of its own. That is the whole rule: it says nothing about material the
+   client supplied, and it never becomes a licence to interrogate it.
+5. **The permission rule stays.** A story about an identifiable real person
+   needs that person's permission. It is the only story-content rule that can
+   stop a run, and it turns on identification, never on whether the story
+   happened.
+
+### Count truth: the card's own total is the only number
+
+- The intake card's own total is the ONLY question count anyone may say. The
+  agent renders the card from the tool (`factory.py card`) and quotes the
+  total the card prints, including the card's own `Question i of N`.
+- The agent never announces a total of its own ("there are N things I need",
+  "Question 1 of N" counted in chat) and never runs a parallel chat sequence
+  with its own numbering on top of the card. There is one counter: the card's.
+- If a remembered or assumed count disagrees with the card, **the card wins**.
+  Re-render the card and use its number; never reconcile the two by explaining
+  them.
+
+### Overwork rule: the card's questions are the whole load
+
+- The card's questions are the whole client load. The agent stacks nothing on
+  top of them: no extra questions in chat, no bundled follow-ups, no
+  "one more thing" asks while the card is still open.
+- **One screen ask = one question.** A question that arrives as one screen
+  holds exactly one question. It never carries sub-asks (a second spelling of
+  the name, an age, a look, the clothes, the wardrobe, a likeness yes/no and
+  the like) - anything else is its own card question or it is not asked.
+- **Answers are plain details, never polished prose.** Rough fragments are a
+  finished answer. Keep the plain reassurance that the client does not have to
+  write it that well.
+- Example answers stay one short line. No long showcase example on the card or
+  in chat - never an ~80-word model answer, which tells the client this is a
+  writing assignment.
 
 ## The control CLI (one entrypoint)
 
@@ -342,6 +469,55 @@ R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measu
 
 **Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until Trevor approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
 
+## Agnes path (optional)
+
+An optional second picture and clip provider for a client who pays for an Agnes AI
+plan (Starter, Plus or Pro). It is chosen only by the AGNES question on the card and
+only while a key is present; a run without that answer behaves exactly as today.
+
+- **Agnes makes the stills and the motion segments; the song and the talking
+  close-ups stay where they are.** Music stays Suno through KIE, lip-sync close-ups
+  stay KIE Kling, and every approval, gate and QC stop is unchanged. Agnes never
+  opens a second paid door and never rides Skill 74: there is no dollar spend inside
+  the daily quota, but every Agnes job still gets a ledger row at cost 0 so receipts,
+  prompt compliance and resume work as they always did.
+- **Fixed 10-second segments.** The delivered timeline is cut into 10-second clips;
+  one still per segment is approved with the storyboard and used as that clip's first
+  frame. **Agnes runs are capped at 5 minutes** (Trevor 2026-10-13) - 7- and
+  10-minute episodes are KIE-only - and no run is ever split across days.
+- **Quota, not spend:** 500 video seconds and 4,000 images per day per key pool,
+  resetting 00:00 UTC, tracked by one ledger per pool. A run that does not fit today
+  waits as a whole for the next reset; a vendor 402 always beats the local count.
+- **Pacing:** at most 2 video jobs in flight per key pool, polls no faster than every
+  15 seconds, a queue-full 503 is backed off and resubmitted (never counted as
+  submitted), a 429 is backed off and resubmitted, and an unknown job state is polled,
+  never resubmitted. Every failure is reported by name; the run never switches
+  provider on its own and asks the one fallback question instead.
+- **No words in the generated pictures** by default. A word that will not bake in is
+  overlaid at assembly (`TEXT_OVERLAID`), never delivered garbled; without tesseract
+  the OCR check reads `OCR_UNAVAILABLE`, which is never a PASS.
+- **Conform:** clips arrive 704x1280 at 24 fps carrying their own audio, which is
+  stripped - the song is the only audio - and the master is cover-scaled to its
+  export size and 30 fps.
+- **Progress, because it takes hours:** the video stage runs as a background job that
+  writes the run's progress record, the studio page shows "Making your video clips:
+  N of M done - about X to go" (or the waiting reason), and the stage answers
+  `waiting` with `agnes-video-running` while it runs. A resumed session never
+  resubmits a job the ledger already knows.
+- **Price lines:** with Agnes chosen the video and image lines read "included in your
+  Agnes plan", plus "Agnes video time: about N of your 500 seconds today". No dollar
+  figure on an Agnes line.
+- **Prerequisites:** `PREREQS.json` declares `agnes-key` (presence only) and
+  `tool-tesseract`, both optional and both gated `when: agnes-path`, so a box that
+  never uses Agnes reports nothing missing. The key value is never printed, logged or
+  written to a receipt.
+
+Reference: `references/agnes-path.md` - the Agnes door, quota tracker, progress writer
+and the Agnes/OCR codes named above ship with the Agnes core batch in this release
+group. Uses available on it: campaign episodes up to 5 minutes, testimonials, lessons,
+paid ads (30 / 60 / 90 s) and short posts; 7- and 10-minute episodes stay on the KIE
+path.
+
 ## What the storyboard is
 
 The storyboard is the written shot-by-shot plan: one card per shot with the
@@ -530,13 +706,19 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
   rule this replaces read "no lip-sync by default"; it is kept here only so
   the change is visible.
 - Never fabricate testimonials, clinical results, credentials or product
-  facts. Creative beats stay separate from production stages.
+  facts **of the agent's own**. It binds what the agent invents and nothing
+  else: a client-supplied claim is accepted verbatim as the client's claim,
+  with no question, no proof request and no fact-check (intake doctrine,
+  "Start here: the enforced flow"). Creative beats stay separate from
+  production stages.
 
 ## Song approval (FU-SONG-APPROVAL)
 
-The intake card's eighth question is SONG APPROVAL: "Do you want to hear and
+SONG APPROVAL is an intake card question: "Do you want to hear and
 pick the song before any video is made?" (1. Yes, send me 3 versions to choose
-from (recommended), 2. No, just make it). On Yes the song stage makes THREE
+from (recommended), 2. No, just make it). Quote its number exactly as the card
+prints it - never a position remembered or counted by the agent (count truth,
+"Start here: the enforced flow"). On Yes the song stage makes THREE
 versions of the same lyric sheet in parallel, each a different arrangement of
 the client's music style (the variant table is `scripts/core/song_choices/
 variants.json`). Each version passes the same song checks as a single song
@@ -598,8 +780,12 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   video_model_rates.json`) and one price function shared by the question and
   the final card; the pick is stored in run state, shown on the card and
   submitted by dispatch with that model's provider id and resolution.
-
-  client with their own story. At most three questions total, and ONE choice
+- **Intake (brief clarification only, not the card).** Quick mode by default
+  (one sentence), Concept mode for a
+  client with their own story. At most three clarification questions total
+  about a changed or thin brief - this cap is on the intake conversation, NOT
+  on the intake card, whose question count is the card's own (count truth,
+  "Start here: the enforced flow") - and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
@@ -924,8 +1110,10 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   model the user has not set up.
 - If the user names a model or agent, use exactly that one.
 
-The one AI MODELS question on the intake card (first question) asks which AI
-builds and which AI checks, with OpenRouter recommended and Ollama allowed. It
+The one AI MODELS question on the intake card asks which AI
+builds and which AI checks, with OpenRouter recommended and Ollama allowed. Its
+number is whatever the card prints for it - never a position asserted by the
+agent (count truth, "Start here: the enforced flow"). It
 only RECORDS the answer as `ai_models` in the approved intake summary, as a
 preference for the operator. The run itself still uses the session's own model;
 nothing here switches models. Names that are not routable are refused, and the
@@ -1024,9 +1212,21 @@ python3 tests/test_parity_layout.py    # layout, registry, adapter hygiene,
                                        # byte parity with the OpenClaw core
 ```
 
-`test_parity_layout.py` prints `PARITY UNDETERMINED` and exits 0 when the
-canonical OpenClaw tree is not on this machine; that is an undetermined
-check, not a pass. Run it where the canonical source exists to prove parity.
+`test_parity_layout.py` prints `PARITY UNDETERMINED` and skips the parity
+half when the canonical OpenClaw tree is not on this machine. That line is not
+the verdict: the process exit code covers the WHOLE run, so an undetermined
+parity half can still leave the run red. Measured on a throwaway of `origin/main`
+in the absent-canonical configuration (2026-10-14):
+
+- repo checkout, `CONTROL/bundled-skills.txt` resolvable from the repo root:
+  every other check ok -> `ALL PASS (parity undetermined)`, **exit 0**.
+- clean / standalone install, skill at `<root>/.claude/skills/...` with no
+  `CONTROL/bundled-skills.txt` above it: the registry half fails FIRST, 11
+  `FAIL` rows, then `PARITY UNDETERMINED` -> **exit 1**.
+
+Neither is a parity pass. Read the exit code of the whole run, not the
+`PARITY UNDETERMINED` line, and run it where the canonical source exists to
+prove parity.
 
 ## Version and provenance
 

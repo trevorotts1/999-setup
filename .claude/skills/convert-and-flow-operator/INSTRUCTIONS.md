@@ -1,0 +1,735 @@
+# Skill 44 — Convert and Flow Operator: Runtime Instructions
+
+## Contact Lookup Routing (READ FIRST — applies to every lookup, any session type)
+
+Contact lookups follow a strict two-rule contract. Violating either rule is a hard failure.
+
+**Rule A — Sub-agents use CLI, not MCP.**
+MCP tools (`ghl-mcp__*`) exist only in the orchestrating session. Spawned sub-agents
+have no MCP injection. Sub-agent lookups MUST use `caf contacts search/get` (CLI) or
+raw HTTPS. Never instruct a sub-agent to call an MCP tool.
+
+**Rule B — Raw HTTP requires dual Accept + correct Version header.**
+Any raw HTTPS fallback to `services.leadconnectorhq.com/mcp/` MUST include:
+```
+Accept: application/json, text/event-stream
+Version: 2021-07-28   (DEFAULT — contacts, locations, blogs, social, opportunities,
+                       payments, users, campaigns, phone-system, medias, invoices)
+Version: 2021-04-15   (ONLY — conversations, calendars, saas-api, voice-ai,
+                       agent-studio, conversation-ai, knowledge-base)
+```
+**`payments` is `2021-07-28`, not `2021-04-15`.** It was listed on the wrong line here
+until 2026-08-03. The authority is the `Version` enum in each app's OpenAPI spec at
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps`; the full table lives
+in `29-ghl-convert-and-flow/SKILL.md` → "Version Header Rule".
+Missing `text/event-stream` returns HTTP 406 — not an auth error; a content-negotiation
+error. Also: never use `grep -P` on macOS (BSD grep has no -P); use `python3 -c` or `jq`.
+
+Full lookup routing table and all failure modes: `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md`.
+
+## Contact Write Routing (READ BEFORE any contact add/save/create/update)
+
+**Generic "add/save this person" → `caf contacts upsert`** (email and/or phone
+match keys, supplied fields only — never empty/null/blank values, never a tags
+array; tags merge afterwards via `caf contacts add-tag`). HighLevel's Upsert
+endpoint resolves create-vs-update per the Location-level Allow Duplicate
+Contact configuration and its matching priority. `--create-new-if-duplicate-allowed`
+travels ONLY on explicit new-record request. **Explicit "create a NEW contact"
+→ `caf contacts create`.** **Known contactId → `caf contacts update <id>`**
+(non-tag fields; `--tag` is refused destructive — PUT replaces the whole set).
+Every write ends with a read-back (`caf contacts get <id>`); a succeeded write
+with a failed read-back is "WRITE SUCCEEDED — VERIFICATION INCOMPLETE" — never
+re-fire the write to check.
+
+---
+
+## Step 0 — Model Check Pre-flight (READ BEFORE ANY BUILD OR MODIFY ACTION)
+
+**Trigger:** any time you are about to BUILD or MODIFY a GHL workflow (caf workflows build,
+patch-email, patch-trigger, restore, or Tier 4 agent-browser build).
+
+**Check:** look at your current session's active model name and thinking level.
+
+**If the active model is a lighter/faster model** (e.g. deepseek-flash, mini, flash,
+or any model NOT identified as a high-reasoning model) **OR thinking is not set to HIGH**:
+
+Surface this recommendation to the owner BEFORE proceeding:
+
+> ⚠️ **GHL workflow builds are complex and error-prone on lighter models.**
+> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. DeepSeek V4.1 Flash
+> or GLM 5.2 — Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding — for the best
+> possible output and to avoid hard-to-catch hallucinations in workflow logic.
+> *(A lighter model previously turned a 2-minute fix into a 12-hour loop by
+> hallucinating a failure cause, a fake link, and a wrong number.)*
+> Say "proceed anyway" to continue on the current model, or switch first and re-run.
+
+**Then proceed** once surfaced — this is a recommendation, not a hard block. Do NOT
+repeat the warning on the same build session after the owner has acknowledged it.
+
+> **BIDIRECTIONAL LINK (Step 9):** If at Step 9 QC catches a HALLUCINATION-class fail
+> (build agent claimed X but QC-observed NOT-X), the Step 0 recommendation flips to a
+> HARD REQUIREMENT — the redo MUST use a high-reasoning model with thinking=HIGH.
+> See Step 9 "If QC finds a HALLUCINATION" for the full escalation path.
+
+Read-only ops (caf contacts list, caf workflows list, etc.) do NOT trigger this check.
+
+---
+
+## Step 0.4 — Flexible Template Match (intent-mode routing — runs BEFORE PLAN MODE)
+
+**Trigger:** any time the intent is to build an AUTOMATION / follow-up workflow (the same
+trigger as Step 0.5 PLAN MODE). Read-only ops skip this.
+
+**Why:** the 28-template automation library (welcome-indoctrination, engagement-broadcast,
+sales-close-sequences, funnel-specific-followups, multichannel-automation) is a RESOURCE, not
+a mandate. Before PLAN MODE, classify the request and let the matcher pick the RIGHT posture so
+a template NEVER dominates the client's own desire.
+
+**CORE PRINCIPLE — FLEXIBILITY:** every template/persona/sequence is a GUIDE and a RESOURCE,
+NEVER a rule or a requirement. It assists; it never dominates.
+
+**Run the matcher** (`automation-templates/_matcher/automation_matcher.py`, stdlib-only, no network):
+
+```bash
+export CAF_AUTOMATION_CATALOG=.claude/skills/convert-and-flow-operator/automation-templates
+export CAF_FUNNEL_AUTOMATION_LINKS=.claude/skills/convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json
+python3 automation-templates/_matcher/automation_matcher.py  # importable; step0_match(task, evidence_root)
+```
+
+It detects the **INTENT MODE** and returns a **DECISION** that PLAN MODE then honors:
+
+| Intent mode | Signal | Decision | What PLAN MODE does |
+|---|---|---|---|
+| `EXPLICIT_USER_SPEC` | user gave their own steps / "use my", "exactly", "do not change" | `HONOR_USER` | Build the user's spec. The matched template is an **optional reference only** — never imposed/overridden onto their choice. |
+| `UNSURE_WANTS_SUGGESTION` | "not sure", "what do you recommend", "which one" (and the default when unclear) | `SUGGEST_TEMPLATE` | **Suggest** the proven template + WHY, then **await confirm**. Do NOT build yet. |
+| `HANDS_OFF_DO_IT_ALL` | "just do it", "build the whole thing", "your call", "turnkey" | `USE_TEMPLATE` | Build the whole automation from the template. |
+| (any) nothing fits | best confidence < threshold | `CREATE_NEW` | Build net-new, then `save_new_template()` so the library grows. |
+
+**Invariants (enforced in code):** `imposes_on_user` is ALWAYS `false`; `override_allowed` is
+ALWAYS `true`; the matcher NEVER blocks a build. Every output is overridable, mixable,
+customizable, ignorable. The decision + intent mode + matched template + score are LOGGED to
+`<evidence_root>/routing/automation-decisions.jsonl`.
+
+**CANONICAL evidence_root (set here, reused at Step 9.3c — FIX-XC-03g).** Define ONE
+evidence_root for this build now and pass the SAME path to the QC gate later:
+
+```
+export CAF_EVIDENCE_ROOT="<engine>/data/evidence/<build-slug>"
+# (<engine> = this skill's tools/engine dir; override the data root with CAF_DATA_DIR)
+mkdir -p "$CAF_EVIDENCE_ROOT"
+python3 - <<'PY'  # step0_match writes routing/ + persona-selection-log.md under it
+from automation_templates._matcher.automation_matcher import step0_match  # (import per your PYTHONPATH)
+# step0_match(task, evidence_root=CAF_EVIDENCE_ROOT)
+PY
+```
+
+`automation_matcher.step0_match` now also PRODUCES `<evidence_root>/persona-selection-log.md`
+(FIX-S36-25): it names the matched template's `copy_persona` (or a `selected_persona: net-new`
+marker for `CREATE_NEW`). This is what closes FAB-QC **D4** — which is fail-closed on that log
+and which nothing used to write, so every standalone templated build hard-missed D4. At Step
+9.3c you MUST pass this SAME `<evidence_root>` via `--evidence`; if the root is missing the
+FAB-QC overlay fails CLOSED (`REQUIRES_OPERATOR`), never a silent skip.
+
+**COMPLETE-FUNNEL handoff (Skill 6 to Skill 44):** when this build was triggered by instantiating
+a **Skill-6 funnel template** (the task carries `funnel_template_id`, or Skill 6 handed over
+`linked_automations`), Step 0.4 also expands the funnel's RECOMMENDED follow-ups from
+`_links/funnel-to-automation.json` (primary + secondary + graduation) — **minus any the user overrode**
+(`automation_overrides`). Each surviving link with `build_now: true` becomes its own Skill-44
+build (each still goes through PLAN MODE + Step 9 QC). Recommended, never mandatory.
+
+**Only after Step 0.4 has set the intent mode + decision may you proceed to Step 0.5 PLAN MODE.**
+For `SUGGEST_TEMPLATE` you must get the client's confirm first; for `HONOR_USER` you build their
+spec (template is reference only); for `USE_TEMPLATE`/`CREATE_NEW` you proceed to plan the build.
+
+---
+
+## Step 0.5 — PLAN MODE (before any workflow CREATE/BUILD)
+
+**Trigger:** any time the intent is to build or create a new workflow, playbook, or funnel.
+
+**NOT triggered by:** read-only ops, REVIEW/export, or a single targeted patch-email/patch-trigger
+on an already-existing workflow.
+
+**BINDING RULE: Rushing to a default build is NOT the best outcome and is a violation. Decide
+the nodes, trigger, and actions deliberately, for THIS client's stated goal. The agent does NOT
+touch `caf workflows build` (or the Tier 4 backstop, or skill 38 structure generation) until
+the plan is presented and the gating questions are answered.**
+
+**Kanban touchpoint — card `in_progress` (FAIL-SOFT, FIX-S36-28).** When this build arrives on
+the deploy rail that Skill 50 hands to, post an `in_progress` card for it via the shared
+mc-route / Command Center helper at the moment PLAN MODE begins, so the work is visible on the
+board. This carding is **fail-soft**: if the board/helper is unavailable it is logged and
+skipped — it NEVER blocks the build. The matching `done` transition is posted only after Step
+9.6 (all WF-1..21 PASS AND rubric ≥ 8.5 AND, when applicable, FAB-QC ≥ 8.5) — never before.
+
+### Step A — THINK (do not write to GHL)
+
+Reason through the following and write them down before any other action:
+
+**A1. DESIRED RESULT** — restate, in the client's own framing, the outcome the workflow must
+produce ("when X happens, the contact should end up Y"). Pull from the conversation; do NOT
+invent goals the client did not state.
+
+**A2. CLIENT EXPECTATIONS** — capture explicit constraints, especially when the client was
+hyper-specific (exact message copy, exact wait durations, exact tag names, exact channel /
+SMS-vs-email, exact business-hours windows). Hyper-specific requests are honored verbatim;
+the agent does NOT silently "improve" a value the client pinned.
+
+**A3. BEST APPROACH** — design which trigger, which nodes, and which actions actually reach A1
+(e.g. Contact Created vs Form Submitted vs Tag Added; SMS vs email vs both; If/Else branches;
+Wait durations; Stop-on-Response). This is a reasoning step, not a template fill.
+
+**A4. TIMING BASIS** — for every scheduled action, determine whether it is relative
+to registration, an event/appointment/transaction, or the previous step. Read
+`references/workflow-timing.md` and generate the timing outline before selecting
+Wait nodes. Automatically include/configure **Set event start time** where relevant;
+resolve genuinely missing dates, not technical-node choices, with the owner. Include
+the `timing` contract in API plans and Skill 6 handoffs. Review timing even when a
+matched template or older handoff omitted that field.
+
+### Step B — DEPENDENCY PRE-CHECK (skill 41 dependency-first contract)
+
+For every tag, custom field, and custom value the approach references, GET-verify it exists in
+GHL FIRST. Missing items are listed in the plan as "must create first (will surface for
+approval)". ZHC-/ZHC_ objects carry standing approval. The plan MUST NOT propose a build on
+non-existent dependencies.
+
+### Step C — OUTLINE
+
+Produce a concrete, ordered node outline:
+Trigger (type + filters) → each action/step in sequence (with its config: template/copy,
+recipient, channel, wait duration, branch conditions) → exit.
+This is the human-readable blueprint of what will be built.
+
+### Step D — CHECKLIST
+
+Instantiate the canonical checklist template
+(`references/workflow-build-checklist-template.md`) for THIS workflow — fill the workflow name,
+trigger type, each expected node, each tag/field/value, the intended re-entry setting, the
+intended publish state, and (if any SMS node) the intended SMS From-number. This is the artifact
+QC and the client will both verify against.
+
+### Step E — IMPROVEMENTS + RECOMMENDATIONS
+
+Surface concrete upgrades the client did not ask for but that serve the goal (e.g. "add a
+Stop-on-Response so contacts who reply are not re-texted", "add a 3-day re-nudge branch",
+"guard the SMS behind business-hours"). Each recommendation is OPTIONAL and clearly labeled as
+a suggestion. When the client was hyper-specific, recommendations are offered ALONGSIDE (never
+instead of) their exact spec, and the agent states it will build their spec unless they accept
+the suggestion.
+
+### Step F — PRESENT THE PLAN + ASK THE GATING QUESTIONS
+
+Send the client: the restated result + expectations, the outline, the checklist, and the
+recommendations — then ask the two mandatory gating questions and WAIT for answers:
+
+**GATING QUESTION 1 — PUBLISH:**
+"Do you want me to publish this and make it live, or build it as a draft for you to review first?"
+(Default if unanswered = DRAFT, matching CAF_DRAFT_ONLY=true.)
+
+**GATING QUESTION 2 — RE-ENTRY:**
+"Should a contact be able to come through this workflow more than once (re-entry / allow
+multiple), or only once?"
+(Default if unanswered = once / re-entry OFF — the safer default; recorded explicitly in the
+checklist either way.)
+
+The publish answer maps to the build's status/trigger-active intent; the re-entry answer maps to
+the workflow's allow-multiple / re-entry setting. NEITHER is guessed — both are recorded on the
+checklist with the client's answer.
+
+> **CLIENT-FACING LANGUAGE (MANDATORY translation layer).** Every message that reaches
+> the client — the gating questions above, the Step 9 announcements, any status update —
+> must be translated into plain 7th-grade words FIRST. Do NOT leak engineer terms
+> ("funnel", "website", "draft", "publish", "deploy", "preview URL", "sub-account", HTTP
+> codes, token/Firebase/IndexedDB, pixel sizes, IDs of any kind). Before sending, swap
+> every engineer term for its plain word and the delivery templates (draft-ready,
+> live, security-hold, pre-build confirm) using the shared phrasebook:
+> `../06-ghl-install-pages/references/client-facing-phrasebook.md`. The technical
+> checklist / QC rubric / export is OPERATOR-LOG language and is never quoted verbatim
+> to the client.
+
+**Only after the gating questions are answered may the agent proceed to TRINITY routing / the
+Per-operation decision rule.**
+
+---
+
+## Natural-language intents -> CLI commands
+
+Operators never memorize CLI syntax. Say what you want in Telegram; the agent routes to the right command.
+
+| Intent | Command |
+|---|---|
+| "Who are my new leads?" | `caf contacts search "<name>"` (there is NO tag filter — `contacts list` takes only `--limit/--offset/--query`; `contacts search` matches by name) |
+| "Show me open opportunities in the Sales pipeline" | `caf opportunities list --status open` (`--status` = open\|won\|lost\|abandoned; add `--pipeline-id <id>` to scope to one pipeline) |
+| "What appointments do I have this week?" | `caf calendars appointments --start <ISO> --end <ISO>` (no `--this-week`; pass an explicit date range) |
+| "Build a follow-up workflow for new leads" | PLAN MODE (Step 0.5) first, then TRINITY |
+| "Update the welcome email in the onboarding workflow" | `caf --experimental workflows patch-email --workflow-id <id> --step-id <id> --subject "..." --body-file <path>` (`--workflow-id` and `--step-id` are both required; body is a file, there is no inline `--body`) |
+| "List my active invoices" | `caf payments invoices --status paid` (`payments invoices` IS the list command — no extra `list`; `--status` = draft\|sent\|paid\|void) |
+| "Schedule this social post for tomorrow at 9am" | `caf social create-post --account-id <id> --text "..." --schedule <ISO8601>` |
+| "What workflows do I have?" | `caf workflows list` (**Tier 0** — LOCATION PIT / public API; no Firebase token needed) |
+| "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` / `caf workflows get <id>` (**NOT Tier 0** — these route through the **internal Firebase client** and REQUIRE the Firebase refresh token; only `workflows list` is PIT). If the Firebase token is absent → Tier-4 agent-browser read-back (export cannot run). Then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
+| "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |
+| "Add a user to <SUBACCOUNT>" / "create a login for <PERSON>" / "give <PERSON> access" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a SUB-ACCOUNT user — see Agency operations below) |
+
+---
+
+## Agency operations — create sub-account / add user
+
+These provision new sub-accounts (locations) and add users. They use **TWO
+DIFFERENT auth paths** — pick the right one per operation:
+
+| Operation | Path | Auth | Endpoint | Version header |
+|---|---|---|---|---|
+| **Create sub-account (location)** | Firebase **internal** API | `token-id: <firebase-id-token>` (NOT Bearer) | `POST backend.leadconnectorhq.com/locations/` | `2021-07-28` |
+| **Add a user** | Agency **PIT + PUBLIC** API | `Authorization: Bearer <agency PIT>` | `POST services.leadconnectorhq.com/users/` | `2023-02-21` |
+
+This is the PROVEN split — the real user was just added via the simpler PIT
+public path; the official public API CANNOT create a location, so create-location
+must use the internal Firebase path. Do not cross them.
+
+> **Version corrected 2026-08-03: `2023-02-21` → `2021-07-28`.** `users.json` declares
+> exactly one Version enum for all 7 user operations — `2021-07-28`. `2023-02-21` appears
+> nowhere in that spec. The old value may still have been accepted (HighLevel is lenient
+> on some Version strings, which is why the original call succeeded), but it was never the
+> documented value, and it contradicted the agency-side docs that already said
+> `2021-07-28`. Use the documented value.
+> Source: `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/users.json`
+
+> **OAuth marketplace app = DEAD END.** Do NOT attempt either operation via the
+> OAuth marketplace-app flow. The app has no published version, so it returns
+> `error.noAppVersionIdFound`. Never route create-location or add-user through
+> OAuth. (PIT is a Private Integration Token — it is NOT OAuth, and the PIT
+> public path for add-user works fine.)
+
+### Add a user — DEFAULT, the proven simple path (agency PIT + public API)
+
+`caf locations add-user` posts to `POST https://services.leadconnectorhq.com/users/`
+with `Authorization: Bearer <agency PIT>` and `Version: 2023-02-21`. No Firebase
+token and **no Chrome extension** are needed for this operation.
+
+Body (CreateUserDto): `companyId` (agency FIRESTORE id), `locationIds=[--location-id]`,
+`firstName`, `lastName`, `email`, `type`, `role`, `permissions{...}`.
+
+- **Omit `--password`** so GHL sends its invite email and the user sets their
+  OWN password (recommended). Only pass `--password` to force a specific one.
+- `--type` defaults to `account` (a sub-account user). See the user-type warning
+  below — this is the most important rule on this page.
+
+```
+caf locations add-user \
+  --location-id <SUBACCOUNT_ID> \
+  --company-id <AGENCY_FIRESTORE_ID> \
+  --first-name <FIRST> --last-name <LAST> --email <EMAIL> \
+  --role <user|admin>
+```
+
+### USER TYPE — account vs agency (HARD WARNING)
+
+**Adding a user to a client's sub-account must NEVER make them an agency user.**
+
+- `--type account` (DEFAULT) + `locationIds=[<SUBACCOUNT_ID>]`
+  → a **SUB-ACCOUNT user**. They live ONLY in that one sub-account.
+  `--role admin` here = admin **of that sub-account ONLY**.
+- `--type agency`
+  → an **AGENCY user**. They control the **WHOLE agency and EVERY sub-account
+  under it**. This is almost never what you want when "adding a user to a
+  client's sub-account."
+
+The CLI enforces this: `--type agency` is **REFUSED** unless you also pass
+`--i-understand-this-is-an-agency-user`. When in doubt, leave `--type` alone
+(it defaults to `account`, scoped to `--location-id`).
+
+### Create a sub-account (location) — Firebase internal path
+
+`caf --experimental locations create` posts to
+`POST https://backend.leadconnectorhq.com/locations/` with these request headers:
+
+```
+token-id: <firebase-id-token>   <-- grabbed from the agency-owner browser session
+channel:  APP
+source:   WEB_USER
+version:  2021-07-28             <-- REQUIRED. Its absence returns HTTP 401.
+Content-Type: application/json
+```
+
+This is the ONLY working create-location path — the official public API / PIT
+CANNOT create a location.
+
+**The Chrome-extension token grab (and short-lived reality).** The `token-id`
+above is a Firebase **id-token**. It is exchanged from
+`GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` at `securetoken.googleapis.com`. That
+refresh token is grabbed by the **Convert and Flow / Scale-44 Chrome-extension
+Token Grabber**, which reads `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` from the
+logged-in **agency-owner** browser session (see
+`references/owner-token-grabber-guide.md`). The id-token is **SHORT-LIVED** —
+the CLI auto-refreshes on a 50-minute window and retries the exchange once on a
+transient failure. **Re-grab via the Chrome extension before agency writes** if
+the refresh token itself is revoked/expired; the command surfaces
+`TOKEN_REFRESH_FAILED`, after which you re-set `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`.
+
+```
+caf --experimental locations create \
+  --name "<NAME>" \
+  --company-id <AGENCY_FIRESTORE_ID> \
+  [--phone <PHONE>] [--address "<ADDR>"] [--timezone <IANA_TZ>]
+```
+
+### companyId rule — FIRESTORE id, NOT relationNumber
+
+In every path/body above, `companyId` is the agency's **Firestore document id**,
+NOT the human-readable `relationNumber` you see in the UI. Passing the
+relationNumber will fail. Resolve the Firestore id once and reuse it.
+
+### Safety gate behaviour
+
+- `locations create` requires `--experimental` (it is the internal Firebase API).
+  `locations add-user` does NOT require `--experimental` (it is the public PIT path).
+- Approval gate applies to both (same as workflow writes): set `CAF_APPROVAL_TOKEN`,
+  or prefix a `ZHC-`/`ZHC_` name for standing approval. No approval = WRITE REFUSED.
+- `locations create`: the location whitelist is SKIPPED (a sub-account being
+  created has no id yet); the approval gate still applies. No `GHL_LOCATION_ID`
+  is required.
+- `locations add-user`: the whitelist (`CAF_ALLOWED_LOCATION_IDS`) is checked
+  against `--location-id`, so a user can only be added to an approved sub-account.
+- `CAF_DRY_RUN=true` prints the exact `POST` body and exits 0 without sending.
+- On any non-OK result the CLI fails loud (stderr + exit 1) — never a silent
+  false success.
+
+### Non-default fallback — add-user via internal Firebase
+
+If the PIT public path is unavailable, `caf --experimental locations add-user
+--internal-firebase-fallback ...` routes add-user through the internal Firebase
+API (`backend.leadconnectorhq.com/users/`, version `2021-07-28`, CreateUserDto
+with `password`). This is **NOT the default** and needs a Firebase token; prefer
+the PIT public path above.
+
+### NL-intent -> command rows
+
+| Intent | Command |
+|---|---|
+| "Create a new sub-account / location for <NAME>" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID> [--phone <PHONE>] [--address "<ADDR>"] [--timezone <IANA_TZ>]` (Firebase internal path) |
+| "Add a user / login for <PERSON> on <SUBACCOUNT>" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a sub-account user) |
+
+(`<NAME>`, `<AGENCY_FIRESTORE_ID>`, `<SUBACCOUNT_ID>`, `<PERSON>`, `<EMAIL>`
+etc. are PLACEHOLDERS — substitute the live values at runtime.)
+
+---
+
+## TRINITY routing (conversational workflow builds)
+
+When the operator asks to "build a workflow / playbook / funnel" AND the workflow contains
+a conversational node:
+
+1. Skill 44 builds the GHL automation structure (the HANDS)
+2. Skill 44 AUTO-INVOKES skill 38 for the brain (communications playbook + Build-with-AI prompt)
+3. All three TRINITY legs ship together, or the build is NOT registered
+
+**WF-19 is a MECHANICAL HARD GATE for conversational builds (FIX-S36-27).** Run the Step-9 QC
+with `--conversational`: `./qc-built-workflow.sh <workflow-id> --conversational …`. That flag
+EXECUTES Skill 38's `scripts/qc-trinity-registry.sh` (the SAME script the SOPs name as the hard
+pre-registration gate) and FAILs WF-19 mechanically on ANY non-zero exit (TRINITY incomplete, or
+no `conversation-workflows/` folder). It is no longer a "requires human review" note that a
+conversational build can register past with zero TRINITY verification. If the registry script
+cannot be found, WF-19 fails CLOSED (`REQUIRES_OPERATOR`).
+
+For a purely mechanical workflow (no conversational node): skill 41 builds standalone (12-point
+checklist); omit `--conversational` and WF-19 stays N/A (human-review).
+
+**Token-aware build path:**
+- Firebase token present + healthy → `caf workflows build` via internal API
+- Firebase token missing or expired → fall through for reads; BUILD falls to Tier 4 (agent-browser); owner
+  nudge: "I need you to grab the Convert and Flow token to build workflows directly."
+
+---
+
+## Per-operation decision rule (runtime)
+
+```
+1. Is this a media upload? → ALWAYS Tier 3 (POST /medias/upload-file). Skip Tier 0.
+2.0 NEW workflow build/create? → run PLAN MODE (Step 0.5) and get the gating answers
+    BEFORE choosing the token/tier path. Do not proceed to 2a/2b until plan is done.
+2. Is this a workflow BUILD? → Check Firebase token:
+   a. Present + healthy → caf workflows build
+   b. Absent / expired → Tier 4 backstop (agent-browser) + owner nudge
+2.5 Is this a workflow REVIEW / inspect / audit / "check this workflow"?
+   → `caf workflows list` is Tier 0 (PIT). BUT `caf workflows export <id>` / `get <id>`
+     route through the INTERNAL Firebase client — they REQUIRE the Firebase refresh token
+     and are NOT Tier-0 PIT reads.
+   → Firebase token present + healthy → caf workflows export <id> (then QC on the export).
+   → Firebase token absent / expired → Tier 4 agent-browser read-back (export cannot run);
+     the mechanical Step-9 QC that relies on export CANNOT run, so the build/review is NOT
+     DONE until an agent-browser read-back confirms it (fail-closed — see Step 9.3 Tier-4 branch).
+   → Escalate per skill 36 ONLY for pieces export cannot show (e.g. trigger-bucket state).
+   → NEVER open-ended-pick the 834-tool Community MCP for a workflow review.
+3. Is this any other op in the CLI surface? → caf <command>
+4. CLI returns 404 / unknown command? → Fall to Tier 1/2/3 per skill 36
+5. Rate limit (429)? → STOP. Surface reset time. NEVER fall through tiers.
+```
+
+---
+
+## Workflow-Write Data Rollback
+
+Every `workflows update`, `patch-email`, or `patch-trigger` writes a timestamped snapshot BEFORE mutating:
+
+```
+<engine>/data/snapshots/<location>/<workflow-id>/<timestamp>.json
+```
+
+To revert a workflow to a previous state:
+```bash
+caf workflows restore <engine>/data/snapshots/<location>/<workflow-id>/<timestamp>.json
+```
+
+---
+
+## Rate-limit protocol (inherited from skill 36)
+
+All tiers share one GHL daily bucket (200k req/day). On a 429 from ANY tier:
+1. Parse `X-RateLimit-Daily-Reset`
+2. Surface to owner: "Rate limited — back at HH:MM ET (in X hours)."
+3. DO NOT retry. DO NOT fall through tiers.
+
+---
+
+## Dependency-first contract (from skill 41)
+
+Before building any workflow, skill 44 checks that every referenced tag, custom field,
+and custom value exists in GHL (GET-back verification). Missing items are surfaced to the
+owner before touching the workflow builder. ZHC- / ZHC_ objects carry standing approval.
+
+---
+
+## Step 9 — QC GATE (before declaring done)
+
+**Trigger:** immediately after the build agent finishes constructing a new workflow.
+
+**BINDING RULE: The build agent MUST NOT say "done" until QC passes and the filled checklist
+is handed to the client. Done is never declared before a clean QC pass + checklist handover.**
+
+### Step 9.1 — Announce to client (MANDATORY, send before spawning QC)
+
+Send from the client's own install/session, through the client's configured channel:
+
+> "I've built the workflow. Before I call it done, I'm running an independent QC agent to
+> verify it against the checklist item-by-item. One moment."
+
+### Step 9.2 — Spawn an independent QC sub-agent on MiniMax
+
+Dispatch a fresh sub-agent (a new agent session in this harness), in a fresh session, on an
+INDEPENDENT MiniMax model (independent = a DIFFERENT model than the build agent, so QC cannot
+inherit the builder's own hallucinations).
+
+**Model resolution (in order):**
+1. Prefer `minimax/minimax-m3` via OpenRouter (the repo's established MiniMax extraction model,
+   per skill 38 Step 9.24).
+2. Or `minimax-m3:cloud` if an Ollama-Cloud MiniMax slug is configured.
+3. VERIFY the MiniMax model is actually configured + reachable before spawning (per
+   subagent-delegation-pattern.md: "Verify the chosen model exists in the client's configured model setup and
+   has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no MiniMax model is
+   available, fall back to the next independent high-reasoning model and RECORD which model QC'd.
+
+The QC sub-agent receives: the filled checklist artifact, the workflow id, and read-only `caf`
+access.
+
+### Step 9.3 — QC runs item-by-item
+
+The QC sub-agent independently inspects the BUILT workflow:
+- Primary: `caf workflows export <id>` — read-only, but it routes through the **internal
+  Firebase client** (NOT the Tier-0 PIT; only `caf workflows list` is PIT). It needs the
+  Firebase refresh token.
+- Escalation per skill 36 ONLY for what export cannot show (e.g. trigger-bucket state — the
+  exact gap discovered in a client install and is the v12.3.6 deferred follow-up).
+
+**Tier-4 QC branch (no Firebase token — MANDATORY, fail-closed):** On a Tier-4 build (the
+workflow was built via agent-browser because the Firebase token was absent/expired), `caf
+workflows export` **cannot run**, so the mechanical WF-1..21 QC **cannot run**. This is NOT a
+pass. `qc-built-workflow.sh` exits 2 with `REQUIRES_OPERATOR` in that case. The build is **NOT
+DONE** until either (a) the Firebase token is restored and the export-based QC runs clean, or
+(b) an **agent-browser read-back** independently confirms every checklist item against the live
+GHL UI. "No token" never means "skip QC" — it means "not done".
+
+The sub-agent runs `qc-built-workflow.sh <workflow-id>` (in the skill folder) which
+machine-asserts the mechanically-checkable items, returns per-item PASS/FAIL JSON, AND emits the
+weighted quality-rubric floor score (the `rubric` block).
+
+For EACH checklist item (WF-1..WF-21) the QC sub-agent returns an explicit PASS / FAIL with
+the observed value vs expected value.
+
+### Step 9.3b — Weighted quality rubric (SUPERSET overlay, AFTER WF-1..21)
+
+**Order is mandatory:** the rubric is computed ONLY after WF-1..21 has been evaluated. It is a
+SUPERSET overlay — it never runs *instead of* WF-1..21, and a high rubric score can NEVER buy
+back a hard WF FAIL.
+
+1. WF-1..21 must clear its mechanical gate first (Step 9.4 routing below).
+2. Then the QC sub-agent grades the 8 rubric dimensions per
+   `references/workflow-quality-rubric.md`. The script emits a machine-knowable FLOOR for every
+   dimension; the sub-agent raises the human-graded dimensions (D1 Goal-fit, D4 Branching,
+   D5 Edge-cases, D6 Deliverability, D7 Idempotency, D8 Naming) to their true 1/5/10 anchor by
+   reading the export against the PLAN A1/A2 values, then recomputes the final weighted 1–10
+   score:
+   `(D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) / 100`.
+3. **Ship threshold: weighted score ≥ 8.5** (aligns with the binding QC Protocol).
+
+### Step 9.3c — FAB-QC library-aware overlay (template fidelity / persona / flexibility / link integrity)
+
+**Order is mandatory:** runs AFTER WF-1..21 (Step 9.3) AND the 8-dimension rubric (Step 9.3b).
+The WF rubric grades the EXPORTED workflow JSON only — it is blind to the **matched automation
+template**, the `copy_persona`, the recorded **flex decision**, and the funnel↔automation link.
+FAB-QC (`shared-utils/fab_qc.py`, the SAME scorer Skill 6 uses) adds the six library-aware
+dimensions defined in `universal-sops/funnel-automation-build-quality-rubric.md`:
+
+1. Run: `./qc-built-workflow.sh <workflow-id> --fab --evidence <evidence_root>` where
+   `<evidence_root>` is the SAME canonical root defined in Step 0.4 (`$CAF_EVIDENCE_ROOT`). The
+   overlay runs automatically after WF-1..21 inside that script and is **FAIL-CLOSED** (FIX-XC-03g):
+   if the score is UNAVAILABLE for any reason (scorer absent, evidence_root missing, or the scorer
+   emits nothing) the script sets the verdict to `REQUIRES_OPERATOR` and exits non-zero — it is NEVER
+   auto-passed as "(FAB-QC skipped)". Before scoring, the script runs the **FAB-artifact
+   PRODUCER** (`shared-utils/fab_artifact.py`): it exports the workflow with `caf workflows export` and
+   converts that REAL export into `build/fab-artifact.json` — each built step's channel + the **actual
+   email/SMS subject+body copy that was pushed** — so the scorer judges the real build, not a hand-authored
+   fixture. (Producer runs only when a `routing/match-decision.json` receipt exists and never clobbers an
+   existing artifact.) The scorer then reads `routing/match-decision.json` (written by Step 0.4's
+   `automation_matcher.step0_match`), the matched template, that produced `fab-artifact`, the
+   `persona-selection-log.md`, and the `_links` map. Without the producer the overlay had nothing to score
+   and the ≥ 8.5 gate was a silent no-op on a real automation build.
+2. Six dimensions, weighted to 100, scored 0–10: **D1** template fidelity (the export reproduces the
+   matched template's `sequence` — steps + channels + order), **D2** copy substance (every step
+   carries substantive copy; ZERO surviving placeholders), **D3** render/soundness (WF-1..21 PASS —
+   the hard floor), **D4** persona grounding (the template's `copy_persona` is named in the log;
+   fail-closed if the selector did not run), **D5** flexibility honored (an EXPLICIT user spec was
+   NOT overridden by the template), **D6** funnel↔automation link integrity (a primary linked
+   follow-up was not silently dropped).
+3. **"Done" requires BOTH:** WF-1..21 all-PASS **AND** the combined weighted FAB-QC score ≥ 8.5 with
+   no hard miss. Below 8.5 → LOOP (name the lowest dimension, fix, re-run; max 5 loops then escalate).
+
+### Step 9.4 — QC verdict routing
+
+- Any WF-1..21 FAIL → Step 9.5 (fix + re-run). The rubric is not consulted until WF-1..21 is clean.
+- WF-1..21 all-PASS AND final weighted rubric ≥ 8.5 AND FAB-QC overlay (Step 9.3c) ≥ 8.5 → proceed to Step 9.6.
+- FAB-QC overlay < 8.5 (or any FAB hard miss) → **LOOP** like a rubric FAIL: name the lowest FAB dimension, fix, re-run. Treated as not-done.
+- WF-1..21 all-PASS BUT final weighted rubric < 8.5 → **LOOP**: do NOT declare done. Report the
+  weighted score and **name the lowest-scoring dimension** (the script surfaces it as
+  `rubric.lowest_dimension`) plus the anchor it fell to, fix that dimension, and re-run QC from
+  Step 9.2. Below-threshold quality is treated like a FAIL for the purpose of "never declare done."
+
+### Step 9.5 — On FAIL: fix and re-run QC
+
+The build agent fixes the failing items (re-using the snapshot/restore if needed) and RE-RUNS
+QC from Step 9.2. Do NOT declare done on a partial pass.
+
+Exception: if the FAIL is class=HALLUCINATION, follow the "If QC finds a HALLUCINATION"
+escalation below instead of the normal fix path.
+
+### Step 9.6 — Declare done + hand over checklist
+
+Only after all WF-1..21 PASS AND the final weighted rubric ≥ 8.5: tell the client "QC passed —
+here is the verified workflow" and HAND THE CLIENT THE FILLED CHECKLIST (every item with its
+PASS + observed value) AND the weighted rubric score (8 dimensions + the final 1–10), so the
+client can independently verify every setting AND see the quality grade.
+
+**Kanban touchpoint — card `done` (FAIL-SOFT, FIX-S36-28).** ONLY now — after every WF-1..21
+PASS, rubric ≥ 8.5, and (when the FAB-QC overlay ran) FAB-QC ≥ 8.5 — move the `in_progress`
+card posted at Step 0.5 to `done` via the shared mc-route / Command Center helper. Never card
+`done` before an all-PASS verdict. Fail-soft: an unavailable board is logged and skipped, never
+a blocker to declaring the (already-verified) build done to the client.
+
+### Step 9.7 — Logging (build-events ledger)
+
+Append to the build-events ledger at:
+`<engine>/data/build-events.jsonl`
+
+Each QC run logs: model used, per-item verdicts, pass/fail result, any escalation, workflow id,
+timestamp. This makes a crash/limit mid-QC recoverable (per MEMORY persistent-ledger rule).
+
+---
+
+### If QC finds a HALLUCINATION
+
+QC distinguishes a HALLUCINATION from a REAL GAP by the evidence shape:
+
+**REAL GAP:** the build agent did NOT claim the item, and QC's independent read shows it absent
+or misconfigured. Response: normal fix + re-run QC (Step 9.5). No model escalation required.
+
+**HALLUCINATION:** the build agent CLAIMED the item is set/done, but QC's independent
+ground-truth read contradicts the claim. Discriminator: (build-agent-claimed == TRUE) AND
+(QC-observed == FALSE/absent/different). Fingerprints:
+- A LINK the build agent reported that returns 404 / does not exist.
+- A phone or SMS From-NUMBER the agent said it set that is not on the node (WF-12/WF-20).
+- A TRIGGER the agent said it activated that export shows active:false (WF-4).
+- A tag/field/value/workflow-id the agent cited that GET-verification cannot find.
+WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
+
+**Escalation on HALLUCINATION-class FAIL (Step 0 recommendation FLIPPED TO REQUIREMENT):**
+
+1. **HARD STOP** — do NOT let the same build agent "fix and continue." A hallucination means
+   the build agent's self-report cannot be trusted; silent retry compounds the lie.
+
+2. **REQUIRE a high-reasoning model at thinking HIGH for the redo.** This is the v12.3.5
+   Step 0 recommendation FLIPPED FROM RECOMMENDATION TO REQUIREMENT for this case. The redo
+   MUST run on a high-reasoning model (e.g. DeepSeek V4.1 Flash / GLM 5.2, Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
+   if the current build session is on a lighter model, the build does NOT proceed until
+   switched (cross-references and strengthens INSTRUCTIONS.md Step 0).
+
+3. **RE-DO** the affected build steps on the reasoning model at thinking HIGH, restoring from
+   the pre-build snapshot if the workflow state is suspect.
+
+4. **RE-RUN QC** (fresh independent MiniMax sub-agent) from scratch against the FULL checklist
+   — a hallucination invalidates the whole build agent's report, so QC re-verifies ALL items,
+   not just the flagged one.
+
+5. **DISCLOSE to the client:** "QC caught that I reported something that wasn't actually true
+   (<the specific item>). I've switched to a high-reasoning model with deep thinking and
+   rebuilt + re-verified." Honest disclosure, per the no-lies rule.
+
+6. **LOG the hallucination event** to the build-events ledger: item, claimed value, observed
+   value, model that hallucinated, model used for redo.
+
+---
+
+## Daily Firebase Token Liveness Check (Skills 44 + 46)
+
+A daily run of the `ghl-token-liveness` check runs on every install (on the OpenClaw side a registered host cron at 08:00 UTC; in this harness, whatever scheduler the operator wires).
+It POSTs the box's `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` to Google's
+`securetoken.googleapis.com` exchange endpoint and classifies the result.
+
+**Agent action on PASS (HTTP 200 + id_token returned):** no action. The check writes a
+day-stamp and exits silently.
+
+**Agent action on INVALID (TOKEN_EXPIRED / USER_DISABLED / INVALID_REFRESH_TOKEN):**
+The check script automatically sends the client a plain-English notification via
+a surfaced notification pointing them to the Token Grabber re-grab flow
+(`references/owner-token-grabber-guide.md`). The client replies with the new token;
+wire it in using the standard steps (Step 1 of the owner-token-grabber-guide FOR THE
+AGENT section: `tools/engine/wire-ghl-env.sh --write` with the token in the install's secrets env
+then `caf doctor` to confirm).
+
+**Do not send the re-grab notification manually if the daily check already sent it today.**
+The check script writes a `.notified` stamp alongside the `.ok` stamp when it fires a
+notification; the agent should inspect `tools/state/ghl-token-liveness/` before
+sending a duplicate.
+
+**Manual invocation** (e.g. after a client reports workflow writes failing):
+```bash
+bash .claude/skills/convert-and-flow-operator/tools/check-ghl-token-liveness.sh
+```
+Delete the day-stamp file first to force a re-check even if today's run already happened:
+```bash
+rm -f tools/state/ghl-token-liveness/ghl-token-liveness-"$(date -u +%Y-%m-%d)".ok
+bash .claude/skills/convert-and-flow-operator/tools/check-ghl-token-liveness.sh
+```
+
+---
+
+## Disclosure header format
+
+Every GHL response from Tier 0 must begin with:
+```
+[GHL tier used: 0 — convertandflow <command>]
+```
+
+On fall-through:
+```
+[GHL tier used: 4 (Tier 0 build blocked: no Firebase token) — agent-browser]
+```

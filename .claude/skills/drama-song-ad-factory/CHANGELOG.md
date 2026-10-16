@@ -1,5 +1,158 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [v2.9.61] — 2026-10-16 — BATCH-AGN-24H-N2: canonical sync of this twin from onboarding main `b16266d9`
+
+Batch `BATCH-AGN-24H-N2` — one batch PR, one entry, no older entry rewritten. Window:
+`2026-10-15T23:54:34Z` - `2026-10-16T23:54:34Z`. Sync source of truth: `trevorotts1/openclaw-onboarding`
+`origin/main` `b16266d9dfc2d9aabcef40e1d780137350080df4` (repo tree
+`7f2ae6c86c55a6e865690d562524b17b6038af98`; its `75-drama-song-ad-factory/` subtree is
+`0994cb127b5317dc40b34edf6c4123a0d26a7f9d`, which live main `c0930ca6e1d9733525694a7c763fa78a56c9e7c7`
+at build time still carries byte for byte).
+
+- `scripts/core/` regenerated with `installer-registration/package_core.py`: 82 files written
+  (48 canonical files this twin did not yet ship, 34 content updates), 0 removed, 501 -> 549 files,
+  one tree sha256 `7c8c0d2f1b69feb35819d690555b122e2fd2a2acd23b502a71588c8638462d5a` on both sides.
+  That carries the pace-order dispatch requirement (`music_qc/pace_change.py`,
+  `music_qc/test_method_pace.py`, `song_dispatch/song_dispatch.py`, `song_dispatch/test_method_song.py`)
+  plus the method and Agnes core batch that landed on canonical main after the previous sync pin.
+- `references/` refreshed byte for byte where this twin mirrors the canonical tree: three proof
+  receipts that are new since that pin (`agnes-platform-proof.md`, `agnes-proof-receipt.md`,
+  `method-proof-receipt.md`) plus the updated `CLIENT-GUIDE.md` and `stage-runbook.md`.
+  `agnes-path.md`, `drama-to-demand-method.md` and `QC.md` were already identical and are unchanged.
+  One canonical receipt is deliberately NOT mirrored: `lipsync-cartoon-proof.md` names judge models
+  six times and `tests/test_model_choice.py` fails any model pin in `references/*.md`, so carrying it
+  would be a red build here while the guard itself may not be weakened. It stays canonical-side only.
+- Version markers move together onto the canonical version of record: `VERSION` `2.7.57` -> `v2.9.61`,
+  the `SKILL.md` frontmatter `version:` -> `v2.9.61`, and this twin gains the `skill-version.txt`
+  the canonical skill carries, byte-identical at `v2.9.61`, so `QC.md`'s
+  "skill-version.txt matches SKILL.md frontmatter version" line holds here as well. The three now
+  agree, which is what `tests/test_parity_layout.py` ("frontmatter matches VERSION") and
+  `scripts/qc-assert-skill-frontmatter-version.sh` check.
+- Not synced as whole files, exactly as every earlier round recorded: this distribution's own
+  `SKILL.md`, `INSTRUCTIONS.md`, `PREREQS.json` and `CHANGELOG.md` keep their Claude-Nine / Claude
+  Code framing (only the canonical doc hunks and this entry were carried over), `VERSION` is this
+  twin's own marker line, `adapters/`, `assets/`, `mini-app/` and `shared-bridge/` stay with their
+  owners.
+
+
+## [2.7.57] — 2026-10-15 — BATCH-AGN-24H-N: 24-hour batch window, member `#227` folded in
+
+Batch bookkeeping release for repo `trevorotts1/999-setup`, head `batch/AGN-24H-N`, carrying
+exactly one member pull request over the fixed 24-hour window
+`2026-10-14T23:54:34.455Z` .. `2026-10-15T23:54:34.455Z`. Version `2.7.56` -> `2.7.57`, in
+`VERSION` and the `SKILL.md` frontmatter `version:`, with this single entry; no older entry was
+rewritten.
+
+**Member, folded in this deliberate order** (its own head is the batch's second parent):
+
+- **`unit/AGN-W3-twin-sync-U2`** (`#227`, head `098653d952`, 2 commits, 39 changed files) —
+  vendors skills `63-agnes-image` and `64-agnes-video` as optional pinned helpers under
+  `installer-registration/helpers/`, adds `installer-registration/helper-deps.py`, and repins
+  `installer-registration/helpers/shared-utils/kie_prompt_gates.json` to
+  `trevorotts1/openclaw-onboarding` `origin/main`. Every changed file lives under
+  `installer-registration/`: this member touches no file under
+  `.claude/skills/drama-song-ad-factory/`, so the merge carries zero content risk to Skill 75
+  and the version bump here is batch bookkeeping, not a Skill 75 behaviour change.
+
+Adopted without redo: `#228` (`unit/AGN-W3-twin-sync-U1`, tip commit `c7cedd6b`) was already on
+`origin/main` at the window's batch start and is NOT re-merged and NOT counted as scope. Open
+PR `#225` (`martin/skill71-item28-adaptation`) belongs to another program and is untouched by
+this batch.
+
+## [2.7.56] — 2026-10-14 — SWI-202: build hygiene never reaches the client (drift reports operator-only, silent)
+
+`#226` (`unit/SWI-202`, W2-item12-U1) — the SPEC.md item-12 doctrine provision, mirrored into this
+packaged twin because `references/parity-contract.md` lists **creative doctrine** and **the
+enforced flow** among the items that must be identical across both distributions (its
+byte-for-byte parity test covers `scripts/core/`, so this is the contract's identical-content
+rule, not the re-copy rule).
+
+`SKILL.md`, inside "Start here: the enforced flow" directly after the no-skip-gate paragraph,
+now states that drift between the installed tree and its source is build hygiene and, during
+a client run, the drift report is OPERATOR-ONLY and SILENT: no decision menu, no numbered
+report-only / add-files / full-re-sync / type-your-own choice, no prompt that waits for an
+answer, nothing about drift in the client's chat; the sync continues non-interactively on its
+documented default and the drift is reported to the operator only, by named file and path.
+The decision menu stays available on the explicit operator path (a named flag or an
+operator-run sync outside a client run).
+
+No code emitter exists to change in either repository: the four menu phrases ("Report only" /
+"Add 5 files" / "Full re-sync" / "Type something") are absent from onboarding `origin/main`,
+from this repo's `origin/main`, from the client box's `~/.claude/tools`, `~/.claude/skills`
+and `~/.openclaw`, and from the installed OpenClaw package — the menu was composed at run time
+by the agent. Version `2.7.55` -> `2.7.56`, in `VERSION` and the `SKILL.md` frontmatter
+`version:`, with this single entry; no older entry was rewritten. `scripts/scrub-operator-chat-id.py`
+does not exist in this repo (that guard is onboarding-only); it was recorded as absent, not created.
+
+## [2.7.55] — 2026-10-14 — BATCH-SWI-N-1: count truth, intake doctrine, parity test hygiene (999)
+
+One release batch for repo `trevorotts1/999-setup`, head `batch/SWI-N-1`, carrying three
+QC-PASS member pull requests. Version `2.7.54` -> `2.7.55`, in `VERSION` and the `SKILL.md`
+frontmatter `version:`, with this single entry.
+
+**Members, merged in this deliberate order** (SWI-004 first, because SWI-007's companion
+test reads the very strings SWI-004 repairs, so #222 stays red until #221 is in the tree):
+
+- **`unit/SWI-004`** (#221, head `87f6a313e`) — count truth in the card strings: the
+  `intake_card` package docstring, the `intake_card.py` argparse help and the `factory.py`
+  card help derive their total from the live source, plus the 14-question companion
+  assertions and the AST sweep of every help/description literal.
+- **`unit/SWI-003`** (#220, head `e9bbe8648`) — intake doctrine in this `SKILL.md`:
+  dramatizations, the never-ask-real rule, the client-claim carve-out, the permission rule,
+  count truth and the overwork rule, plus item 9's parity exit-code documentation.
+- **`unit/SWI-007`** (#222, head `fe2beb79b`) — `tests/test_parity_layout.py` resolves its
+  root from the file location so the 2 real parity FAILs stay visible instead of silently
+  skipping, and `test_intake_card_h9.py` gains the public `NUMBER_WORDS` / `COUNT_CLAIM` /
+  `COUNT_SOURCES` companion contract with `test_no_help_or_docstring_claims_a_different_count`.
+
+**The one conflict and how it was resolved.** `test_intake_card_h9.py` was edited by two
+members at once. Both companion suites were kept: SWI-007's public helpers and its
+`test_no_help_or_docstring_claims_a_different_count` survive unchanged, and SWI-004's
+AST-based helpers survive renamed with an `_AST_` prefix alongside its sweep and live
+`--help` count tests, with the colliding module-count test renamed
+`test_module_count_equals_rendered_count_item10`. No assertion, helper or test was dropped.
+
+## [2.7.54] — 2026-10-14 — BATCH-DSF-11: the R2-B story-brief twin re-sync (DSR-105)
+
+One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-11`, carrying **no
+member PR** — its whole job is the R2-B twin re-sync. Version `2.7.53` -> `2.7.54`, in
+`VERSION` and the `SKILL.md` frontmatter `version:`, with this entry, all in this one
+commit.
+
+**The sync source.** Release group R2-B is **`DSR-105`**, the studio page collecting the
+story brief. It landed on onboarding `origin/main` as PR **#2003** (head
+`4d730e5b45e6828ff914709604fc65797ebd93c0`, verified an ancestor of `origin/main`), carried
+by batch PR **#2026** on branch `batch/DSF-10`, merged as
+`82e34384042a3312c17318285c4bd71965204ec7`. That merge commit *is* `origin/main`'s head, and
+it is the tree this re-sync was packaged from — read live with
+`git -C ~/openclaw-onboarding archive 82e34384 …`, never from a document.
+
+**What changed in skill 75 (why the twin drifted).** `scripts/core/choice_card/intake_card/intake_card.py`
+stays the only question source and gains five typed **BRIEF** questions —
+`BRIEF_IDS = ("offer", "link", "audience", "character", "photos")` — so the card asks **14**
+instead of 9 (`QUESTIONS = _brief_questions() + _questions()`); `mini-app/ui/questions.json`
+was regenerated from it and `mini-app/ui/studio.js` now passes the question into `answerBox`
+so the textarea shape comes from the typed contract; and `mini-app/service/src/index.js`
+reads the brief out of the leading replies and stores it *beside* them, marking
+`brief_complete` false with `brief_missing` rather than refusing an order. `mini-app/**` is
+onboarding-only and has no 999 counterpart (see `parity-contract.md` and the receipt), so
+only the `scripts/core/` half of that change reaches this repo.
+
+**What this commit does.**
+
+| Change | Detail |
+|---|---|
+| Re-package the core | the repo's own `installer-registration/package_core.py --source <read-only git archive of origin/main>`: `496 files (17 written, 0 stale removed)`, `--check: OK 496 files match canonical`, tree sha256 `f4f4d68f8d075a9ab54faf612e959191f94bd91a7258564efaa5c1867b2983cd` on both sides |
+| Re-copy the bridges | `drama-studio/{studio_bridge,approvals_bridge,studio_claim}.py` copied byte-for-byte from the same archive; all three were already identical, so **`studio_bridge.py` did not move** and its recorded fingerprint is untouched |
+| Refresh the fingerprints | `references/twin-sync-fingerprints.json`: `unit` `DSR-202` -> `DSR-206`, `canonical` re-pinned to `82e34384` / `origin/main`, `packaged` to `d504e753a` / `batch/DSF-11`, `summary` 496/496/0/0/0, 17 `files` entries re-digested, `pre_sync_DSR206_*` added. Nothing else touched |
+| Refresh the receipt | `references/twin-sync-receipt.md` gains the R2-B section below the R2-A one |
+
+**Proof.** `DSAF_CANONICAL_CORE=<archive> python3 -I tests/twin_sync_prove.py` ->
+`summary: same=496 differ=0 only-canonical=0 only-packaged=0` / `PARITY: PROVEN`, exit 0.
+`tests/test_studio_bridge_twin.py` exits 0 in both modes, run from the permanent batch
+worktree (never `/tmp`). `cmp` of each bridge against `origin/main`'s original -> exit 0
+all three. The packaged card carries all five brief ids and `len(QUESTIONS) == 14`.
+
 ## [2.7.53] — 2026-10-13 — BATCH-DSF-9: drama-studio pair fix (#216) + the R2-A twin re-sync
 
 One release batch for repo `trevorotts1/999-setup`, head `batch/DSF-9`, one member unit

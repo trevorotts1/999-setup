@@ -1,0 +1,566 @@
+{
+  "_doc": "Runtime selector-gate registry for the GoHighLevel browser builder (D8). Each gate is a UI node the builder must act on. status=captured means a real, live-snapshot-verified DOM node (do NOT re-snapshot blindly, but DO verify it still matches). status=runtime means the node is NOT DOM-captured and MUST be resolved at runtime by snapshotting the live DOM and picking the ref. The `find` hints are accessibility-role/name/visible-text search seeds for `agent-browser find ...`, NOT confirmed CSS. NO invented CSS may ship as fact. NEW (v13.2.4, D8): the `label` field now carries the REAL visible label + sequence wired from the operator's 15 live screenshots (Downloads/ghl-ui-map.md). `label_source` tells you whether that label is screenshot-confirmed-label (from the UI map) or still-runtime-snapshot (no screenshot yet). A screenshot-confirmed label is a visible-text/role target the agent confirms at runtime — it removes the GUESSING, it does NOT replace the runtime @ref capture.",
+  "_legend": {
+    "captured": "Live-snapshot-verified real DOM node (2026-06-21 capture pass).",
+    "runtime": "MUST capture-at-runtime: snapshot the live DOM, pick the @ref, act. Never hardcode invented CSS.",
+    "label_source": {
+      "screenshot-confirmed-label": "Visible label + position verified against the operator's 15 live screenshots (Downloads/ghl-ui-map.md, 2026-06-21). Target this exact visible text/role; confirm the @ref at runtime.",
+      "live-confirmed-label": "Visible label + sequence verified by an END-TO-END LIVE RUN (2026-06-21 D10/D11 pass, BlackCEO LLC operator test fixture). The selector/flow was actually driven and produced the documented result (page saved + preview HTTP 200 + marker/embed rendered). Still resolve the live @ref at runtime; the engine limits (cross-origin iframe, real-pointer double-click-add) are noted inline.",
+      "still-runtime-snapshot": "No screenshot for this node yet. Snapshot the live DOM and resolve from the find-seed; label is a hint only."
+    }
+  },
+  "_capture_pass": "2026-06-21 READ-ONLY pass, app.convertandflow.com, agent-browser 0.27.0, --session ghl-capture. HARD-BLOCKED at login by two-factor authentication: gates 1 and 27 are DOM-captured; the remaining 28 (gates 2-26 and 28-30, incl. the multi-iframe protocol gates 29-30) remain runtime snapshot-gates. SEPARATELY, the 2026-06-21 UI-MAP pass (15 screenshots, Downloads/ghl-ui-map.md) confirmed the VISIBLE LABELS + sequence for the funnel flow — those gates now carry screenshot-confirmed-label. The agent still resolves the live @ref at runtime. PENDING-LIVE-RUN for the REST_autosave wired path end-to-end and the full-funnel publish E2E; the A/B/C build-method OUTCOME baseline in `_runtime_gate_baseline` is separately CAPTURED on the operator fixture.",
+  "_runtime_gate_baseline": {
+    "_doc": "END-TO-END runtime BUILD-OUTCOME baseline, promoted runtime -> captured on the strength of the 2026-06-21 Funnel-Factory re-run (A4-GATE-CAPTURE). DISTINCT from the per-gate `status` field above: `status` (captured=2 / runtime=26) tracks DOM-SELECTOR capture and is unchanged by this block. THIS block records the build-OUTCOME gates (preview HTTP 200 + marker present + asset renders + draft-not-published) that each build METHOD achieved on a real live run. `outcome_status` values mirror the gate legend: `captured` = verified live this run; `runtime` = not yet driven end-to-end. Every value here is supported by independent-curl / API evidence in A4-GATE-CAPTURE; NO value is asserted without that evidence. Operator fixture only: BlackCEO LLC test sub-account (FIXTURE0LOCATION0000), the operator's own box — NO client data.",
+    "_evidence_source": "A4-GATE-CAPTURE (2026-06-21 Funnel-Factory re-run, BlackCEO LLC operator test fixture). Auth: token-only (Firebase refresh-token seed), headless, NO UI login / NO two-factor. Marker: ZHC-FACTORY-FUNNEL-0621.",
+    "outcome_gates": ["preview_http_200", "marker_present", "asset_renders", "draft_not_published", "token_only_auth", "exact_location_verified"],
+    "methods": {
+      "A_funnel_raw_code": {
+        "label": "Funnel / Page builder — raw HTML into a Custom Code element (Skill 06 Part A; gates 13-21)",
+        "outcome_status": "captured",
+        "preview_http_200": {"result": "PASS", "evidence": "independent curl: HTTP 200, content-type text/html, 66021 bytes"},
+        "marker_present": {"result": "PASS", "evidence": "grep -o ZHC-FACTORY-FUNNEL-0621 = 4 occurrences, stable across re-curls"},
+        "asset_renders": {"result": "PASS", "evidence": "img src bac1ccb0-*.jpg -> HTTP/2 200, content-type image/jpeg"},
+        "draft_not_published": {"result": "PASS", "evidence": "only /preview/ URL exists; no public-domain URL; Publish never clicked"},
+        "token_only_auth": {"result": "PASS", "evidence": "Firebase refresh-token seed only; no UI login, no two-factor (headless)"},
+        "exact_location_verified": {"result": "PASS", "evidence": "BlackCEO LLC location FIXTURE0LOCATION0000 HARD-verified HTTP 200, name 'BlackCEO LLC'"}
+      },
+      "B_vercel_embed": {
+        "label": "Page builder — single responsive <iframe> embed into a Custom Code element (Skill 06 Mode 2; gate 26)",
+        "outcome_status": "captured",
+        "preview_http_200": {"result": "PASS", "evidence": "prior run (workflow wy6i8nizq): preview HTTP 200"},
+        "marker_present": {"result": "PASS", "evidence": "prior run: marker x4 in preview"},
+        "asset_renders": {"result": "PASS", "evidence": "embed child-frame HTTP 200, real content rendered live through preview (D10 live-confirmed, gate 26)"},
+        "draft_not_published": {"result": "PASS", "evidence": "prior run: draft only, Publish never clicked"},
+        "token_only_auth": {"result": "PASS", "evidence": "token-only seed (same auth path as Method A)"},
+        "exact_location_verified": {"result": "PASS", "evidence": "operator fixture BlackCEO LLC (same location)"}
+      },
+      "C_website_page": {
+        "label": "Website builder — Website page with raw HTML Code element (Skill 06 Part B; gates 23-25 + 13-21 analogues)",
+        "outcome_status": "captured",
+        "preview_http_200": {"result": "PASS", "evidence": "independent curl: HTTP 200, content-type text/html, 62146 bytes"},
+        "marker_present": {"result": "PASS", "evidence": "grep -o ZHC-FACTORY-FUNNEL-0621 = 4 occurrences, stable across re-curls"},
+        "asset_renders": {"result": "PASS", "evidence": "img src d84694c4-*.png -> HTTP/2 200, content-type image/png"},
+        "draft_not_published": {"result": "PASS", "evidence": "only /preview/ URL exists; no public-domain URL; Publish never clicked"},
+        "token_only_auth": {"result": "PASS", "evidence": "Firebase refresh-token seed only; no UI login, no two-factor (headless)"},
+        "exact_location_verified": {"result": "PASS", "evidence": "BlackCEO LLC location FIXTURE0LOCATION0000 HARD-verified HTTP 200, name 'BlackCEO LLC'"}
+      },
+      "REST_autosave": {
+        "label": "Funnel / Page / Website builder — REST autosave (token-id GET /funnels/page + POST /funnels/builder/autosave; the cracked canvas-REST path, ghl_rest_canvas wired into ghl_builder.emit_rest_save_plan). Adds the image_renders gate (in-page <img> CDN HTTP 200).",
+        "outcome_status": "runtime",
+        "_note": "NOT YET driven end-to-end by the T1 wire-in (T1 is mock-unit-test only: NO live GHL, NO git). The read->splice->autosave->verify->revert recipe is PROVEN live in the headless-canvas solution doc (raw evidence: save_result.json 201, verify_write.json marker landed, byte-identical revert) — but THIS method's outcome_status stays `runtime` until the wired emit_rest_save_plan is driven end-to-end against the operator fixture under a fresh RUN_ID in the durable skill6-fix evidence root. NO fabrication: do not flip to `captured`/PASS without that fresh receipt.",
+        "preview_http_200": {"result": "PENDING-LIVE-RUN", "evidence": "verify_url(preview_url, marker) emitted by emit_rest_save_plan step 'verify_preview'; not yet driven end-to-end via the wired path"},
+        "marker_present": {"result": "PENDING-LIVE-RUN", "evidence": "marker spliced into rawCustomCode by edit_element_customcode; verify_url asserts marker-in-body; not yet driven end-to-end via the wired path"},
+        "image_renders": {"result": "PENDING-LIVE-RUN", "evidence": "in-page <img src=<public storage.googleapis.com/msgsndr CDN url>> must return HTTP 200; the CDN url comes from the services.* media-upload (T2), referenced via the autosave splice; not yet driven end-to-end"},
+        "draft_not_published": {"result": "PENDING-LIVE-RUN", "evidence": "autosave_body pageType='draft' by default; may_publish() gates publish; live pageVersion pointer never moves on a draft; not yet driven end-to-end"},
+        "token_only_auth": {"result": "PENDING-LIVE-RUN", "evidence": "token-id header (minted Firebase id_token), no Authorization: Bearer, no UI login / no two-factor; staged via python-written JS file (never bash ${VAR@Q}); not yet driven end-to-end via the wired path"},
+        "exact_location_verified": {"result": "PENDING-LIVE-RUN", "evidence": "emit_rest_save_plan gates the whole plan behind subaccount_matches(current_location_id, <configured GHL location id>) — MISMATCH emits zero steps; not yet driven end-to-end via the wired path"}
+      }
+    },
+    "_note": "Three build methods (A raw-code funnel/page, B vercel-embed, C website page) hold a live end-to-end runtime PASS on the operator fixture (outcome_status `captured`). The REST_autosave method is the cracked canvas-REST path wired in by T1 (ghl_rest_canvas -> ghl_builder.emit_rest_save_plan); its outcome_status is `runtime` (PENDING-LIVE-RUN) because T1 is mock-unit-test only and the wired path has NOT yet been driven end-to-end (the underlying recipe is proven live in the headless-canvas solution doc, but this method only flips to `captured` on a fresh end-to-end receipt under the durable skill6-fix evidence root). This block does NOT alter the 30-entry `gates` array or its captured/runtime counts (still 2 captured, now 28 runtime including the two multi-iframe protocol gates 29-30, as the install QC asserts). Per-gate DOM selectors remain resolve-at-runtime; what is captured/runtime here is the build OUTCOME each method produces. The full-funnel publish E2E and Skill 62's U26 live proof (deliberately HELD per CWFE-MANIFEST.json) remain OWED and are NOT claimed by this block; operator steps that clear only the owed half are in `OPERATOR-LIVE-CHECKLIST.md`."
+  },
+  "_env": {
+    "_note": "Wired from the UI-map pass (Downloads/ghl-ui-map.md). BCEO Client Sandbox (location XCgFTEA1oDvsPnTqqgoB) = designated test sub-account on this operator box per operator ruling 2026-07-20; every historical capture/evidence line in this file that names BlackCEO LLC (location Mct54Bwi1KlNouGXQcDX) records runs made against the PREVIOUS designated fixture and is preserved unrewritten. Client boxes substitute the client's own sub-account label + location id (NO-COMINGLING).",
+    "test_subaccount_label": "<AGENCY_TEST_SUBACCOUNT>",
+    "test_location_id": "FIXTURE0LOCATION0000",
+    "preview_domain": "<PREVIEW_DOMAIN>",
+    "preview_url_pattern": "https://www.<PREVIEW_DOMAIN>/preview/<PAGE_ID>",
+    "funnels_list_url": "app.convertandflow.com/v2/location/<LOCID>/funnels-websites/funnels",
+    "funnel_url": "app.convertandflow.com/v2/location/<LOCID>/funnels-websites/funnels/<FUNNEL_ID>",
+    "page_builder_url": "app.convertandflow.com/location/<LOCID>/page-builder/<PAGE_ID>",
+    "websites_mirror_funnels": true,
+    "live_domain_note": "Going live (not preview) needs 'Connect Domain' — a CLIENT step, never automated."
+  },
+  "_label_coverage": {
+    "screenshot_confirmed_label": [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+    "live_confirmed_label": [23, 24, 25, 26],
+    "still_runtime_snapshot": [2, 12, 22, 27, 28, 29, 30],
+    "count_screenshot_confirmed": 19,
+    "count_live_confirmed": 4,
+    "count_still_runtime": 7,
+    "total": 30,
+    "_note": "19 gates carry a screenshot-confirmed visible label (the full funnel-build click-path, gates 1+3-11+13-21). 4 gates (23-26, the Websites + Mode-2 embed flow) are now LIVE-CONFIRMED by the 2026-06-21 D10/D11 end-to-end run on the BlackCEO LLC operator test fixture (Website created + page built + Code element + preview HTTP 200 + marker rendered; Mode-2 iframe embed rendered live through preview). The Website builder is the SAME editor as the Funnel builder, with the URL/label/flow DIFFERENCES recorded inline on gate 25. Gate 12 (editor iframe boundary) is structural with no visible label. Gate 22 (funnel-list row) and gate 28 (published-page origin) remain runtime. Gate 27 is auth-storage (DOM-captured, no visible label). Gates 29-30 are the multi-iframe protocol gates (correct-frame-before-edit / refreshed-snapshot-after-panel-open) — structural, no visible UI label, resolve via tools/iframe_router.py at runtime."
+  },
+  "login_route": {
+    "use": "https://app.convertandflow.com/",
+    "do_not_use": "https://app.convertandflow.com/login",
+    "note": "CAPTURED 2026-06-21: the login FORM mounts ONLY at root '/'. The '/login' path renders a permanently-blank 'Initializing...' shell in automated Chromium (the form component never mounts). Always navigate to root."
+  },
+  "gates": [
+    {
+      "id": 1, "spec": "A1.2", "name": "login_form", "status": "captured",
+      "label": "Sign in form (email + password + 'Sign in' button)",
+      "label_source": "screenshot-confirmed-label",
+      "captured": {
+        "email": "input#email (name=email, type=text, placeholder 'Your email address')",
+        "password": "input#password (name=password, type=password, placeholder 'The password you picked')",
+        "submit": "button with exact text 'Sign in'",
+        "also_present": "button 'Sign in with Google', language combobox, link 'Forgot password?'"
+      },
+      "find": "find role textbox name Email | find role textbox name Password | find role button name 'Sign in'"
+    },
+    {
+      "id": 2, "spec": "A2.2", "name": "account_switcher", "status": "runtime",
+      "label": "Sub-account chevron, top-left (current label e.g. '<Sub-account name> / <City, ST>')",
+      "label_source": "still-runtime-snapshot",
+      "find": "find text <current-subaccount-label> (top-left, with chevron) | find testid account-switcher | per-row match by client name",
+      "note": "HARD GATE A2.3: refuse on sub-account mismatch (no co-mingling). UI map confirms the label sits top-left with a chevron, but the switcher list itself was not screenshotted — snapshot it."
+    },
+    {
+      "id": 3, "spec": "A3.1", "name": "sidebar_sites", "status": "runtime",
+      "label": "Sites (left sidebar; turns orange when active)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role link name Sites | find text Sites (left nav)",
+      "note": "Screenshot-confirmed: visible label 'Sites' in the left sidebar, goes orange when active. Snapshot for the live @ref."
+    },
+    {
+      "id": 4, "spec": "A3.2", "name": "tab_funnels", "status": "runtime",
+      "label": "Funnels (orange top-tab row: Funnels | Stores | Webinars | Analytics | Quizzes | QR Codes | Websites | Blogs | WordPress | Client Portal | Forms | Surveys | Chat Widget)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role tab name Funnels | find text Funnels (orange top-tab row)",
+      "note": "Screenshot-confirmed tab order. 'Funnels' is the leftmost tab; 'Websites' is in the same row (gate 23)."
+    },
+    {
+      "id": 5, "spec": "A4.1", "name": "new_funnel_button", "status": "runtime",
+      "label": "+ New funnel (top-right; 'Build with AI' sits beside it)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name 'New funnel' | find text '+ New funnel' (top-right)",
+      "note": "Screenshot-confirmed label is '+ New funnel' (lowercase 'funnel'). Do NOT click the adjacent 'Build with AI' button."
+    },
+    {
+      "id": 6, "spec": "A4.2", "name": "funnel_name_input", "status": "runtime",
+      "label": "'Funnel name *' input on the 'From blank' card (modal 'Create new funnel')",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role heading name 'Create new funnel' | within 'From blank' card -> find role textbox name 'Funnel name'",
+      "note": "Screenshot-confirmed: the 'Create new funnel' modal has THREE cards — 'From blank' (carries the 'Funnel name *' input), 'Build with AI' (Beta), 'From templates'. Use 'From blank'. Blank choice ALSO exists later at the step CONTROL box (gate 10) — support both."
+    },
+    {
+      "id": 7, "spec": "A4.3", "name": "create_button", "status": "runtime",
+      "label": "Create (on the 'From blank' card, after typing the name)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Create (inside the 'Create new funnel' / 'From blank' modal)",
+      "note": "Screenshot-confirmed: 'Create' button on the From-blank card."
+    },
+    {
+      "id": 8, "spec": "A6.1", "name": "add_new_step", "status": "runtime",
+      "label": "+ Add new step or import (blue, inside the funnel)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name 'Add new step or import' | find text '+ Add new step or import' (blue)",
+      "note": "CORRECTED by UI map: it is ONE blue button '+ Add new step or import' — Import is NOT a separate button; it is an 'Import from ClickFunnels' URL field INSIDE the next modal. Match the full visible label; never a substring."
+    },
+    {
+      "id": 9, "spec": "A6.2", "name": "step_name_and_path_inputs", "status": "runtime",
+      "label": "'New step in funnel' modal -> 'Name for page' input + 'Path' input",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role heading name 'New step in funnel' | find role textbox name 'Name for page' | find role textbox name 'Path'",
+      "note": "Screenshot-confirmed: the page-name field is labeled 'Name for page' (NOT 'Step Name'). Path lowercase/hyphenated, unique within funnel. Modal also has the optional 'Import from ClickFunnels' URL field."
+    },
+    {
+      "id": 10, "spec": "A7.1", "name": "blank_template", "status": "runtime",
+      "label": "Step CONTROL box: 'Use existing' (blue) | 'Create from blank' -> click 'Create funnel step'",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name 'Create funnel step' | within control box find text 'Create from blank' (vs 'Use existing')",
+      "note": "Screenshot-confirmed: the step's CONTROL box shows 'Use existing' (blue) and 'Create from blank'. Use 'Create from blank' for a NEW page, then 'Create funnel step'. The box bottom has an 'Edit' dropdown that re-opens an existing page = the EDIT path (gate 11)."
+    },
+    {
+      "id": 11, "spec": "A7.2", "name": "edit_page", "status": "runtime",
+      "label": "'Edit' dropdown at the step CONTROL box bottom (re-opens an existing page)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Edit (control box bottom) | dropdown -> open editor",
+      "note": "Screenshot-confirmed: 'Edit' is a dropdown at the bottom of the step control box — it is the UPDATE/edit path (A14), distinct from 'Create from blank'."
+    },
+    {
+      "id": 12, "spec": "A7.3", "name": "editor_iframe_boundary", "status": "runtime",
+      "label": "Page-builder editor frame (canvas)",
+      "label_source": "still-runtime-snapshot",
+      "find": "frame @ref | frame main",
+      "note": "agent-browser 0.27.0 auto-inlines iframes into the snapshot and exposes 'frame @ref' / 'frame main' — scope into the nested editor frame; never assume top frame. No visible label (structural)."
+    },
+    {
+      "id": 13, "spec": "A8.1", "name": "add_section_blank", "status": "runtime",
+      "label": "Canvas 'Blank Section' (center: 'Blank Section' | 'Insert Element' | 'Generate with AI') -> green Section with a '+ Add' button inside",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find text 'Blank Section' | after insert find role button name 'Add' (the '+ Add' inside the section)",
+      "stable_ref": {"id": ["#hl-builder-add-elements-button", "#empty-placeholder-*"], "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer"},
+      "note": "Screenshot-confirmed: click 'Blank Section' to drop an empty green Section; it shows a '+ Add' button inside (opens Quick Add, gate 15) plus a '+' below it to add another section."
+    },
+    {
+      "id": 14, "spec": "A9.1", "name": "full_width_toggle", "status": "runtime",
+      "label": "Section panel toggle 'Allow Rows to take entire width'",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find text 'Allow Rows to take entire width' (Section right-panel, General/Styles tabs)",
+      "stable_ref": {"id": "#hl-builder-toggle-setting-button", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "Show/Hide settings toggle (alt route to this toggle); verify TOGGLE STATE not id alone."},
+      "note": "CONFIRMED by UI map — the label is 'Allow Rows to take entire width' (NOT 'take up full length'). Resolves the prior ambiguity. Still verify by TOGGLE STATE (on), not label text alone. Section panel also has Sticky + Background (Color/Image/Video). LIVE-MEASURED (2026-06-27 probe): allowRowMaxWidth=False renders a CENTERED ~1170px column visually IDENTICAL to True — the visible 1170 cap comes from the sectionStyles CSS rule, NOT the flag (see _live_render_findings.allowRowMaxWidth_false). ALTERNATE ROUTE: the 'Show settings' icon under Publish reaches this same toggle (see playwright_fallback_recipes.show_settings_full_width_route)."
+    },
+    {
+      "id": 15, "spec": "A10.1", "name": "code_element", "status": "runtime",
+      "label": "Quick Add panel -> 'Custom' group -> 'Code' (</> icon) -> drops a 'Custom Code' element ('<> Custom HTML/Javascript') inside a '1 Column Row'",
+      "label_source": "screenshot-confirmed-label",
+      "find": "open Quick Add (gate 13 '+ Add') | scroll to 'Custom' group | find text 'Code' (</> icon)",
+      "stable_ref": {"id": "#Code", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "Quick-Add 'Code' tile lives in the CROSS-ORIGIN builder iframe; resolve #Code inside that frame, still drive via real-pointer drag/double-click (gate 25 engine limit)."},
+      "note": "Screenshot-confirmed path: '+ Add' -> Quick Add panel (left groups: Quick Add, Sections, Rows, Elements, Prebuilt Sections, Saved Assets, Widget Marketplace, Buttons, Forms And Surveys, Social Media Icons, Countdown Timers, Images, Progress Bar) -> scroll to 'Custom' group -> 'Code'. Element label on canvas = 'Custom Code'."
+    },
+    {
+      "id": 16, "spec": "A10.2", "name": "code_editor_instance", "status": "runtime",
+      "label": "Custom Code element -> right-panel 'Open Code Editor' -> modal 'Custom Javascript/HTML' (dark textarea, placeholder 'Add your code here')",
+      "label_source": "screenshot-confirmed-label",
+      "find": "click 'Custom Code' element (right panel header 'Custom Code') | find role button name 'Open Code Editor' | then locate the 'Custom Javascript/HTML' modal textarea",
+      "note": "Screenshot-confirmed: clicking the element shows right-panel header 'Custom Code' with an 'Open Code Editor' button; that opens the 'Custom Javascript/HTML' modal. Set large payloads via the editor's value API (eval), NOT key-by-key typing — and FEATURE-DETECT CodeMirror v5 vs v6 first (see playwright_fallback_recipes.codemirror_set_value: try v6 '.cm-editor' dispatch, fall back v5 '.CodeMirror'.setValue, then HARD-assert a non-empty read-back == payload BEFORE Save so a v5/v6 mismatch can never silently commit an empty code body). The modal renders on the MAIN page, not inside the builder iframe."
+    },
+    {
+      "id": 17, "spec": "A10.3", "name": "code_element_save", "status": "runtime",
+      "label": "Save (inside the 'Custom Javascript/HTML' code modal)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Save (within the 'Custom Javascript/HTML' modal)",
+      "note": "Screenshot-confirmed: paste HTML into the modal textarea, then click 'Save' to commit the code element."
+    },
+    {
+      "id": 18, "spec": "A10-EDGE", "name": "dismiss_ai_popup", "status": "runtime",
+      "label": "'Ask AI' left panel (Assist/Build tabs, greeting 'Hi <user>, let us set the foundations') -> close via its X",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find text 'Ask AI' then its X | find text 'let us set the foundations' | find role button name Close (Ask AI panel)",
+      "stable_ref": {"id": "#ai-copilot-close", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "Absent is fine (panel may not open) — id-miss falls through to find, never crash."},
+      "note": "Screenshot-confirmed: the editor opens with the 'Ask AI' panel on the left (Assist/Build tabs; greeting personalizes to the logged-in user, so match on 'Ask AI' / 'let us set the foundations', not the name). Close it via its X on first editor open or it eats the next click. Absent is fine — do not crash."
+    },
+    {
+      "id": 19, "spec": "A11.1", "name": "page_save", "status": "runtime",
+      "label": "Top-right disk/save icon (note: 'Autosave off' -> manual save required)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Save | top-right disk icon",
+      "stable_ref": {"id": "#pg-funnel-builder__btn--save", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer"},
+      "note": "Screenshot-confirmed: save is the top-right DISK icon; autosave is OFF so a manual save is required. Wait for the save-confirmation toast, not a fixed sleep."
+    },
+    {
+      "id": 20, "spec": "A12.1", "name": "preview", "status": "runtime",
+      "label": "Top-right EYE icon (Preview)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Preview | top-right eye icon",
+      "stable_ref": {"id": "#hl-builder-preview-button", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer"},
+      "note": "Screenshot-confirmed: preview is the top-right EYE icon. Preview URL pattern uses the configured preview domain (see _env preview_domain)."
+    },
+    {
+      "id": 21, "spec": "A13.2", "name": "publish", "status": "runtime",
+      "label": "Top-right blue 'Publish' button (APPROVAL ONLY; default leave draft)",
+      "label_source": "screenshot-confirmed-label",
+      "find": "find role button name Publish (top-right, blue)",
+      "stable_ref": {"id": "#pg-funnel-builder__btn--publish", "resolution": "id-first->find-fallback->verify-@ref", "status": "prior-unverified-until-live-capture", "_see": "stable_id_selector_layer", "_note": "APPROVAL-ONLY (may_publish); the stable id changes how you FIND it, NOT the never-publish-without-approval gate."},
+      "note": "Screenshot-confirmed: blue 'Publish' button top-right. NEVER act on this gate without an explicit LIVE approval answer (A13.1)."
+    },
+    {
+      "id": 22, "spec": "A14.1", "name": "funnel_list_row_open", "status": "runtime",
+      "label": "Funnel row in the Funnels list (open by exact funnel name)",
+      "label_source": "still-runtime-snapshot",
+      "find": "open by funnel_workspace_url (preferred) | find text <exact funnel name> in list row",
+      "note": "List row not individually screenshotted; prefer opening by the captured funnel_workspace_url."
+    },
+    {
+      "id": 23, "spec": "B3", "name": "tab_websites", "status": "runtime",
+      "label": "Websites (same orange top-tab row as Funnels)",
+      "label_source": "live-confirmed-label",
+      "find": "find text Websites (orange top-tab row) -> it is an ANCHOR <a href='.../funnels-websites/websites'>, NOT an ARIA role=tab (find role tab name Websites MISSES it). Click the <a> whose trimmed text == 'Websites'.",
+      "note": "LIVE-CONFIRMED (D11, 2026-06-21, BlackCEO LLC operator test fixture): the Websites tab IS in the same top-tab row as Funnels (row: Funnels|Stores|Webinars|Analytics|Quizzes|QR Codes|Websites|Blogs|WordPress|Client Portal|Forms|Surveys). IMPORTANT: it is an anchor element with href '/v2/location/<LOCID>/funnels-websites/websites' — NOT role=tab. Resolve the @ref at runtime by exact anchor text 'Websites'."
+    },
+    {
+      "id": 24, "spec": "B4", "name": "new_website_button_and_name", "status": "runtime",
+      "label": "+ New website (top-right, blue) -> 'Create new website' modal -> 'From blank' card -> 'Website name *' input (placeholder 'e.g. Sales website') -> 'Create' button",
+      "label_source": "live-confirmed-label",
+      "find": "find text '+ New website' (top-right blue button; do NOT click adjacent 'Build with AI') -> modal heading 'Create new website' -> within 'From blank' card fill input[placeholder='e.g. Sales website'] -> click 'Create' (bottom-right; 'Cancel' beside it)",
+      "note": "LIVE-CONFIRMED (D11, 2026-06-21, BlackCEO LLC operator test fixture): button label is 'New website' (with + icon). Differs from Funnels: the 'Create new website' modal has TWO cards only — 'From blank' (carries the 'Website name *' input, placeholder 'e.g. Sales website') and 'From templates' — NO 'Build with AI' card inside the modal (that is a separate top-right button). After 'Create' the SPA navigates to '/v2/location/<LOCID>/funnels-websites/websites/<WEBSITE_ID>/pages' (the website DETAIL view), NOT directly into a builder."
+    },
+    {
+      "id": 25, "spec": "B6-B13", "name": "website_editor_selectors", "status": "runtime",
+      "label": "Website detail (sub-tabs Pages|Stats|Sales|Security|Events|Settings) -> '+ Add new page' -> 'New page for website' modal ('Name for page *' + 'Path' + ClickFunnels import) -> 'Create new page' -> page CONTROL box ('Use existing' | 'Create from blank') -> 'Create from blank' opens the builder. Builder MIRRORS the Funnel editor.",
+      "label_source": "live-confirmed-label",
+      "find": "website detail: click '+ Add new page' (blue, top-right) -> fill input[placeholder='Name for page'] + input[placeholder='Path'] -> click 'Create new page' -> on the page control box click 'Create from blank' -> builder opens at '/location/<LOCID>/page-builder/<PAGE_ID>?source=website'. Then gates 13-21 analogues (Blank Section/Quick Add/Custom>Code/Open Code Editor/Save/Preview/Publish) work IDENTICALLY to the Funnel editor.",
+      "note": "LIVE-CONFIRMED (D11, 2026-06-21, BlackCEO LLC operator test fixture): the website page builder is the SAME editor as the Funnel builder (same toolbar: Autosave-off, top-right eye=Preview, disk=Save, blue Publish; same 'Ask AI' panel with a 'Close Ask AI' button; same canvas 'Blank Section'/'Insert Element'/'Generate with AI'; same Quick Add panel -> 'Custom' group -> 'Code' (</> => 'Custom HTML/Javascript' element) -> right-panel 'Open Code Editor' (renders on MAIN page) -> 'Custom Javascript/HTML' modal with a CodeMirror editor -> 'Save'). DIFFERENCES from Funnels: (a) website page-builder URL carries '?source=website'; (b) the page-create button is 'Add new page' / 'Create new page' (Funnel uses 'Add new step or import' / 'Create funnel step'); (c) creating a website page returns to the Pages list with a CONTROL box (does NOT auto-open the builder — click 'Create from blank'). ENGINE LIMITS (same as Funnel): the canvas + Quick Add live in a CROSS-ORIGIN iframe (page-builder.leadconnectorhq.com) whose interior the a11y snapshot does NOT enumerate; the section '+' Add and the Code tile must be driven by REAL pointer events (double-click-add) — synthetic JS clicks / drag do NOT land. Set the CodeMirror value via its API (.CodeMirror.setValue) inside the editor frame, not key-by-key. Preview URL pattern: https://www.<preview-domain>/preview/<PAGE_ID> (verified HTTP 200 + marker rendered)."
+    },
+    {
+      "id": 26, "spec": "C2", "name": "code_element_iframe_embed", "status": "runtime",
+      "label": "Same 'Custom Code' element as gate 15/16; payload = single responsive <iframe>",
+      "label_source": "live-confirmed-label",
+      "find": "same as gate 15 (Code element) -> gate 16 (Open Code Editor); set CodeMirror value to a single responsive <iframe src=<embeddable-url>>; gate 17 Save; gate 19 Save page; gate 20 Preview.",
+      "note": "LIVE-CONFIRMED (D10, 2026-06-21, BlackCEO LLC operator test fixture): Mode 2 path works end-to-end. Payload '<section><iframe ... src=\"<EMBEDDABLE_URL>\" style=\"width:100%;height:600px;border:0\"></iframe></section>' set via CodeMirror -> Save -> page Save -> Preview rendered the embedded page LIVE (embed child-frame HTTP 200, real content). HARD REQUIREMENT: the embed target must be a PUBLIC URL with NO X-Frame-Options:DENY and NO restrictive CSP frame-ancestors. NOTE on Vercel: default Vercel deployment-protection (SSO) returns HTTP 401 + 'x-frame-options: DENY' + a _vercel_sso_nonce cookie => NOT embeddable; only a public (protection-disabled) Vercel deployment with no frame-blocking headers can be embedded. Verify the target's headers (curl -D-) BEFORE building; if it blocks framing, the embed renders BLANK and the operator must set the source app's headers (gate 28 frame-ancestors) or pick a public URL."
+    },
+    {
+      "id": 27, "spec": "2.4", "name": "auth_storage_keys", "status": "captured",
+      "label": "(no visible UI label — IndexedDB auth storage)",
+      "label_source": "still-runtime-snapshot",
+      "captured": {
+        "indexeddb_database": "firebaseLocalStorageDb",
+        "object_store": "firebaseLocalStorage",
+        "keyPath": "fbase_key",
+        "fbase_key": "firebase:authUser:AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE:[DEFAULT]",
+        "fbase_key_format": "firebase:authUser:<apiKey>:<appName> (appName='[DEFAULT]'; CONFIRMED verbatim via Firebase JS SDK _persistenceKeyName + the live store)",
+        "value_shape": "FULL Firebase Web SDK User record (User._fromJSON): { uid, emailVerified:false, isAnonymous:false, providerData:[], stsTokenManager:{refreshToken, accessToken, expirationTime(epoch MILLIS)}, createdAt(string), lastLoginAt(string), apiKey, appName:'[DEFAULT]' }. email/displayName/photoURL OMITTED (undefined) — this is a custom-auth user (sign_in_provider=custom) with no such fields; setting them null fails the SDK string|undefined assertion.",
+        "required_value_fields": ["uid", "stsTokenManager", "emailVerified", "isAnonymous"],
+        "token_path": "value.stsTokenManager.{refreshToken, accessToken, expirationTime}",
+        "uid_path": "value.uid",
+        "app_token_required": false,
+        "session_cookie_required": false,
+        "auth_header": "token-id: <id_token> (NOT Authorization:Bearer — Bearer returns 401); version: 2021-07-28",
+        "localStorage": "deviceId, proxyLoginCount, debug_sentry, locale (NO token; not auth-bearing — do NOT need to seed)",
+        "firebase_api_key": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE — see firebase_api_key_registry (below) for the canonical single-source record; hardcoded (not an env var, not a secret) identically in 06-ghl-install-pages/tools/seed-ghl-auth.py, Skill 44 transport.py, and Skill 44 ghl_internal_client.py — kept in sync by tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync"
+      },
+      "note": "CORRECTS the GOAL spec §2.4 which assumed localStorage. Auth is in IndexedDB. The Firebase refresh token ALONE logs the SPA in: seed-ghl-auth.py mints a fresh id_token from the refresh token and emits the FULL User record above; inject-ghl-auth.sh writes it (and reads it back to confirm). ROOT-CAUSE FIX (auth/internal-error): the record now ALWAYS carries emailVerified:false + isAnonymous:false (the SDK asserts both as booleans; omitting them threw INTERNAL_ERROR and bounced the SPA to the login form). NO app-token and NO session cookie are required — the id_token validates directly via the token-id header. HARD RULE: TOKEN-SEED IS THE ONLY AUTH PATH — there is NO automatic UI-login / two-factor fallback. If the seed fails to log in, the builder STOPS and reports (non-zero); the operator re-grabs a fresh refresh token (Token Grabber) and retries. GHL_AGENCY_EMAIL/PASSWORD is a documented MANUAL last resort only, never auto-invoked."
+    },
+    {
+      "id": 28, "spec": "C3", "name": "ghl_published_domain_for_frame_ancestors", "status": "runtime",
+      "label": "(no UI label — read the published page's own origin)",
+      "label_source": "still-runtime-snapshot",
+      "find": "read the published page's own origin after first publish",
+      "note": "Only knowable from a published page. Whitelist it in the Vercel app's frame-ancestors / X-Frame-Options for Mode 2 embeds."
+    },
+    {
+      "id": 29, "spec": "MIF.1", "name": "correct_frame_before_edit", "status": "runtime",
+      "label": "(no UI label — the multi-iframe frame-targeting protocol, plan Part 3.5 row 4a)",
+      "label_source": "still-runtime-snapshot",
+      "find": "run tools/iframe_router.py detect_iframes on the live DOM -> write working/iframe-map.json {selector, name, src, originClass, purposeHint} -> declare target frame (iframe_selector + frame_epoch) BEFORE any in-frame act",
+      "note": "MULTI-IFRAME HARD GATE: before ANY in-frame act (drag/click/type inside a builder iframe), the builder MUST (1) detect + map the page's iframes (tools/iframe_router.py detect_iframes), (2) declare the target frame as iframe_selector + frame_epoch, and (3) act frame-scoped — never via a top-level selector for an in-frame node. A wrong-frame act MUST FAIL CLOSED (IframeDragError iframe-ambiguous / iframe-refs-stale), never click through the top-level snapshot. Same 'NO invented CSS is shipped as fact' law as every other runtime gate: detect iframes at runtime, do not assume a fixed frame layout."
+    },
+    {
+      "id": 30, "spec": "MIF.2", "name": "refreshed_snapshot_after_panel_open", "status": "runtime",
+      "label": "(no UI label — frame-ref invalidation + iframe-map rebuild, plan Part 3.5 row 4b)",
+      "label_source": "still-runtime-snapshot",
+      "find": "after ANY navigation, panel open (SEO/settings), or 'two saves': all frame refs INVALIDATED -> iframe-map rebuilt (tools/iframe_router.py detect_iframes) -> frame_epoch bumped (router bump_frame_epoch contract) -> THEN the next in-frame act",
+      "note": "STALE-FRAME HARD GATE: after any navigation, panel open (SEO / settings / Show settings), or 'two saves', every previously-captured frame @ref and in-frame element ref is INVALID — the DOM may have remounted the iframe (same src, new document). Before the next act: invalidate all frame refs, rebuild the iframe-map, bump frame_epoch (tools/iframe_router.py bump_frame_epoch contract), and re-snapshot inside the (possibly new) target frame. Acting on a stale epoch's refs must fail closed (IframeDragError iframe-refs-stale), never fall through to a top-level click."
+    }
+  ],
+
+  "stable_id_selector_layer": {
+    "_doc": "STABLE-ID-FIRST resolution layer (research ghl-selectors-v2 CDP capture). ADDITIVE — this is NOT a member of the 30-entry `gates` array and does NOT change the captured=2/runtime=28 counts the install QC asserts. It documents the resolution DISCIPLINE referenced by each gate's `stable_ref` field. The stable ids below are PRIORS captured from the GHL builder DOM, not asserted CSS: the resolver tries the stable id FIRST, then falls back to the gate's existing `find` text/role probe, and STILL resolves + verifies the live @ref at runtime before acting. Tried-then-verified priors — no invented CSS ships as fact. Every id stays `prior-unverified-until-live-capture` until ONE live capture pass promotes it; on `agent-browser` pin bump or GHL UI drift, re-capture before trusting.",
+    "resolution_order": ["1. try stable id (this layer) inside the correct context (see context_split)", "2. on id-miss, fall back to the gate `find` text/role/visible-text seed", "3. ALWAYS resolve the live @ref + verify it is visible/correct role before acting", "4. id-miss is NEVER a crash — it degrades to the find fallback"],
+    "capture_date": "PENDING-LIVE-CAPTURE (ghl-selectors-v2 CDP prior; not yet promoted by a live capture pass on this box). Stamp the GHL-UI capture date here when promoted; keep beside the agent_browser_version_pin (0.27.0).",
+    "ids": {
+      "#Code": {"gate": 15, "what": "Quick-Add 'Code' tile (Custom group). In the CROSS-ORIGIN builder iframe."},
+      "#hl-builder-add-elements-button": {"gate": 13, "what": "'+ Add' / Add-Elements button (opens Quick Add). NOTE: research saw it top-right OR top-left across two captures — do NOT hardcode position, snapshot it."},
+      "#empty-placeholder-*": {"gate": 13, "what": "Blank Section empty placeholder(s); use querySelectorAll (suffix varies per section)."},
+      "#hl-builder-toggle-setting-button": {"gate": 14, "what": "Show/Hide settings toggle (alt route to 'Allow Rows to take entire width'). Verify TOGGLE STATE, not id alone."},
+      "#ai-copilot-close": {"gate": 18, "what": "'Ask AI' / copilot panel close X. Absent is fine."},
+      "#pg-funnel-builder__btn--save": {"gate": 19, "what": "Top toolbar Save button."},
+      "#hl-builder-preview-button": {"gate": 20, "what": "Top toolbar Preview (eye) button."},
+      "#pg-funnel-builder__btn--publish": {"gate": 21, "what": "Top toolbar Publish button. APPROVAL-ONLY (may_publish) is unchanged by this id."},
+      "#hl-builder-seo-meta-data-button": {"gate": null, "what": "SEO / meta-data panel open button (browser SEO path; no numbered gate — REST path sets SEO programmatically). Read GHL's own validator strings off the panel (Phase 4 self-check)."},
+      "#hl-menu-item-*": {"gate": null, "what": "Builder menu / context-menu items (suffix varies). Match by [id^='hl-menu-item-'] then verify text/role; never assume a fixed suffix."}
+    },
+    "context_split": {
+      "_doc": "DUPLICATE-ID + CROSS-ORIGIN gotchas the resolver MUST honor.",
+      "iframe_scoped": ["#Code", "#hl-builder-add-elements-button", "#empty-placeholder-*"],
+      "main_page_scoped": ["#ai-copilot-close", "#pg-funnel-builder__btn--save", "#hl-builder-preview-button", "#pg-funnel-builder__btn--publish", "#hl-builder-toggle-setting-button", "#hl-builder-seo-meta-data-button", "#hl-menu-item-*"],
+      "duplicate_id_gotcha": "Undo/Redo (#...--undo / --redo) exist in BOTH toolbars — use querySelectorAll and disambiguate by visibility/position; never assume a single match.",
+      "naive_ui_no_id_probes": {"allow_rows_toggle": ".n-switch (verify state)", "modal_save_publish_confirm": ".n-modal button text-match ('Save'/'Publish')", "seo_sub_tabs": ".n-tabs-tab", "context_menu_item": "[role=menuitem]"}
+    },
+    "regenerator": "tools/selectors-extract-cdp.py (PLANNED, P1b) — CDP /json/list iframe discovery + Runtime.evaluate scrape, routed through tools/browser_manager.sh (the singleton pooled gateway), NEVER a raw port attach. Re-capture on pin bump / UI drift and re-stamp capture_date."
+  },
+
+  "full_width_alt_route_show_settings": {
+    "_doc": "ALTERNATE PRIOR (transcript-derived) to gate 14 (full_width_toggle). This is NOT a member of the 30-entry `gates` array and does NOT affect the captured=2/runtime=28 counts the install QC asserts — it is a distinct, snapshot-first PRIOR documenting the EASIER second route to the same 'Allow Rows to take entire width' toggle. The harden run owns gate 14's selector priors; this entry is added alongside, not in place of them.",
+    "alt_to_gate": 14,
+    "spec": "A9.1b / transcript step 13b",
+    "status": "runtime",
+    "label": "Show settings / Hide settings icon — directly UNDER the Publish button (top-right). Opens the Sections area -> select 'Allow Rows to take entire width'.",
+    "label_source": "still-runtime-snapshot",
+    "find": "find text 'Show settings' (top-right, under the Publish button) | find text 'Hide settings' | find role button name 'Show settings' -> in the Sections panel that opens, find text 'Allow Rows to take entire width'",
+    "transcript_ref": "Trevor: 'an update, an easier way' (~12:06-12:26; repeated for websites ~18:10-18:25). Source: references/ghl-build-spec-from-transcript.md step 13b (source=transcript, ownedByHarden=true for the toggle DEFAULT itself).",
+    "verify_by": "TOGGLE STATE (on), not label text alone — same end-state as gate 14. Resolve the live @ref at runtime; snapshot-first (no screenshot captured for this route yet, so this is a hint/prior, not confirmed CSS).",
+    "note": "PREFER this route when present: the Show settings / Hide settings icon under Publish is the newer, easier path to the full-width toggle. If absent, fall back to gate 14 (click the GREEN section box -> right-hand Sections panel). Both reach 'Allow Rows to take entire width' which MUST be ON (full width) — OFF/default condenses the content to the middle of the page."
+  },
+
+  "_enforcement_gates": {
+    "_doc": "Build-enforcement gates — these are NOT DOM-selector gates (they do not appear in the 'gates' array and do not affect the captured=2/runtime=26 counts). They are POLICY gates that a build must satisfy before it can be marked done. Each entry has 'required':true (hard gate — build is blocked on failure) or 'required':false (warn-only). These gates are checked by guard scripts in 06-ghl-install-pages/scripts/ and by ghl_gate.py (the authoritative pass reader). They were added 2026-06-26 in response to the pre-flight fabrication incident: a run hand-wrote ledger.json to claim PASS when the machine had recorded FAIL on every page. The guards make that bypass structurally impossible.",
+    "_added": "2026-06-26",
+    "_incident_ref": "Pre-flight report: SKILL6-PREFLIGHT-FAILURE-DIAGNOSTIC.md — both builds FAILED (website HTTP 500 on every page: 'Cannot read properties of undefined reading colors'; funnel pages blank). A hand-written summary claimed PASS. These gates prevent recurrence."
+  },
+
+  "method_decision_per_page": {
+    "_doc": "PLAN-3 — Method-decision architecture gate. Every built page must have a routing/method-decision-<page>.json file with a non-empty 'method' field ('direct' or 'vercel') and a non-empty 'reason' field (>=20 chars) justifying the choice. A build cannot be marked done without this file. Enforced by 06-ghl-install-pages/scripts/guard-ghl-method-decision.sh.",
+    "required": true,
+    "guard_script": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
+    "checked_by": "guard-ghl-method-decision.sh (--static for CI; --run-dir <path> for live runs)",
+    "valid_methods": ["direct", "vercel"],
+    "method_rules": {
+      "direct": "Native GoHighLevel page: HTML FRAGMENT (not a full <!DOCTYPE html> document) inside a Custom Code element. Saved via ghl_rest_canvas / ghl_builder. Use when the page is simple enough that GoHighLevel's renderer will not conflict with the markup. The page blob MUST include a populated defaultSettings.colors theme object and a full section->row->column->element nesting; an empty settings:{} blob causes HTTP 500 on every page load.",
+      "vercel": "Vercel-hosted page embedded into GoHighLevel via a responsive <iframe> in a Custom Code element (Skill 06 Mode 2, gate 26). Use ONLY when the page is rich or complex enough that GoHighLevel's styling conflicts with the markup. REQUIREMENTS: the Vercel deployment must be public (deployment protection disabled), must carry permissive frame-ancestors headers (no X-Frame-Options: DENY), and the vercel_url field in the method-decision file must be populated. Verify headers with curl -D- before building. Default to 'direct'; escalate to 'vercel' only when necessary."
+    },
+    "non_gate": "A missing routing/method-decision-<page>.json is not a warn — it is a hard build block. The gate cannot be satisfied by a hand-written ledger or a build summary; the file must be on disk in the run's routing/ directory.",
+    "ci_mode": "In hermetic CI (--static), this gate checks only that gates.json contains this entry with required:true. The per-page file check only runs in --run-dir mode (live builds)."
+  },
+
+  "image_manifest_non_empty": {
+    "_doc": "PLAN-4 FIX-2/FIX-4 — Image pipeline gate. A build is blocked from being marked done if images/manifest.json is absent OR contains zero records OR any record lacks an https URL with a verified HTTP 200 response. The real image pipeline (generate via Kie.ai gpt-image-2.5 -> verify PNG -> upload to GoHighLevel CDN -> embed <img> -> confirm CDN URL returns HTTP 200) must run. An empty images/ folder is a hard FAIL, not a warn.",
+    "required": true,
+    "guard_script": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
+    "checked_by": "ghl_gate.py require-pass (reads images/manifest.json and asserts non-empty with https+200 records)",
+    "manifest_path": "images/manifest.json (relative to the run directory)",
+    "manifest_schema": {
+      "_doc": "Each record in images/manifest.json must carry these fields to satisfy the gate.",
+      "image_id": "string — unique ID for this image in the build",
+      "local_path": "string — absolute path to the verified PNG on disk",
+      "cdn_url": "string — public GoHighLevel CDN URL (must start with https://)",
+      "cdn_http_status": "integer — HTTP status of a GET to cdn_url (must be 200)",
+      "page": "string — which page this image belongs to",
+      "embedded_in_html": "boolean — true if an <img src=cdn_url> tag was spliced into the page HTML"
+    },
+    "non_gate": "Storage of the image file on disk is NOT verification. The CDN URL must return HTTP 200 and the <img> tag must be present in the saved page HTML. 'Images folder exists but is empty' is the same as 'no image pipeline ran' — hard FAIL.",
+    "ci_mode": "In hermetic CI the guard checks only that this gate entry exists with required:true. The manifest contents are checked at live-run time by ghl_gate require-pass."
+  },
+
+  "verify_gate_authoritative": {
+    "_doc": "PLAN-2 backstop — The authoritative pass gate. A build's overall PASS/FAIL verdict comes from ONE source only: ghl_verify.verify_all (which calls ghl_builder.verify_url for each page — HTTP 200 AND marker in the rendered body at the /preview/<pageId> URL). No other source may issue a PASS verdict. Enforced by guard-ghl-verify-unfakeable.sh (static) and ghl_gate.py require-pass (runtime).",
+    "required": true,
+    "guard_script": "06-ghl-install-pages/scripts/guard-ghl-verify-unfakeable.sh",
+    "checked_by": "guard-ghl-verify-unfakeable.sh (static CI); ghl_gate.py require-pass (live run)",
+    "pass_criterion": "HTTP 200 AND marker present in the RENDERED body of the public /preview/<pageId> URL. Both conditions must be true. Neither alone is sufficient.",
+    "non_gates": {
+      "marker_in_storage": "NOT a gate. 'The marker text is present in the stored Firebase/storage blob' proves only that bytes were uploaded, not that the page renders. A page can have the marker in storage AND return HTTP 500 on load — which is exactly what happened in the 2026-06-26 pre-flight. This string is BANNED as a pass criterion in all tools/*.py.",
+      "http_201_on_save": "NOT a gate. A 201 response from the GoHighLevel autosave endpoint proves only that the server accepted the bytes, not that the page renders. The pre-flight mis-read a 201 as proof of a working page.",
+      "api_difference_rationalization": "NOT a gate. Calling an HTTP 500 an 'API difference' does not make it a pass. A 500 is always a FAIL. This string is BANNED as a rationalization in all tools/*.py.",
+      "hand_written_ledger": "NOT a gate. A ledger.json written by hand (not derived from ghl_verify.verify_all raw results) cannot issue a PASS verdict. The QC gate reads ghl_verify's outputs only."
+    },
+    "verdict_chain": "ghl_verify.verify_all -> writes logs/final-preview-verify.json (raw) -> derives scorecard/verify-summary.json -> assert_consistent (FAIL LOUD if summary > raw) -> ghl_gate require-pass reads summary and raw, re-asserts consistency, exits non-zero on FAIL. This chain cannot be short-circuited."
+  },
+
+  "_live_render_findings": {
+    "_doc": "PRIORS from the 2026-06-27 live /preview/ probe on the operator fixture (BlackCEO LLC). SNAPSHOT/PROBE-CONFIRMED priors, NOT hard build gates: they record what GHL's preview renderer actually did with probe constructs so the REST/golden path + any lint can stop guessing. They neither ban nor assert anything that blocks a build. The authoritative pass gate stays verify_gate_authoritative (HTTP 200 + marker in /preview/).",
+    "_probe_pass": "2026-06-27 live probe, app.convertandflow.com /preview/, token-only seed, 2 probe sections, 0 console errors.",
+    "iframe": {
+      "finding": "SURVIVES",
+      "evidence": "document.querySelectorAll('iframe').length===2; data-zhc attributes intact; src kept. GHL preview does NOT strip <iframe> from custom-code elements.",
+      "implication": "Do NOT add a sanitizer lint that bans <iframe>; ghl_method.iframe_embed_snippet (gate 26) is safe. (Confirms the video #2 lean toward embeds working.)"
+    },
+    "script": {
+      "finding": "SURVIVES_AND_EXECUTES",
+      "evidence": "2 <script data-zhc> tags ran: target divs read ZHC-SCRIPT-EXECUTED-A/B (script rewrote the SCRIPT-DID-NOT-RUN placeholder); window.__ZHC_SCRIPT_RAN_A/B===true; executed text visible in preview-container.innerText.",
+      "implication": "Inline <script> in custom-code blocks is not sanitized/blocked in /preview/."
+    },
+    "externalCss": {
+      "finding": "SURVIVES_AND_APPLIES",
+      "evidence": "external <link rel=stylesheet animate.css@4.1.1> rendered (2/2); inline <style> with @import url(google fonts) ALSO applied — .zhc-ext-A computed color rgb(102,51,153)=rebeccapurple, font-weight 700.",
+      "implication": "External + inline CSS is not stripped."
+    },
+    "emptyBlank": {
+      "finding": "NO_BLANK",
+      "evidence": "every probe element rendered (2 headlines, rich paragraphs, 2 anchors, 2 images, styled paragraph, 2 iframes, 2 executed scripts); autosave HTTP 201 with valid pageDataDownloadUrl; Nuxt SPA hydrated with 0 console errors.",
+      "implication": "Nothing rendered blank. assert_renderable_shape invariant 6 (no empty rawCustomCode) remains the structural guard."
+    },
+    "allowRowMaxWidth_false": {
+      "finding": "CENTERED_1170_NOT_THIN",
+      "evidence": "viewport 1720px: BOTH the False section (section-1ce579e752) and the True section (section-25848cb917) render outer .fullSection.c-section full-width (w=1720,left=0) with the immediate child div.inner w=1170,left=275,max-width:1170px,margin 275px auto — IDENTICAL. The 1170 cap is driven by the sectionStyles CSS rule '#section-...>.inner{max-width:1170px}' the golden writes into BOTH sections; the extra.allowRowMaxWidth flag alone produced NO observable width difference.",
+      "implication": "DISPROVES the 'False collapses to a thin strip' worry. =False = standard centered-1170, visually identical to =True. Full-width is governed by the sectionStyles CSS rule, NOT the flag; defaulting the flag True is a fidelity preference, not a fix for a broken render."
+    }
+  },
+
+  "playwright_fallback_recipes": {
+    "_doc": "P2-3 — SNAPSHOT-FIRST PRIORS (research selectors) + interaction recipes for the Playwright FALLBACK path (ghl_builder uses agent-browser PRIMARY / Playwright FALLBACK). These are PRIORS, not asserted DOM fact: the fallback MUST still snapshot the live DOM and resolve the real handle at runtime; the selectors below are find-seeds + the proven interaction SHAPE, not hardcoded CSS to trust blindly. NO invented CSS ships as fact.",
+    "_status": "research-prior",
+    "code_element_drag_drop": {
+      "_doc": "The Quick-Add 'Code' tile (gate 15) lives in a CROSS-ORIGIN builder iframe (page-builder.leadconnectorhq.com). Synthetic single JS click()/HTML5 drag events do NOT land (engine limit, gate 25). A REAL-POINTER drag with INTERPOLATED moves is required so GHL's drag sensor (pointer-distance + dragstart threshold) fires.",
+      "find_seed": "frame(page-builder.leadconnectorhq.com) -> Quick Add panel -> 'Custom' group -> tile with text 'Code' (</> icon)",
+      "drop_target_seed": "canvas '1 Column Row' inside the active Blank Section (gate 13)",
+      "recipe": "Resolve the source tile bbox + drop-target bbox at runtime. mouse.move(srcX,srcY); mouse.down(); then >=20 INTERPOLATED mouse.move() steps from source to target (linear interpolation of the two bbox centers, ~16ms apart) so the pointer crosses the drag-activation distance and GHL registers a real dragover; a final settle mouse.move(targetX,targetY); mouse.up(). A single down->up move does NOT trip the sensor.",
+      "interpolated_moves_min": 20,
+      "move_interval_ms": 16,
+      "fallback_if_drag_fails": "double-click the 'Code' tile (gate 25 notes double-click-add lands when synthetic drag does not).",
+      "prior_only": true
+    },
+    "codemirror_set_value": {
+      "_doc": "Set the Custom Javascript/HTML code payload via the CodeMirror API, NEVER key-by-key typing (large payloads + special chars corrupt under typing). The editor modal renders on the MAIN page (not inside the builder iframe). VERSION-SAFE: GHL ships CodeMirror v5 OR v6 depending on the live builder build (research selectors-v2 observed v6; older captures observed v5) — the two have INCOMPATIBLE value APIs, so this recipe FEATURE-DETECTS the live editor and takes the matching path. The v5-only `.setValue()` recipe silently no-ops on a v6 editor (and the old 'underlying textarea + input event' fallback is INVALID on v6 — v6 is a contenteditable `.cm-content`, it has NO backing <textarea>), which would let autosave commit an EMPTY rawCustomCode while returning 201 -> blank render. The mandatory non-empty read-back assert below is what makes that failure mode impossible.",
+      "find_seed": "modal 'Custom Javascript/HTML' (gate 16) -> v6 root '.cm-editor' (content '.cm-content') OR v5 root '.CodeMirror'",
+      "recipe": "FEATURE-DETECT then set, NEVER assume a build. (A) DETECT inside the editor document: treat as v6 if document.querySelector('.cm-editor') (content node '.cm-content') is present; treat as v5 if document.querySelector('.CodeMirror') exposes a live `.CodeMirror` instance. TRY v6 FIRST, fall back to v5. (B-v6) CodeMirror 6: obtain the live EditorView — reuse a prior stash on window.__cmEditorRef if it is a v6 view (has `.state`/`.dispatch`), else recover it from the app (the view exposed off the '.cm-editor' node / EditorView.findFromDOM if available) and stash it on window.__cmEditorRef. Replace the WHOLE document in ONE transaction: window.__cmEditorRef.dispatch({changes:{from:0,to:window.__cmEditorRef.state.doc.length,insert:<payload>}}). Read it back with window.__cmEditorRef.state.doc.toString(). (B-v5) CodeMirror 5: window.__cmEditorRef = document.querySelector('.CodeMirror').CodeMirror; window.__cmEditorRef.setValue(<payload>); trigger its change so the SPA marks the field dirty. Read it back with window.__cmEditorRef.getValue(). (C) HARD GATE before clicking Save (gate 17): the read-back value MUST be (i) NON-EMPTY and (ii) === <payload>. On ANY empty or mismatched read-back, FAIL LOUD and DO NOT click Save — never commit an unverified code body. This single assert is the un-fakeable guard against the v5/v6 silent-empty-save class regardless of which build is live.",
+      "window_ref": "window.__cmEditorRef",
+      "dual_path": {
+        "detect": "v6 if '.cm-editor'/'.cm-content' present; v5 if '.CodeMirror' instance present",
+        "v6_set": "window.__cmEditorRef.dispatch({changes:{from:0,to:window.__cmEditorRef.state.doc.length,insert:payload}})",
+        "v6_read": "window.__cmEditorRef.state.doc.toString()",
+        "v5_set": "window.__cmEditorRef.setValue(payload)  (window.__cmEditorRef = document.querySelector('.CodeMirror').CodeMirror)",
+        "v5_read": "window.__cmEditorRef.getValue()",
+        "removed_invalid_fallback": "the old 'set underlying <textarea>.value + dispatch input event' path — INVALID on v6 (contenteditable, no textarea); removed so it can no longer silently produce an empty body"
+      },
+      "verify_before_save": "read-back MUST be non-empty AND === payload, else DO NOT Save. v6: window.__cmEditorRef.state.doc.toString() === payload • v5: window.__cmEditorRef.getValue() === payload",
+      "prior_only": true
+    },
+    "show_settings_full_width_route": {
+      "_doc": "P2 (video #2) — the 'Show settings / Hide settings' icon directly under the Publish button is the NEWER/easier route to the full-width toggle (gate 14), distinct from the OLD route (click the green Section box -> Sections right-panel). PRIOR ONLY — not screenshot-captured; snapshot to resolve the live handle.",
+      "find_seed": "find text 'Show settings' (or 'Hide settings') directly under/near the top-right 'Publish' button -> opens a settings panel carrying 'Allow Rows to take entire width' (gate 14)",
+      "relationship_to_gate_14": "Alternate PATH to the same toggle gate 14 encodes; either route flips the same section-level setting. Prefer whichever the runtime snapshot exposes.",
+      "source": "Trevor video #2 ~12:06-12:26, ~18:10-18:25 ('an update, an easier way to do this')",
+      "prior_only": true
+    }
+  },
+
+  "rate_limit_governor": {
+    "_doc": "P2-4 — client-side rate governor for the browser/REST build loop. GHL throttles rapid autosaves/publishes; bursting trips 429s and (worse) silent dropped writes. The governor spaces write actions and backs off on 429. These POLICY values are the single source of truth; tools/v2_dispatcher.py RateGovernor reads the same defaults (kept in sync).",
+    "min_save_interval_s": 6,
+    "min_publish_interval_s": 15,
+    "honor_retry_after_header": true,
+    "default_429_cooldown_s": 30,
+    "_note": "On HTTP 429: sleep max(Retry-After header, default_429_cooldown_s) before the next attempt. Saves are spaced >= min_save_interval_s apart; publishes >= min_publish_interval_s. These are MINIMUMS — a build may go slower; it must NEVER go faster.",
+    "session_keepalive": {
+      "_doc": "Keep the seeded agent-browser session warm during a long build so it does not idle out. A NO-OP keepalive (cheap eval / harmless read) every interval_minutes; NEVER a navigate/open/reload (that re-runs the boot IIFE and logs the seeded session out — see inject-ghl-auth.sh DO NOT RELOAD).",
+      "interval_minutes": 30,
+      "action": "no-op (e.g. AB --session <s> eval 'true') — NEVER open/navigate/reload",
+      "implemented_in": "tools/v2_dispatcher.py SessionKeepalive"
+    },
+    "token_pre_phase_remint": {
+      "_doc": "F5(b) SKILL-6-BULLETPROOF-SPEC-v1 — the PROACTIVE half of token-expiry recovery. inject-ghl-auth.sh's ONE bounded re-mint is REACTIVE (fires only after a 401/user_not_logged_in-class failure). This gate is checked BEFORE every multi-minute build phase: if the seeded id_token (stamped by browser_manager.sh bm_record_auth_seeded on every successful seed) is older than threshold_minutes, proactively re-mint (seed-ghl-auth.py --print-seed) and re-stage the token BEFORE the phase starts, rather than waiting for a 401 mid-phase. NEVER a navigate/open/reload — same eval-only token-id write inject-ghl-auth.sh already uses. A failed proactive re-mint is NOT fatal on its own; the phase still runs and any resulting 401 falls through to inject-ghl-auth.sh's own bounded retry.",
+      "threshold_minutes": 45,
+      "action": "re-mint + re-seed via seed-ghl-auth.py --print-seed + inject-ghl-auth.sh <session> <seed> --pre-open (GHL_INJECT_KEEP_SESSION=1) — NEVER open/navigate/reload",
+      "implemented_in": "tools/browser_manager.sh bm_record_auth_seeded/bm_auth_age_s/bm_auth_is_stale + tools/v2_dispatcher.py TokenAgeGate/remint_if_stale"
+    }
+  },
+
+  "agent_browser_version_pin": {
+    "_doc": "P2-4 — agent-browser is PINNED to this version. Every gate selector + the eval JSON-encoding + the auto-inlined-iframe snapshot shape + the '--headed false' override semantics were captured/proven against it. tools/inject-ghl-auth.sh FAILS LOUD (exit 70) and browser_manager.py assert_agent_browser_version() raises RuntimeError when the live agent-browser version drifts from this pin, unless the operator acknowledges the risk.",
+    "pinned_version": "0.27.0",
+    "enforced_in": "tools/inject-ghl-auth.sh (version-pin guard, runs before the seed) + tools/browser_manager.py assert_agent_browser_version() (called at browser_session() entry — fires before any render_check command is emitted)",
+    "override_env": "GHL_AB_ALLOW_VERSION_DRIFT=1 (warn instead of refuse); GHL_AB_PINNED_VERSION to re-pin after a deliberate re-capture",
+    "on_drift": "REFUSE (exit 70 / RuntimeError). Re-capture the gates against the new version, then re-pin pinned_version + GHL_AB_PINNED_VERSION."
+  },
+
+  "firebase_api_key_registry": {
+    "_doc": "P3-2 (final-review Point 1 fix 2) — single documented 06-side record of the GoHighLevel / Convert-and-Flow Firebase Web API key. This value is NOT a secret (a public Firebase Web API key restricted server-side by Google; see gate 27 auth_storage_keys.firebase_api_key) and is intentionally hardcoded as a Python constant, with ZERO runtime dependency on this file, in THREE places: 06-ghl-install-pages/tools/seed-ghl-auth.py (FIREBASE_API_KEY), 44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/transport.py (FIREBASE_API_KEY), and 44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_internal_client.py (FIREBASE_API_KEY). This registry's canonical_value is the value 06 asserts against at QC time so a Google key rotation applied to one copy but missed in another is caught immediately (a stale/mismatched key would silently break the securetoken exchange) instead of surfacing later as a confusing auth failure.",
+    "canonical_value": "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE",
+    "duplicated_in": [
+      "06-ghl-install-pages/tools/seed-ghl-auth.py::FIREBASE_API_KEY",
+      "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/transport.py::FIREBASE_API_KEY",
+      "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_internal_client.py::FIREBASE_API_KEY"
+    ],
+    "checked_by": "06-ghl-install-pages/tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync — reads every literal directly from source (and this registry's canonical_value) and fails CI on any mismatch.",
+    "not_a_secret": "Public Firebase Web API key, restricted server-side by Google (see gate 27 auth_storage_keys note); safe to ship in source under the existing D7 token-only doctrine."
+  },
+
+  "automations_builder_gates": {
+    "_doc": "P3-08 Gap A — gate registry for the GoHighLevel Automations (Workflow) BUILDER UI, consumed by tools/ghl_workflow_builder.py. This is the Tier-4 gated, MANAGED workflow-build path Skill 44 routes to when the Firebase token is unread/misconfigured (see 44-convert-and-flow-operator/SKILL.md and 36-ghl-mcp-setup/GHL-LOOKUP-SOP.md RULE 6). The HARNESS (ghl_workflow_builder.py) is complete and unit-tested against a mocked gateway; it drives EVERY browser action through Skill 6's browser_manager.sh singleton gateway (one session, lock=1, TTL, guaranteed teardown, reaper backstop) — never bare agent-browser. Per Skill 6's 'NO invented CSS is shipped as fact' law, the step selectors below are status=runtime: role/name/visible-text FIND HINTS the harness resolves against the LIVE DOM at runtime, NOT captured CSS asserted as fact. A live-capture hardening pass on the operator's own GHL location will flip each step to status=captured and record the confirmed nodes in SELECTORS-LIVE-automations.md — same discipline every other Skill 6 runtime gate follows. The harness REFUSES to run (MissingGateError) if a required step name is absent here; it NEVER freehand-navigates.",
+    "_capture_status": "pending_live_capture",
+    "_capture_note": "Steps are runtime find-hints (accessibility role/name), not fabricated CSS. Flip to captured only after a live snapshot on the operator's location; record in SELECTORS-LIVE-automations.md.",
+    "nav_route_template": "/v2/location/{location_id}/automation/workflows",
+    "nav_route_status": "runtime-unverified",
+    "required_steps": [
+      "open_automations",
+      "create_workflow",
+      "start_from_scratch",
+      "name_workflow",
+      "add_trigger",
+      "choose_trigger_type",
+      "save_trigger",
+      "add_action",
+      "choose_action_type",
+      "save_action",
+      "save_workflow",
+      "read_workflow_id"
+    ],
+    "steps": [
+      { "name": "open_automations", "status": "runtime", "label": "Automations / Workflows list view", "find": "navigate nav_route_template then find role heading name 'Workflows'" },
+      { "name": "create_workflow", "status": "runtime", "label": "Create Workflow button", "find": "find role button name 'Create Workflow' | find role button name '+ Create Workflow'" },
+      { "name": "start_from_scratch", "status": "runtime", "label": "Start from scratch template option", "find": "find role button name 'Start from Scratch' | find text 'Start from scratch'" },
+      { "name": "name_workflow", "status": "runtime", "label": "Workflow name field (top-of-builder, editable title)", "find": "find role textbox name 'Workflow name' | find role textbox name 'Untitled Workflow'" },
+      { "name": "add_trigger", "status": "runtime", "label": "Add New Trigger button", "find": "find role button name 'Add New Trigger' | find text 'Add Trigger'" },
+      { "name": "choose_trigger_type", "status": "runtime", "label": "Trigger-type picker list item", "find": "find role option name {trigger_type} | find text {trigger_type}" },
+      { "name": "save_trigger", "status": "runtime", "label": "Save Trigger button in the trigger config panel", "find": "find role button name 'Save Trigger' | find role button name 'Save'" },
+      { "name": "add_action", "status": "runtime", "label": "Add action '+' node on the canvas", "find": "find role button name 'Add your first Action' | find role button name 'Add Action'" },
+      { "name": "choose_action_type", "status": "runtime", "label": "Action-type picker list item", "find": "find role option name {action_type} | find text {action_type}" },
+      { "name": "save_action", "status": "runtime", "label": "Save Action button in the action config panel", "find": "find role button name 'Save Action' | find role button name 'Save'" },
+      { "name": "save_workflow", "status": "runtime", "label": "Top-right Save button (persists the draft workflow)", "find": "find role button name 'Save'" },
+      { "name": "read_workflow_id", "status": "runtime", "label": "Built workflow id read back from the builder URL after save", "find": "eval location.href — parse /workflows/(?:builder/)?<id> ; id also appears in the workflow settings panel" }
+    ]
+  }
+}

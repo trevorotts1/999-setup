@@ -1,0 +1,789 @@
+---
+name: ghl-install-pages
+description: >
+  How to deploy HTML pages into GoHighLevel (Go High Level) or Convert and Flow
+  using browser automation. This skill teaches the AI agent how to use
+  agent-browser (Vercel Labs) as the primary engine — Playwright as a
+  fallback — to start a session already logged-in via a seeded Firebase token,
+  navigate the funnel/website page builder, paste code, save, preview, and
+  publish-with-approval, all without the human touching the builder.
+metadata:
+  
+  version: "v27.1.26"
+  priority: HIGH
+---
+
+> **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
+
+# GoHighLevel / Convert and Flow - Install Pages (Browser Builder)
+
+This skill is about deploying finished HTML code into the GoHighLevel (Go High
+Level) or Convert and Flow page builder using browser automation. The AI agent
+drives the browser, pastes the code, and handles all the clicks and navigation.
+
+> **ENGINE (v3.0 overhaul):** PRIMARY = `agent-browser` (Vercel Labs, the
+> repo-sanctioned tool from Skill 03), run **headless** with an **isolated
+> `--session <client>`** so it never touches a personal browser. FALLBACK =
+> self-hosted Playwright, a scripted escape hatch for known-hard flows only.
+> The previous raw-Playwright-only stack is replaced. The full hardened
+> procedure is in `ghl-browser-builder-full.md` (v3.0).
+
+> **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
+> **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
+> (gate #1, used ONLY to DETECT a failed seed and STOP — never to log in) and
+> the auth-storage schema (gate #27) are LIVE-CAPTURED. The other 28 in-app
+> controls (incl. gates 29-30) are **runtime snapshot-gates** (`tools/gates.json`):
+> the agent snapshots the live DOM and picks the ref at runtime — NO invented CSS
+> is shipped as fact. Build methods A/B/C (raw-code funnel/page, vercel-embed,
+> website page) hold a `captured` end-to-end PASS on the operator fixture
+> (BlackCEO LLC FIXTURE0LOCATION0000, marker ZHC-FACTORY-FUNNEL-0621;
+> `token_only_auth` PASS) — `tools/gates.json` `_runtime_gate_baseline`. Skill
+> 62's U22 registration wiring is landed on this branch and its offline build is
+> COMPLETE (`62-cinematic-web-funnel-engine/CWFE-MANIFEST.json` `build_status`).
+> **STILL OWED (do not upgrade without a fresh dated receipt):** the REST_autosave
+> wired path end-to-end (`ghl_builder.emit_rest_save_plan` →
+> `tools/ghl_rest_canvas.py`; its per-gate results in `gates.json` stay
+> PENDING-LIVE-RUN), Skill 62's U26 live proof (deliberately HELD), and the
+> full-funnel publish E2E. The sole auth blocker for every owed run is a fresh
+> Firebase refresh token — the token-seed is the sole auth path; there is NO
+> login-form / two-factor run, attended or otherwise, per the TOKEN-ONLY doctrine
+> in §2/D7. No live run is scheduled or approved; the operator steps that clear
+> ONLY the owed half are in `OPERATOR-LIVE-CHECKLIST.md`.
+
+This is NOT about writing or designing the HTML. The HTML is already done
+(usually from a SuperDesign export). This skill is purely about getting that
+code into GHL so the page goes live.
+
+## Funnel Template Library (STEP 0 — template-first / reuse-before-reinvent)
+
+This skill ships a **38-template funnel library** at `06-ghl-install-pages/funnel-templates/`
+(categories: buyer, event, lead, retention-followup, traffic-advanced). Each template encodes a
+proven Brunson-derived `pageStructure`, `copyFramework`, `skill44Widgets`, persona/`books`, and
+`whenToUse`/`doNotUseWhen`. **STEP 0 of every build** runs `tools/funnel_matcher.py` (wired into
+`tools/v2_dispatcher.py` via `_resolve_step0`; env-gated on `GHL_FUNNEL_CATALOG`/`GHL_FUNNEL_INDEX`,
+**never blocks** a build) to match the best-fit template and attach its `pageStructure` + persona
+to the task. Flexibility is **guide-not-rule**: an explicit owner choice is HONORED (template is an
+optional reference); CREATE_NEW only when nothing fits. The matcher also stamps
+`task['funnel_template_id']` and attaches the recommended `linked_automations` from
+`44-.../automation-templates/_links/funnel-to-automation.json` for the complete-funnel handoff to
+Skill 44. CLI: `python3 tools/funnel_matcher_cli.py --match "<offer summary>" --json`
+(`--build-index` rebuilds the committed `tools/catalog-index.json`). See
+`funnel-templates/README.md` and `v2-autonomous-build-sop.md` "P0.5 / STEP 0". Every built funnel
+is held to the FAB-QC ≥ 8.5 build-quality gate (`qc-built-funnel.sh`; rubric in
+`universal-sops/funnel-automation-build-quality-rubric.md`).
+
+## Specialist funnel engines (shared STEP-0 engine selector)
+
+Some funnels are not generic page-plans but a **specific IP product** with their own SACRED copy/image
+contract and their own fail-closed pipeline. These register in the shared **funnel-engine selector**
+(`funnel-engines/registry.json` + `tools/funnel_engine_selector.py`), which runs BEFORE the
+template-first matcher above:
+
+- `ROUTE_TO_ENGINE` → the request is routed to that engine's canonical fail-closed entry shell; the
+  engine authors copy + images, then **delegates the GHL media + funnel/page build back to this skill**
+  (`ghl_media.py` + `ghl_rest_canvas.py` / `ghl_builder.py`). **Skill 6 stays the ONE GHL delivery rail.**
+- `NO_ENGINE_MATCH` → fall through to `funnel_matcher.py` (the 38 templates) + the generic build. Never
+  blocks a build.
+
+Registered engine: **`signature-funnel`** (Skill 49 — the Trevor Otts 12-section Hero + 3/5/7 funnel;
+entry `49-signature-funnel/signature-funnel-entry.sh`). A second entry (Skill 56 Sales-Page-Assets) is
+added by appending one object to `engines[]` — no selector code change. CLI:
+`python3 tools/funnel_engine_selector.py --match "<request>"` / `--list` / `--self-test`. See
+`funnel-engines/README.md`.
+
+## Timing-aware automation handoff
+
+For funnels with timed follow-up, read Skill 44's
+`references/workflow-timing.md`. Preserve the original brief and verified registration
+form/date source in the task's `timing` contract. The dispatcher passes `timing`,
+`timing_brief`, and `location_id` to Skill 44. A missing contract means Skill 44 must
+review/derive timing, not assume ordinary delays. Handoff `ts` is build time, never
+registration time. Skill 44 automatically chooses and configures Set event start time
+when relevant. Its event sequence needs the managed browser's full UI workflow, not
+this skill's single-action `ghl_workflow_builder.py` helper.
+
+## Full-Funnel Pipeline Integration (Skill 44 seam)
+
+When this skill runs as part of a full-funnel build (SOP-07 P4 stage), after page
+build and verify pass Gate-3, hand the live `page_ids` + opt-in form IDs to the
+Automation Workflow Specialist (CRM) to wire workflows. Invoke Skill 44
+(`44-convert-and-flow-operator`) for product creation, form wiring, and GoHighLevel
+workflow builds (see `06-ghl-install-pages/v2-autonomous-build-sop.md` §4 for the
+Skill-44 ecosystem seam and §2.05 for the method-decision that routes
+CALENDAR/FORM/DATA_PUSH pages directly to Skill-44 widget creation before the
+page splice). The P4→P5 handoff is documented in v2-autonomous-build-sop.md §4;
+do NOT skip this handoff or mark a full-funnel P4 task done without emitting
+the board handoff event `{from_dept: "web-development", to_dept: "crm",
+artifact: "page_ids+form_ids+funnel_template_id+linked_automations", job_id: "<P5 task id>"}`.
+Carrying `funnel_template_id` + `linked_automations` (from STEP 0) across the handoff is what makes
+the complete-funnel automation expansion fire in Skill 44; v2_dispatcher persists them to
+`routing/skill44-handoff.json` on a verified build.
+
+**Skill-44 widget create+embed flow (in brief):** classify the page (§2.05
+method-decision) → if `SKILL44_WIDGET`, call Skill 44 to CREATE the real
+GoHighLevel object (calendar, form, or workflow) BEFORE the page splice → capture
+the embed snippet from the creation receipt → embed the snippet VERBATIM (no SRI
+attributes) into the page blob's code element → verify the snippet tag appears in
+the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
+(status:201, re-GET 200); `status:"PLANNED"` stubs are a hard FAIL.
+
+## When to Use This Skill
+
+- The user asks you to deploy, install, or publish a page in GHL
+- The user asks you to put HTML into a Convert and Flow funnel or website
+- The user asks you to update an existing GHL page with new code
+- The user says "install this page" or "deploy this to GHL"
+- You have finished HTML from SuperDesign and need to put it somewhere live
+
+## Prerequisites
+
+- Teach Yourself Protocol (TYP) must be learned first
+- Backup Protocol must be learned first
+- agent-browser must be available (the browser-engine contract lane) - PRIMARY browser engine
+- GHL Setup must be complete (the pack's GHL rails) - the account must already exist
+- Vercel Setup - only for Mode 2 iframe-embed of rich payloads
+- Playwright installed - FALLBACK engine for known-hard flows
+- GoHighLevel auth in the install's secrets env: a Firebase refresh token
+  (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN — the ONLY auth path; seeds a logged-in
+  session with NO login form, NO password, NO two-factor). CLIENT keys only.
+  GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are a
+  DOCUMENTED, MANUAL last resort for a human operator ONLY — they are NEVER
+  auto-invoked by this skill, and there is NO automatic UI-login / 2FA fallback.
+  AUTH LADDER — 3 tiers, identical everywhere it is stated (Prerequisites
+  auth bullet; Critical Things to Know; carried verbatim in INSTALL.md):
+  Tier-1 TOKEN-ONLY (Firebase refresh) — the default, unattended path;
+  Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
+  the policy gates allow; Tier-3 fail-loud — never a silent UI login.
+- **GoHighLevel media/PIT credentials — where they live and how they resolve
+  (READ BEFORE the image step).** The image/media pipeline needs three values, all
+  in the env stores (the ONE canonical resolution, exactly:
+  the live process env, then the install's secrets env store — the file
+  `$SECRETS_ENV` designates; every other doc in this skill references this
+  binding, never restates its own).
+  Skill 6 reads the host-resolved process env
+  (`os.environ`) as already resolved by the host; only `ghl_media.py` /
+  `ghl_image_stage.py` fall back to parsing the stores above directly:
+  - **LOCATION PIT** (media-scoped): `GOHIGHLEVEL_API_KEY` (preferred) → `GHL_API_KEY`
+    → `GOHIGHLEVEL_LOCATION_PIT` → `GHL_LOCATION_PIT`. This is the token media upload
+    REQUIRES. The **AGENCY** PIT (`GOHIGHLEVEL_AGENCY_PIT` /
+    `GOHIGHLEVEL_AGENCY_API_KEY` / `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT` /
+    `GHL_AGENCY_PIT`) **401s for media** — never substitute it.
+  - **Location id**: `GOHIGHLEVEL_LOCATION_ID` → `GHL_LOCATION_ID` →
+    `GOHIGHLEVEL_ALLOWED_LOCATION_IDS` → `CAF_ALLOWED_LOCATION_IDS` (first id).
+  - **Image key**: the KIE key (`KIE_API_KEY`; every alias in the shared secret-name canon counts). On a client box it is the client's own key; operator keys are never used for client work. Shared KIE rules: the harness kie skill's references (kie-common-rules).
+  `ghl_media.resolve_location_pit()` / `resolve_location_id()` search EVERY alias
+  across the live env AND the stores above before raising; the image stage's
+  `_resolve_kie_api_key()` does the same for KIE. **HARD RULE — never record a GHL
+  credential as missing (`honest_fail`) on an empty env var alone.** An empty env
+  var means "not loaded", not "absent" — the value is almost always sitting in
+  the secrets env store. Run `set -a; source "$SECRETS_ENV"; set +a` first, then
+  retry. An `honest_fail` is valid ONLY after the full alias × store search comes
+  back empty, and it MUST name exactly which vars and stores it checked (the
+  resolver's RuntimeError already does). This is the fix for the six-month
+  false-fail where the image step reported "GHL LOCATION PIT not found" on a token
+  that was in the store the whole time. See v2-autonomous-build-sop.md §2.0.1.
+
+## What This Skill Covers
+
+1. **Browser setup** - Viewport size (minimum 1440x900), isolated headless
+   sessions, and anti-detection settings
+2. **Token-only session seeding (D7)** - GHL-AUTH-DOCTRINE: TOKEN-ONLY — the
+   Firebase refresh token ALONE seeds a logged-in session (mint id_token →
+   Firebase IndexedDB record + the six SPA cookies → navigate straight into the
+   dashboard). NO login form is rendered, NO password is typed, two-factor is
+   NEVER reached. On token failure the builder STOPS and reports — it NEVER
+   auto-opens the Sign-in form or a two-factor prompt and NEVER falls back to a
+   login/password.
+3. **GHL's iframe architecture** - The page builder loads inside nested
+   iframes. You cannot just click elements on the main page. The skill
+   explains how to find and switch into the correct iframe context.
+4. **Selector strategy** - GHL changes their UI frequently. Every button and
+   link has a chain of fallback selectors so automation does not break when
+   GHL updates a label or class name.
+5. **10-phase deployment process** - Navigate to Funnels, create a new funnel,
+   add steps, open the builder, dismiss the AI popup, add a blank section with
+   a code element, set full width, paste the HTML, save, and preview.
+6. **Phase-5 method decision** — Every page is classified before build.
+   DEFAULT = DIRECT (native GoHighLevel page blob). Escalate ONLY when the
+   classifier positively scores ADVANCED or a widget type. See decision table
+   in the "Phase-5 Method Decision" section below and in
+   v2-autonomous-build-sop.md §2.05. The old framing of Vercel as a "manual
+   last resort" is superseded — Vercel-embed is now a first-class automated
+   path for ADVANCED pages; Skill-44 widget is the path for CALENDAR/FORM/DATA_PUSH.
+7. **Multi-page funnels** - How to loop through multiple pages (landing, sales,
+   checkout, thank you) in a single funnel deployment.
+8. **Updating existing pages** - How to find an existing funnel, open the page
+   in the builder, replace the code, and save without creating duplicates.
+9. **Error recovery** - Retry logic, screenshot capture on failure, and a
+   recovery protocol for when things go seriously wrong.
+10. **Publishing** - NEVER publish without explicit user approval. Always send
+    a deployment report with screenshots first.
+11. **Role-aware model_router** - `tools/model_router.py` assigns a model to
+    every subtask before execution via an Ollama-Cloud-first ladder (five
+    roles; aliases in parentheses). `content` = `ollama/kimi-k2.6:cloud` →
+    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4.1-flash (universal backup) →
+    Gemini 3.5 Flash (last resort); `html`
+    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4.1-flash →
+    Gemini 3.5 Flash (last resort); `reasoning` (`funnel`) = GLM 5.2 then
+    DeepSeek V4.1 Flash (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
+    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud`
+    → `openrouter/minimax/minimax-m3` (probe-gated) →
+    `openrouter/deepseek/deepseek-v4.1-flash` → `google/gemini-3.5-flash` (last
+    rung); `qc` (vision) = MiniMax M3 (probe-gated) → Gemini 3.5 Flash last
+    resort. MiniMax M2 is PURGED — it never appears in any rung. The
+    router is wired into `tools/v2_dispatcher.py` (role selection at every
+    dispatch entry) and `ghl_verify` (`select_html_repair_model` /
+    `select_qc_model` seam functions); no subtask runs without a model
+    assignment.
+12. **Survey creation — `tools/ghl_survey_builder.py`** - Browser-controlled
+    survey pipeline in two parts. Part 1 creates all required custom fields in
+    the GHL location. Part 2 builds the survey form and maps fields via the
+    Add-Object-Fields interface. Supports conditional logic, required-field
+    enforcement, Quick Add, and plain Terms & Conditions blocks. `--dry-run`
+    performs a full structural validation without writing anything to GHL.
+13. **Adaptive intake — `tools/intake_interview.py`** - Runs a ≤7-question
+    intake interview before a build starts. Adapts follow-up questions to prior
+    answers. Includes a "think for me" branch: when the operator cannot decide,
+    the tool generates recommended answers and holds for confirmation before
+    proceeding. Output is written to the task manifest and consumed by
+    `v2_dispatcher.py` at build time.
+14. **Command Center step-visibility — `tools/cc_board.py`** - `move_task()`,
+    `post_activity()`, and `register_deliverable()` give per-step visibility on
+    the Kanban board (in addition to the existing `update_status` /
+    `ingest_task` producer calls): `post_activity('updated', 'Step k/N: …')`
+    surfaces every material build step on the card's activity feed as it
+    happens. **Done-skip fix** — `move_task()` HARD-BLOCKS any direct call to
+    move a card to `done`; the only path to `done` is the Command Center's own
+    QC gate promoting a card from `review` on a passing score. The new
+    `BuildPhaseDriver` class sequences the whole lifecycle (`queued` → `start` →
+    `step` → `deliverable`(×N) → `review` → `qc`, or `fail` → `backlog`/`blocked`)
+    for any future caller; `ghl_survey_builder.py`'s own fail-soft board wrappers
+    already call `move_task`/`post_activity`/`register_deliverable` directly
+    (via a `getattr` guard) for its survey build flow. Every board call is
+    fail-soft (never raises, never blocks the build) so a build proceeds even
+    against an older `cc_board.py`.
+    **U9 §7 tightenings** (Skill-6 Bulletproof) — all additive/backward-compatible:
+    (§7.1) `BuildPhaseDriver.deliverable(url, meta)` registers each artifact
+    (preview URL, embed snippet, survey/community URL) without moving the card, and
+    `review()` is the single terminal move to `review`; `artifact()` stays the
+    one-shot `deliverable()+review()` convenience. (§7.2) `post_qc_score(task_id,
+    score, gate, passed, scorecard_path)` (and `BuildPhaseDriver.qc(...)`) emits
+    `QC: <score>/10 — <gate> [PASS|FAIL]` as a `completed` activity with the
+    score/gate/verdict/scorecard-path in the metadata — the single source the CC QC
+    sweep reads; `qc-built-form.sh` / `qc-built-funnel.sh` post it when `CC_TASK_ID`
+    is set (opt-in, via `cc_board.py --emit-qc`). (§7.3) `fail(reason=…)` prefixes
+    the blocked/backlog note with one of `AUTH-STOP | SELECTOR-MISS | RATE-LIMIT |
+    TOKEN-CONTEXT | PARKED | VERIFY-FAIL` (`_CC_BLOCK_REASONS`) plus a `block_reason`
+    metadata field, so the board is queryable for fleet-wide failure patterns.
+    (§7.4) `post_queue_wait(task_id, holder_session)` / `BuildPhaseDriver.queued(…)`
+    parks a card at `pending_dispatch` naming the session holding the browser
+    singleton lock, making a lock-wait visible.
+15. **Form creation — `tools/ghl_form_builder.py`** — Browser-controlled form
+    pipeline with a strict TWO-LAYER split: a SMART reasoning layer decides WHAT
+    form to build and pre-creates every CUSTOM FIELD + TAG through the GHL-API
+    operator (Skill 44 / `caf`, LOCATION PIT) with a `zhc_` marker and an
+    idempotent create-vs-reuse plan; a DUMB browser operator then
+    executes an explicit, ordered click list (stable a11y-ref-first selectors +
+    visible-text fallbacks + explicit waits) to create the form, drag standard
+    fields via Quick Add and custom fields via **Add Object Fields** (never
+    create-on-the-fly), style it (incl. Custom CSS), and retrieve the **embed /
+    JavaScript snippet**. The snippet is embedded into a GHL page/funnel/website
+    via the existing `SKILL44_WIDGET → FORM` path (verbatim, no SRI) and verified
+    in the RENDERED DOM (`ghl_verify.render_check`); tags are attached on submit
+    via a Skill-44 "Form Submitted → Add Contact Tag" workflow. Locked selectors:
+    `tools/SELECTORS-LIVE-form.md`. `--dry-run` writes plan + dependency plan +
+    click list without touching GHL. Operator docs live in `references/`
+    (`forms-playbook.md`, `form-creation-checklist.md`, `form-reasoning-layer.md`,
+    `form-browser-operator-instructions.md`, `form-click-map.md`,
+    `form-builder-spec.md`); per-build gate is `qc-built-form.sh`.
+
+## Files in This Folder (Reading Order)
+
+1. **SKILL.md** - You are here. Start with this file.
+2. **references/ghl-build-spec-from-transcript.md** — **THE CANONICAL BUILD
+   RECIPE (authoritative).** Trevor's official walkthrough transcript, distilled
+   into the exact ordered steps every funnel/website build must follow: Sites →
+   Funnels → ZHC-named new funnel → step → Create-from-blank → close Ask AI →
+   Code Block → **Allow Rows to take entire width (full width)** → paste (naked
+   HTML or Vercel embed) → **two saves (CODE then PAGE)** → **SEO/AI-search
+   Content panel** → next step. Also pins the **media-storage folder discipline**
+   (§3), the **founder-as-SEO-author** rule (§2), and the naked-HTML-vs-Vercel
+   decision (§6). **Read this BEFORE `v2-autonomous-build-sop.md` and
+   `tools/gates.json`** — where the autonomous REST path and the transcript
+   disagree on *coverage*, the transcript wins on *what must be true at the end*;
+   the REST path must reach the same end-state.
+3. **references/ghl-build-self-check.md** — **THE PER-PHASE SELF-CHECK CHECKLIST.**
+   A scannable, top-to-bottom self-check the building agent runs **at every phase**
+   (pre-build/creds → media → ZHC container → build page [full-width + two saves] →
+   SEO [incl. the H1 keyword-in-copy gate] → multi-step → images → the un-fakeable
+   `render_check` backstop). It is a VIEW of the gates in `v2-autonomous-build-sop.md`
+   (each line cites its SOP §) — **not** a fork. **Run it as you build; do not
+   advance a phase until that phase's bold `Done when:` gate passes.** It does NOT
+   replace `ghl_verify.render_check` — the sealed verifier (§7/§8) is still the only
+   verdict.
+4. **ghl-browser-builder-full.md** - The v3.0 hardened reference: agent-browser
+   engine, auth seeding, the 30-gate runtime contract, the full funnel +
+   website + Mode-2 iframe flows, and the ledger/resume mechanics. Read this
+   when you are actually about to deploy pages.
+5. **tools/** - The code:
+   - `seed-ghl-auth.py` - mints a Firebase ID token + browser auth seed (D7).
+   - `inject-ghl-auth.sh` - writes the seed into the browser's IndexedDB.
+   - `ghl_builder.py` - manifest, per-page ledger/resume, ZHC prefix (UPPERCASE
+     `ZHC `) + multi-step `ZHC part N` naming, sub-account gate, publish guard,
+     marker-string verify, the SEO panel builder (`build_seo_meta`,
+     `validate_founder_name`, `assert_seo_populated`, and the H1 keyword-in-copy
+     gate `assert_keywords_in_copy`), and the runtime-gate loader.
+   - `ghl_rest_canvas.py` - the page-blob splice + REST autosave, incl. the §2
+     `seoMeta` path (`build_seo_meta`, `set_page_seo`, `page_seo_autosave`).
+   - `ghl_media.py` - media-storage: image upload, `create_media_folder`, and the
+     **folder-per-funnel** wiring (`ensure_funnel_media_folders` /
+     `funnel_media_folder_plan`) — `services.*` + Bearer LOCATION-PIT, **never
+     browser-routed**.
+   - `gates.json` - the 30-gate registry (2 captured, 28 runtime snapshot-gates,
+     incl. the multi-iframe protocol gates 29-30).
+   - `ghl_survey_builder.py` - two-part browser-controlled survey pipeline
+     (**v1.4.0**): Part 1 creates/reuses GHL custom fields; Part 2 builds the
+     survey, maps Add-Object-Fields, wires conditional logic + branch convergence,
+     enforces required fields, and handles Quick Add + plain T&C blocks. v1.4.0
+     adds the **NAV FIX** (`$router.push` to `survey-builder/main` + native
+     "Add survey" click via `ghl_ab_executor` — the dead left-rail "Sites" click is
+     gone), the **build-from-main convergence guard** (`P4:builder_convergence_capable`),
+     **smoke-test-first** (one tile-drag proven via the iframe snapshot delta before
+     a full run is trusted), and a **capture-gated REST fallback lane**
+     (`build_method='rest'`) that can NEVER blind-POST. Accepts `--dry-run` for
+     structural validation without GHL writes.
+   - `ghl_iframe_dragdrop.py` - **reusable cross-origin-iframe drag/drop + ref-less-
+     tab playbook** (tab click + coordinate-drag ladder), the generalized in-skill
+     version of the survey bring-up one-off. Any builder whose canvas is a
+     cross-origin iframe drives it through this. **Read
+     `TECHNIQUES-cross-origin-iframe-dragdrop.md` (skill root) FIRST** when a builder
+     canvas is an iframe. `--selftest` needs no network/browser.
+   - `iframe_router.py` - the **single adaptive iframe entrypoint** (`route_drag` /
+     `route_click`): route through it instead of hand-picking between the AB
+     ladder (`ghl_iframe_dragdrop.py`) and Playwright CDP (`ghl_iframe_drag.py`);
+     the lane is chosen from the capability receipt (`iframeDrag.available`), and
+     multi-iframe ambiguity plus stale frame refs (`frame_epoch`) fail closed.
+     `--selftest` is offline.
+   - `ghl_survey_rest.py` - the survey builder's **capture-gated canvas-free write
+     lane**. Derives the save origin/path/verb from a RECORDED save-capture receipt
+     (`routing/survey-save-capture.json`) ONLY — the anti-blind-POST invariant; no
+     hardcoded save endpoint exists. Read/list paths + roundtrip diff. Offline.
+   - `ghl_form_builder.py` - two-layer browser-controlled FORM builder. THINK
+     layer emits `routing/form-plan.json`, `routing/form-dependency-plan.json`
+     (the Skill-44 custom-field + tag handoff), and `routing/form-click-list.json`;
+     the browser layer executes the click list. Custom fields + tags are
+     PRE-CREATED via Skill 44 (never in-browser create-on-the-fly). `--dry-run`
+     (default) and `--selftest` need no network/browser.
+   - **Locked selector docs (one per browser builder).** Each browser builder
+     names its LOCKED, runtime-snapshot-gated selector reference: funnel →
+     `tools/SELECTORS-LIVE-funnel.md`, page → `tools/SELECTORS-LIVE-page.md`,
+     survey → `tools/SELECTORS-LIVE-survey.md`, form →
+     `tools/SELECTORS-LIVE-form.md`.
+   - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
+     generates recommended answers on request, then confirms before proceeding;
+     output written to the task manifest before build starts.
+   - `model_router.py` - role-aware model selector (Ollama-Cloud-first); called
+     by `v2_dispatcher.py` and `ghl_verify` to assign a model to every subtask
+     before execution. Role → ladder: `content` → `ollama/kimi-k2.6:cloud` →
+     `openrouter/moonshotai/kimi-k2.6` → DeepSeek V4.1 Flash (universal backup);
+     `html`/`code` → GLM 5.2 → DeepSeek V4.1 Flash (universal backup); `reasoning` →
+     GLM 5.2 / DeepSeek V4.1 Flash; `execution` → MiniMax M3 probe-gated →
+     DeepSeek V4.1 Flash; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
+     at Gemini 3.5 Flash as last resort. MiniMax M2 is PURGED from every rung.
+6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
+   historical click-path detail only. Superseded by ghl-browser-builder-full.md.
+7. **INSTRUCTIONS.md** - Operational quick-start.
+8. **INSTALL.md** - Installation steps if any tools are missing.
+9. **EXAMPLES.md** - Example deployments and common scenarios.
+10. **CORE_UPDATES.md** - What to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+11. **references/client-facing-phrasebook.md** - MANDATORY translation layer.
+   Maps every engineer term (funnel, embed, draft, preview URL, HTTP, Firebase,
+   iframe, px, etc.) to the plain 7th-grade word the agent must use when
+   messaging the client. Also contains the four client delivery templates:
+   Template A (draft ready + tappable link + mobile screenshot), Template B
+   (live), Template C (security hold), and Template D (pre-build confirm).
+   Read this before sending any message to a client. NOTHING from the
+   Deployment Report goes to the client — operator log only.
+
+## Critical Things to Know
+
+- PRIMARY engine is agent-browser, headless, with an isolated `--session
+  <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
+  the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+  Route EVERY agent-browser call through the single mandatory
+  gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
+  then `... eval|open|snapshot ...`); NEVER invoke `agent-browser` directly and
+  NEVER invent a per-iteration session name. The gateway owns the ONE canonical
+  session, the box-wide lock, the lease, the TTL, the pool ceiling, the
+  circuit-breaker, and a guaranteed `trap _bm_teardown EXIT`; the hourly host
+  reaper `scripts/agent-browser-reaper.sh` is the backstop for a hard crash.
+- GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
+  Seed the session logged-in via the Firebase
+  refresh token (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) BEFORE
+  navigating. Auth lives in IndexedDB (firebaseLocalStorageDb) + the six SPA
+  cookies, NOT localStorage. The refresh token ALONE logs the SPA in — NO Sign-in
+  form is rendered, NO password is typed, two-factor is NEVER reached.
+  AUTH LADDER — 3 tiers, identical everywhere it is stated (Prerequisites
+  auth bullet; this section; carried verbatim in INSTALL.md):
+  Tier-1 TOKEN-ONLY (Firebase refresh) — the default, unattended path;
+  Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
+  the policy gates allow; Tier-3 fail-loud — never a silent UI login.
+- GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY.
+  The canonical auth entry point is the orchestrator `tools/ghl_auth.py` (a 3-tier
+  ladder). Tier 1 (token-only, above) stays PRIMARY and is the only path a normal
+  build takes. Tier 2 is a GATED, audited, ONE-TIME bootstrap that runs ONLY when
+  there is no valid refresh token AND four gates pass — (A) recorded client
+  authorization, (B) the box PROVES it can read the client's own Gmail (a live
+  read, BEFORE any login, so a misconfigured box never starts a login it can't
+  finish), (C) GHL's selected 2FA is email, (D) agency creds are in the client
+  store. It logs in headless, reads the freshest email-2FA code from the client's
+  own Gmail, and on success SELF-HEALS a fresh refresh token to the client store
+  so the next run is Tier 1 again. Bounded (MAX_LOGIN_ATTEMPTS <= 3, backoff,
+  hard-stop on lockout/captcha). Any gate fail or hard stop -> Tier 3: fail loud,
+  non-zero exit, precise client instruction. ALL login/password/2FA code lives in
+  EXACTLY ONE module (tools/ghl_auth_fallback.py + its browser helper
+  tools/ghl_login_browser.py); CI guard `scripts/guard-ghl-auth-fallback.sh` locks
+  the invariants.
+- HARD RULE: NEVER ask for, type, or fall back to a GHL login/email/password or a
+  two-factor (2FA) prompt. On token failure (no token / revoked / seed does not
+  log in) the builder STOPS and reports (non-zero exit) — it MUST NOT auto-open
+  the Sign-in form or a two-factor prompt. Fix = re-grab a fresh refresh token via
+  the Convert and Flow Token Grabber Chrome extension, then retry the seed.
+  GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never
+  auto-invoked.
+
+### Adaptive browser lanes
+
+Lanes are selected per host by the capability probe — never assumed:
+
+| # | Lane | Cross-origin drag? |
+|---|------|--------------------|
+| 1 | agent-browser via `browser_manager` (PRIMARY, pin 0.27.0) | Partial without Playwright |
+| 1b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
+| 2 | OpenClaw managed browser | NOT AVAILABLE in this harness — structurally absent, never selected |
+| 3 | Playwright-only | Degraded escape hatch |
+| 4 | REST / fallback-ladder | Content ops without UI drag |
+| 5 | CUA | NOT in Skill 6 yet — future last resort only |
+
+Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
+is the runtime source of truth. Capability-class mapping and lane detail live in
+`ENV-MATRIX.md` ("Capability classes").
+
+- Always verify you are in the correct sub-account before building
+  (ghl_builder.py subaccount). Wrong sub-account = the client never sees pages.
+  REFUSE on mismatch.
+- Default to Funnels, not Websites, unless the user specifically says Website.
+- Every funnel/website/step name MUST carry the **UPPERCASE `ZHC ` prefix**
+  (transcript casing — "must carry a ZHC prefix … e.g. ZHC test"; standing build
+  approval) — use `ghl_builder.ensure_zhc_prefix`. The match is case-insensitive
+  (an existing `zhc`/`Zhc` is honored, never double-prefixed) but new names are
+  EMITTED uppercase. Multi-step funnels auto-number each created step
+  **`ZHC part 2` … `ZHC part N`** via `ghl_builder.zhc_step_name(name, order)`
+  when no step name is supplied.
+- **MEDIA STORAGE = MEDIA LIBRARY (same thing).** Trevor uses both names for the
+  one area; treat them as identical. Discipline (transcript §3): **one clearly-
+  named folder per funnel/website, with per-page subfolders as needed.** Create
+  them with `ghl_media.ensure_funnel_media_folders(...)` (which calls
+  `create_media_folder` on the `services.*` + Bearer **LOCATION**-PIT path), then
+  **upload → GHL returns a CDN link → reference THAT media-storage link in the
+  HTML.** **NO browser control for media storage** — folders/uploads go via the
+  GHL API / official MCP / community MCP / Skill 44, NEVER by driving the page
+  builder UI. Fail-soft: if the plan has no folder endpoint, the wrapper groups
+  by `media_folder_name_prefix` instead (still findable). "Grocery-shopping"
+  rule: pre-build forms/calendars/tags/workflows (Skill 44) BEFORE the page.
+- **FORMS = same ONE rail.** Forms are built by `tools/ghl_form_builder.py` under
+  the same doctrine as funnels/websites/surveys: seeded token-only session,
+  correct sub-account, singleton pooled browser, snapshot-gated selectors,
+  draft-by-default, run-evidence outside the skill dir.
+- **Custom fields + tags for a form are PRE-BUILT via Skill 44 (grocery-shopping
+  rule), NEVER by the browser.** The form-builder emits a dependency plan; Skill
+  44 (`caf`, LOCATION PIT) creates/looks-up the objects; the browser only DRAGS
+  the pre-created fields in via **Add Object Fields**. Create-on-the-fly (random
+  unique-key suffix) is DISALLOWED for agent builds.
+- **ZHC marker on agent-created fields/tags.** Custom-field unique key =
+  `zhc_<snake_slug>` (lowercase, no spaces → `{{contact.zhc_<slug>}}`); tag =
+  `zhc_<snake_slug>` (GHL lowercases tags). The form's own NAME still uses the
+  fleet UPPERCASE `ZHC ` prefix (`ghl_builder.ensure_zhc_prefix`). BEFORE
+  creating, GET existing fields/tags and REUSE any matching `zhc_…` — never
+  duplicate (idempotent).
+- **Form embed = the existing `SKILL44_WIDGET → FORM` path.** Retrieve the
+  "Copy Embed Code" JS snippet at Integrate, embed it VERBATIM (no SRI) into a
+  `ghl_rest_canvas` code element on the host page, add optional CSS polish, and
+  verify the snippet tag in the RENDERED DOM via `ghl_verify.render_check`.
+- **Tag attachment ≠ tag creation.** GHL's form builder has no native add-tag
+  control; attach on submit via a Skill-44 "Form Submitted → Add Contact Tag"
+  workflow (built after the form id exists), or a hidden Tags object-field.
+- **SEO / AI-search "Content" panel is a REQUIRED build phase, not optional**
+  (transcript §2). After the two saves, populate it: description/metadata,
+  **researched** keywords (≥3 distinct, no placeholders) **that each actually
+  appear in the page body copy — the H1 keyword-in-copy gate
+  (`ghl_builder.assert_keywords_in_copy` / `assert_seo_populated(..., page_copy=…)`),
+  a HARD FAIL for meta-only keywords**, images, links/tags,
+  canonical link (absolute `https`, the page's own preview/live domain — NEVER a
+  Firebase/storage URL), language **explicitly `en`**, and **author = the
+  FOUNDER's name**. The founder name is a **REQUIRED pre-flight input sourced
+  from the client / GHL location record (never free-typed)** — the build HALTs if
+  it is absent (`ghl_builder.validate_founder_name`). `seoMeta` rides inside the
+  `pageData` autosave (`ghl_builder.build_seo_meta` →
+  `ghl_rest_canvas.set_page_seo` / `page_seo_autosave`); it is emitted as an
+  ordered save step AFTER the page save and gated populated.
+- **Naked HTML vs Vercel embed (transcript §6).** DEFAULT = **naked HTML** (a
+  straight HTML fragment written for the GHL code-block area). Escalate to a
+  **Vercel embed** only when the page has rich features the code block can't
+  render — build/host on Vercel, then paste the embed link into the code editor
+  (this is the §2.05 classifier's `ADVANCED → VERCEL_EMBED` path; `SIMPLE` stays
+  DIRECT). Do NOT pre-ban `<iframe>` on a guess — the Vercel-embed workflow
+  presupposes it renders; the live iframe/strip probe (harden run) settles it.
+- NEVER hardcode invented CSS for an in-app control. Snapshot the live DOM and
+  pick the ref at runtime (the 28 runtime gates in tools/gates.json).
+- Set large HTML payloads via the code-editor value API (eval), never key-by-key.
+- **MANDATORY theme/colors list on EVERY page blob.** Every page blob POSTed to
+  GoHighLevel MUST carry a populated `general.general.colors` list. Without it
+  GoHighLevel reads `.colors` off `undefined` and returns HTTP 500 — the page
+  cannot display even if the bytes stored as 201. (NOTE: `defaultSettings.colors`
+  does NOT exist in real GoHighLevel page blobs — the live path is
+  `general.general.colors`.) The `colors` field is an **18-entry list of
+  `{label, value}` dicts** (Transparent, Primary, Secondary, White, Gray, Black,
+  Red, Orange, Yellow, Green, Teal, Malibu, Indigo, Purple, Pink, Cobalt, Smoke,
+  Overlay) — the exact shape GoHighLevel's renderer walks. Elements MUST nest
+  `section → row → column → element`; flat structure is not rendered. The
+  `rawCustomCode` in a code element MUST be an HTML fragment, not a full
+  `<!DOCTYPE html>…</html>` document (a full document renders blank).
+  `ghl_rest_canvas.new_page_blob()` is a **pure, self-contained** function: it
+  assembles the blob from the inlined `_FLAT_*` constants (theme colors, page
+  styles, section scaffold) — there is NO file I/O and it does NOT load from
+  `references/golden/` at build time. `tools/ghl_rest_canvas.py::assert_renderable`
+  enforces the invariant that `general.general.colors` is a non-empty list before
+  any save. **Per-client brand:** `ghl_method.build_theme_colors(palette,
+  base=_FLAT_THEME_COLORS)` injects a client palette into that list while keeping
+  the exact 18-entry shape (and `apply_palette_to_page_styles` keeps the
+  `:root{--primary:…}` CSS vars in sync). A 201 autosave status does NOT prove a
+  page renders; it only proves bytes were stored.
+- **Sealed un-fakeable verification.** A page PASS requires ONLY: `ghl_verify.render_check`
+  returns HTTP 200, marker present in the RENDERED (JavaScript-hydrated) DOM, and
+  zero render errors — captured as real DOM snapshot + PNG + console artifacts.
+  **Copy-fidelity (P1-4):** when a page carries `copy_tokens` (approved phrases)
+  or `copy_md_path` (the approved copy.md), `ghl_verify.verify_page` additionally
+  asserts every approved copy token appears in the rendered visible text
+  (scripts/styles stripped); a missing token folds into `render_errors` → PASS
+  False. This catches a page that renders 200 + marker but ships stale or
+  placeholder copy. The gate is opt-in (pages without copy assertions are
+  unaffected).
+- **PREVIEW-URL HOST DISCOVERY (empirical, 2026-07).** The preview URL
+  `app.convertandflow.com/preview/<id>` does NOT render on that host — it
+  301-redirects to `sites.leadconnectorhq.com/preview/<id>`, which is where the
+  page actually renders. **No API field reveals this** — the builder/preview
+  payloads carry the `app.convertandflow.com` path and never the render host. It
+  only matters when no custom domain is connected (a page on a custom domain
+  serves from that domain). So for verification, resolve the redirect: fetch
+  `app.convertandflow.com/preview/<id>`, follow the 301 to
+  `sites.leadconnectorhq.com/preview/<id>`, and verify the marker in THAT rendered
+  DOM. Do not hardcode either host as the render source — follow the redirect.
+  `ghl_gate require-pass` reads ONLY `scorecard/verify-summary.json` written by
+  `ghl_verify`; it ignores ledger files and `.md` files. A 201 autosave, a marker
+  grep on stored bytes, a hand-written ledger, or a non-200 re-labeled "API
+  difference" are each EXPLICITLY REJECTED as pass criteria. Any non-200 is a
+  hard FAIL with no escape. A build CANNOT self-declare PASS — the producer runs
+  `ghl_verify`, `ghl_verify` writes the scorecard, `ghl_gate` reads it.
+- NEVER publish without explicit approval. Default = draft + report the preview
+  URL (ghl_builder.py may-publish).
+- Long runs fire detached; the agent exits and resumes via the per-page ledger.
+- Credentials go in the install's secrets env file. CLIENT keys only. Never hardcode.
+
+---
+
+## Phase-5 Method Decision Table
+
+Every page MUST be classified before the build begins. The decision is recorded
+in `routing/method-decision.json` (required — no build proceeds without it).
+
+| Classifier score | Method | Path |
+|---|---|---|
+| `SIMPLE` — static content, CSS fits GoHighLevel builder, no third-party JS | `DIRECT` | Native GoHighLevel page blob with §2.06 `general.general.colors` list and HTML fragment in code element |
+| `ADVANCED` — rich interactivity, third-party JavaScript, CSS that GoHighLevel builder overrides | `VERCEL_EMBED` | Build + host on Vercel; run `prepare → deploy → disable_sso → assert_embeddable` gates; paste iframe snippet into a DIRECT code element |
+| `CALENDAR` / `FORM` / `DATA_PUSH` — needs a real GoHighLevel calendar, form, or CRM write | `SKILL44_WIDGET` | Call Skill 44 to create the GoHighLevel object; embed the GoHighLevel-generated snippet verbatim (no SRI); verify snippet tag appears in RENDERED DOM |
+
+**DEFAULT is DIRECT.** Escalate only when the classifier positively scores ADVANCED
+or a widget type. Do NOT use Vercel-embed for simple static pages.
+
+For VERCEL_EMBED: `assert_embeddable` is a hard gate — if `X-Frame-Options` is
+`SAMEORIGIN` or `DENY`, the build halts and flags; it does NOT bypass and embed.
+The Vercel page MUST be publicly accessible (SSO wall disabled) before the iframe
+snippet is generated.
+
+For SKILL44_WIDGET: the GoHighLevel form embed snippet is emitted verbatim WITHOUT
+`integrity`/`crossorigin` attributes — GoHighLevel rotates the embed script and
+SRI hashes break on the next GoHighLevel deploy. The GoHighLevel object itself
+MUST be real (status:201, re-GET 200 in `ecosystem/`); a `status:"PLANNED"` stub
+is a hard FAIL.
+
+This table supersedes any prior description of Vercel as a "manual last resort."
+
+> **VERCEL_EMBED is a direct API upload to Vercel, PLUS a non-blocking GitHub
+> archive.** `tools/ghl_vercel.py` base64-encodes the generated files
+> (`index.html`, `vercel.json`) and POSTs them straight to the Vercel
+> deployments API (no git, no PR, no build step) — the page goes live exactly
+> as fast as before. Operator standing rule: a page's source code must ALWAYS
+> ALSO live in a GitHub repo, never Vercel-only. `run_pipeline` satisfies that
+> AFTER the Vercel deploy is live and `assert_embeddable` has passed — never
+> before, and never in a way that can delay or fail the deploy:
+>   1. It writes an F6 `vercel_deploy` receipt (`ghl_receipts`, object_type
+>      `vercel_deploy`) recording the marker + deployment url, so every page
+>      built via this path is enumerable later.
+>   2. It calls `tools/ghl_github_archive.py::archive_async`, which copies the
+>      generated files to a stable path under the evidence root and fires a
+>      DETACHED subprocess (new session — survives the parent exiting) that
+>      pushes them to a per-page GitHub repo (name deterministic from
+>      `project_name` + `marker` — a re-deploy always updates its OWN repo,
+>      never an unrelated one) and writes an F6 `vercel_github_archive`
+>      receipt when it finishes.
+>   3. `archive_async` returns immediately — it never waits on the subprocess.
+>      ANY failure anywhere in this path (no `GH_TOKEN`/`GITHUB_TOKEN`,
+>      network error, GitHub API error, spawn failure) is caught and recorded
+>      as an honest `failed` receipt; it is NEVER raised into the Vercel
+>      pipeline and can never take a live page down. Pass `evidence_root=` to
+>      `run_pipeline` to enable this (omit it and both the receipt and the
+>      archive attempt no-op — a pre-existing caller that doesn't pass it
+>      behaves exactly as before this change).
+>
+> **Reconciliation — proving the archive actually landed.**
+> `tools/ghl_github_reconcile.py` sweeps ONE evidence root: it lists every
+> `vercel_deploy` receipt (every page built via this path), checks each has a
+> matching `vercel_github_archive` receipt with `verify.ok == True`, and for
+> any that don't (`--retry`), re-runs the archive job synchronously from the
+> staged source under `<evidence_root>/vercel-github-archive/<marker>/` if it
+> is still present — or FLAGS the page (never fabricates source) if it is not.
+> Run it by hand for one root:
+> `python3 tools/ghl_github_reconcile.py --evidence-root <dir> --retry`
+> (exit 0 = every page's code is confirmed in GitHub; exit 1 = attention
+> needed — see `missing_or_failed`/`flagged` in its output).
+>
+> **D6/B-D2 — RATIFIED.** The non-blocking archival rail above is the
+> permanent doctrine (operator ruling, D6): it ships exactly as fast as
+> before, every failure is an honest receipt a sweep can retry, and nothing
+> in this path can ever block or roll back a live page.
+>
+> **Scheduled maintenance-window sweep (U24/B-U10 item 2).** Reconciliation
+> is NOT a fleet-wide crawler by itself, but `--sweep-base` closes the
+> "wiring it into a periodic gate is left to the operator" gap: it sweeps
+> EVERY Skill-6 evidence run under a base directory (the same run-evidence
+> ledger roots `cc_board.py reconcile`/U27 already discovers) and writes ONE
+> dated JSON log per pass under `<base>/github-archive-reconcile-logs/` —
+> proof-on-disk that the scheduled sweep actually ran, every time it runs:
+> `python3 tools/ghl_github_reconcile.py --sweep-base <dir> --retry`
+> (exit 0 = every run's code is confirmed in GitHub; exit 1 = attention
+> needed on at least one run).
+>
+> **Recurring registration is NOT shipped in this pack (fifth-seam
+> candidate).** The schedule entry file
+> (`schedule/skill6-github-archive-reconcile-sweep.cron.json`, the source of
+> truth for the name/schedule/tz/command) and its installer
+> (`scripts/install-github-archive-reconcile-cron.sh`) are carried VERBATIM
+> as the record of the intended registration, but they are not adapted:
+> registering recurring host jobs is the fifth-seam candidate, which needs
+> the operator's plan-amendment decision. Nothing in this pack registers
+> recurring jobs. Until then, run the sweep on demand
+> (`python3 tools/ghl_github_reconcile.py --sweep-base <dir> --retry`, with
+> the evidence base resolved by `python3 tools/cc_board.py evidence-base`:
+> the `SKILL6_EVIDENCE_BASE_DIR` override, else the in-tree
+> `state/skill6-fix`) or register it with your own scheduler using the
+> entry file as the cadence record.
+>
+> **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
+> `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
+> runs on every per-build QC pass. It never fails a build over a transient
+> archive failure — an honest `failed` receipt stays open for the sweep above
+> to retry, per the non-blocking doctrine — but it DOES hard-fail the gate
+> when a `vercel_deploy` receipt exists with **no archive receipt of any
+> kind**: total silence is the one case "no receipt = not archived" must
+> never quietly pass. It also prints GitHub token presence **by name only**
+> (`GH_TOKEN` / `GITHUB_TOKEN` — `SET` or `NOT-SET`, never the value) so a
+> misconfigured build box is visible without ever printing a secret.
+>
+> **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
+> scorecards, and screenshots are written to a run-evidence root
+> (`skill6-fix/v2-<RUN_ID>/` or `/tmp`), never inside `06-ghl-install-pages/`,
+> so a skill UPDATE (which overlays the whole skill dir) can never wipe a build's
+> history. Any new tool MUST keep durable run state out of the skill dir.
+>
+> **Page inventory + staged lifecycle — nothing auto-deletes client content
+> (U31/B-U17).** `tools/ghl_inventory.py` closes the VERIFIED absence noted
+> in B.11 claim #19 (no GHL-side page inventory/lifecycle/retention existed
+> anywhere in this skill). Three independent, individually-callable stages:
+>
+>   1. **FLAG** (read-only, pure) — `flag_lifecycle_candidates` classifies an
+>      already-enumerated inventory into STALE (draft, unpublished past a
+>      threshold — default 30 days), SUPERSEDED (an older page in the same
+>      funnel/name-family than the newest verified one), and DUPLICATE (2+
+>      pages sharing one build marker — the EXACT ambiguity
+>      `ghl_method.resolve_install_target` would itself refuse with
+>      `InstallTargetError`; reused here, never re-derived, so the two rules
+>      can never drift apart).
+>   2. **CARD** — `post_lifecycle_card` posts ONE operator card per distinct
+>      candidate set, deduped against an on-disk event-ledger so a repeated
+>      maintenance-window run never spams a second card for the same
+>      unresolved candidates; a genuinely new/changed candidate set gets its
+>      own fresh card, and a failed notify is retried (never permanently
+>      lost) on the next run.
+>   3. **EXECUTE** — `execute_approved_deletes` is fail-closed BY
+>      CONSTRUCTION: it refuses (raises `LifecycleGuardError`, deletes
+>      nothing, anywhere in the batch) unless every id being deleted was
+>      flagged, carded, DELIVERED, and explicitly named in `approved_ids`.
+>      Every real delete follows present -> pre-delete RESTORABLE export ->
+>      delete -> absent RECEIPT — "no receipt = not deleted", the same F6
+>      discipline `ghl_receipts.py` established for creates, mirrored here
+>      for removals.
+>
+> Evidence-root **RETENTION** (`prune_evidence_roots`) is a fourth,
+> independent concern, reusing `cc_board.list_evidence_runs` (evidence-root
+> discovery is never re-derived): keeps the newest N (default 10)
+> `v2-<RUN_ID>` roots per funnel-slug group plus every root an OPEN card
+> still references, never even considers a root a `blocked` card references,
+> and only ever COMPRESSES older roots — it never deletes a run-evidence root
+> outright. `pages_total`/`drafts_stale`/`superseded`/`orphan_media` reduce
+> into the `/api/health/deep` advisory shape (`inventory_advisory`) the same
+> way `cc_board.reconcile()`'s output already does (B-U13/U27, verified).
+>
+> **THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
+> SET of funnel ids for a location. Neither the official GHL public API (no
+> Funnels endpoint exists there — checked against Skill 44's own
+> `endpoints.py`) nor the proven internal SPA-canvas REST family
+> (`ghl_rest_canvas.py`, which only proves fetch-a-known-funnel-by-id and
+> list-pages-within-a-known-funnel) documents a "list every funnel for a
+> location" call. `funnel_lister` is a REQUIRED caller-supplied dependency
+> with no default live implementation (`live_funnel_lister_over_browser_
+> manager` raises `NotImplementedError` rather than ever fabricate a funnel
+> list) — wiring + proving a live discovery route (most likely a DOM-snapshot
+> walk of the Sites -> Funnels list, same discipline as
+> `ghl_selector_drift_probe.py`'s `finder`) is a live leg owed to the operator,
+> parallel to U22. `live_page_lister_over_rest_canvas` (the pages-within-a-
+> known-funnel half) IS wired to the already-proven `ghl_rest_canvas.page_
+> list` step, ready the moment a funnel id is available.
+>
+> **Scheduled maintenance-window sweep (U31/B-U17).** The retention half
+> above is entirely live-wiring-free today (compress-only, zero live
+> GoHighLevel calls) and ships its own schedule ENTRY file
+> (`schedule/skill6-page-inventory-lifecycle.cron.json` — single source of
+> truth, same "entry ships as a file, not just doctrine text" discipline as
+> B-U10's amended acceptance). Its installer is carried verbatim but NOT
+> adapted: recurring registration is the fifth-seam candidate (see the
+> github-archive note above). Run the sweep on demand or register it with
+> your own scheduler from the entry file. The live page-enumeration half
+> (blocked on the funnel-discovery gap above) is DEFERRED TO the operator.
+>
+> **Cross-repo board contract.** The board PRODUCER (`tools/cc_board.py`,
+> `update_status`/`ingest_task`, plus the step-visibility trio `move_task`/
+> `post_activity`/`register_deliverable` and the `BuildPhaseDriver` sequencer)
+> and the Command Center CONSUMER (the
+> `/api/tasks/*` routes + `TaskStatus` enum in
+> `trevorotts1/blackceo-command-center`, `>= v4.52.0`) are coupled by a
+> hand-maintained contract. `cc_board.py` posts a phase-change card and a live
+> activity heartbeat after each verified build phase. **Card lifecycle terminates
+> at REVIEW** — a card never auto-advances past the QC-gated REVIEW state; only
+> a passing QC gate or explicit human action promotes it beyond REVIEW. Keep the
+> CC repo at or above that version; if its enum, route path, or auth changes,
+> `cc_board.py` fail-softs (the card just never lands / never moves) and the
+> build continues unregistered.
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's funnel seam and backstop rail relate to Skill 44 and Skill 3.
