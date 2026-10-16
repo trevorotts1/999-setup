@@ -1,5 +1,29 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [2.7.57] — 2026-10-15 — BATCH-AGN-24H-N: 24-hour batch window, member `#227` folded in
+
+Batch bookkeeping release for repo `trevorotts1/999-setup`, head `batch/AGN-24H-N`, carrying
+exactly one member pull request over the fixed 24-hour window
+`2026-10-14T23:54:34.455Z` .. `2026-10-15T23:54:34.455Z`. Version `2.7.56` -> `2.7.57`, in
+`VERSION` and the `SKILL.md` frontmatter `version:`, with this single entry; no older entry was
+rewritten.
+
+**Member, folded in this deliberate order** (its own head is the batch's second parent):
+
+- **`unit/AGN-W3-twin-sync-U2`** (`#227`, head `098653d952`, 2 commits, 39 changed files) —
+  vendors skills `63-agnes-image` and `64-agnes-video` as optional pinned helpers under
+  `installer-registration/helpers/`, adds `installer-registration/helper-deps.py`, and repins
+  `installer-registration/helpers/shared-utils/kie_prompt_gates.json` to
+  `trevorotts1/openclaw-onboarding` `origin/main`. Every changed file lives under
+  `installer-registration/`: this member touches no file under
+  `.claude/skills/drama-song-ad-factory/`, so the merge carries zero content risk to Skill 75
+  and the version bump here is batch bookkeeping, not a Skill 75 behaviour change.
+
+Adopted without redo: `#228` (`unit/AGN-W3-twin-sync-U1`, tip commit `c7cedd6b`) was already on
+`origin/main` at the window's batch start and is NOT re-merged and NOT counted as scope. Open
+PR `#225` (`martin/skill71-item28-adaptation`) belongs to another program and is untouched by
+this batch.
+
 ## [2.7.56] — 2026-10-14 — SWI-202: build hygiene never reaches the client (drift reports operator-only, silent)
 
 `#226` (`unit/SWI-202`, W2-item12-U1) — the SPEC.md item-12 doctrine provision, mirrored into this
