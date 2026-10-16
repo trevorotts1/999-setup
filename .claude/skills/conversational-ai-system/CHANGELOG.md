@@ -7,6 +7,26 @@
 > pack's SKILL.md, INSTRUCTIONS.md, protocols/, and references/ as
 > adapted in this copy.
 
+## [999-batch/DSF-12] - 2026-10-16 - feat: GHL Item-28 follow-on pack harness adaptation (#225)
+
+Folds PR #225 (head `80ff4fabd7fbb81c04573903f6af00c514adcadf`, branch
+`martin/skill71-item28-adaptation`) into the 999 repo as batch `batch/DSF-12`.
+191 files, all modifications, confined to the GHL pack's three skill trees:
+this one, `ghl-install-pages`, and `convert-and-flow-operator`.
+
+This is the 999-side harness adaptation of the pack's Item-28 receipt: the
+adapter seams (launch, session-seed, teardown, paths-secrets) are re-pointed at
+this harness — in-tree engine paths, the install's own secrets env, no gateway
+config. The pack's provenance history above is unchanged and stays verbatim;
+this entry is the batch fold record, not an OpenClaw-side release.
+
+No pack version marker is bumped by this fold: the pack carries no `VERSION`
+file and `ghl_pack_version` (1.0.0, `PACK.md` and
+`repo-integration/ghl-pack-manifest.json`) is a receipt field recorded per
+automation-wiring handoff, not a per-change revision.
+
+---
+
 ## [2.0.12] - 2026-10-06 - fix: step O.6 accepts the Skill 76 local Ollama embedder
 
 `scripts/19-configure-dreaming-embeddings.sh` failed with "no client-owned embedding provider key" on a
