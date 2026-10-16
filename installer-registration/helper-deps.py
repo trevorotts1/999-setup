@@ -62,7 +62,22 @@ HELPER_SPECS = [
      "KIE key resolver, prompt rule 12 enforcer, declared gate list and its "
      "test",
      "openclaw-onboarding/shared-utils", "files"),
+    # Agnes doors, vendored the same way as the KIE helpers (W3-twin-sync-U2).
+    # OPTIONAL: required=false, so preflight never fails a box that does not
+    # run Agnes; `install` still ships them because they are already vendored.
+    ("63", "63-agnes-image", "agnes-image",
+     "Agnes image: one POST synchronous text/image generation, prompt policy, "
+     "domain QC",
+     "openclaw-onboarding/63-agnes-image", "skill"),
+    ("64", "64-agnes-video", "agnes-video",
+     "Agnes video: approved model router plus the create-task/poll-result "
+     "workflow",
+     "openclaw-onboarding/64-agnes-video", "skill"),
 ]
+
+# Spec ids whose helpers are vendored and pinned but not required: a box that
+# never calls Agnes still passes preflight.
+OPTIONAL_SPEC_IDS = {"63", "64"}
 
 # For a "files" helper: (path inside helpers/<name>/, path inside the
 # openclaw-onboarding repository). The pin guard checks each of these against
@@ -123,6 +138,10 @@ def tree_stats(root):
         count += 1
         size += p.stat().st_size
     return count, size
+
+def all_helpers(manifest):
+    """Every pinned helper: install and repin cover optional ones too."""
+    return list(manifest["helpers"])
 
 def helper_kind(h):
     return h.get("kind", "skill")
@@ -306,7 +325,7 @@ def cmd_install(a):
     backup_dir = (Path(a.backup_dir).expanduser() if a.backup_dir
                   else Path.home() / ".claude-skill-backups")
     manifest = load_manifest(a.manifest)
-    helpers = required_helpers(manifest)
+    helpers = all_helpers(manifest)  # optional helpers ship too
     errors = []
     for root in roots:
         errors += _install_root(root, helpers, backup_dir, len(roots) > 1)
@@ -349,7 +368,7 @@ def cmd_repin(a):
             "skillName": skill_name,
             "role": role,
             "kind": kind,
-            "required": True,
+            "required": sid not in OPTIONAL_SPEC_IDS,
             "version": version,
             "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
             "sourcePath": source,
