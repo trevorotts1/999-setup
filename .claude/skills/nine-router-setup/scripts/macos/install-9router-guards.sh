@@ -19,6 +19,9 @@
 # Exit 0 = every selected guard's patch is PROVEN present by content marker (not by exit code: a
 # guard's --check exits 0 even when it would patch, and a guard that cannot find its anchor must
 # never read as success). 1 = something is not applied. 2 = tooling/usage.
+# 3 = --upgrade verification failed, previous version restored and re-proven.
+# 4 = --upgrade verification failed and the rollback could not be completed.
+#                                                        # agent-pull-fix: R13
 #
 # Never touches keys, providers, combos, models or the database. Guards write a sibling
 # `<file>.pre-*` / `.bak-*` copy of each file they change inside the 9Router install dir.
@@ -29,12 +32,17 @@ SRC="$HERE/../../assets/guards"
 BIN_DIR="$HOME/.local/bin"
 PATCH_DIR="$HOME/.9router/patches"
 LABEL="com.blackceo.9router-localhost"
+# agent-pull-fix: R13
+PORT="${NINEROUTER_PORT:-20128}"
+BASE="http://127.0.0.1:$PORT"
+SELF="$HERE/$(basename "$0")"
 # Order matters: dupfix first, codex-terminal after it (it converts dupfix's flag), ollama-done
 # before toolargs, ping last (it wraps the handler export).
 ALL=(dupfix codex-terminal nextserver cachecontrol glm53-thinking deepseek-effort deepseek-openai-route \
      ollama-done opencode-poll opencode-toolargs ping-keepalive upstream-shape usage-stream)
 
-CHECK=0; RESTART=1; ROOT=""; UPGRADE=0; VER="latest"; SEL=()
+# agent-pull-fix: R13 (UP_FROM/UP_TO: version recorded before and after --upgrade)
+CHECK=0; RESTART=1; ROOT=""; UPGRADE=0; VER="latest"; SEL=(); UP_FROM=""; UP_TO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK=1 ;;
@@ -71,9 +79,12 @@ NPM="$(dirname "$NODE")/npm"; [ -x "$NPM" ] || NPM="$(command -v npm 2>/dev/null
 if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
   [ -x "$NPM" ] || { echo "npm not found for --upgrade" >&2; exit 2; }
   PREFIX="$(cd "$ROOT/../.." && pwd)"
-  echo "[guards] upgrading 9router@$VER in prefix $PREFIX"
+  # agent-pull-fix: R13 — record the installed version before touching anything.
+  UP_FROM="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
+  echo "[guards] upgrading 9router@$VER in prefix $PREFIX (from ${UP_FROM:-unknown})"
   PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$VER" --no-audit --no-fund >&2 \
     || { echo "npm install failed; guards not touched" >&2; exit 2; }
+  UP_TO="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
 fi
 [ -d "$CHUNKS" ] || { echo "9Router chunks dir not found at $CHUNKS" >&2; exit 2; }
 echo "[guards] 9Router $(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1) at $ROOT"
@@ -163,4 +174,64 @@ if [ "$CHECK" = 0 ] && [ "$rc" = 0 ] && [ "$RESTART" = 1 ] && [ "$before" != "$a
   launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || echo "[guards] kickstart failed" >&2
 fi
 [ "$CHECK" = 0 ] && [ "$before" = "$after" ] && echo "[guards] bundle unchanged (already applied)"
+
+# ---- agent-pull-fix: R13 — after --upgrade, prove or roll back. ------------------
+# Required proof for a successful upgrade: every selected patch marker is present
+# (rc above), /api/health answers, and one routed claude-nine request succeeds.
+# Any failure: reinstall the recorded previous version, re-apply the guards, prove
+# the markers again, then exit 3 (rollback complete) or 4 (rollback incomplete).
+if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
+  up_fail=""
+  [ "$rc" -eq 0 ] || up_fail="patch markers (run the guards and re-check the MISSING rows above)"
+
+  if [ -z "$up_fail" ]; then
+    up_health=0
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      curl -fsS -m 5 -o /dev/null "$BASE/api/health" 2>/dev/null && { up_health=1; break; }
+      sleep 1
+    done
+    [ "$up_health" = 1 ] || up_fail="router health ($BASE/api/health did not answer)"
+  fi
+
+  if [ -z "$up_fail" ]; then
+    up_routed=0
+    if [ -x "$HOME/.local/bin/claude-nine" ]; then
+      # Output is inspected here and never echoed: pass/fail only.
+      up_out="$("$HOME/.local/bin/claude-nine" -p "Reply with exactly: routing works" 2>&1 || true)"
+      printf '%s' "$up_out" | grep -q "routing works" && up_routed=1
+      up_out=""
+    fi
+    [ "$up_routed" = 1 ] || up_fail="routed claude-nine request (no expected reply)"
+  fi
+
+  if [ -z "$up_fail" ]; then
+    echo "[guards] upgrade verified: 9router ${UP_FROM:-unknown} -> ${UP_TO:-$VER} (patches, health, routed request)"
+    exit 0
+  fi
+
+  echo "[guards] upgrade FAILED: $up_fail" >&2
+  if [ -z "$UP_FROM" ]; then
+    echo "[guards] cannot roll back: previous 9Router version was not recorded" >&2
+    exit 4
+  fi
+  echo "[guards] rolling back to 9router@$UP_FROM" >&2
+  PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$UP_FROM" --no-audit --no-fund >&2 \
+    || { echo "[guards] ROLLBACK FAILED: npm install 9router@$UP_FROM failed; guards NOT re-applied" >&2; exit 4; }
+  up_rb=1
+  for g in "${SEL[@]}"; do
+    "$BIN_DIR/9router-$g-guard.sh" "$ROOT" >/dev/null 2>&1 || true
+  done
+  if [ "$RESTART" = 1 ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+    launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+  fi
+  if bash "$SELF" --check --root "$ROOT" "${SEL[@]}" >/dev/null 2>&1; then
+    echo "[guards] rollback OK: 9router@$UP_FROM reinstalled, patches re-proven present" >&2
+  else
+    echo "[guards] ROLLBACK INCOMPLETE: 9router@$UP_FROM reinstalled but patches are NOT proven present" >&2
+    up_rb=0
+  fi
+  [ "$up_rb" = 1 ] && exit 3
+  exit 4
+fi
+
 exit "$rc"
