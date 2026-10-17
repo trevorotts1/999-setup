@@ -24,5 +24,5 @@
     "default family"
   ],
   "precedence_note": "Model resolution in 999 runs through the native kie skill's lookup (Row 3 MAP); this file carries the law the lookup is judged by, not model data.",
-  "source_gate_sha256": "90381a0dd0b5635fe2acd785f9c92eabc665c2aa8d446b61d3d0cb3aa5af68ae"
+  "source_gate_sha256": "9dfd2a4c2ef10071b5e09d143d4c06410b945a31d920e1e43675861a5ac1d834"
 }

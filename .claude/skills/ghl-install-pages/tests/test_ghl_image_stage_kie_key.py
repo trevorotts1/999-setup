@@ -20,48 +20,10 @@ import ghl_image_stage as st
 FAKE_KEY = "FAKEkie0000000000000000000000001"  # 32 chars, not placeholder-shaped
 
 
-# The dirs ghl_image_stage itself resolves shared-utils from: the in-tree repo
-# siblings, plus $SKILL6_SHARED_UTILS_DIR. The OpenClaw tree
-# (~/.openclaw/skills, /data/.openclaw/skills) is NOT probed by this pack --
-# PACK.md "nothing in this pack borrows from the OpenClaw skills tree at
-# runtime", the same in-tree binding tools/model_router.py uses.
-_SHARED_UTILS_BASES = [
-    os.path.normpath(os.path.join(_TOOLS_DIR, "..", "..", "shared-utils")),
-    os.path.normpath(os.path.join(_TOOLS_DIR, "..", "..", "..", "shared-utils")),
-]
-if os.environ.get("SKILL6_SHARED_UTILS_DIR"):
-    _SHARED_UTILS_BASES.append(os.environ["SKILL6_SHARED_UTILS_DIR"])
-
-
-def _canon_dir() -> str | None:
-    """The shared-utils dir carrying the canon, or None when it is unreadable."""
-    for base in _SHARED_UTILS_BASES:
-        if os.path.isfile(os.path.join(base, "secret_names.json")):
-            return base
-    return None
-
-
 def _canon_kie_family() -> list[str]:
-    base = _canon_dir()
-    assert base is not None, "canon absent -- guarded by the module-level skip below"
-    with open(os.path.join(base, "secret_names.json"), encoding="utf-8") as fh:
+    path = os.path.join(_TOOLS_DIR, "..", "..", "shared-utils", "secret_names.json")
+    with open(path, encoding="utf-8") as fh:
         return json.load(fh)["canonical_names"]["KIE_API_KEY"]
-
-
-# Every assertion in this module reads the shared secret-name canon, and the
-# placeholder guard they exercise (`_kie_value_ok`) fails open when the canon is
-# unreadable. The 999 repo ships no shared-utils, so with no designation there is
-# nothing to assert against -- skip honestly rather than fail on a missing
-# dependency (or, worse, pass only because an OpenClaw tree happened to be
-# mounted on the box running the tests).
-pytestmark = pytest.mark.skipif(
-    _canon_dir() is None,
-    reason=("shared-utils canon unreadable: ghl_image_stage resolves it in-tree "
-            "(tools/../../shared-utils) plus $SKILL6_SHARED_UTILS_DIR, and never from "
-            "the OpenClaw tree; the 999 repo ships no shared-utils. Point "
-            "SKILL6_SHARED_UTILS_DIR at a dir holding secret_names.json + "
-            "secret_helper.py to exercise these canon assertions."),
-)
 
 
 @pytest.fixture
