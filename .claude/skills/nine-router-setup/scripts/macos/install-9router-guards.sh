@@ -194,14 +194,25 @@ if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
   fi
 
   if [ -z "$up_fail" ]; then
-    up_routed=0
-    if [ -x "$HOME/.local/bin/claude-nine" ]; then
-      # Output is inspected here and never echoed: pass/fail only.
-      up_out="$("$HOME/.local/bin/claude-nine" -p "Reply with exactly: routing works" 2>&1 || true)"
-      printf '%s' "$up_out" | grep -q "routing works" && up_routed=1
+    # Resolve the launcher instead of assuming one path: it may live on PATH or in ~/.local/bin.
+    # agent-pull-fix: R13 — narrow -x check would roll back a good upgrade on a box where it differs.
+    up_cli="$(command -v claude-nine 2>/dev/null || true)"
+    if [ -z "$up_cli" ] && [ -x "$HOME/.local/bin/claude-nine" ]; then up_cli="$HOME/.local/bin/claude-nine"; fi
+    if [ -z "$up_cli" ]; then
+      up_fail="routed claude-nine request (binary not found)"
+    else
+      # Bound the probe: claude-nine execs the CLI, and perl's alarm survives exec, so a hung
+      # request is killed (macOS has no timeout(1)). Output is inspected here and never echoed.
+      up_out="$(perl -e 'alarm shift; exec @ARGV' "${NINEROUTER_UPGRADE_PROBE_TIMEOUT:-120}" \
+                 "$up_cli" -p "Reply with exactly: routing works" 2>&1)"
+      up_rc=$?
+      if [ "$up_rc" -eq 142 ]; then
+        up_fail="routed claude-nine request (timed out after ${NINEROUTER_UPGRADE_PROBE_TIMEOUT:-120}s)"
+      elif [ "$up_rc" -ne 0 ] || ! printf '%s' "$up_out" | grep -q "routing works"; then
+        up_fail="routed claude-nine request (no expected reply)"
+      fi
       up_out=""
     fi
-    [ "$up_routed" = 1 ] || up_fail="routed claude-nine request (no expected reply)"
   fi
 
   if [ -z "$up_fail" ]; then
