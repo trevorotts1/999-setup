@@ -60,7 +60,7 @@ set -euo pipefail
 # FIREBASE_API_KEY is GoHighLevel's public Firebase web API key (NOT a secret;
 # it is hardcoded in the transport engine and in seed-ghl-auth.py).
 # ---------------------------------------------------------------------------
-FIREBASE_API_KEY="AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY="REMOVED"
 FIREBASE_TOKEN_URL="https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}"
 
 # Env-var resolution order - IDENTICAL to seed-ghl-auth.py and transport.py.

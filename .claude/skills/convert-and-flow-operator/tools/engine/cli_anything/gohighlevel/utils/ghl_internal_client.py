@@ -23,7 +23,7 @@ from cli_anything.gohighlevel.internal.transport import InternalTransport
 from cli_anything.gohighlevel.internal.endpoints import BASE_URL as _BASE_URL
 
 BASE_URL = _BASE_URL
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY = "REMOVED"
 CTX = ssl.create_default_context()
 
 CHROME_UA = (

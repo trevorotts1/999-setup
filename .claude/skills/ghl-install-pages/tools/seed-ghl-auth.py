@@ -90,7 +90,7 @@ chunk.DOYVEcZH.js) and by a live token-only network replay:
     Web SDK User record so getIdToken() works immediately on first paint:
   IndexedDB database : firebaseLocalStorageDb   (Firebase Web SDK persistence DB)
     object store     : firebaseLocalStorage     (keyPath = "fbase_key")
-      entry.fbase_key  = "firebase:authUser:AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE:[DEFAULT]"
+      entry.fbase_key  = "firebase:authUser:REMOVED:[DEFAULT]"
       entry.value      = full User JSON: uid, emailVerified:false,
         isAnonymous:false, providerData:[], stsTokenManager{refreshToken,
         accessToken,expirationTime}, createdAt/lastLoginAt (epoch-ms strings),
@@ -177,7 +177,7 @@ import urllib.request
 # a secret and NOT an env var. Canonical single-source record + duplication list:
 # gates.json::firebase_api_key_registry (kept in sync by
 # tests/test_ghl_secret_hygiene.py::TestFirebaseApiKeySync — see module docstring).
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY = "REMOVED"
 FIREBASE_TOKEN_URL = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_API_KEY}"
 
 # Env-resolution order — IDENTICAL to transport.py _resolve_refresh_token().

@@ -245,7 +245,7 @@ bounced the SPA back to the login form.
 ```
 IndexedDB database : firebaseLocalStorageDb
   object store     : firebaseLocalStorage   (keyPath = "fbase_key")
-    entry.fbase_key = "firebase:authUser:AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE:[DEFAULT]"
+    entry.fbase_key = "firebase:authUser:REMOVED:[DEFAULT]"
     entry.value = {                            <- full Firebase Web SDK User JSON
       uid               : <user_id from securetoken response>
       emailVerified     : false               <- REQUIRED boolean (SDK assertion)
@@ -255,7 +255,7 @@ IndexedDB database : firebaseLocalStorageDb
       stsTokenManager.accessToken             <- Firebase ID token (short-lived JWT)
       stsTokenManager.expirationTime          <- epoch MILLISECONDS
       createdAt / lastLoginAt                 <- epoch-ms STRINGS (not numbers)
-      apiKey  = AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE
+      apiKey  = REMOVED
       appName = "[DEFAULT]"
     }
     (email/displayName/photoURL OMITTED — a custom-auth user has none; null fails
@@ -269,7 +269,7 @@ localStorage (origin): deviceId, proxyLoginCount, debug_sentry, locale  (NO toke
 1. `python3 tools/seed-ghl-auth.py --print-seed --out /tmp/<session>/ghl-auth-seed.json`
    — reuses the SAME Firebase refresh→ID exchange Skill 44 does in
    `transport.py` (same `securetoken.googleapis.com` endpoint, same hardcoded
-   `FIREBASE_API_KEY = AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE`, same
+   `FIREBASE_API_KEY = REMOVED`, same
    `grant_type=refresh_token`, same env order
    `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` → `CAF_FIREBASE_REFRESH_TOKEN` →
    `GHL_FIREBASE_REFRESH_TOKEN`). It does NOT import or modify Skill 44's engine.

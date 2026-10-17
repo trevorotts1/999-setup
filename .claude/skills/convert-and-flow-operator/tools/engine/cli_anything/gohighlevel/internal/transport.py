@@ -36,7 +36,7 @@ from typing import Any, Optional
 from cli_anything.gohighlevel.internal.adapter_types import AdapterError
 
 # ── Constants — moved from ghl_internal_client.py ───────────────────────────
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY = "REMOVED"
 FIREBASE_TOKEN_URL = f"https://securetoken.googleapis.com/v1/token?key={FIREBASE_API_KEY}"
 
 CHROME_UA = (
