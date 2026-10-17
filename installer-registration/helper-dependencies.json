@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-16T00:49:47Z",
+  "generatedAt": "2026-10-17T12:37:16Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -173,14 +173,14 @@
       "role": "Agnes image: one POST synchronous text/image generation, prompt policy, domain QC",
       "kind": "skill",
       "required": false,
-      "version": "v2.1.5",
+      "version": "v2.1.6",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/63-agnes-image",
       "installPath": "skills/63-agnes-image",
-      "fileCount": 21,
-      "sizeBytes": 200081,
-      "treeSha256": "b1984814ee8aeb1f2b696f0f10b1c9a0dd242acd677d993571ea4a5dc3bba137",
-      "skillMdSha256": "bdd7d46bb9fbbd5cfad1150c2a3ce3e613089c10bd624bfb36756e31fa9cfae7"
+      "fileCount": 28,
+      "sizeBytes": 246884,
+      "treeSha256": "3ef83407a6c7db51b5eb3e6fbbf47700bc1b31ed911aa2fad22fcc4808fc20b7",
+      "skillMdSha256": "d81001ecc50d9bbeae737726ab7f7b5203fe3350bd8c70e2d9f945c657173c14"
     },
     {
       "id": "64",
