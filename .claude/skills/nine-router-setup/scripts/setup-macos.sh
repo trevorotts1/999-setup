@@ -810,9 +810,11 @@ main() {
     esac
   done
   # Plans are only meaningful (and only validated) for a provider that has a key.
+  # A missing plan name falls back; only a wrong non-empty value fails.
+  # agent-pull-fix: R11
+  OLLAMA_PLAN="${OLLAMA_PLAN:-pro}"; AGNES_PLAN="${AGNES_PLAN:-starter}"
   if [ -n "${OLLAMA_API_KEY:-}" ]; then validate_plan "${OLLAMA_PLAN:-}" "free pro max" "OLLAMA_PLAN"; fi
   if [ -n "${AGNES_API_KEY:-}" ]; then validate_plan "${AGNES_PLAN:-}" "starter plus pro" "AGNES_PLAN"; fi
-  OLLAMA_PLAN="${OLLAMA_PLAN:-pro}"; AGNES_PLAN="${AGNES_PLAN:-starter}"
 
   # OPENROUTER_API_KEY is OPTIONAL: absent/placeholder = skip the lane, never a blocker.
   case "${OPENROUTER_API_KEY:-}" in
