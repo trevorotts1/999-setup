@@ -1,0 +1,383 @@
+# Changelog — Signature Funnel (Skill 49)
+
+## v2.1.2 - 2026-10-06 - feat: the image prompt floor uses the rule 12 band
+
+- `scripts/prove_sf_prompt_floor.py`: the 5,000 to 19,000 `PROMPT_CHAR_FLOOR` and `PROMPT_CHAR_CEILING` are retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. AF-FUN-PROMPT-FLOOR and AF-FUN-PROMPT-CEILING keep their codes.
+- `SF-PROVER-PIN.sha256` re-recorded with `bash signature-funnel-entry.sh --write-pin`; the entry self-test passes. The entry version gate now anchors the version (`^v?2.x.y$`) and keeps the SKILL.md lockstep and `--check-version`.
+- The golden prompt ledger (`examples/golden-daybreak/prompt_ledger.json`) is re-baselined to real 95 to 100 percent prompts: the authored scene bodies stay, and genuine scene-bound art direction (`direction_bank.py`, never repetition) fills the rest. `build_golden.py` regenerates the ledger, the certificate and the broken-variant results; `verify.sh` is green.
+
+## 2.1.1 — 2026-10-06 — QC fixes on the KIE integration (PR 1527)
+
+- **Version check anchored.** The entry shell now requires `^2\.[0-9]+\.[0-9]+$` after stripping a leading `v`; `v2.0.1-junk`, `2.x`, `v2.`, `v20.0.0`, `v2.junk` and `v1.9.0` abort at VERSION. New `--version-only` mode; the bypass test covers every case.
+- **Bypass allow-list is content-checked.** `kie74_receipt.py --check` now also requires a real task id, a known adapter state and mode, a saved or result list, and rejects any top-level key Skill 74 does not emit, so a file with the adapter's three identity fields plus a smuggled command is refused. New tests for the smuggle and placeholder cases. Pin re-recorded.
+- Version bumped to v2.1.1 (SKILL.md frontmatter, skill-version.txt).
+
+## 2.1.0 — 2026-10-06 — KIE integration: Skill 74 is the one approved image path
+
+### Changed
+- **Image route (policy then transport).** P3-IMAGES no longer names Skill 47 or `kie_image.py` anywhere
+  (SKILL.md, MASTERDOC.md, FUNNEL-MANIFEST.json, prompts, orchestrator and certificate labels, role text). Skill
+  66 picks the model (GPT Image default via `latest-family`, N43 ratio rules); Skill 74 runs validate,
+  preflight (price x 1.30), prompt-budget check, `submit --mode active`, wait and save immediately. The phase
+  label on the signed certificate is now `kie_live_adapter.py`. Procedure: `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` section 3.
+- **`signature-funnel-entry.sh` bypass scan.** It now flags the createTask route and old KIE client scripts
+  (`jobs/createTask`, `api.kie.ai`, `kie_image.py`, `kie_generate.py`) anywhere in the run dir, and allow-lists
+  exactly one thing: Skill 74 result files directly inside `<RUN_DIR>/receipts/kie74/`, each re-checked by
+  `scripts/kie74_receipt.py --check` (right adapter, no bearer token). New `--scan-only --run-dir` mode.
+- **Dead field and limit text removed.** The reference hook no longer cites the old `image_input` field or an
+  8-reference limit; it uses the field the live schema names and the schema's limit. Prompt length text points to
+  `kie-common-rules.md` rule 12 (95 to 100 percent of the model maximum, never below 80 percent). The prover
+  constants in `prove_sf_prompt_floor.py` and the matching AF trigger text are unchanged here (owned by the
+  prompt-band lane).
+
+### Fixed
+- **Entry version check.** `signature-funnel-entry.sh` required major 1 while `skill-version.txt` is v2.x, so
+  `--self-test` and every real run aborted at VERSION. It now strips the leading `v` and expects major 2.
+- **Stale hash pin.** `scripts/SF-PROVER-PIN.sha256` did not match the shipped enforcement core; re-recorded with
+  `--write-pin` after these changes (the pinned set now also includes `scripts/kie74_receipt.py`).
+
+### Added
+- `scripts/kie74_receipt.py` (records one Skill 74 result as run evidence, stamped by a non-subject module) and
+  `scripts/test_sf_bypass_scan.py` (hand-rolled createTask refused, Skill 74 receipts accepted, forged or
+  leaked or nested files refused). Both run inside `signature-funnel-entry.sh --self-test` and `verify.sh`.
+- Version bumped to v2.1.0 (SKILL.md frontmatter, skill-version.txt).
+
+## v2.0.3 - 2026-10-05 - Entry shell version gate matches the current v2 contract
+
+### Fixed
+- `signature-funnel-entry.sh` aborted every run and its `--self-test` with `ABORT [VERSION]: skill-version.txt is 'v2.0.2', expected major 1.x`. Two defects: `EXPECTED_MAJOR` was still `"1"` although the skill is on major 2, and the `case` pattern `"1".*` could never match the shipped `vMAJOR.MINOR.PATCH` form (leading `v`), so even a v1.x file would have been refused. The gate now expects major 2, accepts `vMAJOR.MINOR.PATCH`, and also requires SKILL.md frontmatter `version:` to equal skill-version.txt.
+
+### Added
+- `signature-funnel-entry.sh --check-version` (deps + version gate only) and `scripts/test_entry_version.py`, which proves the gate passes on the shipped version and fails closed on major 1, major 3, malformed values and frontmatter drift.
+
+### Pin re-recorded
+`scripts/SF-PROVER-PIN.sha256` was stale on main: `prove_sf_prompt_floor.py` changed on 2026-09-09 after the pin was minted on 2026-07-21, so once the version gate stopped aborting first, the hash-pin step failed next (898c779a... computed vs 8e9755f7... recorded). Re-minted with `bash signature-funnel-entry.sh --write-pin`; no pinned file was edited by this change.
+
+### Not changed
+The entry shell and the new test are not pinned files; `scripts/delegation_receipt.py` is unchanged and still identical in Skills 49 and 56.
+
+
+## 1.4.0 — 2026-07-21 — A10 / T0-09, T0-11: certificates can no longer mint on self-authored evidence
+
+### Fixed
+- **P3-IMAGES / P4-MEDIA no longer attest on file existence (T0-09).** The two delegated
+  seams used to return `delegated` the moment `media_ledger.json` existed — and the run
+  writes that file, so a phase claiming to prove image generation through Skill 47 and
+  upload through Skill 6 was satisfied by a file its own subject authored, with no provider
+  ever contacted. They now read the ledger's content (every image must carry a real
+  image-provider task id and resolve to a GHL media host) and consult a provider-receipt
+  store. `AF-FUN-DELEG-IMAGES` / `AF-FUN-DELEG-MEDIA`.
+- **`scripts/prove_sf_build.py` proves build COMPLETENESS (T0-11).** The P7 gate verified
+  every page the receipt *supplied* and never checked that all required pages *were*
+  supplied, so a 7-step funnel whose receipt carried 3 pages returned zero violations. The
+  required page-type set is now derived from the locked funnel size (the 3/5/7 matrix in
+  `structure/funnel_structure.json`, the same source P6/P8 use) and any missing page type
+  fails. `AF-FUN-BUILD-PAGESET` / `-SIZE` / `-SIZE-MISMATCH` / `-PREVIEW-PLACEHOLDER`. The
+  orchestrator passes the locked brief size to the prover.
+
+### Added
+- **`scripts/delegation_receipt.py` (new) — the provider-receipt contract.** A delegated
+  tool records one receipt per real provider round-trip (response id, HTTP status, remote
+  id, covered ledger ids); the requirer refuses to attest a phase unless the receipt exists,
+  carries a 2xx status and real ids, covers every ledger row, and — the headline A10
+  property — was **not** stamped by a subject module (an orchestrator or a `prove_*`). The
+  writing side lands first: seams use `validate_if_present()`, receipts are validated
+  strictly whenever present, and the signed certificate records `delegation_receipts:
+  present|absent` so it can never imply provider evidence it does not carry.
+  `AF-FUN-DELEG-RECEIPT-SELF-AUTHORED`.
+- **`scripts/stub_provider_adapter.py` (new).** The only fixture source the self-tests use
+  for receipts, so a test fixture is never authored by the run under test.
+
+## 1.3.4 — 2026-07-13 — U17/B-U3: copy stage consumes the blended-persona bundle (Skill 6 Blended-Persona Kanban v2)
+
+### Added
+- **`scripts/copy_persona_blend_seam.py` (new).** Wires an acquired persona bundle
+  (from Skill 6's `persona_bundle_ladder.py`, U15) into the Signature Funnel's
+  copy stage: `universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md` and
+  `prompts/funnel-copy-prompts.md` both gain a bundle-consumption seam so the
+  12-section Hero copy is written in the blended voice when a bundle is active,
+  and reproduces the pre-U17 single-persona prompt byte-for-byte when it is not.
+- The persona-selection-log write/parse format stays back-compatible — both the
+  legacy single-persona log line and the new bundle-aware line round-trip
+  through the existing regex parser unchanged (`test_copy_persona_blend_seam.py`,
+  10 cases, all passing).
+
+### Notes
+- Paired with U19/B-U5 (`shared-utils/fab_qc.py` D4 v2), which is the QC-side
+  half of this same seam — FAB-QC now scores voice grounding against the
+  bundle's blend voice when a bundle is active, not just the template's baked-in
+  persona name. Ledger-declared merge-paired; both units land in the same
+  `skill6-v2/chainA` train.
+
+## 1.3.3 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
+
+### Fixed
+- **`mc_board.py` — an UNRECOGNIZED `department_slug`** (a typo, a regressed
+  hardcoded fake slug like the historical `funnels`/`books`/`email` family, or an
+  empty string) is now caught client-side before the ingest POST, logged loudly to
+  stderr, and RE-ROUTED to the `general-task` catch-all department with the
+  original bad slug annotated on the card description and on `begin_run`'s initial
+  board event note. Never silently dropped. Recognized slugs (the 22 mandatory + 6
+  universal-primary floor departments + known variant aliases, mirrored from
+  `23-ai-workforce-blueprint/scripts/department-floor.py:116-158`) pass through
+  unchanged. Applied identically to the shared `mc_board.py` family
+  (49/50/53/54/55/56/57).
+
+### Added
+- **`test_cc_contract.py`** — six new regression cases: an unrecognized slug
+  reroutes to `general-task`, an empty slug reroutes, a known slug
+  (`web-development`) and `general-task` itself pass through unchanged, the
+  reroute logs loudly to stderr, and `begin_run`'s initial advance note records the
+  original bad slug as a board-visible event.
+
+## 1.3.1 — 2026-07-08 — Command Center board department slug fix (FIX-BOARD-DEPT-01)
+
+Board-routing metadata fix only — **no funnel content, gate, or certificate change**.
+The golden `PROCESS-CERTIFICATE.json` HMAC is byte-for-byte unchanged and still
+re-verifies; the department slug lives ONLY in the fail-soft Command Center board
+seam (a VIEW, never a gate), so no ledger, prompt, image, page, or certificate is
+touched.
+
+### Fixed
+- **FIX-BOARD-DEPT-01** — `run_signature_funnel.py::_mc_board_begin` hardcoded
+  `department="funnels"` when opening the run's Command Center card
+  (`mc_board.begin_run` → `card_open`, which posts `department_slug=<slug>` to
+  `POST /api/tasks/ingest`). **"funnels" is NOT a real, seeded fleet department**:
+  it is absent from the 22 mandatory departments and the universal-primary vertical
+  departments in `23-ai-workforce-blueprint/department-naming-map.json` and from the
+  canonical set enforced by `23-ai-workforce-blueprint/scripts/department-floor.py`
+  (it appears ONLY as descriptive text inside the web-development one-liner). Every
+  Signature Funnel card was therefore silently dropped / misrouted and never
+  surfaced on the kanban — the same defect shape as the Skill 53 Book Writer
+  `department="books"` bug. Repointed to Skill 49's authoritative owning department
+  **`web-development`** (its primary role `signature-funnel-specialist`, per
+  `23-ai-workforce-blueprint/skill-department-map.json`, which declares
+  `["web-development", "marketing"]`).
+
+### Added
+- **`scripts/test_sf_department.py`** — AST static regression guard: parses
+  `run_signature_funnel.py` and asserts every `department=` board literal is a
+  string that (1) is one of Skill 49's declared departments in
+  `skill-department-map.json`, (2) is a real seeded fleet department in
+  `department-naming-map.json`, and (3) is NEVER the broken `"funnels"` (or sibling
+  `"books"`) slug. Wired into `verify.sh` (check 4b). No import, no network.
+
+### Notes
+- `run_signature_funnel.py` is in the enforcement-core **hash pin**, so
+  `scripts/SF-PROVER-PIN.sha256` was re-minted (`bash signature-funnel-entry.sh
+  --write-pin`) for the one-line slug change. This re-stamp is the code-integrity
+  pin only and is distinct from the golden funnel certificate, which is unchanged.
+- `scripts/test_cc_contract.py` (byte-identical shared board contract across
+  49/50/53/55/56/57) is intentionally **not** modified — its `department="funnels"`
+  is an arbitrary mock label for a disabled-board no-op, not a routed slug.
+
+## 1.3.0 — 2026-07-05 — gate-integrity harness (train W2-gate-integrity-harness, FIX-XC-05a)
+
+Train **W2-gate-integrity-harness**. Fix IDs: FIX-XC-05a. Ports the presentation
+department's `gate_integrity_check.py` enforcement TEMPLATE (FIX-XC-05) to the engine, so
+"declared == enforced == tested" is provable, not aspirational.
+
+### Added
+- **`scripts/gate_integrity_check.py`** (Guard A): for every python-enforced autofail in
+  `FUNNEL-MANIFEST.json` it asserts the `py_symbol` is DEFINED + REFERENCED (not a dead
+  no-op) in its module, that the module NAMES the AF code, AND that a deliberately-failing
+  fixture actually RAISED the code. Fail-closed: exit 2 when the coverage battery is absent,
+  exit 1 on any no-op / untested gate. Shell-enforced front-door codes
+  (`signature-funnel-entry.sh:*`) are scoped out (bash guards).
+- **`scripts/test_sf_gate_coverage.py`** (negative-test battery, the presentation
+  `test_preflight.py` role): drives every python-enforced autofail to a failing fixture —
+  reusing each prover's own `_violation_cases()` / `_valid_*()` and adding targeted probes
+  for the section-band / CTA / order codes and the orchestrator phase gates
+  (HTML-FRAGMENT / BUILD-FAB / DERIVE-LEDGER / FRONT-DOOR) — and writes
+  `scripts/working/af-coverage.json`. Proven: all **85** in-scope declared codes trigger.
+- `scripts/gate_integrity_check.py` added to the enforcement-core **hash pin**
+  (`SF-PROVER-PIN.sha256` re-minted) and to `signature-funnel-entry.sh --self-test`.
+
+### Notes
+- Golden/broken fixture batteries follow the REJECTION-RESULTS pattern; `af-coverage.json`
+  is the machine-readable coverage receipt regenerated by the battery on every self-test.
+
+## 1.2.0 — 2026-07-05 — SACRED word-min floors on the ceiling-only sections (FIX-XC-04d / ruling R1)
+
+Train **W2-49-sacred-floors** (Wave-2). Fix ID: **FIX-XC-04d**. RATIFIED ruling **R1** (SACRED-IP
+sign-off GRANTED, 2026-07-05): the ceiling-only bands were floorless, so thin/under-length copy passed.
+
+### Changed
+- **FIX-XC-04d** — `structure/funnel_structure.json`: added `word_min: 18` to Sections **5, 6, 8, 9, 10**
+  (previously `word_max: 30` with no floor). Each section rule now reads "18-30 words. … Write to the
+  TOP of the band; under-length is as much a failure as over-length." The contract note no longer says
+  "Never floored" — the R1 floor is a ratified SACRED-IP change.
+- **`scripts/prove_sf_copy.py`** — the word-band checker (renamed `_check_wordmax` → `_check_wordband`)
+  now enforces BOTH the ceiling AND, when present, the `word_min` floor. Below-floor is a fail-closed
+  HARD MISS under the existing `AF-FUN-SEC5-WORDS` / `AF-FUN-SEC6-WORDS` / `AF-FUN-BENEFIT-WORDS` codes
+  (stripped-word count; a whitespace-padded thin section can never satisfy the band).
+- **`prompts/funnel-copy-prompts.md`** — rebalanced the shared preamble (was "you are forbidden from
+  exceeding a count") to: "**Write to the TOP of every band; under-length is as much a failure as
+  over-length.** A band has a floor and a ceiling…"; the per-section SACRED band lines for 5/6/8/9/10
+  now read **18-30 words (write to the top)**.
+- Doc-truth: `SKILL.md` section table and `FUNNEL-MANIFEST.json` AF-code triggers updated from "≤30
+  words / exceeds 30 words" to the 18-30 band.
+
+### Added
+- Four new negative self-test fixtures in `prove_sf_copy.py` (`sec5_short_words`, `sec6_short_words`,
+  `sec8_short_words`, `sec10_short_words`) proving under-length is caught; the entry self-test is now
+  1 valid-pass + 23 violation-catch.
+
+### Notes
+- The golden `examples/golden-daybreak` main + derived pages already clear the new floor (Sections
+  5/6/8/9/10 authored at 20-27 words), and the in-code golden fixture (`_valid_main_page`) was
+  re-authored to genuinely clear the mins while writing to the top of each band.
+- Re-minted `scripts/SF-PROVER-PIN.sha256` (`structure/funnel_structure.json` + `prove_sf_copy.py` are
+  in the pinned enforcement core).
+
+## 1.1.0 — 2026-07-05 — F4.3 engine persona adoption (train DEP-7)
+
+Train **DEP-7**. Fix IDs: F4.3.
+
+### Added
+- **Brief-stage canonical persona resolution** (`scripts/persona_brief.py`): the funnel now
+  resolves its governing persona through the ONE shared entry point
+  `shared-utils/persona_for_job.py` (canonical 5-layer selector) at the brief stage, instead of a
+  static kanban label. The resolved persona id + Section-4 governance excerpt are written to
+  `persona-selection.json` for the copy prompts, and the signed **PROCESS-CERTIFICATE** now names
+  the canonical persona (`cert["persona"]`, added before signing so it is covered by the HMAC).
+- A brief-declared client persona choice (`client_persona_id`/`personaId`) is **FINAL** — the
+  selector is never consulted for it (client sovereignty).
+
+### Notes
+- Fail-soft: an unreachable selector / bare box is a clean skip and never blocks a funnel run
+  (the shared helper is never-naked on its own via its fail-closed fallback).
+
+## 1.0.10 — 2026-07-05 — P7 QC≥8.5 seam now requires the FAB scorecard FILE (FIX-COPY-02)
+
+Train **T-w1-copy-fidelity** (Wave-1). Fix ID: **FIX-COPY-02**.
+
+### Changed
+- **FIX-COPY-02** — `run_signature_funnel.py`: the P7-BUILD "QC ≥ 8.5" seam no longer trusts a
+  self-declared `build_receipt.json` number alone. The engine now ECHOES `copy_ledger.json` into
+  `build/fab-artifact.json` (the FAB scorecard the shared copy-substance gate scores) at run start,
+  and the new fail-closed **`_gate_build`** requires that scorecard FILE to exist and carry real
+  echoed copy (`AF-FUN-BUILD-FAB`) BEFORE the pinned `prove_sf_build.py` enforces `qc_score ≥ 8.5` +
+  a preview URL per page. An engine-routed build that emits no FAB evidence can no longer silently
+  skip the ≥8.5 gate. Self-contained (stdlib; no cross-skill import) so the entry self-test stays
+  hermetic.
+- `FUNNEL-MANIFEST.json`: registered `AF-FUN-BUILD-FAB`; P7-BUILD `py_symbol` → `run_signature_funnel._gate_build`.
+- Re-minted `scripts/SF-PROVER-PIN.sha256` (the orchestrator is in the pinned enforcement core).
+- Extended `run_signature_funnel.py --self-test`: asserts the happy path emits the FAB scorecard, and
+  that P7 fails closed (`AF-FUN-BUILD-FAB`) when the scorecard is absent or echoes no copy.
+
+## 1.0.9 — 2026-07-05 — image-set coverage cross-check (P2 prompts + P9 images)
+
+Train **T-w1-49-signature-funnel** (Wave-1). Fix ID: FIX-IMG-07.
+
+### Changed
+- **FIX-IMG-07 — no coverage cross-check between copy sections, the prompt ledger, and the
+  media ledger.** A 2-prompt ledger cleared P2 for a 12-section, 5-page funnel, and a 2-image
+  media ledger certified a ~40-image funnel — images for a handful of ~40 slots minted a full
+  certificate. Now closed:
+  - `scripts/prove_sf_prompt_floor.py` — new **`--structure`** mode. It computes the REQUIRED
+    `(page_type, section)` image set for the funnel size from `structure/funnel_structure.json`
+    (`funnel_matrix[size]` + `profiles[page].sections` + the new `image_coverage.page_policies`)
+    per MASTERDOC §4 — one image per numbered copy section, one celebratory hero for Thank-You,
+    none for the Checkout order page — and fails closed listing every missing pair. It auto-detects
+    the ledger kind: a `prompts` array is checked for **AF-FUN-PROMPT-COVERAGE**, an `images`
+    array for **AF-FUN-IMG-COVERAGE**. Size resolves from `--funnel-size` or `--brief`; a ledger
+    with neither array, or an unknown size, is fail-closed. Coverage self-test added for sizes 3/5/7.
+  - `run_signature_funnel.py` — **P9-CERTIFY** now folds the image-coverage assert in beside the
+    no-pitch/provenance gate: the media ledger must carry an image for every required slot for the
+    brief's `funnel_size` or the run aborts with **AF-FUN-IMG-COVERAGE** and no certificate. The
+    orchestrator self-test's valid run now emits the full image set, plus a new regression case:
+    a partial media ledger aborts at P9.
+  - `structure/funnel_structure.json` — added the `image_coverage` policy block (the required-set
+    source) and registered both new AF codes in `autofail_codes`.
+  - `examples/golden-daybreak/build_golden.py` — the committed golden is now a COMPLETE 7-step
+    funnel: the prompt ledger and media ledger each cover all 45 required image slots (main 1-12,
+    upsell/downsell/upsell-2/downsell-2 1-8, thank-you hero). Derived-page and thank-you prompts
+    reuse the authored main-section bodies through the existing `_vary` de-templating layer (never
+    machine filler); the golden certificate was re-minted. Also fixed a latent gap where the golden
+    orchestrator run did not stage `persona-selection-log.md` (P0 fail-closed since 1.0.7).
+  - `verify.sh` — golden reproduce now also asserts prompt + image coverage via `--structure`.
+  - Re-minted `scripts/SF-PROVER-PIN.sha256`; registered the new AF codes in `FUNNEL-MANIFEST.json`.
+
+## 1.0.8 — merge-train T-w1-board-and-54 (Wave-1)
+- **FIX-XC-06** — added the fail-soft `block_run()` wrapper to the shared
+  `scripts/mc_board.py` (the CANONICAL copy). It moves a run's card to the `blocked`
+  status (reachable from any state in one hop, NEVER `done`) with the failing phase +
+  AF code as the note, so a gate failure is VISIBLE on the board instead of stranding
+  the card at in_progress. Re-dropped byte-identical into 50 / 53 / 55 / 56 / 57 and
+  the new 54 copy. The signature-funnel runner itself is unchanged (purely additive).
+## 1.0.7 — 2026-07-05 — persona grounding (P0) + client model-content receipt (P9)
+
+Train **T-funnel-copy-engine** (Wave-0 merge-train). Fix IDs: FIX-XC-02a, FIX-XC-09e.
+
+### Changed
+- **FIX-XC-02a** — `scripts/prove_sf_intake.py`: new fail-closed **AF-FUN-INTAKE-PERSONA-LOG** gate.
+  A runtime brief may not unlock generation without a `persona-selection-log.md` (resolved from
+  `--persona-log`, the brief's `persona_selection_log` ref, or a sibling file) that names a REGISTERED
+  persona slug (mirrors FAB-QC D4). Wired the golden (`examples/golden-daybreak/persona-selection-log.md`),
+  the orchestrator self-run, and `verify.sh` reproduce. Copy-persona Step-0 + Section-4 Task-Mode seam
+  documented in `prompts/funnel-copy-prompts.md` and `universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md`.
+- **FIX-XC-09e** — `signature-funnel-entry.sh` resolves the CLIENT's own execution-tier authoring model
+  (role=content), writes `routing/model-content-receipt.json`, and gates it via
+  `scripts/prove_sf_cert.py --model-receipt` (new **AF-FUN-MODEL-TIER** / **AF-FUN-MODEL-NOANTHROPIC**;
+  execution/content tier required, Anthropic hard-banned by provider field).
+- Re-minted `scripts/SF-PROVER-PIN.sha256`; added the new AF codes to `FUNNEL-MANIFEST.json`.
+
+## 1.0.6 — 2026-07-05 — artifact-backed phase gates + verbatim grade-block containment
+
+Train **T-49-signature-funnel** (Wave-0). Fix IDs: FIX-XC-03a, FIX-IMG-05, FIX-IMG-06.
+
+### Changed
+- **FIX-XC-03a — P5–P8 were unconditional no-ops** (`_phase_gates` :99-106 passed
+  `required_file=None`, so a PROCESS-CERTIFICATE could mint with ZERO pages built).
+  Each phase now MEASURES a real artifact and fails closed:
+  - **P5-HTML** — `run_signature_funnel._gate_html_fragments`: a non-empty
+    `pages/<profile>.fragment.html` for every page in the brief's 3/5/7 matrix
+    (`AF-FUN-HTML-FRAGMENT`).
+  - **P6-COMPOSE** — new `scripts/prove_sf_graph.py`: validates `funnel_graph.json`
+    against MASTERDOC §3 (node set == `funnel_structure.json:funnel_matrix`, unique
+    thank-you terminal, no non-terminal dead ends, accept/decline one-click branch on
+    every upsell, forward + terminal reachability). `AF-FUN-GRAPH-{SIZE,TYPE,NODES,EDGE,TERMINAL,BRANCH,REACH}`.
+  - **P7-BUILD** — new `scripts/prove_sf_build.py`: requires `build_receipt.json` with a
+    measured `qc_score >= 8.5` and a non-empty http(s) preview URL per page.
+    `AF-FUN-BUILD-{MALFORMED,QC,PREVIEW,TYPE}`.
+  - **P8-DERIVE** — `run_signature_funnel._gate_derived_pages`: requires a
+    `derived_pages.json` ledger enumerating the U1/D1/U2/D2/TY derived set for the size
+    (`AF-FUN-DERIVE-LEDGER`).
+  - Both new provers carry a `--self-test` and are added to the front-door hash pin
+    (`SF-PROVER-PIN.sha256` re-minted; entry self-test extended). The orchestrator
+    self-test now proves P5 and P6 abort with NO certificate when their artifact is missing.
+- **FIX-IMG-06 — grade-block "verbatim" was any-of-five short substrings**
+  (`prove_sf_prompt_floor.py:47-53,:110-113` — the words "signature grade" alone cleared
+  it). Replaced with normalized VERBATIM containment vs the canonical `_GRADE_BLOCK`:
+  pass requires ≥85% of its sentences present OR a contiguous ≥600-normalized-char run;
+  fingerprints kept only as a fast pre-check; the `AF-FUN-PROMPT-GRADE` detail now names
+  the missing sentences. Added a `grade_fingerprint_only` negative fixture.
+- **FIX-IMG-05 — SOP-FUNNEL-03 verify command was broken** (positional arg vs a
+  `--ledger`-only prover; argparse rc=2 was indistinguishable from a real violation).
+  `prove_sf_prompt_floor.py` now also accepts an optional positional ledger path
+  (`nargs="?"`); `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md:51` fixed to
+  `--ledger …`; the universal-sops content manifest re-stamped.
+
+## 1.0.5 — 2026-07-05 — shared mc_board board review-skip root fix (FIX-XC-01a)
+
+### Changed
+- **`scripts/mc_board.py` (shared helper, byte-identical across 49/50/53/55/56/57):** the producer no
+  longer PATCHes a run's Command Center card straight to `done`. `complete_run` now posts the terminal
+  status `review` ("certified — awaiting QC promotion") with the deliverable link registered on the
+  card; `card_advance(status="done")` is HARD-BLOCKED. `review -> done` is owned exclusively by the
+  independent QC scorer (PASS >= 8.5). Ports the CC `LEGAL_TRANSITIONS` map + BFS legal-path walker +
+  current-status GET from `48-facebook-ad-generator/scripts/cc_board.py`, and honors
+  `CC_STATUS_PATH_TEMPLATE` / `CC_STATUS_METHOD` for route parity. Still fully fail-soft — the board is
+  a VIEW, never a gate.
+- **`run_signature_funnel.py`:** `orchestrate()` now calls `card_advance(phase_id, "in_progress")` per
+  phase (a fail-soft board heartbeat); `_mc_board_done` moves the card to `review` (never `done`) and
+  registers the deliverable link derived from the run's media ledger.
+
+### Added
+- **`scripts/test_cc_contract.py` (byte-identical):** stdlib contract test proving `complete_run` posts
+  `review` and never `done`, the legal-path walk, route-template parity, and disabled-board no-op.
+
+## [2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

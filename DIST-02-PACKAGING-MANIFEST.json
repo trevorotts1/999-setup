@@ -1,0 +1,273 @@
+{
+  "schema": "blackceo.recovery.dist02.packaging-manifest/1",
+  "task": "DIST-02",
+  "scope": "package the Black Friday Launcher dependencies into 999-setup; packaging only, nothing enabled at runtime",
+  "enabled_in_999": false,
+  "base": {
+    "repo": "trevorotts1/999-setup",
+    "branch": "recovery/999-launcher-deps",
+    "base_ref": "origin/main",
+    "base_commit": "a156e4dfb7db831b32b47416cc751d8e803636a1"
+  },
+  "sources": [
+    {
+      "repo": "trevorotts1/openclaw-onboarding",
+      "ref": "origin/main",
+      "commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "used_for": [
+        "the Launcher dependency contract (read from this ref; see note_contract_location)",
+        "skill trees 49, 71, 77, 78, 79, 80, 81, 82",
+        "shared-utils/signature_launch"
+      ]
+    },
+    {
+      "repo": "trevorotts1/openclaw-onboarding",
+      "ref": "origin/batch/recovery-b5",
+      "commit": "1728ebefe1a409bd9b111b2caaeedb2be2400e86",
+      "used_for": [
+        "83-black-friday-launcher skill tree (v0.2.0)"
+      ],
+      "why": "83-black-friday-launcher does not exist at onboarding origin/main"
+    }
+  ],
+  "note_contract_location": {
+    "declared_path": "83-black-friday-launcher/launcher_core/dependencies.json",
+    "present_at_onboarding_origin_main": false,
+    "present_at_onboarding_origin_batch_recovery_b5": true,
+    "evidence": "git show origin/main:83-black-friday-launcher/launcher_core/dependencies.json -> fatal: path ... does not exist in 'origin/main' (rc=128); same path at origin/batch/recovery-b5 reads successfully"
+  },
+  "entries": [
+    {
+      "id": "tree-49-signature-funnel",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "vendored",
+      "999_path": ".claude/skills/signature-funnel",
+      "source_path": "49-signature-funnel",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "source_version": "v2.1.11",
+      "files": 115,
+      "evidence": "diff -r source vs destination -> identical"
+    },
+    {
+      "id": "tree-78-signature-product-selection",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "vendored",
+      "999_path": ".claude/skills/signature-product-selection",
+      "source_path": "78-signature-product-selection",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "source_version": "0.2.2",
+      "files": 50,
+      "evidence": "diff -r source vs destination -> identical"
+    },
+    {
+      "id": "tree-79-signature-order-form",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "vendored",
+      "999_path": ".claude/skills/signature-order-form",
+      "source_path": "79-signature-order-form",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "source_version": "0.1.3",
+      "files": 35,
+      "evidence": "diff -r source vs destination -> identical"
+    },
+    {
+      "id": "tree-80-signature-upsell",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "vendored",
+      "999_path": ".claude/skills/signature-upsell",
+      "source_path": "80-signature-upsell",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "source_version": "0.2.1",
+      "files": 117,
+      "evidence": "diff -r source vs destination -> identical",
+      "note": "SKILL.md frontmatter name is '80-signature-upsell' while the 999 directory/registry name is 'signature-upsell'; vendored bytes were not edited"
+    },
+    {
+      "id": "tree-81-signature-downsell",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "already_present",
+      "999_path": ".claude/skills/signature-downsell",
+      "source_path": "81-signature-downsell",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "999_version": "0.1.1",
+      "source_version": "0.1.3",
+      "drift": {
+        "files_differing": 9,
+        "files_only_in_source": 1,
+        "files_only_in_999": 0,
+        "example_only_in_source": "fixtures/valid-downsell-request-policy.json"
+      },
+      "action": "not overwritten; 999-side copy left as-is"
+    },
+    {
+      "id": "tree-82-signature-thank-you",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "already_present",
+      "999_path": ".claude/skills/signature-thank-you",
+      "source_path": "82-signature-thank-you",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "999_version": "0.3.0",
+      "source_version": "0.3.1",
+      "drift": {
+        "files_differing": 3,
+        "files_only_in_source": 2,
+        "files_only_in_999": 0
+      },
+      "action": "not overwritten; 999-side copy left as-is"
+    },
+    {
+      "id": "tree-71-blackceo-signature-page",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "already_present",
+      "999_path": ".claude/skills/blackceo-signature-page",
+      "source_path": "71-blackceo-signature-page",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "999_version": "1.2.14",
+      "source_version": "1.2.17",
+      "drift": {
+        "files_differing": 12,
+        "files_only_in_source": 1,
+        "files_only_in_999": 5
+      },
+      "action": "not overwritten; 999-side copy left as-is"
+    },
+    {
+      "id": "tree-77-council-of-wise-elders",
+      "kind": "skill_tree",
+      "required": true,
+      "status": "already_present",
+      "999_path": ".claude/skills/council-of-wise-elders",
+      "source_path": "77-council-of-wise-elders",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "999_version": "v1.0.0",
+      "source_version": "v1.0.15",
+      "drift": {
+        "files_differing": 68,
+        "files_only_in_source": 47,
+        "files_only_in_999": 1,
+        "example_only_in_999": "DISTRIBUTION-RECONCILIATION.json"
+      },
+      "action": "not overwritten; 999-side copy left as-is"
+    },
+    {
+      "id": "shared-utils-signature-launch",
+      "kind": "shared_utils",
+      "required": true,
+      "status": "vendored",
+      "999_path": "shared-utils/signature_launch",
+      "source_path": "shared-utils/signature_launch",
+      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
+      "files": 68,
+      "evidence": "diff -r source vs destination -> identical"
+    },
+    {
+      "id": "registry-line-81",
+      "kind": "registry_line",
+      "required": true,
+      "declared_ref": "23-ai-workforce-blueprint/skill-department-map.json",
+      "declared_ref_present_in_999": false,
+      "999_registry": "CONTROL/bundled-skills.txt",
+      "status": "added",
+      "registry_name": "signature-downsell",
+      "registry_line": 16
+    },
+    {
+      "id": "registry-line-82",
+      "kind": "registry_line",
+      "required": true,
+      "declared_ref": "23-ai-workforce-blueprint/skill-department-map.json",
+      "declared_ref_present_in_999": false,
+      "999_registry": "CONTROL/bundled-skills.txt",
+      "status": "added",
+      "registry_name": "signature-thank-you",
+      "registry_line": 17
+    },
+    {
+      "id": "registry-line-launcher",
+      "kind": "registry_line",
+      "required": true,
+      "declared_ref": "23-ai-workforce-blueprint/skill-department-map.json",
+      "declared_ref_present_in_999": false,
+      "999_registry": "CONTROL/bundled-skills.txt",
+      "status": "added",
+      "registry_name": "83-black-friday-launcher",
+      "registry_line": 18,
+      "why_numeric": "the contract's installer_registration entry is ref '83-black-friday-launcher/SKILL.md' and its checker requires a numeric prefix; the Launcher's own test test_directory_name_derives_from_one_constant asserts SKILL_ROOT.name == SKILL_DIR_NAME == '83-black-friday-launcher'"
+    },
+    {
+      "id": "department-map-entry-launcher",
+      "kind": "department_map_entry",
+      "required": true,
+      "declared_ref": "83-black-friday-launcher/repo-integration/skill-department-map-entry.json",
+      "status": "missing_at_source",
+      "999_path": null,
+      "evidence": "git ls-tree -r origin/batch/recovery-b5:83-black-friday-launcher lists no repo-integration/ directory; the declared file does not exist",
+      "blocks_enablement": true
+    },
+    {
+      "id": "installer-registration-launcher",
+      "kind": "installer_registration",
+      "required": true,
+      "status": "vendored",
+      "999_path": ".claude/skills/83-black-friday-launcher/SKILL.md",
+      "source_path": "83-black-friday-launcher",
+      "source_commit": "1728ebefe1a409bd9b111b2caaeedb2be2400e86",
+      "source_version": "0.2.0",
+      "files": 32,
+      "evidence": "diff -r source vs destination -> identical"
+    },
+    {
+      "id": "skill-number-assigned",
+      "kind": "skill_number",
+      "required": true,
+      "status": "blocked",
+      "evidence": "83-black-friday-launcher/registration.json -> skill.number_final = false; launcher_core/constants.py -> SKILL_NUMBER = '83' (working parameter)",
+      "blocks_enablement": true
+    },
+    {
+      "id": "runtime-jsonschema",
+      "kind": "runtime_package",
+      "required": true,
+      "status": "missing",
+      "evidence": "python3 -I -c 'import jsonschema' -> rc=1 (ModuleNotFoundError); no requirements.txt, pyproject.toml, setup.py or Pipfile exists in the 999 tree; .claude/skills/signature-order-form/scripts/validate_checkout.py:18 imports jsonschema",
+      "blocks_enablement": true,
+      "note": "no python dependency declaration mechanism exists in 999 to package this; reported, not invented"
+    }
+  ],
+  "installer_registration_format": {
+    "what_the_format_demands": [
+      "a skill source directory <repo>/.claude/skills/<name>/SKILL.md (resolve_skill_source, setup-macos.sh)",
+      "one line per skill in CONTROL/bundled-skills.txt (bundled_skills, both installers)",
+      "nothing else: link_skills_into_root/link_one_skill read only that file plus the directory"
+    ],
+    "not_added_and_why": [
+      "installer-registration/bundled-skills-entry.txt is a per-unit proof artifact checked only for drama-song-ad-factory by verify-registration.sh; the format does not require entries for new skills",
+      "installer-registration/helper-dependencies.json pins only the KIE helper set hardcoded in helper-deps.py HELPER_SPECS; signature skills are not helper-kind and are not pinned there"
+    ]
+  },
+  "checks": [
+    {"command": "bash installer-registration/verify-registration.sh", "exit_code": 0, "result": "RESULT: 27 passed, 0 failed"},
+    {"command": "bash installer-registration/verify-council-registration.sh", "exit_code": 0, "result": "RESULT: 53 passed, 0 failed"},
+    {"command": "python3 installer-registration/check-helper-pins.py --onboarding <onboarding checkout> --ref origin/main", "exit_code": 0, "result": "every pin equals openclaw-onboarding@origin/main"},
+    {"command": "python3 installer-registration/helper-deps.py preflight", "exit_code": 1, "result": "0/7 helper/root pairs OK; 7 failed (KIE helpers absent from ~/.claude-nine; machine state, not packaging state)"},
+    {"command": "bash installer-registration/smoke_test.sh --self-test", "exit_code": 0, "result": "all 4 cases behaved as specified"},
+    {"command": "bash .claude/skills/83-black-friday-launcher/verify.sh", "exit_code": 1, "result": "101 tests: 1 failure, 51 errors; 49 ok — the Launcher resolves its dependencies at numbered sibling paths (49-signature-funnel, 77-council-of-wise-elders, 79-signature-order-form) that do not exist under 999's slug naming"},
+    {"command": "python3 -I -c 'import jsonschema'", "exit_code": 1, "result": "module not importable"}
+  ],
+  "remaining_obligations": [
+    "83-black-friday-launcher/repo-integration/skill-department-map-entry.json does not exist at the source; the Launcher must publish it or the manifest entry must be withdrawn by its owner",
+    "skill.number_final is false; the Launcher number is a working parameter (83), so the registry name carries an unassigned number",
+    "jsonschema is required by Skill 79's validator and is not declared anywhere in 999",
+    "the Launcher's launcher_core/constants.py hardcodes numbered dependency directory names, so it does not resolve 999's slug-named skill trees; vendored bytes were not edited",
+    "skills 49, 78, 79, 80 are vendored but deliberately not registered in CONTROL/bundled-skills.txt (DIST-02 named only signature-downsell, signature-thank-you and the Launcher)",
+    "skills 71, 77, 81, 82 are present in 999 but drifted from onboarding origin/main; they were not overwritten"
+  ],
+  "live_effects": "none"
+}
