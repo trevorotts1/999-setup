@@ -115,6 +115,26 @@ case "$DOCTOR_OUT" in
   *) fail "doctor did not pass on the vendored tree"; echo "$DOCTOR_OUT" ;;
 esac
 
+echo "== E. pinned canonical prerequisite probe =="
+PINNED="$REPO_ROOT/scripts/council-node-runtime-preflight.mjs"
+DRIVER="$REPO_ROOT/scripts/council-runtime-preflight.mjs"
+[ -f "$DRIVER" ] && pass "shared prerequisite driver exists" \
+  || fail "shared prerequisite driver missing: $DRIVER"
+if [ -f "$PINNED" ]; then
+  PINNED_SHA="$(node -e 'const c=require("node:crypto"),f=require("node:fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$PINNED")"
+  [ "$PINNED_SHA" = "3b7e6169eb39b53f5caa004c1157540391f4dc5f34444d117601d3a4287e7b1f" ] \
+    && pass "pinned probe is byte-identical to the canonical node-runtime-preflight.mjs" \
+    || fail "pinned probe hash drifted: $PINNED_SHA"
+else
+  fail "pinned prerequisite probe missing: $PINNED"
+fi
+node "$DRIVER" --verify-source "$VENDORED" >/dev/null 2>&1 \
+  && pass "vendored tree verifies as a canonical-origin portable source" \
+  || fail "vendored tree failed canonical source verification"
+node "$DRIVER" --probe --source "$VENDORED" >/dev/null 2>&1 \
+  && pass "canonical Node/SQLite prerequisite probe passes" \
+  || fail "canonical Node/SQLite prerequisite probe failed"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

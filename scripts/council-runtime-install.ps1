@@ -4,8 +4,16 @@
 #
 #   1. Finds the installed council skill folder (through a Claude config
 #      root junction) and reads its distribution identity
-#      (manifest.json aggregate hash).
-#   2. Stages the runtime payload into a versioned per-user prefix
+#      (manifest.json aggregate hash). Resolves the portable source that
+#      actually feeds the install: -SourceDir, then
+#      COUNCIL_CANONICAL_SOURCE, then the installed skill folder. The
+#      resolved tree must recompute to its own manifest and carry
+#      canonical provenance; a hand-edited copy is refused instead of
+#      being treated as a separately editable product.
+#   2. Runs the canonical Node/SQLite prerequisite probe through the exact
+#      resolved Node executable. A failed probe stops before staging and
+#      the previous release is untouched.
+#   3. Stages the runtime payload into a versioned per-user prefix
 #      outside every config/discovery root:
 #      %LOCALAPPDATA%\BlackCEO\WiseElders\runtime\<aggregate>
 #      Node modules exist only inside that prefix, never in the shared
@@ -16,7 +24,8 @@
 #      installed skill folder, and the staged CLI doctor (through the
 #      generated wrapper and the bundle resolver) must exit 0.
 #   4. Points the prefix's `current` junction at the gated build. A
-#      failed gate leaves `current` exactly as it was.
+#      failed gate leaves `current` exactly as it was, and a failed prefix
+#      replacement restores the previous prefix before dying.
 #   5. Installs the blackceo-council executable pair (cmd shim on PATH
 #      in %LOCALAPPDATA%\BlackCEO\WiseElders\bin, ps1 off PATH in
 #      %LOCALAPPDATA%\BlackCEO\WiseElders\lib) and adds the bin dir to
@@ -24,12 +33,14 @@
 #      never overwritten; the install refuses and says why.
 #
 # Usage:
-#   scripts\council-runtime-install.ps1 [-SkillDir DIR] [-DataDir DIR]
-#                                       [-Offline] [-Check]
-# Exit codes: 0 ok; 4 preflight; 5 dependency install failed;
-# 6 build failed; 7 doctor gate failed.
+#   scripts\council-runtime-install.ps1 [-SkillDir DIR] [-SourceDir DIR]
+#                                       [-DataDir DIR] [-Offline] [-Check]
+# Exit codes: 0 ok; 4 preflight (including source integrity and the Node
+# prerequisite probe); 5 dependency install failed; 6 build failed;
+# 7 doctor gate failed.
 param(
     [string]$SkillDir = '',
+    [string]$SourceDir = '',
     [string]$DataDir = '',
     [switch]$Offline,
     [switch]$Check
@@ -42,7 +53,7 @@ function Die($code, $msg, $exit) {
     exit $exit
 }
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $RepoRoot = Split-Path -Parent $ScriptDir
 
 # --- data profile (mirrors runtime/src/cli/paths.ts Section 16.1) -------
@@ -72,14 +83,48 @@ if (-not $SkillDir) {
         if (Test-Path (Join-Path $cand 'manifest.json')) { $SkillDir = $cand; break }
     }
 }
-if (-not $SkillDir -or -not (Test-Path (Join-Path $SkillDir 'manifest.json'))) {
+if (-not $SkillDir -or -not (Test-Path -LiteralPath (Join-Path $SkillDir 'manifest.json'))) {
     Die 'COUNCIL_SKILL_NOT_FOUND' 'no installed council-of-wise-elders skill folder with manifest.json was found' 4
 }
-$SkillDir = (Resolve-Path $SkillDir).Path
-$manifest = Get-Content (Join-Path $SkillDir 'manifest.json') -Raw | ConvertFrom-Json
-$aggregate = $manifest.aggregate_sha256
-if (-not $aggregate) { Die 'COUNCIL_SKILL_MANIFEST_INVALID' "could not read aggregate_sha256 from $SkillDir\manifest.json" 4 }
+$SkillDir = (Resolve-Path -LiteralPath $SkillDir).Path
 Say "skill folder: $SkillDir"
+
+# --- resolve the canonical portable source --------------------------------
+# The runtime payload is never taken from an unverified copy. The resolved
+# tree must recompute to its own manifest and carry canonical provenance;
+# a hand-edited copy stops here. Native Windows paths (spaces, Unicode,
+# drive letters) are passed through the call operator without a shell.
+if ($SourceDir) { $resolvedSource = $SourceDir }
+elseif ($env:COUNCIL_CANONICAL_SOURCE) { $resolvedSource = $env:COUNCIL_CANONICAL_SOURCE }
+else { $resolvedSource = $SkillDir }
+if (-not $resolvedSource -or -not (Test-Path -LiteralPath $resolvedSource -PathType Container)) {
+    Die 'COUNCIL_SOURCE_NOT_FOUND' "portable source directory not found: $resolvedSource" 4
+}
+$SourceDir = (Resolve-Path -LiteralPath $resolvedSource).Path
+if (-not (Test-Path -LiteralPath (Join-Path $SourceDir 'manifest.json'))) {
+    Die 'COUNCIL_SOURCE_NOT_FOUND' "portable source has no manifest.json: $SourceDir" 4
+}
+$preflight = Join-Path $ScriptDir 'council-runtime-preflight.mjs'
+if (-not (Test-Path -LiteralPath $preflight)) {
+    Die 'COUNCIL_PREFLIGHT_MISSING' "prerequisite probe missing beside this script: $preflight" 4
+}
+& $node.Source $preflight --verify-source $SourceDir
+if ($LASTEXITCODE -ne 0) {
+    Die 'COUNCIL_SOURCE_INTEGRITY_FAILED' "the portable source at $SourceDir does not recompute to its own manifest, or carries no canonical provenance. A copied or hand-edited folder is not an install source; the previous release was not touched" 4
+}
+& $node.Source $preflight --probe --source $SourceDir
+if ($LASTEXITCODE -ne 0) {
+    Die 'COUNCIL_NODE_PREREQ_FAILED' "the resolved Node executable $($node.Source) failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
+}
+& $node.Source (Join-Path $SourceDir 'scripts\doctor.mjs') --root $SourceDir | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Die 'COUNCIL_SOURCE_DOCTOR_FAILED' "the portable source at $SourceDir does not pass its own package doctor; the previous release was not touched" 4
+}
+
+$manifest = Get-Content -LiteralPath (Join-Path $SourceDir 'manifest.json') -Raw | ConvertFrom-Json
+$aggregate = $manifest.aggregate_sha256
+if (-not $aggregate) { Die 'COUNCIL_SKILL_MANIFEST_INVALID' "could not read aggregate_sha256 from $SourceDir\manifest.json" 4 }
+Say "portable source: $SourceDir"
 Say "distribution aggregate: $aggregate"
 
 $runtimeDir = Join-Path $DataDir 'runtime'
@@ -123,7 +168,7 @@ if (-not $reused) {
     $stage = Join-Path $runtimeDir ".staging-$aggregate-$PID"
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
-    Copy-Item (Join-Path $SkillDir 'runtime') (Join-Path $stage 'runtime') -Recurse
+    Copy-Item -LiteralPath (Join-Path $SourceDir 'runtime') -Destination (Join-Path $stage 'runtime') -Recurse
     # Build outputs are regenerated below; never carried into the prefix.
     Remove-Item (Join-Path $stage 'runtime\node_modules') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $stage 'runtime\dist') -Recurse -Force -ErrorAction SilentlyContinue
@@ -211,7 +256,7 @@ if (-not $reused) {
         Remove-Item $stage -Recurse -Force
         Die 'COUNCIL_BUILD_FAILED' 'bundling the council entry failed. Staging was removed; current is unchanged' 6
     }
-    @{ aggregate = $aggregate; skill_dir = $SkillDir; node = (& $node.Source --version) } |
+    @{ aggregate = $aggregate; skill_dir = $SkillDir; source_dir = $SourceDir; node = (& $node.Source --version) } |
         ConvertTo-Json | Set-Content (Join-Path $stage 'install-record.json') -Encoding utf8NoBOM
 
     Say 'gating the staged prefix (package doctor + CLI doctor)...'
@@ -220,9 +265,24 @@ if (-not $reused) {
         Die 'COUNCIL_DOCTOR_FAILED' 'the staged runtime did not pass the doctor gates. Staging was removed; current is unchanged' 7
     }
     Set-Content (Join-Path $stage '.install-complete') 'ok' -Encoding ascii
-    if (Test-Path $prefix) { Remove-Item $prefix -Recurse -Force }
     New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
-    Move-Item $stage $prefix
+    # Replace the prefix without ever leaving the previous release absent:
+    # move the old tree aside, move the gated tree in, restore the old tree
+    # if the move fails. The old tree is deleted only after success.
+    $previousPrefix = Join-Path $runtimeDir ".previous-$aggregate-$PID"
+    if (Test-Path -LiteralPath $previousPrefix) { Remove-Item -LiteralPath $previousPrefix -Recurse -Force }
+    if (Test-Path -LiteralPath $prefix) {
+        Move-Item -LiteralPath $prefix -Destination $previousPrefix
+    }
+    try {
+        Move-Item -LiteralPath $stage -Destination $prefix
+    } catch {
+        if ((Test-Path -LiteralPath $previousPrefix) -and -not (Test-Path -LiteralPath $prefix)) {
+            Move-Item -LiteralPath $previousPrefix -Destination $prefix
+        }
+        Die 'COUNCIL_SWAP_FAILED' 'could not move the gated prefix into place; the previous release was restored' 7
+    }
+    if (Test-Path -LiteralPath $previousPrefix) { Remove-Item -LiteralPath $previousPrefix -Recurse -Force }
     Say "prefix installed: $prefix"
 }
 
