@@ -1,0 +1,200 @@
+#!/bin/bash
+# blackceo-council-desktop (WER-021 companion, 999 side): native macOS
+# desktop launcher for the standalone Council service.
+#
+# Contract with the service (owned by WER-021 / runtime/src/service/):
+#   GET http://127.0.0.1:<port>/api/health
+#     -> 200 {"service":"council","sessionUrl":"<absolute http(s) URL>"}
+# The service is the standalone Council front door. This launcher never
+# requires Command Center or Vercel: a managed session is whatever URL the
+# service reports.
+#
+# What this launcher does, and does not do:
+#   - reuses a VERIFIED matching council service already listening;
+#   - starts the service when the port has no listener at all;
+#   - REFUSES an unrelated listener on the port and NEVER kills it;
+#   - prints the verified session URL, then opens the system browser;
+#     when the browser cannot open, the URL is still printed and usable;
+#   - emits the launch command and readiness check with --print-command.
+# Registering a launchd/system service is OUT OF SCOPE. Nothing here loads
+# or installs a system service; it only launches a per-user process.
+#
+# Usage:
+#   blackceo-council-desktop [--port N] [--no-open] [--print-command]
+#                            [--timeout SECONDS]
+# Exit codes: 0 url delivered; 2 usage; 3 unrelated listener (not killed);
+#             4 runtime/node missing; 5 service did not become ready;
+#             6 service reported no verified session URL.
+set -uo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  _t="$(readlink "$SELF")"
+  case "$_t" in /*) SELF="$_t" ;; *) SELF="$(dirname "$SELF")/$_t" ;; esac
+done
+SELF_DIR="$(cd "$(dirname "$SELF")" && pwd -P)"
+unset _t
+
+say() { echo "blackceo-council-desktop: $*"; }
+die() { say "ERROR $1: $2" >&2; exit "$3"; }
+
+# --- options ---------------------------------------------------------------
+HOST="127.0.0.1"
+PORT="${BLACKCEO_COUNCIL_PORT:-4179}"
+TIMEOUT="${BLACKCEO_COUNCIL_READY_TIMEOUT:-20}"
+DO_OPEN=1
+PRINT_ONLY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port) [ $# -ge 2 ] || die USAGE "--port needs a value" 2; PORT="$2"; shift 2 ;;
+    --timeout) [ $# -ge 2 ] || die USAGE "--timeout needs a value" 2; TIMEOUT="$2"; shift 2 ;;
+    --no-open) DO_OPEN=0; shift ;;
+    --print-command) PRINT_ONLY=1; shift ;;
+    -h|--help) sed -n '2,30p' "$SELF"; exit 0 ;;
+    *) die USAGE "unknown argument: $1" 2 ;;
+  esac
+done
+case "$PORT" in ''|*[!0-9]*) die USAGE "port must be a number: $PORT" 2 ;; esac
+case "$TIMEOUT" in ''|*[!0-9]*) die USAGE "timeout must be a number: $TIMEOUT" 2 ;; esac
+
+BASE="http://$HOST:$PORT"
+HEALTH="$BASE/api/health"
+
+# --- runtime profile (mirrors launchers/macos/blackceo-council) -----------
+# The profile root is recorded beside the installed executable; the
+# environment variable stays authoritative for the state directory and is
+# never used as the runtime location (Section 16.1).
+PROFILE_ROOT=""
+if [ -n "${BLACKCEO_COUNCIL_PROFILE:-}" ]; then
+  PROFILE_ROOT="$BLACKCEO_COUNCIL_PROFILE"
+elif [ -f "$SELF_DIR/blackceo-council.profile" ]; then
+  PROFILE_ROOT="$(head -1 "$SELF_DIR/blackceo-council.profile" 2>/dev/null || true)"
+fi
+if [ -z "$PROFILE_ROOT" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then
+    PROFILE_ROOT="$HOME/Library/Application Support/BlackCEO/WiseElders"
+  else
+    PROFILE_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/blackceo/wise-elders"
+  fi
+fi
+ENTRY="$PROFILE_ROOT/runtime/current/run-council.mjs"
+LOG_DIR="$PROFILE_ROOT/logs"
+LOG="$LOG_DIR/launcher.log"
+
+NODE_BIN="${BLACKCEO_NODE_EXE:-}"
+if [ -z "$NODE_BIN" ]; then
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
+fi
+if [ -z "$NODE_BIN" ] && [ -f "$HOME/.local/share/999/node-path" ]; then
+  _nd="$(head -1 "$HOME/.local/share/999/node-path" 2>/dev/null || true)"
+  [ -n "$_nd" ] && [ -x "$_nd/node" ] && NODE_BIN="$_nd/node"
+  unset _nd
+fi
+
+# --- emitted commands (registration is out of scope) ----------------------
+launch_command() {
+  printf '"%s" "%s" serve --host %s --port %s\n' "${NODE_BIN:-node}" "$ENTRY" "$HOST" "$PORT"
+}
+readiness_check() {
+  printf 'curl -fsS %s\n' "$HEALTH"
+}
+if [ "$PRINT_ONLY" = "1" ]; then
+  echo "COUNCIL_LAUNCH_COMMAND=$(launch_command)"
+  echo "COUNCIL_READINESS_CHECK=$(readiness_check)"
+  echo "# Registration as a launchd/system service is out of scope: this launcher emits the command and readiness check only."
+  exit 0
+fi
+
+[ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] \
+  || die COUNCIL_NODE_MISSING "Node.js is not runnable; the council runtime cannot start" 4
+
+# --- probe the port: down, matching, or unrelated -------------------------
+# A curl exit of 7 means nothing is listening. Any other failing curl is an
+# occupied/unreachable listener and is treated as unrelated, never killed.
+PROBE_BODY="$(mktemp "${TMPDIR:-/tmp}/blackceo-council-desktop.XXXXXX" 2>/dev/null || true)"
+[ -n "$PROBE_BODY" ] || die PROBE_TMP "could not create a temporary probe file" 4
+trap 'rm -f "$PROBE_BODY"' EXIT
+
+probe() {
+  # Sets PROBE_STATE (down|matching|unrelated|unreachable) and PROBE_URL.
+  PROBE_STATE="down"; PROBE_URL=""
+  : > "$PROBE_BODY"
+  HTTP_CODE="$(curl -sS --max-time 2 -o "$PROBE_BODY" -w '%{http_code}' "$HEALTH" 2>/dev/null)"
+  CURL_RC=$?
+  if [ "$CURL_RC" -eq 7 ]; then PROBE_STATE="down"; return 0; fi
+  if [ "$CURL_RC" -ne 0 ]; then PROBE_STATE="unreachable"; return 0; fi
+  CLASS="$("$NODE_BIN" -e '
+    const fs = require("node:fs");
+    let d;
+    try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+    catch { process.stdout.write("unrelated"); process.exit(0); }
+    if (d && d.service === "council" && typeof d.sessionUrl === "string" &&
+        /^https?:\/\//.test(d.sessionUrl)) {
+      process.stdout.write("matching\t" + d.sessionUrl);
+    } else {
+      process.stdout.write("unrelated");
+    }
+  ' "$PROBE_BODY" 2>/dev/null)"
+  case "$CLASS" in
+    matching$'\t'*) PROBE_STATE="matching"; PROBE_URL="${CLASS#matching$'\t'}" ;;
+    *) PROBE_STATE="unrelated" ;;
+  esac
+}
+
+port_pid() {
+  # Reports the listener pid for the message only. Never signals it.
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1 || true
+}
+
+refuse_unrelated() {
+  PID="$(port_pid)"
+  say "REFUSING: port $PORT already has a listener that is not a council service${PID:+ (pid $PID)}." >&2
+  say "It was left untouched. Stop it yourself, or pass --port with a free port." >&2
+  exit 3
+}
+
+probe
+case "$PROBE_STATE" in
+  matching) URL="$PROBE_URL" ;;
+  unrelated|unreachable) refuse_unrelated ;;
+  down) URL="" ;;
+esac
+
+# --- start the service when, and only when, nothing is listening ---------
+if [ -z "$URL" ]; then
+  [ -f "$ENTRY" ] || die COUNCIL_RUNTIME_MISSING "the council runtime is not installed (no $ENTRY). Install it with scripts/council-runtime-install.sh" 4
+  mkdir -p "$LOG_DIR" || die COUNCIL_LOG_DIR "could not create $LOG_DIR" 5
+  say "starting council service on $BASE (log: $LOG)"
+  nohup "$NODE_BIN" "$ENTRY" serve --host "$HOST" --port "$PORT" >>"$LOG" 2>&1 &
+  START_PID=$!
+  WAITED=0
+  while [ "$WAITED" -lt "$TIMEOUT" ]; do
+    sleep 1
+    WAITED=$((WAITED + 1))
+    probe
+    case "$PROBE_STATE" in
+      matching) URL="$PROBE_URL"; break ;;
+      unrelated|unreachable) refuse_unrelated ;;
+    esac
+  done
+  if [ -z "$URL" ]; then
+    say "ERROR COUNCIL_NOT_READY: the service did not become ready within ${TIMEOUT}s (pid $START_PID)." >&2
+    [ -f "$LOG" ] && tail -20 "$LOG" >&2
+    exit 5
+  fi
+fi
+
+[ -n "$URL" ] || die COUNCIL_NO_SESSION_URL "the service is listening but reported no verified session URL" 6
+
+# The URL is printed before any browser attempt, so a failed open can never
+# lose it.
+echo "COUNCIL_SESSION_URL=$URL"
+
+if [ "$DO_OPEN" = "1" ]; then
+  OPEN_CMD="${BLACKCEO_COUNCIL_OPEN_CMD:-open}"
+  if ! "$OPEN_CMD" "$URL" >/dev/null 2>&1; then
+    say "WARNING COUNCIL_BROWSER_OPEN_FAILED: could not open the browser with '$OPEN_CMD'." >&2
+    say "The session URL above is still valid; open it manually." >&2
+  fi
+fi
+exit 0
