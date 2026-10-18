@@ -45,6 +45,22 @@ INSTALL=0
 
 say() { [ "$QUIET" -eq 1 ] || echo "$@"; }
 
+# True when dotted version "$1" sorts below dotted version "$2".
+# Numeric per segment, missing segments count as 0 (1.2 < 1.2.1).
+version_behind() {
+  awk -v a="$1" -v b="$2" 'BEGIN {
+    na = split(a, A, "."); nb = split(b, B, ".")
+    n = (na > nb ? na : nb)
+    for (i = 1; i <= n; i++) {
+      x = (i <= na ? A[i] + 0 : 0)
+      y = (i <= nb ? B[i] + 0 : 0)
+      if (x < y) exit 0
+      if (x > y) exit 1
+    }
+    exit 1
+  }'
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1; shift ;;
@@ -89,6 +105,14 @@ for path in "$SRC"/*/; do
 
   # A real dir already there = claude-nine's own copy. Leave it alone.
   if [ -e "$target" ] && [ ! -L "$target" ]; then
+    # A stale copy would otherwise stay invisible forever (this branch exits 0).
+    if [ -f "$target/skill-version.txt" ] && [ -f "$path/skill-version.txt" ]; then
+      dst_ver="$(tr -d ' \t\r\n' < "$target/skill-version.txt")"
+      src_ver="$(tr -d ' \t\r\n' < "$path/skill-version.txt")"
+      if [ -n "$dst_ver" ] && [ -n "$src_ver" ] && version_behind "$dst_ver" "$src_ver"; then
+        say "  ! WARN: skill $name is behind: destination $dst_ver < source $src_ver (not overwritten)"
+      fi
+    fi
     continue
   fi
   # Correct symlink already there.
