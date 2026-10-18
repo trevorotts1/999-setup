@@ -21,21 +21,37 @@
 #      COUNCIL_NPM_OFFLINE_CACHE_MISS and leaves no current.
 #   8. Native dependency errors: broken node and failing npm surface as
 #      named errors, never a partial install.
+#   9. WER-004 prerequisite probe: a resolved Node that fails the canonical
+#      probe refuses with COUNCIL_NODE_PREREQ_FAILED and leaves the
+#      previous release current, complete and gated.
+#  10. WER-004 source identity: a hand-edited copy of the portable source
+#      refuses with COUNCIL_SOURCE_INTEGRITY_FAILED and writes nothing.
+#  11. WER-004 PowerShell path: a source path with spaces and non-ASCII
+#      characters resolves through the PowerShell installer path. Runs
+#      when pwsh is present; otherwise reported SKIP (native Windows host
+#      execution is deferred to WER-027, never claimed as a pass).
 #
 # Everything runs under a fixture HOME in ${TMPDIR:-/tmp}.
 # Run: bash scripts/test-council-install.sh
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The fixture HOMEs below define the discovery roots; an inherited
+# CLAUDE_CONFIG_DIR would silently redirect discovery at the operator's
+# live install and make this battery non-reproducible.
+unset CLAUDE_CONFIG_DIR
 SETUP_SH="$REPO_ROOT/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
 INSTALL_SH="$REPO_ROOT/scripts/council-runtime-install.sh"
+INSTALL_PS1="$REPO_ROOT/scripts/council-runtime-install.ps1"
+PREFLIGHT="$REPO_ROOT/scripts/council-runtime-preflight.mjs"
 SYNC_SH="$REPO_ROOT/scripts/sync-nine-skills.sh"
 SKILL_NAME="council-of-wise-elders"
 VENDORED="$REPO_ROOT/.claude/skills/$SKILL_NAME"
 
-PASS=0; FAIL=0
+PASS=0; FAIL=0; SKIP=0
 pass() { PASS=$((PASS + 1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
+skip() { SKIP=$((SKIP + 1)); echo "  SKIP: $1"; }
 
 BASE="${TMPDIR:-/tmp}/cwe040-install-battery"
 rm -rf "$BASE"; mkdir -p "$BASE"
@@ -98,7 +114,7 @@ HOME="$H1" bash "$H1/.local/bin/sync-nine-skills.sh" --quiet >/dev/null 2>&1
 
 echo "== 3. runtime install: prefix, wrapper, current, executable =="
 DATA1="$H1/.local/share/blackceo/wise-elders"
-HOME="$H1" bash "$INSTALL_SH" > "$BASE/install1.log" 2>&1; RC=$?
+HOME="$H1" bash "$INSTALL_SH" --data-dir "$DATA1" > "$BASE/install1.log" 2>&1; RC=$?
 [ "$RC" = 0 ] && pass "runtime install exits 0" || { fail "runtime install exited $RC"; tail -5 "$BASE/install1.log"; }
 PREFIX1="$DATA1/runtime/$AGG"
 [ -f "$PREFIX1/.install-complete" ] && pass "versioned prefix installed at runtime/$AGG" \
@@ -125,7 +141,7 @@ cmp -s "$WRAP" "$RENDER" && pass "emitted wrapper is byte-identical to the CWE-0
   || fail "emitted wrapper differs from the CWE-010 template render"
 [ -x "$H1/.local/bin/blackceo-council" ] && grep -q 'blackceo-council (CWE-040)' "$H1/.local/bin/blackceo-council" \
   && pass "blackceo-council executable installed" || fail "executable missing or foreign"
-HOME="$H1" bash "$INSTALL_SH" --check > "$BASE/check1.log" 2>&1; RC=$?
+HOME="$H1" bash "$INSTALL_SH" --data-dir "$DATA1" --check > "$BASE/check1.log" 2>&1; RC=$?
 [ "$RC" = 0 ] && pass "install --check passes after install" || fail "install --check exited $RC"
 
 echo "== 4. CLI through the installed executable =="
@@ -228,13 +244,77 @@ printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 10.0.0; exit 0; fi\nexit
 chmod 755 "$STUB/npm"; rm -f "$STUB/node"
 H7="$BASE/home7"; mkdir -p "$H7/.claude"
 link_root "$H7" "$H7/.claude"
-HOME="$H7" PATH="$STUB:$PATH" bash "$INSTALL_SH" > "$BASE/install7.log" 2>&1; RC=$?
+HOME="$H7" PATH="$STUB:$PATH" bash "$INSTALL_SH" --data-dir "$H7/data" > "$BASE/install7.log" 2>&1; RC=$?
 [ "$RC" = 5 ] && grep -q 'COUNCIL_NPM_CI_FAILED' "$BASE/install7.log" \
   && pass "failing npm ci surfaces as COUNCIL_NPM_CI_FAILED (exit 5)" \
   || fail "failing npm: rc=$RC (want 5 with COUNCIL_NPM_CI_FAILED)"
-[ ! -e "$H7/.local/share/blackceo/wise-elders/runtime/current" ] \
+[ ! -e "$H7/data/runtime/current" ] \
   && pass "failed dependency install leaves no current" \
   || fail "failed dependency install left a current link"
+
+echo "== 9. WER-004 prerequisite failure preserves the previous release =="
+[ -f "$PREFLIGHT" ] && pass "shared prerequisite probe exists" \
+  || fail "shared prerequisite probe missing: $PREFLIGHT"
+H8="$BASE/home8"; mkdir -p "$H8/.claude"
+link_root "$H8" "$H8/.claude"
+DATA8="$H8/.local/share/blackceo/wise-elders"
+HOME="$H8" bash "$INSTALL_SH" --data-dir "$DATA8" > "$BASE/install8.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "baseline install exits 0" \
+  || { fail "baseline install exited $RC"; tail -5 "$BASE/install8.log"; }
+AGG8="$(readlink "$DATA8/runtime/current" 2>/dev/null || true)"
+[ -n "$AGG8" ] && pass "baseline current points at $AGG8" || fail "baseline current missing"
+REAL_NODE="$(command -v node)"
+STUB2="$BASE/probe-stub"; mkdir -p "$STUB2"
+cat > "$STUB2/node" <<EOF
+#!/bin/sh
+if [ "\$2" = "--probe" ]; then
+  echo "FAIL preflight: simulated sqlite failure" >&2
+  exit 1
+fi
+exec "$REAL_NODE" "\$@"
+EOF
+chmod 755 "$STUB2/node"
+HOME="$H8" PATH="$STUB2:$PATH" bash "$INSTALL_SH" --source-dir "$VENDORED" --data-dir "$DATA8" \
+  > "$BASE/install8b.log" 2>&1; RC=$?
+[ "$RC" = 4 ] && grep -q 'COUNCIL_NODE_PREREQ_FAILED' "$BASE/install8b.log" \
+  && pass "a failed prerequisite probe refuses with COUNCIL_NODE_PREREQ_FAILED (exit 4)" \
+  || fail "failed prerequisite probe: rc=$RC (want 4 with COUNCIL_NODE_PREREQ_FAILED)"
+[ "$(readlink "$DATA8/runtime/current" 2>/dev/null || true)" = "$AGG8" ] \
+  && pass "current still points at the previous release after the refused probe" \
+  || fail "current changed after the refused probe"
+[ -f "$DATA8/runtime/$AGG8/.install-complete" ] \
+  && pass "previous prefix is still complete after the refused probe" \
+  || fail "previous prefix is incomplete after the refused probe"
+HOME="$H8" bash "$INSTALL_SH" --data-dir "$DATA8" --check > "$BASE/check8.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "previous release still passes --check after the refused probe" \
+  || fail "previous release failed --check after the refused probe (rc=$RC)"
+
+echo "== 10. WER-004 hand-edited source is refused =="
+H9="$BASE/home9"; mkdir -p "$H9/.claude"
+link_root "$H9" "$H9/.claude"
+TAMPERED="$BASE/tampered portable source"
+cp -R "$VENDORED" "$TAMPERED"
+printf '\nhand edit\n' >> "$TAMPERED/SKILL.md"
+HOME="$H9" bash "$INSTALL_SH" --source-dir "$TAMPERED" --data-dir "$H9/data" > "$BASE/install9.log" 2>&1; RC=$?
+[ "$RC" = 4 ] && grep -q 'COUNCIL_SOURCE_INTEGRITY_FAILED' "$BASE/install9.log" \
+  && pass "a hand-edited source refuses with COUNCIL_SOURCE_INTEGRITY_FAILED (exit 4)" \
+  || fail "hand-edited source: rc=$RC (want 4 with COUNCIL_SOURCE_INTEGRITY_FAILED)"
+[ ! -e "$H9/data/runtime/current" ] \
+  && pass "the refused source created no current link" \
+  || fail "the refused source created a current link"
+HOME="$H9" bash "$INSTALL_SH" --data-dir "$H9/data" --check > "$BASE/check9.log" 2>&1; RC=$?
+[ "$RC" != 0 ] && pass "--check reports the refused source as not installed" \
+  || fail "--check reported success for a refused source"
+
+echo "== 11. WER-004 PowerShell path with spaces and non-ASCII =="
+if command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoProfile -File "$REPO_ROOT/scripts/test-council-install.ps1" -RepoRoot "$REPO_ROOT" \
+    > "$BASE/ps-test.log" 2>&1; RC=$?
+  [ "$RC" = 0 ] && pass "PowerShell path test passes (spaces + non-ASCII)" \
+    || { fail "PowerShell path test exited $RC"; tail -10 "$BASE/ps-test.log"; }
+else
+  skip "pwsh is not installed on this host; PowerShell path test not executed (native Windows execution deferred to WER-027)"
+fi
 
 echo "== preservation, after everything =="
 [ "$(sha256sum "$H1/.claude-nine/settings.json" | cut -d' ' -f1)" = "$SETTINGS_HASH_BEFORE" ] \
@@ -245,5 +325,5 @@ echo "== preservation, after everything =="
 
 rm -rf "$BASE"
 echo
-echo "RESULT: $PASS passed, $FAIL failed"
+echo "RESULT: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]

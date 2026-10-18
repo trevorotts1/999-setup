@@ -5,8 +5,16 @@
 # What it does:
 #   1. Finds the installed council skill folder (through a Claude config
 #      root link) and reads its distribution identity (manifest.json
-#      aggregate hash).
-#   2. Stages the runtime payload into a versioned per-user prefix
+#      aggregate hash). Resolves the portable source that actually feeds
+#      the install: --source-dir, then COUNCIL_CANONICAL_SOURCE, then the
+#      installed skill folder. The resolved tree must recompute to its own
+#      manifest and carry canonical provenance; a hand-edited copy is
+#      refused instead of being treated as a separately editable product.
+#   2. Runs the canonical Node/SQLite prerequisite probe through the exact
+#      resolved Node executable (install-runtime.mjs --check-prereqs when
+#      the source publishes it, else node-runtime-preflight.mjs). A failed
+#      probe stops before staging and the previous release is untouched.
+#   3. Stages the runtime payload into a versioned per-user prefix
 #      OUTSIDE every config/discovery root:
 #        macOS: ~/Library/Application Support/BlackCEO/WiseElders/runtime/<aggregate>
 #        Linux: ${XDG_DATA_HOME:-$HOME/.local/share}/blackceo/wise-elders/runtime/<aggregate>
@@ -14,12 +22,13 @@
 #      synchronized skill folder. The generated Claude-Nine host wrapper
 #      is emitted into the staged dist from the CWE-010 template in the
 #      vendored runtime (renderClaudeNineWrapper()).
-#   3. Gates the staged prefix: the package doctor must pass on the
+#   4. Gates the staged prefix: the package doctor must pass on the
 #      installed skill folder, and the staged CLI doctor (through the
 #      generated wrapper and the bundle resolver) must exit 0.
-#   4. Atomically swaps the prefix's `current` link to the gated build.
-#      A failed gate leaves `current` exactly as it was.
-#   5. Installs the blackceo-council executable (launchers/macos/
+#   5. Atomically swaps the prefix's `current` link to the gated build.
+#      A failed gate leaves `current` exactly as it was; a failed prefix
+#      replacement restores the previous prefix before dying.
+#   6. Installs the blackceo-council executable (launchers/macos/
 #      blackceo-council) into the bin dir. A foreign file at that path
 #      is never overwritten; the install refuses and says why.
 #
@@ -27,11 +36,12 @@
 # opens the store there). The skill folder is never written to.
 #
 # Usage:
-#   scripts/council-runtime-install.sh [--skill-dir DIR] [--data-dir DIR]
-#                                      [--bin-dir DIR] [--offline] [--check]
-# Exit codes: 0 ok; 4 preflight (node/npm/skill/manifest missing or a
-# foreign executable); 5 dependency install failed; 6 build failed;
-# 7 doctor gate failed.
+#   scripts/council-runtime-install.sh [--skill-dir DIR] [--source-dir DIR]
+#                                      [--data-dir DIR] [--bin-dir DIR]
+#                                      [--offline] [--check]
+# Exit codes: 0 ok; 4 preflight (node/npm/skill/manifest/source integrity,
+# prerequisite probe, or a foreign executable); 5 dependency install
+# failed; 6 build failed; 7 doctor gate failed.
 set -uo pipefail
 
 SELF="${BASH_SOURCE[0]}"
@@ -44,6 +54,7 @@ REPO_ROOT="$(cd "$SELF_DIR/.." && pwd -P)"
 unset _t
 
 SKILL_DIR=""
+SOURCE_DIR_OPT=""
 DATA_DIR=""
 BIN_DIR="$HOME/.local/bin"
 OFFLINE=0
@@ -51,11 +62,12 @@ CHECK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --skill-dir) SKILL_DIR="$2"; shift 2 ;;
+    --source-dir) SOURCE_DIR_OPT="$2"; shift 2 ;;
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --offline) OFFLINE=1; shift ;;
     --check) CHECK=1; shift ;;
-    -h|--help) sed -n '2,40p' "$SELF"; exit 0 ;;
+    -h|--help) sed -n '2,44p' "$SELF"; exit 0 ;;
     *) echo "council-runtime-install: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -95,10 +107,43 @@ fi
 [ -n "$SKILL_DIR" ] && [ -f "$SKILL_DIR/manifest.json" ] \
   || die COUNCIL_SKILL_NOT_FOUND "no installed council-of-wise-elders skill folder with manifest.json was found" 4
 SKILL_DIR="$(cd "$SKILL_DIR" && pwd -P)"
-AGGREGATE="$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).aggregate_sha256)' "$SKILL_DIR/manifest.json" 2>/dev/null || true)"
-[ -n "$AGGREGATE" ] \
-  || die COUNCIL_SKILL_MANIFEST_INVALID "could not read aggregate_sha256 from $SKILL_DIR/manifest.json" 4
 say "skill folder: $SKILL_DIR"
+
+# --- resolve the canonical portable source --------------------------------
+# The runtime payload is never taken from an unverified copy. The resolved
+# tree must be the canonical portable source (or the distribution bundle
+# generated from it): its files must recompute to its own manifest and it
+# must carry canonical provenance. An edited copy therefore stops here.
+if [ -n "$SOURCE_DIR_OPT" ]; then
+  SOURCE_DIR="$SOURCE_DIR_OPT"
+elif [ -n "${COUNCIL_CANONICAL_SOURCE:-}" ]; then
+  SOURCE_DIR="$COUNCIL_CANONICAL_SOURCE"
+else
+  SOURCE_DIR="$SKILL_DIR"
+fi
+[ -n "$SOURCE_DIR" ] && [ -d "$SOURCE_DIR" ] \
+  || die COUNCIL_SOURCE_NOT_FOUND "portable source directory not found: ${SOURCE_DIR:-<empty>}" 4
+SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd -P)"
+[ -f "$SOURCE_DIR/manifest.json" ] \
+  || die COUNCIL_SOURCE_NOT_FOUND "portable source has no manifest.json: $SOURCE_DIR" 4
+
+PREFLIGHT="$SELF_DIR/council-runtime-preflight.mjs"
+[ -f "$PREFLIGHT" ] \
+  || die COUNCIL_PREFLIGHT_MISSING "prerequisite probe missing beside this script: $PREFLIGHT" 4
+
+"$NODE_BIN" "$PREFLIGHT" --verify-source "$SOURCE_DIR" \
+  || die COUNCIL_SOURCE_INTEGRITY_FAILED "the portable source at $SOURCE_DIR does not recompute to its own manifest, or carries no canonical provenance. A copied or hand-edited folder is not an install source; the previous release was not touched" 4
+
+"$NODE_BIN" "$PREFLIGHT" --probe --source "$SOURCE_DIR" \
+  || die COUNCIL_NODE_PREREQ_FAILED "the resolved Node executable $NODE_BIN failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
+
+"$NODE_BIN" "$SOURCE_DIR/scripts/doctor.mjs" --root "$SOURCE_DIR" >/dev/null 2>&1 \
+  || die COUNCIL_SOURCE_DOCTOR_FAILED "the portable source at $SOURCE_DIR does not pass its own package doctor; the previous release was not touched" 4
+
+AGGREGATE="$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).aggregate_sha256)' "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
+[ -n "$AGGREGATE" ] \
+  || die COUNCIL_SKILL_MANIFEST_INVALID "could not read aggregate_sha256 from $SOURCE_DIR/manifest.json" 4
+say "portable source: $SOURCE_DIR"
 say "distribution aggregate: $AGGREGATE"
 
 RUNTIME_DIR="$DATA_DIR/runtime"
@@ -116,9 +161,9 @@ prefix_gates() {
 
 if [ "$CHECK" -eq 1 ]; then
   if [ -L "$CURRENT" ] && [ "$(readlink "$CURRENT")" = "$AGGREGATE" ]; then
-    say "current: $AGGREGATE (matches the installed skill)"
+    say "current: $AGGREGATE (matches the resolved source)"
   elif [ -e "$CURRENT" ]; then
-    say "current: $(readlink "$CURRENT" 2>/dev/null || echo '(not a link)') (does not match the installed skill aggregate)"
+    say "current: $(readlink "$CURRENT" 2>/dev/null || echo '(not a link)') (does not match the resolved source aggregate)"
   else
     say "current: not installed"
     exit 1
@@ -133,8 +178,8 @@ else
   STAGE="$RUNTIME_DIR/.staging-$AGGREGATE-$$"
   rm -rf "$STAGE"
   mkdir -p "$STAGE" || die COUNCIL_STAGE_FAILED "could not create staging dir $STAGE" 5
-  cp -R "$SKILL_DIR/runtime" "$STAGE/runtime" \
-    || die COUNCIL_STAGE_FAILED "could not copy the runtime payload from $SKILL_DIR" 5
+  cp -R "$SOURCE_DIR/runtime" "$STAGE/runtime" \
+    || die COUNCIL_STAGE_FAILED "could not copy the runtime payload from $SOURCE_DIR" 5
   # Build outputs are regenerated below; never carried into the prefix.
   rm -rf "$STAGE/runtime/node_modules" "$STAGE/runtime/dist"
   cp "$SELF_DIR/council/run-council.mjs" "$STAGE/run-council.mjs" \
@@ -206,8 +251,8 @@ else
     die COUNCIL_BUILD_FAILED "bundling the council entry failed. Staging was removed; current is unchanged" 6
   fi
   rm -f "$STAGE/runtime/bundle-entry.mjs"
-  printf '{ "aggregate": "%s", "skill_dir": "%s", "node": "%s" }\n' \
-    "$AGGREGATE" "$SKILL_DIR" "$("$NODE_BIN" --version)" > "$STAGE/install-record.json"
+  printf '{ "aggregate": "%s", "skill_dir": "%s", "source_dir": "%s", "node": "%s" }\n' \
+    "$AGGREGATE" "$SKILL_DIR" "$SOURCE_DIR" "$("$NODE_BIN" --version)" > "$STAGE/install-record.json"
 
   say "gating the staged prefix (package doctor + CLI doctor)..."
   if ! prefix_gates "$STAGE"; then
@@ -215,9 +260,21 @@ else
     die COUNCIL_DOCTOR_FAILED "the staged runtime did not pass the doctor gates. Staging was removed; current is unchanged" 7
   fi
   printf 'ok\n' > "$STAGE/.install-complete"
-  rm -rf "$PREFIX"
   mkdir -p "$RUNTIME_DIR"
-  mv "$STAGE" "$PREFIX" || die COUNCIL_SWAP_FAILED "could not move the gated prefix into place" 7
+  # Replace the prefix without ever leaving the previous release absent:
+  # move the old tree aside, move the gated tree in, and restore the old
+  # tree if the move fails. The old tree is deleted only after success.
+  OLD_PREFIX="$RUNTIME_DIR/.previous-$AGGREGATE-$$"
+  rm -rf "$OLD_PREFIX"
+  if [ -e "$PREFIX" ] || [ -L "$PREFIX" ]; then
+    mv "$PREFIX" "$OLD_PREFIX" \
+      || die COUNCIL_SWAP_FAILED "could not move the previous prefix aside; it is unchanged" 7
+  fi
+  if ! mv "$STAGE" "$PREFIX"; then
+    [ -e "$OLD_PREFIX" ] && mv "$OLD_PREFIX" "$PREFIX"
+    die COUNCIL_SWAP_FAILED "could not move the gated prefix into place; the previous release was restored" 7
+  fi
+  rm -rf "$OLD_PREFIX"
   say "prefix installed: $PREFIX"
 fi
 
