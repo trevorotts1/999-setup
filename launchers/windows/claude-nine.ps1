@@ -6,13 +6,50 @@
 # - No [CmdletBinding()]/param(): PowerShell's common-parameter prefix matching
 #   would hijack real args like -p (-> -PipelineVariable). Read $args verbatim.
 # - System.Security is not auto-loaded in 5.1; Add-Type is required for DPAPI.
-# - This file is ASCII-only. A non-ASCII byte (e.g. an em dash) decoded as ANSI
-#   under 5.1 produces a stray double-quote that collapses the whole script.
+# - ENCODING: pure ASCII, no UTF-8 BOM. A non-ASCII byte (e.g. an em dash)
+#   decoded as ANSI under 5.1 produces a stray double-quote that collapses
+#   the whole script. launchers/windows/tests/ enforces this.
+#
+# No POSIX shell, no WSL and no symlink assumption: node.exe is located by a
+# fixed native search order, and every path handed to a program is quoted.
 #
 # Never echoes API keys, the router token, or the dashboard password.
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
+
+function Resolve-NodeExe {
+    # Fixed order: this script's directory, PATH entries, then the
+    # well-known per-machine and per-user Node install roots.
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $candidates.Add((Join-Path $PSScriptRoot 'node.exe'))
+    foreach ($dir in ($env:PATH -split ';')) {
+        $trimmed = $dir.Trim().Trim('"')
+        if ($trimmed) {
+            $candidates.Add((Join-Path $trimmed 'node.exe'))
+            $candidates.Add((Join-Path $trimmed 'node.cmd'))
+        }
+    }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432)) {
+        if ($root) { $candidates.Add((Join-Path $root 'nodejs\node.exe')) }
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'))
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Volta\bin\node.exe'))
+    }
+    foreach ($root in @($env:NVM_HOME, $env:NVM_SYMLINK)) {
+        if ($root) { $candidates.Add((Join-Path $root 'node.exe')) }
+    }
+    if ($env:USERPROFILE) {
+        $candidates.Add((Join-Path $env:USERPROFILE 'scoop\apps\nodejs\current\node.exe'))
+    }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return $null
+}
 
 # Forwarded arguments, verbatim (automatic $args under powershell -File).
 $ForwardedArgs = $args
@@ -74,7 +111,7 @@ function Start-Router {
     if (-not $src) { throw '9router not found (looked at NINEROUTER_BINARY, the setup state file, %APPDATA%\npm, PATH).' }
     $exe = [System.IO.Path]::ChangeExtension($src, 'cmd')
     if (-not (Test-Path $exe)) { $exe = $src }
-    Start-Process -FilePath $exe -ArgumentList @('-p', "$Port", '--no-browser','--host','127.0.0.1') -WindowStyle Hidden
+    Start-Process -FilePath "$exe" -ArgumentList @('-p', "$Port", '--no-browser','--host','127.0.0.1') -WindowStyle Hidden
     for ($i = 0; $i -lt 40; $i++) {
         if (Test-Health) { return }
         Start-Sleep -Milliseconds 500
@@ -118,14 +155,15 @@ try {
     #     would throw. The tool-name fix (a model answering `default.Bash` for
     #     `Bash`) sits next to it, is reverted the same way, shares the restart.
     $catFix = Join-Path $PSScriptRoot 'fix-9router-catalog.mjs'
-    if ((Test-Path $catFix) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    $nodeExe = Resolve-NodeExe
+    if ((Test-Path -LiteralPath $catFix) -and $nodeExe) {
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        & node $catFix --quiet 2>&1 | Out-Null
+        & "$nodeExe" "$catFix" --quiet 2>&1 | Out-Null
         $catRc = $LASTEXITCODE
         $tnFix = Join-Path $PSScriptRoot 'fix-9router-toolnames.mjs'
-        if (Test-Path $tnFix) {
-            & node $tnFix --quiet 2>&1 | Out-Null
+        if (Test-Path -LiteralPath $tnFix) {
+            & "$nodeExe" "$tnFix" --quiet 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 10) { $catRc = 10 }
         }
         $ErrorActionPreference = $prevEap
@@ -217,9 +255,18 @@ try {
     # user-passed --effort still wins (claude's CLI takes the last flag).
     if ($EffortFlag) { $escaped += $EffortFlag }
     foreach ($arg in $ForwardedArgs) {
-        $escaped += Escape-Argument $arg
+        $escaped += Escape-Argument "$arg"
     }
-    $psi.Arguments = ($escaped -join ' ')
+    # CreateProcess cannot start a .cmd/.bat directly; npm installs claude as
+    # a .cmd shim. Run that shim through the command interpreter with /d /s /c
+    # and one outer quote pair, per the documented cmd.exe parsing rules.
+    if ($claudeExe -match '\.(cmd|bat)$') {
+        $comspec = if ($env:ComSpec) { $env:ComSpec } else { 'cmd.exe' }
+        $psi.FileName = $comspec
+        $psi.Arguments = '"' + (Escape-Argument "$claudeExe") + ' ' + ($escaped -join ' ') + '"'
+    } else {
+        $psi.Arguments = ($escaped -join ' ')
+    }
     # Keep the PC awake while the session runs (display may sleep):
     # ES_CONTINUOUS | ES_SYSTEM_REQUIRED on this thread, which stays alive in
     # WaitForExit below; Windows drops it when this process exits.
