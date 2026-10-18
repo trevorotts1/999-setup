@@ -38,6 +38,17 @@
 # Exit codes: 0 ok; 4 preflight (including source integrity and the Node
 # prerequisite probe); 5 dependency install failed; 6 build failed;
 # 7 doctor gate failed.
+#
+# ENCODING: pure ASCII, no UTF-8 BOM, LF or CRLF both accepted by Windows
+# PowerShell 5.1. A BOM-less .ps1 is decoded as ANSI on 5.1, so a non-ASCII
+# byte would be corrupted; launchers/windows/tests/ enforces this.
+#
+# No POSIX shell, no WSL and no symlink assumption: node.exe and npm.cmd are
+# located by a fixed native search order, and every path handed to a program
+# is quoted. Generated files are written as UTF-8 without a BOM through .NET
+# (Windows PowerShell 5.1 predates the BOM-less UTF-8 encoding name).
+# The only write outside the per-user data profile is the CURRENT-USER Path
+# environment variable; no machine-wide registry value is written.
 param(
     [string]$SkillDir = '',
     [string]$SourceDir = '',
@@ -56,6 +67,62 @@ function Die($code, $msg, $exit) {
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $RepoRoot = Split-Path -Parent $ScriptDir
 
+function Resolve-NodeExe {
+    # Fixed order: this script's directory, PATH entries, then the
+    # well-known per-machine and per-user Node install roots.
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $candidates.Add((Join-Path $ScriptDir 'node.exe'))
+    foreach ($dir in ($env:PATH -split ';')) {
+        $trimmed = $dir.Trim().Trim('"')
+        if ($trimmed) {
+            $candidates.Add((Join-Path $trimmed 'node.exe'))
+            $candidates.Add((Join-Path $trimmed 'node.cmd'))
+        }
+    }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432)) {
+        if ($root) { $candidates.Add((Join-Path $root 'nodejs\node.exe')) }
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'))
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Volta\bin\node.exe'))
+    }
+    foreach ($root in @($env:NVM_HOME, $env:NVM_SYMLINK)) {
+        if ($root) { $candidates.Add((Join-Path $root 'node.exe')) }
+    }
+    if ($env:USERPROFILE) {
+        $candidates.Add((Join-Path $env:USERPROFILE 'scoop\apps\nodejs\current\node.exe'))
+    }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return $null
+}
+
+function Resolve-NpmCmd($nodeExe) {
+    # npm.cmd ships beside node.exe; check that directory first, then PATH
+    # and the same well-known roots.
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($nodeExe) { $candidates.Add((Join-Path (Split-Path -Parent $nodeExe) 'npm.cmd')) }
+    foreach ($dir in ($env:PATH -split ';')) {
+        $trimmed = $dir.Trim().Trim('"')
+        if ($trimmed) { $candidates.Add((Join-Path $trimmed 'npm.cmd')) }
+    }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432)) {
+        if ($root) { $candidates.Add((Join-Path $root 'nodejs\npm.cmd')) }
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\nodejs\npm.cmd'))
+    }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return $null
+}
+
 # --- data profile (mirrors runtime/src/cli/paths.ts Section 16.1) -------
 if (-not $DataDir) {
     if ($env:BLACKCEO_COUNCIL_DATA_DIR) { $DataDir = $env:BLACKCEO_COUNCIL_DATA_DIR }
@@ -63,15 +130,24 @@ if (-not $DataDir) {
 }
 
 # --- preflight: prove node and npm by execution, never by lookup --------
-$node = Get-Command node -ErrorAction SilentlyContinue
-if (-not $node) { Die 'COUNCIL_NODE_MISSING' 'Node.js is not runnable on PATH; the council runtime cannot install or run' 4 }
-& $node.Source --version | Out-Null
-if ($LASTEXITCODE -ne 0) { Die 'COUNCIL_NODE_MISSING' 'Node.js is not runnable on PATH; the council runtime cannot install or run' 4 }
-$npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
-if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
-if (-not $npm) { Die 'COUNCIL_NPM_MISSING' 'npm is not runnable on PATH; the council runtime dependencies cannot be installed' 4 }
-& $npm.Source --version | Out-Null
-if ($LASTEXITCODE -ne 0) { Die 'COUNCIL_NPM_MISSING' 'npm is not runnable on PATH; the council runtime dependencies cannot be installed' 4 }
+# This runs before any file is written or removed (launchers/windows/tests/
+# asserts that ordering on the bytes).
+$nodeExe = Resolve-NodeExe
+if (-not $nodeExe) { Die 'COUNCIL_NODE_MISSING' 'Node.js is not runnable (searched this script directory, PATH, and the standard Node install roots); the council runtime cannot install or run' 4 }
+try { $nodeVersion = (& "$nodeExe" --version 2>&1 | Out-String).Trim() } catch { Die 'COUNCIL_NODE_MISSING' 'Node.js is not runnable (searched this script directory, PATH, and the standard Node install roots); the council runtime cannot install or run' 4 }
+if ($LASTEXITCODE -ne 0) { Die 'COUNCIL_NODE_MISSING' 'Node.js is not runnable (searched this script directory, PATH, and the standard Node install roots); the council runtime cannot install or run' 4 }
+$npmExe = Resolve-NpmCmd "$nodeExe"
+if (-not $npmExe) { Die 'COUNCIL_NPM_MISSING' 'npm is not runnable; the council runtime dependencies cannot be installed' 4 }
+try { & "$npmExe" --version | Out-Null } catch { Die 'COUNCIL_NPM_MISSING' 'npm is not runnable; the council runtime dependencies cannot be installed' 4 }
+if ($LASTEXITCODE -ne 0) { Die 'COUNCIL_NPM_MISSING' 'npm is not runnable; the council runtime dependencies cannot be installed' 4 }
+
+# UTF-8 without a BOM, written through .NET. Windows PowerShell 5.1 has no
+# BOM-less UTF-8 encoding name, and its `>` redirection emits UTF-16LE, which
+# Node cannot parse as JavaScript.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+function Write-Utf8File($path, $text) {
+    [System.IO.File]::WriteAllText($path, $text, $Utf8NoBom)
+}
 
 # --- locate the installed skill folder -----------------------------------
 if (-not $SkillDir) {
@@ -108,15 +184,16 @@ $preflight = Join-Path $ScriptDir 'council-runtime-preflight.mjs'
 if (-not (Test-Path -LiteralPath $preflight)) {
     Die 'COUNCIL_PREFLIGHT_MISSING' "prerequisite probe missing beside this script: $preflight" 4
 }
-& $node.Source $preflight --verify-source $SourceDir
+& "$nodeExe" "$preflight" --verify-source "$SourceDir"
 if ($LASTEXITCODE -ne 0) {
     Die 'COUNCIL_SOURCE_INTEGRITY_FAILED' "the portable source at $SourceDir does not recompute to its own manifest, or carries no canonical provenance. A copied or hand-edited folder is not an install source; the previous release was not touched" 4
 }
-& $node.Source $preflight --probe --source $SourceDir
+& "$nodeExe" "$preflight" --probe --source "$SourceDir"
 if ($LASTEXITCODE -ne 0) {
-    Die 'COUNCIL_NODE_PREREQ_FAILED' "the resolved Node executable $($node.Source) failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
+    Die 'COUNCIL_NODE_PREREQ_FAILED' "the resolved Node executable $nodeExe failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
 }
-& $node.Source (Join-Path $SourceDir 'scripts\doctor.mjs') --root $SourceDir | Out-Null
+$sourceDoctor = Join-Path $SourceDir 'scripts\doctor.mjs'
+& "$nodeExe" "$sourceDoctor" --root "$SourceDir" | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Die 'COUNCIL_SOURCE_DOCTOR_FAILED' "the portable source at $SourceDir does not pass its own package doctor; the previous release was not touched" 4
 }
@@ -132,10 +209,12 @@ $prefix = Join-Path $runtimeDir $aggregate
 $current = Join-Path $runtimeDir 'current'
 
 function Test-PrefixGates($root) {
-    & $node.Source (Join-Path $SkillDir 'scripts\doctor.mjs') --root $SkillDir | Out-Null
+    $skillDoctor = Join-Path $SkillDir 'scripts\doctor.mjs'
+    & "$nodeExe" "$skillDoctor" --root "$SkillDir" | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
-    if (-not (Test-Path (Join-Path $root 'run-council.mjs'))) { return $false }
-    & $node.Source (Join-Path $root 'run-council.mjs') doctor --data-dir $DataDir | Out-Null
+    $gateEntry = Join-Path $root 'run-council.mjs'
+    if (-not (Test-Path -LiteralPath $gateEntry)) { return $false }
+    & "$nodeExe" "$gateEntry" doctor --data-dir "$DataDir" | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
     return $true
 }
@@ -166,46 +245,52 @@ if ((Test-Path (Join-Path $prefix '.install-complete')) -and (Test-PrefixGates $
 }
 if (-not $reused) {
     $stage = Join-Path $runtimeDir ".staging-$aggregate-$PID"
-    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $SourceDir 'runtime') -Destination (Join-Path $stage 'runtime') -Recurse
+    $sourceRuntime = Join-Path $SourceDir 'runtime'
+    Copy-Item -LiteralPath "$sourceRuntime" -Destination (Join-Path $stage 'runtime') -Recurse
     # Build outputs are regenerated below; never carried into the prefix.
-    Remove-Item (Join-Path $stage 'runtime\node_modules') -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item (Join-Path $stage 'runtime\dist') -Recurse -Force -ErrorAction SilentlyContinue
-    Copy-Item (Join-Path $ScriptDir 'council\run-council.mjs') (Join-Path $stage 'run-council.mjs')
-    Copy-Item (Join-Path $ScriptDir 'council\bundle-native-resolver.mjs') (Join-Path $stage 'bundle-native-resolver.mjs')
+    Remove-Item -LiteralPath (Join-Path $stage 'runtime\node_modules') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $stage 'runtime\dist') -Recurse -Force -ErrorAction SilentlyContinue
+    $runCouncilSrc = Join-Path $ScriptDir 'council\run-council.mjs'
+    $resolverSrc = Join-Path $ScriptDir 'council\bundle-native-resolver.mjs'
+    Copy-Item -LiteralPath "$runCouncilSrc" -Destination (Join-Path $stage 'run-council.mjs')
+    Copy-Item -LiteralPath "$resolverSrc" -Destination (Join-Path $stage 'bundle-native-resolver.mjs')
 
     $npmFlags = @('ci', '--no-audit', '--no-fund')
     if ($Offline) { $npmFlags += '--offline' }
     Say 'installing runtime dependencies (npm ci)...'
+    $npmLog = Join-Path $stage 'npm-ci.log'
     Push-Location (Join-Path $stage 'runtime')
-    & $npm.Source @npmFlags *> (Join-Path $stage 'npm-ci.log')
+    & "$npmExe" @npmFlags *> "$npmLog"
     $ciRc = $LASTEXITCODE
     Pop-Location
     if ($ciRc -ne 0) {
-        Get-Content (Join-Path $stage 'npm-ci.log') -Tail 5 | ForEach-Object { [Console]::Error.WriteLine($_) }
-        Remove-Item $stage -Recurse -Force
+        Get-Content -LiteralPath "$npmLog" -Tail 5 | ForEach-Object { [Console]::Error.WriteLine($_) }
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         if ($Offline) {
             Die 'COUNCIL_NPM_OFFLINE_CACHE_MISS' 'npm ci --offline failed: a pinned dependency is not in the local npm cache, and this install was asked to stay offline. Re-run without -Offline on a connected machine. Staging was removed; current is unchanged' 5
         }
         Die 'COUNCIL_NPM_CI_FAILED' 'npm ci failed for the pinned runtime dependencies (log tail above). Staging was removed; current is unchanged' 5
     }
     Say 'building the runtime (tsc + esbuild bundle)...'
+    $buildLog = Join-Path $stage 'build.log'
     Push-Location (Join-Path $stage 'runtime')
-    & $npm.Source run build *> (Join-Path $stage 'build.log')
+    & "$npmExe" run build *> "$buildLog"
     $buildRc = $LASTEXITCODE
     Pop-Location
     if ($buildRc -ne 0) {
-        Get-Content (Join-Path $stage 'build.log') -Tail 5 | ForEach-Object { [Console]::Error.WriteLine($_) }
-        Remove-Item $stage -Recurse -Force
+        Get-Content -LiteralPath "$buildLog" -Tail 5 | ForEach-Object { [Console]::Error.WriteLine($_) }
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         Die 'COUNCIL_BUILD_FAILED' 'the runtime build failed (log tail above). Staging was removed; current is unchanged' 6
     }
     # The canonical bundle step (copy-runtime-assets.mjs, CWE-039 F-1)
     # copies the persistence schema SQL into dist at build time; the
     # persistence layer loads it relative to its module, so its absence
     # would only surface when the store first opens. Assert it landed.
-    if (-not (Test-Path (Join-Path $stage 'runtime\dist\migrations\0001-council-schema.sql'))) {
-        Remove-Item $stage -Recurse -Force
+    $schemaFile = Join-Path $stage 'runtime\dist\migrations\0001-council-schema.sql'
+    if (-not (Test-Path -LiteralPath $schemaFile)) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         Die 'COUNCIL_BUILD_FAILED' 'the built runtime is missing dist\migrations\0001-council-schema.sql (the canonical copy-runtime-assets step did not run). Staging was removed; current is unchanged' 6
     }
     # Emit the generated Claude-Nine host wrapper from the CWE-010 template.
@@ -213,26 +298,28 @@ if (-not $reused) {
     # contracts package uses extensionless import specifiers, which plain
     # Node ESM cannot resolve from source or tsc output.
     $emitFile = Join-Path $stage 'emit-wrapper.mts'
-    @('import { renderClaudeNineWrapper } from "./runtime/src/bridges/claude-nine.ts";',
-      'process.stdout.write(renderClaudeNineWrapper());') |
-        Set-Content $emitFile -Encoding utf8NoBOM
+    $emitSource = @('import { renderClaudeNineWrapper } from "./runtime/src/bridges/claude-nine.ts";',
+      'process.stdout.write(renderClaudeNineWrapper());') -join "`n"
+    Write-Utf8File "$emitFile" ("$emitSource`n")
+    $tsxCmd = Join-Path $stage 'runtime\node_modules\.bin\tsx.cmd'
     $wrapperFile = Join-Path $stage 'runtime\dist\claude-nine-host-wrapper.mjs'
-    & (Join-Path $stage 'runtime\node_modules\.bin\tsx.cmd') $emitFile > $wrapperFile
+    $wrapperText = & "$tsxCmd" "$emitFile"
     $emitRc = $LASTEXITCODE
-    Remove-Item $emitFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $emitFile -Force -ErrorAction SilentlyContinue
     if ($emitRc -ne 0) {
-        Remove-Item $stage -Recurse -Force
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         Die 'COUNCIL_BUILD_FAILED' 'emitting the generated host wrapper from the CWE-010 template failed. Staging was removed; current is unchanged' 6
     }
-    if (-not (Select-String -Path $wrapperFile -Pattern 'createClaudeNineBridge' -Quiet)) {
-        Remove-Item $stage -Recurse -Force
+    Write-Utf8File "$wrapperFile" ((($wrapperText -join "`n")) + "`n")
+    if (-not (Select-String -LiteralPath "$wrapperFile" -Pattern 'createClaudeNineBridge' -Quiet)) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         Die 'COUNCIL_BUILD_FAILED' 'the generated host wrapper does not compose createClaudeNineBridge. Staging was removed; current is unchanged' 6
     }
     # Bundle the runnable entry with the runtime's own esbuild (the same
     # mechanism as the package's own blackceo-council bin): the entry
     # composes the emitted wrapper with the bundle native resolver.
     $entryFile = Join-Path $stage 'runtime\bundle-entry.mjs'
-    @('import { readFileSync } from "node:fs";',
+    $entrySource = @('import { readFileSync } from "node:fs";',
       'import { createClaudeNineHost, main } from "./dist/claude-nine-host-wrapper.mjs";',
       'import { runCli } from "./dist/cli/dispatcher.js";',
       'import { bundleNativeResolver } from "../bundle-native-resolver.mjs";',
@@ -244,33 +331,34 @@ if (-not $reused) {
       '  });',
       '} else {',
       '  process.exitCode = await main(process.argv.slice(2), bundleNativeResolver, undefined);',
-      '}') |
-        Set-Content $entryFile -Encoding utf8NoBOM
-    & (Join-Path $stage 'runtime\node_modules\.bin\esbuild.cmd') $entryFile `
-        --bundle --platform=node --format=esm --target=node20 `
-        --outfile=(Join-Path $stage 'runtime\dist\council-entry.mjs') *> (Join-Path $stage 'entry.log')
+      '}') -join "`n"
+    Write-Utf8File "$entryFile" ("$entrySource`n")
+    $esbuildCmd = Join-Path $stage 'runtime\node_modules\.bin\esbuild.cmd'
+    $entryOut = Join-Path $stage 'runtime\dist\council-entry.mjs'
+    $entryLog = Join-Path $stage 'entry.log'
+    & "$esbuildCmd" "$entryFile" --bundle --platform=node --format=esm --target=node20 "--outfile=$entryOut" *> "$entryLog"
     $entryRc = $LASTEXITCODE
-    Remove-Item $entryFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $entryFile -Force -ErrorAction SilentlyContinue
     if ($entryRc -ne 0) {
-        Get-Content (Join-Path $stage 'entry.log') -Tail 5 | ForEach-Object { [Console]::Error.WriteLine($_) }
-        Remove-Item $stage -Recurse -Force
+        Get-Content -LiteralPath "$entryLog" -Tail 5 | ForEach-Object { [Console]::Error.WriteLine($_) }
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         Die 'COUNCIL_BUILD_FAILED' 'bundling the council entry failed. Staging was removed; current is unchanged' 6
     }
-    @{ aggregate = $aggregate; skill_dir = $SkillDir; source_dir = $SourceDir; node = (& $node.Source --version) } |
-        ConvertTo-Json | Set-Content (Join-Path $stage 'install-record.json') -Encoding utf8NoBOM
+    $installRecord = @{ aggregate = $aggregate; skill_dir = $SkillDir; source_dir = $SourceDir; node = $nodeVersion } | ConvertTo-Json
+    Write-Utf8File (Join-Path $stage 'install-record.json') "$installRecord`n"
 
     Say 'gating the staged prefix (package doctor + CLI doctor)...'
     if (-not (Test-PrefixGates $stage)) {
-        Remove-Item $stage -Recurse -Force
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
         Die 'COUNCIL_DOCTOR_FAILED' 'the staged runtime did not pass the doctor gates. Staging was removed; current is unchanged' 7
     }
-    Set-Content (Join-Path $stage '.install-complete') 'ok' -Encoding ascii
+    Write-Utf8File (Join-Path $stage '.install-complete') "ok`n"
     New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
     # Replace the prefix without ever leaving the previous release absent:
     # move the old tree aside, move the gated tree in, restore the old tree
     # if the move fails. The old tree is deleted only after success.
     $previousPrefix = Join-Path $runtimeDir ".previous-$aggregate-$PID"
-    if (Test-Path -LiteralPath $previousPrefix) { Remove-Item -LiteralPath $previousPrefix -Recurse -Force }
+    if (Test-Path -LiteralPath $previousPrefix) { Remove-Item -LiteralPath $previousPrefix -Recurse -Force -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $prefix) {
         Move-Item -LiteralPath $prefix -Destination $previousPrefix
     }
@@ -282,7 +370,7 @@ if (-not $reused) {
         }
         Die 'COUNCIL_SWAP_FAILED' 'could not move the gated prefix into place; the previous release was restored' 7
     }
-    if (Test-Path -LiteralPath $previousPrefix) { Remove-Item -LiteralPath $previousPrefix -Recurse -Force }
+    if (Test-Path -LiteralPath $previousPrefix) { Remove-Item -LiteralPath $previousPrefix -Recurse -Force -ErrorAction SilentlyContinue }
     Say "prefix installed: $prefix"
 }
 
@@ -296,18 +384,18 @@ if (-not $reused) {
 # leaves the previous current in place instead of none.
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 $previous = Join-Path $runtimeDir ".current.previous.$PID"
-if (Test-Path $previous) { Remove-Item $previous -Force }
-$hadCurrent = Test-Path $current
-if ($hadCurrent) { Move-Item $current $previous }
+if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Force -ErrorAction SilentlyContinue }
+$hadCurrent = Test-Path -LiteralPath $current
+if ($hadCurrent) { Move-Item -LiteralPath $current -Destination $previous }
 try {
     New-Item -ItemType Junction -Path $current -Target $prefix | Out-Null
 } catch {
-    if ($hadCurrent -and (Test-Path $previous) -and -not (Test-Path $current)) {
-        Move-Item $previous $current
+    if ($hadCurrent -and (Test-Path -LiteralPath $previous) -and -not (Test-Path -LiteralPath $current)) {
+        Move-Item -LiteralPath $previous -Destination $current
     }
     Die 'COUNCIL_SWAP_FAILED' 'could not swap the current junction' 7
 }
-if (Test-Path $previous) { Remove-Item $previous -Force }
+if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Force -ErrorAction SilentlyContinue }
 Say "current -> $aggregate"
 
 # --- the blackceo-council executable pair -----------------------------------
@@ -317,19 +405,22 @@ $cmdDest = Join-Path $binDir 'blackceo-council.cmd'
 $ps1Dest = Join-Path $libDir 'blackceo-council.ps1'
 $cmdSrc = Join-Path $RepoRoot 'launchers\windows\blackceo-council.cmd'
 $ps1Src = Join-Path $RepoRoot 'launchers\windows\blackceo-council.ps1'
-if ((Test-Path $cmdDest) -and -not (Select-String -Path $cmdDest -Pattern 'CWE-040' -Quiet)) {
+if ((Test-Path -LiteralPath $cmdDest) -and -not (Select-String -LiteralPath $cmdDest -Pattern 'CWE-040' -Quiet)) {
     Die 'COUNCIL_EXECUTABLE_FOREIGN' "$cmdDest exists and is not the council executable; refusing to overwrite it. Move it aside and re-run" 4
 }
 New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 New-Item -ItemType Directory -Path $libDir -Force | Out-Null
-Copy-Item $cmdSrc $cmdDest -Force
-Copy-Item $ps1Src $ps1Dest -Force
-Set-Content (Join-Path $libDir 'blackceo-council.profile') $DataDir -Encoding ascii
+Copy-Item -LiteralPath "$cmdSrc" -Destination "$cmdDest" -Force
+Copy-Item -LiteralPath "$ps1Src" -Destination "$ps1Dest" -Force
+# The profile holds a path that may contain non-ASCII (a user name), so it is
+# written as UTF-8 without a BOM; the launcher reads it with -Encoding UTF8.
+Write-Utf8File (Join-Path $libDir 'blackceo-council.profile') "$DataDir`n"
 Say "executable: $cmdDest"
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($userPath -split ';') -notcontains $binDir) {
-    [Environment]::SetEnvironmentVariable('Path', (($userPath, $binDir) -join ';'), 'User')
+    $newUserPath = if ($userPath) { "$userPath;$binDir" } else { $binDir }
+    [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
     Say "user PATH: added $binDir (new shells pick it up)"
 } else {
     Say "user PATH: $binDir already present"
