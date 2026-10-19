@@ -38,8 +38,9 @@
 // This is package consistency checking, not a signature or publisher
 // attestation.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const ARCHIVE_NAME = "council-of-wise-elders.skill";
 
@@ -73,7 +74,11 @@ export function deriveDoctorMode(root) {
 }
 
 // CLI entry point for the shell installer.
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+// Compare REAL paths on both sides: new URL(...).pathname is percent-encoded
+// ("mac%20mini") and import.meta.url is already symlink-resolved, so a plain
+// string compare is false on any path with a space or under a symlinked dir.
+const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && realOrResolved(process.argv[1]) === realOrResolved(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   const i = args.indexOf("--root");
   const root = i >= 0 ? resolve(args[i + 1]) : null;
