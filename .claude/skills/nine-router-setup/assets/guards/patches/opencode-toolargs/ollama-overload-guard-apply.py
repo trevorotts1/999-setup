@@ -37,40 +37,48 @@ SIG='async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,com
 #           Streaming: headers go out at once, SSE comment keepalives flow while buffering; if no later model
 #           answers, the original reply is sent (never worse than unpatched). A client disconnect stops the walk.
 HELPERS=MARK_A+r'''let __ogIds=new Set(["ollama","ollama-local"]);async function __ogOn(m){try{return __ogIds.has((await c(38775).mA(m))?.provider)}catch{return!1}}function __ogBad(t,sse){let r=e=>String(e?.message||e?.error?.message||e||"").slice(0,200);if(!sse){let j;try{j=JSON.parse(t)}catch{return"body is not JSON"}if(!j||"object"!=typeof j||Array.isArray(j))return"body is not an object";if(j.error)return"an error body: "+r(j.error);return"message"===j.type&&Array.isArray(j.content)||Array.isArray(j.choices)&&j.choices[0]?.message||"response"===j.object&&"failed"!==j.status?null:"a body that is not a message"}let end=!1;for(let v of t.split(/\r?\n\r?\n/)){let d=v.split(/\r?\n/).filter(l=>l.startsWith("data:")).map(l=>l.slice(5).trimStart()).join("\n"),e;if(!d||"[DONE]"===d)continue;try{e=JSON.parse(d)}catch{continue}if(!e||"object"!=typeof e)continue;if(e.error||"error"===e.type||"response.failed"===e.type)return"an error event: "+r(e.error||e.response?.error);("message_stop"===e.type||"response.completed"===e.type||"response.incomplete"===e.type||Array.isArray(e.choices)&&e.choices.some(h=>h?.finish_reason))&&(end=!0)}return end?null:"a stream that ended without finishing"}async function __ogRun(a,o,i,f,c,g){let sse=(f.headers.get("content-type")||"").includes("text/event-stream"),dead=!1,rest=async t=>{let b=null==t?"a reply stream that failed":null;if(!b)try{b=__ogBad(t,sse)}catch{}if(!b||dead)return null;__fgLog(g,`ollama-overload-guard: ${o[i]} answered 200 with ${b} - discarding reply, trying next model`);let by=null,x=await q({body:a,models:o.slice(i+1),handleSingleModel:(b,m)=>(by=m,c(b,m)),log:g,comboName:"ollama-overload-guard",comboStrategy:"fallback",autoSwitch:!1});return __fgLog(g,x.ok?`ollama-overload-guard: retry served by ${by}`:`ollama-overload-guard: no later model answered (status ${x.status})`+(sse?" - returning the original reply":"")),x};if(!sse){let t=null;try{t=await f.text()}catch{}let x=await rest(t);return x||new Response(t,{status:f.status,statusText:f.statusText,headers:f.headers})}let n=new TextEncoder,tm,rd;return new Response(new ReadableStream({start(l){tm=setInterval(()=>{try{l.enqueue(n.encode(": keepalive\n\n"))}catch{}},Number(process.env.NINEROUTER_FG_KEEPALIVE_MS)||15e3),(async()=>{let t=null,x=null;try{t=await f.text()}catch{}try{x=await rest(t)}catch{}if(clearInterval(tm),dead)return void x?.body?.cancel().catch(()=>{});try{if(!x?.ok)return x?.body?.cancel().catch(()=>{}),null!=t&&l.enqueue(n.encode(t)),l.close();for(rd=x.body.getReader();;){let{value:v,done:d}=await rd.read();if(d)break;l.enqueue(v)}l.close()}catch(e){try{l.error(e)}catch{}}})()},cancel(){dead=!0,clearInterval(tm),rd?.cancel().catch(()=>{})}}),{status:f.status,statusText:f.statusText,headers:f.headers})}'''
-V2_RET='__fgi<o.length-1&&__fgTools(a)&&await __fgOn(e)?await __fgRun(a,o,__fgi,b,c,g):b;'
-EDITS_A=[(SIG,HELPERS+SIG),
- (V2_RET,V2_RET[:-2]+'__fgi<o.length-1&&await __ogOn(e)?await __ogRun(a,o,__fgi,b,c,g):b;')]
+# Short local identifiers are renamed between 9Router builds (0.5.104 renamed the combo loop's reply variable), so the
+# v2 hook is matched by shape with the reply variable and models variable captured; the edit rewrites it into a nested
+# ternary. (`o`, `a`, `c`, `g` are the combo function's own parameters/locals, the same names v2 injects.)
+import re
+ID=r'[A-Za-z_$][\w$]*'
+RE_V2=re.compile(r'(?P<pre>__fgi<(?P<o>'+ID+r')\.length-1&&__fgTools\(a\)&&await __fgOn\((?P<e>'+ID+r')\)\?await __fgRun\(a,(?P=o),__fgi,(?P<r>'+ID+r'),c,g\):)(?P=r)(?![\w$])')
+EDITS_A=[(SIG,HELPERS+SIG),(RE_V2,lambda m:m['pre']+f'__fgi<{m["o"]}.length-1&&await __ogOn({m["e"]})?await __ogRun(a,{m["o"]},__fgi,{m["r"]},c,g):{m["r"]}')]
 
 MARK_B='/*ollama-nonstream-claude-v1*/'
 # The non-stream translator is an anonymous function expression; naming it lets the ollama branch recurse
 # OpenAI -> client format through the router's own OPENAI->CLAUDE / OPENAI->RESPONSES branches.
-NS_HEAD='let N=(0,e.nZ)(t,s)?function(a,b,c,e=null){if(b===c)return a;'
-NS_TAIL='return b===d.h.OLLAMA?(0,g._)(a):a}(L,t,s,F):L'
-EDITS_B=[(NS_HEAD,NS_HEAD.replace('function(a,b,c','function __ogNs(a,b,c')),
- (NS_TAIL,MARK_B+'return b===d.h.OLLAMA?(c===d.h.OPENAI?(0,g._)(a):__ogNs((0,g._)(a),d.h.OPENAI,c,e)):a}(L,t,s,F):L')]
-# 0.5.91 renamed the handler's locals (L,t,s,F / N -> M,u,t,G / O); the inner function is unchanged.
-# Locate by the inner, rename-proof text and re-derive both anchors from whatever local names the bundle uses.
-NS_CORE='return b===d.h.OLLAMA?(0,g._)(a):a}('
-import re
-def __edits_b(s):
-    if s.count(NS_HEAD)==1 and s.count(NS_TAIL)==1: return EDITS_B
-    h=re.findall(r'let [A-Za-z_$][\w$]*=\(0,e\.nZ\)\([A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\)\?function\(a,b,c,e=null\)\{if\(b===c\)return a;',s)
-    t=re.findall(re.escape(NS_CORE)+r'([A-Za-z_$][\w$]*),[A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\):\1(?![\w$])',s)
-    if len(h)!=1 or len(t)!=1: return EDITS_B   # anchor-count check below reports the mismatch
-    tail=re.search(re.escape(NS_CORE)+r'[A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\):[A-Za-z_$][\w$]*(?![\w$])',s).group(0)
-    return [(h[0],h[0].replace('function(a,b,c','function __ogNs(a,b,c')),
-            (tail,MARK_B+'return b===d.h.OLLAMA?(c===d.h.OPENAI?(0,g._)(a):__ogNs((0,g._)(a),d.h.OPENAI,c,e)):a}('+tail[len(NS_CORE):])]
+# Located by the inner, rename-proof text: every module alias and local name is captured (0.5.91 renamed the
+# handler's locals L,t,s,F / N -> M,u,t,G / O; 0.5.104 changed the surrounding module aliases again).
+NS_HEAD=re.compile(r'let [A-Za-z_$][\w$]*=\(0,'+ID+r'\.'+ID+r'\)\('+ID+r','+ID+r'\)\?function\(a,b,c,e=null\)\{if\(b===c\)return a;')
+NS_TAIL=re.compile(r'return b===(?P<E>'+ID+r'\.'+ID+r')\.OLLAMA\?\(0,(?P<G>'+ID+r'\.'+ID+r')\)\(a\):a\}\((?P<args>'+ID+r','+ID+r','+ID+r','+ID+r')\):(?P<L>'+ID+r')(?![\w$])')
+def __ns_tail(m):
+    E,G=m['E'],m['G']
+    return MARK_B+f'return b==={E}.OLLAMA?(c==={E}.OPENAI?(0,{G})(a):__ogNs((0,{G})(a),{E}.OPENAI,c,e)):a}}({m["args"]}):{m["L"]}'
+EDITS_B=[(NS_HEAD,lambda m:m.group(0).replace('function(a,b,c','function __ogNs(a,b,c')),(NS_TAIL,__ns_tail)]
+def __count(s,old): return len(list(old.finditer(s))) if hasattr(old,'finditer') else s.count(old)
+def __apply(s,old,new):
+    if hasattr(old,'sub'): return old.sub(new,s,count=1)
+    return s.replace(old,new,1)
+
+def __locate_b():
+    fs=[os.path.join(CHUNKS,f) for f in sorted(os.listdir(CHUNKS)) if f.endswith('.js')]
+    txt={f:open(f,errors='ignore').read() for f in fs}
+    hit=[f for f in fs if MARK_B in txt[f]]
+    if hit: return hit[0]
+    hit=[f for f in fs if NS_TAIL.search(txt[f])]
+    if len(hit)!=1: print(f'{MARK_B} target code found in {len(hit)} chunk files (need 1) - bundle changed, not patching'); sys.exit(2)
+    return hit[0]
 
 plan=[]
-for mark,anchor,edits,need in ((MARK_A,SIG,EDITS_A,'/*failover-guard-v2*/'),(MARK_B,NS_CORE,EDITS_B,None)):
-    F=__locate(mark,anchor); s=open(F).read()
+for mark,edits,need in ((MARK_A,EDITS_A,'/*failover-guard-v2*/'),(MARK_B,EDITS_B,None)):
+    F=__locate(mark,SIG) if mark==MARK_A else __locate_b(); s=open(F).read()
     if mark in s: print('already patched:',F); continue
-    if mark==MARK_B: edits=__edits_b(s)
     if need and need not in s:
         if not CHECK: print(f'{os.path.basename(F)} lacks {need} - run failover-guard-apply.py first'); sys.exit(2)
         edits=edits[:1]   # --check on a fresh bundle: the loop anchor only exists once v2 is in
     for i,(old,new) in enumerate(edits,1):
-        n=s.count(old)
+        n=__count(s,old)
         if n!=1: print(f'{mark} ANCHOR {i} matched {n} times (need 1) - bundle changed, not patching'); sys.exit(2)
     plan.append((F,s,edits))
 if CHECK: plan and print(f'{len(plan)} file(s) would be patched, all anchors unique; --check only, nothing written'); sys.exit(0)
@@ -78,7 +86,7 @@ stamp=time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())
 for F,s,edits in plan:
     bak=F+'.bak-pre-ollamaguard-'+stamp
     shutil.copy2(F,bak)
-    for old,new in edits: s=s.replace(old,new,1)
+    for old,new in edits: s=__apply(s,old,new)
     open(F,'w').write(s)
     r=subprocess.run([NODE,'--check',F],capture_output=True,text=True)
     if r.returncode!=0:

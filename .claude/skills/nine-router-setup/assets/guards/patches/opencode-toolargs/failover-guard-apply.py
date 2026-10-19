@@ -23,7 +23,8 @@ def __prune(pattern_prefix):
     import glob
     old=sorted(glob.glob(pattern_prefix+'*'),key=os.path.getmtime)[:-1]
     for o in old: os.remove(o)
-F=__locate(MARK,'async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,comboStrategy:j,comboStickyLimit:k=1,autoSwitch:m=!0}){')
+SIG='async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,comboStrategy:j,comboStickyLimit:k=1,autoSwitch:m=!0}){'
+F=__locate(MARK,SIG)
 s=open(F).read()
 if MARK in s: print('already patched:',F); sys.exit(0)
 if '/*failover-guard-v' in s: print('an older failover guard is in',F,'- restore its .bak-pre-failoverguard-* original first'); sys.exit(2)
@@ -45,21 +46,30 @@ if '/*failover-guard-v' in s: print('an older failover guard is in',F,'- restore
 #             flow while buffering, so clients do not time out; a client disconnect stops the walk.
 HELPERS=MARK+r'''function __fgTools(a){let t=a&&Array.isArray(a.tools)?a.tools:null;if(!t||!t.length)return null;let m=new Map;for(let x of t){let n=x?.name||x?.function?.name,s=x?.input_schema||x?.parameters||x?.function?.parameters;n&&m.set(n,Array.isArray(s?.required)?s.required:[])}return m.size?m:null}function __fgCalls(t){let r=[],by=new Map,g=(k,n)=>{let c=by.get(k);return c||(c={name:"",json:""},by.set(k,c),r.push(c)),n&&!c.name&&(c.name=n),c},j=null;try{j=JSON.parse(t)}catch{}if(j&&"object"==typeof j){for(let b of Array.isArray(j.content)?j.content:[])"tool_use"===b?.type&&r.push({name:b.name,json:"",init:b.input});for(let h of Array.isArray(j.choices)?j.choices:[])for(let c of h?.message?.tool_calls||[])r.push({name:c?.function?.name,json:c?.function?.arguments??""});for(let o of Array.isArray(j.output)?j.output:[])"function_call"===o?.type&&r.push({name:o.name,json:o.arguments??""});return r}for(let v of t.split(/\r?\n\r?\n/)){let d=v.split(/\r?\n/).filter(l=>l.startsWith("data:")).map(l=>l.slice(5).trimStart()).join("\n"),e;if(!d||"[DONE]"===d)continue;try{e=JSON.parse(d)}catch{continue}if(!e||"object"!=typeof e)continue;if("content_block_start"===e.type&&"tool_use"===e.content_block?.type)g("c"+e.index,e.content_block.name).init=e.content_block.input;else if("content_block_delta"===e.type&&"input_json_delta"===e.delta?.type)g("c"+e.index).json+=e.delta.partial_json||"";else if(Array.isArray(e.choices)){for(let h of e.choices)for(let c of h?.delta?.tool_calls||[])g("o"+(c.index??0),c.function?.name).json+=c.function?.arguments||""}else if(("response.output_item.added"===e.type||"response.output_item.done"===e.type)&&"function_call"===e.item?.type){let c=g("r"+e.item.id,e.item.name);e.item.arguments&&(c.done=e.item.arguments)}else"response.function_call_arguments.delta"===e.type?g("r"+e.item_id).json+=e.delta||"":"response.function_call_arguments.done"===e.type&&e.arguments&&(g("r"+e.item_id).done=e.arguments)}return r}function __fgBad(t,m){for(let c of __fgCalls(t)){let s=c.done??c.json,a;if(s)try{a=JSON.parse(s)}catch{return{tool:c.name,reason:"unparseable arguments"}}else a=c.init??{};if(!a||"object"!=typeof a||Array.isArray(a))return{tool:c.name,reason:"arguments not an object"};let q=m.get(c.name);if(!q)continue;let x=q.filter(k=>null==a[k]);if(x.length)return{tool:c.name,reason:(Object.keys(a).length?"missing required ":"empty arguments, missing required ")+x.join(",")}}return null}function __fgLog(g,t){g.warn("COMBO",t);try{process.getBuiltinModule("fs").appendFileSync(process.env.NINEROUTER_FG_LOG||process.getBuiltinModule("os").homedir()+"/.9router/logs/failover-guard.log",new Date().toISOString()+" "+t+"\n")}catch{}}let __fgIds=new Set(["opencode","opencode-zen"]);async function __fgOn(m){try{return __fgIds.has((await c(38775).mA(m))?.provider)}catch{return!1}}async function __fgRun(a,o,i,f,c,g){let m=__fgTools(a),dead=!1,chain=async()=>{let r=f,k=i,fb=null;for(;;){if(k>=o.length-1||k>i&&!await __fgOn(o[k]))return fb&&__fgLog(g,`failover-guard: retry served by ${o[k]} (not validated: last in chain or not opencode)`),{res:r};let t=null,b=null;try{t=await r.text()}catch(e){g.warn("COMBO",`failover-guard: ${o[k]} reply stream failed, trying next`,{error:e?.message||String(e)})}if(null!=t){try{b=__fgBad(t,m)}catch{}if(!b)return fb&&__fgLog(g,`failover-guard: retry served by ${o[k]}`),{res:r,text:t};__fgLog(g,`failover-guard: ${o[k]} returned tool "${b.tool}" with ${b.reason} - discarding reply, trying next model`),fb||(fb={res:r,text:t})}for(r=null;!r&&!dead&&++k<o.length;){g.info("COMBO",`Trying model ${k+1}/${o.length}: ${o[k]}`);try{let x=await c(a,o[k]);if(x.ok)r=x;else{g.warn("COMBO",`failover-guard: ${o[k]} failed, trying next`,{status:x.status});try{await x.body?.cancel()}catch{}}}catch(e){g.warn("COMBO",`failover-guard: ${o[k]} threw, trying next`,{error:e?.message||String(e)})}}if(!r)return dead||__fgLog(g,"failover-guard: no later model answered - returning the original reply"),fb}};if(!(f.headers.get("content-type")||"").includes("text/event-stream")){let x=await chain();return x?null==x.text?x.res:new Response(x.text,{status:x.res.status,statusText:x.res.statusText,headers:x.res.headers}):f}let n=new TextEncoder,tm,rd;return new Response(new ReadableStream({start(l){tm=setInterval(()=>{try{l.enqueue(n.encode(": keepalive\n\n"))}catch{}},Number(process.env.NINEROUTER_FG_KEEPALIVE_MS)||15e3),(async()=>{let x=await chain();if(clearInterval(tm),dead)return;try{if(!x)return l.close();if(null!=x.text)return l.enqueue(n.encode(x.text)),l.close();for(rd=x.res.body.getReader();;){let{value:v,done:d}=await rd.read();if(d)break;l.enqueue(v)}l.close()}catch(e){try{l.error(e)}catch{}}})()},cancel(){dead=!0,clearInterval(tm),rd?.cancel().catch(()=>{})}}),{status:f.status,statusText:f.statusText,headers:f.headers})}'''
 
-E=[]
+# Short local identifiers are renamed between 9Router builds (0.5.104 renamed the reply variable b->f and
+# wrapped the success return in a block), so the loop anchors are content signatures with the
+# identifiers captured, not fixed strings. Every anchor must still match exactly once, else exit 2.
+import re
+ID=r'[A-Za-z_$][\w$]*'
 # 1. inject helpers at module scope, right before Pr.
-E.append(('async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,comboStrategy:j,comboStickyLimit:k=1,autoSwitch:m=!0}){',
- HELPERS+'async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,comboStrategy:j,comboStickyLimit:k=1,autoSwitch:m=!0}){'))
 # 2. on a 200 from a non-last opencode/opencode-zen member of a tools request, validate before returning (index captured
-#    because the inner `let b` shadows the loop counter).
-E.append(('for(let b=0;b<o.length;b++){let e=o[b];g.info("COMBO",`Trying model ${b+1}/${o.length}: ${e}`);try{let b=await c(a,e);if(b.ok)return g.info("COMBO",`Model ${e} succeeded`),b;',
- 'for(let b=0;b<o.length;b++){let e=o[b],__fgi=b;g.info("COMBO",`Trying model ${b+1}/${o.length}: ${e}`);try{let b=await c(a,e);if(b.ok)return g.info("COMBO",`Model ${e} succeeded`),__fgi<o.length-1&&__fgTools(a)&&await __fgOn(e)?await __fgRun(a,o,__fgi,b,c,g):b;'))
-for i,(old,new) in enumerate(E,1):
-    n=s.count(old)
-    if n!=1: print(f'ANCHOR {i} matched {n} times (need 1) - bundle changed, not patching'); sys.exit(2)
-if CHECK: print(f'all {len(E)} anchors unique; --check only, nothing written'); sys.exit(0)
+#    because the inner `let b` shadows the loop counter):
+#    2a. loop head: `for(let I=0;I<O.length;I++){let E=O[I];`  -> also remember the index in __fgi
+#    2b. success return: `return g.info("COMBO",`Model ${E} succeeded`),R` -> validate R first.
+RE_HEAD=re.compile(r'for\(let (?P<i>'+ID+r')=0;(?P=i)<(?P<o>'+ID+r')\.length;(?P=i)\+\+\)\{let (?P<e>'+ID+r')=(?P=o)\[(?P=i)\];')
+if s.count(SIG)!=1: print(f'ANCHOR 1 matched {s.count(SIG)} times (need 1) - bundle changed, not patching'); sys.exit(2)
+heads=RE_HEAD.findall(s)
+if len(heads)!=1: print(f'ANCHOR 2a (combo loop head) matched {len(heads)} times (need 1) - bundle changed, not patching'); sys.exit(2)
+m=RE_HEAD.search(s); I,O,Ee=m['i'],m['o'],m['e']
+RE_RET=re.compile(r'return g\.info\("COMBO",`Model \$\{'+re.escape(Ee)+r'\} succeeded`\),(?P<r>'+ID+r')(?=[;}])')
+rets=RE_RET.findall(s)
+if len(rets)!=1: print(f'ANCHOR 2b (combo success return) matched {len(rets)} times (need 1) - bundle changed, not patching'); sys.exit(2)
+if CHECK: print('all 3 anchors unique; --check only, nothing written'); sys.exit(0)
 bak=F+'.bak-pre-failoverguard-'+time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())
 shutil.copy2(F,bak)
-for old,new in E: s=s.replace(old,new,1)
+s=RE_HEAD.sub(lambda m:m.group(0)[:-1]+',__fgi='+I+';',s,count=1)
+s=RE_RET.sub(lambda m:f'return g.info("COMBO",`Model ${{{Ee}}} succeeded`),__fgi<{O}.length-1&&__fgTools(a)&&await __fgOn({Ee})?await __fgRun(a,{O},__fgi,{m["r"]},c,g):{m["r"]}',s,count=1)
+s=s.replace(SIG,HELPERS+SIG,1)   # last: the helpers must not be seen by the loop regexes
 open(F,'w').write(s)
 r=subprocess.run([NODE,'--check',F],capture_output=True,text=True)
 if r.returncode!=0:
