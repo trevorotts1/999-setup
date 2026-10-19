@@ -57,6 +57,18 @@ those two are supplied by this skill, in `scripts/kie_transport.py`:
    generated ratio measured from the saved file, preflight_ok, and
    budget_exit.
 
+Save naming (Update Plan Item 26, proposal P6, ruled 2026-10-15): the
+saved file carries the delivered name, the two-digit `Image-NN.png`
+derived from the item's three-digit internal ID (`IMG-001` saves as
+`Image-01.png`, `IMG-012` as `Image-12.png`, `IMG-123` as
+`Image-123.png`; the derivation of record is `delivered_filename` in
+`scripts/validate_image_manifest.py`). Never save under the internal ID
+(`IMG-001.png`) or the three-digit form (`Image-001.png`): the saved
+file, the receipt's `file` (for example
+`"image-generation-qc/Image-01.png"`), and the delivered file are one
+name, and the gate matches that name to the internal ID by its trailing
+number.
+
 Hand-rolled KIE calls are forbidden in this harness exactly as in
 the onboarding one: a generation with no adapter task id and no
 receipt file cannot close the stage.
@@ -77,7 +89,8 @@ must distinguish the two call the enforcer's `check`, never
 
 The stage receipt's transport block names `skill: "kie"` and
 `policy: "kie"` on a claude-nine run (intake records
-`runtime: "claude-nine"`), one task entry per generated file, each
+`runtime: "claude-nine"`, written when write_intake.py is run with
+`--runtime claude-nine`), one task entry per generated file, each
 with file, task_id, model_id, model_source (one of latest-family,
 explicit-request, user-pin, legacy-ratio-route), requested_ratio,
 generated_ratio, preflight_ok true, and budget_exit 0. The cost block
@@ -95,7 +108,8 @@ Row 4's MAP disposition), with 67-kie-video as its policy helper.
 
 When the client explicitly selects Agnes, `scripts/agnes_route.py`
 in this skill is the route (submit, poll, save, cost over the
-synchronous Agnes image endpoint). Intake refuses the selection in
+synchronous Agnes image endpoint). With `--runtime claude-nine` (the
+flag every run in this edition passes), intake refuses the selection in
 writing when AGNES_AI_API_KEY is not configured in the environment.
 Receipts name the route honestly: transport skill `63-agnes-image`
 (the gate's route name), adapter `agnes`, receipt files under
