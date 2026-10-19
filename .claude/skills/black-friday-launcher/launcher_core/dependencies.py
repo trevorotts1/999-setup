@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -21,9 +22,60 @@ from .constants import (REPO_ROOT, SkillResolutionError, resolve_ref,
 
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 
+_NUMERIC_DIR = re.compile(r"^(\d+)-(.+)$")
+_FRONTMATTER_NAME = re.compile(r"^name:[ \t]*(.+?)[ \t]*$")
+
 
 class DependencyError(Exception):
     """The dependency manifest itself cannot be read."""
+
+
+def frontmatter_name(skill_md: Path) -> Optional[str]:
+    """The `name:` scalar of a SKILL.md YAML frontmatter block, or None.
+
+    An absent block, an unterminated block or a missing name is None: the same
+    fail-closed answer as a name mismatch, never a guess from the file path.
+    """
+    try:
+        lines = Path(skill_md).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return None
+        match = _FRONTMATTER_NAME.match(line)
+        if match:
+            return match.group(1).strip().strip("'\"")
+    return None
+
+
+def installer_registration_status(skill_md: Path) -> Dict[str, Any]:
+    """Judge one skill registration file under either directory convention.
+
+    999 links skills from CONTROL/bundled-skills.txt, so a bare slug
+    (``black-friday-launcher``) and a numbered directory
+    (``83-black-friday-launcher``) are equally valid. Both are accepted only
+    when the directory name's slug and the SKILL.md frontmatter name agree; an
+    ARCHIVED directory is always rejected.
+    """
+    skill_md = Path(skill_md)
+    directory = skill_md.parent.name
+    numeric = _NUMERIC_DIR.match(directory)
+    slug = numeric.group(2) if numeric else directory
+    name = frontmatter_name(skill_md)
+    archived = "ARCHIVED" in directory
+    ok = (skill_md.is_file() and not archived and name is not None
+          and name == slug and (numeric is not None or directory == slug))
+    return {
+        "ok": ok,
+        "directory": directory,
+        "numeric_prefix": numeric is not None,
+        "slug": slug,
+        "frontmatter_name": name,
+        "archived": archived,
+    }
 
 
 def _repo_root() -> Path:
@@ -66,12 +118,15 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
         if target is None:
             return {"status": "missing", "evidence": error}
         if kind == "installer_registration":
-            name = target.parent.name
-            numeric = name.split("-", 1)[0].isdigit()
-            ok = target.is_file() and numeric and "ARCHIVED" not in name
-            return {"status": "present" if ok else "missing",
-                    "evidence": f"{ref} resolved={target} exists={target.is_file()} "
-                                f"numeric_prefix={numeric} archived={'ARCHIVED' in name}"}
+            judged = installer_registration_status(target)
+            return {"status": "present" if judged["ok"] else "missing",
+                    "evidence": f"{ref} resolved={target} "
+                                f"exists={target.is_file()} "
+                                f"directory={judged['directory']} "
+                                f"numeric_prefix={judged['numeric_prefix']} "
+                                f"frontmatter_name={judged['frontmatter_name']!r} "
+                                f"slug={judged['slug']!r} "
+                                f"archived={judged['archived']}"}
         return {"status": "present" if target.exists() else "missing",
                 "evidence": f"{ref} resolved={target}"}
     if kind == "registry_line":

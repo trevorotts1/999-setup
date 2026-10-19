@@ -144,6 +144,77 @@ else
   fail "entry file missing or lacks '$SKILL_NAME'"
 fi
 
+echo "== F. bare-slug skill registers and links (black-friday-launcher) =="
+# 999 names skills by bare slug (the Launcher is
+# .claude/skills/black-friday-launcher, not 83-black-friday-launcher). The
+# registration check must accept that convention, and the real installer
+# (setup-macos.sh, driven by CONTROL/bundled-skills.txt) must link it. Both
+# are asserted here; the directory is NOT renamed.
+LAUNCHER="black-friday-launcher"
+LAUNCHER_TREE="$REPO_ROOT/.claude/skills/$LAUNCHER"
+FRONT_NAME="$(awk '
+  NR == 1 { if ($0 != "---") exit; next }
+  $0 == "---" { exit }
+  /^name:/ { sub(/^name:[ \t]*/, ""); print; exit }
+' "$LAUNCHER_TREE/SKILL.md" 2>/dev/null)"
+[ "$FRONT_NAME" = "$LAUNCHER" ] \
+  && pass "bare-slug tree exposes SKILL.md frontmatter name $LAUNCHER" \
+  || fail "bare-slug tree frontmatter name is '${FRONT_NAME:-absent}', expected $LAUNCHER"
+manifest_names "$MANIFEST" | grep -qx "$LAUNCHER" \
+  && pass "registry lists bare slug $LAUNCHER" \
+  || fail "registry does not list bare slug $LAUNCHER"
+
+HOME_F="$BASE/home-f"; mkdir -p "$HOME_F"
+OUT_F="$(HOME="$HOME_F" REPO_ROOT="$REPO_ROOT" \
+  REPO_SKILL_DIR="$REPO_ROOT/.claude/skills/nine-router-setup" \
+  bash "$WRAPPER" link_skills_into_root "$HOME_F/.claude" 2>&1)"
+RC_F=$?
+[ "$RC_F" = "0" ] && pass "clean install with bare-slug skill exits 0" \
+  || fail "clean install with bare-slug skill exited $RC_F"
+case "$OUT_F" in
+  *"skill linked: $LAUNCHER"*) pass "real installer links bare-slug $LAUNCHER" ;;
+  *) fail "real installer did not link bare-slug $LAUNCHER (got: $OUT_F)" ;;
+esac
+[ -L "$HOME_F/.claude/skills/$LAUNCHER" ] \
+  && pass "clean install created skills/$LAUNCHER link" \
+  || fail "skills/$LAUNCHER link absent after clean install"
+
+# The Launcher's own registration check reads the SKILL.md frontmatter and must
+# agree: a matching bare slug passes, a mismatched one fails closed.
+REG_STATUS="$(cd "$LAUNCHER_TREE" && python3 - "$REPO_ROOT" <<'PY'
+import sys
+from pathlib import Path
+from launcher_core import dependencies
+
+skill_md = dependencies.resolve_ref(
+    "83-black-friday-launcher/SKILL.md", Path(sys.argv[1]))
+print("present" if dependencies.installer_registration_status(skill_md)["ok"]
+      else "missing")
+PY
+)"
+[ "$REG_STATUS" = "present" ] \
+  && pass "launcher registration check accepts the bare slug in this repo" \
+  || fail "launcher registration check rejected the bare slug (got '${REG_STATUS:-empty}')"
+
+SKEL_F="$BASE/skel-bare"
+mkdir -p "$SKEL_F/.claude/skills/$LAUNCHER"
+printf -- '---\nname: some-other-skill\ndescription: fixture\n---\n' \
+  > "$SKEL_F/.claude/skills/$LAUNCHER/SKILL.md"
+REG_NEG="$(cd "$LAUNCHER_TREE" && python3 - "$SKEL_F" <<'PY'
+import sys
+from pathlib import Path
+from launcher_core import dependencies
+
+skill_md = dependencies.resolve_ref(
+    "83-black-friday-launcher/SKILL.md", Path(sys.argv[1]))
+print("present" if dependencies.installer_registration_status(skill_md)["ok"]
+      else "missing")
+PY
+)"
+[ "$REG_NEG" = "missing" ] \
+  && pass "launcher registration check rejects a bare slug whose frontmatter name differs" \
+  || fail "launcher registration check accepted a mismatched frontmatter name (got '${REG_NEG:-empty}')"
+
 rm -rf "$BASE"
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
