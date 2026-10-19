@@ -1,36 +1,31 @@
 # Council local patches (999-only)
 
-These patches are 999-setup changes to the vendored Council tree
-(`.claude/skills/council-of-wise-elders`) that do **not** exist in the Council
-source (`trevorotts1/openclaw-onboarding`, `77-council-of-wise-elders`).
+These patches are NOT in the Council source (`trevorotts1/openclaw-onboarding`,
+`77-council-of-wise-elders`). They are 999-setup changes applied on top of the
+vendored canonical tree. Whether to upstream them is the Council source owner's decision.
 
 | Patch | Effect |
-| --- | --- |
-| `01-dispatcher-skillRootForAssets.patch` | `runtime/src/cli/dispatcher.ts`: adds and exports `skillRootForAssets()` and uses it for advisor loading and the data-dir guard, so the installed binary finds its real skill folder. |
-| `02-skill-root.test.ts.patch` | New file `runtime/src/cli/skill-root.test.ts`, the regression test for the above (full file). |
+|---|---|
+| `01-dispatcher-skillRootForAssets.patch` | `runtime/src/cli/dispatcher.ts`: exports `skillRootForAssets()` and uses it for advisor loading and the data-dir guard, so the installed binary finds its real skill folder. |
+| `02-skill-root.test.ts.patch` | Adds `runtime/src/cli/skill-root.test.ts`, the regression test for that fix. |
 
-Both apply cleanly (`git apply --check`) to the unmodified Council source
-dispatcher, whose bytes are identical at the previous vendored commit and at
+Origin: 999-setup commit `0fd08bd4` (diff of `0fd08bd4~1..0fd08bd4`). The patches apply
+cleanly (`git apply --check`) to the canonical tree at onboarding
 `bf2385c7553cea09d32f68c49b2765acd4867ddb`.
 
 ## Re-vendoring
 
-`scripts/vendor-council-bundle.mjs` deletes the vendored folder and copies the
-canonical tree, which silently removes these patches. Always re-vendor with:
+`scripts/vendor-council-bundle.mjs` deletes the vendored folder and copies the canonical
+tree, so it drops these changes. Always re-vendor with:
 
-```
-node scripts/revendor-council.mjs --source <openclaw-onboarding>/77-council-of-wise-elders --source-commit <full sha>
-python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py
-```
+    node scripts/revendor-council.mjs --source <canonical 77-council-of-wise-elders> --source-commit <full sha>
+    python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py
 
-The wrapper vendors, `git apply`s every `*.patch` here in name order, and runs
-`scripts/realign-council-vendor-record.mjs --write`, which declares the
-divergence as one `local_divergence` entry (file hashes and patch hashes) in
-both `installer-registration/council-vendoring.json` and the bundle's
-`DISTRIBUTION-RECONCILIATION.json`, then reseals `manifest.json`. The record's
-`canonical_files` stays canonical-only. A tree change that no patch covers makes
-the realign tool fail instead of being absorbed.
+`revendor-council.mjs` runs the vendor tool, `git apply`s every `*.patch` here in name
+order, then runs `scripts/realign-council-vendor-record.mjs --write`, which declares the
+divergence (files, hashes, these patch artifacts) as a `local_divergence` entry in
+`installer-registration/council-vendoring.json` and in the bundle's
+`DISTRIBUTION-RECONCILIATION.json`. `canonical_files` holds canonical hashes only.
 
-Upstreaming these patches into the Council source is a decision for its owner.
-Once upstreamed, delete the patch files and re-vendor: the divergence entry
-disappears on its own.
+If a patch stops applying after a Council update, the wrapper fails; refresh the patch
+against the new canonical file (or drop it once Council carries the fix).
