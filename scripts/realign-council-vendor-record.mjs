@@ -21,6 +21,15 @@
 //     recomputed from the tree with the canonical hash method;
 //   - a distribution_local_changes entry records the paths it realigned,
 //     by hash only, so the fact that they are not canonical is on the record.
+//     The entry is carried forward across no-op runs: a file already recorded
+//     there (and still equal to the tree, still absent from manifest.json,
+//     still not canonical) stays declared instead of silently disappearing.
+//     A file leaves the entry only when it genuinely returns to canonical
+//     (so re-vendoring folds it into an already-populated record), when it
+//     disappears from both the tree and manifest.json, or when a manifest
+//     entry differs from the declared one and supersedes it. An empty record
+//     key is the one exception: it can never carry canonical identity, so
+//     re-vendoring folds any manifest entry in and the next run drops it.
 //
 // A file present in canonical_files but absent from the tree still fails
 // the integrity test: this tool never registers a deletion.
@@ -97,13 +106,31 @@ if (errors.length) {
 }
 
 const nextFiles = { ...(record.canonical_files ?? {}) };
+const previous = (record.intentional_distribution_differences ?? []).find(
+  (d) => d.kind === "distribution_local_changes");
+const declared = new Map((previous?.files ?? []).map((f) => [f.path, f]));
+const current = new Set(manifestFiles.map((e) => e.path));
 const realigned = [];
+// Carry forward a declared difference that the tree still shows. A no-op run
+// over an unchanged non-canonical tree must not delete it. An empty record
+// key can never carry canonical identity, so re-vendoring folds any manifest
+// entry in; one recorded there is accounted for and drops out.
+for (const f of declared.values()) {
+  if (!present.has(f.path)) continue;
+  if (!current.has(f.path) && nextFiles[f.path] !== undefined) continue;
+  const actual = hashes.get(f.path);
+  if (actual === undefined || actual !== f.sha256) continue;
+  realigned.push(f);
+}
+const carried = new Set(realigned.map((f) => f.path));
 for (const e of manifestFiles) {
   if (DECLARED.has(e.path)) continue;
   if (nextFiles[e.path] === e.sha256) continue;
+  if (carried.has(e.path)) continue;
   realigned.push({ path: e.path, sha256: e.sha256, previous_sha256: nextFiles[e.path] ?? null });
-  nextFiles[e.path] = e.sha256;
 }
+for (const f of realigned) nextFiles[f.path] = f.sha256;
+realigned.sort((a, b) => (a.path < b.path ? -1 : 1));
 
 const differences = (record.intentional_distribution_differences ?? []).filter(
   (d) => d.kind !== "distribution_local_changes");
