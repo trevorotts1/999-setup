@@ -34,8 +34,10 @@ PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 
-BASE="${TMPDIR:-/tmp}/cwe-doctor-mode"
-rm -rf "$BASE"; mkdir -p "$BASE"
+# Unique per-invocation fixture root so concurrent runs never share state.
+BASE="$(mktemp -d "${TMPDIR:-/tmp}/cwe-doctor-mode.XXXXXX")" || { echo "FAIL: cannot create fixture dir"; exit 1; }
+trap 'rm -rf "$BASE"' EXIT
+trap 'exit 1' INT TERM HUP
 # Warm the fixture cache from the operator cache if present, else install
 # reads it as-is; --offline means no network either way. A cold cache is a
 # leg result, never mistaken for a mode-derivation failure.
