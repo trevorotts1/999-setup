@@ -230,6 +230,21 @@ command grep -qF -e '--root "$SkillDir" "--$skillMode"' -e '--root "$SkillDir" "
   && pass "ps1 Test-PrefixGates passes the derived skill mode (serves -Check)" \
   || fail "ps1 Test-PrefixGates does not pass a derived skill mode"
 
+echo "== E. ps1 resolves the doctor only after SkillDir discovery =="
+# $SkillDir defaults to '' and is discovered near the end of preflight. A
+# $skillDoctor computed before that tests "\scripts\doctor.mjs", fails, and
+# dies COUNCIL_SKILL_DOCTOR_MISSING before discovery ever runs. Static
+# ordering check: discovery assignment < $skillDoctor assignment < Die guard.
+disc="$(grep -n '^\$SkillDir = (Resolve-Path' "$PS1" | head -1 | cut -d: -f1)"
+sd="$(grep -n '^\$skillDoctor = Join-Path' "$PS1" | head -1 | cut -d: -f1)"
+guard="$(grep -n "Die 'COUNCIL_SKILL_DOCTOR_MISSING'" "$PS1" | head -1 | cut -d: -f1)"
+[ -n "$disc" ] && [ -n "$sd" ] && [ -n "$guard" ] \
+  && pass "ps1: discovery ($disc), \$skillDoctor ($sd), guard ($guard) all present" \
+  || fail "ps1: missing discovery/$skillDoctor/guard line (disc=$disc sd=$sd guard=$guard)"
+[ -n "$disc" ] && [ -n "$sd" ] && [ -n "$guard" ] && [ "$disc" -lt "$sd" ] && [ "$sd" -lt "$guard" ] \
+  && pass "ps1: \$skillDoctor and its Die guard follow SkillDir discovery" \
+  || fail "ps1: \$skillDoctor/guard resolve before SkillDir discovery (disc=$disc sd=$sd guard=$guard)"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 rm -rf "$BASE"

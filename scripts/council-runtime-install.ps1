@@ -143,11 +143,6 @@ function Get-DoctorMode($root) {
     return $null
 }
 
-$skillDoctor = Join-Path $SkillDir 'scripts\doctor.mjs'
-if (-not (Test-Path -LiteralPath $skillDoctor -PathType Leaf)) {
-    Die 'COUNCIL_SKILL_DOCTOR_MISSING' "the skill folder carries no package doctor: $skillDoctor" 4
-}
-
 # --- data profile (mirrors runtime/src/cli/paths.ts Section 16.1) -------
 if (-not $DataDir) {
     if ($env:BLACKCEO_COUNCIL_DATA_DIR) { $DataDir = $env:BLACKCEO_COUNCIL_DATA_DIR }
@@ -190,6 +185,14 @@ if (-not $SkillDir -or -not (Test-Path -LiteralPath (Join-Path $SkillDir 'manife
 $SkillDir = (Resolve-Path -LiteralPath $SkillDir).Path
 Say "skill folder: $SkillDir"
 
+# The package doctor is resolved only after discovery: before it, $SkillDir
+# is still the (empty) parameter default, so a run without -SkillDir would
+# test an empty root, fail, and die COUNCIL_SKILL_DOCTOR_MISSING.
+$skillDoctor = Join-Path $SkillDir 'scripts\doctor.mjs'
+if (-not (Test-Path -LiteralPath $skillDoctor -PathType Leaf)) {
+    Die 'COUNCIL_SKILL_DOCTOR_MISSING' "the skill folder carries no package doctor: $skillDoctor" 4
+}
+
 # --- resolve the canonical portable source --------------------------------
 # The runtime payload is never taken from an unverified copy. The resolved
 # tree must recompute to its own manifest and carry canonical provenance;
@@ -217,13 +220,12 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     Die 'COUNCIL_NODE_PREREQ_FAILED' "the resolved Node executable $nodeExe failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
 }
-$sourceDoctor = Join-Path $SourceDir 'scripts\doctor.mjs'
 $sourceMode = Get-DoctorMode $SourceDir
 if (-not $sourceMode) {
     Die 'COUNCIL_SOURCE_MODE_UNDETERMINED' "the portable source at $SourceDir is neither a source package (archive present, archive.status 'generated') nor an extracted distribution (no archive, archive.status 'extracted_distribution'); refusing to guess a doctor mode. The previous release was not touched" 4
 }
 Say "source doctor mode: $sourceMode"
-& "$nodeExe" "$sourceDoctor" --root "$SourceDir" "--$sourceMode" | Out-Null
+& "$nodeExe" (Join-Path $SourceDir 'scripts\doctor.mjs') --root "$SourceDir" "--$sourceMode" | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Die 'COUNCIL_SOURCE_DOCTOR_FAILED' "the portable source at $SourceDir does not pass its own package doctor ($sourceMode mode); the previous release was not touched" 4
 }
