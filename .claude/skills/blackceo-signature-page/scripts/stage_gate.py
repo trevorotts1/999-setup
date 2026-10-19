@@ -48,7 +48,7 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop",
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:noop",
                  "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
 
 
@@ -88,26 +88,46 @@ def save_state(run_dir, state):
     return state_path
 
 
+def design_board_start_failures(run_dir, stage):
+    """SPF021: the design-board stage starts only on the client's resolved brand colors
+    (resolution consumed from scripts/brand_colors.py through design_board.py)."""
+    if stage != "design-board":
+        return []
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import design_board
+        design_board.brand_resolution(run_dir)
+    except design_board.BoardError as exc:
+        return [f"stage design-board cannot start: {exc}"]
+    finally:
+        sys.path.pop(0)
+    return []
+
+
 def brand_path_for(run_dir):
-    """Resolve the run's brand file. intake.json names it; fallback is the skill's own BlackCEO file."""
-    intake = run_dir / "intake.json"
-    if intake.exists():
-        try:
-            data = json.loads(intake.read_text(encoding="utf-8"))
-            bf = data.get("brand_file")
-            if bf:
-                p = Path(bf)
-                return p if p.is_absolute() else (run_dir / bf)
-        except Exception:
-            pass
-    return SKILL_ROOT / "assets" / "brand" / "blackceo-brand.json"
+    """The run's brand file: the one scripts/brand_colors.py resolved (see brand_colors.brand_path)."""
+    return _brand_colors().brand_path(run_dir)
 
 
-# Test hook: a run folder may pin its own brand file for gate builtins.
+def _brand_colors():
+    """scripts/brand_colors.py (SPF019): the brand-color resolution every image stage passes."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import brand_colors
+    finally:
+        sys.path.pop(0)
+    return brand_colors
+
+
+def brand_color_failures(run_dir, stage):
+    """Refusal lines when `stage` makes images and the client's brand colors are unresolved."""
+    line = _brand_colors().failure(run_dir, stage)
+    return [f"stage {stage}: {line}"] if line else []
+
+
 def brand_path_for_checked(run_dir):
-    pinned = run_dir / "private" / "brand.json"
-    if pinned.exists():
-        return pinned
+    """Gate builtins read the same resolved file as every other check (a run's private/brand.json
+    pin counts only when brand_colors.resolve accepts it)."""
     return brand_path_for(run_dir)
 
 
@@ -574,6 +594,9 @@ def run_builtin(name, args, run_dir):
     """Built-in gate validators."""
     if name == "gate:must_supply":
         brand = brand_path_for_checked(run_dir)
+        if brand.name == _brand_colors().UNRESOLVED:
+            # no owned, colored brand file: say so (and ask) instead of "file unreadable"
+            return "gate:must_supply: " + _brand_colors().failure(run_dir)
         problems = brand_must_supply(brand)
         if problems:
             return "gate:must_supply: " + "; ".join(problems)
@@ -586,6 +609,25 @@ def run_builtin(name, args, run_dir):
         if not isinstance(intake, dict) or intake.get("image_engine") not in ("kie", "agnes"):
             return ("gate:intake_engine: intake.json must carry image_engine \"kie\" or \"agnes\" "
                     "(write it with scripts/write_intake.py)")
+        return None
+    if name == "gate:intake_design_style":
+        # The client chooses A Block, B Circle or C Hybrid before any wireframe
+        # (references/design-styles.md). A production run cannot close intake
+        # without a recorded choice; test runs are exempt and carry no style.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return f"gate:intake_design_style: intake.json unreadable ({exc})"
+        if not isinstance(intake, dict):
+            return "gate:intake_design_style: intake.json is not an object"
+        if intake.get("test_run") is True and not intake.get("design_style"):
+            return None
+        if intake.get("design_style") not in ("A", "B", "C") or intake.get(
+                "design_style_source") not in ("client_choice", "recommended_accepted"):
+            return ("gate:intake_design_style: intake.json must carry design_style A, B or C and "
+                    "design_style_source client_choice or recommended_accepted; ask the client with "
+                    "`python3 scripts/design_style.py question`, then record it with "
+                    "scripts/write_intake.py --design-style (references/design-styles.md)")
         return None
     if name == "gate:noop":
         # Test-only builtin: always passes.
@@ -2218,7 +2260,7 @@ def cmd_check_item(run_dir, stage, item_id):
     if entry.get("status") == "blocked":
         return fail_exit([f"item {item_id} of stage {stage} is blocked: "
                           f"{entry.get('blocked_reason', 'no reason recorded')}"])
-    failures = item_dependency_failures(run_dir, stage, item_id)
+    failures = item_dependency_failures(run_dir, stage, item_id) + brand_color_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: item {item_id} of stage {stage} may start (its own "
@@ -2935,7 +2977,8 @@ def cmd_check(run_dir, stage):
         hygiene_failures = browser_hygiene_pass(run_dir, stage)
         if hygiene_failures:
             return fail_exit(hygiene_failures)
-    failures = check_requires(run_dir, stage)
+    failures = check_requires(run_dir, stage) + brand_color_failures(run_dir, stage)
+    failures += design_board_start_failures(run_dir, stage)
     if failures:
         return fail_exit(failures)
     print(f"PASS: stage {stage} may start (all dependencies closed with matching receipts and artifacts)")
@@ -2960,7 +3003,7 @@ def cmd_close(run_dir, stage):
             record_not_applicable(run_dir, stage, reason)
             print(f"NOT APPLICABLE: stage {stage} recorded in state.json ({reason})")
             return 0
-    failures = []
+    failures = brand_color_failures(run_dir, stage)
     # Item 33: the reaper pass runs before anything else is evaluated,
     # so a run whose runner died still gets its sessions accounted, and
     # the receipt it writes satisfies the stage's artifact contract.
@@ -3355,6 +3398,43 @@ def compute_review_mode(run_dir):
             f"{len(author_sessions)} author sessions, no overlap)")
 
 
+# Fix 12.4 (task 4.3): the four-image rule, enforced at report time.
+# The per-stage artifacts prove presence per glob; this proves the SET
+# exists for every page role the run declares. A run missing any of the
+# four can never report complete.
+FOUR_IMAGE_GLOBS = (
+    "desktop-wireframe/section-*.png",
+    "mobile-tablet/section-*.png",
+    "final-mockups/desktop/part-*.png",
+    "final-mockups/mobile/part-*.png",
+)
+
+def declared_page_roles(run_dir):
+    """The page roles this run declares (references/page-request.schema.json
+    enum). A launch-context run records intake.json's launch.page_role and
+    places the same request at run_dir/page-request.json; a classic run with
+    neither builds the signature landing page, the skill's one page role."""
+    intake = intake_data(run_dir)
+    launch = intake.get("launch")
+    if isinstance(launch, dict) and isinstance(launch.get("page_role"), str) \
+            and launch["page_role"]:
+        return [launch["page_role"]]
+    try:
+        request = json.loads((run_dir / "page-request.json").read_text(encoding="utf-8"))
+    except Exception:
+        request = None
+    if isinstance(request, dict) and isinstance(request.get("page_role"), str) \
+            and request["page_role"]:
+        return [request["page_role"]]
+    return ["landing"]
+
+def four_image_gaps(run_dir):
+    """(page_role, glob) pairs whose glob resolves to no file in the run."""
+    return [(role, pattern)
+            for role in declared_page_roles(run_dir)
+            for pattern in FOUR_IMAGE_GLOBS
+            if not any(run_dir.glob(pattern))]
+
 def cmd_report(run_dir):
     state, _ = load_state(run_dir)
     now = datetime.now(timezone.utc)
@@ -3476,6 +3556,11 @@ def cmd_report(run_dir):
         lines.append("Browser hygiene: not recorded.")
     lines.append("")
 
+    # Fix 12.4: the four-image rule forces incomplete; it never refuses the
+    # report, because the report is where the absence must be visible.
+    image_gaps = four_image_gaps(run_dir)
+    if image_gaps:
+        required_closed = False
     overall = "RUN COMPLETE" if required_closed else "RUN INCOMPLETE"
     # Item 6, rule 1: a test run's report never reads as a production
     # delivery, even when every stage closed (a test run cannot close
@@ -3499,7 +3584,14 @@ def cmd_report(run_dir):
     if not required_closed:
         missing = [s for s in ORDER
                    if stage_line(run_dir, s, state) in ("FAIL", "BLOCKED", NOT_RUN)]
-        lines.append(f"**{overall}** — not closed: {', '.join(missing)}")
+        reasons = []
+        if missing:
+            reasons.append(f"not closed: {', '.join(missing)}")
+        if image_gaps:
+            reasons.append("four-image rule not satisfied: "
+                           + ", ".join(f"{role} missing {pattern}"
+                                       for role, pattern in image_gaps))
+        lines.append(f"**{overall}** — " + "; ".join(reasons))
     else:
         lines.append(f"**{overall}**")
     rm_line = compute_review_mode(run_dir)
