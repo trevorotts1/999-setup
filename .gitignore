@@ -22,6 +22,9 @@ __pycache__/
 router-session.json
 route-state.json
 *.log
+# Vendored canonical evidence logs are SOURCE, not runtime state: the council
+# vendor record and its aggregate hash include them (scripts/test-council-vendor.sh).
+!/.claude/skills/council-of-wise-elders/evidence/**/*.log
 
 # Pre-merge backups live on pushed snapshot branches, not as in-tree .bak files
 *.bak-*
