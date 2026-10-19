@@ -29,10 +29,10 @@
 // where width.sh answers, both twins print the same instrument name.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const WORKFLOW_CEILING = Number(process.env.WORKFLOW_CEILING || 50);
 
@@ -321,8 +321,9 @@ function selftest() {
 }
 
 // --- CLI ---------------------------------------------------------------------
+const realOrResolved = (p) => { try { return realpathSync(p); } catch { return path.resolve(p); } };
 const invokedDirectly = Boolean(process.argv[1])
-  && import.meta.url === pathToFileURL(process.argv[1]).href;
+  && realOrResolved(process.argv[1]) === realOrResolved(fileURLToPath(import.meta.url));
 
 if (invokedDirectly) {
   const arg = process.argv[2] || '';

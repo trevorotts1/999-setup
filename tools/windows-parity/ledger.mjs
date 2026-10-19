@@ -16,7 +16,7 @@
 //
 // Exit: 0 written + verified; 1 lock timeout or write verification failure
 // (loud, never silent).
-import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync, rmSync, statSync, copyFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync, rmSync, statSync, copyFileSync, readdirSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -182,6 +182,7 @@ function main() {
 
 // Guard: run CLI main() only when executed directly (watchdog.mjs imports
 // appendLine — an import must never trigger the CLI parser).
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const realOrResolved = (p) => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrResolved(process.argv[1]) === realOrResolved(fileURLToPath(import.meta.url))) {
   main();
 }

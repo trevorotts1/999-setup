@@ -34,8 +34,10 @@ PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 
-BASE="${TMPDIR:-/tmp}/cwe-doctor-mode"
-rm -rf "$BASE"; mkdir -p "$BASE"
+# Unique per-invocation fixture root so concurrent runs never share state.
+BASE="$(mktemp -d "${TMPDIR:-/tmp}/cwe-doctor-mode.XXXXXX")" || { echo "FAIL: cannot create fixture dir"; exit 1; }
+trap 'rm -rf "$BASE"' EXIT
+trap 'exit 1' INT TERM HUP
 # Warm the fixture cache from the operator cache if present, else install
 # reads it as-is; --offline means no network either way. A cold cache is a
 # leg result, never mistaken for a mode-derivation failure.
@@ -244,6 +246,28 @@ guard="$(grep -n "Die 'COUNCIL_SKILL_DOCTOR_MISSING'" "$PS1" | head -1 | cut -d:
 [ -n "$disc" ] && [ -n "$sd" ] && [ -n "$guard" ] && [ "$disc" -lt "$sd" ] && [ "$sd" -lt "$guard" ] \
   && pass "ps1: \$skillDoctor and its Die guard follow SkillDir discovery" \
   || fail "ps1: \$skillDoctor/guard resolve before SkillDir discovery (disc=$disc sd=$sd guard=$guard)"
+
+echo "== F. CLI entry guard works when the path has a space or a symlink =="
+# The CLI only runs when argv[1] names this module. A guard that compared
+# argv[1] to the percent-encoded URL pathname (or skipped realpath) was
+# false on "/Volumes/External Drive/..." and under a symlinked temp dir:
+# exit 0, EMPTY stdout, and every install leg then died with
+# COUNCIL_SOURCE_MODE_UNDETERMINED.
+SP="$BASE/dir with space"; mkdir -p "$SP"
+cp "$MODE_TOOL" "$SP/council-doctor-mode.mjs"
+OUT="$(cd "$SP" && node ./council-doctor-mode.mjs --root "$VENDORED" 2>&1)"; RC=$?
+[ "$RC" = 0 ] && [ "$OUT" = "distribution" ] \
+  && pass "CLI run from a spaced directory prints distribution" \
+  || fail "spaced-directory CLI: rc=$RC out='$OUT' (want rc=0 out=distribution)"
+OUT="$(node "$SP/council-doctor-mode.mjs" --root "$VENDORED" 2>&1)"; RC=$?
+[ "$RC" = 0 ] && [ "$OUT" = "distribution" ] \
+  && pass "CLI invoked by absolute spaced path prints distribution" \
+  || fail "spaced absolute-path CLI: rc=$RC out='$OUT'"
+ln -s "$SP" "$BASE/link-to-spaced"
+OUT="$(node "$BASE/link-to-spaced/council-doctor-mode.mjs" --root "$VENDORED" 2>&1)"; RC=$?
+[ "$RC" = 0 ] && [ "$OUT" = "distribution" ] \
+  && pass "CLI invoked through a symlinked directory prints distribution" \
+  || fail "symlinked-directory CLI: rc=$RC out='$OUT'"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

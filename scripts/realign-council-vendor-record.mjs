@@ -1,39 +1,38 @@
 #!/usr/bin/env node
-// Council of Wise Elders: realign the vendoring record after a deliberate
-// change to the vendored tree (999-setup).
+// Council of Wise Elders: seal the vendored tree and declare its LOCAL
+// divergence from canonical (999-setup).
 //
-// scripts/vendor-council-bundle.mjs has no regeneration mode: it re-vendors
-// from a clean canonical openclaw-onboarding tree and writes manifest.json,
-// DISTRIBUTION-RECONCILIATION.json and installer-registration/council-vendoring.json
-// together. A runtime fix that lands in the vendored tree (runtime/src/cli/*)
-// is therefore not covered by any tool, and the integrity test fails.
+// scripts/vendor-council-bundle.mjs copies the canonical Council tree and
+// writes manifest.json, DISTRIBUTION-RECONCILIATION.json and
+// installer-registration/council-vendoring.json together. It knows nothing
+// about 999-only changes. Those live as reviewable `git apply` patches in
+// installer-registration/council-local-patches/ and are applied by
+// scripts/revendor-council.mjs after the vendoring tool runs.
 //
-// This tool closes that gap WITHOUT touching the canonical identity: the
-// record keeps its canonical_source, its canonical_files, and every
-// intentional_distribution_differences entry exactly as the vendoring tool
-// wrote them. It only adds/updates the distribution side:
+// This tool runs after the patches are applied. It never absorbs a change
+// silently: every file in the tree that is not byte-identical to its
+// canonical hash (and is not one of the vendoring tool's own declared
+// differences) must be the target of a patch artifact, and every patch
+// target must actually diverge. Then it:
 //
-//   - every manifest.json entry is recorded in canonical_files with the hash
-//     that file actually has (the three Brunson strip files stay as the
-//     vendoring tool's strip left them; the reconciliation report and
-//     manifest.json are declarable differences and are not recorded);
-//   - distribution.distribution_aggregate_sha256 / _file_count are
-//     recomputed from the tree with the canonical hash method;
-//   - a distribution_local_changes entry records the paths it realigned,
-//     by hash only, so the fact that they are not canonical is on the record.
-//
-// A file present in canonical_files but absent from the tree still fails
-// the integrity test: this tool never registers a deletion.
+//   - leaves canonical_source and canonical_files EXACTLY as the vendoring
+//     tool wrote them (canonical hashes only; a 999-only file never appears
+//     there);
+//   - declares the divergence as one `local_divergence` entry (files with
+//     their hashes, patch artifacts with their hashes) in BOTH the
+//     bundle's DISTRIBUTION-RECONCILIATION.json and the vendoring record;
+//   - reseals manifest.json over the tree with the canonical hash method;
+//   - recomputes distribution.distribution_aggregate_sha256 / _file_count.
 //
 // Usage:
 //   node scripts/realign-council-vendor-record.mjs [--write] [--repo <dir>]
 //
-// Without --write it prints what it would change and writes nothing. Exit 1
-// when the tree does not recompute to its own manifest.json, when a manifest
-// entry does not match the tree, or when a recorded file is missing from it.
+// Without --write it prints the verdict and writes nothing. Exit 1 on an
+// unexplained divergence, a patch target that did not diverge, or a
+// canonical file missing from the tree.
 //
-// The dist02 packaging manifest measures the tree directory itself, so after
-// a realign it is refreshed with the black-friday-launcher generator:
+// The dist02 packaging manifest measures the tree directory itself, so
+// afterwards refresh it with the black-friday-launcher generator:
 //   python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py
 
 import { createHash } from "node:crypto";
@@ -54,8 +53,11 @@ const DECLARED = new Set([
   "manifest.json",
   "DISTRIBUTION-RECONCILIATION.json",
 ]);
+const VENDORED = ".claude/skills/council-of-wise-elders";
+const PATCH_DIR = "installer-registration/council-local-patches";
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
+const byPath = (a, b) => (a[0] < b[0] ? -1 : 1);
 
 function walk(dir, base = dir, acc = []) {
   for (const name of readdirSync(dir).sort()) {
@@ -66,83 +68,106 @@ function walk(dir, base = dir, acc = []) {
   return acc;
 }
 
-const tree = join(root, ".claude", "skills", "council-of-wise-elders");
+const tree = join(root, ...VENDORED.split("/"));
 const recPath = join(root, "installer-registration", "council-vendoring.json");
+const reconPath = join(tree, "DISTRIBUTION-RECONCILIATION.json");
+const manifestPath = join(tree, "manifest.json");
+const patchDir = join(root, ...PATCH_DIR.split("/"));
 
 const record = JSON.parse(readFileSync(recPath, "utf8"));
-const manifest = JSON.parse(readFileSync(join(tree, "manifest.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const recon = JSON.parse(readFileSync(reconPath, "utf8"));
 const errors = [];
 
-const manifestFiles = Array.isArray(manifest.files) ? manifest.files : [];
-const hashes = new Map(manifestFiles.map((e) => [e.path, e.sha256]));
-const entries = [...hashes.entries()]
-  .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-  .map(([p, h]) => `${h}  ${p}`);
-const aggregate = sha256(Buffer.from(entries.join("\n") + "\n", "utf8"));
-if (aggregate !== manifest.aggregate_sha256 || entries.length !== manifest.file_count) {
-  console.error(`FAIL manifest.json does not recompute: tree ${aggregate}/${entries.length}, manifest ${manifest.aggregate_sha256}/${manifest.file_count}`);
-  process.exit(1);
+// Tree hashes (the canonical hash method excludes manifest.json and *.skill).
+const present = walk(tree);
+const hashes = new Map(present.map((rel) => [rel, sha256(readFileSync(join(tree, rel)))]));
+const sealed = [...hashes.entries()].filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill")).sort(byPath);
+
+// Patch artifacts: their sha256 and the paths they touch.
+const patches = readdirSync(patchDir).filter((n) => n.endsWith(".patch")).sort();
+const patchArtifacts = [];
+const patchTargets = new Set();
+for (const name of patches) {
+  const text = readFileSync(join(patchDir, name), "utf8");
+  patchArtifacts.push({ path: `${PATCH_DIR}/${name}`, sha256: sha256(Buffer.from(text, "utf8")) });
+  for (const m of text.matchAll(/^\+\+\+ b\/(.+)$/gm)) {
+    if (!m[1].startsWith(`${VENDORED}/`)) errors.push(`patch ${name} targets a path outside ${VENDORED}: ${m[1]}`);
+    else patchTargets.add(m[1].slice(VENDORED.length + 1));
+  }
 }
-for (const e of manifestFiles) {
-  const actual = sha256(readFileSync(join(tree, e.path)));
-  if (actual !== e.sha256) errors.push(`manifest entry ${e.path} does not match the tree`);
+
+// Divergence = tree files that are not their recorded canonical bytes.
+const canonical = record.canonical_files ?? {};
+const diverged = [];
+for (const [rel, h] of hashes) {
+  if (DECLARED.has(rel)) continue;
+  if (canonical[rel] === h) continue;
+  diverged.push({ path: rel, kind: rel in canonical ? "modified" : "added", sha256: h, canonical_sha256: canonical[rel] ?? null });
 }
-const present = new Set(walk(tree));
-for (const path of Object.keys(record.canonical_files ?? {})) {
-  if (!present.has(path)) errors.push(`canonical file missing from the tree: ${path}`);
-}
+for (const d of diverged) if (!patchTargets.has(d.path)) errors.push(`unexplained divergence, no patch covers it: ${d.path}`);
+for (const t of patchTargets) if (!diverged.some((d) => d.path === t)) errors.push(`patch target did not diverge from canonical (patch not applied?): ${t}`);
+for (const rel of Object.keys(canonical)) if (!hashes.has(rel)) errors.push(`canonical file missing from the tree: ${rel}`);
 if (errors.length) {
   for (const e of errors) console.error(`FAIL ${e}`);
   process.exit(1);
 }
 
-const nextFiles = { ...(record.canonical_files ?? {}) };
-const realigned = [];
-for (const e of manifestFiles) {
-  if (DECLARED.has(e.path)) continue;
-  if (nextFiles[e.path] === e.sha256) continue;
-  realigned.push({ path: e.path, sha256: e.sha256, previous_sha256: nextFiles[e.path] ?? null });
-  nextFiles[e.path] = e.sha256;
-}
+const localDivergence = diverged.length === 0 ? null : {
+  kind: "local_divergence",
+  rule: "999-only changes applied on top of the vendored canonical tree by scripts/revendor-council.mjs with git apply. They are NOT in the Council source (canonical_files carries only canonical hashes) and a plain re-vendor with scripts/vendor-council-bundle.mjs deletes them. Each file is recorded with its distribution hash and, when canonical has the file, the canonical hash it replaces; the patch artifacts are recorded by hash. Whether to upstream them is a decision for the Council source owner.",
+  patch_artifacts: patchArtifacts,
+  files: diverged,
+};
+const withoutLocal = (list) => (list ?? []).filter((d) => d.kind !== "local_divergence" && d.kind !== "distribution_local_changes");
+const nextRecon = { ...recon, intentional_distribution_differences: [...withoutLocal(recon.intentional_distribution_differences), ...(localDivergence ? [localDivergence] : [])] };
+const reconText = JSON.stringify(nextRecon, null, 2) + "\n";
 
-const differences = (record.intentional_distribution_differences ?? []).filter(
-  (d) => d.kind !== "distribution_local_changes");
-if (realigned.length) {
-  differences.push({
-    kind: "distribution_local_changes",
-    rule: "Files changed in the distribution tree on top of the vendoring tool's strip (for example a runtime fix that has no canonical counterpart yet), realigned by scripts/realign-council-vendor-record.mjs. Each entry records the vendored hash and, when there was one, the canonical hash it replaced. The canonical source is unchanged; re-vendoring from a canonical tree that carries the change folds these into canonical_files and removes this entry.",
-    files: realigned.map(({ path, sha256, previous_sha256 }) => ({ path, sha256, previous_sha256 })),
-  });
-}
-
+// Reseal: the reconciliation report is part of the tree, so hash it as it will be written.
+hashes.set("DISTRIBUTION-RECONCILIATION.json", sha256(Buffer.from(reconText, "utf8")));
+const entries = [...hashes.entries()].filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill")).sort(byPath);
+const aggregate = sha256(Buffer.from(entries.map(([p, h]) => `${h}  ${p}`).join("\n") + "\n", "utf8"));
+const nextManifest = {
+  ...manifest,
+  file_count: entries.length,
+  aggregate_sha256: aggregate,
+  files: entries.map(([p, h]) => ({
+    path: p, sha256: h,
+    bytes: p === "DISTRIBUTION-RECONCILIATION.json" ? Buffer.byteLength(reconText) : statSync(join(tree, p)).size,
+  })),
+};
 const nextRecord = {
   ...record,
-  intentional_distribution_differences: differences,
-  // Mirrors the key order vendor-council-bundle.mjs writes.
+  intentional_distribution_differences: nextRecon.intentional_distribution_differences,
   distribution: {
     vendored_path: record.distribution.vendored_path,
     distribution_aggregate_sha256: aggregate,
     distribution_file_count: entries.length,
   },
-  canonical_files: Object.fromEntries(
-    [...Object.entries(nextFiles)].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
 };
 
-const summarize = (r) => [
-  `distribution aggregate: record=${record.distribution.distribution_aggregate_sha256}/${record.distribution.distribution_file_count} record-after=${r.distribution.distribution_aggregate_sha256}/${r.distribution.distribution_file_count}`,
-  `manifest: ${manifest.aggregate_sha256}/${manifest.file_count}`,
-  `realigned files: ${realigned.length}`,
-  ...realigned.map((f) => `  ${f.path}: ${f.previous_sha256 ?? "(new)"} -> ${f.sha256}`),
-];
-const changed = JSON.stringify(record) !== JSON.stringify(nextRecord);
-if (!changed) {
-  console.log("REALIGN: OK (record already matches the tree)");
+const next = {
+  recon: reconText,
+  manifest: JSON.stringify(nextManifest, null, 2) + "\n",
+  record: JSON.stringify(nextRecord, null, 2) + "\n",
+};
+const current = {
+  recon: readFileSync(reconPath, "utf8"),
+  manifest: readFileSync(manifestPath, "utf8"),
+  record: readFileSync(recPath, "utf8"),
+};
+console.log(`  distribution aggregate: ${aggregate} (${entries.length} files)`);
+console.log(`  local divergence: ${diverged.length} file(s) covered by ${patchArtifacts.length} patch artifact(s)`);
+for (const d of diverged) console.log(`    ${d.kind} ${d.path}: ${d.canonical_sha256 ?? "(no canonical)"} -> ${d.sha256}`);
+if (next.recon === current.recon && next.manifest === current.manifest && next.record === current.record) {
+  console.log("REALIGN: OK (tree, manifest and record already agree)");
   process.exit(0);
 }
 if (!write) {
   console.log("REALIGN: DRY RUN, would write (pass --write)");
   process.exit(0);
 }
-writeFileSync(recPath, JSON.stringify(nextRecord, null, 2) + "\n");
-for (const line of summarize(nextRecord)) console.log(`  ${line}`);
-console.log(`REALIGN: WROTE ${recPath}`);
+writeFileSync(reconPath, next.recon);
+writeFileSync(manifestPath, next.manifest);
+writeFileSync(recPath, next.record);
+console.log(`REALIGN: WROTE ${recPath}, ${manifestPath}, ${reconPath}`);
