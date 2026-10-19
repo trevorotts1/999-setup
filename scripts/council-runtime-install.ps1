@@ -123,6 +123,31 @@ function Resolve-NpmCmd($nodeExe) {
     return $null
 }
 
+function Get-DoctorMode($root) {
+    # Doctor verification mode for a resolved skill tree: 'source' or
+    # 'distribution', or $null when the tree is neither. The rule and its
+    # anti-spoof argument live in scripts/council-doctor-mode.mjs, shared
+    # with the macOS/Linux installer so both derive the mode identically.
+    # A tree with the archive AND status generated keeps the archive
+    # SHA-256 binding (source); a tree with no archive AND status
+    # extracted_distribution is checked as an extracted distribution.
+    # Anything else returns $null and the caller refuses.
+    $tool = Join-Path $ScriptDir 'council-doctor-mode.mjs'
+    if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
+        [Console]::Error.WriteLine("council-runtime-install: ERROR COUNCIL_DOCTOR_MODE_TOOL_MISSING: doctor mode derivation missing beside this script: $tool")
+        return $null
+    }
+    $mode = (& "$nodeExe" "$tool" --root "$root" 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { return $null }
+    if ($mode -eq 'source' -or $mode -eq 'distribution') { return $mode }
+    return $null
+}
+
+$skillDoctor = Join-Path $SkillDir 'scripts\doctor.mjs'
+if (-not (Test-Path -LiteralPath $skillDoctor -PathType Leaf)) {
+    Die 'COUNCIL_SKILL_DOCTOR_MISSING' "the skill folder carries no package doctor: $skillDoctor" 4
+}
+
 # --- data profile (mirrors runtime/src/cli/paths.ts Section 16.1) -------
 if (-not $DataDir) {
     if ($env:BLACKCEO_COUNCIL_DATA_DIR) { $DataDir = $env:BLACKCEO_COUNCIL_DATA_DIR }
@@ -193,9 +218,14 @@ if ($LASTEXITCODE -ne 0) {
     Die 'COUNCIL_NODE_PREREQ_FAILED' "the resolved Node executable $nodeExe failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
 }
 $sourceDoctor = Join-Path $SourceDir 'scripts\doctor.mjs'
-& "$nodeExe" "$sourceDoctor" --root "$SourceDir" | Out-Null
+$sourceMode = Get-DoctorMode $SourceDir
+if (-not $sourceMode) {
+    Die 'COUNCIL_SOURCE_MODE_UNDETERMINED' "the portable source at $SourceDir is neither a source package (archive present, archive.status 'generated') nor an extracted distribution (no archive, archive.status 'extracted_distribution'); refusing to guess a doctor mode. The previous release was not touched" 4
+}
+Say "source doctor mode: $sourceMode"
+& "$nodeExe" "$sourceDoctor" --root "$SourceDir" "--$sourceMode" | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Die 'COUNCIL_SOURCE_DOCTOR_FAILED' "the portable source at $SourceDir does not pass its own package doctor; the previous release was not touched" 4
+    Die 'COUNCIL_SOURCE_DOCTOR_FAILED' "the portable source at $SourceDir does not pass its own package doctor ($sourceMode mode); the previous release was not touched" 4
 }
 
 $manifest = Get-Content -LiteralPath (Join-Path $SourceDir 'manifest.json') -Raw | ConvertFrom-Json
@@ -209,8 +239,12 @@ $prefix = Join-Path $runtimeDir $aggregate
 $current = Join-Path $runtimeDir 'current'
 
 function Test-PrefixGates($root) {
-    $skillDoctor = Join-Path $SkillDir 'scripts\doctor.mjs'
-    & "$nodeExe" "$skillDoctor" --root "$SkillDir" | Out-Null
+    # Serves -Check as well as the post-build gate. The doctor mode is
+    # derived from the SKILL folder, the tree being gated; a refused
+    # derivation returns $false rather than falling through.
+    $skillMode = Get-DoctorMode $SkillDir
+    if (-not $skillMode) { return $false }
+    & "$nodeExe" "$skillDoctor" --root "$SkillDir" "--$skillMode" | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
     $gateEntry = Join-Path $root 'run-council.mjs'
     if (-not (Test-Path -LiteralPath $gateEntry)) { return $false }
