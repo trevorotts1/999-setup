@@ -114,7 +114,7 @@ done
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 "$PY" - "$BUILD" "$NODE" "$CHECK" "$QUIET" "$STAMP" <<'PY'
-import os, shutil, subprocess, sys
+import os, re, shutil, subprocess, sys
 
 build_dir, node_bin, check, quiet, stamp = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4] == "1", sys.argv[5]
 
@@ -125,50 +125,88 @@ def say(*a):
 def rel(p):
     return os.path.relpath(p, build_dir)
 
-# ---- the nine edits, anchored by exact content ---------------------------
-# EDIT6/EDIT7 appear twice on purpose: 9Router 0.5.85 renamed the minified locals
-# in the non-stream builder (g->h, E->G, n->o). Same name = same edit; whichever
-# variant's anchor exists is applied, the other is skipped. (added 2026-09-22)
-EDITS = [('EDIT1 opencode Accept: always SSE (body always forces stream:true)',
-  '"x-opencode-project":e["x-opencode-project"]||"global",Accept:b?"text/event-stream":"*/*"',
-  '"x-opencode-project":e["x-opencode-project"]||"global",Accept:"text/event-stream"'),
- ('EDIT2 aggregator: carry a delta-text buffer',
-  'g={responseId:"",created:Math.floor(Date.now()/1e3),status:"in_progress",usage:{...e},items:new Map}',
-  'g={responseId:"",created:Math.floor(Date.now()/1e3),status:"in_progress",usage:{...e},items:new Map,deltaText:""}'),
- ('EDIT3 frame handler: keep response.output_text.delta text',
-  '"response.output_item.done"===f?b.items.set(c.output_index??0,c.item)',
-  '"response.output_text.delta"===f?b.deltaText=(b.deltaText||"")+("string"==typeof '
-  'c.delta?c.delta:""):"response.output_item.done"===f?b.items.set(c.output_index??0,c.item)'),
- ('EDIT4 aggregator: recover buffered text when no item carried any',
-  'let h=[],i=g.items.size>0?Math.max(...g.items.keys()):-1;for(let a=0;a<=i;a++)h.push(g.items.get(a)||{type:"message",content:[],role:"assistant"});',
-  'let h=[],i=g.items.size>0?Math.max(...g.items.keys()):-1;for(let '
-  'a=0;a<=i;a++)h.push(g.items.get(a)||{type:"message",content:[],role:"assistant"});if(g.deltaText&&!h.some(a=>a?.type==="message"&&Array.isArray(a.content)&&a.content.some(a=>"string"==typeof '
-  'a?.text&&a.text.length>0)))h.push({type:"message",role:"assistant",content:[{type:"output_text",text:g.deltaText,annotations:[]}]});'),
- ('EDIT5 aggregator: reject non-terminal EOF before success callbacks',
-  'status:g.status||"completed",output:h,usage:g.usage}',
-  'status:g.status,output:h,usage:g.usage,...g.incomplete_details?{incomplete_details:g.incomplete_details}:{}}'),
- ('EDIT6 non-stream: length only for explicit upstream token limit',
-  'let b="completed"===g.status||"done"===g.status,d=E?"tool_calls":b?"stop":g.status||"stop"',
+# ---- the nine edits, located by content signature ------------------------
+# 9Router renames the minified locals of the compiled bundle between builds (0.5.85: g->h, E->G, n->o;
+# 0.5.104: e->f in the opencode header builder). An edit is therefore written as a TEMPLATE: literal code
+# text plus `@x@` placeholders for a renamed short identifier. The first `@x@` matches any JS identifier
+# and captures it, later `@x@` must repeat that same identifier, and the replacement is filled from the
+# captures, so one template covers every build. `ctx` supplies identifiers that only the replacement
+# needs (EDIT7's status variable) from a second unique anchor in the same file. Literal text still has to
+# match exactly, each template must match exactly once (else AMBIGUOUS, or MISSING -> exit 3, never a
+# silent success) and the already-applied check uses the same template, so re-runs stay no-ops.
+ID = r'[A-Za-z_$][\w$]*'
+
+def _rx(tpl, bound):
+    seen, out = set(), []
+    for k, part in enumerate(re.split(r'@(\w+)@', tpl)):
+        if k % 2 == 0:
+            out.append(re.escape(part))
+        elif part in bound:
+            out.append(re.escape(bound[part]))
+        elif part in seen:
+            out.append('(?P=%s)' % part)
+        else:
+            seen.add(part)
+            out.append('(?<![\\w$])(?P<%s>%s)' % (part, ID))
+    return re.compile(''.join(out))
+
+class Edit:
+    def __init__(self, name, old, new, ctx=None):
+        self.name, self.old, self.new, self.ctx = name, old, new, ctx
+        self.old_lit = max(re.split(r'@\w+@', old), key=len)
+        self.new_lit = max(re.split(r'@\w+@', new), key=len)
+        self._ctx_rx = _rx(ctx, {}) if ctx else None
+    def ctx_vals(self, text):
+        """{} when the edit needs no context, None when the context anchor is absent or ambiguous."""
+        if not self._ctx_rx:
+            return {}
+        vals = {tuple(sorted(m.groupdict().items())) for m in self._ctx_rx.finditer(text)}
+        return dict(next(iter(vals))) if len(vals) == 1 else None
+    def old_rx(self, ctx):
+        return _rx(self.old, ctx)
+    def new_rx(self, ctx):
+        return _rx(self.new, ctx)
+    def fill(self, m, ctx):
+        g = {**ctx, **m.groupdict()}
+        return re.sub(r'@(\w+)@', lambda x: g[x.group(1)], self.new)
+
+EDITS = [
+ Edit('EDIT1 opencode Accept: always SSE (body always forces stream:true)',
+  '"x-opencode-project":@e@["x-opencode-project"]||"global",Accept:@b@?"text/event-stream":"*/*"',
+  '"x-opencode-project":@e@["x-opencode-project"]||"global",Accept:"text/event-stream"'),
+ Edit('EDIT2 aggregator: carry a delta-text buffer',
+  '@g@={responseId:"",created:Math.floor(Date.now()/1e3),status:"in_progress",usage:{...@e@},items:new Map}',
+  '@g@={responseId:"",created:Math.floor(Date.now()/1e3),status:"in_progress",usage:{...@e@},items:new Map,deltaText:""}'),
+ Edit('EDIT3 frame handler: keep response.output_text.delta text',
+  '"response.output_item.done"===@f@?@b@.items.set(@c@.output_index??0,@c@.item)',
+  '"response.output_text.delta"===@f@?@b@.deltaText=(@b@.deltaText||"")+("string"==typeof '
+  '@c@.delta?@c@.delta:""):"response.output_item.done"===@f@?@b@.items.set(@c@.output_index??0,@c@.item)'),
+ Edit('EDIT4 aggregator: recover buffered text when no item carried any',
+  'let @h@=[],@i@=@g@.items.size>0?Math.max(...@g@.items.keys()):-1;for(let @a@=0;@a@<=@i@;@a@++)@h@.push(@g@.items.get(@a@)||{type:"message",content:[],role:"assistant"});',
+  'let @h@=[],@i@=@g@.items.size>0?Math.max(...@g@.items.keys()):-1;for(let '
+  '@a@=0;@a@<=@i@;@a@++)@h@.push(@g@.items.get(@a@)||{type:"message",content:[],role:"assistant"});if(@g@.deltaText&&!@h@.some(@a@=>@a@?.type==="message"&&Array.isArray(@a@.content)&&@a@.content.some(@a@=>"string"==typeof '
+  '@a@?.text&&@a@.text.length>0)))@h@.push({type:"message",role:"assistant",content:[{type:"output_text",text:@g@.deltaText,annotations:[]}]});'),
+ Edit('EDIT5 aggregator: reject non-terminal EOF before success callbacks',
+  'status:@g@.status||"completed",output:@h@,usage:@g@.usage}',
+  'status:@g@.status,output:@h@,usage:@g@.usage,...@g@.incomplete_details?{incomplete_details:@g@.incomplete_details}:{}}'),
+ Edit('EDIT6 non-stream: length only for explicit upstream token limit',
+  'let @b@="completed"===@h@.status||"done"===@h@.status,@d@=@G@?"tool_calls":@b@?"stop":@h@.status||"stop"',
   'let '
-  'b="completed"===g.status||"done"===g.status,d="incomplete"===g.status&&"max_output_tokens"===g.incomplete_details?.reason?"length":E?"tool_calls":b?"stop":g.status||"stop"'),
- ('EDIT7 non-stream: explicit token-limit outcome on Gemini wire',
-  'parts:[{text:n||""}]},finishReason:"STOP",index:0}',
-  'parts:[{text:n||""}]},finishReason:"incomplete"===g.status?"MAX_TOKENS":"STOP",index:0}'),
- ('EDIT6 non-stream: length only for explicit upstream token limit',
-  'let b="completed"===h.status||"done"===h.status,d=G?"tool_calls":b?"stop":h.status||"stop"',
-  'let '
-  'b="completed"===h.status||"done"===h.status,d="incomplete"===h.status&&"max_output_tokens"===h.incomplete_details?.reason?"length":G?"tool_calls":b?"stop":h.status||"stop"'),
- ('EDIT7 non-stream: explicit token-limit outcome on Gemini wire',
-  'parts:[{text:o||""}]},finishReason:"STOP",index:0}',
-  'parts:[{text:o||""}]},finishReason:"incomplete"===h.status?"MAX_TOKENS":"STOP",index:0}'),
- ('EDIT8 aggregator: recognize upstream terminal outcomes',
-  '"response.completed"===f||"response.done"===f?(b.status="completed",c.response?.usage&&(b.usage.input_tokens=c.response.usage.input_tokens||0,b.usage.output_tokens=c.response.usage.output_tokens||0,b.usage.total_tokens=c.response.usage.total_tokens||0)):"response.failed"===f&&(b.status="failed")',
-  '"response.completed"===f||"response.done"===f||"response.incomplete"===f?(b.status=c.response?.status||("response.incomplete"===f?"incomplete":"completed"),b.incomplete_details=c.response?.incomplete_details,c.response?.usage&&(b.usage.input_tokens=c.response.usage.input_tokens||0,b.usage.output_tokens=c.response.usage.output_tokens||0,b.usage.total_tokens=c.response.usage.total_tokens||0)):"response.failed"===f||"error"===f?b.status="failed":void '
+  '@b@="completed"===@h@.status||"done"===@h@.status,@d@="incomplete"===@h@.status&&"max_output_tokens"===@h@.incomplete_details?.reason?"length":@G@?"tool_calls":@b@?"stop":@h@.status||"stop"'),
+ Edit('EDIT7 non-stream: explicit token-limit outcome on Gemini wire',
+  'parts:[{text:@t@||""}]},finishReason:"STOP",index:0}',
+  'parts:[{text:@t@||""}]},finishReason:"incomplete"===@h@.status?"MAX_TOKENS":"STOP",index:0}',
+  ctx='finish_reason:@h@.status||"unknown"}'),
+ Edit('EDIT8 aggregator: recognize upstream terminal outcomes',
+  '"response.completed"===@f@||"response.done"===@f@?(@b@.status="completed",@c@.response?.usage&&(@b@.usage.input_tokens=@c@.response.usage.input_tokens||0,@b@.usage.output_tokens=@c@.response.usage.output_tokens||0,@b@.usage.total_tokens=@c@.response.usage.total_tokens||0)):"response.failed"===@f@&&(@b@.status="failed")',
+  '"response.completed"===@f@||"response.done"===@f@||"response.incomplete"===@f@?(@b@.status=@c@.response?.status||("response.incomplete"===@f@?"incomplete":"completed"),@b@.incomplete_details=@c@.response?.incomplete_details,@c@.response?.usage&&(@b@.usage.input_tokens=@c@.response.usage.input_tokens||0,@b@.usage.output_tokens=@c@.response.usage.output_tokens||0,@b@.usage.total_tokens=@c@.response.usage.total_tokens||0)):"response.failed"===@f@||"error"===@f@?@b@.status="failed":void '
   '0'),
- ('EDIT9 aggregator: fail closed on EOF and protocol errors',
-  'finally{b.releaseLock()}let h=[],i=g.items.size',
-  'finally{b.releaseLock()}if("completed"!==g.status&&!("incomplete"===g.status&&"max_output_tokens"===g.incomplete_details?.reason))throw Error("Upstream '
-  'Responses stream failed or ended without a valid terminal event");let h=[],i=g.items.size')]
+ Edit('EDIT9 aggregator: fail closed on EOF and protocol errors',
+  'finally{@b@.releaseLock()}let @h@=[],@i@=@g@.items.size',
+  'finally{@b@.releaseLock()}if("completed"!==@g@.status&&!("incomplete"===@g@.status&&"max_output_tokens"===@g@.incomplete_details?.reason))throw Error("Upstream '
+  'Responses stream failed or ended without a valid terminal event");let @h@=[],@i@=@g@.items.size')]
+# Older guard versions left these (literal, 0.5.8x names) in already-patched bundles; they are first rewritten
+# back to the form the templates above expect.
 LEGACY_EDITS = [('EDIT5 aggregator: non-terminal EOF is incomplete, not in_progress',
   'status:g.status||"completed",output:h,usage:g.usage}',
   'status:"in_progress"===g.status?"incomplete":g.status||"completed",output:h,usage:g.usage}'),
@@ -195,9 +233,9 @@ for p in all_files:
     except OSError:
         continue
 
-per_edit_already = {name: [] for name, _, _ in EDITS}
-per_edit_found = {name: [] for name, _, _ in EDITS}
-per_edit_ambiguous = {name: [] for name, _, _ in EDITS}
+per_edit_already = {e.name: [] for e in EDITS}
+per_edit_found = {e.name: [] for e in EDITS}
+per_edit_ambiguous = {e.name: [] for e in EDITS}
 
 to_write = {}
 for path, s in texts.items():
@@ -206,26 +244,31 @@ for path, s in texts.items():
         if previous in out:
             out = out.replace(previous, old)
     changed = out != s
-    for name, old, new in EDITS:
-        if new in out:
-            per_edit_already[name].append(path)
+    for e in EDITS:
+        if e.old_lit not in out and e.new_lit not in out:
             continue
-        cnt = out.count(old)
-        if cnt == 0:
+        ctx = e.ctx_vals(out)
+        if ctx is None:
             continue
-        if cnt != 1:
-            per_edit_ambiguous[name].append((path, cnt))
+        if e.new_lit in out and e.new_rx(ctx).search(out):
+            per_edit_already[e.name].append(path)
             continue
-        per_edit_found[name].append(path)
+        ms = list(e.old_rx(ctx).finditer(out))
+        if not ms:
+            continue
+        if len(ms) != 1:
+            per_edit_ambiguous[e.name].append((path, len(ms)))
+            continue
+        per_edit_found[e.name].append(path)
         if not check:
-            out = out.replace(old, new, 1)
+            out = out[:ms[0].start()] + e.fill(ms[0], ctx) + out[ms[0].end():]
             changed = True
     if changed and out != s:
         to_write[path] = out
 
 # An anchor that is nowhere to be found is a FAILURE, never a silent success.
-missing = [name for name, _, _ in EDITS
-           if not per_edit_already[name] and not per_edit_found[name] and not per_edit_ambiguous[name]]
+missing = [e.name for e in EDITS
+           if not per_edit_already[e.name] and not per_edit_found[e.name] and not per_edit_ambiguous[e.name]]
 if missing:
     print(f"FAIL: {len(missing)} of {len(EDITS)} OpenCode non-stream anchors were not found anywhere under {build_dir}:")
     for name in missing:
@@ -233,7 +276,8 @@ if missing:
     print("      The bundle layout changed. Re-derive the anchors; do NOT assume success.")
     sys.exit(3)
 
-for name, _, _ in EDITS:
+for e in EDITS:
+    name = e.name
     for p in per_edit_found[name]:
         say(f"  {'WOULD PATCH' if check else 'patching'} [{name}]: {rel(p)}")
     for p in per_edit_already[name]:
@@ -244,7 +288,7 @@ for name, _, _ in EDITS:
 if check:
     print()
     print("CHECK MODE — nothing was written.")
-    if any(per_edit_ambiguous[n] for n, _, _ in EDITS):
+    if any(per_edit_ambiguous[e.name] for e in EDITS):
         print("AMBIGUOUS anchors present — see above.")
         sys.exit(5)
     sys.exit(0)
@@ -270,7 +314,7 @@ if failed:
     print(f"\nFAILED: {failed} file(s) rejected by node --check and rolled back. See above.")
     sys.exit(4)
 
-if any(per_edit_ambiguous[n] for n, _, _ in EDITS):
+if any(per_edit_ambiguous[e.name] for e in EDITS):
     print("\nWARNING: at least one file had an ambiguous (non-unique) anchor and was left untouched.")
     print("         This means the bundle shape changed since these anchors were derived — inspect by hand.")
     sys.exit(5)
@@ -281,20 +325,20 @@ say(f"files patched: {len(patched_files)}   already-applied instances left alone
 say()
 say("Verify (post-patch occurrence counts of the NEW form, re-read from disk):")
 shortfall = 0
-# Grouped by NAME: an edit may carry several anchor variants (one per bundle
-# layout); exactly one of them must read back, so the variants' counts are summed.
-_forms = {}
-for name, old, new in EDITS:
-    _forms.setdefault(name, []).append(new)
-for name, forms in _forms.items():
+for e in EDITS:
     total = 0
     for p in all_files:
         try:
             s2 = open(p, encoding="utf-8", errors="surrogateescape").read()
         except OSError:
             continue
-        total += sum(s2.count(f) for f in forms)
-    say(f"  {name}: {total}")
+        if e.new_lit not in s2:
+            continue
+        ctx = e.ctx_vals(s2)
+        if ctx is None:
+            continue
+        total += len(list(e.new_rx(ctx).finditer(s2)))
+    say(f"  {e.name}: {total}")
     if total != 1:
         shortfall += 1
 if shortfall:

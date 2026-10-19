@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix/roll20261019-can009: nine-router-setup: the opencode-poll guard and the opencode-toolargs failover-guard and ollama-overload parts now locate their targets by content signature (templates whose renamed minified locals are captured, unique-match, fail-closed exit 3/2) instead of fixed anchor strings, so a clean 9Router 0.5.104 install or --upgrade passes the guards step (before: opencode-poll exit 3 "5 of 11 anchors not found", failover guard exit 2, which also blocked the ollama overload and ollama nonstream claude parts); output is byte-identical to the old guards on 0.5.95; install-9router-guards.sh proves opencode-poll with a rename-tolerant marker. May touch the same files as PR #262 (CAN002) and must merge after it. New check: tests/test-can009-opencode-signature.sh
+
 ## [1.38.0] — 2026-10-14
 
 - unit/DRAMA-UPLOADS-TWIN: drama-song-ad-factory 2.7.50 packages the verified direct-upload bridge from onboarding merged main `73fa96563dec1eb954f210c6ad383693812cfec5`; twin hashes and six offline transport tests agree.

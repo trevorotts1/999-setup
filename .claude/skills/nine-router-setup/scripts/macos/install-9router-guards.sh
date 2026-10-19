@@ -131,7 +131,8 @@ T = {  # guard -> [(label, marker, scope, min)]
  "deepseek-effort": [("DeepSeek effort tiers", '"low"===a||"minimal"===a?"low":"max"===a||"ultra"===a?"max":"high"', "chunks", 1)],
  "deepseek-openai-route": [("DeepSeek OpenAI route", "/*deepseek-openai-route-v1*/", "chunks", 1)],
  "ollama-done": [("Ollama [DONE] capture", 'let __done="data: [DONE]', "chunks", 1)],
- "opencode-poll": [("oc non-stream poll", 'status:"in_progress",usage:{...e},items:new Map,deltaText:""}', "chunks", 1)],
+ # the aggregator's `usage:{...e}` local is renamed between builds; the guard locates it by content signature, so the proof does too.
+ "opencode-poll": [("oc non-stream poll", r're:status:"in_progress",usage:\{\.\.\.[\w$]+\},items:new Map,deltaText:""\}', "chunks", 1)],
  "opencode-toolargs": [("toolargs recovery", "/*toolargs-recovery-v1*/", "chunks", 1),
                        ("failover guard", "/*failover-guard-v2*/", "chunks", 1),
                        ("ollama overload", "/*ollama-overload-guard-v1*/", "chunks", 1),
