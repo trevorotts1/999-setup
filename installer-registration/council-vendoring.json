@@ -83,8 +83,8 @@
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "ad1bddee036a4b55d43defe9e08041e9ddc023c12aeea84a464312390eb92918",
-    "distribution_file_count": 648
+    "distribution_aggregate_sha256": "46834b5cd6ad10650f86e748deed95476bfc196af939c815dfd219b070f55d47",
+    "distribution_file_count": 649
   },
   "canonical_files": {
     "CHANGELOG.md": "483795584820f4d5c3e557669fea4137fc242f3b39018a63133945cc3de175f5",
@@ -466,7 +466,7 @@
     "runtime/src/cli/budget.ts": "25696e2b52eb3108bfeb8a51e12b82e8845e833860ea28866f07dce71f4aa8ea",
     "runtime/src/cli/card-contract.ts": "2c10d463a0dff6e19a344e675de17fea1a5a953d2ed52e3e1caf6a3426d90f9e",
     "runtime/src/cli/card-text.ts": "daf059ef24b6bde7e309417663aeed30628a4deaf0385a144779f9d65d3655a0",
-    "runtime/src/cli/dispatcher.ts": "365c049a304fa244d550f55369bd972482df34305e8aefcd08edb63a5c013c56",
+    "runtime/src/cli/dispatcher.ts": "36a9019d7cb1779b119b30c6f1e14bcb91009bd4eeb98af40b51cae8c8782969",
     "runtime/src/cli/engine.ts": "fcd345deb8d1c725cbeee1d7660e2d66497687852988060d4b0c479f1126e46c",
     "runtime/src/cli/errors.ts": "7a067db8d1321c24d4d87137ecb1567e1ea653bdcb1bdb7bb0d8c3aae50a9831",
     "runtime/src/cli/executable-resolver.ts": "ee6ec38f66b20abb60a774a0a673dca6021534e34b3466c6b6737f5039903633",
@@ -485,6 +485,7 @@
     "runtime/src/cli/paths.ts": "548cde7e7d76c9bc6d7ab9d1def683b34d0e243fd4f55291f5fc7cff75e7915e",
     "runtime/src/cli/report-export.ts": "75b9e8c052cb899d7de928bb639609783eb4eec7c7769d69441cad03103ceb49",
     "runtime/src/cli/route-discovery.ts": "af3a34a36819427dfb5530adff66ce92c877b5c47e35e8fbf0b6218e68f48074",
+    "runtime/src/cli/skill-root.test.ts": "65a1581c4730675a51b6bd7234a1ff20ead019173e33588f545da2702fa38698",
     "runtime/src/cli/subprocess-transport.test.ts": "2621deb30bf28cb09f6f4f8f287930c6e5f295946a7173bf68c0ad9c7e12d53c",
     "runtime/src/cli/subprocess-transport.ts": "df344e0d9d62206d8070cf35cde0a6559a12ebeb24ef4f421981aa84d8afc510",
     "runtime/src/context/README.md": "68c4bf238ce2048b7e1672e8b16ee437fc06cabbb828bab044c92a267a7906bd",
