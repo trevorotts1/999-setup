@@ -225,7 +225,7 @@ if (-not $sourceMode) {
     Die 'COUNCIL_SOURCE_MODE_UNDETERMINED' "the portable source at $SourceDir is neither a source package (archive present, archive.status 'generated') nor an extracted distribution (no archive, archive.status 'extracted_distribution'); refusing to guess a doctor mode. The previous release was not touched" 4
 }
 Say "source doctor mode: $sourceMode"
-& "$nodeExe" (Join-Path $SourceDir 'scripts\doctor.mjs') --root "$SourceDir" "--$sourceMode" | Out-Null
+& "$nodeExe" "$SourceDir\scripts\doctor.mjs" --root "$SourceDir" "--$sourceMode" | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Die 'COUNCIL_SOURCE_DOCTOR_FAILED' "the portable source at $SourceDir does not pass its own package doctor ($sourceMode mode); the previous release was not touched" 4
 }
