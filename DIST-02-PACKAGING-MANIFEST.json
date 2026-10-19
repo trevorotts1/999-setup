@@ -1,13 +1,14 @@
 {
-  "schema": "blackceo.recovery.dist02.packaging-manifest/1",
+  "schema": "blackceo.recovery.dist02.packaging-manifest/2",
   "task": "DIST-02",
   "scope": "package the Black Friday Launcher dependencies into 999-setup; packaging only, nothing enabled at runtime",
   "enabled_in_999": false,
   "base": {
     "repo": "trevorotts1/999-setup",
-    "branch": "recovery/999-launcher-deps",
+    "branch": "lane-b/install-packaging-fixes",
     "base_ref": "origin/main",
-    "base_commit": "a156e4dfb7db831b32b47416cc751d8e803636a1"
+    "base_commit": "926d8c0ccf36358fd624b5c103e0526c4a860d2d",
+    "note": "regenerated against the shipped tree after PR #244 (merge of recovery/999-launcher-enable)"
   },
   "sources": [
     {
@@ -47,7 +48,9 @@
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
       "source_version": "v2.1.11",
       "files": 115,
-      "evidence": "diff -r source vs destination -> identical"
+      "evidence": "diff -r source vs destination -> identical",
+      "sha256": "sha256:fb56d00672fa8b24bb633d20f093d8d693e19138a3f56f2ddd97c0a4eeab969b",
+      "999_version": "v2.1.12"
     },
     {
       "id": "tree-78-signature-product-selection",
@@ -59,7 +62,9 @@
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
       "source_version": "0.2.2",
       "files": 50,
-      "evidence": "diff -r source vs destination -> identical"
+      "evidence": "diff -r source vs destination -> identical",
+      "sha256": "sha256:46668975b72901261aac8fec365f7ade841c858bec2826e0b0aca851007f0028",
+      "999_version": "0.2.2"
     },
     {
       "id": "tree-79-signature-order-form",
@@ -70,8 +75,10 @@
       "source_path": "79-signature-order-form",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
       "source_version": "0.1.3",
-      "files": 35,
-      "evidence": "diff -r source vs destination -> identical"
+      "files": 37,
+      "evidence": "diff -r source vs destination -> identical",
+      "sha256": "sha256:bc119eef40ceaed8715f179bc4693313b26c2989f14562d96e450b2c22a012b0",
+      "999_version": "0.1.4"
     },
     {
       "id": "tree-80-signature-upsell",
@@ -84,7 +91,9 @@
       "source_version": "0.2.1",
       "files": 117,
       "evidence": "diff -r source vs destination -> identical",
-      "note": "SKILL.md frontmatter name is '80-signature-upsell' while the 999 directory/registry name is 'signature-upsell'; vendored bytes were not edited"
+      "note": "SKILL.md frontmatter name is '80-signature-upsell' while the 999 directory/registry name is 'signature-upsell'; vendored bytes were not edited",
+      "sha256": "sha256:cf9e9b92a4b66fc9110e83f1ae9e637443ff5a2f5b01c2327602112bd4d9aae8",
+      "999_version": "0.2.1"
     },
     {
       "id": "tree-81-signature-downsell",
@@ -102,7 +111,9 @@
         "files_only_in_999": 0,
         "example_only_in_source": "fixtures/valid-downsell-request-policy.json"
       },
-      "action": "not overwritten; 999-side copy left as-is"
+      "action": "not overwritten; 999-side copy left as-is",
+      "files": 50,
+      "sha256": "sha256:14301556ee186ecb9375bfdd2fcb20478ba2b55ed60b9e8dac06033bf4fca40b"
     },
     {
       "id": "tree-82-signature-thank-you",
@@ -119,7 +130,9 @@
         "files_only_in_source": 2,
         "files_only_in_999": 0
       },
-      "action": "not overwritten; 999-side copy left as-is"
+      "action": "not overwritten; 999-side copy left as-is",
+      "files": 45,
+      "sha256": "sha256:5a23535a5fb39726560b0abdf5764d16c894f98c422cc1eb7a13a94dd22a32f5"
     },
     {
       "id": "tree-71-blackceo-signature-page",
@@ -136,7 +149,9 @@
         "files_only_in_source": 1,
         "files_only_in_999": 5
       },
-      "action": "not overwritten; 999-side copy left as-is"
+      "action": "not overwritten; 999-side copy left as-is",
+      "files": 313,
+      "sha256": "sha256:130bb989c730fcaf23c06ff58bf939085fe40b4257a21be93636f4ecba91fcd2"
     },
     {
       "id": "tree-77-council-of-wise-elders",
@@ -154,7 +169,9 @@
         "files_only_in_999": 1,
         "example_only_in_999": "DISTRIBUTION-RECONCILIATION.json"
       },
-      "action": "not overwritten; 999-side copy left as-is"
+      "action": "not overwritten; 999-side copy left as-is",
+      "files": 311,
+      "sha256": "sha256:8e403c591a032f9cb5ae39665d7ed906cca3cfa1e6356e076458f8e09f88096b"
     },
     {
       "id": "shared-utils-signature-launch",
@@ -165,7 +182,9 @@
       "source_path": "shared-utils/signature_launch",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
       "files": 68,
-      "evidence": "diff -r source vs destination -> identical"
+      "evidence": "diff -r source vs destination -> identical",
+      "sha256": "sha256:d7cc0eab36702ae9de7770efc65f956d659cf04a55929a6772cbf1fd968c656a",
+      "999_version": null
     },
     {
       "id": "registry-line-81",
@@ -176,7 +195,11 @@
       "999_registry": "CONTROL/bundled-skills.txt",
       "status": "added",
       "registry_name": "signature-downsell",
-      "registry_line": 16
+      "registry_line": 16,
+      "999_path": "CONTROL/bundled-skills.txt",
+      "files": 1,
+      "sha256": "sha256:c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c",
+      "999_version": null
     },
     {
       "id": "registry-line-82",
@@ -187,7 +210,11 @@
       "999_registry": "CONTROL/bundled-skills.txt",
       "status": "added",
       "registry_name": "signature-thank-you",
-      "registry_line": 17
+      "registry_line": 17,
+      "999_path": "CONTROL/bundled-skills.txt",
+      "files": 1,
+      "sha256": "sha256:c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c",
+      "999_version": null
     },
     {
       "id": "registry-line-launcher",
@@ -197,48 +224,57 @@
       "declared_ref_present_in_999": false,
       "999_registry": "CONTROL/bundled-skills.txt",
       "status": "added",
-      "registry_name": "83-black-friday-launcher",
+      "registry_name": "black-friday-launcher",
       "registry_line": 18,
-      "why_numeric": "the contract's installer_registration entry is ref '83-black-friday-launcher/SKILL.md' and its checker requires a numeric prefix; the Launcher's own test test_directory_name_derives_from_one_constant asserts SKILL_ROOT.name == SKILL_DIR_NAME == '83-black-friday-launcher'"
+      "why": "the Launcher ships as a bare slug; the installer resolves registry names verbatim and accepts either convention",
+      "999_path": "CONTROL/bundled-skills.txt",
+      "files": 1,
+      "sha256": "sha256:c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c",
+      "999_version": null
     },
     {
       "id": "department-map-entry-launcher",
       "kind": "department_map_entry",
       "required": true,
       "declared_ref": "83-black-friday-launcher/repo-integration/skill-department-map-entry.json",
-      "status": "missing_at_source",
-      "999_path": null,
-      "evidence": "git ls-tree -r origin/batch/recovery-b5:83-black-friday-launcher lists no repo-integration/ directory; the declared file does not exist",
-      "blocks_enablement": true
+      "status": "present",
+      "999_path": ".claude/skills/black-friday-launcher/repo-integration/skill-department-map-entry.json",
+      "evidence": "present in the shipped tree; measured by the generator",
+      "blocks_enablement": false,
+      "files": 1,
+      "sha256": "sha256:f2083ea35dec7946789ea4e608d554495e3c93efcf3820362cb5f92e483f6b14",
+      "999_version": null
     },
     {
       "id": "installer-registration-launcher",
       "kind": "installer_registration",
       "required": true,
       "status": "vendored",
-      "999_path": ".claude/skills/83-black-friday-launcher/SKILL.md",
+      "999_path": ".claude/skills/black-friday-launcher",
       "source_path": "83-black-friday-launcher",
       "source_commit": "1728ebefe1a409bd9b111b2caaeedb2be2400e86",
       "source_version": "0.2.0",
-      "files": 32,
-      "evidence": "diff -r source vs destination -> identical"
+      "files": 37,
+      "evidence": "diff -r source vs destination -> identical",
+      "sha256": "sha256:caa5e95f21c7023b5508163b188198b23a8abe798166afd96dea5e84089c6de6",
+      "999_version": "0.2.2"
     },
     {
       "id": "skill-number-assigned",
       "kind": "skill_number",
       "required": true,
-      "status": "blocked",
-      "evidence": "83-black-friday-launcher/registration.json -> skill.number_final = false; launcher_core/constants.py -> SKILL_NUMBER = '83' (working parameter)",
-      "blocks_enablement": true
+      "status": "present",
+      "evidence": "skill.number_final = true (LAUNCH-04); launcher_core/constants.py SKILL_NUMBER = '83'; registration.json number_assignment records the availability evidence",
+      "blocks_enablement": false
     },
     {
       "id": "runtime-jsonschema",
       "kind": "runtime_package",
       "required": true,
-      "status": "missing",
-      "evidence": "python3 -I -c 'import jsonschema' -> rc=1 (ModuleNotFoundError); no requirements.txt, pyproject.toml, setup.py or Pipfile exists in the 999 tree; .claude/skills/signature-order-form/scripts/validate_checkout.py:18 imports jsonschema",
-      "blocks_enablement": true,
-      "note": "no python dependency declaration mechanism exists in 999 to package this; reported, not invented"
+      "status": "declared",
+      "evidence": "requirements.txt declares jsonschema>=4.0; setup-macos.sh ensure_jsonschema() installs it from that file idempotently (an importable module skips pip) and fails loudly when the import still fails. Proven by .claude/skills/black-friday-launcher/tests/verify_installer_python_deps.sh: control MISSING with isolated_interpreter=True before the install, PRESENT with isolated_interpreter=True after",
+      "blocks_enablement": false,
+      "note": "declared in requirements.txt and installed by the macOS installer; the Windows installer is not changed by this lane"
     }
   ],
   "installer_registration_format": {
@@ -253,21 +289,73 @@
     ]
   },
   "checks": [
-    {"command": "bash installer-registration/verify-registration.sh", "exit_code": 0, "result": "RESULT: 27 passed, 0 failed"},
-    {"command": "bash installer-registration/verify-council-registration.sh", "exit_code": 0, "result": "RESULT: 53 passed, 0 failed"},
-    {"command": "python3 installer-registration/check-helper-pins.py --onboarding <onboarding checkout> --ref origin/main", "exit_code": 0, "result": "every pin equals openclaw-onboarding@origin/main"},
-    {"command": "python3 installer-registration/helper-deps.py preflight", "exit_code": 1, "result": "0/7 helper/root pairs OK; 7 failed (KIE helpers absent from ~/.claude-nine; machine state, not packaging state)"},
-    {"command": "bash installer-registration/smoke_test.sh --self-test", "exit_code": 0, "result": "all 4 cases behaved as specified"},
-    {"command": "bash .claude/skills/83-black-friday-launcher/verify.sh", "exit_code": 1, "result": "101 tests: 1 failure, 51 errors; 49 ok — the Launcher resolves its dependencies at numbered sibling paths (49-signature-funnel, 77-council-of-wise-elders, 79-signature-order-form) that do not exist under 999's slug naming"},
-    {"command": "python3 -I -c 'import jsonschema'", "exit_code": 1, "result": "module not importable"}
+    {
+      "command": "bash installer-registration/verify-registration.sh",
+      "exit_code": 0,
+      "result": "RESULT: 34 passed, 0 failed"
+    },
+    {
+      "command": "bash installer-registration/verify-council-registration.sh",
+      "exit_code": 0,
+      "result": "RESULT: 53 passed, 0 failed"
+    },
+    {
+      "command": "bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh",
+      "exit_code": 0,
+      "result": "SUITES: 18 passed"
+    },
+    {
+      "command": "bash .claude/skills/black-friday-launcher/verify.sh",
+      "exit_code": 0,
+      "result": "16 present, 0 missing, 0 unverifiable; enabled_in_999=False, would_enable=True"
+    },
+    {
+      "command": "bash .claude/skills/black-friday-launcher/tests/verify_installer_python_deps.sh",
+      "exit_code": 0,
+      "result": "RESULT: 10 passed, 0 failed; runtime-jsonschema MISSING with isolated_interpreter=True before the install, PRESENT with isolated_interpreter=True after; second run short-circuits"
+    },
+    {
+      "command": "python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py --check",
+      "exit_code": 0,
+      "result": "OK 16 entries match the tree"
+    }
   ],
   "remaining_obligations": [
-    "83-black-friday-launcher/repo-integration/skill-department-map-entry.json does not exist at the source; the Launcher must publish it or the manifest entry must be withdrawn by its owner",
-    "skill.number_final is false; the Launcher number is a working parameter (83), so the registry name carries an unassigned number",
-    "jsonschema is required by Skill 79's validator and is not declared anywhere in 999",
-    "the Launcher's launcher_core/constants.py hardcodes numbered dependency directory names, so it does not resolve 999's slug-named skill trees; vendored bytes were not edited",
     "skills 49, 78, 79, 80 are vendored but deliberately not registered in CONTROL/bundled-skills.txt (DIST-02 named only signature-downsell, signature-thank-you and the Launcher)",
-    "skills 71, 77, 81, 82 are present in 999 but drifted from onboarding origin/main; they were not overwritten"
+    "skills 71, 77, 81, 82 were drifted from their recorded onboarding source commits at DIST-02 time and were not overwritten; the recorded drift is history, not a re-measurement",
+    "setup-windows.ps1 does not install jsonschema; only the macOS installer does"
   ],
-  "live_effects": "none"
+  "live_effects": "none",
+  "generated": {
+    "tool": ".claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py",
+    "command": "python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py",
+    "verify": "python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py --check",
+    "digest": "sha256:<hex> = SHA-256 over the newline-terminated, path-sorted lines '<file sha256>  <posix relative path>'; __pycache__, *.pyc, .DS_Store and .git are excluded",
+    "measured_keys": [
+      "999_path",
+      "files",
+      "999_version",
+      "sha256"
+    ],
+    "metadata_from": "the manifest already in the tree; provenance is never re-invented"
+  },
+  "checks_environment": {
+    "TMPDIR": "/Volumes/mac mini m4/Downloads/BLACKCEO_RECOVERY_2026-10-18/tmp",
+    "note": "TMPDIR, TMP and TEMP were all set to this path for every command above"
+  },
+  "numeric_assumption_audit": {
+    "why": "launcher_core/dependencies.py already accepts a bare slug; this audit confirms no other numeric-only assumption exists in the 999 install path",
+    "grep_setup_macos": {
+      "command": "grep -nE '\\[0-9\\]' .claude/skills/nine-router-setup/scripts/setup-macos.sh",
+      "exit_code": 1,
+      "result": "no match"
+    },
+    "grep_installer_registration": {
+      "command": "grep -rnE '\\[0-9\\]' installer-registration --include='*.sh'",
+      "matches": [
+        "installer-registration/helpers/74-kie-live-adapter/qc-74-kie-live-adapter.sh:28 — a semantic-version regex for skill-version.txt, not a skill-directory assumption"
+      ]
+    },
+    "conclusion": "no numeric-only assumption found, so no fix and no new test were needed. bundled_skills() returns registry names verbatim; resolve_skill_source() and link_skills_into_root() use that name unchanged. Bare-slug install is proven by verify-registration.sh section F; both conventions on the registration check are proven by tests/test_dependencies_registration.py."
+  }
 }

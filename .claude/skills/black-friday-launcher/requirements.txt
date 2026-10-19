@@ -3,4 +3,10 @@
 # (signature-order-form/scripts/validate_checkout.py), which does `import
 # jsonschema` at module load. Nothing else the Launcher imports needs a
 # third-party package: everything else is stdlib.
+#
+# Installed by .claude/skills/nine-router-setup/scripts/setup-macos.sh
+# (ensure_jsonschema, in the dependency preflight) with
+# `python3 -m pip install --user -r <this file>`; inside a venv pip rejects
+# --user, so the installer drops the flag there. Manual install, same file:
+#   python3 -m pip install --user -r .claude/skills/black-friday-launcher/requirements.txt
 jsonschema>=4.0
