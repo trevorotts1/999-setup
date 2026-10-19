@@ -1,0 +1,61 @@
+name: skill71-parity
+
+# Skill 71 cross-repo parity (fix plan Fix 10). The two repositories drifted
+# in files their own allowlist classifies as byte-identical, and the parity
+# block skipped by default because nothing set SKILL71_999_ROOT.
+#
+# Both repository roots are checked out by name and the parity checker is run
+# with them; the environment variables are set in the job so the check can
+# never report [SKIP] for want of them.
+#
+# DEVIATION (recorded in the unit's ledger): verify.sh's own parity block
+# computes PARITY_REPO_ROOT as "$ROOT/../..", one level above the onboarding
+# repository in both standard layouts, so it cannot find
+# scripts/check-skill71-parity.py and reports FAIL for a missing file rather
+# than a real comparison. This job therefore calls the checker directly, which
+# is the comparison verify.sh intends to run; the verify.sh path fix belongs
+# in the onboarding repository, which this unit does not own.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/skills/blackceo-signature-page/**'
+      - '.github/workflows/skill71-parity.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/blackceo-signature-page/**'
+      - '.github/workflows/skill71-parity.yml'
+  schedule:
+    # openclaw-onboarding moves without a commit here, so it also runs on a clock
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    env:
+      SKILL71_999_ROOT: ${{ github.workspace }}/999-checkout
+      SKILL71_ONB_ROOT: ${{ github.workspace }}/onboarding-checkout
+    steps:
+      - name: Checkout 999-setup (this repository)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: 999-checkout
+      - name: Checkout trevorotts1/openclaw-onboarding (the sync source)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: trevorotts1/openclaw-onboarding
+          ref: main
+          path: onboarding-checkout
+      - name: Skill 71 parity reports PASS or FAIL, never SKIP
+        run: |
+          test -n "$SKILL71_999_ROOT" || { echo "SKILL71_999_ROOT unset" >&2; exit 1; }
+          test -n "$SKILL71_ONB_ROOT" || { echo "SKILL71_ONB_ROOT unset" >&2; exit 1; }
+          python3 "$SKILL71_ONB_ROOT/scripts/check-skill71-parity.py" \
+            --onb-root "$SKILL71_ONB_ROOT" \
+            --nine-root "$SKILL71_999_ROOT"
