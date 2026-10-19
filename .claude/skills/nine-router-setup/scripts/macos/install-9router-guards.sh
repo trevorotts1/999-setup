@@ -75,16 +75,36 @@ NODE=""; for c in /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 
   [ -n "$c" ] && [ -x "$c" ] && { NODE="$c"; break; }; done
 [ -n "$NODE" ] || { echo "no node binary resolvable" >&2; exit 2; }
 NPM="$(dirname "$NODE")/npm"; [ -x "$NPM" ] || NPM="$(command -v npm 2>/dev/null || true)"
+[ -z "${NINEROUTER_NPM:-}" ] || NPM="$NINEROUTER_NPM"   # test seam: point at a fake/scratch npm
+
+pkg_version() { sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" 2>/dev/null | head -1; }
+# npm global prefix that owns ROOT. ROOT is <prefix>/lib/node_modules/9router (macOS/Linux, incl. the
+# custom ~/.local/share/999/npm) or <prefix>/node_modules/9router (Windows layout); anything else is
+# refused rather than guessed, because a wrong --prefix installs a second copy and leaves ROOT stale.
+prefix_of_root() {
+  local nm; nm="$(dirname "${ROOT%/}")"
+  [ "$(basename "$nm")" = node_modules ] || return 1
+  nm="$(dirname "$nm")"
+  [ "$(basename "$nm")" = lib ] && nm="$(dirname "$nm")"
+  printf '%s\n' "$nm"
+}
 
 if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
   [ -x "$NPM" ] || { echo "npm not found for --upgrade" >&2; exit 2; }
-  PREFIX="$(cd "$ROOT/../.." && pwd)"
+  PREFIX="$(prefix_of_root)" || { echo "cannot derive npm prefix from --root $ROOT (expected <prefix>/lib/node_modules/9router or <prefix>/node_modules/9router)" >&2; exit 2; }
   # agent-pull-fix: R13 — record the installed version before touching anything.
-  UP_FROM="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
+  UP_FROM="$(pkg_version)"
+  # Version the install must land on: VER itself when exact, else what the registry resolves it to.
+  case "$VER" in
+    [0-9]*.[0-9]*.[0-9]*) WANT="$VER" ;;
+    *) WANT="$(PATH="$(dirname "$NODE"):$PATH" "$NPM" view "9router@$VER" version 2>/dev/null | tail -1)"
+       [ -n "$WANT" ] || { echo "cannot resolve 9router@$VER on the registry; guards not touched" >&2; exit 2; } ;;
+  esac
   echo "[guards] upgrading 9router@$VER in prefix $PREFIX (from ${UP_FROM:-unknown})"
   PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$VER" --no-audit --no-fund >&2 \
     || { echo "npm install failed; guards not touched" >&2; exit 2; }
-  UP_TO="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1)"
+  UP_TO="$(pkg_version)"
+  [ "$UP_TO" = "$WANT" ] || { echo "npm install into $PREFIX succeeded but the package at $ROOT reports ${UP_TO:-no version}, expected $WANT: the live 9Router was NOT upgraded; guards not touched" >&2; exit 2; }
 fi
 [ -d "$CHUNKS" ] || { echo "9Router chunks dir not found at $CHUNKS" >&2; exit 2; }
 echo "[guards] 9Router $(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1) at $ROOT"
@@ -228,6 +248,8 @@ if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
   echo "[guards] rolling back to 9router@$UP_FROM" >&2
   PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$UP_FROM" --no-audit --no-fund >&2 \
     || { echo "[guards] ROLLBACK FAILED: npm install 9router@$UP_FROM failed; guards NOT re-applied" >&2; exit 4; }
+  [ "$(pkg_version)" = "$UP_FROM" ] \
+    || { echo "[guards] ROLLBACK FAILED: package at $ROOT reports $(pkg_version), expected $UP_FROM; guards NOT re-applied" >&2; exit 4; }
   up_rb=1
   for g in "${SEL[@]}"; do
     "$BIN_DIR/9router-$g-guard.sh" "$ROOT" >/dev/null 2>&1 || true
