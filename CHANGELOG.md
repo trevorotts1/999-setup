@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- fix/roll20261019-can002: nine-router-setup: the GLM 5.3 thinking guard now locates parts A-F by content signature (regex with captured minified locals) instead of fixed anchor strings, so it survives 9Router chunk renumbering and local renames (proven on 0.5.91, 0.5.95 and 0.5.104); a part that resolves 0 files or reads back short now exits 3 instead of printing "files patched: 0"; (none) on GLM 5.3 maps to the lowest valid level where the model cannot disable thinking; the regression suite derives its stock-drift expectations; install-9router-guards.sh: --root may be the package, an npm prefix or a node_modules dir; ~/.9router (the data folder) or no --root auto-detects (known prefixes, then `npm root -g`, then the running process); any other non-package folder is an error (exit 2), so a mistyped scratch root can never patch the live install. New check: tests/test-glm53-guard-signature.sh
+
 ## [1.38.0] — 2026-10-14
 
 - unit/DRAMA-UPLOADS-TWIN: drama-song-ad-factory 2.7.50 packages the verified direct-upload bridge from onboarding merged main `73fa96563dec1eb954f210c6ad383693812cfec5`; twin hashes and six offline transport tests agree.
