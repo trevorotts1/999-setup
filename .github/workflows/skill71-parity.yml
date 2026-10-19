@@ -1,0 +1,82 @@
+name: skill71-parity
+
+# Skill 71 cross-repo parity (fix plan Fix 10). The two repositories drifted
+# in files their own allowlist classifies as byte-identical, and the parity
+# block skipped by default because nothing set SKILL71_999_ROOT.
+#
+# The step below runs the shipped verify.sh with BOTH roots named, so its
+# parity block reports [PASS] or [FAIL] and never [SKIP]. verify.sh resolves
+# its repository as "$ROOT/../.." and looks for
+# scripts/check-skill71-parity.py in it; in the onboarding repository the
+# skill sits one level below the root, so the step exposes it one level
+# deeper through a symlink. The expression then names the real checkout root
+# and the checker compares the two real trees. No file bytes are copied or
+# changed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude/skills/blackceo-signature-page/**'
+      - '.github/workflows/skill71-parity.yml'
+  pull_request:
+    paths:
+      - '.claude/skills/blackceo-signature-page/**'
+      - '.github/workflows/skill71-parity.yml'
+  schedule:
+    # openclaw-onboarding moves without a commit here, so it also runs on a clock
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    env:
+      SKILL71_999_ROOT: ${{ github.workspace }}/999-checkout
+      SKILL71_ONB_ROOT: ${{ github.workspace }}/onboarding-checkout
+    steps:
+      - name: Checkout 999-setup (this repository)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: 999-checkout
+      - name: Checkout trevorotts1/openclaw-onboarding (the sync source)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: trevorotts1/openclaw-onboarding
+          ref: main
+          path: onboarding-checkout
+      - name: Skill 71 parity reports PASS or FAIL, never SKIP
+        run: |
+          set -uo pipefail
+          test -n "$SKILL71_999_ROOT" || { echo "SKILL71_999_ROOT unset" >&2; exit 1; }
+          test -n "$SKILL71_ONB_ROOT" || { echo "SKILL71_ONB_ROOT unset" >&2; exit 1; }
+
+          # verify.sh computes its repository as "$ROOT/../.." and expects
+          # scripts/check-skill71-parity.py there. The onboarding skill sits
+          # one level below the checkout root, so expose it one level deeper
+          # through a symlink; verify.sh then names the real root.
+          mkdir -p "$SKILL71_ONB_ROOT/.ci"
+          ln -sfn "$SKILL71_ONB_ROOT/71-blackceo-signature-page" \
+                  "$SKILL71_ONB_ROOT/.ci/71-blackceo-signature-page"
+
+          log="$RUNNER_TEMP/skill71-verify.log"
+          rc=0
+          bash "$SKILL71_ONB_ROOT/.ci/71-blackceo-signature-page/verify.sh" \
+            2>&1 | tee "$log" || rc=$?
+
+          # The parity verdict decides this step. verify.sh also runs the skill
+          # test suite as a side effect; wiring that suite into CI is Fix 11,
+          # a different unit, so its result is printed but not judged here.
+          if grep -q '^\[PASS\] parity against .* checkout ' "$log"; then
+            exit 0
+          fi
+          if grep -q '^\[FAIL\] parity against .* checkout ' "$log"; then
+            echo "Skill 71 cross-repo parity FAILED (verify.sh exit $rc)" >&2
+            exit 1
+          fi
+          echo "Skill 71 parity printed neither PASS nor FAIL (verify.sh exit $rc)" >&2
+          exit 1
