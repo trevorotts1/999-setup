@@ -4,17 +4,14 @@ name: skill71-parity
 # in files their own allowlist classifies as byte-identical, and the parity
 # block skipped by default because nothing set SKILL71_999_ROOT.
 #
-# Both repository roots are checked out by name and the parity checker is run
-# with them; the environment variables are set in the job so the check can
-# never report [SKIP] for want of them.
-#
-# DEVIATION (recorded in the unit's ledger): verify.sh's own parity block
-# computes PARITY_REPO_ROOT as "$ROOT/../..", one level above the onboarding
-# repository in both standard layouts, so it cannot find
-# scripts/check-skill71-parity.py and reports FAIL for a missing file rather
-# than a real comparison. This job therefore calls the checker directly, which
-# is the comparison verify.sh intends to run; the verify.sh path fix belongs
-# in the onboarding repository, which this unit does not own.
+# The step below runs the shipped verify.sh with BOTH roots named, so its
+# parity block reports [PASS] or [FAIL] and never [SKIP]. verify.sh resolves
+# its repository as "$ROOT/../.." and looks for
+# scripts/check-skill71-parity.py in it; in the onboarding repository the
+# skill sits one level below the root, so the step exposes it one level
+# deeper through a symlink. The expression then names the real checkout root
+# and the checker compares the two real trees. No file bytes are copied or
+# changed.
 
 on:
   push:
@@ -54,8 +51,32 @@ jobs:
           path: onboarding-checkout
       - name: Skill 71 parity reports PASS or FAIL, never SKIP
         run: |
+          set -uo pipefail
           test -n "$SKILL71_999_ROOT" || { echo "SKILL71_999_ROOT unset" >&2; exit 1; }
           test -n "$SKILL71_ONB_ROOT" || { echo "SKILL71_ONB_ROOT unset" >&2; exit 1; }
-          python3 "$SKILL71_ONB_ROOT/scripts/check-skill71-parity.py" \
-            --onb-root "$SKILL71_ONB_ROOT" \
-            --nine-root "$SKILL71_999_ROOT"
+
+          # verify.sh computes its repository as "$ROOT/../.." and expects
+          # scripts/check-skill71-parity.py there. The onboarding skill sits
+          # one level below the checkout root, so expose it one level deeper
+          # through a symlink; verify.sh then names the real root.
+          mkdir -p "$SKILL71_ONB_ROOT/.ci"
+          ln -sfn "$SKILL71_ONB_ROOT/71-blackceo-signature-page" \
+                  "$SKILL71_ONB_ROOT/.ci/71-blackceo-signature-page"
+
+          log="$RUNNER_TEMP/skill71-verify.log"
+          rc=0
+          bash "$SKILL71_ONB_ROOT/.ci/71-blackceo-signature-page/verify.sh" \
+            2>&1 | tee "$log" || rc=$?
+
+          # The parity verdict decides this step. verify.sh also runs the skill
+          # test suite as a side effect; wiring that suite into CI is Fix 11,
+          # a different unit, so its result is printed but not judged here.
+          if grep -q '^\[PASS\] parity against .* checkout ' "$log"; then
+            exit 0
+          fi
+          if grep -q '^\[FAIL\] parity against .* checkout ' "$log"; then
+            echo "Skill 71 cross-repo parity FAILED (verify.sh exit $rc)" >&2
+            exit 1
+          fi
+          echo "Skill 71 parity printed neither PASS nor FAIL (verify.sh exit $rc)" >&2
+          exit 1
