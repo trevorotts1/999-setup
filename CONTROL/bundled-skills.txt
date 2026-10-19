@@ -15,4 +15,4 @@ drama-studio
 council-of-wise-elders
 signature-downsell
 signature-thank-you
-83-black-friday-launcher
+black-friday-launcher
