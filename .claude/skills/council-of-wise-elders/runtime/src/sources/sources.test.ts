@@ -6,8 +6,8 @@
  * T004 original-speaker rule it shares with CWE-015, the CWE-012 prose
  * block's named negative fixtures (missing locator, wrong speaker,
  * unlisted title claim, missing attribution label), and a disk audit of
- * the nine real scaffold packs, which must validate structurally while
- * reporting their honest not-yet-substantive qualification.
+ * the nine real packs, which must validate structurally while reporting
+ * only the source qualification supported by their current records.
  *
  * All pack fixtures are synthetic and labeled as fixture data; no test
  * string is a real quotation or source excerpt.
@@ -69,18 +69,18 @@ describe('T001: seat registry validation', () => {
 });
 
 describe('valid packs pass', () => {
-  test('valid minimal Sinek pack is substantive', () => {
+  test('valid minimal Sinek pack has primary teaching coverage', () => {
     const v = validateAdvisorPack(validSinekPack());
     assert.equal(v.valid, true, JSON.stringify(v.diagnostics, null, 2));
-    assert.equal(v.qualification, 'substantive');
-    assert.equal(v.works[0].work_class, 'complete_book');
+    assert.equal(v.qualification, 'primary_teaching_based');
+    assert.equal(v.works[0].work_class, 'primary_teaching');
     assert.equal(v.works[0].traceable_concepts, 3);
     assert.equal(v.works[0].application_cases, 1);
   });
   test('valid Jakes pack: three books, three lenses, one seat', () => {
     const v = validateAdvisorPack(validJakesPack());
     assert.equal(v.valid, true, JSON.stringify(v.diagnostics, null, 2));
-    assert.equal(v.qualification, 'substantive');
+    assert.equal(v.qualification, 'primary_teaching_based');
     assert.equal(v.works.length, 3);
     assert.ok(v.works.every((w) => w.gate_met));
   });
@@ -406,7 +406,7 @@ describe('Skill 22 export package validation', () => {
       claimed_titles: ['Start with Why'],
     });
     assert.equal(r.accepted, true, JSON.stringify(r.diagnostics, null, 2));
-    assert.equal(r.qualification, 'substantive');
+    assert.equal(r.qualification, 'primary_teaching_based');
   });
   test('evidence citing a source the package does not carry is rejected', () => {
     const pack = validSinekPack();
@@ -434,7 +434,7 @@ describe('Skill 22 export package validation', () => {
   });
 });
 
-describe('disk audit: the nine scaffold packs', () => {
+describe('disk audit: the nine source packs', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const advisorsDir = join(here, '..', '..', '..', 'advisors');
   const folders = readdirSync(advisorsDir, { withFileTypes: true })
@@ -448,7 +448,7 @@ describe('disk audit: the nine scaffold packs', () => {
   });
 
   for (const seat of SEAT_IDS) {
-    test(`${seat} scaffold pack is structurally valid and honestly unqualified`, () => {
+    test(`${seat} pack is structurally valid with honest source qualification`, () => {
       const dir = join(advisorsDir, seat);
       const read = (name: string) =>
         JSON.parse(readFileSync(join(dir, name), 'utf8')) as Record<string, unknown>;
@@ -469,10 +469,30 @@ describe('disk audit: the nine scaffold packs', () => {
       };
       const v = validateAdvisorPack(pack);
       assert.equal(v.valid, true, JSON.stringify(v.diagnostics, null, 2));
-      assert.ok(
-        v.qualification === 'bibliographic_only' || v.qualification === 'incomplete',
-        `expected an honest unqualified state, got ${v.qualification}`,
-      );
+      if (seat === 'russell-brunson') {
+        assert.equal(v.qualification, 'primary_teaching_based');
+        assert.equal(v.works.length, 2);
+        assert.ok(v.works.every((work) => work.work_class === 'primary_teaching'
+          && work.traceable_concepts === 4 && work.application_cases === 1 && work.gate_met));
+        const downgraded = clonePack(pack);
+        for (const record of downgraded.sources.records as Array<Record<string, unknown>>) {
+          if (record.quality === 'primary_substantive') record.quality = 'unverified';
+        }
+        assert.notEqual(validateAdvisorPack(downgraded).qualification, 'primary_teaching_based');
+      } else if (seat === 'oprah-winfrey' || seat === 'les-brown') {
+        assert.equal(v.qualification, 'partial');
+        assert.equal(v.works.length, 2);
+        assert.equal(v.works[0].work_class, 'primary_teaching');
+        assert.equal(v.works[0].traceable_concepts, 4);
+        assert.equal(v.works[0].application_cases, 1);
+        assert.equal(v.works[0].gate_met, true);
+        assert.equal(v.works[1].gate_met, false);
+        assert.equal(v.works[1].traceable_concepts, 0);
+        const records = pack.sources.records as Array<Record<string, unknown>>;
+        assert.equal(records.filter((r) => r.source_type === 'book').length, 2);
+      } else {
+        assert.ok(v.qualification === 'bibliographic_only' || v.qualification === 'incomplete');
+      }
     });
   }
 });
