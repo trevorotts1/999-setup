@@ -89,22 +89,60 @@ prefix_of_root() {
   printf '%s\n' "$nm"
 }
 
+# Reinstall the recorded previous version, re-apply the guards, re-prove them. Always exits: 3 = rolled back and
+# proven, 4 = rollback impossible or incomplete.
+rollback_upgrade() {
+  if [ -z "$UP_FROM" ]; then
+    echo "[guards] cannot roll back: previous 9Router version was not recorded" >&2
+    exit 4
+  fi
+  echo "[guards] rolling back to 9router@$UP_FROM" >&2
+  PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$UP_FROM" --no-audit --no-fund >&2 \
+    || { echo "[guards] ROLLBACK FAILED: npm install 9router@$UP_FROM failed; guards NOT re-applied" >&2; exit 4; }
+  [ "$(pkg_version)" = "$UP_FROM" ] \
+    || { echo "[guards] ROLLBACK FAILED: package at $ROOT reports $(pkg_version), expected $UP_FROM; guards NOT re-applied" >&2; exit 4; }
+  up_rb=1
+  for g in "${SEL[@]}"; do
+    "$BIN_DIR/9router-$g-guard.sh" "$ROOT" >/dev/null 2>&1 || true
+  done
+  if [ "$RESTART" = 1 ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+    launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+  fi
+  if bash "$SELF" --check --root "$ROOT" "${SEL[@]}" >/dev/null 2>&1; then
+    echo "[guards] rollback OK: 9router@$UP_FROM reinstalled, patches re-proven present" >&2
+  else
+    echo "[guards] ROLLBACK INCOMPLETE: 9router@$UP_FROM reinstalled but patches are NOT proven present" >&2
+    up_rb=0
+  fi
+  [ "$up_rb" = 1 ] && exit 3
+  exit 4
+}
+
 if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
   [ -x "$NPM" ] || { echo "npm not found for --upgrade" >&2; exit 2; }
   PREFIX="$(prefix_of_root)" || { echo "cannot derive npm prefix from --root $ROOT (expected <prefix>/lib/node_modules/9router or <prefix>/node_modules/9router)" >&2; exit 2; }
   # agent-pull-fix: R13 — record the installed version before touching anything.
   UP_FROM="$(pkg_version)"
-  # Version the install must land on: VER itself when exact, else what the registry resolves it to.
-  case "$VER" in
-    [0-9]*.[0-9]*.[0-9]*) WANT="$VER" ;;
-    *) WANT="$(PATH="$(dirname "$NODE"):$PATH" "$NPM" view "9router@$VER" version 2>/dev/null | tail -1)"
-       [ -n "$WANT" ] || { echo "cannot resolve 9router@$VER on the registry; guards not touched" >&2; exit 2; } ;;
-  esac
+  # Version the install must land on. Only an exact version or a plain dist-tag is accepted: a semver range makes
+  # `npm view` print several lines and install a version we cannot name ahead of time, so it could not be verified.
+  if printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'; then WANT="$VER"
+  elif printf '%s' "$VER" | grep -Eq '^[A-Za-z][A-Za-z0-9._-]*$'; then
+    WANT="$(PATH="$(dirname "$NODE"):$PATH" "$NPM" view "9router@$VER" version 2>/dev/null | tail -1)"
+    [ -n "$WANT" ] || { echo "cannot resolve 9router@$VER on the registry; guards not touched" >&2; exit 2; }
+  else echo "--upgrade VERSION must be an exact version (0.5.104) or a dist-tag (latest), not '$VER'; nothing installed" >&2; exit 2
+  fi
   echo "[guards] upgrading 9router@$VER in prefix $PREFIX (from ${UP_FROM:-unknown})"
   PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$VER" --no-audit --no-fund >&2 \
     || { echo "npm install failed; guards not touched" >&2; exit 2; }
   UP_TO="$(pkg_version)"
-  [ "$UP_TO" = "$WANT" ] || { echo "npm install into $PREFIX succeeded but the package at $ROOT reports ${UP_TO:-no version}, expected $WANT: the live 9Router was NOT upgraded; guards not touched" >&2; exit 2; }
+  if [ "$UP_TO" != "$WANT" ]; then
+    if [ "$UP_TO" = "$UP_FROM" ]; then   # nothing changed at ROOT (the CAN008 symptom): no rollback needed
+      echo "npm install into $PREFIX succeeded but the package at $ROOT reports ${UP_TO:-no version}, expected $WANT: the live 9Router was NOT upgraded; guards not touched" >&2; exit 2
+    fi
+    # ROOT changed, but not to the target (dist-tag moved mid-run, odd package): it is replaced and unguarded.
+    echo "[guards] upgrade FAILED: package at $ROOT now reports ${UP_TO:-no version}, expected $WANT (was ${UP_FROM:-unknown}); the live 9Router WAS replaced" >&2
+    rollback_upgrade
+  fi
 fi
 [ -d "$CHUNKS" ] || { echo "9Router chunks dir not found at $CHUNKS" >&2; exit 2; }
 echo "[guards] 9Router $(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -1) at $ROOT"
@@ -241,30 +279,7 @@ if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
   fi
 
   echo "[guards] upgrade FAILED: $up_fail" >&2
-  if [ -z "$UP_FROM" ]; then
-    echo "[guards] cannot roll back: previous 9Router version was not recorded" >&2
-    exit 4
-  fi
-  echo "[guards] rolling back to 9router@$UP_FROM" >&2
-  PATH="$(dirname "$NODE"):$PATH" "$NPM" install -g --prefix "$PREFIX" "9router@$UP_FROM" --no-audit --no-fund >&2 \
-    || { echo "[guards] ROLLBACK FAILED: npm install 9router@$UP_FROM failed; guards NOT re-applied" >&2; exit 4; }
-  [ "$(pkg_version)" = "$UP_FROM" ] \
-    || { echo "[guards] ROLLBACK FAILED: package at $ROOT reports $(pkg_version), expected $UP_FROM; guards NOT re-applied" >&2; exit 4; }
-  up_rb=1
-  for g in "${SEL[@]}"; do
-    "$BIN_DIR/9router-$g-guard.sh" "$ROOT" >/dev/null 2>&1 || true
-  done
-  if [ "$RESTART" = 1 ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
-    launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
-  fi
-  if bash "$SELF" --check --root "$ROOT" "${SEL[@]}" >/dev/null 2>&1; then
-    echo "[guards] rollback OK: 9router@$UP_FROM reinstalled, patches re-proven present" >&2
-  else
-    echo "[guards] ROLLBACK INCOMPLETE: 9router@$UP_FROM reinstalled but patches are NOT proven present" >&2
-    up_rb=0
-  fi
-  [ "$up_rb" = 1 ] && exit 3
-  exit 4
+  rollback_upgrade
 fi
 
 exit "$rc"
