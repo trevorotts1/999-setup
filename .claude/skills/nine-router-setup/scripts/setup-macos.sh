@@ -226,6 +226,50 @@ ensure_pillow() {
   return 0
 }
 
+# ensure_jsonschema — the Black Friday Launcher's ONE third-party runtime
+# requirement. Launcher_core/checkout.py imports Skill 79's validator, which
+# does `import jsonschema` at module load; the declaration is the Launcher's
+# own requirements.txt. Idempotent (an importable jsonschema skips pip
+# entirely) and FATAL on failure, unlike Pillow: a Launcher that cannot import
+# jsonschema cannot run at all, so a silent MISSING line would ship a broken
+# skill. --user is the only safe form on a stock PEP 668 Mac (never
+# --break-system-packages); inside a venv pip rejects --user, so the flag is
+# dropped when the interpreter is already isolated in one.
+ensure_jsonschema() {
+  local req="$SKILL_DIR/../black-friday-launcher/requirements.txt"
+  local out rc ver in_venv
+  out="$(python3 -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>&1)" && rc=0 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s' jsonschema "already importable ($out)")")
+    return 0
+  fi
+  [ -f "$req" ] || fail "jsonschema is required by the Black Friday Launcher but its declaration is missing: $req. Nothing else names the dependency, so setup stops here instead of shipping a Launcher that cannot import it."
+  in_venv="$(python3 -c 'import sys; print(int(sys.prefix != sys.base_prefix))' 2>/dev/null || echo 0)"
+  log "Installing the Black Friday Launcher Python requirement (jsonschema) from $req..."
+  set +e
+  if [ "$in_venv" = 1 ]; then
+    out="$(python3 -m pip install -r "$req" 2>&1)"
+  else
+    out="$(python3 -m pip install --user -r "$req" 2>&1)"
+  fi
+  rc=$?
+  set -e
+  # The import is the verdict and rc only explains it (same rule as Pillow):
+  # pip can exit 0 and still leave the module unimportable on this interpreter.
+  if [ "$rc" -eq 0 ] && ver="$(python3 -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>&1)"; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s' jsonschema "python3 -m pip install -r requirements.txt ($ver)")")
+    return 0
+  fi
+  local em why
+  em="$(python3 -c 'import pathlib, sysconfig; print(int((pathlib.Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED").exists()))' 2>/dev/null || echo 0)"
+  if [ "$em" = 1 ]; then
+    why="this python3 ($(command -v python3)) is externally managed (PEP 668) and refuses --user; macOS Command Line Tools' /usr/bin/python3 does not. Run setup with that interpreter first on PATH, or install jsonschema into this one yourself."
+  else
+    why="install it yourself: python3 -m pip install --user -r $req"
+  fi
+  fail "jsonschema is still not importable after installing $req (pip rc=$rc). The Black Friday Launcher cannot run without it. $why Then rerun setup. Last pip output: $(printf '%s' "$out" | head -3)"
+}
+
 # ensure_gh (fix #33) — GitHub CLI, used for the one-click GitHub sign-in that
 # keeps a client's work backed up online. Homebrew when present, otherwise the
 # official release zip from github.com/cli/cli into $HOME/.local/bin (Homebrew
@@ -689,6 +733,7 @@ main() {
   require_clt
   ensure_gh
   ensure_pillow
+  ensure_jsonschema
 
   # Node 20+ / npm 10+: install-node.sh installs/repairs ONLY when needed and
   # prints the ABSOLUTE path to a proven-working node binary on stdout. Never

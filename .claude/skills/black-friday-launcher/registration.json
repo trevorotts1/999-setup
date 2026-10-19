@@ -123,7 +123,7 @@
     "enabled_in_999": true,
     "enabled_at": "2026-10-19",
     "enabled_evidence": "recovery/999-launcher-enable: the dependency preflight reports 16 present, 0 missing, 0 unverifiable (would_enable=true); installer-registration/verify-registration.sh 34/0, verify-council-registration.sh 53/0, kaizen 18 suites, launcher verify.sh all pass",
-    "note": "Enabled in 999 after the dependency preflight came back clean and every registration gate passed. The dependency manifest's own enabled_in_999 stays false by design: that field is the preflight package's promise that it never claims 999 state, and it now reports would_enable=true. jsonschema is importable on the host that ran the preflight but is still not installed by the 999 installer; see the runtime-dependency blocker below.",
+    "note": "Enabled in 999 after the dependency preflight came back clean and every registration gate passed. The dependency manifest's own enabled_in_999 stays false by design: that field is the preflight package's promise that it never claims 999 state, and it now reports would_enable=true. The 999 macOS installer installs jsonschema from requirements.txt; see the runtime-dependency blocker below.",
     "blockers": [
       {
         "id": "department-map-entry-absent",
@@ -137,8 +137,8 @@
       },
       {
         "id": "runtime-dependency-declared-nowhere",
-        "status": "declared",
-        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator; the 999 installer still installs no Python dependencies. The preflight runs on a host where jsonschema is importable, so this does not block enablement, but a box without it must install it."
+        "status": "resolved",
+        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator, and .claude/skills/nine-router-setup/scripts/setup-macos.sh ensure_jsonschema() installs it from that file: idempotent (an importable module skips pip) and fatal when the import still fails. Proven by tests/verify_installer_python_deps.sh: control MISSING with isolated_interpreter=True before the install, PRESENT with isolated_interpreter=True after."
       },
       {
         "id": "department-map-absent",
