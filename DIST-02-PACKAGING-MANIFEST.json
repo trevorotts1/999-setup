@@ -49,7 +49,7 @@
       "source_version": "v2.1.11",
       "files": 115,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:fb56d00672fa8b24bb633d20f093d8d693e19138a3f56f2ddd97c0a4eeab969b",
+      "sha256": "sha256:5d6a96101803a91c95ca65d245559a191625c369bdb35491d0b327d0bc7527f8",
       "999_version": "v2.1.12"
     },
     {
@@ -75,10 +75,10 @@
       "source_path": "79-signature-order-form",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
       "source_version": "0.1.3",
-      "files": 37,
+      "files": 38,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:bc119eef40ceaed8715f179bc4693313b26c2989f14562d96e450b2c22a012b0",
-      "999_version": "0.1.4"
+      "sha256": "sha256:c96fcfc6047734c717fec8bb5c113f843e567a1a2571b2d885fa0400475bf3e4",
+      "999_version": "0.1.5"
     },
     {
       "id": "tree-80-signature-upsell",
@@ -123,7 +123,7 @@
       "999_path": ".claude/skills/signature-thank-you",
       "source_path": "82-signature-thank-you",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "999_version": "0.3.0",
+      "999_version": "0.3.1",
       "source_version": "0.3.1",
       "drift": {
         "files_differing": 3,
@@ -131,8 +131,8 @@
         "files_only_in_999": 0
       },
       "action": "not overwritten; 999-side copy left as-is",
-      "files": 45,
-      "sha256": "sha256:5a23535a5fb39726560b0abdf5764d16c894f98c422cc1eb7a13a94dd22a32f5"
+      "files": 47,
+      "sha256": "sha256:e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa"
     },
     {
       "id": "tree-71-blackceo-signature-page",
@@ -150,8 +150,8 @@
         "files_only_in_999": 5
       },
       "action": "not overwritten; 999-side copy left as-is",
-      "files": 313,
-      "sha256": "sha256:130bb989c730fcaf23c06ff58bf939085fe40b4257a21be93636f4ecba91fcd2"
+      "files": 316,
+      "sha256": "sha256:8b513f4e2c8621d99fd2174ede80941c2379d53d80caa6fe02eb941fb4af89df"
     },
     {
       "id": "tree-77-council-of-wise-elders",
@@ -161,7 +161,7 @@
       "999_path": ".claude/skills/council-of-wise-elders",
       "source_path": "77-council-of-wise-elders",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "999_version": "v1.0.0",
+      "999_version": "1.0.18",
       "source_version": "v1.0.15",
       "drift": {
         "files_differing": 68,
@@ -170,8 +170,8 @@
         "example_only_in_999": "DISTRIBUTION-RECONCILIATION.json"
       },
       "action": "not overwritten; 999-side copy left as-is",
-      "files": 311,
-      "sha256": "sha256:8e403c591a032f9cb5ae39665d7ed906cca3cfa1e6356e076458f8e09f88096b"
+      "files": 649,
+      "sha256": "sha256:a66f3cb6f1bd2cad506a065ba4237ce77a1e3b4eb952cfba5ed5199af0103a0b"
     },
     {
       "id": "shared-utils-signature-launch",
