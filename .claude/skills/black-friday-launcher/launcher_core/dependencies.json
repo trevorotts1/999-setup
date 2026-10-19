@@ -103,7 +103,7 @@
       "kind": "installer_registration",
       "ref": "83-black-friday-launcher/SKILL.md",
       "required": true,
-      "why": "install.sh and update-skills.sh discover skills as <number>-<name>/ with SKILL.md; a non-numeric or ARCHIVED directory is skipped"
+      "why": "the 999 installer discovers skills from CONTROL/bundled-skills.txt and links either <number>-<name>/ or a bare <slug>/ whose SKILL.md frontmatter name matches; an ARCHIVED directory or a frontmatter name mismatch is skipped"
     },
     {
       "id": "skill-number-assigned",

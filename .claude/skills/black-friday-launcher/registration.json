@@ -120,8 +120,10 @@
     "cross_sales_teaching_source"
   ],
   "enablement": {
-    "enabled_in_999": false,
-    "note": "Enabling in 999 is not part of LAUNCH-04 and no 999 write was made. This records the state of the three reported enablement blockers.",
+    "enabled_in_999": true,
+    "enabled_at": "2026-10-19",
+    "enabled_evidence": "recovery/999-launcher-enable: the dependency preflight reports 16 present, 0 missing, 0 unverifiable (would_enable=true); installer-registration/verify-registration.sh 34/0, verify-council-registration.sh 53/0, kaizen 18 suites, launcher verify.sh all pass",
+    "note": "Enabled in 999 after the dependency preflight came back clean and every registration gate passed. The dependency manifest's own enabled_in_999 stays false by design: that field is the preflight package's promise that it never claims 999 state, and it now reports would_enable=true. jsonschema is importable on the host that ran the preflight but is still not installed by the 999 installer; see the runtime-dependency blocker below.",
     "blockers": [
       {
         "id": "department-map-entry-absent",
@@ -136,7 +138,17 @@
       {
         "id": "runtime-dependency-declared-nowhere",
         "status": "declared",
-        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator; the 999 installer still installs no Python dependencies"
+        "evidence": "requirements.txt declares jsonschema for the Skill 79 checkout validator; the 999 installer still installs no Python dependencies. The preflight runs on a host where jsonschema is importable, so this does not block enablement, but a box without it must install it."
+      },
+      {
+        "id": "department-map-absent",
+        "status": "resolved",
+        "evidence": "23-ai-workforce-blueprint/skill-department-map.json vendored verbatim from openclaw-onboarding origin/main @ 6de76988d1d17a42198815684374799529b70c2a (provenance in 23-ai-workforce-blueprint/VENDORED.md); the three registry-line entries now resolve"
+      },
+      {
+        "id": "installer-numeric-directory-only",
+        "status": "resolved",
+        "evidence": "launcher_core/dependencies.py accepts a bare-slug directory whose SKILL.md frontmatter name matches, as well as a numbered directory; installer-registration/verify-registration.sh section F proves the real 999 installer links the bare slug and that a mismatched frontmatter name is rejected"
       }
     ]
   },
