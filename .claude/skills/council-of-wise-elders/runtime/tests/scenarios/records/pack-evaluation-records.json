@@ -1,7 +1,7 @@
 {
   "schema": "wise-elders.pack-evaluation-records/v1",
   "unit": "CWE-042",
-  "note": "Per-pack, per-case evaluation records. Content review verdicts: every pack is content-verified at bibliographic_only against its recorded export basis; no seat, quote, or qualification is upgraded by this review. Case verdicts distinguish deterministically executed checks from defined cases that did not run, with the reason recorded for each.",
+  "note": "Per-pack, per-case evaluation records. Original content reviews used the recorded derivative basis. Russell now has a separate retained-original intake and primary-teaching gate; this does not upgrade any semantic deliberation or routing evaluation. Case verdicts distinguish deterministically executed checks from defined cases that did not run.",
   "packs": [
     {
       "seat_id": "simon-sinek",
@@ -150,65 +150,72 @@
     {
       "seat_id": "oprah-winfrey",
       "pack_unit": "CWE-015",
-      "qualification_after_review": "bibliographic_only",
-      "source_records": 0,
-      "evidence_units": 0,
+      "qualification_after_review": "partial",
+      "source_records": 2,
+      "evidence_units": 10,
       "cases": [
         {
           "case_id": "oprah-eval-guest-attribution",
           "case_type": "overreach or safety boundary: mistaken attribution to an interview host",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-private-story-exclusion",
           "case_type": "overreach or safety boundary: sensitive client story excluded from business task cards",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-good-intention-harmful-execution",
           "case_type": "strong fit: the decision squarely engages this seat's owned question",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-attention-seeking-launch",
           "case_type": "strong fit: the decision squarely engages this seat's owned question",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-low-visibility-meaningful-work",
           "case_type": "apparent agreement needing testing: the seat's first instinct agrees and must be challenged",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-missing-evidence",
           "case_type": "missing evidence: the seat must abstain or condition on named missing facts",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-therapy-overreach",
           "case_type": "overreach or safety boundary: the request asks the seat to speak beyond its sources",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "oprah-eval-weak-fit-routine-vendor-choice",
           "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
+        },
+        {
+          "case_id": "case-oprah-winfrey-dignity-versus-attention",
+          "case_type": "targeted supplied-book principle contrast",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Defined for the new mapped book evidence; no semantic evaluation run is claimed."
         }
       ]
     },
@@ -273,9 +280,9 @@
     {
       "seat_id": "russell-brunson",
       "pack_unit": "CWE-017",
-      "qualification_after_review": "bibliographic_only",
-      "source_records": 4,
-      "evidence_units": 58,
+      "qualification_after_review": "primary_teaching_based",
+      "source_records": 6,
+      "evidence_units": 68,
       "cases": [
         {
           "case_id": "case-strong-fit",
@@ -325,8 +332,16 @@
           "verdict": "defined_not_run",
           "evidence": null,
           "reason": "Semantic deliberation case. No live evaluation allowance exists in this build and no generated run exists to grade; executing it through a scripted fixture transport would measure the script author, not the pack. Content reviewed in the CWE-042 build report; execution NOT_RUN per Section 32.5."
+        },
+        {
+          "case_id": "case-anchor-framework-contrast",
+          "case_type": "targeted",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "New source-grounded contrast case defined locally. No live model evaluation was run; source fidelity review and deterministic provenance gates are not semantic execution."
         }
-      ]
+      ],
+      "review_basis": "2026-10-18 retained-source intake: two anchor records, eight concept paraphrases and two author-reported cases; supplementary records unchanged. Semantic evaluation NOT_RUN."
     },
     {
       "seat_id": "michelle-obama",
@@ -526,65 +541,72 @@
     {
       "seat_id": "les-brown",
       "pack_unit": "CWE-021",
-      "qualification_after_review": "bibliographic_only",
-      "source_records": 0,
-      "evidence_units": 0,
+      "qualification_after_review": "partial",
+      "source_records": 2,
+      "evidence_units": 10,
       "cases": [
         {
           "case_id": "les-brown-eval-fear-versus-constraint",
           "case_type": "strong fit: the decision squarely engages this seat's owned question",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-real-capacity-constraint",
           "case_type": "overreach or safety boundary: a real constraint must not be reframed as a belief problem",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-changed-strategy",
           "case_type": "strong fit: the decision squarely engages this seat's owned question",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-rational-stop",
           "case_type": "apparent agreement needing testing: the seat's persistence instinct must be challenged by the stop condition",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-confidence-without-irresponsible-spending",
           "case_type": "strong fit: the decision squarely engages this seat's owned question",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-missing-evidence",
           "case_type": "missing evidence: the seat must abstain or condition on named missing facts",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-guarantee-and-quotation-overreach",
           "case_type": "overreach or safety boundary: the request asks the seat to speak beyond its sources",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
         },
         {
           "case_id": "les-brown-eval-weak-fit-routine-renewal",
           "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
           "verdict": "defined_not_run",
           "evidence": null,
-          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+          "reason": "Supplied-book evidence is now mapped, but this semantic scenario has not been executed. The separate first-person teaching foundation and installed acceptance remain unverified."
+        },
+        {
+          "case_id": "case-les-brown-enthusiasm-versus-verification",
+          "case_type": "targeted supplied-book principle contrast",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "Defined for the new mapped book evidence; no semantic evaluation run is claimed."
         }
       ]
     }

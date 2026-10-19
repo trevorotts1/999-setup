@@ -109,7 +109,9 @@ EOF
 [ $? -eq 0 ] && PASS=$((PASS + 1)) || FAIL=$((FAIL + 1))
 
 echo "== D. doctor on the vendored tree =="
-DOCTOR_OUT="$(node "$VENDORED/scripts/doctor.mjs" --root "$VENDORED" 2>&1)"
+# The vendored folder is an extracted distribution (no .skill archive), so
+# the canonical doctor must run in distribution mode.
+DOCTOR_OUT="$(node "$VENDORED/scripts/doctor.mjs" --root "$VENDORED" --distribution 2>&1)"
 case "$DOCTOR_OUT" in
   *"DOCTOR: PASS"*) pass "doctor PASS on the vendored tree" ;;
   *) fail "doctor did not pass on the vendored tree"; echo "$DOCTOR_OUT" ;;

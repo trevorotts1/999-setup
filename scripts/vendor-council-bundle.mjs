@@ -389,7 +389,16 @@ const distManifest = {
   file_count: distAgg.count,
   aggregate_sha256: distAgg.aggregate,
   hash_method: canonicalManifest.hash_method,
-  archive: canonicalManifest.archive,
+  // The vendored folder is an EXTRACTED distribution, never a source
+  // package: it deliberately carries no .skill archive. The canonical
+  // archive contract therefore requires status
+  // "extracted_distribution" and no archive sha256 here; the canonical
+  // archive identity stays recorded in the vendoring record.
+  archive: {
+    file: canonicalManifest.archive?.file ?? "council-of-wise-elders.skill",
+    note: canonicalManifest.archive?.note,
+    status: "extracted_distribution",
+  },
   files: filesList,
 };
 writeFileSync(join(out, "manifest.json"), JSON.stringify(distManifest, null, 2) + "\n");
@@ -397,7 +406,7 @@ pass(`distribution manifest written: ${distAgg.count} files, aggregate ${distAgg
 
 // ---- Doctor gate ---------------------------------------------------------------
 try {
-  const doctorOut = execFileSync("node", [join(out, "scripts", "doctor.mjs"), "--root", out], { encoding: "utf8" });
+  const doctorOut = execFileSync("node", [join(out, "scripts", "doctor.mjs"), "--root", out, "--distribution"], { encoding: "utf8" });
   if (!doctorOut.includes("DOCTOR: PASS")) fail(`doctor did not pass on the vendored tree:\n${doctorOut}`);
   else pass("doctor PASS on the vendored distribution tree");
 } catch (e) {
