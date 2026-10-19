@@ -52,7 +52,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const SELF = fileURLToPath(import.meta.url);
 
@@ -484,8 +484,9 @@ function selftest() {
 }
 
 // --- CLI ---------------------------------------------------------------------
+const realOrResolved = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 const invokedDirectly = Boolean(process.argv[1])
-  && import.meta.url === pathToFileURL(process.argv[1]).href;
+  && realOrResolved(process.argv[1]) === realOrResolved(fileURLToPath(import.meta.url));
 
 if (invokedDirectly) {
   const argv = process.argv.slice(2);

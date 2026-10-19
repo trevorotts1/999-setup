@@ -294,9 +294,11 @@ and `claude-nine`:
 - **`council-of-wise-elders`**: the Council of Wise Elders (Skill 77): a nine-seat,
   source-grounded advisory council for consequential decisions. This copy is VENDORED
   from the canonical package in `trevorotts1/openclaw-onboarding`
-  (`77-council-of-wise-elders`) by `scripts/vendor-council-bundle.mjs`; it is a generated
+  (`77-council-of-wise-elders`) by `scripts/revendor-council.mjs` (which runs
+  `scripts/vendor-council-bundle.mjs`, then re-applies the 999-only patches in
+  `installer-registration/council-local-patches/`); it is a generated
   distribution artifact, never a second source tree. Provenance and the declared
-  distribution differences live in `installer-registration/council-vendoring.json` and
+  distribution differences, including that local divergence, live in `installer-registration/council-vendoring.json` and
   in the bundle's own `DISTRIBUTION-RECONCILIATION.json`. After the skill is linked,
   `scripts/council-runtime-install.sh` (Windows: `scripts/council-runtime-install.ps1`)
   installs its runtime into the per-user WiseElders data profile, outside every config

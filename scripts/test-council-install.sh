@@ -58,8 +58,10 @@ pass() { PASS=$((PASS + 1)); echo "  ok: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 skip() { SKIP=$((SKIP + 1)); echo "  SKIP: $1"; }
 
-BASE="${TMPDIR:-/tmp}/cwe040-install-battery"
-rm -rf "$BASE"; mkdir -p "$BASE"
+# Unique per-invocation fixture root so concurrent runs never share state.
+BASE="$(mktemp -d "${TMPDIR:-/tmp}/cwe040-install-battery.XXXXXX")" || { echo "FAIL: cannot create fixture dir"; exit 1; }
+trap 'rm -rf "$BASE"' EXIT
+trap 'exit 1' INT TERM HUP
 export npm_config_cache="$BASE/npm-cache"
 AGG="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).aggregate_sha256)' "$VENDORED/manifest.json")"
 [ -n "$AGG" ] && pass "vendored aggregate read: $AGG" || { echo "FAIL: cannot read vendored manifest"; exit 1; }

@@ -306,8 +306,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   return 0;
 }
 
-const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
-const selfPath = path.resolve(fileURLToPath(import.meta.url));
+const realOrResolved = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+const invokedPath = process.argv[1] ? realOrResolved(process.argv[1]) : '';
+const selfPath = realOrResolved(fileURLToPath(import.meta.url));
 if (invokedPath && invokedPath === selfPath) {
   main().then((code) => { process.exitCode = code; }).catch((error) => {
     say(`ERROR: ${error && error.message ? error.message : String(error)}`);
