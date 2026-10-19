@@ -218,7 +218,10 @@ T = {  # guard -> [(label, marker, scope, min)]
  "deepseek-openai-route": [("DeepSeek OpenAI route", "/*deepseek-openai-route-v1*/", "chunks", 1)],
  "ollama-done": [("Ollama [DONE] capture", 'let __done="data: [DONE]', "chunks", 1)],
  # the aggregator's `usage:{...e}` local is renamed between builds; the guard locates it by content signature, so the proof does too.
- "opencode-poll": [("oc non-stream poll", r're:status:"in_progress",usage:\{\.\.\.[\w$]+\},items:new Map,deltaText:""\}', "chunks", 1)],
+ # EDIT2 (aggregator) alone is not proof: EDIT6/EDIT7 (non-stream outcomes) are checked too so a bundle missing them cannot read OK.
+ "opencode-poll": [("oc non-stream poll", r're:status:"in_progress",usage:\{\.\.\.[\w$]+\},items:new Map,deltaText:""\}', "chunks", 1),
+                   ("oc non-stream length", r're:"incomplete"===[\w$]+\.status&&"max_output_tokens"===[\w$]+\.incomplete_details\?\.reason\?"length"', "chunks", 1),
+                   ("oc non-stream MAX_TOKENS", r're:finishReason:"incomplete"===[\w$]+\.status\?"MAX_TOKENS":"STOP"', "chunks", 1)],
  "opencode-toolargs": [("toolargs recovery", "/*toolargs-recovery-v1*/", "chunks", 1),
                        ("failover guard", "/*failover-guard-v2*/", "chunks", 1),
                        ("ollama overload", "/*ollama-overload-guard-v1*/", "chunks", 1),

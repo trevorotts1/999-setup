@@ -81,4 +81,12 @@ sed -i.orig 's/let e=o\[n\];/let e=o.at(n);/' "$C5/7313.js"; rm -f "$C5"/*.orig;
 "$PY" "$TA/ollama-overload-guard-apply.py" "$R5" >"$T/f3.out" 2>&1; rc=$?
 [ $rc -eq 2 ] && ok "ollama overload: refuses without the failover guard (exit 2)" || bad "ollama fail-closed rc=$rc"
 [ "$b3" = "$(cks "$R5")" ] && ok "failover/ollama: nothing written when an anchor is missing" || bad "wrote despite a missing anchor"
+
+# 6. installer --check proves EDIT6/EDIT7, not just EDIT2: a bundle with EDIT2 present and EDIT7 reverted must read MISSING (exit 1)
+INST="$HERE/../scripts/macos/install-9router-guards.sh"
+bash "$INST" --check --root "$R" opencode-poll >"$T/c1.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && [ "$(grep -c '^\[guards\] OK   opencode-poll' "$T/c1.out")" = 3 ] && ok "installer --check: patched bundle shows 3 OK opencode-poll rows" || { bad "installer --check patched rc=$rc"; tail -5 "$T/c1.out"; }
+sed -i.orig 's/finishReason:"incomplete"===w.status?"MAX_TOKENS":"STOP"/finishReason:"STOP"/' "$C/7312.js"; rm -f "$C"/*.orig
+bash "$INST" --check --root "$R" opencode-poll >"$T/c2.out" 2>&1; rc=$?
+[ $rc -eq 1 ] && grep -q 'MISSING opencode-poll: oc non-stream MAX_TOKENS' "$T/c2.out" && ok "installer --check: EDIT7 missing (EDIT2 present) is MISSING, exit 1" || { bad "installer --check EDIT7 rc=$rc"; tail -5 "$T/c2.out"; }
 exit $fail
