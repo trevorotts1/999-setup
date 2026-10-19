@@ -30,56 +30,23 @@ $FAIL = 0
 function Pass($m) { $script:PASS += 1; Write-Host "  ok: $m" }
 function Fail($m) { $script:FAIL += 1; Write-Host "  FAIL: $m" }
 
-# Remove PowerShell comments from source text, keeping quoted strings.
-# Line comments start at `#` outside a string; block comments are <# ... #>.
-# Here-strings are kept whole (they are data the script may execute).
+# Remove PowerShell comments from source text using PowerShell's own tokenizer,
+# so a `#` inside a bare word (a#), a string or a here-string is never mistaken
+# for a comment. Only tokens of kind Comment are blanked; everything else is
+# kept at its original offsets. If the source does not parse cleanly, return it
+# untouched so the scan fails closed (prose included) instead of dropping code.
 function ConvertTo-CodeOnly([string]$src) {
-    $out = New-Object System.Text.StringBuilder
-    $i = 0
-    $n = $src.Length
-    while ($i -lt $n) {
-        $c = $src[$i]
-        # Here-string opener: @' or @" followed by newline, ended by '@ or "@
-        if (($c -eq '@') -and $i + 2 -lt $n -and ($src[$i + 1] -eq "'" -or $src[$i + 1] -eq '"') -and $src[$i + 2] -eq "`n") {
-            $q = $src[$i + 1]
-            $close = $q + '@'
-            $end = $src.IndexOf("`n" + $close, $i + 2)
-            if ($end -lt 0) { [void]$out.Append($src.Substring($i)); break }
-            $end = $end + 1 + $close.Length
-            [void]$out.Append($src.Substring($i, $end - $i))
-            $i = $end
-            continue
+    $tokens = $null; $errs = $null
+    [void][System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$tokens, [ref]$errs)
+    if ($errs.Count -gt 0) { return $src }
+    $sb = New-Object System.Text.StringBuilder($src)
+    foreach ($t in $tokens) {
+        if ($t.Kind -ne 'Comment') { continue }
+        for ($k = $t.Extent.StartOffset; $k -lt $t.Extent.EndOffset; $k++) {
+            if ($sb[$k] -ne "`r" -and $sb[$k] -ne "`n") { $sb[$k] = ' ' }
         }
-        if ($c -eq "'" -or $c -eq '"') {
-            $q = $c
-            [void]$out.Append($c); $i++
-            while ($i -lt $n) {
-                [void]$out.Append($src[$i])
-                if ($src[$i] -eq '`' -and $q -eq '"' -and $i + 1 -lt $n) {
-                    $i++; [void]$out.Append($src[$i])
-                } elseif ($src[$i] -eq $q) {
-                    if ($i + 1 -lt $n -and $src[$i + 1] -eq $q) { $i++; [void]$out.Append($src[$i]) }
-                    else { break }
-                }
-                $i++
-            }
-            $i++
-            continue
-        }
-        if ($c -eq '<' -and $i + 2 -lt $n -and $src[$i + 1] -eq '#') {
-            $end = $src.IndexOf('#>', $i + 2)
-            if ($end -lt 0) { break }
-            $i = $end + 2
-            continue
-        }
-        if ($c -eq '#') {
-            while ($i -lt $n -and $src[$i] -ne "`n") { $i++ }
-            continue
-        }
-        [void]$out.Append($c)
-        $i++
     }
-    return $out.ToString()
+    return $sb.ToString()
 }
 
 $node = Get-Command node -ErrorAction SilentlyContinue
@@ -142,6 +109,12 @@ $note = "comment marker # is not a comment"
         Fail 'WSL/Bash scan self-test: a comment was not stripped'
     } else {
         Pass 'WSL/Bash scan self-test: code dependency fails, comments pass'
+    }
+    # A `#` inside a bare word is not a comment: the `& bash` after it is code.
+    if ((ConvertTo-CodeOnly 'Write-Output a#; & bash -c "echo x"') -notmatch '(?im)\bbash\b') {
+        Fail 'WSL/Bash scan self-test: code after a bare-word # was dropped'
+    } else {
+        Pass 'WSL/Bash scan self-test: bare-word # does not start a comment'
     }
     # Self-check: the stripper must keep code and drop comments. If it fails
     # to strip, the assertion below would silently pass a broken installer.
