@@ -8,7 +8,8 @@
 #   B. Every vendored file is accounted for by the record: byte-identical
 #      to the recorded canonical hash, or one of the declared distribution
 #      differences (the three Brunson pack files, manifest.json, and the
-#      reconciliation report itself).
+#      reconciliation report itself), or a declared local_divergence file
+#      (999-only patch) matching its recorded hash and patch artifact.
 #   C. Zero residual private references (dropped item ids and the private
 #      evidence id prefix) anywhere in the vendored tree.
 #   D. The canonical doctor passes on the vendored tree.
@@ -78,11 +79,29 @@ const declaredChanged = new Set([
   "manifest.json",
   "DISTRIBUTION-RECONCILIATION.json",
 ]);
+// 999-only changes are declared separately from canonical_files: each one
+// must match its recorded distribution hash, differ from (or be absent in)
+// the canonical record, and be covered by a patch artifact whose hash matches.
+const local = (record.intentional_distribution_differences || []).find((d) => d.kind === "local_divergence");
+const localFiles = new Map((local ? local.files : []).map((f) => [f.path, f]));
+for (const [rel, f] of localFiles) {
+  if (record.canonical_files[rel] !== f.canonical_sha256 && !(f.canonical_sha256 === null && !(rel in record.canonical_files))) {
+    bad(`local divergence ${rel} does not carry the recorded canonical hash`);
+  }
+  if (f.sha256 === f.canonical_sha256) bad(`local divergence ${rel} is identical to canonical`);
+}
+const repoRoot = join(root, "..", "..", "..");
+for (const a of (local ? local.patch_artifacts : [])) {
+  let actual = null;
+  try { actual = sha(readFileSync(join(repoRoot, a.path))); } catch { /* reported below */ }
+  if (actual !== a.sha256) bad(`patch artifact ${a.path} missing or its hash drifted`);
+}
 let accounted = 0;
 for (const [rel, h] of hashes) {
   const canonical = record.canonical_files[rel];
   if (canonical === h) { accounted += 1; continue; }
   if (declaredChanged.has(rel)) { accounted += 1; continue; }
+  if (localFiles.has(rel) && localFiles.get(rel).sha256 === h) { accounted += 1; continue; }
   bad(`unaccounted file difference: ${rel}`);
 }
 if (accounted === hashes.size) ok(`all ${hashes.size} vendored files accounted for by the record`);
