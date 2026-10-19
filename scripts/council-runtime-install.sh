@@ -75,6 +75,14 @@ done
 say() { echo "council-runtime-install: $*"; }
 die() { say "ERROR $1: $2" >&2; exit "$3"; }
 
+# Doctor verification mode for a resolved skill tree: prints "source" or
+# "distribution", prints ERROR and returns 1 when neither applies. The rule
+# and its anti-spoof argument live in scripts/council-doctor-mode.mjs.
+council_doctor_mode() {
+  [ -f "$DOCTOR_MODE_TOOL" ] || { echo "ERROR doctor mode derivation missing: $DOCTOR_MODE_TOOL" >&2; return 1; }
+  "$NODE_BIN" "$DOCTOR_MODE_TOOL" --root "$1" 2>/dev/null
+}
+
 # --- data profile (mirrors runtime/src/cli/paths.ts Section 16.1) -------
 if [ -z "$DATA_DIR" ]; then
   if [ -n "${BLACKCEO_COUNCIL_DATA_DIR:-}" ]; then
@@ -130,6 +138,9 @@ SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd -P)"
 PREFLIGHT="$SELF_DIR/council-runtime-preflight.mjs"
 [ -f "$PREFLIGHT" ] \
   || die COUNCIL_PREFLIGHT_MISSING "prerequisite probe missing beside this script: $PREFLIGHT" 4
+DOCTOR_MODE_TOOL="$SELF_DIR/council-doctor-mode.mjs"
+[ -f "$DOCTOR_MODE_TOOL" ] \
+  || die COUNCIL_DOCTOR_MODE_TOOL_MISSING "doctor mode derivation missing beside this script: $DOCTOR_MODE_TOOL" 4
 
 "$NODE_BIN" "$PREFLIGHT" --verify-source "$SOURCE_DIR" \
   || die COUNCIL_SOURCE_INTEGRITY_FAILED "the portable source at $SOURCE_DIR does not recompute to its own manifest, or carries no canonical provenance. A copied or hand-edited folder is not an install source; the previous release was not touched" 4
@@ -137,8 +148,22 @@ PREFLIGHT="$SELF_DIR/council-runtime-preflight.mjs"
 "$NODE_BIN" "$PREFLIGHT" --probe --source "$SOURCE_DIR" \
   || die COUNCIL_NODE_PREREQ_FAILED "the resolved Node executable $NODE_BIN failed the canonical Council prerequisite probe (Node ^22.13.0 || >=24 with node:sqlite). Nothing was staged; the previous release is unchanged" 4
 
-"$NODE_BIN" "$SOURCE_DIR/scripts/doctor.mjs" --root "$SOURCE_DIR" >/dev/null 2>&1 \
-  || die COUNCIL_SOURCE_DOCTOR_FAILED "the portable source at $SOURCE_DIR does not pass its own package doctor; the previous release was not touched" 4
+# The doctor's verification mode is derived from the resolved tree, not
+# hardcoded and not read from the manifest's own status alone: a source
+# package (archive present, status generated) keeps the archive SHA-256
+# binding; an extracted distribution (no archive, status
+# extracted_distribution) is checked as one. Anything else is refused here
+# with COUNCIL_SOURCE_MODE_UNDETERMINED, because no mode would be a true
+# statement about that tree. Derived once and reused by prefix_gates().
+DOCTOR_MODE_SOURCE="$(council_doctor_mode "$SOURCE_DIR")" || true
+case "$DOCTOR_MODE_SOURCE" in
+  source|distribution) ;;
+  *)
+    die COUNCIL_SOURCE_MODE_UNDETERMINED "the portable source at $SOURCE_DIR is neither a source package (archive present, archive.status \"generated\") nor an extracted distribution (no archive, archive.status \"extracted_distribution\"); refusing to guess a doctor mode. The previous release was not touched" 4 ;;
+esac
+say "source doctor mode: $DOCTOR_MODE_SOURCE"
+"$NODE_BIN" "$SOURCE_DIR/scripts/doctor.mjs" --root "$SOURCE_DIR" --"$DOCTOR_MODE_SOURCE" >/dev/null 2>&1 \
+  || die COUNCIL_SOURCE_DOCTOR_FAILED "the portable source at $SOURCE_DIR does not pass its own package doctor ($DOCTOR_MODE_SOURCE mode); the previous release was not touched" 4
 
 AGGREGATE="$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).aggregate_sha256)' "$SOURCE_DIR/manifest.json" 2>/dev/null || true)"
 [ -n "$AGGREGATE" ] \
@@ -153,7 +178,13 @@ CURRENT="$RUNTIME_DIR/current"
 prefix_gates() {
   # $1 = prefix root to gate. Package doctor on the skill folder plus the
   # CLI doctor through the generated wrapper, against the real profile.
-  "$NODE_BIN" "$SKILL_DIR/scripts/doctor.mjs" --root "$SKILL_DIR" >/dev/null 2>&1 || return 1
+  # Gated at exit too: this function serves --check and drives the swap
+  # decision, so a refused derivation must return 1, never fall through.
+  # The doctor mode is derived from the SKILL folder, the tree being gated.
+  local skill_mode
+  skill_mode="$(council_doctor_mode "$SKILL_DIR")" || return 1
+  case "$skill_mode" in source|distribution) ;; *) return 1 ;; esac
+  "$NODE_BIN" "$SKILL_DIR/scripts/doctor.mjs" --root "$SKILL_DIR" --"$skill_mode" >/dev/null 2>&1 || return 1
   [ -f "$1/run-council.mjs" ] || return 1
   "$NODE_BIN" "$1/run-council.mjs" doctor --data-dir "$DATA_DIR" >/dev/null 2>&1 || return 1
   return 0
@@ -188,7 +219,27 @@ else
     || die COUNCIL_STAGE_FAILED "bundle resolver missing beside this script" 5
 
   NPM_FLAGS="--no-audit --no-fund"
-  [ "$OFFLINE" -eq 1 ] && NPM_FLAGS="$NPM_FLAGS --offline"
+  # npm ci --offline must be provable offline. npm reads a userconfig ABOVE
+  # an exported npm_config_cache, and a fixture HOME's cache is cold, so the
+  # one reliable pin is the command line: --cache=<dir> when the caller set
+  # one (the test batteries do), else the operator cache. When the target
+  # cache is cold and a warm operator cache exists, carry the warm one into
+  # it first. A copy failure is not fatal: npm then reports the real miss.
+  if [ "$OFFLINE" -eq 1 ]; then
+    NPM_CACHE_DIR="${npm_config_cache:-}"
+    if [ -z "$NPM_CACHE_DIR" ] && [ -n "${HOME:-}" ]; then
+      NPM_CACHE_DIR="$HOME/.npm"
+    fi
+    NPM_FLAGS="$NPM_FLAGS --offline"
+    if [ -n "$NPM_CACHE_DIR" ]; then
+      NPM_FLAGS="$NPM_FLAGS --cache=$NPM_CACHE_DIR"
+      if [ ! -d "$NPM_CACHE_DIR/_cacache" ] && [ -n "${HOME:-}" ] \
+        && [ -d "$HOME/.npm/_cacache" ] && [ "$HOME/.npm" != "$NPM_CACHE_DIR" ]; then
+        mkdir -p "$NPM_CACHE_DIR" 2>/dev/null \
+          && cp -R "$HOME/.npm/_cacache" "$NPM_CACHE_DIR/" 2>/dev/null || true
+      fi
+    fi
+  fi
   say "installing runtime dependencies (npm ci)..."
   if ! (cd "$STAGE/runtime" && "$NPM_BIN" ci $NPM_FLAGS >"$STAGE/npm-ci.log" 2>&1); then
     tail -5 "$STAGE/npm-ci.log" >&2 || true

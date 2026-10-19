@@ -30,6 +30,11 @@
 #      characters resolves through the PowerShell installer path. Runs
 #      when pwsh is present; otherwise reported SKIP (native Windows host
 #      execution is deferred to WER-027, never claimed as a pass).
+#  12. Doctor mode derivation: the vendored tree derives distribution at
+#      both installer call sites, never a hardcoded mode.
+#  13. Doctor mode battery (scripts/test-council-doctor-mode.sh): the
+#      canonical source still passes source mode with the archive binding,
+#      and a masked distribution is refused.
 #
 # Everything runs under a fixture HOME in ${TMPDIR:-/tmp}.
 # Run: bash scripts/test-council-install.sh
@@ -315,6 +320,28 @@ if command -v pwsh >/dev/null 2>&1; then
 else
   skip "pwsh is not installed on this host; PowerShell path test not executed (native Windows execution deferred to WER-027)"
 fi
+
+echo "== 12. doctor mode DERIVATION (CWE: no hardcoded --distribution) =="
+# The installer derives the doctor's verification mode from the resolved
+# tree (scripts/council-doctor-mode.mjs). The vendored tree is an extracted
+# distribution; leg 3 above already installed against it, so a regression
+# that hardcodes source mode reappears there as COUNCIL_SOURCE_DOCTOR_FAILED
+# and this leg names the cause. Legs 3, 5, 8 and 9 also cover the wrapped
+# copy of the installer, so --check and the post-build gate are re-exercised.
+MODE_TOOL="$REPO_ROOT/scripts/council-doctor-mode.mjs"
+[ -f "$MODE_TOOL" ] && pass "doctor mode derivation tool exists" \
+  || fail "doctor mode derivation tool missing: $MODE_TOOL"
+MODE_V="$(node "$MODE_TOOL" --root "$VENDORED" 2>&1)"
+[ "$MODE_V" = "distribution" ] && pass "vendored tree derives distribution" \
+  || fail "vendored tree derived '$MODE_V' (want distribution)"
+HOME="$H1" bash "$INSTALL_SH" --data-dir "$DATA1" > "$BASE/install12.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "reinstall against the vendored tree exits 0 at source-doctor gate" \
+  || { fail "reinstall exited $RC"; grep 'ERROR' "$BASE/install12.log" | head -2; }
+
+echo "== 13. doctor mode derivation: canonical source and masked negative =="
+bash "$REPO_ROOT/scripts/test-council-doctor-mode.sh" > "$BASE/doctor-mode.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "canonical source still passes source mode; masked distribution refused" \
+  || { fail "doctor mode battery exited $RC"; grep 'FAIL' "$BASE/doctor-mode.log" | head -8; }
 
 echo "== preservation, after everything =="
 [ "$(sha256sum "$H1/.claude-nine/settings.json" | cut -d' ' -f1)" = "$SETTINGS_HASH_BEFORE" ] \
