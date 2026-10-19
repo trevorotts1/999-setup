@@ -245,6 +245,28 @@ guard="$(grep -n "Die 'COUNCIL_SKILL_DOCTOR_MISSING'" "$PS1" | head -1 | cut -d:
   && pass "ps1: \$skillDoctor and its Die guard follow SkillDir discovery" \
   || fail "ps1: \$skillDoctor/guard resolve before SkillDir discovery (disc=$disc sd=$sd guard=$guard)"
 
+echo "== F. CLI entry guard works when the path has a space or a symlink =="
+# The CLI only runs when argv[1] names this module. A guard that compared
+# argv[1] to the percent-encoded URL pathname (or skipped realpath) was
+# false on "/Volumes/External Drive/..." and under a symlinked temp dir:
+# exit 0, EMPTY stdout, and every install leg then died with
+# COUNCIL_SOURCE_MODE_UNDETERMINED.
+SP="$BASE/dir with space"; mkdir -p "$SP"
+cp "$MODE_TOOL" "$SP/council-doctor-mode.mjs"
+OUT="$(cd "$SP" && node ./council-doctor-mode.mjs --root "$VENDORED" 2>&1)"; RC=$?
+[ "$RC" = 0 ] && [ "$OUT" = "distribution" ] \
+  && pass "CLI run from a spaced directory prints distribution" \
+  || fail "spaced-directory CLI: rc=$RC out='$OUT' (want rc=0 out=distribution)"
+OUT="$(node "$SP/council-doctor-mode.mjs" --root "$VENDORED" 2>&1)"; RC=$?
+[ "$RC" = 0 ] && [ "$OUT" = "distribution" ] \
+  && pass "CLI invoked by absolute spaced path prints distribution" \
+  || fail "spaced absolute-path CLI: rc=$RC out='$OUT'"
+ln -s "$SP" "$BASE/link-to-spaced"
+OUT="$(node "$BASE/link-to-spaced/council-doctor-mode.mjs" --root "$VENDORED" 2>&1)"; RC=$?
+[ "$RC" = 0 ] && [ "$OUT" = "distribution" ] \
+  && pass "CLI invoked through a symlinked directory prints distribution" \
+  || fail "symlinked-directory CLI: rc=$RC out='$OUT'"
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 rm -rf "$BASE"

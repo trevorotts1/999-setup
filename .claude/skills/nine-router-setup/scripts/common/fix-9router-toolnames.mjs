@@ -225,7 +225,8 @@ function selftest() {
   return fails ? 1 : 0;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const realOrResolved = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && realOrResolved(process.argv[1]) === realOrResolved(fileURLToPath(import.meta.url))) {
   const argv = process.argv.slice(2);
   try {
     process.exitCode = argv.includes('--selftest') ? selftest() : run(argv);

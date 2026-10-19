@@ -145,8 +145,11 @@ export async function resolveAll(credentials) {
 
 // CLI entry point for manual verification: node resolve-models.mjs --deepseek|--ollama|--agnes|--all
 // Intentionally avoids printing keys — caller passes via env, not argv.
-import { pathToFileURL } from "node:url";
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolvePath(p); } };
+if (process.argv[1] && realOrResolved(process.argv[1]) === realOrResolved(fileURLToPath(import.meta.url))) {
   const arg = process.argv[2];
   const run = async () => {
     if (arg === "--deepseek" && process.env.DEEPSEEK_API_KEY) {
