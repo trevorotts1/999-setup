@@ -1,0 +1,49 @@
+name: council-vendor-tests
+
+# CWE-040 council vendor consistency. These two batteries existed and passed
+# on a developer box, but nothing in CI ran them, so main went red undetected:
+# the vendoring record drifted away from the vendored skill tree and no job
+# noticed.
+#
+#   scripts/test-council-vendor.sh   vendored tree recomputes to the recorded
+#                                    distribution aggregate; every file is
+#                                    accounted for; zero private references;
+#                                    doctor passes; prerequisite probe pinned
+#   scripts/test-council-install.sh  platform installation battery: dual-root
+#                                    link with the real installer functions,
+#                                    runtime prefix + wrapper, CLI inventory and
+#                                    golden sample, update path, spaced paths,
+#                                    offline and native-dependency errors,
+#                                    prerequisite and source-integrity refusal
+#
+# Both steps are plain `bash scripts/...` with no pipe, so the script's own
+# exit status is the step's exit status. No continue-on-error anywhere.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  council-vendor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Toolchain preflight
+        run: |
+          node --version
+          npm --version
+          sha256sum --version | head -1
+      - name: Council vendor consistency
+        run: bash scripts/test-council-vendor.sh
+      - name: Council install battery
+        run: bash scripts/test-council-install.sh
