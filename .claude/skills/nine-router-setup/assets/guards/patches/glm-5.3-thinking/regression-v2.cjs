@@ -66,6 +66,15 @@ function chkTrue(name, cond, detail){
   if(cond){ pass++; console.log('  PASS  '+name); }
   else { fail++; failures.push(name); console.log('  FAIL  '+name+(detail?'\n          '+detail:'')); }
 }
+// Stock behaviour drifts between 9Router releases (0.5.104 made glm-5.3-flash thinkingCanDisable:false).
+// Assertions about UNTOUCHED stock behaviour therefore accept the known stock truths; assertions about
+// the guard's own output derive the expectation from the resolved capabilities instead of pinning it.
+function chkOneOf(name, got, wants){
+  const g=JSON.stringify(got);
+  if(wants.some(w=>JSON.stringify(w)===g)){ pass++; console.log('  PASS  '+name); }
+  else { fail++; failures.push(name); console.log('  FAIL  '+name+'\n          got  '+g+'\n          want one of '+JSON.stringify(wants)); }
+}
+const noDisable=(p,m)=>CAPS.getCapabilitiesForModel(p,m).thinkingCanDisable===false;
 const strip=(m)=>String(m).replace(/\([^()]*\)\s*$/,'').trim();
 
 // Full pipeline: client wire -> provider wire -> thinking applier -> transport.
@@ -97,8 +106,10 @@ console.log('');
 console.log('1. capability resolution (which entry wins per identifier form)');
 {
   const M=CAPS.MODEL_CAPABILITIES['glm-5.3-flash'];
+  // thinkingCanDisable is upstream-owned (added by 0.5.104); the guard must neither add nor remove it.
+  const {thinkingCanDisable:_tcd,...Mrest}=M;
   chk('1.1 MODEL_CAPABILITIES[glm-5.3-flash] keeps every stock capability and gains the flag',
-      M, {vision:true,videoInput:true,pdf:true,reasoning:true,thinkingFormat:'zai',
+      Mrest, {vision:true,videoInput:true,pdf:true,reasoning:true,thinkingFormat:'zai',
           thinkingEffortSupported:true,contextWindow:1000000,maxOutput:131072});
   const forms=[
     ['openrouter','z-ai/glm-5.3-flash',            'MODEL_CAPABILITIES basename'],
@@ -135,12 +146,14 @@ console.log('\n2. level resolution');
   // stock ordering: the generic {pattern:"*deepseek-v4.*"} rule is listed BEFORE the
   // codebuddy-scoped {pattern:"deepseek-v4*"} one, so a dotted id hits the generic rule.
   // Both values are pinned to stock 0.5.81 truth.
-  chk('2.5a codebuddy-cn/deepseek-v4 rule untouched',   LEVELS.k('codebuddy-cn','deepseek-v4'),   ['low','high','xhigh']);
+  chkOneOf('2.5a codebuddy-cn/deepseek-v4 rule untouched',   LEVELS.k('codebuddy-cn','deepseek-v4'),
+      [['low','high','xhigh'],['none','high','max']]);   // 0.5.81-0.5.91 | 0.5.104 stock
   chk('2.5b codebuddy-cn/deepseek-v4.1 ordering untouched', LEVELS.k('codebuddy-cn','deepseek-v4.1'),
       ['none','low','medium','high','xhigh','max']);
   // a provider with no GLM 5.3 rule of its own must NOT pick one up
+  // by-format default for zai; 0.5.104 filters "none" out when the model cannot disable thinking
   chk('2.6 an unlisted provider gets no GLM 5.3 level rule (by-format default)',
-      LEVELS.k('nvidia','z-ai/glm-5.3-flash'), ['none','thinking']);
+      LEVELS.k('nvidia','z-ai/glm-5.3-flash'), noDisable('nvidia','z-ai/glm-5.3-flash')?['thinking']:['none','thinking']);
   // representative unrelated models
   chk('2.7 unrelated: deepseek/deepseek-flash levels unchanged', LEVELS.k('deepseek','deepseek-flash'), ['none','high','max']);
   chk('2.8 unrelated: codex/gpt-6 levels unchanged', LEVELS.k('codex','gpt-6'),
@@ -159,7 +172,11 @@ console.log('\n3. OpenRouter: final outgoing request');
     'thinking='+JSON.stringify(r.body.thinking)+' enable_thinking='+r.body.enable_thinking);
   chk('3.5 the (max) suffix is NOT forwarded in the upstream model id', r.body.model, 'z-ai/glm-5.3-flash');
   // every supported level once, plus disable and omitted
-  for(const [lvl,want] of [['low','low'],['high','high'],['max','max'],['none','none']]){
+  for(const [lvl,want] of [['low','low'],['high','high'],['max','max'],
+      // GLM 5.3 cannot disable thinking (Z.ai rejects "disabled"; OpenRouter marks its reasoning mandatory
+      // and rejects effort "none"): (none) goes out as the lowest valid effort on every release, not as
+      // "none" (<=0.5.95 stock) or "minimal" (0.5.104 stock)
+      ['none','low']]){
     const x=finalRequest({fromWire:FMT.OPENAI,toWire:FMT.OPENAI,provider:'openrouter',
       model:`z-ai/glm-5.3-flash(${lvl})`,body:{model:'x',messages:MSG,max_tokens:512},stream:false});
     chk(`3.6 (${lvl}) -> reasoning.effort`, x.body.reasoning&&x.body.reasoning.effort, want);
@@ -199,7 +216,10 @@ console.log('\n4. Ollama Cloud: final outgoing request');
   }
   const off=finalRequest({fromWire:FMT.OPENAI,toWire:FMT.OLLAMA,provider:'ollama',
     model:'glm-5.3-flash:cloud(none)',body:{model:'x',messages:MSG,max_tokens:512},stream:true});
-  chk('4.7 (none) disables thinking the way Ollama expects', off.body.think, false);
+  // Ollama Cloud ignores think:false for GLM 5.3, so where caps say it cannot disable thinking
+  // (0.5.104+ glm-5.3-flash) (none) is sent as the lowest valid level
+  chk('4.7 (none) disables thinking the way Ollama expects', off.body.think,
+      noDisable('ollama','glm-5.3-flash:cloud')?'low':false);
   const om=finalRequest({fromWire:FMT.OPENAI,toWire:FMT.OLLAMA,provider:'ollama',
     model:'glm-5.3-flash:cloud',body:{model:'x',messages:MSG,max_tokens:512},stream:true});
   chkTrue('4.8 omitted effort emits no think at all (server default preserved)',
@@ -304,21 +324,16 @@ console.log('\n6. provider and transport identity');
 // bundle, so a reverted file loses the final form entirely.
 console.log('\n7. response-path repairs (final-form presence)');
 {
-  const E_NEW='if(M?.usage&&(M.usage=(0,h.WL)((0,h.O9)(M.usage),r)),!N&&!O&&s!==d.h.OLLAMA&&M?.choices)for(let a of M.choices)'
-             +'a?.message?.reasoning_content&&a.message.content&&delete a.message.reasoning_content;';
-  // 0.5.85 renamed the minified locals in this function (M->N, N->O, O->P, r->s, targetFormat s->t). Same edit. (2026-09-22)
-  const E_NEW85='if(N?.usage&&(N.usage=(0,h.WL)((0,h.O9)(N.usage),s)),!O&&!P&&t!==d.h.OLLAMA&&N?.choices)for(let a of N.choices)'
-             +'a?.message?.reasoning_content&&a.message.content&&delete a.message.reasoning_content;';
-  // 0.5.91 renamed them again (N->O, O->P, P->Q, s->t, targetFormat t->u). Same edit. (2026-09-26)
-  const E_NEW91='if(O?.usage&&(O.usage=(0,h.WL)((0,h.O9)(O.usage),t)),!P&&!Q&&u!==d.h.OLLAMA&&O?.choices)for(let a of O.choices)'
-             +'a?.message?.reasoning_content&&a.message.content&&delete a.message.reasoning_content;';
-  const F_NEW='g=c.reasoning_content||c.provider_specific_fields?.reasoning_content||c.reasoning||'
-             +'(Array.isArray(c.reasoning_details)?c.reasoning_details.map(a=>"string"==typeof a?a:a?.text||a?.content||"").join(""):"")||"";';
+  // Final-form signatures, immune to the minifier renaming locals (M->N->O..., targetFormat s->t->u):
+  // E = the non-stream usage/choices finalizer exempts the Ollama upstream format from the delete;
+  // F = the non-stream openai->claude converter falls back to reasoning / reasoning_details.
+  const E_RX=/\(0,\w+\.\w+\)\(\(0,\w+\.\w+\)\(\w+\.usage\),\w+\)\),!\w+&&!\w+&&\w+!==\w+\.h\.OLLAMA&&\w+\?\.choices\)for\(let a of \w+\.choices\)a\?\.message\?\.reasoning_content&&a\.message\.content&&delete a\.message\.reasoning_content;/g;
+  const F_RX=/\w+\.provider_specific_fields\?\.reasoning_content\|\|\w+\.reasoning\|\|\(Array\.isArray\(\w+\.reasoning_details\)\?\w+\.reasoning_details\.map\(a=>"string"==typeof a\?a:a\?\.text\|\|a\?\.content\|\|""\)\.join\(""\):""\)\|\|"";/g;
   let all=[]; walk(BUILD, all);
   let ce=0, cf=0;
   for(const p of all){
     let t; try{ t=fs.readFileSync(p,'utf8'); }catch(e){ continue; }
-    ce+=t.split(E_NEW).length-1+t.split(E_NEW85).length-1+t.split(E_NEW91).length-1; cf+=t.split(F_NEW).length-1;
+    ce+=(t.match(E_RX)||[]).length; cf+=(t.match(F_RX)||[]).length;
   }
   chk('7.1 non-stream Ollama reasoning_content is preserved (edit E present once)', ce, 1);
   chk('7.2 non-stream openai->claude reads reasoning/reasoning_details (edit F present once)', cf, 1);

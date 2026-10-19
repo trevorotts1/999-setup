@@ -44,7 +44,7 @@ _resolve_9router_root() {
   echo "$HOME/.npm-global/lib/node_modules/9router"
 }
 ROOT="${ROOT:-$(_resolve_9router_root)}"
-SUITE="$HOME/.9router/patches/glm-5.3-thinking/regression-v2.cjs"
+SUITE="${GLM53_SUITE:-$HOME/.9router/patches/glm-5.3-thinking/regression-v2.cjs}"   # GLM53_SUITE: test a suite checkout against a scratch root
 GUARD="$HOME/.local/bin/9router-glm53-thinking-guard.sh"
 [ -x "$GUARD" ] || GUARD="$HOME/.9router/patches/glm-5.3-thinking/9router-glm53-thinking-guard.sh"
 

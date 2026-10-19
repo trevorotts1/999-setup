@@ -11,8 +11,10 @@
 #                                  [--upgrade [VERSION]] [guard-name ...]
 #   (no guard names)  all guards, in the order they must run
 #   --check           copy nothing, patch nothing: print what the bundle has and has not
-#   --root DIR        9Router install dir (default: first of ~/.npm-global, /opt/homebrew, /usr/local,
-#                     /usr/lib, ~/.local/share/999/npm). The five older guards search that same list.
+#   --root DIR        9Router package dir, or an npm prefix / node_modules dir containing it. Omit it, or pass
+#                     ~/.9router (the data folder), to auto-detect: first of ~/.npm-global, /opt/homebrew,
+#                     /usr/local, /usr/lib, ~/.local/share/999/npm, then `npm root -g`, then the running process.
+#                     Any other DIR that is not a 9Router package is an error (exit 2).
 #   --upgrade [VER]   npm-install 9router@VER (default latest) into the same prefix first, then re-apply
 #   --no-restart      do not kickstart the launchd job after a change
 #
@@ -60,13 +62,39 @@ for g in "${SEL[@]}"; do
 done
 [ -d "$SRC" ] || { echo "guard assets not found at $SRC" >&2; exit 2; }
 
-if [ -z "$ROOT" ]; then
+# Resolve the 9Router package dir. --root may be the package itself, an npm prefix or node_modules dir
+# that holds it, or something that is not the package at all (~/.9router is DATA, not the install);
+# in that last case fall through to auto-detect instead of failing with "no 9Router install found".
+is_pkg() { [ -f "$1/package.json" ] && grep -q '"name": *"9router"' "$1/package.json" 2>/dev/null; }
+find_pkg() {  # $1 = user-supplied path, echoes the package dir it names (if any)
+  local c; for c in "$1" "$1/lib/node_modules/9router" "$1/node_modules/9router" "$1/9router"; do
+    is_pkg "$c" && { (cd "$c" && pwd); return 0; }; done; return 1
+}
+autodetect_pkg() {
+  local d npmbin
   for d in "$HOME/.npm-global/lib/node_modules/9router" /opt/homebrew/lib/node_modules/9router \
            /usr/local/lib/node_modules/9router /usr/lib/node_modules/9router \
            "$HOME/.local/share/999/npm/lib/node_modules/9router"; do
-    [ -f "$d/package.json" ] && { ROOT="$d"; break; }
-  done
+    is_pkg "$d" && { echo "$d"; return 0; }; done
+  for npmbin in /opt/homebrew/bin/npm /usr/local/bin/npm "$(command -v npm 2>/dev/null)"; do
+    [ -x "$npmbin" ] || continue
+    d="$("$npmbin" root -g 2>/dev/null)/9router"; is_pkg "$d" && { echo "$d"; return 0; }; done
+  d="$(ps -axo command= 2>/dev/null | grep -o '/[^ ]*/node_modules/9router/' | head -1)"; d="${d%/}"
+  [ -n "$d" ] && is_pkg "$d" && { echo "$d"; return 0; }
+  return 1
+}
+if [ -n "$ROOT" ]; then
+  want="$ROOT"; [ -d "$want" ] || { echo "--root $want does not exist" >&2; exit 2; }
+  ROOT="$(find_pkg "$want" || true)"
+  if [ -z "$ROOT" ]; then
+    # Only the 9Router DATA folder (~/.9router) falls back to auto-detect; any other folder that is not the
+    # package is an error, so a mistyped scratch-copy root can never patch the live install.
+    wantp="$(cd "$want" && pwd -P)"; datap="$(cd "$HOME/.9router" 2>/dev/null && pwd -P || echo "$HOME/.9router")"
+    [ "$wantp" = "$datap" ] || { echo "no 9Router package at/under $want (use --root DIR)" >&2; exit 2; }
+    echo "[guards] --root $want is the 9Router data folder, not the package; auto-detecting" >&2
+  fi
 fi
+[ -n "$ROOT" ] || ROOT="$(autodetect_pkg || true)"
 [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ] || { echo "no 9Router install found (use --root DIR)" >&2; exit 2; }
 CHUNKS="$ROOT/app/.next-cli-build/server/chunks"
 STREAM="$ROOT/app/.next-cli-build/server/app/api/usage/stream/route.js"  # usage-stream guard patches the route, not a chunk
