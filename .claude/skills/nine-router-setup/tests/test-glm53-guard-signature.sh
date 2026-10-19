@@ -2,7 +2,7 @@
 # CAN002 regression check (offline, no npm, no network): the GLM 5.3 guard must find parts A-F by CONTENT
 # SIGNATURE in a bundle whose chunk files are renumbered and whose minified locals are renamed, apply them
 # idempotently, FAIL CLOSED when a part resolves 0 files, and the installer must auto-detect the 9Router
-# package from a wrong/prefix --root. On the pre-fix guard (fixed anchor strings) step 1 fails.
+# package from a prefix, node_modules or ~/.9router --root (any other non-package --root must exit 2). On the pre-fix guard (fixed anchor strings) step 1 fails.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$HERE/../assets/guards/9router-glm53-thinking-guard.sh"
