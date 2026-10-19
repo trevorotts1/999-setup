@@ -323,7 +323,7 @@ X_END = 'shouldRetry(a,b){return a===d.gx.RATE_LIMITED&&b+1<this.getFallbackCoun
 
 # (name, function). Every part must resolve in >=1 file (applied or patched) or the guard FAILS:
 # there is no fixed expected file count, because the number of chunks that carry a copy changes
-# between releases (A was 4 files on 0.5.81, 3 on 0.5.104).
+# between releases (on 0.5.104 A patches 4 files, three server chunks plus one static chunk, and B patches 3).
 PARTS = [
     ("A caps: glm-5.3-flash zai entry gains thinkingEffortSupported", part_A),
     ("B levels: low/high/max rules scoped to the real connections", part_B),

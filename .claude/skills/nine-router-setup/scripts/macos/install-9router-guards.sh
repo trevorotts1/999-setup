@@ -11,9 +11,10 @@
 #                                  [--upgrade [VERSION]] [guard-name ...]
 #   (no guard names)  all guards, in the order they must run
 #   --check           copy nothing, patch nothing: print what the bundle has and has not
-#   --root DIR        9Router package dir, or an npm prefix / node_modules dir containing it (default and
-#                     fallback for any DIR that is not a 9Router package: first of ~/.npm-global, /opt/homebrew,
-#                     /usr/local, /usr/lib, ~/.local/share/999/npm, then `npm root -g`, then the running process).
+#   --root DIR        9Router package dir, or an npm prefix / node_modules dir containing it. Omit it, or pass
+#                     ~/.9router (the data folder), to auto-detect: first of ~/.npm-global, /opt/homebrew,
+#                     /usr/local, /usr/lib, ~/.local/share/999/npm, then `npm root -g`, then the running process.
+#                     Any other DIR that is not a 9Router package is an error (exit 2).
 #   --upgrade [VER]   npm-install 9router@VER (default latest) into the same prefix first, then re-apply
 #   --no-restart      do not kickstart the launchd job after a change
 #
@@ -85,7 +86,13 @@ autodetect_pkg() {
 if [ -n "$ROOT" ]; then
   want="$ROOT"; [ -d "$want" ] || { echo "--root $want does not exist" >&2; exit 2; }
   ROOT="$(find_pkg "$want" || true)"
-  [ -n "$ROOT" ] || echo "[guards] --root $want is not a 9Router package; auto-detecting" >&2
+  if [ -z "$ROOT" ]; then
+    # Only the 9Router DATA folder (~/.9router) falls back to auto-detect; any other folder that is not the
+    # package is an error, so a mistyped scratch-copy root can never patch the live install.
+    wantp="$(cd "$want" && pwd -P)"; datap="$(cd "$HOME/.9router" 2>/dev/null && pwd -P || echo "$HOME/.9router")"
+    [ "$wantp" = "$datap" ] || { echo "no 9Router package at/under $want (use --root DIR)" >&2; exit 2; }
+    echo "[guards] --root $want is the 9Router data folder, not the package; auto-detecting" >&2
+  fi
 fi
 [ -n "$ROOT" ] || ROOT="$(autodetect_pkg || true)"
 [ -n "$ROOT" ] && [ -f "$ROOT/package.json" ] || { echo "no 9Router install found (use --root DIR)" >&2; exit 2; }

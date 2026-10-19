@@ -58,4 +58,7 @@ for r in "$H/.npm-global/lib/node_modules/9router" "$H/.npm-global" "$H/.npm-glo
   case "$o" in *"9Router 9.9.9 at $H/.npm-global/lib/node_modules/9router"*) ok "installer --root $(basename "$r") -> package found" ;; *) bad "installer --root $r: $(echo "$o" | head -2)" ;; esac
 done
 HOME="$H" bash "$INST" --check --root "$T/does-not-exist" glm53-thinking >/dev/null 2>&1; [ $? -eq 2 ] && ok "installer: a --root that does not exist is an error" || bad "missing --root accepted"
+# an existing folder that is NOT a 9Router package (and not ~/.9router) must exit 2, never fall through to another install
+mkdir -p "$T/notapkg"; o="$(HOME="$H" bash "$INST" --check --root "$T/notapkg" glm53-thinking 2>&1)"; rc=$?
+[ $rc -eq 2 ] && ! echo "$o" | grep -q "9Router 9.9.9 at" && ok "installer: --root <existing non-package dir> exits 2, no auto-detect" || bad "non-package --root rc=$rc: $(echo "$o" | head -2)"
 exit $fail
