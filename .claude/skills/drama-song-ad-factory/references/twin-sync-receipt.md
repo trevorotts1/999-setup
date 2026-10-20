@@ -1,3 +1,95 @@
+# TWIN-SYNC receipt — DSF-009 (music-stage clean-install fix, 2026-10-20)
+
+Unit `DSF-009` (drama-stage fix batch): the 999 twin of skill 75 re-synced from the merged
+onboarding change set `fix(75,74): music stage runs on a clean install` (onboarding PR #2374,
+head `32fa0fd9b94ba4a3e47739692c231b4c52ea64d8`, onboarding `origin/main` `f795e09a`), which
+merged the Skill 75 lane (`1821f4a2c`) and the Skill 74 lane (`1fbfecc21`, v1.1.9) plus the
+two skills whose SKILL_VERSIONS pin for Skill 74 moved (07-kie-setup v7.2.2 -> v7.2.3,
+47-movie-producer). This section, the regenerated `scripts/core/`, the refreshed
+`references/stage-runbook.md`, the regenerated `references/twin-sync-fingerprints.json`
+core blocks and the twin's `SKILL.md`/`INSTRUCTIONS.md`-adjacent version markers are the
+change; the Skill 74 side arrives through the `installer-registration` helper pin (v1.1.8 ->
+v1.1.9) whose vendored folder was rsynced from the onboarding tree.
+
+## What was compared
+
+| Side | Repository | Tree | Commit |
+|---|---|---|---|
+| Canonical (source of truth) | `trevorotts1/openclaw-onboarding` | `75-drama-song-ad-factory/scripts/core/` | `32fa0fd9b94ba4a3e47739692c231b4c52ea64d8` (merged PR #2374 head; its merge commit `f795e09a` is `origin/main` and the skill-75 core subtree is byte-identical: `git diff 32fa0fd9 origin/main -- 75-drama-song-ad-factory/scripts/core/` is empty) |
+| Packaged copy (this repo) | `trevorotts1/999-setup` | `.claude/skills/drama-song-ad-factory/scripts/core/` | base `963f18c5b53f70c56d461b54798b965bbaac3499` (`origin/fix/dsf-stage3-deadlock` = merged PR #271), packaged on branch `fix/dsf-music-stage-transports` |
+
+## How the core was packaged
+
+```
+$ python3 installer-registration/package_core.py --source /Users/blackceomacmini/wt/dsf-005/75-drama-song-ad-factory/scripts/core
+package_core: OK  560 files (6 written, 0 stale removed) source=... dest=...
+  tree sha256 packaged=85a067e6adb639a48968e2e2dcd6754c9cbe6a38ed45db2701c660fb95ca5009
+        canonical=85a067e6adb639a48968e2e2dcd6754c9cbe6a38ed45db2701c660fb95ca5009
+$ python3 installer-registration/package_core.py --check --source <same>
+package_core --check: OK  560 files match canonical
+```
+
+`6 written`: `audio_c3/lyric_timing.py`, `kie_dispatch/kie_dispatch.py`,
+`song_choices/song_choices.py` changed; `intake_preflight/test_factory_method_agnes.py`
+changed (the order-independence test fix); `song_transports.py` and
+`test_music_clean_install_v2971.py` are new; nothing 999 shipped was dropped
+(`only_packaged = 0`). Nothing hand-edited.
+
+## Prove (run on this branch's head)
+
+| Check | Result |
+|---|---|
+| `python3 .claude/skills/drama-song-ad-factory/tests/twin_sync_prove.py --canonical <onboarding dsf-005 tree> --selftest` | `SELFTEST: PASS`; `same=560 differ=0 only-canonical=0 only-packaged=0`; `PARITY: PROVEN` |
+| `python3 .claude/skills/drama-song-ad-factory/tests/test_parity_layout.py` (`DSAF_CANONICAL_CORE` at the same source) | pass — file set and bytes match; the frontmatter `version:` check asserts `SKILL.md` == `VERSION` (both `v2.9.71` on this branch) |
+| 558 -> 560 files: `song_transports.py`, `test_music_clean_install_v2971.py` gained on both sides | recorded in `twin-sync-fingerprints.json` (`summary.in_scope_files 560, match 560`) |
+
+## Fingerprints refresh
+
+`references/twin-sync-fingerprints.json` core blocks were rewritten in place (indent=2,
+every other key and its order kept — the `round3_*`, `studio_bridge_twin` and all earlier
+`pre_sync_*` blocks ride through untouched):
+
+- `unit` → `DSF-009`
+- `canonical` → `base_sha 32fa0fd9b94ba4a3e47739692c231b4c52ea64d8`,
+  `branch "fix/dsf-music-stage-transports (onboarding, merged PR #2374 = onboarding main f795e09a; v2.9.71)"`,
+  `tree_sha256 85a067e6adb639a48968e2e2dcd6754c9cbe6a38ed45db2701c660fb95ca5009`
+- `packaged` → `base_sha 963f18c5b53f70c56d461b54798b965bbaac3499`,
+  `branch fix/dsf-music-stage-transports`, same `tree_sha256`
+- `summary` → `{in_scope_files 560, match 560, differ 0, only_canonical 0, only_packaged 0}`
+- `files` → 560 entries, every `canonical_sha256 == packaged_sha256`, `match: true`
+- `pre_sync_DSF009_999_main_divergence_from_canonical` (4) + `pre_sync_DSF009_summary`
+  = `{in_scope_files 560, match 554, differ 4, only_canonical 2, only_packaged 0}` — what
+  the packaged core (PR #271's v2.9.70 sync) looked like against the v2.9.71 canonical
+  core BEFORE this sync: 4 changed files (`audio_c3/lyric_timing.py`,
+  `intake_preflight/test_factory_method_agnes.py`, `kie_dispatch/kie_dispatch.py`,
+  `song_choices/song_choices.py`) and 2 canonical files missing
+  (`song_transports.py`, `test_music_clean_install_v2971.py`).
+
+Same algorithm and exclusions as every earlier round: sha256 of raw bytes, `__pycache__/`
+and `*.pyc` dropped identically on both sides, no normalisation.
+
+## Skill 74 (helper pin, not a file copy in scripts/core)
+
+Skill 74 is not part of skill 75's `scripts/core`; on this repository it ships as the
+vendored helper `installer-registration/helpers/74-kie-live-adapter/` pinned in
+`installer-registration/helper-dependencies.json`. The sync is:
+
+```
+rsync -a --delete --exclude __pycache__ --exclude '*.pyc' \
+  <onboarding>/74-kie-live-adapter/ installer-registration/helpers/74-kie-live-adapter/
+python3 installer-registration/helper-deps.py repin
+```
+
+`07-kie-setup` v7.2.2 -> v7.2.3 rode the SAME merged PR #2374 ("SKILL_VERSIONS pin for
+Skill 74 follows") so its vendored folder follows the same way. Guard results on this
+branch: `check-helper-pins.py --onboarding <onboarding tree> --ref origin/main` exit 0
+(every pin equals openclaw-onboarding origin/main and every vendored folder matches its
+own pin); `test-helper-pins.sh` 11 passed, 0 failed. The helper preflight against a live
+`~/.claude-nine` config root is an INSTALL-side check (it needs the helpers installed
+under that root) and stayed out of scope: the repo-side guards above are the ones CI runs.
+
+---
+
 # TWIN-SYNC receipt — W3-twin-sync-U1 (Agnes Drama Ad Factory run, 2026-10-15)
 
 Unit `W3-twin-sync-U1` (BUILD-PLAN.md section W3-twin-sync-U1, Agnes run): skill 75 core

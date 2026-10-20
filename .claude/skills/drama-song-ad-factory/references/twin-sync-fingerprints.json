@@ -1,6 +1,6 @@
 {
   "artifact": "twin-sync-fingerprints",
-  "unit": "DSF-002",
+  "unit": "DSF-009",
   "scope": "scripts/core/",
   "exclusions": [
     "__pycache__/",
@@ -11,22 +11,22 @@
   "canonical": {
     "repo": "trevorotts1/openclaw-onboarding",
     "tree": "75-drama-song-ad-factory/scripts/core/",
-    "base_sha": "e13c70e4b77467014304ff18ea6cd8048a1cf398",
-    "branch": "fix/dsf-stage3-deadlock (onboarding DSF-001 worktree, v2.9.70 on origin/main e13c70e4b)",
+    "base_sha": "32fa0fd9b94ba4a3e47739692c231b4c52ea64d8",
+    "branch": "fix/dsf-music-stage-transports (onboarding, merged PR #2374 = onboarding main f795e09a; v2.9.71)",
     "label": "ONBOARDING_CANONICAL",
-    "tree_sha256": "b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf"
+    "tree_sha256": "85a067e6adb639a48968e2e2dcd6754c9cbe6a38ed45db2701c660fb95ca5009"
   },
   "packaged": {
     "repo": "trevorotts1/999-setup",
     "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-    "base_sha": "110de4160aa1f20e5f2ef1ede110cc5422895420",
-    "branch": "fix/dsf-stage3-deadlock",
+    "base_sha": "963f18c5b53f70c56d461b54798b965bbaac3499",
+    "branch": "fix/dsf-music-stage-transports",
     "label": "999_PACKAGED",
-    "tree_sha256": "b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf"
+    "tree_sha256": "85a067e6adb639a48968e2e2dcd6754c9cbe6a38ed45db2701c660fb95ca5009"
   },
   "summary": {
-    "in_scope_files": 558,
-    "match": 558,
+    "in_scope_files": 560,
+    "match": 560,
     "differ": 0,
     "only_canonical": 0,
     "only_packaged": 0
@@ -202,8 +202,8 @@
       "match": true
     },
     "audio_c3/lyric_timing.py": {
-      "canonical_sha256": "98efb2d03a343346361ddc01a6ba1555786c82f6076cc1cb7ccb5e1524a7e698",
-      "packaged_sha256": "98efb2d03a343346361ddc01a6ba1555786c82f6076cc1cb7ccb5e1524a7e698",
+      "canonical_sha256": "0259f47fe7d9480c25a533b183c24945f1718cf2e9ae5a6461669adcaa696283",
+      "packaged_sha256": "0259f47fe7d9480c25a533b183c24945f1718cf2e9ae5a6461669adcaa696283",
       "match": true
     },
     "audio_c3/no_echo/__init__.py": {
@@ -1142,8 +1142,8 @@
       "match": true
     },
     "intake_preflight/test_factory_method_agnes.py": {
-      "canonical_sha256": "cca4daa8a8aabde487e733e90d49a3d50720e19227d57a090d1521d54b4ee4aa",
-      "packaged_sha256": "cca4daa8a8aabde487e733e90d49a3d50720e19227d57a090d1521d54b4ee4aa",
+      "canonical_sha256": "b02bec650013297bfec6a688f1faff1681fc9f12f27bd87330770d226ecfa456",
+      "packaged_sha256": "b02bec650013297bfec6a688f1faff1681fc9f12f27bd87330770d226ecfa456",
       "match": true
     },
     "intake_preflight/test_factory_next.py": {
@@ -1177,8 +1177,8 @@
       "match": true
     },
     "kie_dispatch/kie_dispatch.py": {
-      "canonical_sha256": "5ed775c05ff800526e6a60dd2c34f946e5a6da8144d72e8c0e58a080c9b8677c",
-      "packaged_sha256": "5ed775c05ff800526e6a60dd2c34f946e5a6da8144d72e8c0e58a080c9b8677c",
+      "canonical_sha256": "88828bfe906bf42c4036f1ea630bf738c62e2a841afee7666f3b5b47f6165337",
+      "packaged_sha256": "88828bfe906bf42c4036f1ea630bf738c62e2a841afee7666f3b5b47f6165337",
       "match": true
     },
     "kie_dispatch/model_lock.py": {
@@ -2257,8 +2257,8 @@
       "match": true
     },
     "song_choices/song_choices.py": {
-      "canonical_sha256": "a28e8c3f1325caf3b704d5fff6d545a23f0d002e947a24d13643f668d3d7dc61",
-      "packaged_sha256": "a28e8c3f1325caf3b704d5fff6d545a23f0d002e947a24d13643f668d3d7dc61",
+      "canonical_sha256": "7a6c398dcb26b0894eeb97fa071ac1b2859df127431ef7d4e682d3f2c0544811",
+      "packaged_sha256": "7a6c398dcb26b0894eeb97fa071ac1b2859df127431ef7d4e682d3f2c0544811",
       "match": true
     },
     "song_choices/test_recommend.py": {
@@ -2344,6 +2344,11 @@
     "song_dispatch/test_song_dispatch_ww_u1.py": {
       "canonical_sha256": "a2ec61f38b7fa165675c1f306af510b21e0bd86819c0207fd5dd8ecc12084dc1",
       "packaged_sha256": "a2ec61f38b7fa165675c1f306af510b21e0bd86819c0207fd5dd8ecc12084dc1",
+      "match": true
+    },
+    "song_transports.py": {
+      "canonical_sha256": "969c43f9abb8951bdfd9084fc92c1459d451a151a55e2b9e49052413f4b49765",
+      "packaged_sha256": "969c43f9abb8951bdfd9084fc92c1459d451a151a55e2b9e49052413f4b49765",
       "match": true
     },
     "spend_ledger.py": {
@@ -2824,6 +2829,11 @@
     "test_lipsync_clips.py": {
       "canonical_sha256": "d9b70fe9308b532eda062aeb3ca06e3bc8037692e17ed0149f0871eae3dc114b",
       "packaged_sha256": "d9b70fe9308b532eda062aeb3ca06e3bc8037692e17ed0149f0871eae3dc114b",
+      "match": true
+    },
+    "test_music_clean_install_v2971.py": {
+      "canonical_sha256": "50ab4b528619ba967b76ca26d7b9c8e56b074cc5ae5c234bc9bbb693aa8a6a48",
+      "packaged_sha256": "50ab4b528619ba967b76ca26d7b9c8e56b074cc5ae5c234bc9bbb693aa8a6a48",
       "match": true
     },
     "test_music_createtask_ww30.py": {
@@ -3534,6 +3544,39 @@
     "match": 467,
     "differ": 34,
     "only_canonical": 48,
+    "only_packaged": 0
+  },
+  "pre_sync_DSF009_999_main_divergence_from_canonical": {
+    "audio_c3/lyric_timing.py": {
+      "canonical_sha256": "0259f47fe7d9480c25a533b183c24945f1718cf2e9ae5a6461669adcaa696283",
+      "packaged_sha256": "98efb2d03a343346361ddc01a6ba1555786c82f6076cc1cb7ccb5e1524a7e698"
+    },
+    "intake_preflight/test_factory_method_agnes.py": {
+      "canonical_sha256": "b02bec650013297bfec6a688f1faff1681fc9f12f27bd87330770d226ecfa456",
+      "packaged_sha256": "cca4daa8a8aabde487e733e90d49a3d50720e19227d57a090d1521d54b4ee4aa"
+    },
+    "kie_dispatch/kie_dispatch.py": {
+      "canonical_sha256": "88828bfe906bf42c4036f1ea630bf738c62e2a841afee7666f3b5b47f6165337",
+      "packaged_sha256": "5ed775c05ff800526e6a60dd2c34f946e5a6da8144d72e8c0e58a080c9b8677c"
+    },
+    "song_choices/song_choices.py": {
+      "canonical_sha256": "7a6c398dcb26b0894eeb97fa071ac1b2859df127431ef7d4e682d3f2c0544811",
+      "packaged_sha256": "a28e8c3f1325caf3b704d5fff6d545a23f0d002e947a24d13643f668d3d7dc61"
+    },
+    "song_transports.py": {
+      "canonical_sha256": "969c43f9abb8951bdfd9084fc92c1459d451a151a55e2b9e49052413f4b49765",
+      "packaged_sha256": null
+    },
+    "test_music_clean_install_v2971.py": {
+      "canonical_sha256": "50ab4b528619ba967b76ca26d7b9c8e56b074cc5ae5c234bc9bbb693aa8a6a48",
+      "packaged_sha256": null
+    }
+  },
+  "pre_sync_DSF009_999_main_summary": {
+    "in_scope_files": 560,
+    "match": 554,
+    "differ": 4,
+    "only_canonical": 2,
     "only_packaged": 0
   }
 }
