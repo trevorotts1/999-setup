@@ -11,12 +11,15 @@ onboarding DSF-001 change set at v2.9.70 (branch `fix/dsf-stage3-deadlock`).
 
 - `scripts/core/` regenerated with `installer-registration/package_core.py`: 0 files hand-edited,
   549 -> 558 files, one tree sha256
-  `37f0a5c3a2c8cdb2a98f773a5e869778ec503f8b18cf4c791bb92cb2a273a15c` on both sides, `--check` OK.
+  `b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf` on both sides, `--check` OK.
   It carries five fixes:
   1. `lyric_writer` first-person vs client hook: a line that is a contiguous run of at least 3 words
      of the client's own brief text (offer, website, claims, packet lines) is exempt from
      `line-not-first-person`, because `suno_recipe.check_hook` requires the hook to be the client's
-     own words. Invented second-person lines and 2-word fragments still refuse.
+     own words. Invented second-person lines and 2-word fragments still refuse. The comparison
+     folds apostrophe variants (a brief pasted from Word carries U+2019 while the written lyric
+     usually carries ASCII '), because `words` splits the curly form ("isn't" is one token,
+     "isn\u2019t" is two) and the client's own line then silently refused itself.
   2. `lyric_writer` URL dot: a dot inside a word (`VoyageToVirtue.com/...`, `3.5`) is no longer a
      sentence break for `line-multi-idea`; "I rise. I fall" still refuses.
   3. Plan budget vs `words_fit`: `length_formula.plan(L, style_id=...)` priced words at 1.4 spoken /
