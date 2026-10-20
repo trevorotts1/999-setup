@@ -1,5 +1,53 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [v2.9.70] — 2026-10-20 — DSF-002: canonical sync from onboarding v2.9.70 (stage-3 script-lyrics deadlock + hook_plan forwarding)
+
+This twin is what Laya Kelley and Jennifer Allen run. Both runs sat in `script-lyrics` for hours and
+never reached the song: Laya's Voyage To Virtue run about 9 hours (321 shell calls, 1.84 M output
+tokens), Jennifer's 54-minute and 136-minute agents on the same errors. The stage-3 agent is told to
+iterate until every gate passes and never edit a validator, and the shipped gates contradicted each
+other. Sync source: `trevorotts1/openclaw-onboarding` `origin/main` `e13c70e4b` (v2.9.69) plus the
+onboarding DSF-001 change set at v2.9.70 (branch `fix/dsf-stage3-deadlock`).
+
+- `scripts/core/` regenerated with `installer-registration/package_core.py`: 0 files hand-edited,
+  549 -> 558 files, one tree sha256
+  `37f0a5c3a2c8cdb2a98f773a5e869778ec503f8b18cf4c791bb92cb2a273a15c` on both sides, `--check` OK.
+  It carries five fixes:
+  1. `lyric_writer` first-person vs client hook: a line that is a contiguous run of at least 3 words
+     of the client's own brief text (offer, website, claims, packet lines) is exempt from
+     `line-not-first-person`, because `suno_recipe.check_hook` requires the hook to be the client's
+     own words. Invented second-person lines and 2-word fragments still refuse.
+  2. `lyric_writer` URL dot: a dot inside a word (`VoyageToVirtue.com/...`, `3.5`) is no longer a
+     sentence break for `line-multi-idea`; "I rise. I fall" still refuses.
+  3. Plan budget vs `words_fit`: `length_formula.plan(L, style_id=...)` priced words at 1.4 spoken /
+     1.07 sung per second while `words_fit.preflight` prices Soul Ballad at 1.85 / 1.0 plus 8 s
+     intro/outro, so the plan's own budget was refused `WORDS_DO_NOT_FIT` (60 s: 66 words = 65.7 s
+     against 58 s; 90 s: 95 words = 90.1 s against 88 s). A named non-rap style now caps its words to
+     what `preflight` admits; `plan(L)` with no style is byte-identical; rap styles are untouched.
+     New check `length_formula/test_style_budget_fits_v2970.py`.
+     Scope, stated plainly: this caps ONLY the plan the WRITER is handed
+     (`length_formula.plan` with `style_id`). `suno_recipe.check_lyric_sheet`'s drafting tolerance
+     (10 % + 2) is NOT that gate -- see fix 5.
+  4. `hook_plan` forwarding (onboarding v2.9.65, missing from this twin at v2.9.61):
+     `song_dispatch.validate_request` forwards `hook_plan` to `check_lyric_sheet` and `song_choices`
+     attaches `_hook_plan` before `validate_request` -- the "hook appears 2 times, 88 s needs 4"
+     refusal Laya hit on 2026-10-20. The v2.9.62-v2.9.69 canonical core changes ride along.
+  5. The drafting allowance in `suno_recipe.check_lyric_sheet` stays on the UNCAPPED plan (the larger
+     of the styled and unstyled totals, i.e. byte-for-byte the allowance origin/main applied). Pricing
+     that row off fix 3's capped total shrank the allowance and refused a real approved 48 s sheet
+     (58 words against 52.6), turning three shipped self-checks red: `sung_hook/test_three_walls.py`,
+     `song_dispatch/test_remaining_defects_r1_r2_r4.py`, `suno_recipe/test_pace_direction_g11.py`.
+     `words_fit.preflight` stays the ONE gate that decides whether a sheet FITS.
+- Doctrine: `SKILL.md` and `INSTRUCTIONS.md` carry the canonical stage-3 STOP RULE paragraph verbatim
+  (at most 3 validator rounds, then stop, report the exact gate and ask the client one question;
+  never grid-search, never more than about 10 minutes, never edit a validator during a run).
+  `references/stage-runbook.md` refreshed byte for byte from canonical (STOP RULE plus the music
+  stage lifecycle paragraph). `references/twin-sync-fingerprints.json` core block regenerated
+  (558/558 match, both tree hashes recorded). Canonical-only references stay unmirrored as recorded
+  at v2.9.61.
+- Version markers move together: `VERSION`, `skill-version.txt` and the `SKILL.md` frontmatter
+  `v2.9.61` -> `v2.9.70`, the canonical version of record.
+
 ## [v2.9.61] — 2026-10-16 — BATCH-AGN-24H-N2: canonical sync of this twin from onboarding main `b16266d9`
 
 Batch `BATCH-AGN-24H-N2` — one batch PR, one entry, no older entry rewritten. Window:
