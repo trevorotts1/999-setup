@@ -179,6 +179,23 @@ esac
   && pass "clean install created skills/$LAUNCHER link" \
   || fail "skills/$LAUNCHER link absent after clean install"
 
+# From the freshly linked install the Launcher's preflight must report itself
+# enabled (registration.json + every required dependency). jsonschema is the
+# one dependency that depends on the host interpreter, so it is the only
+# blocker tolerated, and then only while it is genuinely not importable.
+ENABLED_F="$(cd "$HOME_F/.claude/skills/$LAUNCHER" && python3 -m launcher_core.cli dependencies 2>/dev/null | python3 -c '
+import importlib.util, json, sys
+text = sys.stdin.read()
+report = json.loads(text[:text.rindex("}") + 1])
+have = importlib.util.find_spec("jsonschema") is not None
+ok = report["enabled_in_999"] is True if have else (
+    report["blockers"] == ["runtime-jsonschema"] and report["enabled_in_999"] is False)
+print("enabled" if ok else "not-enabled:%r" % (report["blockers"],))
+')"
+[ "$ENABLED_F" = "enabled" ] \
+  && pass "linked clean install: launcher preflight reports enabled_in_999 (jsonschema-only blocker tolerated)" \
+  || fail "linked clean install: launcher preflight not enabled (got '${ENABLED_F:-empty}')"
+
 # The Launcher's own registration check reads the SKILL.md frontmatter and must
 # agree: a matching bare slug passes, a mismatched one fails closed.
 REG_STATUS="$(cd "$LAUNCHER_TREE" && python3 - "$REPO_ROOT" <<'PY'
