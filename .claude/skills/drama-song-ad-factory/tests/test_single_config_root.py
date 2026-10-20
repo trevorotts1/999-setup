@@ -198,7 +198,8 @@ def main():
             ai = flat(AGENT_INSTALL.read_text(encoding="utf-8"))
             check(
                 "AGENT_INSTALL: both runtimes resolve the same config root",
-                "same config root, no duplicate install" in ai,
+                "the two roots must expose the same skill set" in ai.lower()
+                and "one install feeds both" in ai.lower(),
             )
         else:
             check("AGENT_INSTALL.md present", False, str(AGENT_INSTALL))

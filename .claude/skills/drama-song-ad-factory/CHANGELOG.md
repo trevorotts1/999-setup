@@ -1,5 +1,25 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [v2.9.72] — 2026-10-20 — R&B Flow fits every length or is refused before stage 3; client brief words count
+
+Twin sync of onboarding v2.9.72 (the same two defects, same fixes, same tests):
+
+R1 — R&B Flow deadlocked at 30/45/60 s: the plan kept its rap reservation AND its
+generic sung budget and missed the style's sung-share floor (60 s: sung 53 + rap 40
+-> SHARE_OFF_TARGET 63.5% against 72.9%; 30/45 s -> WORDS_DO_NOT_FIT). The sung
+allocation is now sized against the share words_fit checks, at the style's own
+rates, never raising a word count. A card too short for both is refused up front by
+music_director.build_generate_request with STYLE_TOO_SHORT_FOR_RAP naming the
+shortest card that works (70 s). Soul Ballad, Soul Rise and no-style plans are
+byte-identical.
+
+R2 — client_word_runs now treats the research brief's sub-avatar client answers
+(avatar, emotional_wound, desired_transformation) as exempt verbatim sources.
+sub_avatar.notes stays excluded (the model-written provenance field).
+
+New tests: length_formula/test_rnbflow_fit_v2972.py,
+lyric_writer/test_brief_exemption_v2972.py.
+
 ## [v2.9.71] — 2026-10-20 — DSF-009: canonical sync from onboarding v2.9.71 (the music stage runs on a clean install)
 
 This twin is what Laya Kelley and Jennifer Allen run. v2.9.70 opened the script gate; both runs then

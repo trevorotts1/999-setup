@@ -59,5 +59,24 @@ jobs:
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
       - name: Skill tests + layout parity test (empty HOME)
         run: HOME="$(mktemp -d)" python3 -m pytest -q "$SKILL/tests"
+      - name: Every $SKILL/tests script that pytest cannot collect (empty HOME)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Some tests here are SCRIPT-style (top-level asserts, no test_ class or
+          # function): `pytest -q $SKILL/tests` imports and discards them, so a red
+          # one is invisible. Run every file that pytest collects nothing from.
+          rc=0
+          n=0
+          while IFS= read -r t; do
+            if HOME="$(mktemp -d)" python3 -m pytest -q "$t" --collect-only 2>/dev/null | grep -qE '^[0-9]+ (test|item)'; then
+              continue
+            fi
+            n=$((n+1))
+            h="$(mktemp -d)"
+            if ! (HOME="$h" python3 "$t" </dev/null); then echo "FAIL (script, empty HOME): $t"; rc=1; fi
+          done < <(find "$SKILL/tests" -type f -name '*.py' -not -path '*/__pycache__/*' | sort)
+          echo "script-style test files run: $n"
+          [ "$rc" -eq 0 ]
       - name: W4 proof run (19 stages, zero network, zero spend)
         run: HOME="$(mktemp -d)" python3 "$SKILL/scripts/proof_run/run_proof.py"
