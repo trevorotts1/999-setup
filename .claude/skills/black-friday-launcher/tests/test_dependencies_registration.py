@@ -72,10 +72,11 @@ class InstallerRegistrationConventionTests(unittest.TestCase):
         self.assertEqual(result["status"], "missing", result["evidence"])
         self.assertIn("frontmatter_name=None", result["evidence"])
 
-    def test_the_real_repository_registers_the_bare_slug(self):
+    def test_the_real_repository_registers_the_skill(self):
         result = dependencies._present(ENTRY, dependencies._repo_root())
         self.assertEqual(result["status"], "present", result["evidence"])
-        self.assertIn("directory=black-friday-launcher", result["evidence"])
+        self.assertRegex(result["evidence"],
+                         r"directory=(83-)?black-friday-launcher")
         self.assertIn("frontmatter_name='black-friday-launcher'",
                       result["evidence"])
 

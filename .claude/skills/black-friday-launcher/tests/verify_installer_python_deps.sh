@@ -26,6 +26,18 @@ fail() { FAIL=$((FAIL + 1)); echo "  FAIL: $1"; }
 [ -f "$SETUP_SH" ] || { echo "installer not found: $SETUP_SH" >&2; exit 2; }
 bash -n "$SETUP_SH" && pass "setup-macos.sh parses" || fail "setup-macos.sh does not parse"
 
+# --- Windows installer: static proof (no PowerShell on this host) ---------
+SETUP_PS1="$REPO_ROOT/.claude/skills/nine-router-setup/scripts/setup-windows.ps1"
+grep -q '^function Ensure-Jsonschema {' "$SETUP_PS1" \
+  && pass "setup-windows.ps1 defines Ensure-Jsonschema" \
+  || fail "setup-windows.ps1 does not define Ensure-Jsonschema"
+grep -q 'jsonschema      \$(Ensure-Jsonschema)' "$SETUP_PS1" \
+  && pass "setup-windows.ps1 calls Ensure-Jsonschema in the dependency step" \
+  || fail "setup-windows.ps1 never calls Ensure-Jsonschema"
+grep -q "black-friday-launcher\\\\requirements.txt" "$SETUP_PS1" \
+  && pass "Ensure-Jsonschema reads the Launcher's requirements.txt" \
+  || fail "Ensure-Jsonschema does not name the Launcher's requirements.txt"
+
 # --- the installer's own Python path, extracted verbatim ------------------
 WRAPPER="$BASE/installer-python-path.sh"
 {
