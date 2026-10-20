@@ -49,8 +49,8 @@
       "source_version": "v2.1.11",
       "files": 129,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:d8116ec59f0612bc9d4bf18e0c1e301b7c7baad361aff476a9c0824e709c1734",
-      "999_version": "v2.1.17"
+      "sha256": "sha256:11a24e91d658069e5db0e2139a6806e0ffd356ff7ef4c1299dc1e424a6e9c161",
+      "999_version": "v2.1.18"
     },
     {
       "id": "tree-78-signature-product-selection",
@@ -63,8 +63,8 @@
       "source_version": "0.2.2",
       "files": 53,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:9e5894760343865c6814b8c46194fcc3965e6c656740716d78da604176e91377",
-      "999_version": "0.2.4"
+      "sha256": "sha256:e1312fd13fd31d32fe5035eb70f5c0cbb963aeab686fc21bfe178e5fa5ce32ca",
+      "999_version": "0.2.5"
     },
     {
       "id": "tree-79-signature-order-form",
@@ -142,7 +142,7 @@
       "999_path": ".claude/skills/blackceo-signature-page",
       "source_path": "71-blackceo-signature-page",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "999_version": "1.3.3",
+      "999_version": "1.3.4",
       "source_version": "1.2.17",
       "drift": {
         "files_differing": 12,
@@ -150,8 +150,8 @@
         "files_only_in_999": 5
       },
       "action": "not overwritten; 999-side copy left as-is",
-      "files": 383,
-      "sha256": "sha256:8381a8768e2f7aa87b43f3fa3329e70e92f03c3831ea606ba17465a2acad6935"
+      "files": 384,
+      "sha256": "sha256:22a61a090b10ef03a58e177b76164c3fc96f9a91b22c4cf2e19d9a075b0b8835"
     },
     {
       "id": "tree-77-council-of-wise-elders",

@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## 1.3.4 - 2026-10-20 - 999 synced with onboarding v27.1.53: a zero-image generation run is FAILED (onboarding PR #2371)
+
+- Neutral files re-synced from onboarding main e13c70e4b by `scripts/sync-skill71-to-999.sh`: `scripts/shared_page_service.py` (`--pipeline-command` is required for a generation run; `--validation-only` is the labelled admit-and-stage mode, exit 2 otherwise), new `scripts/stage_gate.py` `verify_generated_images()` (zero images is FAILED regardless of exit codes), `scripts/run_page_type.py` passes `--validation-only` for its admission call, plus `tests/test_shared_page_service_generation.py`, `tests/run_tests.py`, `tests/test_page_role_thank_you.py`. `references/kie-policy-999.json` regenerated from the new gate; the `ghl-install-pages` version stamp follows onboarding.
+- `SKILL.md` (adapter): version line only, 1.3.4; the 999 routing sections are unchanged.
+- Same batch, other 999 copies: Skill 49 (`signature-funnel`, v2.1.18) `scripts/checkout_wrapper.py` and Skill 78 (`signature-product-selection`, 0.2.5) `scripts/run_image_stages.py` pass `--validation-only` on their admission-only call; Skill 78 test updated to match.
+- `DIST-02-PACKAGING-MANIFEST.json` re-measured with `generate_dist02_manifest.py`; `README.md` and `CONTROL/bundled-components.json` carry 1.3.4.
+
 ## 1.3.3 - 2026-10-20 - 999 synced with the onboarding sigpage batch (onboarding PR #2368, v27.1.51)
 
 - Neutral files re-synced from onboarding main 94bb46dbf by `scripts/sync-skill71-to-999.sh`: a folded-levels sales page closes its wireframes and mockups on the levels panel in a real run; brand colours as roles with a palette status; review-writer and production-record validator updates; `references/brand-intake.md`; the shared client-intake answers tests.
