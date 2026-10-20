@@ -1,5 +1,57 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [v2.9.71] — 2026-10-20 — DSF-009: canonical sync from onboarding v2.9.71 (the music stage runs on a clean install)
+
+This twin is what Laya Kelley and Jennifer Allen run. v2.9.70 opened the script gate; both runs then
+hit the music stage and stopped there: on a clean install NOT ONE paid music job could be dispatched
+and the bare `song_choices.py generate` CLI refused every run. Five defects, each proven on real
+client data (Laya Kelley's Voyage To Virtue run, 2026-10-19; Jennifer Allen's runs of 2026-10-16/17,
+`driver_dispatch*.py` workaround files, FAILURE-ANALYSIS-20261017 section 4.5). Laya's box agent
+hand-patched five files between 09:56 and 10:25 EDT and her takes and word timings came back; this
+sync carries the same repairs with the tests the patch never had. Sync source:
+`trevorotts1/openclaw-onboarding` merged PR #2374 (head `32fa0fd9b94ba4a3e47739692c231b4c52ea64d8`,
+Skill 74 v1.1.9 rides along through the installer-registration helper pin).
+
+- `scripts/core/` regenerated with `installer-registration/package_core.py` from the onboarding
+  canonical core at the merged PR #2374 head: 0 files hand-edited, 558 -> 560 files
+  (+`song_transports.py`, +`test_music_clean_install_v2971.py`), one tree sha256
+  `85a067e6adb639a48968e2e2dcd6754c9cbe6a38ed45db2701c660fb95ca5009` on both sides.
+  It carries the five fixes, each proven on the real probe shapes:
+  1. `song_choices` CARD RECEIPT attached: `song_choices._card_receipt` reads the run's OWN record
+     (`control/card-receipt-block.json`, else `control/card-receipt.json` when it holds an `answers`
+     dict, else `control/run-state.json["card_receipt"]`) and attaches it to every paid request —
+     including the word-timing sub-calls. Laya's `probe/req.json` -> `CARD_UNANSWERED` before,
+     `None` (dispatch proceeds) after. Nothing found attaches nothing: the gate still refuses and
+     no receipt is ever fabricated.
+  2. `script_words` fed the approved sheet's lyric LINES (`spec["sheet"][*]["lines"]`, fallback
+     `sheet_text`; bracket headers are Suno directions, never lyrics), not the 247-word
+     `client_text` research document (96 of 120 required words unsingable by any take).
+     `client_text` stays the hook-vocabulary source in `build_requests`.
+  3. `audio_c3.lyric_timing` OMITS `callBackUrl` when there is none instead of sending `""`, which
+     Skill 74's `_cb_check` refuses as bad_request.
+  4. SYNC createTask models dispatchable: `ai-music-api/timeStamped-lyrics` answers createTask
+     synchronously with `alignedWords` and no taskId; Skill 74 reported it `bad_response` and
+     `kie_dispatch`'s save step re-queried a local `sync-` id KIE never had, saving zero files.
+     Skill 74 now returns `state=success data={"response": data, "sync": true}` and persists a
+     URL-less payload as `<save_dir>/<task>_0.json`; `kie_dispatch` writes the submit envelope to
+     `sync-info.json` and passes `--info` to save; CLI `save --info <file>`.
+  5. PRODUCTION TRANSPORTS shipped: new `scripts/core/song_transports.py` (stdlib + numpy +
+     ffmpeg: `make_measure`, `make_save`, `make_timings`, `build_pace_plan`) wires the `generate`
+     CLI itself; the programmatic refusal for None stays exactly as it was.
+- Helper pin: `74-kie-live-adapter` v1.1.8 -> v1.1.9 (sync createTask fix + `tests/test_sync_createtask.py`),
+  vendored folder rsynced from onboarding; `07-kie-setup` v7.2.2 -> v7.2.3 rode along in the same
+  merged PR ("SKILL_VERSIONS pin for Skill 74 follows") and its vendored folder follows too;
+  `helper-deps.py repin` + `check-helper-pins.py` (origin/main) + `test-helper-pins.sh` all green.
+- Doctrine: `references/stage-runbook.md` refreshed byte for byte from canonical (the music row is
+  now the `song_choices.py generate` command — the ONE command the music stage runs);
+  `references/twin-sync-fingerprints.json` core block regenerated (560/560 match, both tree hashes
+  recorded). The canonical SKILL.md "music command" paragraph is carried in the twin's own wording
+  under this entry because the twin's `SKILL.md` is its own document (OpenClaw runtime wording).
+- Version markers move together: `VERSION`, `skill-version.txt` and the `SKILL.md` frontmatter
+  `v2.9.70` -> `v2.9.71`, the canonical version of record.
+- `intake_preflight/test_factory_method_agnes.py` rides the core regeneration (canonical test
+  update so kie_dispatch resolves at call time — the suite is order-independent).
+
 ## [v2.9.70] — 2026-10-20 — DSF-002: canonical sync from onboarding v2.9.70 (stage-3 script-lyrics deadlock + hook_plan forwarding)
 
 This twin is what Laya Kelley and Jennifer Allen run. Both runs sat in `script-lyrics` for hours and

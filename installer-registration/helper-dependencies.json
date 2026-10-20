@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-17T13:48:36Z",
+  "generatedAt": "2026-10-20T17:42:48Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -87,14 +87,14 @@
       "role": "KIE paid transport: discovery, schemas, upload, submit, poll, credits",
       "kind": "skill",
       "required": true,
-      "version": "v1.1.8",
+      "version": "v1.1.9",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/74-kie-live-adapter",
       "installPath": "skills/74-kie-live-adapter",
-      "fileCount": 35,
-      "sizeBytes": 771359,
-      "treeSha256": "2befc6929a071fcaf1408b5cf71e12664c6211c8a0a34c526d08d10bf7c8dc40",
-      "skillMdSha256": "86c30ca113663533e536582d22a0705be596408035d7f0d8a3e45a7e41b9b74a"
+      "fileCount": 36,
+      "sizeBytes": 784453,
+      "treeSha256": "8d3a27cd290dc23d7f611d60daa04b5773fa316e8bc89c77191cb6d85527e602",
+      "skillMdSha256": "73ff312878219de9bd59d29a62e259e1b2261a853ccca7c9d980a8578b96ce5f"
     },
     {
       "id": "46",
@@ -119,14 +119,14 @@
       "role": "KIE setup: credentials, router and the common rules 1 through 13 (references/kie-common-rules.md)",
       "kind": "skill",
       "required": true,
-      "version": "v7.2.2",
+      "version": "v7.2.3",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/07-kie-setup",
       "installPath": "skills/07-kie-setup",
       "fileCount": 16,
-      "sizeBytes": 377299,
-      "treeSha256": "15dfdc656117e8dd1eb7ccd9f0799d7d6cc7e4e36c0b121d5041f25a75a2341c",
-      "skillMdSha256": "08d50b0acb121669080127578a920103901599cdd71c231df5117531c0351e5f"
+      "sizeBytes": 377657,
+      "treeSha256": "234e4eedfb4ab30db7eb06d9e3e93cab848897658a5bf6272f3860b561400881",
+      "skillMdSha256": "9ce5474c5aa1fd78b598b15897547c538f99e66415d94803acdb6b686f30e9f5"
     },
     {
       "id": "shared-utils",

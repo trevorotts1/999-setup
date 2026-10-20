@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: v2.9.70
+version: v2.9.71
 ---
 
 # Drama Song Ad Factory
@@ -158,6 +158,20 @@ when missing or stale). No: nothing changes. Code and tests: `scripts/core/scrip
 (`stage.py`, `test_script_wiring.py`).
 
 **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+
+**The music command (v2.9.71).** The command to run for the music stage is
+`song_choices.py generate --run-dir "$RUN" --request "$RUN/music/req.json"
+--ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID"`. On a clean install it is the
+only one that works, because it supplies the production transports itself
+(`scripts/core/song_transports.py`: measurements decoded off each take's own
+audio, every paid take kept under `<run>/music/takes/<variant>/take-NN/`, the
+one word-timing step and the pace order), attaches the run's recorded four-pick
+card receipt (`control/card-receipt-block.json`, else
+`control/card-receipt.json` with an `answers` dict, else
+`control/run-state.json["card_receipt"]`), and hands the `script_words` gate the
+approved sheet's LYRIC LINES instead of the source research document. The lower
+level `kie_dispatch.py dispatch` row still exists for a single hand-built job
+and supplies none of those three things.
 
 ## Start here: the enforced flow
 
