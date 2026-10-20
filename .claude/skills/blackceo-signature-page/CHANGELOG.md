@@ -10,6 +10,7 @@
 - `shared-utils/client_intake` shipped (engine, schema, question bank, palette data, fixtures): Skill 49's `launch_intake.py` fails closed without it. Its `tests/` stay in onboarding because they resolve onboarding-numbered repository-root paths.
 - 999-only layout shims added so the neutral Skill 49 and 83 tests resolve onboarding-numbered sibling paths: `.claude/skills/{49-signature-funnel,71-blackceo-signature-page,78-signature-product-selection}` (symlinks).
 - `DIST-02-PACKAGING-MANIFEST.json` re-measured with `generate_dist02_manifest.py`.
+- `ghl-install-pages/skill-version.txt` follows onboarding main's stamp (v27.1.52, onboarding de91b470c) so the neutral GHL pack parity holds against live onboarding main.
 
 ## 1.3.2 - 2026-10-20 - 999 adapters brought current with the onboarding sigpage batch (onboarding PR #2367)
 
