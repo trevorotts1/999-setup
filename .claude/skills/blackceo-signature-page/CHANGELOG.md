@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.3.0 - 2026-10-19 - 999 adapters brought current, suite and verify.sh pass
+
+- `SKILL.md` (adapter): merged with the onboarding 1.3.0 text (design board, funnel handoff, internal layout proof, supplied-size and fifteen-stage prose); the 999 image/video routing and harness-dependency sections are kept. Version 1.3.0 (SKILL.md, skill-version.txt, VERSION).
+- `scripts/write_intake.py` (adapter): onboarding writer (founder-photo forms, supplied-size check, handoff, launch context) plus the 999 deltas, now opt-in behind `--runtime claude-nine`: it records `runtime`, and with it intake refuses `image_engine agnes` when AGNES_AI_API_KEY is unset. Without the flag the intake is byte-identical to the legacy form the neutral tests pin.
+- `references/kie-generation-route.md` (adapter): states the `Image-NN.png` save naming (Item 26) and the `--runtime claude-nine` requirement.
+- 999-only layout shims so the neutral tests and verify.sh resolve their paths here: `.claude/skills/{shared-utils,scripts,universal-sops}` (symlinks to the repository root), `universal-sops/signature-page-craft/README.md` and `scripts/check-skill71-parity.py` (copies from onboarding), `.claude/scripts/check-skill71-parity.py` (verify.sh passes `.claude/` as the root; this re-aims it at the repository root).
+- `tests/test_sync_allowlist.py`: passes in the 999 tree (the onb_only file must be absent here). Byte-identical to onboarding PR #2354; merge that first.
+
 ## 1.2.7 - 2026-10-09 - operator wording scrub
 
 - Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
