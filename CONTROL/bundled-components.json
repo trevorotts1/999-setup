@@ -64,7 +64,7 @@
     ],
     "blackceo-signature-page": [
       {
-        "version": "1.3.3",
+        "version": "1.3.4",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/blackceo-signature-page",
