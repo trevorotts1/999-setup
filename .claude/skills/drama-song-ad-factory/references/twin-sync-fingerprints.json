@@ -14,7 +14,7 @@
     "base_sha": "e13c70e4b77467014304ff18ea6cd8048a1cf398",
     "branch": "fix/dsf-stage3-deadlock (onboarding DSF-001 worktree, v2.9.70 on origin/main e13c70e4b)",
     "label": "ONBOARDING_CANONICAL",
-    "tree_sha256": "37f0a5c3a2c8cdb2a98f773a5e869778ec503f8b18cf4c791bb92cb2a273a15c"
+    "tree_sha256": "b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf"
   },
   "packaged": {
     "repo": "trevorotts1/999-setup",
@@ -22,7 +22,7 @@
     "base_sha": "110de4160aa1f20e5f2ef1ede110cc5422895420",
     "branch": "fix/dsf-stage3-deadlock",
     "label": "999_PACKAGED",
-    "tree_sha256": "37f0a5c3a2c8cdb2a98f773a5e869778ec503f8b18cf4c791bb92cb2a273a15c"
+    "tree_sha256": "b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf"
   },
   "summary": {
     "in_scope_files": 558,
@@ -1522,8 +1522,8 @@
       "match": true
     },
     "lyric_writer/lyric_writer.py": {
-      "canonical_sha256": "75bbe5ce4337c4438dd5f6e5807a27947f076eaa55007e102488b086b69b5f06",
-      "packaged_sha256": "75bbe5ce4337c4438dd5f6e5807a27947f076eaa55007e102488b086b69b5f06",
+      "canonical_sha256": "888c9d21cfaec695fb384e4f1160d672455804149805ac18bddcc7bdf033d334",
+      "packaged_sha256": "888c9d21cfaec695fb384e4f1160d672455804149805ac18bddcc7bdf033d334",
       "match": true
     },
     "lyric_writer/test_delivery_grammar_amend.py": {
