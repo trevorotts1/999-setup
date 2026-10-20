@@ -1,6 +1,6 @@
 {
   "artifact": "twin-sync-fingerprints",
-  "unit": "W3-twin-sync-999CANON",
+  "unit": "DSF-002",
   "scope": "scripts/core/",
   "exclusions": [
     "__pycache__/",
@@ -11,20 +11,22 @@
   "canonical": {
     "repo": "trevorotts1/openclaw-onboarding",
     "tree": "75-drama-song-ad-factory/scripts/core/",
-    "base_sha": "b16266d9dfc2d9aabcef40e1d780137350080df4",
-    "branch": "origin/main",
-    "label": "ONBOARDING_CANONICAL"
+    "base_sha": "e13c70e4b77467014304ff18ea6cd8048a1cf398",
+    "branch": "fix/dsf-stage3-deadlock (onboarding DSF-001 worktree, v2.9.70 on origin/main e13c70e4b)",
+    "label": "ONBOARDING_CANONICAL",
+    "tree_sha256": "b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf"
   },
   "packaged": {
     "repo": "trevorotts1/999-setup",
     "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-    "base_sha": "16be8634bb84bba2efa9bb9905862e24ff44b010",
-    "branch": "batch/AGN-24H-N2",
-    "label": "999_PACKAGED"
+    "base_sha": "110de4160aa1f20e5f2ef1ede110cc5422895420",
+    "branch": "fix/dsf-stage3-deadlock",
+    "label": "999_PACKAGED",
+    "tree_sha256": "b63c4aff3089f3045fea86114b37e84625fec58eec36941f0aee8c3c9cd00bbf"
   },
   "summary": {
-    "in_scope_files": 549,
-    "match": 549,
+    "in_scope_files": 558,
+    "match": 558,
     "differ": 0,
     "only_canonical": 0,
     "only_packaged": 0
@@ -200,8 +202,8 @@
       "match": true
     },
     "audio_c3/lyric_timing.py": {
-      "canonical_sha256": "a33cc55f90bbba8ae9c83d9ac84a429baa3ed2b36aaec50eafcc03263ac4db26",
-      "packaged_sha256": "a33cc55f90bbba8ae9c83d9ac84a429baa3ed2b36aaec50eafcc03263ac4db26",
+      "canonical_sha256": "98efb2d03a343346361ddc01a6ba1555786c82f6076cc1cb7ccb5e1524a7e698",
+      "packaged_sha256": "98efb2d03a343346361ddc01a6ba1555786c82f6076cc1cb7ccb5e1524a7e698",
       "match": true
     },
     "audio_c3/no_echo/__init__.py": {
@@ -1125,8 +1127,8 @@
       "match": true
     },
     "intake_preflight/factory.py": {
-      "canonical_sha256": "ae2bd9ec049c80f1cec29d6e347c4c345c689ee757945abced8977dd0769ca41",
-      "packaged_sha256": "ae2bd9ec049c80f1cec29d6e347c4c345c689ee757945abced8977dd0769ca41",
+      "canonical_sha256": "b5ce490bcda43a5bce165a83b97dd29f7d0e4f63dd445b5bd851bb6dee26eb21",
+      "packaged_sha256": "b5ce490bcda43a5bce165a83b97dd29f7d0e4f63dd445b5bd851bb6dee26eb21",
       "match": true
     },
     "intake_preflight/intake.py": {
@@ -1157,6 +1159,11 @@
     "intake_preflight/test_intake_preflight.py": {
       "canonical_sha256": "21627f7c4c0237144d9fffb4e5b2ee49eb1f22e845b4fb44295099b44e1c9e3c",
       "packaged_sha256": "21627f7c4c0237144d9fffb4e5b2ee49eb1f22e845b4fb44295099b44e1c9e3c",
+      "match": true
+    },
+    "intake_preflight/test_music_stage_lifecycle.py": {
+      "canonical_sha256": "01dece83d95fde6df50aeff3e0ec5bc51f5c35f2d9cd76c6ecdccbee13de83a8",
+      "packaged_sha256": "01dece83d95fde6df50aeff3e0ec5bc51f5c35f2d9cd76c6ecdccbee13de83a8",
       "match": true
     },
     "job_recovery.py": {
@@ -1240,8 +1247,8 @@
       "match": true
     },
     "length_formula/length_formula.py": {
-      "canonical_sha256": "857b72e87cce79dce5eb523ada785079515d3de5e67cb0bc2ef2a119e07b5fcd",
-      "packaged_sha256": "857b72e87cce79dce5eb523ada785079515d3de5e67cb0bc2ef2a119e07b5fcd",
+      "canonical_sha256": "dd8c8d4d7b7379baf1b38b56defc136c9b3dd9e39740c4860683a5b490a7b244",
+      "packaged_sha256": "dd8c8d4d7b7379baf1b38b56defc136c9b3dd9e39740c4860683a5b490a7b244",
       "match": true
     },
     "length_formula/method_runtime.json": {
@@ -1264,9 +1271,14 @@
       "packaged_sha256": "b1fddcdf1f36a3138e9ba0d1b68b29176f7a6c407d605cc1d20c7e11688049ca",
       "match": true
     },
+    "length_formula/test_style_budget_fits_v2970.py": {
+      "canonical_sha256": "691a8320af19abe5e483568e4149b539dcb661222ce3c26b68adb0f293e92441",
+      "packaged_sha256": "691a8320af19abe5e483568e4149b539dcb661222ce3c26b68adb0f293e92441",
+      "match": true
+    },
     "length_formula/test_style_plan_u2.py": {
-      "canonical_sha256": "6bb10723f4eb61e8d4f044ca74afbb69f1c48414a3042ecd1f1c60403be1ca52",
-      "packaged_sha256": "6bb10723f4eb61e8d4f044ca74afbb69f1c48414a3042ecd1f1c60403be1ca52",
+      "canonical_sha256": "5e6433197cc43b5d62b55ae7f3e0e4da52ef1b0787e880e936a3f372448b2493",
+      "packaged_sha256": "5e6433197cc43b5d62b55ae7f3e0e4da52ef1b0787e880e936a3f372448b2493",
       "match": true
     },
     "lip_sync/lip_gate/__init__.py": {
@@ -1510,8 +1522,8 @@
       "match": true
     },
     "lyric_writer/lyric_writer.py": {
-      "canonical_sha256": "894580e0ce12380938f0edca85a48d2f2550055d2d79902b7a15eb4586a3d4d3",
-      "packaged_sha256": "894580e0ce12380938f0edca85a48d2f2550055d2d79902b7a15eb4586a3d4d3",
+      "canonical_sha256": "888c9d21cfaec695fb384e4f1160d672455804149805ac18bddcc7bdf033d334",
+      "packaged_sha256": "888c9d21cfaec695fb384e4f1160d672455804149805ac18bddcc7bdf033d334",
       "match": true
     },
     "lyric_writer/test_delivery_grammar_amend.py": {
@@ -1565,8 +1577,8 @@
       "match": true
     },
     "music_director/test_prompt_limits_u6.py": {
-      "canonical_sha256": "69b27d2c54294436af0dcd0a82222911ab5502f3c6ca4d045a904d22c22ddd28",
-      "packaged_sha256": "69b27d2c54294436af0dcd0a82222911ab5502f3c6ca4d045a904d22c22ddd28",
+      "canonical_sha256": "e436af133b0a30e6beea510d0ec64505808965947035089693760bc4fecee1af",
+      "packaged_sha256": "e436af133b0a30e6beea510d0ec64505808965947035089693760bc4fecee1af",
       "match": true
     },
     "music_qc/__init__.py": {
@@ -1575,8 +1587,8 @@
       "match": true
     },
     "music_qc/pace_change.py": {
-      "canonical_sha256": "12266b24e3fbe6c5005e0cb5c6a879ab02fc083700f50b28cacd1be6639bfcd6",
-      "packaged_sha256": "12266b24e3fbe6c5005e0cb5c6a879ab02fc083700f50b28cacd1be6639bfcd6",
+      "canonical_sha256": "d77b870b5243b7ecf7022085f26ba9773637bdd6e4c049e437d0c9578e11accb",
+      "packaged_sha256": "d77b870b5243b7ecf7022085f26ba9773637bdd6e4c049e437d0c9578e11accb",
       "match": true
     },
     "music_qc/rap_check.py": {
@@ -2100,8 +2112,8 @@
       "match": true
     },
     "singing_detector/singing_detector.py": {
-      "canonical_sha256": "0a69781a3791f53fae20a573c31b7da7508abb0683f086519befc516a6b62581",
-      "packaged_sha256": "0a69781a3791f53fae20a573c31b7da7508abb0683f086519befc516a6b62581",
+      "canonical_sha256": "e1bee6d6674ca00dd9d8e800d11baebb1407c25cb35365b1cc36be7ebb852562",
+      "packaged_sha256": "e1bee6d6674ca00dd9d8e800d11baebb1407c25cb35365b1cc36be7ebb852562",
       "match": true
     },
     "singing_detector/test_receipt_evidence_g5.py": {
@@ -2245,8 +2257,8 @@
       "match": true
     },
     "song_choices/song_choices.py": {
-      "canonical_sha256": "ef77d457c9db81538e60627304a233fb64fb0e846cb6e9a86b776788b10efb5b",
-      "packaged_sha256": "ef77d457c9db81538e60627304a233fb64fb0e846cb6e9a86b776788b10efb5b",
+      "canonical_sha256": "a28e8c3f1325caf3b704d5fff6d545a23f0d002e947a24d13643f668d3d7dc61",
+      "packaged_sha256": "a28e8c3f1325caf3b704d5fff6d545a23f0d002e947a24d13643f668d3d7dc61",
       "match": true
     },
     "song_choices/test_recommend.py": {
@@ -2265,8 +2277,8 @@
       "match": true
     },
     "song_choices/variants.json": {
-      "canonical_sha256": "484b7cc12b09c4aedc634b25dc49875715228452862d51a7e09491d2cae0e270",
-      "packaged_sha256": "484b7cc12b09c4aedc634b25dc49875715228452862d51a7e09491d2cae0e270",
+      "canonical_sha256": "9df172e7092d744bfc290f0adae594412017bc5c7c71a32dc7f73e263d80c19b",
+      "packaged_sha256": "9df172e7092d744bfc290f0adae594412017bc5c7c71a32dc7f73e263d80c19b",
       "match": true
     },
     "song_contract/__init__.py": {
@@ -2295,8 +2307,8 @@
       "match": true
     },
     "song_contract/song_contract.py": {
-      "canonical_sha256": "73376246e601742cc0b216525968a1f49b3fc188a060180a3a4baf6b83a54275",
-      "packaged_sha256": "73376246e601742cc0b216525968a1f49b3fc188a060180a3a4baf6b83a54275",
+      "canonical_sha256": "b47d6cfc89d2117c76bdb7df6689761804717e92112ba67302712c942d03a106",
+      "packaged_sha256": "b47d6cfc89d2117c76bdb7df6689761804717e92112ba67302712c942d03a106",
       "match": true
     },
     "song_contract/test_song_contract.py": {
@@ -2310,13 +2322,18 @@
       "match": true
     },
     "song_dispatch/song_dispatch.py": {
-      "canonical_sha256": "ba0f0cb96d075349b8d00d672a1c2cf1125135e9b77d76f6eb853be4cb48effa",
-      "packaged_sha256": "ba0f0cb96d075349b8d00d672a1c2cf1125135e9b77d76f6eb853be4cb48effa",
+      "canonical_sha256": "5e8064ccb62d09ffc86b7d871a9448f66206820d09bc6dcb92652bd6ee05d7bb",
+      "packaged_sha256": "5e8064ccb62d09ffc86b7d871a9448f66206820d09bc6dcb92652bd6ee05d7bb",
       "match": true
     },
     "song_dispatch/test_method_song.py": {
       "canonical_sha256": "9ca179200bdec99f889e27db08978edafa5ff8542e36d503fe510e6183f1a070",
       "packaged_sha256": "9ca179200bdec99f889e27db08978edafa5ff8542e36d503fe510e6183f1a070",
+      "match": true
+    },
+    "song_dispatch/test_remaining_defects_r1_r2_r4.py": {
+      "canonical_sha256": "a51553caa75bece8dc1102adcf7c9c92ec4aeee1606b0b7506150edf239006fb",
+      "packaged_sha256": "a51553caa75bece8dc1102adcf7c9c92ec4aeee1606b0b7506150edf239006fb",
       "match": true
     },
     "song_dispatch/test_song_dispatch.py": {
@@ -2644,6 +2661,21 @@
       "packaged_sha256": "d686e090f46578269b1bd494d52b2b002dcee465a98c6f6be8f466d987ef8da4",
       "match": true
     },
+    "sung_hook/fixtures/gala-48s-approved.json": {
+      "canonical_sha256": "26a9d2f2b566bf4bafea7d5e65688face92d7ee6fab90a5d6df7cc3c01fd11bc",
+      "packaged_sha256": "26a9d2f2b566bf4bafea7d5e65688face92d7ee6fab90a5d6df7cc3c01fd11bc",
+      "match": true
+    },
+    "sung_hook/fixtures/gala-48s-local-words.json": {
+      "canonical_sha256": "4f9ef9f8110993fdebe90ebb5e2d7f0ab5f3bcb8b3ad186bd046485b0c3e92d6",
+      "packaged_sha256": "4f9ef9f8110993fdebe90ebb5e2d7f0ab5f3bcb8b3ad186bd046485b0c3e92d6",
+      "match": true
+    },
+    "sung_hook/fixtures/gala-48s-suno-aligned-headers.json": {
+      "canonical_sha256": "b89fa9d2fe92a25211fef6499fd53b370fbc8a28a75b14559a1041b1b30c2ddf",
+      "packaged_sha256": "b89fa9d2fe92a25211fef6499fd53b370fbc8a28a75b14559a1041b1b30c2ddf",
+      "match": true
+    },
     "sung_hook/fixtures/one-check-v1-take-headers.json": {
       "canonical_sha256": "cfb09758beabd57b1d569c485c3363d0b519d943208d79ab864f568a6f7a9db2",
       "packaged_sha256": "cfb09758beabd57b1d569c485c3363d0b519d943208d79ab864f568a6f7a9db2",
@@ -2660,13 +2692,13 @@
       "match": true
     },
     "sung_hook/hook_placement.py": {
-      "canonical_sha256": "378d30540cbb427b7bc8c868deb4148f8f35465caf3212bf3cff99eb788487df",
-      "packaged_sha256": "378d30540cbb427b7bc8c868deb4148f8f35465caf3212bf3cff99eb788487df",
+      "canonical_sha256": "c5f8336e90cc1ad8728d9f0c63db8116fe644b90d19da586d4a23b077dc1353c",
+      "packaged_sha256": "c5f8336e90cc1ad8728d9f0c63db8116fe644b90d19da586d4a23b077dc1353c",
       "match": true
     },
     "sung_hook/sung_hook.py": {
-      "canonical_sha256": "d80a4637898f26df9eac40972f8f096d7de014b4959daa307fb5ad6ef25c5c84",
-      "packaged_sha256": "d80a4637898f26df9eac40972f8f096d7de014b4959daa307fb5ad6ef25c5c84",
+      "canonical_sha256": "4c2370952085961784bca46d8d16086984f82f62c4b5fba423bcb04330cc318e",
+      "packaged_sha256": "4c2370952085961784bca46d8d16086984f82f62c4b5fba423bcb04330cc318e",
       "match": true
     },
     "sung_hook/test_hook_placement.py": {
@@ -2684,6 +2716,16 @@
       "packaged_sha256": "72e5dd8163a04c67f3440753fc431051adaa9fbdecb77e23f177e26744dd8417",
       "match": true
     },
+    "sung_hook/test_three_walls.py": {
+      "canonical_sha256": "0bedcb602d9b87f1ba94c0c2f796c786a1f48578f1b25d565b1fb425f2254cf3",
+      "packaged_sha256": "0bedcb602d9b87f1ba94c0c2f796c786a1f48578f1b25d565b1fb425f2254cf3",
+      "match": true
+    },
+    "sung_hook/test_timing_word_shapes.py": {
+      "canonical_sha256": "8aebf87c81532de228d13a1ba1c861dce61616f45fd58996f29ed34ade1ad484",
+      "packaged_sha256": "8aebf87c81532de228d13a1ba1c861dce61616f45fd58996f29ed34ade1ad484",
+      "match": true
+    },
     "suno_recipe/__init__.py": {
       "canonical_sha256": "d9e95c5730284bbdab481574f6b0e9ce8e64144e638c69b962b58a6f5f37409f",
       "packaged_sha256": "d9e95c5730284bbdab481574f6b0e9ce8e64144e638c69b962b58a6f5f37409f",
@@ -2695,8 +2737,13 @@
       "match": true
     },
     "suno_recipe/suno_recipe.py": {
-      "canonical_sha256": "0ee3a7e197c5a5f1fa9f2533fdf05d743fcae5842b2b4ff38c70963b6e97f135",
-      "packaged_sha256": "0ee3a7e197c5a5f1fa9f2533fdf05d743fcae5842b2b4ff38c70963b6e97f135",
+      "canonical_sha256": "45934e8d7ec31745093a421f6cb535f4c9040efde467dcc0359c28cb5d026004",
+      "packaged_sha256": "45934e8d7ec31745093a421f6cb535f4c9040efde467dcc0359c28cb5d026004",
+      "match": true
+    },
+    "suno_recipe/test_pace_direction_g11.py": {
+      "canonical_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53",
+      "packaged_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53",
       "match": true
     },
     "suno_recipe/test_suno_recipe.py": {

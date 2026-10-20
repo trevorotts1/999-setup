@@ -152,6 +152,8 @@ run each argv without a shell). Never type them free hand or send them as one
 line: one block per question, one numbered option per line, a blank line
 between questions. See `references/choice-card-spec.md` section 2.1.
 
+**Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+
 **Script approval.** The card's last question (SCRIPT APPROVAL) lets the client read and approve the story and song lyrics before the song is made. On Yes, send the script, pause, and do not generate the song until "approve"; save the card answers (the `answers` list of `intake_card.conversation`) to `$RUN/card-answers.json` and the script to `$RUN/creative/script.json`; `factory.py next` then sends the script and pauses by itself, and `factory.py script-reply` carries the client's answer; see SKILL.md "Script approval before the song".
 
 **Ask them one at a time (I7).** Do not send the whole card. Run
