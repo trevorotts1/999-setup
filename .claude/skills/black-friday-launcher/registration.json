@@ -143,7 +143,7 @@
       {
         "id": "department-map-absent",
         "status": "resolved",
-        "evidence": "23-ai-workforce-blueprint/skill-department-map.json vendored verbatim from openclaw-onboarding origin/main @ 6de76988d1d17a42198815684374799529b70c2a (provenance in 23-ai-workforce-blueprint/VENDORED.md); the three registry-line entries now resolve"
+        "evidence": "23-ai-workforce-blueprint/skill-department-map.json vendored verbatim from openclaw-onboarding origin/main @ c4bf7530f6af9bcd0c3e1b55c7b0ae25761f2b8a (provenance in 23-ai-workforce-blueprint/VENDORED.md); the three registry-line entries now resolve"
       },
       {
         "id": "installer-numeric-directory-only",

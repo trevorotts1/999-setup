@@ -5,9 +5,9 @@ rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
 - Source ref: `origin/main`
-- Source commit: `6de76988d1d17a42198815684374799529b70c2a`
-- Git blob: `d91bcf78003c62af61732ce595a3b5b5b35e9010`
-- SHA-256: `38343b881165997b316260587a56834fe6b207b9a6cf6987100015faf70f445b`
+- Source commit: `c4bf7530f6af9bcd0c3e1b55c7b0ae25761f2b8a`
+- Git blob: `ce4d5d105a4cf48f946489e545d17fb9e99960e7`
+- SHA-256: `ddee7a81ebb251c16f91bb6672491e68a7a69ddaa0d3ca9c63aa56bf219e2165`
 - Entries: 83 (skill 01 through 83, including `signature-downsell`,
   `signature-thank-you` and `black-friday-launcher`)
 

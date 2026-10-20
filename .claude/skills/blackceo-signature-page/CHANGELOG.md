@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 1.3.2 - 2026-10-20 - 999 adapters brought current with the onboarding sigpage batch (onboarding PR #2367)
+
+- Neutral files re-synced from onboarding main c4bf7530f by `scripts/sync-skill71-to-999.sh` (page types, page kinds, order form, clear desktop/mobile labels, review-PDF guard).
+- `SKILL.md` (adapter): 3-way merged with the onboarding 1.3.2 text (page kinds, per-page-type copy forms); the 999 routing sections are kept; the duplicate Design style section is removed.
+- `scripts/write_intake.py` (adapter): onboarding writer (`--page-kind`, page-type forms) plus the 999 deltas (`--runtime claude-nine`, Agnes-key refusal), still opt-in.
+- 999-only layout shims so the neutral tests resolve onboarding-numbered sibling paths here: `.claude/skills/{06-ghl-install-pages,23-ai-workforce-blueprint,79-signature-order-form,80-signature-upsell,81-signature-downsell,82-signature-thank-you}` (symlinks).
+- `23-ai-workforce-blueprint/skill-department-map.json` re-vendored verbatim from onboarding c4bf7530f (provenance in VENDORED.md and the launcher registration).
+
 ## 1.3.0 - 2026-10-19 - 999 adapters brought current, suite and verify.sh pass
 
 - `SKILL.md` (adapter): merged with the onboarding 1.3.0 text (design board, funnel handoff, internal layout proof, supplied-size and fifteen-stage prose); the 999 image/video routing and harness-dependency sections are kept. Version 1.3.0 (SKILL.md, skill-version.txt, VERSION).
