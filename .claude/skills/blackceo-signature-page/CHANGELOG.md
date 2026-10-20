@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 1.3.3 - 2026-10-20 - 999 synced with the onboarding sigpage batch (onboarding PR #2368, v27.1.51)
+
+- Neutral files re-synced from onboarding main 94bb46dbf by `scripts/sync-skill71-to-999.sh`: a folded-levels sales page closes its wireframes and mockups on the levels panel in a real run; brand colours as roles with a palette status; review-writer and production-record validator updates; `references/brand-intake.md`; the shared client-intake answers tests.
+- `SKILL.md` (adapter): 3-way merged with the onboarding 1.3.3 text; the 999 routing sections are kept.
+- `scripts/write_intake.py` (adapter): onboarding writer (shared client-intake answers file) 3-way merged with the 999 deltas (`--runtime claude-nine`, Agnes-key refusal), still opt-in.
+- `adapters/openclaw/README.md` (adapter): added so the adapter set matches onboarding (the 999 edition still runs under claude-nine / Claude Code).
+- Same batch, other 999 copies brought to onboarding main 94bb46dbf: Skill 83 (`black-friday-launcher`, 0.2.4, including its `routes/`), the shared `signature_launch` package (with `experience/`), Skill 49 (`signature-funnel`, v2.1.17) and Skill 78 (`signature-product-selection`; the launcher's product-selection chain needs its `run_image_stages.py`). The 999 copies of 49, 78 and 83 `routes/` had been frozen at the vendoring commit; no 999-only patch was lost (the one 999 test patch is now upstream).
+- `shared-utils/client_intake` shipped (engine, schema, question bank, palette data, fixtures): Skill 49's `launch_intake.py` fails closed without it. Its `tests/` stay in onboarding because they resolve onboarding-numbered repository-root paths.
+- 999-only layout shims added so the neutral Skill 49 and 83 tests resolve onboarding-numbered sibling paths: `.claude/skills/{49-signature-funnel,71-blackceo-signature-page,78-signature-product-selection}` (symlinks).
+- `DIST-02-PACKAGING-MANIFEST.json` re-measured with `generate_dist02_manifest.py`.
+- `ghl-install-pages/skill-version.txt` follows onboarding main's stamp (v27.1.52, onboarding de91b470c) so the neutral GHL pack parity holds against live onboarding main.
+
 ## 1.3.2 - 2026-10-20 - 999 adapters brought current with the onboarding sigpage batch (onboarding PR #2367)
 
 - Neutral files re-synced from onboarding main c4bf7530f by `scripts/sync-skill71-to-999.sh` (page types, page kinds, order form, clear desktop/mobile labels, review-PDF guard).

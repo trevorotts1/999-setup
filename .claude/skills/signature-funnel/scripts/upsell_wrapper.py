@@ -21,10 +21,13 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
   1. ENRICH  builds the superset request from the S49 page-request, the
      launch record, the compiled route graph (hash-verified against the
      request), the staged copy document and the verified journey state.
-     The incoming request must be exactly page-request 1.0-shaped: any
-     key outside the packet schema's fields fails closed by name here
-     rather than being forwarded, because Skill 80's runtime validator
-     does not enforce its schema's additionalProperties: false.
+     The incoming request must be exactly page-request shaped: the
+     1.0 fields, plus, on a request stamped schema_version "1.1", the
+     one 1.1 field (prompt_policy_id, admitted under the pair rule by
+     the flip-time seam, adoption map 1.4 item 4). Any other key fails
+     closed by name here rather than being forwarded, because Skill
+     80's runtime validator does not enforce its schema's
+     additionalProperties: false.
      Every block is sourced from a named input (see BUILD-REPORT.md for
      the block-by-block table). A block with NO honest source fails the
      run closed with a named error BEFORE produce.py is invoked: the
@@ -35,7 +38,14 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
   4. PROJECT reduces it to exactly the 17 page-result 1.0 fields and
      verifies the echo against the S49 request (a result that does not
      echo is refused, never repaired).
-  5. Writes the projected result at the {result} path dispatch expects.
+  5. IMAGES  with --bridge-config (the landing bridge's own config: Skill 71 root plus
+             brand owner, image cap and brand file) hands the page to Skill 71's
+             page-type runner (scripts/run_page_type.py): desktop and mobile
+             wireframes and mockups, one long review PDF per stage, overview boards,
+             in <work_dir>/images-<slot>. The wrapper builds none of that itself. A
+             failed image run fails the wrapper closed; without --bridge-config the
+             wrapper says on stderr that no wireframes or mockups were made.
+  6. Writes the projected result at the {result} path dispatch expects.
 
 Operator-staged run inputs (sidecar): an optional enrichment JSON file
 may supply ONLY the keys this wrapper cannot source in-band:
@@ -68,6 +78,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
+
 EXIT_OK = 0
 EXIT_FAILCLOSED = 2
 EXIT_USAGE = 3
@@ -89,18 +102,27 @@ RESULT_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                  "native_bindings_ref", "test_only")
 # The page-request 1.0 fields: exactly the properties of the packet
 # page-request schema (19 fields; the schema is additionalProperties:
-# false). This wrapper consumes 1.0-shaped requests ONLY: enrich()
-# fails closed on any other incoming key instead of forwarding it to
-# Skill 80, whose runtime validator (adapter_common.validate_request)
-# is a stdlib mirror that does NOT enforce the schema's
-# additionalProperties: false. The test suite pins this tuple to the
-# packet schema's properties, so the two cannot diverge silently.
+# false). enrich() fails closed on any other incoming key instead of
+# forwarding it to Skill 80, whose runtime validator
+# (adapter_common.validate_request) is a stdlib mirror that does NOT
+# enforce the schema's additionalProperties: false. The test suite
+# pins this tuple to the packet schema's properties, so the two
+# cannot diverge silently.
 REQUEST_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                   "revision", "request_id", "page_id", "page_role",
                   "assigned_skill", "approval_ref", "input_hash", "brand_ref",
                   "brand_hash", "route_graph_ref", "route_graph_hash",
                   "offer_refs", "copy_profile", "allowed_write_target",
                   "test_only")
+# The one field the 1.1 shape adds, admitted by the flip-time seam
+# (adoption map 1.4 item 4, executed under map 2.3 step 3(a)): on a
+# request stamped schema_version "1.1" this key is admitted and
+# carried into the enriched request unchanged; on any other version
+# its presence fails closed, as does a "1.1" request without a
+# non-empty string value (the pair rule, in the consumers' wording).
+# It is deliberately NOT part of REQUEST_FIELDS, which stays pinned
+# to the packet page-request 1.0 schema's properties.
+POLICY_FIELD = "prompt_policy_id"
 ECHO_FIELDS = ("request_id", "input_hash", "page_id", "launch_id",
                "revision", "tenant_id", "location_id", "test_only")
 
@@ -519,16 +541,40 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     naming every block that has no honest source."""
     problems: List[str] = []
     # Input shape (DEFECT 1 cure): the request must be exactly
-    # page-request 1.0-shaped. Any key outside REQUEST_FIELDS (for
-    # example the schema 1.1 prompt_policy_id) fails closed by name
-    # here, before the enriched request is built, instead of being
-    # silently forwarded to a consumer whose runtime validator does
-    # not enforce its schema's additionalProperties: false.
-    for key in sorted(set(request) - set(REQUEST_FIELDS)):
+    # page-request shaped. Any key outside REQUEST_FIELDS fails closed
+    # by name here, before the enriched request is built, instead of
+    # being silently forwarded to a consumer whose runtime validator
+    # does not enforce its schema's additionalProperties: false.
+    # The one admission beyond the 1.0 fields is the flip-time seam
+    # (adoption map 1.4 item 4): POLICY_FIELD is admitted on a request
+    # stamped "1.1" and carried through unchanged (the enriched request
+    # below starts as a copy of the request, so an admitted id rides
+    # it verbatim). The pair rule is enforced with the consumers' own
+    # wording: the field on any other version fails closed, and a
+    # "1.1" request without a non-empty string id fails closed, so a
+    # mislabeled request is refused here by name rather than
+    # forwarded. Genuinely unknown keys fail exactly as before.
+    for key in sorted(set(request) - set(REQUEST_FIELDS) - {POLICY_FIELD}):
         problems.append(
             f"request: field {key!r} is not part of page-request 1.0; "
             "this wrapper consumes 1.0-shaped requests only (refused, "
             "never forwarded)")
+    version = request.get("schema_version")
+    if POLICY_FIELD in request:
+        if version != "1.1":
+            problems.append(
+                "request: prompt_policy_id requires request "
+                "schema_version 1.1 (the 1.0 schema forbids the field)")
+        elif not isinstance(request[POLICY_FIELD], str) \
+                or not request[POLICY_FIELD]:
+            problems.append(
+                "request: a 1.1 request must carry a non-empty "
+                "prompt_policy_id (the 1.1 label exists to carry "
+                "the field)")
+    elif version == "1.1":
+        problems.append(
+            "request: a 1.1 request must carry a non-empty "
+            "prompt_policy_id (the 1.1 label exists to carry the field)")
     _check_sidecar(sidecar, problems)
     if request.get("page_role") != instance:
         problems.append(f"instance: request page_role "
@@ -598,6 +644,51 @@ def project_result(bundle: Mapping[str, Any],
 
 
 # ---------------------------------------------------------------------------
+# Images - wireframes and mockups through Skill 71's page-type runner.
+# ---------------------------------------------------------------------------
+def image_command(args: argparse.Namespace, request_path: Path, graph_path: Path,
+                  bundle_path: Path, work_dir: Path) -> List[str]:
+    """The Skill 71 runner command for this slot.
+
+    Brand owner, image cap, brand file and design style come from the shared image inputs file when
+    one is given, else from the landing bridge's config; none is invented here (the same discipline
+    as landing_bridge.py). A value in the inputs file wins over the bridge config."""
+    cfg = _load_json(Path(args.bridge_config), "bridge config") if args.bridge_config else {}
+    landing = cfg.get("landing") or {}
+    inputs = getattr(args, "inputs", None) or {}
+    root = Path(args.skill71_root or (cfg.get("skill71") or {}).get("root") or "")
+
+    def pick(key):
+        value = inputs.get(key)
+        return landing.get(key) if value in (None, "") else value
+
+    missing = [k for k in ("brand_owner", "image_cap", "brand_file") if pick(k) in (None, "")]
+    runner = root / "scripts" / "run_page_type.py"
+    if missing or not runner.is_file():
+        raise EnrichmentError([f"image inputs / bridge config: {missing} missing" if missing
+                               else f"skill71 root has no {runner.name}"])
+    # Dispatch stamps every request with one copy_profile; this page's is the consumer
+    # constant, so Skill 71's intake records the upsell form. Nothing else is changed.
+    images_request = work_dir / f"page-request-images-{args.slot}.json"
+    images_request.write_text(json.dumps(
+        dict(_load_json(request_path, "request"), copy_profile=UPSELL_COPY_PROFILE),
+        indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    cmd = [sys.executable, str(runner), "--copy-version", "upsell",
+           "--copy-json", args.copy, "--bundle", str(bundle_path),
+           "--request", str(images_request), "--launch-record", args.launch,
+           "--route-graph", str(graph_path), "--brand-file", str(pick("brand_file")),
+           "--brand-owner", str(pick("brand_owner")), "--image-cap", str(pick("image_cap")),
+           "--run-dir", str(work_dir / f"images-{args.slot}"), "--provider", args.image_provider]
+    if pick("design_style"):
+        cmd += ["--design-style", str(pick("design_style"))]
+    if inputs.get("design_prose_ref"):
+        cmd += ["--design-prose", str(inputs["design_prose_ref"])]
+    if args.allow_paid:
+        cmd.append("--allow-paid")
+    return cmd
+
+
+# ---------------------------------------------------------------------------
 # CLI - the dispatch adapter command shape.
 # ---------------------------------------------------------------------------
 def main(argv: Optional[List[str]] = None) -> int:
@@ -623,10 +714,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--copy-artifact-path",
                     help="path string recorded in result.artifacts "
                          "(default: the --copy value)")
+    ap.add_argument("--bridge-config",
+                    help="landing bridge config JSON (Skill 71 root, brand owner, image "
+                         "cap, brand file): produce the page's wireframes and mockups "
+                         "through Skill 71. Without it none are made, and the wrapper says so")
+    ap.add_argument("--image-inputs",
+                    help="the shared image inputs file (design style, brand file, owner, image cap, "
+                         "provider); makes the images run without --bridge-config when "
+                         "--skill71-root is given")
+    ap.add_argument("--skill71-root", help="the Skill 71 tree (default: the bridge config's)")
+    ap.add_argument("--image-provider", choices=["stub", "kie"], default="stub",
+                    help="image provider for --bridge-config (stub is free and draws "
+                         "placeholders; kie spends money and needs --allow-paid)")
+    ap.add_argument("--allow-paid", action="store_true",
+                    help="confirms the spend cap is approved for --image-provider kie")
     ap.add_argument("--bundle-out",
                     help="where to keep the raw bundle (default: "
                          "bundle-<slot>.json beside the request)")
     args = ap.parse_args(argv)
+    args.inputs = None
+    if args.image_inputs:
+        try:
+            args.inputs = page_set.load_image_inputs(args.image_inputs)
+        except page_set.PageSetError as exc:
+            print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
+            return EXIT_FAILCLOSED
+        if args.image_provider == "stub" and args.inputs["image_provider"] == "kie":
+            args.image_provider, args.allow_paid = "kie", args.inputs["allow_paid"]
 
     request_path = Path(args.request)
     work_dir = request_path.resolve().parent
@@ -673,6 +787,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         for p in exc.problems:
             print(f"FAIL-CLOSED: {p}", file=sys.stderr)
         return EXIT_FAILCLOSED
+    if args.bridge_config or args.image_inputs:
+        try:
+            cmd = image_command(args, request_path, graph_path, bundle_path, work_dir)
+        except EnrichmentError as exc:
+            for p in exc.problems:
+                print(f"FAIL-CLOSED: {p}", file=sys.stderr)
+            return EXIT_FAILCLOSED
+        if subprocess.run(cmd).returncode != 0:
+            print("FAIL-CLOSED: Skill 71 page-type runner failed; no page-result written",
+                  file=sys.stderr)
+            return EXIT_FAILCLOSED
+        # every design file the page made goes into its result, not only the copy
+        images_dir = work_dir / f"images-{args.slot}"
+        page_set.stage_visual_bible(getattr(args, "inputs", None), images_dir)
+        found = {a["path"]: a for a in projected["artifacts"]}
+        found.update({a["path"]: a for a in page_set.design_artifacts(args.slot, images_dir)})
+        projected["artifacts"] = [found[k] for k in sorted(found)]
+    else:
+        print(f"NOTE images: no --bridge-config, so no wireframes or mockups were made "
+              f"for {args.slot}; this result is copy and a TEST ONLY render only",
+              file=sys.stderr)
     Path(args.result).write_text(json.dumps(projected, indent=2) + "\n",
                                  encoding="utf-8")
     print(f"wrote {args.result} (slot={args.slot} "
