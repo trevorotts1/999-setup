@@ -311,7 +311,7 @@ their own MIT notices in their skill folders and in
 
 Every bundled skill now carries a `VERSION` file at its root (`spec-protocol` 1.38.0,
 `nine-router-setup` 1.29.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
-`blackceo-signature-page` 1.3.0, `hook-skill` 1.2.0, `kiss` 1.0.0). At every
+`blackceo-signature-page` 1.3.2, `hook-skill` 1.2.0, `kiss` 1.0.0). At every
 spec-protocol launch, `tools/check-update.sh` checks all bundled skills (exit 0 = current,
 1 = update available, 2 = undetermined) and `tools/self-update.sh` can update
 spec-protocol itself; the other skills refresh by re-running the

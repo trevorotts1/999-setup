@@ -7,6 +7,8 @@
 # Installed by .claude/skills/nine-router-setup/scripts/setup-macos.sh
 # (ensure_jsonschema, in the dependency preflight) with
 # `python3 -m pip install --user -r <this file>`; inside a venv pip rejects
-# --user, so the installer drops the flag there. Manual install, same file:
+# --user, so the installer drops the flag there. On Windows,
+# scripts/setup-windows.ps1 (Ensure-Jsonschema) runs
+# `py -m pip install -r <this file>`. Manual install, same file:
 #   python3 -m pip install --user -r .claude/skills/black-friday-launcher/requirements.txt
 jsonschema>=4.0

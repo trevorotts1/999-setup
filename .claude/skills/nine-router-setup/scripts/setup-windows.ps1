@@ -179,6 +179,31 @@ function Ensure-Pillow {
     return "MISSING - still not importable after '$pipExe -m pip install Pillow'; PDF review of blackceo-signature-page will fail until Pillow is installed"
 }
 
+# Ensure-Jsonschema - the Black Friday Launcher's ONE third-party runtime
+# requirement (same rule as setup-macos.sh ensure_jsonschema). The Launcher's
+# checkout validator does `import jsonschema` at module load; the declaration is
+# the sibling skill's requirements.txt. Idempotent (an importable jsonschema
+# skips pip) and FATAL on failure, unlike Pillow: a Launcher that cannot import
+# jsonschema cannot run, so a silent MISSING line would ship a broken skill.
+# The import is the verdict, never pip's exit code. Returns the summary text.
+function Ensure-Jsonschema {
+    if (Test-Runs 'python' @('-c', 'import jsonschema')) { return 'OK   already importable' }
+    $req = Join-Path $Scripts '..\..\black-friday-launcher\requirements.txt'
+    if (-not (Test-Path -LiteralPath $req)) {
+        Write-Blocker "jsonschema is required by the Black Friday Launcher but its declaration is missing: $req. Setup stops here instead of shipping a Launcher that cannot import it."
+    }
+    $pipExe = $null
+    if (Test-Runs 'py' @('-m', 'pip', '--version')) { $pipExe = 'py' }
+    elseif (Test-Runs 'python' @('-m', 'pip', '--version')) { $pipExe = 'python' }
+    if (-not $pipExe) {
+        Write-Blocker "jsonschema is required by the Black Friday Launcher and neither py nor python has pip. Install it yourself: python -m pip install -r $req"
+    }
+    & $pipExe -m pip install -r $req | Out-Host
+    Refresh-Path
+    if (Test-Runs 'python' @('-c', 'import jsonschema')) { return "OK   $pipExe -m pip install -r requirements.txt" }
+    Write-Blocker "jsonschema is still not importable after '$pipExe -m pip install -r $req'. The Black Friday Launcher cannot run without it. Install it into the python on PATH, then rerun setup."
+}
+
 # Bundled personal skills — the same list the macOS installer links. Source of
 # truth: CONTROL/bundled-skills.txt when running from a repo checkout;
 # standalone installs fall back to the hard-coded baseline. Junction links
@@ -419,6 +444,7 @@ try {
     }
     $DepSummary += "python          OK   $((Get-Command python).Source)"
     $DepSummary += "pillow          $(Ensure-Pillow)"
+    $DepSummary += "jsonschema      $(Ensure-Jsonschema)"
     $ghOk = Ensure-WingetPackage 'GitHub.cli' 'gh'
     if ($ghOk) { $DepSummary += "gh              OK   $((Get-Command gh).Source)" }
     else { $DepSummary += 'gh              MISSING - winget GitHub.cli did not install; GitHub backup runs local-only until gh is installed (https://cli.github.com)' }

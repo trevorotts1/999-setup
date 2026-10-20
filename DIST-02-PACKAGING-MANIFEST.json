@@ -1,8 +1,8 @@
 {
   "schema": "blackceo.recovery.dist02.packaging-manifest/2",
   "task": "DIST-02",
-  "scope": "package the Black Friday Launcher dependencies into 999-setup; packaging only, nothing enabled at runtime",
-  "enabled_in_999": false,
+  "scope": "package the Black Friday Launcher dependencies into 999-setup and enable the Launcher in 999 (offline core only: no live payment, no entitlement creation, no paid model session)",
+  "enabled_in_999": true,
   "base": {
     "repo": "trevorotts1/999-setup",
     "branch": "lane-b/install-packaging-fixes",
@@ -142,7 +142,7 @@
       "999_path": ".claude/skills/blackceo-signature-page",
       "source_path": "71-blackceo-signature-page",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "999_version": "1.2.14",
+      "999_version": "1.3.0",
       "source_version": "1.2.17",
       "drift": {
         "files_differing": 12,
@@ -150,8 +150,8 @@
         "files_only_in_999": 5
       },
       "action": "not overwritten; 999-side copy left as-is",
-      "files": 316,
-      "sha256": "sha256:8b513f4e2c8621d99fd2174ede80941c2379d53d80caa6fe02eb941fb4af89df"
+      "files": 356,
+      "sha256": "sha256:fa66e730195aba23007e3e575c8d0c4cb7683c38ad5e65c564bb9bf6b1484c47"
     },
     {
       "id": "tree-77-council-of-wise-elders",
@@ -256,8 +256,8 @@
       "source_version": "0.2.0",
       "files": 37,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:caa5e95f21c7023b5508163b188198b23a8abe798166afd96dea5e84089c6de6",
-      "999_version": "0.2.2"
+      "sha256": "sha256:55fd3ad288d2598ed3e958ee69fa6df899a72281405b47521b8e61774f63034b",
+      "999_version": "0.2.3"
     },
     {
       "id": "skill-number-assigned",
@@ -272,9 +272,9 @@
       "kind": "runtime_package",
       "required": true,
       "status": "declared",
-      "evidence": "requirements.txt declares jsonschema>=4.0; setup-macos.sh ensure_jsonschema() installs it from that file idempotently (an importable module skips pip) and fails loudly when the import still fails. Proven by .claude/skills/black-friday-launcher/tests/verify_installer_python_deps.sh: control MISSING with isolated_interpreter=True before the install, PRESENT with isolated_interpreter=True after",
+      "evidence": "requirements.txt declares jsonschema>=4.0; setup-macos.sh ensure_jsonschema() and setup-windows.ps1 Ensure-Jsonschema install it from that file idempotently (an importable module skips pip) and fails loudly when the import still fails. Proven by .claude/skills/black-friday-launcher/tests/verify_installer_python_deps.sh: control MISSING with isolated_interpreter=True before the install, PRESENT with isolated_interpreter=True after",
       "blocks_enablement": false,
-      "note": "declared in requirements.txt and installed by the macOS installer; the Windows installer is not changed by this lane"
+      "note": "declared in requirements.txt and installed by the macOS installer (ensure_jsonschema) and the Windows installer (Ensure-Jsonschema)"
     }
   ],
   "installer_registration_format": {
@@ -292,7 +292,7 @@
     {
       "command": "bash installer-registration/verify-registration.sh",
       "exit_code": 0,
-      "result": "RESULT: 34 passed, 0 failed"
+      "result": "RESULT: 35 passed, 0 failed"
     },
     {
       "command": "bash installer-registration/verify-council-registration.sh",
@@ -307,7 +307,7 @@
     {
       "command": "bash .claude/skills/black-friday-launcher/verify.sh",
       "exit_code": 0,
-      "result": "16 present, 0 missing, 0 unverifiable; enabled_in_999=False, would_enable=True"
+      "result": "16 present, 0 missing, 0 unverifiable; enabled_in_999=True, would_enable=True"
     },
     {
       "command": "bash .claude/skills/black-friday-launcher/tests/verify_installer_python_deps.sh",
@@ -322,8 +322,7 @@
   ],
   "remaining_obligations": [
     "skills 49, 78, 79, 80 are vendored but deliberately not registered in CONTROL/bundled-skills.txt (DIST-02 named only signature-downsell, signature-thank-you and the Launcher)",
-    "skills 71, 77, 81, 82 were drifted from their recorded onboarding source commits at DIST-02 time and were not overwritten; the recorded drift is history, not a re-measurement",
-    "setup-windows.ps1 does not install jsonschema; only the macOS installer does"
+    "skills 71, 77, 81, 82 were drifted from their recorded onboarding source commits at DIST-02 time and were not overwritten; the recorded drift is history, not a re-measurement"
   ],
   "live_effects": "none",
   "generated": {
