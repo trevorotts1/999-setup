@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw.ai/schemas/email-engine/brief.schema.json",
+  "title": "Email Engine — locked intake brief (brief.json)",
+  "description": "The P0 output contract. The brief is written from the turn-gated ONE-block intake ledger (intake/email-intake-questions.json) and validated by prove-email.py in intake mode. The one-block property is verified against an INDEPENDENT conversation_ledger export when present (authoritative — the actual transcript, not a boolean); absent an export the self-attested one-block flags are accepted as a recorded attestation. Any violation is a nonzero, fail-closed exit.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["skill", "asked_all_at_once", "question_block_msg_id", "answers"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["intake", "brief"],
+      "description": "Optional explicit kind hint for the prover's auto-detect."
+    },
+    "skill": {
+      "type": "string",
+      "const": "email-engine",
+      "description": "Must equal 'email-engine' (else AF-EMAIL-TYPE-MISMATCH)."
+    },
+    "asked_all_at_once": {
+      "type": "boolean",
+      "const": true,
+      "description": "The six required questions were emitted as ONE message block (else AF-EMAIL-INTAKE-SPLIT)."
+    },
+    "one_question_per_turn": {
+      "type": "boolean",
+      "enum": [false],
+      "description": "If present must be false — a true value proves the brief was split across turns (AF-EMAIL-INTAKE-SPLIT)."
+    },
+    "question_block_msg_id": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "array", "minItems": 1, "maxItems": 1, "items": { "type": "string", "minLength": 1 } }
+      ],
+      "description": "A single non-empty id proving the questions were emitted in exactly ONE block (else AF-EMAIL-INTAKE-SPLIT)."
+    },
+    "answers": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["objective", "buyer_type", "offer", "brand_voice", "sequence_position", "founder_name"],
+      "properties": {
+        "objective": {
+          "type": "string",
+          "enum": ["promotional", "abandoned-cart", "upsell", "downsell"],
+          "description": "Exactly one of the 4 objectives (else AF-EMAIL-BRIEF-INCOMPLETE)."
+        },
+        "buyer_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "spontaneous | methodical | humanistic | competitive | all (all = a full 12-email buyer-type sequence)."
+        },
+        "offer": { "type": "string", "minLength": 1, "description": "The exact offer / product / event name(s)." },
+        "brand_voice": { "type": "string", "minLength": 1, "description": "The brand voice / tone to continue." },
+        "sequence_position": {
+          "type": "string",
+          "minLength": 1,
+          "description": "single | landing-page-10-promo | high-ticket-appointment | convert-and-flow-buyer-12 (resolves sequence_type + preview count + subject mode)."
+        },
+        "founder_name": { "type": "string", "minLength": 1, "description": "The founder's ACTUAL name for the close (no placeholder)." }
+      }
+    },
+    "high_ticket": { "type": "string", "enum": ["yes", "no"], "description": "Optional; high-ticket uses two previews + the 80-87-char emoji subject band." },
+    "persona_style": {
+      "type": "string",
+      "enum": ["les-brown", "lisa-nichols", "brene-brown-gifts", "brene-brown-daring", "simon-sinek", "david-goggins", "dan-pink", "malcolm-gladwell", "michelle-obama", "iyanla-vanzant", "td-jakes", "tony-robbins"],
+      "description": "Optional persona STYLE (tone only; the person is NEVER named/quoted)."
+    },
+    "offer_token_ledger": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "The exact offer name(s) from the offer answer."
+    },
+    "client_overrode_word_band": {
+      "type": "boolean",
+      "description": "true ONLY when the client stated an exact per-email length that overrides the 150-300 default; surfaced on the process certificate. Client-exact wins. The exact band itself is carried in locked_overrides.word_band_override."
+    },
+    "locked_overrides": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The LOGGED client-exact override channel (FIX-XC-12a). An override on the authored emails.json is honored ONLY when its identical value is echoed here — otherwise it is refused (AF-EMAIL-OVERRIDE-UNLOGGED) and the SACRED default re-applies. The honored source is recorded on the process certificate.",
+      "properties": {
+        "word_band_override": {
+          "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 1 },
+          "description": "Authorized [min, max] word band that overrides the 150-300 default."
+        },
+        "expected_preview_count": {
+          "type": "integer", "minimum": 1,
+          "description": "Authorized preview-line count that overrides the sequence-declared default."
+        },
+        "subject_mode": {
+          "type": "string", "enum": ["high_ticket", "convert_and_flow"],
+          "description": "Authorized subject mode that overrides the sequence-inferred default."
+        }
+      }
+    },
+    "conversation_ledger": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true },
+      "description": "Optional INDEPENDENT transcript export (FIX-S36-47). When present it is AUTHORITATIVE for the one-block check: exactly ONE assistant turn may carry the intake question block (role in assistant|agent|bot AND kind/type in intake|intake_questions|questions|question_block). Absent, the self-attested one-block flags are used and labeled attestation-based."
+    },
+    "intake_mode": {
+      "type": "string",
+      "enum": ["signature_launch"],
+      "description": "Optional; present ONLY on a shared-launch brief produced by tools/launch_intake_adapter.py from the approved S49 launch intake (contract: intake/launch-intake-contract.json). On this path the one-block attestation fields above are NOT carried and the root required set's attestation fields do not apply; prove-email.py verifies launch_provenance instead (AF-EMAIL-LAUNCH-PROVENANCE). Absent on every legacy brief."
+    },
+    "launch_provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The launch brief's provenance block: profile, launch id and revision, the plan document hash, the offer reference, the launch_plan_build approval record binding (subject hash equal to the plan hash, scope covering the build, not revoked), and a per-field provenance entry for every consumed field. Required when intake_mode is signature_launch."
+    }
+  }
+}
