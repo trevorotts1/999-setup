@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: v2.9.76
+version: v2.9.77
 ---
 
 # Drama Song Ad Factory
@@ -1144,6 +1144,43 @@ checker must differ from the builder. Code: `scripts/core/choice_card/intake_car
   allowed to fail silently. Report it right away, in plain words, with what
   broke and what was trying to run. Do not retry quietly, skip the step,
   swap to another model, or carry on as if it worked.
+
+## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
+
+Once intake is answered and the run has started, one watcher speaks to the
+client every 10 minutes until the job is COMPLETE or the 3-hour cap is reached.
+The client is never left wondering what happened.
+
+`scripts/core/heartbeat/run_watch.py --run-dir $RUN [--interval-check] [--max-hours 3]`
+takes ONE read-only look (`control/state.sqlite3` opened `mode=ro`,
+`control/fork-decisions.json`, `control/run-state.json`, `song-choices/`, and
+the spend ledger's `runs.created_at`) and prints one JSON envelope: `run_id`,
+`stage`, `stage_state`, `elapsed_minutes`, `decisions_pending` (intake
+outstanding, approval gates, a cost fork still on the safe default `wait` - each
+with its own question text and options), `stalled`, `loud`, `expired`,
+`message_for_client`. It NEVER mutates a run: stall recovery is the printed
+`recovery_command` (`factory.py next --run-dir $RUN`), run by the agent, never
+by the watcher.
+
+- **Stall** = the current stage made no progress for 30 minutes, its lease ran
+  out, or it is `STALE`. Loud code `HEARTBEAT_STALLED`.
+- **Cap** = 3 hours from the run's own start (the earlier of spend_ledger
+  `runs.created_at` and the state store's first row). At the cap the client gets
+  a final wrap-up and `HEARTBEAT_EXPIRED` is a FAILURE unless the run is
+  COMPLETE. The cap is a FLAG with a client-facing wrap-up, never a silent pass
+  and never a claim that unfinished work is done.
+- **Unreadable state** = `HEARTBEAT_STATE_UNREADABLE`, loud, exit 1.
+
+Two drivers, one watcher: the OpenClaw cron
+(`timer-artifacts/install-keepalive-cron.sh --apply` registers ONE silent,
+isolated, cheap-model `skill75-keepalive` job every 10 minutes from
+`timer-artifacts/keepalive-cron-prompt.txt`; `timer-artifacts/uninstall.sh
+--apply` removes it and writes the durable tombstone) and, in this
+distribution's runtime, the 10-minute `/loop` documented in `INSTRUCTIONS.md`
+section 6d. Both stop at the cap (`expired`, or `--interval-check` exit 10).
+
+Tests: `python3 scripts/core/heartbeat/test_run_watch.py`,
+`python3 timer-artifacts/checks/test_keepalive_cron.py`.
 
 ## Runtime modes
 
