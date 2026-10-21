@@ -8,8 +8,8 @@ manifest already in the tree: this tool never invents history.
 
 Digest definition: ``sha256:<hex>`` where ``<hex>`` is SHA-256 over the
 newline-terminated lines ``"<file sha256>  <posix relative path>"``, sorted by
-relative path. A directory is measured without ``__pycache__``, ``*.pyc``,
-``.DS_Store`` or ``.git``.
+relative path. A directory is measured without ``__pycache__``, ``.pytest_cache``,
+``*.pyc``, ``.DS_Store`` or ``.git``.
 
 Usage:
   python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py [--repo DIR]
@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 MANIFEST = "DIST-02-PACKAGING-MANIFEST.json"
-IGNORED_DIRS = {"__pycache__", ".git"}
+IGNORED_DIRS = {"__pycache__", ".git", ".pytest_cache"}
 IGNORED_NAMES = {".DS_Store"}
 IGNORED_SUFFIXES = {".pyc"}
 

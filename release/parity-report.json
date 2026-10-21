@@ -1,0 +1,155 @@
+{
+  "schema": "blackceo.release.parity-report/1",
+  "release_id": "signature-launch-2026-10-21",
+  "tested": {
+    "openclaw-onboarding": "0267b99c66bfde2a0bd8dec1e2422bab4a3f84be",
+    "999-setup": "6ad4d0b0789a244c7d33949820d0bde4fadaac16"
+  },
+  "result": "PASS",
+  "failures": 0,
+  "components": [
+    {
+      "id": "49-signature-funnel",
+      "source_path": "49-signature-funnel",
+      "install_path": ".claude/skills/49-signature-funnel",
+      "source_files": 132,
+      "installed_files": 132,
+      "intentional_variants": [],
+      "differences": [],
+      "unexpected": 0,
+      "result": "PASS"
+    },
+    {
+      "id": "78-signature-product-selection",
+      "source_path": "78-signature-product-selection",
+      "install_path": ".claude/skills/78-signature-product-selection",
+      "source_files": 53,
+      "installed_files": 53,
+      "intentional_variants": [],
+      "differences": [],
+      "unexpected": 0,
+      "result": "PASS"
+    },
+    {
+      "id": "79-signature-order-form",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 38,
+      "installed_files": 38,
+      "reason": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "80-signature-upsell",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 117,
+      "installed_files": 117,
+      "reason": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "81-signature-downsell",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 54,
+      "installed_files": 50,
+      "reason": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "82-signature-thank-you",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 48,
+      "installed_files": 47,
+      "reason": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "71-blackceo-signature-page",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 380,
+      "installed_files": 384,
+      "reason": "the 999 edition carries the Amendment 5B adapter variants; drift is reported per file"
+    },
+    {
+      "id": "77-council-of-wise-elders",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 736,
+      "installed_files": 658,
+      "reason": "vendored separately; drift reported, never claimed as parity"
+    },
+    {
+      "id": "83-black-friday-launcher",
+      "source_path": "83-black-friday-launcher",
+      "install_path": ".claude/skills/black-friday-launcher",
+      "source_files": 50,
+      "installed_files": 55,
+      "intentional_variants": [
+        "requirements.txt",
+        "registration.json",
+        "scripts/*",
+        "release/*",
+        "tests/verify_installer_python_deps.sh",
+        "tests/test_release_manifests.py"
+      ],
+      "differences": [
+        {
+          "file": "registration.json",
+          "kind": "byte_drift",
+          "allowed_variant": true
+        },
+        {
+          "file": "requirements.txt",
+          "kind": "byte_drift",
+          "allowed_variant": true
+        },
+        {
+          "file": "release/release-set.json",
+          "kind": "999_only",
+          "allowed_variant": true
+        },
+        {
+          "file": "scripts/generate_dist02_manifest.py",
+          "kind": "999_only",
+          "allowed_variant": true
+        },
+        {
+          "file": "scripts/release_manifests.py",
+          "kind": "999_only",
+          "allowed_variant": true
+        },
+        {
+          "file": "tests/test_release_manifests.py",
+          "kind": "999_only",
+          "allowed_variant": true
+        },
+        {
+          "file": "tests/verify_installer_python_deps.sh",
+          "kind": "999_only",
+          "allowed_variant": true
+        }
+      ],
+      "unexpected": 0,
+      "result": "PASS"
+    },
+    {
+      "id": "shared-utils-signature-launch",
+      "result": "EXCLUDED",
+      "parity": false,
+      "source_files": 89,
+      "installed_files": 79,
+      "reason": "measured; drift reported per file"
+    },
+    {
+      "id": "shared-utils-signature-launch-contract",
+      "source_path": "shared-utils/signature_launch_contract",
+      "install_path": "shared-utils/signature_launch_contract",
+      "source_files": 6,
+      "installed_files": 6,
+      "intentional_variants": [],
+      "differences": [],
+      "unexpected": 0,
+      "result": "PASS"
+    }
+  ]
+}
