@@ -790,7 +790,7 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+- **Video model question.** Four models (Hailuo 02 Standard RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
   video_model_rates.json`) and one price function shared by the question and
@@ -822,8 +822,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   the other.
 - **Frame rate (Part H H3, replaces the old "output = the clips' native
   rate" line):** the master is always 30 fps. Kling clips are native 30 and
-  pass through with no conform filter (every lip-sync frame kept); MiniMax H3
-  clips are native 24 and are motion-interpolated to 30 (never the plain
+  pass through with no conform filter (every lip-sync frame kept); Hailuo 02
+  Standard clips are native 24 and are motion-interpolated to 30 (never the plain
   `fps` filter). The assembler refuses any other timeline rate unless the
   choice card sets it, and checks every segment with mpdecimate (at most 2%
   duplicated frames; a deliberate still is marked `hold`).
@@ -1144,6 +1144,43 @@ checker must differ from the builder. Code: `scripts/core/choice_card/intake_car
   allowed to fail silently. Report it right away, in plain words, with what
   broke and what was trying to run. Do not retry quietly, skip the step,
   swap to another model, or carry on as if it worked.
+
+## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
+
+Once intake is answered and the run has started, one watcher speaks to the
+client every 10 minutes until the job is COMPLETE or the 3-hour cap is reached.
+The client is never left wondering what happened.
+
+`scripts/core/heartbeat/run_watch.py --run-dir $RUN [--interval-check] [--max-hours 3]`
+takes ONE read-only look (`control/state.sqlite3` opened `mode=ro`,
+`control/fork-decisions.json`, `control/run-state.json`, `song-choices/`, and
+the spend ledger's `runs.created_at`) and prints one JSON envelope: `run_id`,
+`stage`, `stage_state`, `elapsed_minutes`, `decisions_pending` (intake
+outstanding, approval gates, a cost fork still on the safe default `wait` - each
+with its own question text and options), `stalled`, `loud`, `expired`,
+`message_for_client`. It NEVER mutates a run: stall recovery is the printed
+`recovery_command` (`factory.py next --run-dir $RUN`), run by the agent, never
+by the watcher.
+
+- **Stall** = the current stage made no progress for 30 minutes, its lease ran
+  out, or it is `STALE`. Loud code `HEARTBEAT_STALLED`.
+- **Cap** = 3 hours from the run's own start (the earlier of spend_ledger
+  `runs.created_at` and the state store's first row). At the cap the client gets
+  a final wrap-up and `HEARTBEAT_EXPIRED` is a FAILURE unless the run is
+  COMPLETE. The cap is a FLAG with a client-facing wrap-up, never a silent pass
+  and never a claim that unfinished work is done.
+- **Unreadable state** = `HEARTBEAT_STATE_UNREADABLE`, loud, exit 1.
+
+Two drivers, one watcher: the OpenClaw cron
+(`timer-artifacts/install-keepalive-cron.sh --apply` registers ONE silent,
+isolated, cheap-model `skill75-keepalive` job every 10 minutes from
+`timer-artifacts/keepalive-cron-prompt.txt`; `timer-artifacts/uninstall.sh
+--apply` removes it and writes the durable tombstone) and, in this
+distribution's runtime, the 10-minute `/loop` documented in `INSTRUCTIONS.md`
+section 6d. Both stop at the cap (`expired`, or `--interval-check` exit 10).
+
+Tests: `python3 scripts/core/heartbeat/test_run_watch.py`,
+`python3 timer-artifacts/checks/test_keepalive_cron.py`.
 
 ## Runtime modes
 
