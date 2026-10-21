@@ -7,7 +7,7 @@
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "9a5f21b069ef1551e0b8186fcfea4b64e1b2e811945cea093539102f2f2d00ea"
+  "tree_sha256": "bb9bc0813d153aa3f8dde300ec1d6b3541f1aef815d1227b67dca89b3e25a28b"
  },
  "exclusions": [
   "__pycache__/",
@@ -2826,7 +2826,7 @@
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "9a5f21b069ef1551e0b8186fcfea4b64e1b2e811945cea093539102f2f2d00ea"
+  "tree_sha256": "bb9bc0813d153aa3f8dde300ec1d6b3541f1aef815d1227b67dca89b3e25a28b"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -3573,8 +3573,8 @@
  },
  "summary": {
   "differ": 0,
-  "in_scope_files": 566,
-  "match": 566,
+  "in_scope_files": 575,
+  "match": 575,
   "only_canonical": 0,
   "only_packaged": 0
  },
