@@ -790,7 +790,7 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+- **Video model question.** Four models (Hailuo 02 Standard RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
   video_model_rates.json`) and one price function shared by the question and
@@ -822,8 +822,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   the other.
 - **Frame rate (Part H H3, replaces the old "output = the clips' native
   rate" line):** the master is always 30 fps. Kling clips are native 30 and
-  pass through with no conform filter (every lip-sync frame kept); MiniMax H3
-  clips are native 24 and are motion-interpolated to 30 (never the plain
+  pass through with no conform filter (every lip-sync frame kept); Hailuo 02
+  Standard clips are native 24 and are motion-interpolated to 30 (never the plain
   `fps` filter). The assembler refuses any other timeline rate unless the
   choice card sets it, and checks every segment with mpdecimate (at most 2%
   duplicated frames; a deliberate still is marked `hold`).
