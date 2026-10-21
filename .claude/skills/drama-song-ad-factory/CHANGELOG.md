@@ -1,5 +1,44 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## [v2.9.77] — twin sync of onboarding v2.9.77 (run keepalive: 10-minute heartbeat, live decisions, stall recovery, 3-hour cap)
+ - 2026-10-21 - owner order: the client hears from us every 10 minutes
+
+Once intake is answered and the run starts, the client gets a stage update every
+10 minutes, every pending decision is put in front of them, a stall is detected
+and picked back up, and the job hard-stops at 3 hours with a final summary. No
+gate is weakened: the keepalive only adds visibility, and the 3-hour cap is a
+FLAG plus a client-facing wrap-up, never a silent pass.
+
+- NEW `scripts/core/heartbeat/run_watch.py` - one read-only look at a run
+  (`control/state.sqlite3` opened `mode=ro`, `control/fork-decisions.json`,
+  `control/run-state.json`, `song-choices/`, spend_ledger `runs.created_at`)
+  printing one JSON envelope: `run_id`, `stage`, `stage_state`,
+  `elapsed_minutes`, `decisions_pending` (intake outstanding + approval gates +
+  cost forks still on the safe default "wait", each with its own question and
+  options), `stalled`, `loud`, `expired`, `message_for_client`. It never mutates
+  a run: stall recovery is the printed `factory.py next --run-dir` command for
+  the agent to run. Named codes: `HEARTBEAT_STALLED` (no progress for 30
+  minutes, a dead lease or a STALE row), `HEARTBEAT_EXPIRED` (3-hour cap, job not
+  COMPLETE), `HEARTBEAT_STATE_UNREADABLE` (loud, exit 1).
+- NEW OpenClaw wiring `timer-artifacts/install-keepalive-cron.sh` - ONE
+  idempotent `skill75-keepalive` cron every 10 minutes, silent (`--no-deliver`),
+  isolated session, cheap/local model pinned, one agent; exact-name JSON
+  presence check (an UNKNOWN list refuses rather than risk a duplicate) and
+  tombstone-respecting; prompt = `timer-artifacts/keepalive-cron-prompt.txt`.
+  `timer-artifacts/uninstall.sh --apply` removes it and writes the durable
+  tombstone.
+- INSTRUCTIONS.md (6d) + SKILL.md: the claude-nine / Claude Code 10-minute loop
+  (the `/loop` skill or a self-scheduled wakeup) that speaks
+  `message_for_client` and stops itself at 3 hours (`expired`, or
+  `--interval-check` exit 10).
+- Tests: `scripts/core/heartbeat/test_run_watch.py` (normal stage update,
+  decision surfacing, stall, 3-hour expiry, unreadable state, no-mutation proof)
+  and `timer-artifacts/checks/test_keepalive_cron.py` (dry-run writes nothing,
+  exactly one registration, idempotent second run, tombstone, UNKNOWN list,
+  uninstall). Command Center: no change needed - `cc_sync.Outbox` carries only
+  create/deliverable/move kinds, the factory stages already post the run's own
+  moves, and a read-only watcher must not add board writes.
+
 ## [v2.9.73] — twin sync of onboarding v2.9.73 (lip-sync gate, slot hold, operator decision, model catalog, state reconcile)
  - 2026-10-21 - reliability fixes proven by the Voyage To Virtue run
 
