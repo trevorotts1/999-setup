@@ -3,15 +3,15 @@
   "release_id": "signature-launch-2026-10-21",
   "pins": {
     "openclaw-onboarding": {
-      "ref": "origin/main",
-      "commit": "1a42152c08c14d9189a9b0e53cffc754a989f3f2"
+      "ref": "audit-v3/L14",
+      "commit": "0267b99c66bfde2a0bd8dec1e2422bab4a3f84be"
     },
     "999-setup": {
-      "ref": "origin/main",
-      "commit": "054a33f335b0d01aea95975e35f6d197ff02a528"
+      "ref": "audit-v3/L14",
+      "commit": "236115e617657c6295e2316f3f516501ce39759a"
     }
   },
-  "measured_at": "6ad4d0b0789a244c7d33949820d0bde4fadaac16",
+  "measured_at": "236115e617657c6295e2316f3f516501ce39759a",
   "components": [
     {
       "id": "49-signature-funnel",
@@ -260,13 +260,13 @@
         {
           "path": ".claude/skills/black-friday-launcher",
           "files": 55,
-          "sha256": "sha256:5432c84fd29fea756c5ada10a73f347a7ca2e7742cc74f3ca96bd49232318083",
+          "sha256": "sha256:48e28a28afe2cb7cf0f505616ac7bfa81f4603e0ebb0c1bbef476a5c922ba76b",
           "999_version": "0.2.6"
         }
       ],
       "version": "0.2.6",
       "files": 55,
-      "sha256": "sha256:5432c84fd29fea756c5ada10a73f347a7ca2e7742cc74f3ca96bd49232318083"
+      "sha256": "sha256:48e28a28afe2cb7cf0f505616ac7bfa81f4603e0ebb0c1bbef476a5c922ba76b"
     },
     {
       "id": "shared-utils-signature-launch",

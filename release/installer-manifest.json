@@ -160,7 +160,7 @@
       "install_path": ".claude/skills/black-friday-launcher",
       "version": "0.2.6",
       "files": 55,
-      "sha256": "sha256:5432c84fd29fea756c5ada10a73f347a7ca2e7742cc74f3ca96bd49232318083"
+      "sha256": "sha256:48e28a28afe2cb7cf0f505616ac7bfa81f4603e0ebb0c1bbef476a5c922ba76b"
     },
     {
       "component": "shared-utils-signature-launch",
@@ -216,5 +216,5 @@
       "sha256": "sha256:42c326c908a099d5e39b6ae28fe57845edbaf1a54f17051dfb9950fefaf3c451"
     }
   ],
-  "measured_at": "6ad4d0b0789a244c7d33949820d0bde4fadaac16"
+  "measured_at": "236115e617657c6295e2316f3f516501ce39759a"
 }

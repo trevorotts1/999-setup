@@ -4,12 +4,12 @@
   "target": "999-setup",
   "pins": {
     "openclaw-onboarding": {
-      "ref": "origin/main",
-      "commit": "1a42152c08c14d9189a9b0e53cffc754a989f3f2"
+      "ref": "audit-v3/L14",
+      "commit": "0267b99c66bfde2a0bd8dec1e2422bab4a3f84be"
     },
     "999-setup": {
-      "ref": "origin/main",
-      "commit": "054a33f335b0d01aea95975e35f6d197ff02a528"
+      "ref": "audit-v3/L14",
+      "commit": "236115e617657c6295e2316f3f516501ce39759a"
     }
   },
   "enablement": {
@@ -38,8 +38,14 @@
       "id": "49-signature-funnel",
       "number": 49,
       "source_path": "49-signature-funnel",
-      "install_paths": [".claude/skills/49-signature-funnel", ".claude/skills/signature-funnel"],
-      "requires": ["71-blackceo-signature-page", "shared-utils-signature-launch"],
+      "install_paths": [
+        ".claude/skills/49-signature-funnel",
+        ".claude/skills/signature-funnel"
+      ],
+      "requires": [
+        "71-blackceo-signature-page",
+        "shared-utils-signature-launch"
+      ],
       "capabilities": [],
       "parity": true
     },
@@ -47,7 +53,10 @@
       "id": "78-signature-product-selection",
       "number": 78,
       "source_path": "78-signature-product-selection",
-      "install_paths": [".claude/skills/78-signature-product-selection", ".claude/skills/signature-product-selection"],
+      "install_paths": [
+        ".claude/skills/78-signature-product-selection",
+        ".claude/skills/signature-product-selection"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": true
@@ -56,7 +65,10 @@
       "id": "79-signature-order-form",
       "number": 79,
       "source_path": "79-signature-order-form",
-      "install_paths": [".claude/skills/79-signature-order-form", ".claude/skills/signature-order-form"],
+      "install_paths": [
+        ".claude/skills/79-signature-order-form",
+        ".claude/skills/signature-order-form"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -66,7 +78,10 @@
       "id": "80-signature-upsell",
       "number": 80,
       "source_path": "80-signature-upsell",
-      "install_paths": [".claude/skills/80-signature-upsell", ".claude/skills/signature-upsell"],
+      "install_paths": [
+        ".claude/skills/80-signature-upsell",
+        ".claude/skills/signature-upsell"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -76,7 +91,10 @@
       "id": "81-signature-downsell",
       "number": 81,
       "source_path": "81-signature-downsell",
-      "install_paths": [".claude/skills/81-signature-downsell", ".claude/skills/signature-downsell"],
+      "install_paths": [
+        ".claude/skills/81-signature-downsell",
+        ".claude/skills/signature-downsell"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -86,7 +104,10 @@
       "id": "82-signature-thank-you",
       "number": 82,
       "source_path": "82-signature-thank-you",
-      "install_paths": [".claude/skills/82-signature-thank-you", ".claude/skills/signature-thank-you"],
+      "install_paths": [
+        ".claude/skills/82-signature-thank-you",
+        ".claude/skills/signature-thank-you"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -96,7 +117,10 @@
       "id": "71-blackceo-signature-page",
       "number": 71,
       "source_path": "71-blackceo-signature-page",
-      "install_paths": [".claude/skills/71-blackceo-signature-page", ".claude/skills/blackceo-signature-page"],
+      "install_paths": [
+        ".claude/skills/71-blackceo-signature-page",
+        ".claude/skills/blackceo-signature-page"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -106,7 +130,9 @@
       "id": "77-council-of-wise-elders",
       "number": 77,
       "source_path": "77-council-of-wise-elders",
-      "install_paths": [".claude/skills/council-of-wise-elders"],
+      "install_paths": [
+        ".claude/skills/council-of-wise-elders"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -116,7 +142,9 @@
       "id": "83-black-friday-launcher",
       "number": 83,
       "source_path": "83-black-friday-launcher",
-      "install_paths": [".claude/skills/black-friday-launcher"],
+      "install_paths": [
+        ".claude/skills/black-friday-launcher"
+      ],
       "requires": [
         "49-signature-funnel",
         "71-blackceo-signature-page",
@@ -128,14 +156,20 @@
         "82-signature-thank-you",
         "shared-utils-signature-launch"
       ],
-      "capabilities": ["38", "44", "50"],
+      "capabilities": [
+        "38",
+        "44",
+        "50"
+      ],
       "parity": true
     },
     {
       "id": "shared-utils-signature-launch",
       "number": null,
       "source_path": "shared-utils/signature_launch",
-      "install_paths": ["shared-utils/signature_launch"],
+      "install_paths": [
+        "shared-utils/signature_launch"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": false,
@@ -145,7 +179,9 @@
       "id": "shared-utils-signature-launch-contract",
       "number": null,
       "source_path": "shared-utils/signature_launch_contract",
-      "install_paths": ["shared-utils/signature_launch_contract"],
+      "install_paths": [
+        "shared-utils/signature_launch_contract"
+      ],
       "requires": [],
       "capabilities": [],
       "parity": true
@@ -178,7 +214,14 @@
   "intentional_variants": [
     {
       "component": "83-black-friday-launcher",
-      "globs": ["requirements.txt", "registration.json", "scripts/*", "release/*", "tests/verify_installer_python_deps.sh", "tests/test_release_manifests.py"],
+      "globs": [
+        "requirements.txt",
+        "registration.json",
+        "scripts/*",
+        "release/*",
+        "tests/verify_installer_python_deps.sh",
+        "tests/test_release_manifests.py"
+      ],
       "reason": "999 harness edition: installer dependency notes, the 999 enablement record, the DIST-02/release manifest tooling and the installer dependency test exist only in the installed tree"
     }
   ]

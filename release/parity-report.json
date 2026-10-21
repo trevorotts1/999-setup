@@ -3,7 +3,7 @@
   "release_id": "signature-launch-2026-10-21",
   "tested": {
     "openclaw-onboarding": "0267b99c66bfde2a0bd8dec1e2422bab4a3f84be",
-    "999-setup": "6ad4d0b0789a244c7d33949820d0bde4fadaac16"
+    "999-setup": "236115e617657c6295e2316f3f516501ce39759a"
   },
   "result": "PASS",
   "failures": 0,
