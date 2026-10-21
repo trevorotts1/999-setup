@@ -144,6 +144,31 @@ and this distribution runs them unchanged:
   (`negative_tags`) all survive into the exact serialized createTask request
   and are checked there by `song_dispatch.validate_request`; a style text over
   the 1000-character cap refuses `STYLE_TOO_LONG` rather than dropping a clause.
+- **The song-failure verdict belongs to the client.** When the song judge fails
+  a take, nothing regenerates and nothing loops: `song_choices.one_variant`
+  makes ONE generation per variant, keeps the paid take, records the judge's
+  named concerns, and presents every take — the passing ones to pick, the
+  failed ones in `SONG-CHOICES/FOR-LISTENING/` to listen to — with ONE
+  question: "Want me to redo all of them, keep one of these three, or generate
+  three new options?" The client's answer is authoritative and recorded in
+  `$RUN/song-choices/fork-decision.json` (`song_choices.py fork`, or
+  `pick --reply` with words): `redo_all` / `new_three` reopen the music row for
+  a round the client asked for, and `keep_one` is recorded but never writes a
+  PASS — the WW-18/WW-21 measured gates still hold, so a kept take whose
+  required gates failed needs the documented `--operator-decision` route. Say
+  the concerns plainly and say the client may decide a take is fine.
+- **QC duration overshoot is a flag, not a stop.** One rule
+  (`master_length.judge_duration`) governs the song `length` gate
+  (`song_dispatch.judge_take`, target = delivered seconds) and the video master
+  check (`master_length.check_master`, target = chosen length - 2 s; the
+  client-facing line names the chosen length). At or under the target passes
+  clean. An overshoot of up to 10 seconds PASSES and records the named warning
+  `QC_DURATION_OVERSHOOT` ("62s of 60s — within the 10-second allowance") on
+  the receipt through `loud_failure.warn`; an overshoot past 10 seconds ALSO
+  passes and records `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds
+  over. Neither stops the run: whether a long master is redone belongs to the
+  client. An undershoot is unchanged — the song gate keeps the 5/10 band (past
+  10 points is still FAIL) and the video master stays free on the short side.
 
 ## 7. Version 2 options on the choice card (owner BUILD-OUT 2026-10-07)
 
