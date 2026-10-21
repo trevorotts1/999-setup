@@ -47,10 +47,10 @@
       "source_path": "49-signature-funnel",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
       "source_version": "v2.1.11",
-      "files": 129,
+      "files": 132,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:11a24e91d658069e5db0e2139a6806e0ffd356ff7ef4c1299dc1e424a6e9c161",
-      "999_version": "v2.1.18"
+      "sha256": "sha256:0fa5620220c90887172109304ed7ba071ffae49225c8db61edaa1414843292a1",
+      "999_version": "v2.1.20"
     },
     {
       "id": "tree-78-signature-product-selection",
@@ -198,7 +198,7 @@
       "registry_line": 16,
       "999_path": "CONTROL/bundled-skills.txt",
       "files": 1,
-      "sha256": "sha256:c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c",
+      "sha256": "sha256:5f42de0231a6d2fe6ee95e4607eef5984570bcd269430e3e32c4aa891e291327",
       "999_version": null
     },
     {
@@ -213,7 +213,7 @@
       "registry_line": 17,
       "999_path": "CONTROL/bundled-skills.txt",
       "files": 1,
-      "sha256": "sha256:c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c",
+      "sha256": "sha256:5f42de0231a6d2fe6ee95e4607eef5984570bcd269430e3e32c4aa891e291327",
       "999_version": null
     },
     {
@@ -229,7 +229,7 @@
       "why": "the Launcher ships as a bare slug; the installer resolves registry names verbatim and accepts either convention",
       "999_path": "CONTROL/bundled-skills.txt",
       "files": 1,
-      "sha256": "sha256:c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c",
+      "sha256": "sha256:5f42de0231a6d2fe6ee95e4607eef5984570bcd269430e3e32c4aa891e291327",
       "999_version": null
     },
     {
@@ -254,10 +254,10 @@
       "source_path": "83-black-friday-launcher",
       "source_commit": "1728ebefe1a409bd9b111b2caaeedb2be2400e86",
       "source_version": "0.2.0",
-      "files": 49,
+      "files": 55,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:b1bbe1bf269fd780cb076ba7eacd8aac098cf5f45c7a629bf16d5e8477ec699b",
-      "999_version": "0.2.4"
+      "sha256": "sha256:1885053fc54c2ad58a244f049464175804e32935812f51d3289a6926fb23c1d8",
+      "999_version": "0.2.6"
     },
     {
       "id": "skill-number-assigned",

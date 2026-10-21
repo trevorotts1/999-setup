@@ -1,0 +1,185 @@
+{
+  "schema": "blackceo.release-set/1",
+  "release_id": "signature-launch-2026-10-21",
+  "target": "999-setup",
+  "pins": {
+    "openclaw-onboarding": {
+      "ref": "origin/main",
+      "commit": "1a42152c08c14d9189a9b0e53cffc754a989f3f2"
+    },
+    "999-setup": {
+      "ref": "origin/main",
+      "commit": "054a33f335b0d01aea95975e35f6d197ff02a528"
+    }
+  },
+  "enablement": {
+    "enabled_in_999": true,
+    "why": "the Launcher's dependency preflight reports every required entry present and the registry lines below are installed"
+  },
+  "registry": {
+    "path": "CONTROL/bundled-skills.txt",
+    "lines": [
+      "blackceo-signature-page",
+      "council-of-wise-elders",
+      "signature-downsell",
+      "signature-thank-you",
+      "black-friday-launcher",
+      "signature-funnel",
+      "signature-product-selection",
+      "signature-order-form",
+      "signature-upsell",
+      "conversational-ai-system",
+      "convert-and-flow-operator",
+      "email-engine"
+    ]
+  },
+  "components": [
+    {
+      "id": "49-signature-funnel",
+      "number": 49,
+      "source_path": "49-signature-funnel",
+      "install_paths": [".claude/skills/49-signature-funnel", ".claude/skills/signature-funnel"],
+      "requires": ["71-blackceo-signature-page", "shared-utils-signature-launch"],
+      "capabilities": [],
+      "parity": true
+    },
+    {
+      "id": "78-signature-product-selection",
+      "number": 78,
+      "source_path": "78-signature-product-selection",
+      "install_paths": [".claude/skills/78-signature-product-selection", ".claude/skills/signature-product-selection"],
+      "requires": [],
+      "capabilities": [],
+      "parity": true
+    },
+    {
+      "id": "79-signature-order-form",
+      "number": 79,
+      "source_path": "79-signature-order-form",
+      "install_paths": [".claude/skills/79-signature-order-form", ".claude/skills/signature-order-form"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "80-signature-upsell",
+      "number": 80,
+      "source_path": "80-signature-upsell",
+      "install_paths": [".claude/skills/80-signature-upsell", ".claude/skills/signature-upsell"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "81-signature-downsell",
+      "number": 81,
+      "source_path": "81-signature-downsell",
+      "install_paths": [".claude/skills/81-signature-downsell", ".claude/skills/signature-downsell"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "82-signature-thank-you",
+      "number": 82,
+      "source_path": "82-signature-thank-you",
+      "install_paths": [".claude/skills/82-signature-thank-you", ".claude/skills/signature-thank-you"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "vendored at an older revision; measured and reported, never claimed as parity"
+    },
+    {
+      "id": "71-blackceo-signature-page",
+      "number": 71,
+      "source_path": "71-blackceo-signature-page",
+      "install_paths": [".claude/skills/71-blackceo-signature-page", ".claude/skills/blackceo-signature-page"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "the 999 edition carries the Amendment 5B adapter variants; drift is reported per file"
+    },
+    {
+      "id": "77-council-of-wise-elders",
+      "number": 77,
+      "source_path": "77-council-of-wise-elders",
+      "install_paths": [".claude/skills/council-of-wise-elders"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "vendored separately; drift reported, never claimed as parity"
+    },
+    {
+      "id": "83-black-friday-launcher",
+      "number": 83,
+      "source_path": "83-black-friday-launcher",
+      "install_paths": [".claude/skills/black-friday-launcher"],
+      "requires": [
+        "49-signature-funnel",
+        "71-blackceo-signature-page",
+        "77-council-of-wise-elders",
+        "78-signature-product-selection",
+        "79-signature-order-form",
+        "80-signature-upsell",
+        "81-signature-downsell",
+        "82-signature-thank-you",
+        "shared-utils-signature-launch"
+      ],
+      "capabilities": ["38", "44", "50"],
+      "parity": true
+    },
+    {
+      "id": "shared-utils-signature-launch",
+      "number": null,
+      "source_path": "shared-utils/signature_launch",
+      "install_paths": ["shared-utils/signature_launch"],
+      "requires": [],
+      "capabilities": [],
+      "parity": false,
+      "parity_note": "measured; drift reported per file"
+    },
+    {
+      "id": "shared-utils-signature-launch-contract",
+      "number": null,
+      "source_path": "shared-utils/signature_launch_contract",
+      "install_paths": ["shared-utils/signature_launch_contract"],
+      "requires": [],
+      "capabilities": [],
+      "parity": true
+    }
+  ],
+  "capability_interfaces": [
+    {
+      "id": "38-conversational-ai-system",
+      "skill_dir": ".claude/skills/conversational-ai-system",
+      "entry": "SKILL.md",
+      "purpose": "Conversation AI unit of a turnkey launch plan (faq / booking / checkout / full)"
+    },
+    {
+      "id": "44-convert-and-flow-operator",
+      "skill_dir": ".claude/skills/convert-and-flow-operator",
+      "entry": "SKILL.md",
+      "purpose": "automation families of a turnkey launch plan, built through the Skill 44 engine"
+    },
+    {
+      "id": "50-email-engine",
+      "skill_dir": ".claude/skills/email-engine",
+      "entry": "SKILL.md",
+      "purpose": "email sequences and text sets of a turnkey launch plan (draft_only)"
+    }
+  ],
+  "shared_contracts": [
+    "shared-utils/signature_launch",
+    "shared-utils/signature_launch_contract"
+  ],
+  "intentional_variants": [
+    {
+      "component": "83-black-friday-launcher",
+      "globs": ["requirements.txt", "registration.json", "scripts/*", "release/*", "tests/verify_installer_python_deps.sh", "tests/test_release_manifests.py"],
+      "reason": "999 harness edition: installer dependency notes, the 999 enablement record, the DIST-02/release manifest tooling and the installer dependency test exist only in the installed tree"
+    }
+  ]
+}

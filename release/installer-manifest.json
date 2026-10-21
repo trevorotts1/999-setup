@@ -1,0 +1,220 @@
+{
+  "schema": "blackceo.release.installer-manifest/1",
+  "release_id": "signature-launch-2026-10-21",
+  "enabled_in_999": true,
+  "registry_path": "CONTROL/bundled-skills.txt",
+  "expected_registry_lines": [
+    "blackceo-signature-page",
+    "council-of-wise-elders",
+    "signature-downsell",
+    "signature-thank-you",
+    "black-friday-launcher",
+    "signature-funnel",
+    "signature-product-selection",
+    "signature-order-form",
+    "signature-upsell",
+    "conversational-ai-system",
+    "convert-and-flow-operator",
+    "email-engine"
+  ],
+  "links": [
+    {
+      "component": "49-signature-funnel",
+      "registry_name": "signature-funnel",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/49-signature-funnel",
+      "version": "v2.1.20",
+      "files": 132,
+      "sha256": "sha256:0fa5620220c90887172109304ed7ba071ffae49225c8db61edaa1414843292a1"
+    },
+    {
+      "component": "49-signature-funnel",
+      "registry_name": "signature-funnel",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/signature-funnel",
+      "version": "v2.1.20",
+      "files": 132,
+      "sha256": "sha256:0fa5620220c90887172109304ed7ba071ffae49225c8db61edaa1414843292a1"
+    },
+    {
+      "component": "78-signature-product-selection",
+      "registry_name": "signature-product-selection",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/78-signature-product-selection",
+      "version": "0.2.5",
+      "files": 53,
+      "sha256": "sha256:e1312fd13fd31d32fe5035eb70f5c0cbb963aeab686fc21bfe178e5fa5ce32ca"
+    },
+    {
+      "component": "78-signature-product-selection",
+      "registry_name": "signature-product-selection",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/signature-product-selection",
+      "version": "0.2.5",
+      "files": 53,
+      "sha256": "sha256:e1312fd13fd31d32fe5035eb70f5c0cbb963aeab686fc21bfe178e5fa5ce32ca"
+    },
+    {
+      "component": "79-signature-order-form",
+      "registry_name": "signature-order-form",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/79-signature-order-form",
+      "version": "0.1.5",
+      "files": 38,
+      "sha256": "sha256:c96fcfc6047734c717fec8bb5c113f843e567a1a2571b2d885fa0400475bf3e4"
+    },
+    {
+      "component": "79-signature-order-form",
+      "registry_name": "signature-order-form",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/signature-order-form",
+      "version": "0.1.5",
+      "files": 38,
+      "sha256": "sha256:c96fcfc6047734c717fec8bb5c113f843e567a1a2571b2d885fa0400475bf3e4"
+    },
+    {
+      "component": "80-signature-upsell",
+      "registry_name": "signature-upsell",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/80-signature-upsell",
+      "version": "0.2.1",
+      "files": 117,
+      "sha256": "sha256:cf9e9b92a4b66fc9110e83f1ae9e637443ff5a2f5b01c2327602112bd4d9aae8"
+    },
+    {
+      "component": "80-signature-upsell",
+      "registry_name": "signature-upsell",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/signature-upsell",
+      "version": "0.2.1",
+      "files": 117,
+      "sha256": "sha256:cf9e9b92a4b66fc9110e83f1ae9e637443ff5a2f5b01c2327602112bd4d9aae8"
+    },
+    {
+      "component": "81-signature-downsell",
+      "registry_name": "signature-downsell",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/81-signature-downsell",
+      "version": "0.1.1",
+      "files": 50,
+      "sha256": "sha256:14301556ee186ecb9375bfdd2fcb20478ba2b55ed60b9e8dac06033bf4fca40b"
+    },
+    {
+      "component": "81-signature-downsell",
+      "registry_name": "signature-downsell",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/signature-downsell",
+      "version": "0.1.1",
+      "files": 50,
+      "sha256": "sha256:14301556ee186ecb9375bfdd2fcb20478ba2b55ed60b9e8dac06033bf4fca40b"
+    },
+    {
+      "component": "82-signature-thank-you",
+      "registry_name": "signature-thank-you",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/82-signature-thank-you",
+      "version": "0.3.1",
+      "files": 47,
+      "sha256": "sha256:e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa"
+    },
+    {
+      "component": "82-signature-thank-you",
+      "registry_name": "signature-thank-you",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/signature-thank-you",
+      "version": "0.3.1",
+      "files": 47,
+      "sha256": "sha256:e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa"
+    },
+    {
+      "component": "71-blackceo-signature-page",
+      "registry_name": "blackceo-signature-page",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/71-blackceo-signature-page",
+      "version": "1.3.4",
+      "files": 384,
+      "sha256": "sha256:22a61a090b10ef03a58e177b76164c3fc96f9a91b22c4cf2e19d9a075b0b8835"
+    },
+    {
+      "component": "71-blackceo-signature-page",
+      "registry_name": "blackceo-signature-page",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/blackceo-signature-page",
+      "version": "1.3.4",
+      "files": 384,
+      "sha256": "sha256:22a61a090b10ef03a58e177b76164c3fc96f9a91b22c4cf2e19d9a075b0b8835"
+    },
+    {
+      "component": "77-council-of-wise-elders",
+      "registry_name": "council-of-wise-elders",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/council-of-wise-elders",
+      "version": "1.0.24",
+      "files": 658,
+      "sha256": "sha256:ffb7664b1ec158e8d667497aef54ee711beb7cae00a4ccbdde2c5093413f7930"
+    },
+    {
+      "component": "83-black-friday-launcher",
+      "registry_name": "black-friday-launcher",
+      "linked_from_registry": true,
+      "install_path": ".claude/skills/black-friday-launcher",
+      "version": "0.2.6",
+      "files": 55,
+      "sha256": "sha256:1885053fc54c2ad58a244f049464175804e32935812f51d3289a6926fb23c1d8"
+    },
+    {
+      "component": "shared-utils-signature-launch",
+      "registry_name": null,
+      "linked_from_registry": false,
+      "install_path": "shared-utils/signature_launch",
+      "version": null,
+      "files": 79,
+      "sha256": "sha256:a5c33e7bf330bc10778926dc86b434b243011dba88b9667c26465dfa0dff2d7c"
+    },
+    {
+      "component": "shared-utils-signature-launch-contract",
+      "registry_name": null,
+      "linked_from_registry": false,
+      "install_path": "shared-utils/signature_launch_contract",
+      "version": null,
+      "files": 6,
+      "sha256": "sha256:42c326c908a099d5e39b6ae28fe57845edbaf1a54f17051dfb9950fefaf3c451"
+    }
+  ],
+  "capability_interfaces": [
+    {
+      "id": "38-conversational-ai-system",
+      "skill_dir": ".claude/skills/conversational-ai-system",
+      "entry": "SKILL.md",
+      "present": true,
+      "purpose": "Conversation AI unit of a turnkey launch plan (faq / booking / checkout / full)"
+    },
+    {
+      "id": "44-convert-and-flow-operator",
+      "skill_dir": ".claude/skills/convert-and-flow-operator",
+      "entry": "SKILL.md",
+      "present": true,
+      "purpose": "automation families of a turnkey launch plan, built through the Skill 44 engine"
+    },
+    {
+      "id": "50-email-engine",
+      "skill_dir": ".claude/skills/email-engine",
+      "entry": "SKILL.md",
+      "present": true,
+      "purpose": "email sequences and text sets of a turnkey launch plan (draft_only)"
+    }
+  ],
+  "shared_contracts": [
+    {
+      "path": "shared-utils/signature_launch",
+      "files": 79,
+      "sha256": "sha256:a5c33e7bf330bc10778926dc86b434b243011dba88b9667c26465dfa0dff2d7c"
+    },
+    {
+      "path": "shared-utils/signature_launch_contract",
+      "files": 6,
+      "sha256": "sha256:42c326c908a099d5e39b6ae28fe57845edbaf1a54f17051dfb9950fefaf3c451"
+    }
+  ],
+  "measured_at": "054a33f335b0d01aea95975e35f6d197ff02a528"
+}

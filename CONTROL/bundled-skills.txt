@@ -16,3 +16,14 @@ council-of-wise-elders
 signature-downsell
 signature-thank-you
 black-friday-launcher
+# Signature launch components (Skill 83's packaged set, pinned release).
+# The Launcher imports Skill 49's dispatch and plans units for Skills 38, 44 and
+# 50; without these lines a fresh 999 install links the Launcher but not the
+# skills it calls, so the dependency preflight fails after install.
+signature-funnel
+signature-product-selection
+signature-order-form
+signature-upsell
+conversational-ai-system
+convert-and-flow-operator
+email-engine

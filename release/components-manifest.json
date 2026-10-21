@@ -1,0 +1,314 @@
+{
+  "schema": "blackceo.release.components-manifest/1",
+  "release_id": "signature-launch-2026-10-21",
+  "pins": {
+    "openclaw-onboarding": {
+      "ref": "origin/main",
+      "commit": "1a42152c08c14d9189a9b0e53cffc754a989f3f2"
+    },
+    "999-setup": {
+      "ref": "origin/main",
+      "commit": "054a33f335b0d01aea95975e35f6d197ff02a528"
+    }
+  },
+  "measured_at": "054a33f335b0d01aea95975e35f6d197ff02a528",
+  "components": [
+    {
+      "id": "49-signature-funnel",
+      "number": 49,
+      "source_path": "49-signature-funnel",
+      "install_paths": [
+        ".claude/skills/49-signature-funnel",
+        ".claude/skills/signature-funnel"
+      ],
+      "requires": [
+        "71-blackceo-signature-page",
+        "shared-utils-signature-launch"
+      ],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/49-signature-funnel",
+          "files": 132,
+          "sha256": "sha256:0fa5620220c90887172109304ed7ba071ffae49225c8db61edaa1414843292a1",
+          "999_version": "v2.1.20"
+        },
+        {
+          "path": ".claude/skills/signature-funnel",
+          "files": 132,
+          "sha256": "sha256:0fa5620220c90887172109304ed7ba071ffae49225c8db61edaa1414843292a1",
+          "999_version": "v2.1.20"
+        }
+      ],
+      "version": "v2.1.20",
+      "files": 264,
+      "sha256": "sha256:0fa5620220c90887172109304ed7ba071ffae49225c8db61edaa1414843292a1"
+    },
+    {
+      "id": "78-signature-product-selection",
+      "number": 78,
+      "source_path": "78-signature-product-selection",
+      "install_paths": [
+        ".claude/skills/78-signature-product-selection",
+        ".claude/skills/signature-product-selection"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/78-signature-product-selection",
+          "files": 53,
+          "sha256": "sha256:e1312fd13fd31d32fe5035eb70f5c0cbb963aeab686fc21bfe178e5fa5ce32ca",
+          "999_version": "0.2.5"
+        },
+        {
+          "path": ".claude/skills/signature-product-selection",
+          "files": 53,
+          "sha256": "sha256:e1312fd13fd31d32fe5035eb70f5c0cbb963aeab686fc21bfe178e5fa5ce32ca",
+          "999_version": "0.2.5"
+        }
+      ],
+      "version": "0.2.5",
+      "files": 106,
+      "sha256": "sha256:e1312fd13fd31d32fe5035eb70f5c0cbb963aeab686fc21bfe178e5fa5ce32ca"
+    },
+    {
+      "id": "79-signature-order-form",
+      "number": 79,
+      "source_path": "79-signature-order-form",
+      "install_paths": [
+        ".claude/skills/79-signature-order-form",
+        ".claude/skills/signature-order-form"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/79-signature-order-form",
+          "files": 38,
+          "sha256": "sha256:c96fcfc6047734c717fec8bb5c113f843e567a1a2571b2d885fa0400475bf3e4",
+          "999_version": "0.1.5"
+        },
+        {
+          "path": ".claude/skills/signature-order-form",
+          "files": 38,
+          "sha256": "sha256:c96fcfc6047734c717fec8bb5c113f843e567a1a2571b2d885fa0400475bf3e4",
+          "999_version": "0.1.5"
+        }
+      ],
+      "version": "0.1.5",
+      "files": 76,
+      "sha256": "sha256:c96fcfc6047734c717fec8bb5c113f843e567a1a2571b2d885fa0400475bf3e4"
+    },
+    {
+      "id": "80-signature-upsell",
+      "number": 80,
+      "source_path": "80-signature-upsell",
+      "install_paths": [
+        ".claude/skills/80-signature-upsell",
+        ".claude/skills/signature-upsell"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/80-signature-upsell",
+          "files": 117,
+          "sha256": "sha256:cf9e9b92a4b66fc9110e83f1ae9e637443ff5a2f5b01c2327602112bd4d9aae8",
+          "999_version": "0.2.1"
+        },
+        {
+          "path": ".claude/skills/signature-upsell",
+          "files": 117,
+          "sha256": "sha256:cf9e9b92a4b66fc9110e83f1ae9e637443ff5a2f5b01c2327602112bd4d9aae8",
+          "999_version": "0.2.1"
+        }
+      ],
+      "version": "0.2.1",
+      "files": 234,
+      "sha256": "sha256:cf9e9b92a4b66fc9110e83f1ae9e637443ff5a2f5b01c2327602112bd4d9aae8"
+    },
+    {
+      "id": "81-signature-downsell",
+      "number": 81,
+      "source_path": "81-signature-downsell",
+      "install_paths": [
+        ".claude/skills/81-signature-downsell",
+        ".claude/skills/signature-downsell"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/81-signature-downsell",
+          "files": 50,
+          "sha256": "sha256:14301556ee186ecb9375bfdd2fcb20478ba2b55ed60b9e8dac06033bf4fca40b",
+          "999_version": "0.1.1"
+        },
+        {
+          "path": ".claude/skills/signature-downsell",
+          "files": 50,
+          "sha256": "sha256:14301556ee186ecb9375bfdd2fcb20478ba2b55ed60b9e8dac06033bf4fca40b",
+          "999_version": "0.1.1"
+        }
+      ],
+      "version": "0.1.1",
+      "files": 100,
+      "sha256": "sha256:14301556ee186ecb9375bfdd2fcb20478ba2b55ed60b9e8dac06033bf4fca40b"
+    },
+    {
+      "id": "82-signature-thank-you",
+      "number": 82,
+      "source_path": "82-signature-thank-you",
+      "install_paths": [
+        ".claude/skills/82-signature-thank-you",
+        ".claude/skills/signature-thank-you"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/82-signature-thank-you",
+          "files": 47,
+          "sha256": "sha256:e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa",
+          "999_version": "0.3.1"
+        },
+        {
+          "path": ".claude/skills/signature-thank-you",
+          "files": 47,
+          "sha256": "sha256:e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa",
+          "999_version": "0.3.1"
+        }
+      ],
+      "version": "0.3.1",
+      "files": 94,
+      "sha256": "sha256:e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa"
+    },
+    {
+      "id": "71-blackceo-signature-page",
+      "number": 71,
+      "source_path": "71-blackceo-signature-page",
+      "install_paths": [
+        ".claude/skills/71-blackceo-signature-page",
+        ".claude/skills/blackceo-signature-page"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/71-blackceo-signature-page",
+          "files": 384,
+          "sha256": "sha256:22a61a090b10ef03a58e177b76164c3fc96f9a91b22c4cf2e19d9a075b0b8835",
+          "999_version": "1.3.4"
+        },
+        {
+          "path": ".claude/skills/blackceo-signature-page",
+          "files": 384,
+          "sha256": "sha256:22a61a090b10ef03a58e177b76164c3fc96f9a91b22c4cf2e19d9a075b0b8835",
+          "999_version": "1.3.4"
+        }
+      ],
+      "version": "1.3.4",
+      "files": 768,
+      "sha256": "sha256:22a61a090b10ef03a58e177b76164c3fc96f9a91b22c4cf2e19d9a075b0b8835"
+    },
+    {
+      "id": "77-council-of-wise-elders",
+      "number": 77,
+      "source_path": "77-council-of-wise-elders",
+      "install_paths": [
+        ".claude/skills/council-of-wise-elders"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": ".claude/skills/council-of-wise-elders",
+          "files": 658,
+          "sha256": "sha256:ffb7664b1ec158e8d667497aef54ee711beb7cae00a4ccbdde2c5093413f7930",
+          "999_version": "1.0.24"
+        }
+      ],
+      "version": "1.0.24",
+      "files": 658,
+      "sha256": "sha256:ffb7664b1ec158e8d667497aef54ee711beb7cae00a4ccbdde2c5093413f7930"
+    },
+    {
+      "id": "83-black-friday-launcher",
+      "number": 83,
+      "source_path": "83-black-friday-launcher",
+      "install_paths": [
+        ".claude/skills/black-friday-launcher"
+      ],
+      "requires": [
+        "49-signature-funnel",
+        "71-blackceo-signature-page",
+        "77-council-of-wise-elders",
+        "78-signature-product-selection",
+        "79-signature-order-form",
+        "80-signature-upsell",
+        "81-signature-downsell",
+        "82-signature-thank-you",
+        "shared-utils-signature-launch"
+      ],
+      "capabilities": [
+        "38",
+        "44",
+        "50"
+      ],
+      "measured": [
+        {
+          "path": ".claude/skills/black-friday-launcher",
+          "files": 55,
+          "sha256": "sha256:1885053fc54c2ad58a244f049464175804e32935812f51d3289a6926fb23c1d8",
+          "999_version": "0.2.6"
+        }
+      ],
+      "version": "0.2.6",
+      "files": 55,
+      "sha256": "sha256:1885053fc54c2ad58a244f049464175804e32935812f51d3289a6926fb23c1d8"
+    },
+    {
+      "id": "shared-utils-signature-launch",
+      "number": null,
+      "source_path": "shared-utils/signature_launch",
+      "install_paths": [
+        "shared-utils/signature_launch"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": "shared-utils/signature_launch",
+          "files": 79,
+          "sha256": "sha256:a5c33e7bf330bc10778926dc86b434b243011dba88b9667c26465dfa0dff2d7c",
+          "999_version": null
+        }
+      ],
+      "version": null,
+      "files": 79,
+      "sha256": "sha256:a5c33e7bf330bc10778926dc86b434b243011dba88b9667c26465dfa0dff2d7c"
+    },
+    {
+      "id": "shared-utils-signature-launch-contract",
+      "number": null,
+      "source_path": "shared-utils/signature_launch_contract",
+      "install_paths": [
+        "shared-utils/signature_launch_contract"
+      ],
+      "requires": [],
+      "capabilities": [],
+      "measured": [
+        {
+          "path": "shared-utils/signature_launch_contract",
+          "files": 6,
+          "sha256": "sha256:42c326c908a099d5e39b6ae28fe57845edbaf1a54f17051dfb9950fefaf3c451",
+          "999_version": null
+        }
+      ],
+      "version": null,
+      "files": 6,
+      "sha256": "sha256:42c326c908a099d5e39b6ae28fe57845edbaf1a54f17051dfb9950fefaf3c451"
+    }
+  ]
+}
