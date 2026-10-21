@@ -30,6 +30,11 @@
 # Run: bash scripts/test-council-swap.sh
 set -uo pipefail
 
+# Session-environment isolation (WER-004): never let a real operator
+# config root (CLAUDE_CONFIG_DIR from a claude-nine session) or data
+# profile leak into the battery's installs.
+unset CLAUDE_CONFIG_DIR BLACKCEO_COUNCIL_DATA_DIR COUNCIL_RUNTIME_PREFIX || true
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SH="$REPO_ROOT/scripts/council-runtime-install.sh"
 SKILL_NAME="council-of-wise-elders"
