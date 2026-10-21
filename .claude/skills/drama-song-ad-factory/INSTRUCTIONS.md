@@ -30,8 +30,10 @@ and stage rules live in `SKILL.md`; the machine contract lives in
 
    - `ok` (0) -> continue; the summary digest and authorization scope are
      recorded.
-   - `waiting` (2) -> answer the bundled questions in ONE reply. At most
-     three are asked, only the genuinely missing essentials:
+   - `waiting` (2) -> ask the ONE question in the message and WAIT for the
+     client's answer, then run intake again with that answer added to get the
+     next question (Trevor 2026-10-21: never several questions at once). At
+     most three are asked in all, only the genuinely missing essentials:
      offer; audience + action; the exact website or placement. Never money:
      the choice card asks that once, with the real price. A question already
      answered is never re-asked.
@@ -206,9 +208,12 @@ card. The answers and the time answered go into the receipt
   without that record a run behaves exactly as it did before the method existed.
 
 1. **One card, all defaults pre-selected** - a client approves with one
-   click. Directive 24.3 still caps intake at three story questions in one message
-   (offer + optional product image; audience and action; website or placement).
-   Money is asked once, on the card, with the real price.
+   click. Directive 24.3 still caps intake at three story questions, and they
+   are asked ONE per message: send the one question from the intake envelope,
+   wait for the answer, run intake again with that answer added to get the next
+   (Trevor 2026-10-21: never more than one question in a message). The three
+   are offer + optional product image; audience and action; website or
+   placement. Money is asked once, on the card, with the real price.
    Quick mode is the default; Concept mode takes the client's own story.
 2. **Length:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes,
    **10-minute long version**. Brief pre-fills the RECOMMENDED pick, else
