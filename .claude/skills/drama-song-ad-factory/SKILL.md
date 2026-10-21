@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: v2.9.74
+version: v2.9.76
 ---
 
 # Drama Song Ad Factory
@@ -790,7 +790,7 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
+- **Video model question.** Four models (Hailuo 02 Standard RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
   video_model_rates.json`) and one price function shared by the question and
