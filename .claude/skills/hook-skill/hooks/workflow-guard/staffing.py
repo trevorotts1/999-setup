@@ -359,12 +359,15 @@ def census_errors(doc, plan_dir, implicit=False):
 
 
 # ---------------------------------------------------------------- done / ready / owed
-_FAMILIES = ("opus", "sonnet", "haiku", "fable", "gpt", "gemini", "deepseek", "glm", "kimi", "qwen", "llama", "mistral",
-             "grok", "minimax", "nemotron", "gemma", "codex", "agnes")
+_FAMILIES = ("opus", "sonnet", "haiku", "fable", "gpt", "gemini", "deepseek", "glm", "kimi", "mimo", "qwen", "llama",
+             "mistral", "grok", "minimax", "nemotron", "gemma", "codex", "agnes")
 
 
 def model_family(name):
     """Family of a model name: vendor prefix, version, date and case stripped ('anthropic/claude-opus-4-5-20251101' -> 'opus').
+    Variants of one family NEVER count as independent families: 'xiaomi/mimo-v2.6-pro' and
+    'openrouter/xiaomi/mimo-v2.6-flash' both normalize to 'mimo', so a Pro/Flash pair cannot
+    masquerade as builder/checker independence (spec 10.1, D16 family identity).
     Unknown names compare as normalized lowercase with digits and separators removed."""
     s = str(name or "").strip().lower().rsplit("/", 1)[-1].split(":", 1)[0]
     for tok in re.split(r"[^a-z]+", s):

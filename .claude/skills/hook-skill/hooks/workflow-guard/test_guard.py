@@ -16,7 +16,11 @@ class GuardTests(unittest.TestCase):
  def name(self,lanes=10):return 'tg-W1-build+qc-SKR001..SKR099-%dL'%lanes
  def script(self,lanes=10):return "// SCRATCH ISOLATION lanes/<UNIT-ID>-<box-slug>/\nexport const meta={name:'"+self.name(lanes)+"',description:'test',phases:[{title:'Build'},{title:'QC'}]};\nconst r=await pipeline(args.units,u=>agent(u.prompt,{model:'opus',phase:'Build',label:'build:'+u.id}), (b,u)=>agent(u.prompt,{model:'sonnet',phase:'QC',label:'qc:'+u.id}));return r;"
  def args(self,n=10):return {'units':[{'id':'SKR-%03d'%i,'prompt':'test'} for i in range(n)]}
- def hook(self,payload):return subprocess.run(['python3',str(ROOT/'guard.py'),'hook'],input=json.dumps(payload),capture_output=True,text=True,env=self.env)
+ def hook(self,payload):
+  # cwd pins the payload to the tmp dir: the guard resolves plans upward from the payload cwd, and
+  # running these fixtures inside a tree that already holds a real SWARM-PLAN.json would govern them.
+  payload.setdefault('cwd',str(self.path))
+  return subprocess.run(['python3',str(ROOT/'guard.py'),'hook'],input=json.dumps(payload),capture_output=True,text=True,env=self.env)
  def test_ten_parallel_lanes_twenty_lifetime_calls(self):
   r=self.validate(self.script(),self.args());self.assertTrue(r['ok'],r);self.assertEqual(r['conservativePeak'],10)
  def test_eleven_rejected(self):self.bad(self.script(11),self.args(11),'Computed upper bound 11 concurrent agents exceeds effective cap 10')
@@ -35,8 +39,9 @@ class GuardTests(unittest.TestCase):
  def test_provider_cap(self):
   args=self.args(4);args['guard']={'providerSlots':3};self.bad(self.script(4),args,'exceeds declared available provider slots')
  def test_snapshot_matches_validation_and_preserves_input(self):
-  r=self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':self.args()},'session_id':'test','tool_use_id':'test1'})
-  self.assertEqual(r.returncode,0,r.stderr);o=json.loads(r.stdout)['hookSpecificOutput'];self.assertEqual(o['updatedInput']['script'],self.script());self.assertEqual(o['updatedInput']['args'],self.args());self.assertNotIn('permissionDecision',o)
+  launch=self.plan_launch();script=Path(launch['scriptPath']).read_text()
+  r=self.hook({'tool_name':'Workflow','tool_input':{'script':script,'args':launch['args']},'session_id':'test','tool_use_id':'test1'})
+  self.assertEqual(r.returncode,0,r.stderr);o=json.loads(r.stdout)['hookSpecificOutput'];self.assertEqual(o['updatedInput']['script'],script);self.assertEqual(o['updatedInput']['args'],launch['args']);self.assertNotIn('permissionDecision',o)
  def test_missing_file_rejected(self):
   r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':'/does-not-exist'}});self.assertEqual(r.returncode,2);self.assertIn('scriptPath cannot be read',r.stderr)
  def test_non_workflow_untouched(self):self.assertEqual(self.hook({'tool_name':'Read','tool_input':{}}).stdout,'')
@@ -57,7 +62,7 @@ class GuardTests(unittest.TestCase):
   p={'hook_event_name':'Stop','session_id':'test','stop_hook_active':False}
   r=self.hook(p);o=json.loads(r.stdout);self.assertEqual(o['decision'],'block');self.assertIn('w1 STALE_REVIEW_REQUIRED',o['reason']);self.assertEqual(self.hook(p).stdout,'')
  def test_verified_cancellation_is_terminal(self):
-  self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':self.args()},'session_id':'test','tool_use_id':'test1'})
+  self.stage_launch('test1')
   self.hook({'hook_event_name':'PostToolUse','tool_name':'Workflow','session_id':'test','tool_use_id':'test1','tool_response':{'taskId':'wka7c9bxn','runId':'wf_60e1d071-a35'}})
   self.hook({'hook_event_name':'PostToolUse','tool_name':'TaskStop','session_id':'test','tool_input':{'task_id':'wka7c9bxn'},'tool_response':{'message':'Successfully stopped task: wka7c9bxn'}})
   import sqlite3
@@ -66,7 +71,7 @@ class GuardTests(unittest.TestCase):
   r=self.hook({'hook_event_name':'PreToolUse','tool_name':'TaskOutput','tool_input':{'task_id':'wtest1234','timeout':300000,'block':True}})
   self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['updatedInput']['timeout'],60000)
  def test_structured_native_receipt(self):
-  self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':self.args()},'session_id':'test','tool_use_id':'test1'})
+  self.stage_launch('test1')
   self.hook({'hook_event_name':'PostToolUse','tool_name':'Workflow','session_id':'test','tool_use_id':'test1','tool_response':{'taskId':'wka7c9bxn','runId':'wf_60e1d071-a35','status':'running'}})
   import sqlite3
   c=sqlite3.connect(self.path/'state/guard.sqlite3');state,receipt=c.execute('SELECT state,receipt FROM launches').fetchone();self.assertEqual(state,'RETURNED');self.assertEqual(json.loads(receipt)['task_id'],'wka7c9bxn')
@@ -87,7 +92,9 @@ class GuardTests(unittest.TestCase):
   r=self.generate({'guard':{},'units':self.good_units()});self.assertEqual(r.returncode,0,r.stderr)
   launch=json.loads((self.path/'generated/launch-01.json').read_text());self.assertEqual(set(launch),{'scriptPath'})
   code=Path(launch['scriptPath']).read_text();self.assertNotIn('args.units',code);self.assertTrue(self.validate(code)['ok'])
-  self.assertEqual(self.hook({'tool_name':'Workflow','tool_input':launch}).returncode,0)
+  # spec 10.1/10.3 admission provenance: a planless legacy launch is refused at admission (the
+  # contract path is make-workflow.py --plan, covered by plan_launch); the validator still accepts it
+  r=self.hook({'tool_name':'Workflow','tool_input':launch});self.assertEqual(r.returncode,2);self.assertIn('ADMISSION PROVENANCE',r.stderr)
  def test_generator_accepts_existing_launch_object(self):self.assertEqual(self.generate({'args':{'units':self.good_units()}}).returncode,0)
  def test_generator_rejects_filename_output_before_creating_it(self):
   r=self.generate(self.good_units(),'launch-01.json');self.assertNotEqual(r.returncode,0);self.assertIn('DIRECTORY',r.stderr);self.assertFalse((self.path/'launch-01.json').exists());self.assertNotIn('Traceback',r.stderr)
@@ -100,17 +107,20 @@ class GuardTests(unittest.TestCase):
  def test_generator_idempotent_repeat(self):
   self.assertEqual(self.generate(self.good_units()).returncode,0);self.assertEqual(self.generate(self.good_units()).returncode,0)
  def test_legacy_string_arguments_normalized(self):
-  r=self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':json.dumps(self.args())}})
-  self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['updatedInput']['args'],self.args())
+  launch=self.plan_launch();script=Path(launch['scriptPath']).read_text()
+  r=self.hook({'tool_name':'Workflow','tool_input':{'script':script,'args':json.dumps(launch['args'])}})
+  self.assertEqual(r.returncode,0,r.stderr);self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['updatedInput']['args'],launch['args'])
  def test_malformed_string_arguments_rejected(self):
   r=self.hook({'tool_name':'Workflow','tool_input':{'script':self.script(),'args':'{bad'}})
   self.assertEqual(r.returncode,2);self.assertIn('invalid JSON text',r.stderr)
  def test_legacy_missing_arguments_recovered_only_from_matching_sidecar(self):
-  f=self.path/'workflow-01.js';f.write_text(self.script());side=self.path/'launch-01.json';side.write_text(json.dumps({'scriptPath':str(f),'args':self.args()}))
+  launch=self.plan_launch()
+  f=self.path/'workflow-01.js';f.write_text(Path(launch['scriptPath']).read_text());side=self.path/'launch-01.json';side.write_text(json.dumps({'scriptPath':str(f),'args':launch['args']}))
   r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':str(f)}});self.assertEqual(r.returncode,0,r.stderr)
-  self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['updatedInput']['args'],self.args())
-  side.write_text(json.dumps({'scriptPath':str(self.path/'different.js'),'args':self.args()}))
-  r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':str(f)}});self.assertEqual(r.returncode,2);self.assertIn('Cannot measure pipeline items',r.stderr)
+  self.assertEqual(json.loads(r.stdout)['hookSpecificOutput']['updatedInput']['args'],launch['args'])
+  # a sidecar naming a DIFFERENT script never supplies args: the launch fails closed at admission
+  side.write_text(json.dumps({'scriptPath':str(self.path/'different.js'),'args':launch['args']}))
+  r=self.hook({'tool_name':'Workflow','tool_input':{'scriptPath':str(f)}});self.assertEqual(r.returncode,2);self.assertIn('ADMISSION PROVENANCE',r.stderr)
  def load(self,name):
   os.environ['WORKFLOW_GUARD_STATE']=str(self.path/'state')
   spec=importlib.util.spec_from_file_location(name,ROOT/'guard.py');g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
@@ -165,6 +175,24 @@ class GuardTests(unittest.TestCase):
  def raw_hook(self,text,env=None):return subprocess.run(['python3',str(ROOT/'guard.py'),'hook'],input=text,capture_output=True,text=True,env=env or self.env)
  def cli(self,*a,env=None):return subprocess.run(['python3',str(ROOT/'guard.py'),*a],capture_output=True,text=True,env=env or self.env)
  def pre(self,tool,tool_input,session='canary',**extra):return self.hook({'hook_event_name':'PreToolUse','tool_name':tool,'tool_input':tool_input,'session_id':session,**extra})
+ def mkplanv2(self,proot,wid='T-01',n=2):
+  proot.mkdir(exist_ok=True)
+  units=[{'unit_id':'%s-U%d'%(wid,k),'work':'build part %s'%chr(96+k),'owned_output':'out/%s/%d.md'%(wid,k),'acceptance':'a','source':'s','verdict_file':'evidence/%s/%s-U%d.verdict.json'%(wid,wid,k)} for k in range(1,n+1)]
+  doc={'schema':'blackceo.swarm-plan/v2','status':'planned-not-running','policy':{'max_active_workflows':3,'max_agents_per_workflow':10,'max_working_agents':500},'workflows':[{'workflow_id':wid,'agent_count':n,'concurrency':n,'dependencies':[],'units':units}]}
+  p=proot/'SWARM-PLAN.json';p.write_text(json.dumps(doc));return p
+ def plan_launch(self,wid='T-01',n=2):
+  # Admission provenance (spec 10.1/10.3): a launch must carry args.workflowId under a plan. The
+  # supported generator produces exactly that contract; these fixtures use it instead of hand-rolled
+  # planless launches, which admission now refuses.
+  plan=self.mkplanv2(self.path/'planroot',wid,n);out=self.path/'planout'
+  r=subprocess.run(['python3',str(ROOT/'make-workflow.py'),'--plan',str(plan),'--workflow-id',wid,'--out-dir',str(out),'--state-dir',str(self.path/'state')],capture_output=True,text=True)
+  self.assertEqual(r.returncode,0,r.stderr)
+  return json.loads((out/('launch-%s.json'%wid)).read_text())
+ def stage_launch(self,tid,session='test',peak=3):
+  # A launch that already passed admission (as test_returned_run_live stages it): for tests whose
+  # subject is the PostToolUse receipt path, not admission itself.
+  self.cli('canary','--session','init')
+  c=sqlite3.connect(self.path/'state/guard.sqlite3');c.execute('INSERT INTO launches VALUES(?,?,?,?,?,?,?,?,?)',(tid,session,'',time.time(),'h','RESERVED','n',peak,''));c.commit();c.close()
  def alerts_file(self,session,workflow):
   d=self.path/'state';d.mkdir(parents=True,exist_ok=True)
   (d/'alerts.json').write_text(json.dumps({'checked_at':time.time(),'alerts':[{'session':session,'workflow':workflow,'state':'STALE_REVIEW_REQUIRED'}]}))
@@ -179,7 +207,7 @@ class GuardTests(unittest.TestCase):
   for i in range(60):self.assertEqual(self.pre('Read',{'file_path':'/tmp/f%d'%i}).returncode,0)
   c=json.loads(self.cli('canary','--session','canary').stdout)
   self.assertEqual((c['total'],c['unparsed']),(60,0))
-  self.assertEqual(self.pre('Workflow',{'script':self.script(),'args':self.args()}).returncode,0)
+  self.assertEqual(self.pre('Workflow',self.plan_launch()).returncode,0)
  def test_retry_cap_denies_third_identical_failed_call(self):
   ti={'command':'node /does/not/exist.mjs'}
   self.assertEqual(self.pre('Bash',ti,'retry').returncode,0)
@@ -223,21 +251,28 @@ class GuardTests(unittest.TestCase):
   root=self.register()
   outside=self.pre('Edit',{'file_path':str(self.path/'elsewhere.txt')},'prog')
   self.assertEqual(outside.returncode,2);self.assertIn('Orchestrator fence',outside.stderr)
-  self.assertEqual(self.pre('Edit',{'file_path':str(root/'unit.md')},'prog').returncode,0)
+  # spec 10.1 orchestrator allowlist: implementation writes are denied for the conductor seat
+  # EVEN inside the run root; only the named lane/work/evidence accounting trees may be written.
+  impl=self.pre('Edit',{'file_path':str(root/'unit.md')},'prog')
+  self.assertEqual(impl.returncode,2);self.assertIn('ORCHESTRATOR ALLOWLIST',impl.stderr);self.assertIn('implementation writes are denied',impl.stderr)
+  self.assertEqual(self.pre('Edit',{'file_path':str(root/'lanes'/'x-lane'/'note.md')},'prog').returncode,0)
+  self.assertEqual(self.pre('Edit',{'file_path':str(root/'work'/'S-x'/'receipt.md')},'prog').returncode,0)
   self.assertEqual(self.pre('Edit',{'file_path':str(self.path/'elsewhere.txt')},'prog',agent_id='sub-1').returncode,0)
   self.assertEqual(self.pre('Edit',{'file_path':str(self.path/'elsewhere.txt')},'unregistered').returncode,0)
  def test_orchestrator_fence_bash(self):
   root=self.register('bashprog')
   self.assertEqual(self.pre('Bash',{'command':'git status'},'bashprog').returncode,0)
   r=self.pre('Bash',{'command':'git commit -am x'},'bashprog');self.assertEqual(r.returncode,2);self.assertIn('Mutating shell command with no absolute path',r.stderr);self.assertIn('Orchestrator fence',r.stderr)
-  self.assertEqual(self.pre('Bash',{'command':'rm %s/tmpfile'%root},'bashprog').returncode,0)
+  # spec 10.1 orchestrator allowlist: a mutating command is denied even INSIDE the run root now.
+  r=self.pre('Bash',{'command':'rm %s/tmpfile'%root},'bashprog');self.assertEqual(r.returncode,2);self.assertIn('ORCHESTRATOR ALLOWLIST',r.stderr);self.assertIn('mutating commands are denied',r.stderr)
   r=self.pre('Bash',{'command':'rm /etc/hosts'},'bashprog');self.assertEqual(r.returncode,2);self.assertIn('/etc/hosts, outside the program run root',r.stderr)
  def test_orchestrator_fence_blocks_fleet_unless_test_mode(self):
   self.register('fleetprog')
   r=self.pre('Bash',{'command':'ssh karen-mini ls'},'fleetprog')
   self.assertEqual(r.returncode,2);self.assertIn('Remote-host and fleet commands',r.stderr)
   allowed=self.hook_env({'hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':{'command':'ssh karen-mini ls'},'session_id':'fleetprog'},{**self.env,'SKILL_REVIEW_TEST_MODE':'1'})
-  self.assertEqual(allowed.returncode,0,allowed.stderr)
+  # the flag bypasses ONLY the fleet fence: the orchestrator allowlist still refuses ssh for the seat
+  self.assertEqual(allowed.returncode,2,allowed.stderr);self.assertNotIn('Remote-host',allowed.stderr);self.assertIn('ORCHESTRATOR ALLOWLIST',allowed.stderr)
  def test_runtime_peak_recorded_and_cap_alert(self):
   g=self.load('guard_peak');now=time.time()
   j=self.path/'peak.jsonl'

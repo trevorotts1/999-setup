@@ -26,7 +26,7 @@ def db():
  c.row_factory=sqlite3.Row
  try:c.execute('PRAGMA busy_timeout=10000')
  except sqlite3.Error:pass
- c.executescript('''CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT); CREATE TABLE IF NOT EXISTS watches(path TEXT PRIMARY KEY,session TEXT,last_change REAL,signature TEXT,state TEXT,detail TEXT); CREATE TABLE IF NOT EXISTS notices(session TEXT PRIMARY KEY,fingerprint TEXT); CREATE TABLE IF NOT EXISTS health(id INTEGER PRIMARY KEY,checked REAL); CREATE TABLE IF NOT EXISTS failures(session TEXT,fingerprint TEXT,tool TEXT,count INTEGER,last_error TEXT,updated REAL,PRIMARY KEY(session,fingerprint)); CREATE TABLE IF NOT EXISTS continuations(session TEXT PRIMARY KEY,count INTEGER,latched INTEGER,updated REAL); CREATE TABLE IF NOT EXISTS programs(session TEXT PRIMARY KEY,run_root TEXT,registered REAL); CREATE TABLE IF NOT EXISTS session_liveness(session TEXT PRIMARY KEY,last_seen REAL NOT NULL); CREATE TABLE IF NOT EXISTS omission(session TEXT PRIMARY KEY,fingerprint TEXT,count INTEGER,updated REAL,alert TEXT); CREATE TABLE IF NOT EXISTS scratch(path TEXT PRIMARY KEY,session TEXT,workflow TEXT,run_root TEXT,registered REAL,ended REAL,status TEXT); CREATE TABLE IF NOT EXISTS plan_alerts(key TEXT PRIMARY KEY,session TEXT,workflow TEXT,state TEXT,detail TEXT,updated REAL); CREATE TABLE IF NOT EXISTS reservations(id TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,attempt TEXT,created REAL); CREATE TABLE IF NOT EXISTS human_prompts(session TEXT PRIMARY KEY,at REAL); CREATE TABLE IF NOT EXISTS launch_units(id TEXT PRIMARY KEY,units INTEGER);''')
+ c.executescript('''CREATE TABLE IF NOT EXISTS launches(id TEXT PRIMARY KEY,session TEXT,transcript TEXT,created REAL,script_hash TEXT,state TEXT,name TEXT,peak INTEGER,receipt TEXT); CREATE TABLE IF NOT EXISTS watches(path TEXT PRIMARY KEY,session TEXT,last_change REAL,signature TEXT,state TEXT,detail TEXT); CREATE TABLE IF NOT EXISTS notices(session TEXT PRIMARY KEY,fingerprint TEXT); CREATE TABLE IF NOT EXISTS health(id INTEGER PRIMARY KEY,checked REAL); CREATE TABLE IF NOT EXISTS failures(session TEXT,fingerprint TEXT,tool TEXT,count INTEGER,last_error TEXT,updated REAL,PRIMARY KEY(session,fingerprint)); CREATE TABLE IF NOT EXISTS continuations(session TEXT PRIMARY KEY,count INTEGER,latched INTEGER,updated REAL); CREATE TABLE IF NOT EXISTS programs(session TEXT PRIMARY KEY,run_root TEXT,registered REAL); CREATE TABLE IF NOT EXISTS session_liveness(session TEXT PRIMARY KEY,last_seen REAL NOT NULL); CREATE TABLE IF NOT EXISTS omission(session TEXT PRIMARY KEY,fingerprint TEXT,count INTEGER,updated REAL,alert TEXT); CREATE TABLE IF NOT EXISTS scratch(path TEXT PRIMARY KEY,session TEXT,workflow TEXT,run_root TEXT,registered REAL,ended REAL,status TEXT); CREATE TABLE IF NOT EXISTS plan_alerts(key TEXT PRIMARY KEY,session TEXT,workflow TEXT,state TEXT,detail TEXT,updated REAL); CREATE TABLE IF NOT EXISTS reservations(id TEXT PRIMARY KEY,session TEXT,plan TEXT,workflow_id TEXT,attempt TEXT,created REAL); CREATE TABLE IF NOT EXISTS human_prompts(session TEXT PRIMARY KEY,at REAL); CREATE TABLE IF NOT EXISTS launch_units(id TEXT PRIMARY KEY,units INTEGER); CREATE TABLE IF NOT EXISTS attempt_revocations(plan TEXT,attempt_id TEXT,workflow_id TEXT,reason TEXT,revoked_by TEXT,revoked_at REAL,ack TEXT,PRIMARY KEY(plan,attempt_id)); CREATE TABLE IF NOT EXISTS attempt_checkpoints(plan TEXT,attempt_id TEXT,workflow_id TEXT,superseded_by TEXT,checkpoint TEXT,at REAL,PRIMARY KEY(plan,attempt_id));''')
  _staffing().migrate(c)  # launch_tags (workflowId per launch), launch_attempts, session_plans: idempotent
  return c
 
@@ -268,17 +268,23 @@ def occupancy(c,now=None,commit=True):
  # Live counts: workflows per program, agents per workflow, agents total.
  # commit=False when the caller already holds a write transaction, so the reap
  # joins it instead of ending it early.
+ # RAW OBSERVED COUNTS (spec 10.3): the run journal is the native census. Its observed
+ # count is reported and enforced as-is and is NEVER clamped to the declared peak (12
+ # observed with a declared peak of 10 reports 12). Only a run with no readable census
+ # falls back to the declared peak as an accounting stand-in, and it is counted and
+ # reported as UNKNOWN: unknown is never zero.
  now=time.time() if now is None else now
  reap_dead(c,now,commit=commit)
- per={};workflows=0;agents=0
+ per={};workflows=0;agents=0;observed=0;unknown=0
  for r in c.execute("SELECT session,peak,transcript,receipt FROM launches WHERE state IN (?,?,?,?)",COUNTED).fetchall():
   per[r['session']]=per.get(r['session'],0)+1
   workflows+=1
   # Live accounting: finished agents free their slots; the declared peak only
-  # stands in until the run's journal exists.
+  # stands in while the run's native census (journal) is missing or unreadable.
   run=live_running(r);peak=int(r['peak'] or 0)
-  agents+=peak if run is None else min(run,peak)
- return {'workflows':workflows,'per_program':per,'agents_total':agents}
+  if run is None:unknown+=1;agents+=peak
+  else:agents+=run;observed+=run
+ return {'workflows':workflows,'per_program':per,'agents_total':agents,'agents_observed':observed,'unknown_runs':unknown}
 
 def _can_arm(plan):
  # The plan's status can be flipped only when its directory is writable (the flip is an atomic rename). Checked BEFORE a
@@ -329,6 +335,9 @@ def admit_launch(row,tag=None):
       c.execute('ROLLBACK')
       return 'the plan runs at most %d workflows at once and %d are running (admission re-check); launch %s when one finishes.'%(mx,len(live_ids),tag[0])
      if len(tag)>2 and tag[2]:
+      if c.execute('SELECT 1 FROM attempt_revocations WHERE plan=? AND attempt_id=?',(tag[1],str(tag[2]))).fetchone():
+       c.execute('ROLLBACK')
+       return 'args.attemptId %s was REVOKED (fenced attempt): a revoked attempt token cannot dispatch or spend and can never be reused. Restart the unfinished work under a NEW attempt ID linked to this one (guard.py restart-attempt --plan %s --supersedes %s --new-attempt <new-id>).'%(json.dumps(str(tag[2])),tag[1],str(tag[2]))
       if c.execute('SELECT 1 FROM attempt_ids WHERE plan=? AND attempt_id=?',(tag[1],str(tag[2]))).fetchone() or c.execute("SELECT 1 FROM reservations r JOIN launches l ON l.id=r.id WHERE r.plan=? AND r.attempt=? AND l.state=? AND r.id!=?",(tag[1],str(tag[2]),RESERVED,row[0])).fetchone():
        c.execute('ROLLBACK')
        return 'args.attemptId %s was already used by an admitted launch of this plan; every launch needs a new unique attemptId.'%json.dumps(tag[2])
@@ -499,26 +508,172 @@ def canary_denial(session):
   return refuse('conductor seat is on a model whose tool JSON does not parse; move the conductor seat. Measured '+str(c['unparsed'])+' unparsed of '+str(c['total'])+' tool calls this session, rate '+format(100.0*c['rate'],'.2f')+' percent, threshold 2 percent.')
  return None
 
+# ---- Enforcement level accounting and the explicit production-dispatch blocker (spec 10.1) ----
+# HONEST LEVEL, never overstated: this guard is a same-user PreToolUse hook. It is BEST-EFFORT and
+# is NOT an operating-system security boundary. A same-user conductor that bypasses hooks (a raw
+# CLI call, a second process, direct sqlite writes) cannot be absolutely prevented here; this code
+# never claims absolute prevention. Absolute prevention needs a supported OS-level boundary (a
+# separate user/sandbox identity), which only a visible specialist can establish and attest.
+ENFORCEMENT_LEVEL='best-effort same-user PreToolUse hook (NOT an operating-system security boundary; no absolute prevention is claimed)'
+ENFORCEMENT_DEFAULT={'enforcement_level':ENFORCEMENT_LEVEL,'os_security_boundary':False,'supported_boundary_established':False,'production_dispatch':'closed','blocker':'spec 10.1: production dispatch stays closed under this explicit blocker until a visible specialist establishes and attests a supported admission boundary','specialist':None,'evidence':None,'allowed_plans':[],'updated':None,'updated_by':None}
+
+def enforcement_file():
+ return STATE/'enforcement.json'
+
+def enforcement_state():
+ try:d=json.loads(enforcement_file().read_text())
+ except (OSError,ValueError):d=None
+ out=dict(ENFORCEMENT_DEFAULT)
+ if isinstance(d,dict):out.update({k:v for k,v in d.items() if k in ENFORCEMENT_DEFAULT})
+ out['enforcement_level']=ENFORCEMENT_LEVEL;out['os_security_boundary']=False
+ return out
+
+def write_enforcement(update):
+ e=enforcement_state();e.update(update);e['enforcement_level']=ENFORCEMENT_LEVEL;e['os_security_boundary']=False;e['updated']=time.time()
+ atomic(enforcement_file(),json.dumps(e,indent=1,sort_keys=True)+'\n')
+ return e
+
+def dispatch_blocker(plan=None):
+ # The explicit enforcement blocker (spec 10.1): PRODUCTION DISPATCH STAYS CLOSED while a visible
+ # specialist establishes a supported admission boundary. Closed means: only governed, planned,
+ # visible workflow dispatch may run - and when allowed_plans is non-empty, ONLY the named visible
+ # specialist plan(s) may dispatch while everything else is production and stays closed. Planless
+ # (unplanned/hidden) dispatch is production and is always refused at admission, open or closed.
+ # Opening requires a named visible specialist that established AND attested a supported boundary.
+ # Weakening the requirement or bypassing host controls is never a fix.
+ e=enforcement_state()
+ if e.get('production_dispatch')=='open':return None
+ allowed=[str(a) for a in (e.get('allowed_plans') or [])]
+ if plan is not None and (not allowed or str(plan) in allowed):return None
+ scope=('only the visible specialist plan(s) %s may dispatch; every other plan is production dispatch and stays closed'%json.dumps(allowed)) if allowed else 'only governed planned visible workflows may dispatch; any unplanned/planless launch is production dispatch and stays closed'
+ return refuse('PRODUCTION DISPATCH CLOSED under an explicit enforcement blocker: %s Current enforcement level: %s. %s. A visible specialist must establish and attest a supported boundary before production dispatch opens (guard.py enforcement --open-dispatch --boundary-established-by <name> --evidence <proof>); never bypass host controls and never claim absolute prevention.'%(e.get('blocker') or 'no reason recorded',ENFORCEMENT_LEVEL,scope))
+
+# ---- Orchestrator tool allowlist (spec 10.1), enforced at the host's supported admission boundary ----
+# A session registered as a program is the ORCHESTRATOR seat. Its permitted work is starting,
+# inspecting, controlling and reporting on actual visible workflows and genuine decisions. The
+# allowlist below is enforced in fence() at PreToolUse (the admission/permission boundary this
+# host supports for tool calls). Denies cover implementation writes, arbitrary execution, renders,
+# tests, direct provider dispatch and hidden agent spawning INCLUDING indirect shell/script forms.
+# ENFORCEMENT LEVEL (honest): same-user best-effort hook, not an OS security boundary (see above).
+ORCH_ALLOW_TOOLS=frozenset(('Workflow','Agent','Task','TaskOutput','TaskStop','TodoWrite','SendMessage','Read','Grep','Glob','WebFetch','WebSearch','ListMcpResourcesTool','ReadMcpResourceDirTool','NotebookRead','ExitPlanMode','AskUserQuestion','EnterWorktree','ExitWorktree','TaskList','TaskGet','TaskCreate','TaskUpdate','Monitor','CronCreate','CronList','CronDelete','StructuredOutput','ReportFindings','Skill','PushNotification','ListAgents','LSP'))
+ORCH_WRITE_ALLOW_KINDS=('lanes','work','evidence')  # named accounting/scratch trees under the program run root
+ORCH_BASH_ALLOW=[re.compile(p,re.I) for p in (
+ r'^(?:ls|stat|file|wc|head|tail|cat|less|more|shasum|md5|diff|find|grep|rg|jq|sort|uniq|basename|dirname|realpath|readlink|date|uname|uptime|whoami|hostname|id|pwd|command|which|open|ditto(?:\s|$))',
+ r'^git (?:status|log|show|diff|branch|worktree list|remote -v|rev-parse|describe|tag -l|ls-files|ls-remote)\b',
+ r'^(?:python3? )?\S*guard\.py (?:status|tick|canary|resolve|watch|register|enforcement|census|revoke-attempt|restart-attempt)\b',
+ r'^(?:python3? )?\S*staffing\.py (?:start|status|retire|add-plan|from-census|cancel|clear-tamper)\b',
+ r'^(?:mdfind|mdls|plutil|sw_vers|system_profiler)\b',
+)]
+ORCH_BASH_DENY_CLASSES=(
+ ('hidden agent spawning (including indirect shell/script forms)',re.compile(r'\b(?:claude|claude-nine|codex|openclaw|nohup|disown|daemonize|setsid|tmux|screen)\b|\b(?:bash|sh|zsh|dash|ksh)\s+-c\b|[;&|]\s*(?:python3?|node|perl|ruby|bash|sh|zsh)\b|\beval\b|\bexec\b|\bsource\b|(?:^|\s)\.\s+[~/]',re.I)),
+ ('direct provider dispatch',re.compile(r'\b(?:curl|wget)\b|(?:https?://\S*(?:api|v1|openrouter|anthropic|openai|gemini|generativelanguage|ollama))|/v1/(?:chat|completions|embeddings|models)\b|127\.0\.0\.1:20128|localhost:20128',re.I)),
+ ('arbitrary execution',re.compile(r'\b(?:python3?|node|perl|ruby|php|make|cmake|npx|npm|yarn|pnpm|pip3?|docker|brew|osascript|swift)\b',re.I)),
+ ('renders',re.compile(r'\b(?:ffmpeg|ffprobe|magick|convert|sox|inkscape|rsvg|blender)\b',re.I)),
+ ('tests',re.compile(r'\b(?:pytest|unittest|tox|jest|vitest|mocha|cypress|npm test|make test|node --test)\b',re.I)),
+)
+PROVIDER_FETCH=re.compile(r'(?:openrouter|api\.openai|api\.anthropic|generativelanguage|ollama|/v1/(?:chat|completions|models)|127\.0\.0\.1:20128|localhost:20128)',re.I)
+
+def _orch_bash_allowed(cmd):
+ # Named read/status and workflow/queue-control only: no shell metacharacters beyond quiet
+ # redirects, so `cat f | python3 x` is never allowlisted by its first word alone.
+ c=QUIET_REDIRECT.sub(' ',cmd)
+ if re.search(r'[;&|<>`$()\n]',c):return False
+ stripped=c.strip()
+ return any(rx.match(stripped) for rx in ORCH_BASH_ALLOW)
+
+# ---- Native cancellation/restart protocol (spec 10.5) ----
+# quarantine -> checkpoint -> lease revocation -> native stop with acknowledgement -> fenced
+# writes/spend -> unfinished-work restart under a NEW attempt ID linked to its predecessor.
+def attempt_revoked(plan,attempt_id):
+ if not plan or not attempt_id:return None
+ rows=read_rows('SELECT reason,revoked_by,revoked_at,ack FROM attempt_revocations WHERE plan=? AND attempt_id=?',(str(plan),str(attempt_id)))
+ return dict(rows[0]) if rows else None
+
+def revoked_attempt_of(data,session):
+ # "plan|attempt" when this hook call comes from an agent of a revoked attempt's run, else None.
+ aid=data.get('agent_id')
+ if not aid:return None
+ try:launches=read_rows('SELECT id,transcript,receipt FROM launches WHERE session=?',(str(session),))
+ except sqlite3.Error:return None
+ for l in launches:
+  try:attempts=read_rows('SELECT plan,attempt_id FROM attempt_ids WHERE launch_id=?',(l['id'],))
+  except sqlite3.Error:continue
+  for a in attempts:
+   if attempt_revoked(a['plan'],a['attempt_id']) and _agent_in_run(l['transcript'],l['receipt'],aid,data):
+    return '%s|%s'%(a['plan'],a['attempt_id'])
+ return None
+
+def checkpoint_attempt(plan,workflow_id,attempt_id,superseded_by=None,by='guard'):
+ # Persist the checkpoint of one attempt: its accepted outputs (journaled verdicts) and the units
+ # still unfinished. Restart re-creates ONLY the unfinished work under a new attempt ID.
+ p=str(plan);recs=read_rows('SELECT unit_id,sha256,agent_id,launch_id,created FROM verdict_records WHERE plan=? AND attempt_id=?',(p,str(attempt_id)))
+ units=[]
+ try:doc=_jload(p)
+ except Exception:doc=None
+ for wf in _staffing().workflows(doc or {}):
+  if wf.get('workflow_id')==workflow_id:units=_staffing().unit_ids(wf)
+ done={r['unit_id'] for r in recs}
+ ck={'workflow_id':workflow_id,'attempt_id':str(attempt_id),'accepted_outputs':[dict(r) for r in recs],
+     'unfinished_units':[u for u in units if u not in done],'superseded_by':superseded_by,
+     'checkpoint_by':by,'at':time.time()}
+ write_txn([('INSERT OR REPLACE INTO attempt_checkpoints VALUES(?,?,?,?,?,?)',(p,str(attempt_id),str(workflow_id or ''),str(superseded_by) if superseded_by else '',json.dumps(ck,sort_keys=True),time.time()))])
+ return ck
+
+def revoke_attempt(plan,workflow_id,attempt_id,reason,ack='',by=None):
+ # Quarantine + lease revocation. After this row exists the attempt token is dead at every write,
+ # evidence, state and provider-dispatch boundary this guard governs: the old attempt cannot
+ # write or spend. (Honest limit: a worker that bypasses hooks entirely is outside this fence;
+ # native stop/capability isolation is what closes that gap - spec 10.5 step 3.)
+ if not _nonempty_str(reason):raise ValueError('reason is required')
+ ck=checkpoint_attempt(plan,workflow_id,attempt_id,by=by or 'revoke-attempt')
+ write_txn([('INSERT OR REPLACE INTO attempt_revocations VALUES(?,?,?,?,?,?,?)',(str(plan),str(attempt_id),str(workflow_id or ''),str(reason),str(by or 'operator'),time.time(),str(ack or '')))])
+ return ck
+
+def _nonempty_str(v):
+ return isinstance(v,str) and bool(v.strip())
+
 def fence(data,tool,root):
- # Decision 11: a registered conductor session records and dispatches; it does not build.
+ # Decision 11 + spec 10.1: a registered conductor session (the orchestrator seat) records and
+ # dispatches; it does not build. Its tool use is restricted to the named allowlist above.
  note=' Orchestrator fence: this session is running program '+str(root)+'. Dispatch a builder or QC agent for this; the conductor only records.'
  allowed=(root,str(STATE))
  ti=data.get('tool_input') if isinstance(data.get('tool_input'),dict) else {}
  if tool in FENCE_EDIT:
   target=ti.get('file_path') or ti.get('notebook_path')
   if not target:return None
-  if any(under(target,a) for a in allowed):return None
+  if any(under(target,a) for a in allowed):
+   # Named write allowance: only the run root's lane/scratch, work (receipts) and evidence trees -
+   # accounting, never implementation. Everything else in the run root is implementation and is denied.
+   p=os.path.normpath(os.path.abspath(os.path.expanduser(str(target))))
+   if _rl(p).startswith(_rl(str(STATE))):return None
+   for kind in ORCH_WRITE_ALLOW_KINDS:
+    if under(p,str(Path(root)/kind)):return None
+   return refuse('ORCHESTRATOR ALLOWLIST: implementation writes are denied for the orchestrator seat (Write target '+str(target)+' is inside the program run root but is not a named lane/work/evidence accounting path).'+note)
   return refuse('Write target '+str(target)+' is outside the program run root.'+note)
  if tool=='Bash':
   cmd=str(ti.get('command') or '')
   if FENCE_FLEET.search(cmd) and os.environ.get('SKILL_REVIEW_TEST_MODE')!='1':
    return refuse('Remote-host and fleet commands are denied while a program is active.'+note)
+  if _orch_bash_allowed(cmd):return None
+  for cls,rx in ORCH_BASH_DENY_CLASSES:
+   if rx.search(cmd):
+    return refuse(('ORCHESTRATOR ALLOWLIST: %s is denied for the orchestrator seat (command: %s).'+note)%(cls,redact(cmd).replace('\n',' ')[:160]))
   if FENCE_MUTATE.search(cmd):
    paths=ABSPATH.findall(cmd)
    if not paths:return refuse('Mutating shell command with no absolute path cannot be proven to stay inside the program run root.'+note)
    outside=[p for p in paths if not any(under(p,a) for a in allowed)]
    if outside:return refuse('Mutating shell command touches '+outside[0]+', outside the program run root.'+note)
- return None
+   return refuse('ORCHESTRATOR ALLOWLIST: mutating commands are denied for the orchestrator seat even inside the program run root; the conductor does not build.'+note)
+  return refuse(('ORCHESTRATOR ALLOWLIST: this command is not a named read/status or workflow/queue-control operation (command: %s).'+note)%redact(cmd).replace('\n',' ')[:160])
+ if tool in ('Agent','Task'):
+  if plan_agent_allowed(ti):return None
+  return refuse('HIDDEN WORKER: the orchestrator seat may spawn only demonstrably read-only helpers (subagent_type Explore, Plan or claude-code-guide; no write/build intent). Builds go through the planned visible Workflow launch.'+note)
+ if tool=='WebFetch':
+  if PROVIDER_FETCH.search(str(ti.get('url') or '')):
+   return refuse('ORCHESTRATOR ALLOWLIST: direct provider dispatch is denied for the orchestrator seat (WebFetch to a model/API endpoint).'+note)
+  return None
+ if tool in ORCH_ALLOW_TOOLS or tool in FENCE_EDIT:return None
+ return refuse('ORCHESTRATOR ALLOWLIST: tool %s is not a named read/status or workflow/queue-control operation for the orchestrator seat.'%tool+note)
 
 # ---- Unit verdict files are written by checker SUBAGENTS only ----
 # The main (conductor) session may not write any *.verdict.json ANYWHERE (no plan condition, same as Write/Edit): Write/Edit/
@@ -663,7 +818,7 @@ def _plan_of_evidence(real):
 
 def _sub_verdict_authorized(data,rp,session,cwd,extra_plan):
  # A subagent may write a verdict into a plan's evidence tree only when its agent_id belongs to the ADMITTED run (by run id) of
- # the workflow that owns that verdict file. Returns True/False.
+ # the workflow that owns that verdict file AND that run's attempt token is not revoked. Returns True/False.
  st=_staffing();aid=data.get('agent_id')
  cands=[str(x[0]) for x in st.resolve_plans(cwd,session,STATE)]
  if extra_plan:cands.append(str(extra_plan))
@@ -672,8 +827,11 @@ def _sub_verdict_authorized(data,rp,session,cwd,extra_plan):
   for wf in st.workflows(doc or {}):
    for u in wf.get('units') or []:
     if not isinstance(u,dict) or not u.get('verdict_file') or _rl(Path(path).parent/u['verdict_file'])!=rp:continue
-    for r in read_rows("SELECT l.transcript,l.receipt FROM launch_tags t JOIN launches l ON l.id=t.id WHERE t.plan=? AND t.workflow_id=? AND l.state IN (?,?,?,'COMPLETED')",(str(Path(path).resolve()),wf['workflow_id'])+LIVE_STATES):
-     if _agent_in_run(r['transcript'],r['receipt'],aid,data):return True
+    for r in read_rows("SELECT l.id,l.transcript,l.receipt FROM launch_tags t JOIN launches l ON l.id=t.id WHERE t.plan=? AND t.workflow_id=? AND l.state IN (?,?,?,'COMPLETED')",(str(Path(path).resolve()),wf['workflow_id'])+LIVE_STATES):
+     if _agent_in_run(r['transcript'],r['receipt'],aid,data):
+      # FENCED WRITES (spec 10.5): an agent of a revoked attempt is a stale writer and cannot write.
+      if read_rows('SELECT 1 FROM attempt_revocations v JOIN attempt_ids a ON a.plan=v.plan AND a.attempt_id=v.attempt_id WHERE a.launch_id=? LIMIT 1',(r['id'],)):continue
+      return True
  return False
 
 def protected_write_block(data,tool,ti,session):
@@ -705,7 +863,10 @@ def protected_write_block(data,tool,ti,session):
    if ev is not None:
     if tool!='Write':return refuse('Write unit verdicts with the Write tool (full content) so the guard can journal them; %s edits in a plan evidence tree are refused.'%tool)
     if not isv:return refuse('A subagent may write only *.verdict.json files in a plan evidence tree (%s). Do not bypass hooks.'%t)
-    if not _sub_verdict_authorized(data,rp,session,cwd,ev):return refuse('This agent is not part of the admitted run of the workflow that owns %s, so it may not write that verdict. Do not bypass hooks.'%t)
+    if not _sub_verdict_authorized(data,rp,session,cwd,ev):
+     ra=revoked_attempt_of(data,session)
+     if ra:return refuse('ATTEMPT %s IS REVOKED (fenced writer): the old attempt cannot write (%s). Its work is quarantined; a successor restarts the unfinished work under a new attempt ID. Do not bypass hooks.'%(ra.split('|')[-1],t))
+     return refuse('This agent is not part of the admitted run of the workflow that owns %s, so it may not write that verdict. Do not bypass hooks.'%t)
    elif isv:return refuse('A verdict file is written only inside its plan\'s evidence tree by an agent of the admitted run (%s).'%t)
   return None
  if tool=='Bash':
@@ -758,6 +919,7 @@ def record_subagent_verdict(data,tool,ti,session):
    for u in wf.get('units') or []:
     if not isinstance(u,dict) or u.get('unit_id')!=d.get('unit_id') or not u.get('verdict_file'):continue
     if _rl(Path(path).parent/u['verdict_file'])!=rp:continue
+    if attempt_revoked(path,d.get('attempt_id')):continue  # fenced: a revoked attempt's writes are never journaled
     for r in read_rows("SELECT l.id,l.transcript,l.receipt FROM launch_tags t JOIN launches l ON l.id=t.id JOIN attempt_ids a ON a.launch_id=l.id WHERE t.plan=? AND t.workflow_id=? AND a.plan=? AND a.attempt_id=? AND l.state IN (?,?,?,'COMPLETED')",(str(path),wf['workflow_id'],str(path),str(d.get('attempt_id')))+LIVE_STATES):
      if _agent_in_run(r['transcript'],r['receipt'],data['agent_id'],data):
       write_txn([('INSERT OR IGNORE INTO verdict_records VALUES(?,?,?,?,?,?,?,?)',(str(path),wf['workflow_id'],u['unit_id'],str(d.get('attempt_id')),sha,str(data['agent_id']),r['id'],time.time()))])
@@ -1087,6 +1249,9 @@ def _pre_checks(data,tool,session):
   return refuse('Trevor said stop. Report status and end the turn.')
  if prior>=2:
   return refuse('Third identical attempt of a failed call. Change the input, change the approach, or dispatch a subagent to diagnose. Fingerprint '+fp[:8]+'.')
+ ra=revoked_attempt_of(data,session)
+ if ra and tool in FENCE_EDIT+('Bash','Workflow','Agent','Task','NotebookEdit'):
+  return refuse('ATTEMPT %s IS REVOKED (fenced writer): the old attempt cannot write or spend (%s). Its work is quarantined and checkpointed; a successor restarts the unfinished work under a new attempt ID. Do not bypass hooks.'%(ra.split('|')[-1],tool))
  if tool in FENCE_EDIT or tool=='Bash':
   # A refusal counts toward the "Third identical attempt" rule: a retried identical refused call is stopped with the change-approach message.
   vb=verdict_write_block(data,tool,ti,session)
@@ -1190,6 +1355,12 @@ def _validate(data,ctx):
   ti['args']=decoded;argument_note+=' Converted legacy JSON text args to a structured JSON value.'
  _pin_run_root_plan(data,ti,s)
  ctx['tag']=plan_tag(data,ti)
+ if ctx['tag'] is None:
+  # Admission provenance (spec 10.1/10.3): every execution worker must attach to an actual
+  # visible workflow of an explicit plan. A planless launch is refused at admission.
+  return refuse('ADMISSION PROVENANCE: this Workflow launch carries no governed plan (no args.workflowId under an armed or pinned SWARM-PLAN). Only planned visible workflows may be launched: generate the launch with `python3 %s --plan <SWARM-PLAN.json> --workflow-id <id>` and dispatch through it. Unplanned or hidden execution is denied.'%(ROOT/'make-workflow.py'))
+ blocked=dispatch_blocker(ctx['tag'][1])
+ if blocked is not None:return blocked
  # Plan launch contract FIRST, without recording: nothing is journaled unless every check below passes.
  sess=data.get('session_id','unknown');cwd=data.get('cwd') or os.getcwd();env=dict(os.environ)
  try:reap_now()
@@ -1600,6 +1771,13 @@ def hook(data):
     except ValueError:continue
     if r.get('task_id')==task:
      stmts.append(("UPDATE launches SET state='CANCELLED' WHERE id=?",(l['id'],)))
+     # Native stop with acknowledgement (spec 10.5): the runtime acknowledged the stop, so
+     # quarantine + checkpoint + lease revocation happen NOW for every attempt of this launch.
+     try:
+      for a in read_rows('SELECT plan,attempt_id,workflow_id FROM attempt_ids WHERE launch_id=?',(l['id'],)):
+       checkpoint_attempt(a['plan'],a['workflow_id'],a['attempt_id'],by='native-stop-ack')
+       stmts.append(('INSERT OR REPLACE INTO attempt_revocations VALUES(?,?,?,?,?,?,?)',(str(a['plan']),str(a['attempt_id']),str(a['workflow_id'] or ''),'native stop acknowledged (verified TaskStop receipt)','guard:TaskStop',time.time(),'TaskStop: successfully stopped')))
+     except Exception:pass
      if r.get('run_id'):
       for w in watches:
        if Path(w['path']).parent.name==r['run_id']:stmts.append(("UPDATE watches SET state='CANCELLED',detail='Verified TaskStop receipt' WHERE path=?",(w['path'],)))
@@ -1651,7 +1829,7 @@ def hook(data):
    c=db()
    try:occ=occupancy(c)
    finally:c.close()
-   running='running now: workflows %d/%d, agents %d/%d'%(occ['workflows'],lim['concurrent_workflows_per_program'],occ['agents_total'],lim['concurrent_agents_total'])
+   running='running now: workflows %d/%d, agents %d/%d (raw observed %d; %d run(s) without a readable native census reported UNKNOWN, never zero)'%(occ['workflows'],lim['concurrent_workflows_per_program'],occ['agents_total'],lim['concurrent_agents_total'],occ['agents_observed'],occ['unknown_runs'])
   except Exception as e:running='running counts unavailable ('+type(e).__name__+')'
   try:line=plan_line(data,session)
   except Exception:line=''
@@ -1699,7 +1877,7 @@ def hook(data):
  return 0
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('command',choices=['hook','tick','watch','resolve','status','register','canary'],nargs='?',default='hook');p.add_argument('--session');p.add_argument('--journal');p.add_argument('--reason');p.add_argument('--run-root',dest='run_root');p.add_argument('--workflow');p.add_argument('--dir',action='append',default=[]);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('command',choices=['hook','tick','watch','resolve','status','register','canary','enforcement','census','revoke-attempt','restart-attempt'],nargs='?',default='hook');p.add_argument('--session');p.add_argument('--journal');p.add_argument('--reason');p.add_argument('--run-root',dest='run_root');p.add_argument('--workflow');p.add_argument('--dir',action='append',default=[]);p.add_argument('--plan');p.add_argument('--attempt');p.add_argument('--supersedes');p.add_argument('--new-attempt',dest='new_attempt');p.add_argument('--by');p.add_argument('--close-dispatch',dest='close_dispatch',action='store_true');p.add_argument('--open-dispatch',dest='open_dispatch',action='store_true');p.add_argument('--boundary-established-by',dest='boundary_established_by');p.add_argument('--evidence');p.add_argument('--allow-plan',dest='allow_plan',action='append',default=[]);a=p.parse_args()
  if a.command=='hook':
   raw=sys.stdin.read()
   try:d=json.loads(raw)
@@ -1725,6 +1903,38 @@ def main():
  if a.command=='canary':
   if not a.session:p.error('--session required')
   print(json.dumps(canary(a.session)));return 0
+ if a.command=='enforcement':
+  # Honest enforcement accounting: the level is fixed text, never softened by state.
+  if a.close_dispatch:
+   e=write_enforcement({'production_dispatch':'closed','blocker':a.reason or 'no reason recorded','updated_by':a.by or 'operator','allowed_plans':list(a.allow_plan or []),'specialist':None,'evidence':None})
+  elif a.open_dispatch:
+   if not (a.boundary_established_by and a.evidence):
+    print('enforcement REFUSED: --open-dispatch requires --boundary-established-by <name> AND --evidence <proof>; a visible specialist must establish and attest a supported boundary before production dispatch resumes. '+ENFORCEMENT_LEVEL,file=sys.stderr);return 2
+   e=write_enforcement({'production_dispatch':'open','blocker':None,'specialist':a.boundary_established_by,'evidence':a.evidence,'updated_by':a.by or a.boundary_established_by,'allowed_plans':[]})
+  else:
+   e=enforcement_state()
+  print(json.dumps({'enforcement':e,'honest_level':ENFORCEMENT_LEVEL,'claims':'same-user best-effort PreToolUse hook; NOT an operating-system security boundary; absolute prevention is NEVER claimed. Run test_u3_canaries.py after any change to this enforcement.'},indent=1,sort_keys=True));return 0
+ if a.command=='census':
+  try:
+   c=db()
+   try:occ=occupancy(c)
+   finally:c.close()
+  except Exception as e2:
+   print('census unavailable (%s: %s): reported UNKNOWN, never zero'%(type(e2).__name__,e2),file=sys.stderr);return 2
+  print(json.dumps({'census_source':'native run journals','raw_observed_agents':occ['agents_observed'],'accounted_agents_total':occ['agents_total'],'unknown_runs':occ['unknown_runs'],'workflows':occ['workflows'],'per_program':occ['per_program'],'note':'raw observed counts are never clamped to a declared peak; a run without a readable native census is UNKNOWN, never zero'},indent=1,sort_keys=True));return 0
+ if a.command=='revoke-attempt':
+  if not (a.plan and a.attempt and a.reason):p.error('--plan --attempt --reason required')
+  ck=revoke_attempt(a.plan,a.workflow,a.attempt,a.reason,ack='revoked via guard.py revoke-attempt',by=a.by or 'operator')
+  print(json.dumps({'revoked':{'plan':str(Path(a.plan).expanduser()),'attempt_id':a.attempt,'workflow_id':a.workflow,'reason':a.reason,'checkpoint':ck},'note':'the old attempt cannot write or spend at any boundary this guard governs; restart the unfinished work under a NEW attempt ID (guard.py restart-attempt)'}));return 0
+ if a.command=='restart-attempt':
+  if not (a.plan and a.workflow and a.supersedes and a.new_attempt and a.reason):p.error('--plan --workflow --supersedes --new-attempt --reason required')
+  plan=str(Path(a.plan).expanduser())
+  if not attempt_revoked(plan,a.supersedes):
+   print('restart REFUSED: superseded attempt %s is not revoked; revoke it first (guard.py revoke-attempt) so the old attempt cannot write or spend. Nothing changed.'%a.supersedes,file=sys.stderr);return 2
+  if read_rows('SELECT 1 FROM attempt_ids WHERE plan=? AND attempt_id=?',(plan,str(a.new_attempt))):
+   print('restart REFUSED: --new-attempt %s is already in use; a restart needs a fresh attempt ID. Nothing changed.'%a.new_attempt,file=sys.stderr);return 2
+  ck=checkpoint_attempt(plan,a.workflow,a.supersedes,superseded_by=a.new_attempt,by=a.by or 'restart-attempt')
+  print(json.dumps({'restart':{'plan':plan,'workflow_id':a.workflow,'supersedes':a.supersedes,'new_attempt_id':a.new_attempt,'reason':a.reason,'unfinished_units':ck['unfinished_units'],'accepted_outputs_preserved':len(ck['accepted_outputs'])},'note':'relaunch ONLY the unfinished units with args.attemptId=%s linked to predecessor %s; the predecessor stays fenced (cannot write or spend)'%(a.new_attempt,a.supersedes)}));return 0
  if a.command=='tick':print(json.dumps({'alerts':len(tick())}));return 0
  if a.command=='status':print((STATE/'STATUS.md').read_text() if (STATE/'STATUS.md').exists() else 'Not checked');return 0
  if a.command=='watch':
