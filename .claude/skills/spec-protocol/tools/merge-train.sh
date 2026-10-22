@@ -13,12 +13,28 @@
 # local-only repo.
 # No registry = one repo: the repo-anchor receipt's repoRoot (else <home>), trunk
 # MERGE_TRAIN_TRUNK (default main), remote origin, named after the root's basename.
-# --batch without --repo runs EVERY registered repo's train at once, each in its own
-# process under its own lock (<workdir>/merge-train/<name>/batch.lock; with no
-# registry <workdir>/merge-train/batch.lock): one repo's red gate or slow suite never
-# blocks another. Exit is the worst of the trains (2, else 3, else 0).
+# ONE INTEGRATION WRITER/LOCK PER REPO, REGISTERED REPOS RUN SERIAL BY DEFAULT. Each
+# train holds its own lock (<workdir>/merge-train/<name>/batch.lock; with no registry
+# <workdir>/merge-train/batch.lock), so two batches of one repo never merge at once.
+# --batch WITHOUT --repo takes that one repo's train when the project has a single
+# repository (no registry, or one entry). With more than one registered repo it runs
+# them one after another under MERGE_TRAIN_HEAVY_GATE (default 1: one resource-heavy
+# integration gate on the host at a time) and prints its serialized order first:
+#   MERGE-TRAIN BATCH | repos-serial order=<a,b>
+# S75-WM and any visible integration workflow invoke registered repositories one per
+# lane with --repo (a workflow launch is per-unit, and the plan mode forbids derived
+# unit lists), or carry MERGE_TRAIN_HEAVY_GATE=1 on a bare --batch for the same
+# one-at-a-time permit. MERGE_TRAIN_HEAVY_GATE=0 keeps the legacy concurrent fan-out
+# (one repo's red gate or slow suite never blocks another) -- the explicit,
+# cross-process-unsynchronized exception; exit is the worst of the trains
+# (2, else 3, else 0).
 #
-# --batch (the tick runs it every MERGE_BATCH_MINUTES, default 10). With no branches
+# BATCH CADENCE -- a batch is ATTEMPTED every MERGE_BATCH_MINUTES (default 10) when
+# eligible units exist (the tick runs it; MERGE_BATCH_MINUTES=0 disables the attempts:
+# zero is a disabled interval, never "every tick"). An attempt with nothing waiting
+# exits 0 quietly; a batch or gate already running is NEVER restarted because a new
+# window arrived -- "already running (pid N)" names the active batch and the next
+# window is queued. With no branches
 # named, the batch is every unit/<id> branch whose latest QC-RECORD in the ledger
 # (CONTROL/LEDGER.md, or <state dir>/spec-protocol/LEDGER.md on a profiled project)
 # is verdict=PASS or outcome=CLIENT-ACCEPTED, plus every branch re-queued for this
@@ -31,7 +47,8 @@
 # the offending unit(s) are found; they are undone and parked with the failing output:
 #   REPAIR: unit=<branch> reason=batch-gate-red log=<file>
 # A conflicting unit is skipped, never blocking the rest, and parked for the
-# conflict-resolver seat (haiku chain):
+# conflict-resolver seat (the run's approved resolution seat -- the same pinned role
+# policy every other seat follows: never a banned model, never an auto-router):
 #   CONFLICT: unit=<branch> against=<integration branch> seat=conflict-resolver
 # Parked units sit in <train dir>/parked.tsv and are retried once their branch tip
 # moves (the repair or resolution committed). Nothing waiting prints
@@ -40,7 +57,17 @@
 #   MERGE-TRAIN BATCH | already running    (exit 0)
 # The gate is killed after MERGE_TRAIN_GATE_TIMEOUT seconds (default 1800) = red.
 #
-# PROOF OF MERGE — the only definition of merged. After the push, `git fetch`, then
+# PROOF OF MERGE — the only definition of merged. Fresh independent QC bound to the
+# exact candidate commit, then remote-main reachability, and nothing else counts: not
+# a local merge, not a green pull request, not a branch push, not mergeable:true.
+# (1) QC BOUND TO THE CANDIDATE: when a unit's latest QC-RECORD names head=<sha>, that
+# QC qualifies only the commit it judged. A unit whose branch tip has moved past its
+# QC head is STALE and is never merged on the older verdict; it waits for fresh
+# independent QC of the new candidate and prints
+#   QC-STALE: unit=<branch> qc-head=<sha> tip=<sha>
+# (a QC-RECORD that names no head keeps the historical behavior: its verdict alone
+# qualifies the unit).
+# (2) REACHABILITY ON THE CORRECT REMOTE MAIN: after the push, `git fetch`, then
 # EACH landed unit's commit must be an ancestor of <remote>/<trunk> (or, on a
 # local-only repo whose checked-out branch IS the trunk, of that local trunk):
 #   MERGED: unit=<branch> commit=<sha> trunk=<remote>/<trunk> repo=<name>
@@ -95,6 +122,10 @@ TRUNK="${MERGE_TRAIN_TRUNK:-main}"
 REMOTE=origin RNAME="" PROOF="" PROOF_LABEL=""
 PROJECT="" REPO_ARG="" RD=""
 landed=() units=() halted="" TC="" MT="" PARKED=0 TRIED=() TSHAS=() REQUEUED=()
+# The shared heavy-gate permit: one resource-heavy integration gate on the host at a
+# time, across every repo train and every concurrent child (a mkdir lock whose pid
+# proves liveness; a dead holder's lock self-heals).
+GH_LOCK="${MERGE_TRAIN_HEAVY_GATE_LOCK:-${TMPDIR:-/tmp}/merge-train-heavy-gate.lock}" GH_HELD=0
 
 say() { printf '%s\n' "$*"; [[ -n "$PROJECT" ]] && record "$PROJECT" "$*"; return 0; }
 stop() { printf 'MERGE-TRAIN STOP | %s\n' "$*"; exit 3; }
@@ -350,8 +381,10 @@ train() {
     fi
     tests=none
     if [[ -n "$TC" ]]; then
-      if bash -c "$TC" >/dev/null 2>&1; then tests=pass
+      gate_acquire
+      if bash -c "$TC" >/dev/null 2>&1; then tests=pass; gate_release
       else
+        gate_release
         git reset --hard ORIG_HEAD >/dev/null 2>&1
         halted="unit=$b tests red ($TC); its merge was undone, nothing after it was merged"; break
       fi
@@ -374,6 +407,17 @@ ready_ids() { # ready_ids <ledger> -- unit ids whose latest QC-RECORD passed, in
     u != "" && /verdict=/ { match($0, /verdict=[A-Z-]+/); ok[u] = (substr($0, RSTART + 8, RLENGTH - 8) == "PASS") }
     u != "" && /outcome=CLIENT-ACCEPTED/ { ok[u] = 1 }
     END { for (i = 1; i <= n; i++) if (ok[order[i]]) print order[i] }' "$1"
+}
+
+qc_head() { # qc_head <ledger> <branch> -- the exact candidate commit its latest QC-RECORD judged
+             # (its head=), empty when that record names none
+  [[ -r "$1" ]] || return 0
+  awk -v want="${2##*/}" '
+    /^[0-9][0-9][0-9][0-9]-/ { u = "" }
+    /QC-RECORD unit=/ { match($0, /unit=[^ |]+/); u = substr($0, RSTART + 5, RLENGTH - 5)
+                        if (u == want) h = "" }
+    u == want && /head=[0-9a-fA-F]+/ { match($0, /head=[0-9a-fA-F]+/); h = substr($0, RSTART + 5, RLENGTH - 5) }
+    END { print h }' "$1"
 }
 
 park() { # park <branch> <conflict|red> [gate output]
@@ -427,10 +471,25 @@ try_set() { # try_set <branch>... -- merge each --no-ff onto HEAD; a conflict is
   done
 }
 
-gate() { # gate <output file> -- the test command once on HEAD, killed at the timeout
+gate_acquire() { # one resource-heavy integration gate on the host at a time (the shared permit across children)
+  while ! mkdir "$GH_LOCK" 2>/dev/null; do
+    local pid
+    pid="$(cat "$GH_LOCK/pid" 2>/dev/null)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then sleep 1
+    else rm -rf "$GH_LOCK" 2>/dev/null; fi
+  done
+  echo $$ > "$GH_LOCK/pid"; GH_HELD=1
+}
+gate_release() { [[ "${GH_HELD:-0}" == 1 ]] && rm -rf "$GH_LOCK"; GH_HELD=0; return 0; }
+gate() { # gate <output file> -- the test command once on HEAD under the permit, killed at the timeout
   [[ -n "$TC" ]] || return 0
+  local rc
+  gate_acquire
   # ponytail: alarm kills the gate's shell, not grandchildren it left behind.
   perl -e 'alarm shift; exec @ARGV' "${MERGE_TRAIN_GATE_TIMEOUT:-1800}" bash -c "$TC" >"$1" 2>&1
+  rc=$?
+  gate_release
+  return $rc
 }
 
 solve() { # solve <branch>... -- land the subset that keeps the gate green, bisecting on red
@@ -469,13 +528,26 @@ for r in repos:
 PY
 }
 
-all_repos() { # all_repos <repos.json> [<branch>...] -- every registered repo's train, in parallel
+all_repos() { # all_repos <repos.json> [<branch>...] -- every registered repo's train, SERIALLY by default
   local reg="$1" out n rc worst=0 i=0
   shift
   local -a names=() pids=()
   out="$(registry "$reg")" || undetermined "cannot read the repo registry $reg"
   while IFS=$'\t' read -r n _; do [[ -n "$n" ]] && names+=("$n"); done <<<"$out"
   (( ${#names[@]} )) || { printf 'MERGE-TRAIN BATCH | nothing waiting (no repos in %s)\n' "$reg"; exit 0; }
+  if [[ "${MERGE_TRAIN_HEAVY_GATE:-1}" != 0 ]]; then
+    # The default contract (S75-WM included): registered repositories run one after
+    # another, each still under its own writer lock and the shared heavy-gate permit.
+    printf 'MERGE-TRAIN BATCH | repos-serial order=%s\n' "$(IFS=,; echo "${names[*]}")"
+    for n in "${names[@]}"; do
+      bash "$SELF" "$PROJECT" --batch --repo "$n" "$@"
+      rc=$?
+      if (( rc == 2 || worst == 2 )); then worst=2; elif (( rc != 0 )); then worst=3; fi
+    done
+    exit "$worst"
+  fi
+  # MERGE_TRAIN_HEAVY_GATE=0: the explicit legacy concurrent fan-out (cross-process
+  # permit not synchronized here); one repo's red gate or slow suite never blocks another.
   local tmp; tmp="$(mktemp -d "${TMPDIR:-/tmp}/mtrain-all.XXXXXX")" || undetermined "cannot create a temp dir"
   for n in "${names[@]}"; do
     bash "$SELF" "$PROJECT" --batch --repo "$n" "$@" > "$tmp/$n.out" 2>&1 & pids+=("$!")
@@ -509,7 +581,7 @@ elsewhere() { # elsewhere <branch> -- the unit belongs to another registered rep
 }
 
 batch() { # batch [--repo <name>] [<branch>...]
-  local sd ledger repo="" src b tip pid u wait_ref n root tr rem reg
+  local sd ledger repo="" src b tip pid u wait_ref n root tr rem reg qh
   local -a want=() ready=()
   OTHER_ROOTS=()
   if [[ "${1:-}" == --repo ]]; then REPO_ARG="${2:-}"; [[ -n "$REPO_ARG" ]] || { echo "--repo needs a name"; exit 1; }; shift 2; fi
@@ -537,7 +609,7 @@ batch() { # batch [--repo <name>] [<branch>...]
     rm -rf "$MT/batch.lock"; mkdir "$MT/batch.lock" 2>/dev/null || undetermined "cannot take the lock $MT/batch.lock"
   fi
   echo $$ > "$MT/batch.lock/pid"
-  trap 'rm -rf "$MT/batch.lock"' EXIT
+  trap 'rm -rf "$MT/batch.lock"; gate_release' EXIT
 
   src="$(receipt_source)"
   enter_repo "$repo"
@@ -560,6 +632,12 @@ batch() { # batch [--repo <name>] [<branch>...]
     git merge-base --is-ancestor "$tip" "$wait_ref" && continue
     if [[ " ${REQUEUED[*]-} " != *" $b "* ]]; then
       awk -F'\t' -v b="$b" -v t="$tip" '$1 == b && $2 == t { f = 1 } END { exit !f }' "$MT/parked.tsv" 2>/dev/null && continue
+    fi
+    # Fresh independent QC bound to the exact candidate commit: a QC record that names
+    # head= qualifies only that commit; a moved tip is stale until fresh QC judges it.
+    qh="$(qc_head "$ledger" "$b")"
+    if [[ -n "$qh" && "$qh" != "$tip" ]]; then
+      say "QC-STALE: unit=$b qc-head=$qh tip=$tip (fresh independent QC must judge the exact candidate commit)"; continue
     fi
     ready+=("$b")
   done
@@ -674,6 +752,80 @@ selftest() {
      && grep -q '^REPAIR: unit=unit/X1 ' <<<"$out2" && [[ "$(cut -f1,2 "$t/m/state/spec-protocol/merge-train/requeue.tsv")" == $'y\tunit/none' ]]; then
     echo "SELFTEST ok   two repos: x's red gate parks X1 while y's train merges Y1; a re-queue line retries parked X1"
   else echo "SELFTEST FAIL two-repo: rc=$rc"; printf '%s\n--\n%s\n' "$out" "$out2"; fails=1; fi
+
+  # S75-W00-U4 (1): fresh independent QC bound to the exact candidate commit. A QC
+  # record naming head= qualifies only that commit: a moved tip is QC-STALE and is
+  # never merged on the older verdict; fresh QC of the new candidate admits it.
+  git init -q --bare "$t/z.git"; git init -q -b main "$t/z"
+  mkdir -p "$t/p4/state/spec-protocol"
+  printf '{"documents":{"state":"state/state.json"}}\n' > "$t/p4/.spec-protocol.json"
+  printf '{"repoRoot":"%s","source":"existing"}\n' "$t/z" > "$t/p4/state/repo-anchor.json"
+  ( cd "$t/z" && echo base > f && git add f && git commit -qm base && git remote add origin "$t/z.git" && git push -q origin main \
+    && git checkout -qb unit/Q1 && echo q1 > q1 && git add q1 && git commit -qm "unit Q1" && git checkout -q main ) || { echo "SELFTEST UNDETERMINED qc-stale fixture"; exit 2; }
+  qtip="$(git -C "$t/z" rev-parse unit/Q1)"
+  printf '2026-01-01T00:00:00Z | QC-RECORD unit=Q1 judge=j bar=b head=0000000000000000000000000000000000000001\nbar-fetch=f\nverdict=PASS\noutcome=PASSED\nblind=yes model-independence=PROVEN self-qc=no\nprovenance=STRIPPED\n' > "$t/p4/state/spec-protocol/LEDGER.md"
+  out="$(MERGE_TRAIN_TEST_CMD=true bash "$SELF" "$t/p4" --batch 2>&1)"; rc=$?
+  if (( rc == 0 )) && grep -q "^QC-STALE: unit=unit/Q1 qc-head=0000000000000000000000000000000000000001 tip=$qtip " <<<"$out" \
+     && ! grep -q '^MERGED:' <<<"$out" && ! grep -q '^LANDED:' <<<"$out"; then
+    echo "SELFTEST ok   QC-STALE: a unit whose QC did not judge the exact candidate commit is never merged"
+  else echo "SELFTEST FAIL qc-stale: rc=$rc"; printf '%s\n' "$out"; fails=1; fi
+  printf '2026-01-01T00:00:00Z | QC-RECORD unit=Q1 judge=j bar=b head=%s\nbar-fetch=f\nverdict=PASS\noutcome=PASSED\nblind=yes model-independence=PROVEN self-qc=no\nprovenance=STRIPPED\n' "$qtip" > "$t/p4/state/spec-protocol/LEDGER.md"
+  out="$(MERGE_TRAIN_TEST_CMD=true bash "$SELF" "$t/p4" --batch 2>&1)"; rc=$?
+  if (( rc == 0 )) && grep -q '^MERGED: unit=unit/Q1 .* repo=z' <<<"$out"; then
+    echo "SELFTEST ok   fresh QC bound to the exact candidate commit admits the unit; remote-main reachability is the merge proof"
+  else echo "SELFTEST FAIL qc-bound: rc=$rc"; printf '%s\n' "$out"; fails=1; fi
+
+  # S75-W00-U4 (2): a batch or gate already running is never restarted because a new
+  # window arrived; the active batch is named and its own merge completes.
+  git init -q --bare "$t/w.git"; git init -q -b main "$t/w"
+  mkdir -p "$t/p5/state/spec-protocol"
+  printf '{"documents":{"state":"state/state.json"}}\n' > "$t/p5/.spec-protocol.json"
+  printf '{"repoRoot":"%s","source":"existing"}\n' "$t/w" > "$t/p5/state/repo-anchor.json"
+  qc W1:PASS > "$t/p5/state/spec-protocol/LEDGER.md"
+  ( cd "$t/w" && echo base > f && git add f && git commit -qm base && git remote add origin "$t/w.git" && git push -q origin main \
+    && git checkout -qb unit/W1 && echo w1 > w1 && git add w1 && git commit -qm "unit W1" && git checkout -q main ) || { echo "SELFTEST UNDETERMINED running fixture"; exit 2; }
+  MERGE_TRAIN_HEAVY_GATE_LOCK="$t/gh5.lock" MERGE_TRAIN_TEST_CMD='sleep 2' bash "$SELF" "$t/p5" --batch > "$t/p5.first" 2>&1 &
+  p5pid=$!
+  sleep 0.4
+  out="$(bash "$SELF" "$t/p5" --batch 2>&1)"; rc=$?
+  wait "$p5pid"; r1=$?
+  out1="$(cat "$t/p5.first")"
+  if (( rc == 0 && r1 == 0 )) && grep -q 'already running (pid' <<<"$out" && grep -q '^MERGED: unit=unit/W1 ' <<<"$out1"; then
+    echo "SELFTEST ok   a batch already running is reported and queued, never restarted; its own batch lands"
+  else echo "SELFTEST FAIL already-running: rc=$rc r1=$r1"; printf '%s\n--\n%s\n' "$out" "$out1"; fails=1; fi
+
+  # S75-W00-U4 (3): the shared heavy-gate permit -- two repositories' trains may run
+  # as children, but at most one resource-heavy integration gate runs on the host at
+  # a time (the gate itself proves the permit is held while it runs).
+  for n in s1 s2; do
+    git init -q --bare "$t/$n.git"; git init -q -b main "$t/$n"
+    ( cd "$t/$n" && echo base > f && git add f && git commit -qm base && git remote add origin "$t/$n.git" && git push -q origin main \
+      && git checkout -qb "unit/$(tr a-z A-Z <<<"$n")1" && echo "$n" > ok && git add -A && git commit -qm "$n 1" \
+      && git checkout -q main ) || { echo "SELFTEST UNDETERMINED permit fixture"; exit 2; }
+  done
+  mkdir -p "$t/p6/state/spec-protocol"
+  printf '{"documents":{"state":"state/state.json"}}\n' > "$t/p6/.spec-protocol.json"
+  printf '{"repos":[{"name":"s1","root":"%s","trunk":"main","remote":"origin"},{"name":"s2","root":"%s","trunk":"main","remote":"origin"}]}\n' "$t/s1" "$t/s2" > "$t/p6/state/spec-protocol/repos.json"
+  qc S11:PASS S21:PASS > "$t/p6/state/spec-protocol/LEDGER.md"
+  gcmd="printf '%s\\n' \"\$(date +%s)\" >> '$t/gates.log'; test -d '$t/gh6.lock'; sleep 2"
+  MERGE_TRAIN_HEAVY_GATE_LOCK="$t/gh6.lock" MERGE_TRAIN_TEST_CMD="$gcmd" bash "$SELF" "$t/p6" --batch --repo s1 > "$t/s1.out" 2>&1 &
+  g1=$!
+  MERGE_TRAIN_HEAVY_GATE_LOCK="$t/gh6.lock" MERGE_TRAIN_TEST_CMD="$gcmd" bash "$SELF" "$t/p6" --batch --repo s2 > "$t/s2.out" 2>&1 &
+  g2=$!
+  wait "$g1"; r1=$?; wait "$g2"; r2=$?
+  gap=$(( $(tail -n 1 "$t/gates.log" 2>/dev/null || echo 0) - $(head -n 1 "$t/gates.log" 2>/dev/null || echo 0) ))
+  if (( r1 == 0 && r2 == 0 )) && [[ "$(wc -l < "$t/gates.log" | tr -d ' ')" == 2 ]] && (( gap >= 2 )) \
+     && grep -q '^MERGED: unit=unit/S11 ' "$t/s1.out" && grep -q '^MERGED: unit=unit/S21 ' "$t/s2.out"; then
+    echo "SELFTEST ok   shared heavy-gate permit: two repository trains never run their gates at once; both land"
+  else echo "SELFTEST FAIL heavy-gate permit: r1=$r1 r2=$r2 gap=$gap"; cat "$t/gates.log" 2>/dev/null "$t/s1.out" "$t/s2.out"; fails=1; fi
+
+  # S75-W00-U4 (4): bare --batch over a multi-repo registry is serial by default
+  # (repos-serial), so registered repositories never merge concurrently by accident.
+  printf '{"repos":[{"name":"s1","root":"%s","trunk":"main","remote":"origin"},{"name":"s2","root":"%s","trunk":"main","remote":"origin"}]}\n' "$t/s1" "$t/s2" > "$t/p6/state/spec-protocol/repos.json"
+  out="$(MERGE_TRAIN_TEST_CMD=true bash "$SELF" "$t/p6" --batch 2>&1)"; rc=$?
+  if (( rc == 0 )) && grep -q '^MERGE-TRAIN BATCH | repos-serial order=s1,s2$' <<<"$out" && grep -q 'nothing waiting' <<<"$out"; then
+    echo "SELFTEST ok   bare --batch runs registered repositories serially (repos-serial order=s1,s2)"
+  else echo "SELFTEST FAIL repos-serial: rc=$rc"; printf '%s\n' "$out"; fails=1; fi
   exit "$fails"
 }
 
@@ -686,5 +838,5 @@ if [[ "${2:-}" == --batch ]]; then
   shift 2
   batch "$@"
 fi
-[[ $# -ge 2 ]] || { sed -n '2,89p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1; }
+[[ $# -ge 2 ]] || { sed -n '2,116p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1; }
 train "$@"
