@@ -9,7 +9,7 @@ generation). Credit -> USD is a currency conversion (1 KIE credit = 0.005 USD,
 proven by the build ledger), not a price.
 
 Card rules this unit proves (plan 4.2, 5.1-5.3):
-  * default model MiniMax H3 at 768P when the client makes no choice (D5).
+  * default model Hailuo 02 Standard at 768P when the client makes no choice (D5).
   * if that default is unavailable (blocked, failing, missing from the live
     catalog), the card says price unavailable and OFFERS the next cheapest
     APPROVED model that fits the job, with its live price. Never a silent switch.
@@ -32,7 +32,7 @@ UNIT_NAME = "catalog-calculator"
 # (672 credits booked as 336 USD cents) and the client price menu doc.
 CREDIT_USD = 0.005
 
-# Owner decision D5: MiniMax H3 default, 768P, card states it when no choice.
+# Owner decision D5: Hailuo 02 Standard default, 768P, card states it when no choice.
 DEFAULT_MODEL_FAMILY = "hailuo"
 DEFAULT_RESOLUTION = "768P"
 

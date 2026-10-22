@@ -1231,7 +1231,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             return envelope(
                 "dispatch", "rejected", "VIDEO_MODEL_LOCK_MISSING",
                 "no video model is locked for this run; show and answer the "
-                "choice card first (default MiniMax H3 768P) - never "
+                "choice card first (default Hailuo 02 Standard 768P) - never "
                 "dispatch an un-locked video job",
                 run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Video-model lock (manual Part F F14, Critical). Stdlib only.
 
-Rule: the video model is locked to the card's choice (default MiniMax H3
-768P, decision 5). The allowed list is exactly the models in
+Rule: the video model is locked to the card's choice (default Hailuo 02
+Standard 768P, decision 5). The allowed list is exactly the models in
 references/price-menu.md - anything else (seedance-1.5-pro included) is
 refused even if KIE offers it. No automatic fallback: if the chosen model
 is down, stop and ask the owner with the next approved option and its price.
@@ -47,8 +47,8 @@ ALLOWED_VIDEO_MODELS = (
     "bytedance/seedance-2-mini",
 )
 
-# Decision 5 default: MiniMax H3 768P - the id price-menu.md names for the
-# family ("minimax-h3/*"); the card's per-member picks stay in the family.
+# Decision 5 default: Hailuo 02 Standard 768P - the id price-menu.md names for
+# the family ("hailuo/02-image-to-video-*"); the card's per-member picks stay in the family.
 DEFAULT_VIDEO_MODEL = "hailuo/02-image-to-video-*"
 
 # Lip-sync is not a menu video model: Trevor locked the lip-sync model. The F14

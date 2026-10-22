@@ -186,7 +186,7 @@ def entry_for_lock(locked):
 
 
 def chosen(state_store=None, run_id=None, n=None):
-    """The client's model: explicit n, else the run-state lock, else the default (H3)."""
+    """The client's model: explicit n, else the run-state lock, else the default (Hailuo 02 Standard)."""
     if n is not None:
         return model_for(int(n))
     if state_store and run_id:

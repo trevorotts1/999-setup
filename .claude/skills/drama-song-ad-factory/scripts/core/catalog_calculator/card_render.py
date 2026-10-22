@@ -84,7 +84,7 @@ def _cents(value):
 
 def default_choice(card, model=None):
     """The D5/D24 default choice for one ad, from a card's five fields.
-    ``model`` is the client's video model table entry (default: H3).
+    ``model`` is the client's video model table entry (default: Hailuo 02 Standard).
 
     Batch cards choose the five fields once; this turns them into the
     calculator's ``choice`` + shipped fixtures, so a card renders with real
