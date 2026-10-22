@@ -1262,15 +1262,24 @@ def _sheet_lyric_words(spec):
 
 
 def _next_attempt_id(ledger_db, run_id, logical_key):
-    """Mint the next attempt id from the spend ledger (twin of onboarding)."""
+    """Mint the next attempt id from the spend ledger.
+
+    spend_ledger.plan() refuses a duplicate (logical_key, attempt_id) on
+    purpose, but the shipped generate path used a literal "a1" for every
+    dispatch, so a retry after a failed paid take was refused
+    DUPLICATE_ATTEMPT and the retry path was structurally dead.
+    """
     try:
         import sqlite3
         con = sqlite3.connect(ledger_db)
-        row = con.execute(
-            "SELECT COALESCE(MAX(attempt_no),0) FROM jobs WHERE logical_key=? AND run_id=?",
-            (logical_key, run_id)).fetchone()
+        rows = con.execute(
+            "SELECT attempt_id FROM jobs WHERE logical_key=? AND run_id=?",
+            (logical_key, run_id)).fetchall()
         con.close()
-        n = int(row[0]) + 1
+        import re as _re
+        nums = [int(m.group(1)) for (aid,) in rows
+                if (m := _re.match(r"a(\d+)$", str(aid or "")))]
+        n = (max(nums) + 1) if nums else 1
     except Exception:
         n = 1
     return "a%d" % max(n, 1)
