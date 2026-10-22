@@ -65,8 +65,15 @@ SKILL1="$SKILL1/bundle"
 AGG1="$(read_agg "$SKILL1")"
 [ -n "$AGG1" ] && [ "$AGG1" != "$AGG2" ] && pass "previous bundle aggregate differs: $AGG1" \
   || fail "previous bundle aggregate did not differ (agg1=$AGG1 agg2=$AGG2)"
-node "$SKILL1/scripts/doctor.mjs" --root "$SKILL1" > "$BASE/skill1-doctor.log" 2>&1
-[ $? -eq 0 ] && pass "previous bundle passes the package doctor" || fail "previous bundle doctor failed"
+# The package doctor checks a SOURCE package (archive present) by default, so
+# it must be told when the tree is an extracted distribution -- exactly as the
+# installer derives the mode with council-doctor-mode.mjs and never hardcodes
+# it. A derived mode keeps this fixture check honest for both tree shapes.
+SKILL1_MODE="$(node "$REPO_ROOT/scripts/council-doctor-mode.mjs" --root "$SKILL1" 2>/dev/null || true)"
+case "$SKILL1_MODE" in source|distribution) ;; *) SKILL1_MODE="source" ;; esac
+node "$SKILL1/scripts/doctor.mjs" --root "$SKILL1" --"$SKILL1_MODE" > "$BASE/skill1-doctor.log" 2>&1
+[ $? -eq 0 ] && pass "previous bundle passes the package doctor ($SKILL1_MODE mode)" \
+  || fail "previous bundle doctor failed"
 
 H="$BASE/home"; mkdir -p "$H"
 DATA="$H/data"
