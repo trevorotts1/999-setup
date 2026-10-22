@@ -315,6 +315,64 @@ def main():
           snap == tree_digest(run6),
           sorted(set(snap) ^ set(tree_digest(run6))))
 
+    # 7. a WAL state db whose sidecars cannot be attached still reads --------
+    run7 = make_run(tmp, "run7")
+    set_stage(run7, "run7", "music", "RUNNING", age_s=60, lease_in=300,
+              owner="worker-7")
+    db7 = run7 / "control" / "state.sqlite3"
+    con = sqlite3.connect(str(db7))
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    con.execute("UPDATE stages SET reason='wal frames' WHERE run_id='run7'")
+    con.commit()
+    sealed = Path(tmp) / "run7-sealed"
+    (sealed / "control").mkdir(parents=True)
+    for suf in ("", "-wal"):
+        src = Path(str(db7) + suf)
+        if src.exists():
+            import shutil as _sh
+            _sh.copy2(str(src), str(sealed / "control" / "state.sqlite3") + suf)
+    con.close()
+    os.chmod(sealed / "control", 0o555)
+    try:
+        try:
+            sqlite3.connect("file:%s?mode=ro" % (sealed / "control" / "state.sqlite3"),
+                            uri=True).execute("PRAGMA schema_version").fetchone()
+            raise AssertionError("fixture does not reproduce the failure")
+        except sqlite3.Error:
+            pass                        # the control: a raw mode=ro open fails
+        env = RW.build(sealed, now=NOW)
+        check("7: WAL db behind an unwritable dir reads, no STATE_UNREADABLE",
+              "HEARTBEAT_STATE_UNREADABLE" not in env["loud"], env["loud"])
+        check("7: the stage table still reads through the private copy",
+              env["stage"], "music")
+    finally:
+        os.chmod(sealed / "control", 0o755)
+
+    # 8. a delivered run is never "stalled" just because time passed ---------
+    run8 = make_run(tmp, "run8")
+    for s in STAGES:
+        set_stage(run8, "run8", s, "COMPLETE", age_s=1000 * 60)
+    env = RW.build(run8, now=NOW)
+    check("8: a COMPLETE stage never counts as a stall",
+          env["stalled"] is False, env.get("stall_detail"))
+    check("8: no HEARTBEAT_STALLED on a delivered run",
+          "HEARTBEAT_STALLED" not in env["loud"], env["loud"])
+    check("8: the delivered run still stops the loop",
+          env["loop_should_stop"] is True)
+
+    # 9. a client wait past the cap is not an expiry -------------------------
+    run9 = make_run(tmp, "run9", base_ago_s=6 * 60 * 60)
+    for s in ("research", "creative-strategy", "script-lyrics", "music",
+              "continuity-bible", "storyboard", "image-keyframes"):
+        set_stage(run9, "run9", s, "COMPLETE", age_s=6 * 60 * 60)
+    set_stage(run9, "run9", "video-generation", "WAITING_APPROVAL",
+              age_s=30 * 60)
+    env = RW.build(run9, now=NOW)
+    check("9: a run parked on the client is not expired",
+          env["expired"] is False, env.get("expired"))
+    check("9: no HEARTBEAT_EXPIRED while the client owes the answer",
+          "HEARTBEAT_EXPIRED" not in env["loud"], env["loud"])
+
     print()
     if FS:
         print("%d FAILED: %s" % (len(FS), ", ".join(FS)))
