@@ -689,10 +689,3 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                 "digest": digest, "provenance": prov, "auth_status": status,
                 "approval_invalidated": False, "changes": [],
                 "next_action": "Record summary digest + auth scope, then run preflight before paid work."}
-    return {"outcome": "waiting", "reason_code": "missing-essentials",
-            "questions": qs,
-            "question_message": _fmt([q["question"] for q in qs]),
-            "summary": summary, "digest": digest, "provenance": prov,
-            "auth_status": status, "approval_invalidated": False, "changes": [],
-            "next_action": ("Ask this ONE question and wait for the client's answer; "
-                            "run intake again with that answer to get the next question.")}

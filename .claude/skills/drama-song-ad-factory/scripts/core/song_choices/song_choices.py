@@ -875,15 +875,18 @@ def failure_concerns(result):
 def failure_fork_message(results):
     """The one client message when any take failed the judge: the concerns in
     plain words, the client's freedom to say a take is fine, and the ONE
-    question. No jargon, no second question."""
-    failed = [r for r in results or [] if str(r.get("status") or "").upper() == "FAILED"]
+    question. No jargon, no second question. A FAILED take with NO audio was
+    never presented for listening, so it never reaches the fork and the message
+    names no such version at all (designed absence)."""
+    presented = [r for r in results or [] if (r.get("take") or r.get("heard"))]
+    failed = [r for r in presented if str(r.get("status") or "").upper() == "FAILED"]
     msg = ["I listened through your song options and checked them carefully.", ""]
     for r in failed:
         concerns = r.get("concerns") or failure_concerns(r)
         msg.append("Version %d needs work: %s."
                    % (r.get("n"), "; ".join(concerns) if concerns else "it did not pass my check"))
-    if len(failed) < len(results or []):
-        passed = [r for r in results or [] if r not in failed]
+    if len(failed) < len(presented):
+        passed = [r for r in presented if r not in failed]
         msg += ["", "Version %s came through cleanly, and you can still pick one of those."
                 % ", ".join(str(r.get("n")) for r in passed)]
     msg += ["", "These are my notes, not the final word: you may listen and decide one of "

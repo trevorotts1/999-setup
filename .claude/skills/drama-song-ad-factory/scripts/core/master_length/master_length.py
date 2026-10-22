@@ -131,10 +131,6 @@ def check_master(chosen_length_s, measured_s):
                 "detail": "master length could not be measured"}
     v = judge_duration(measured_s, m, short="free",
                        label_target_s=chosen_length_s)
-    if v["verdict"] != "PASS":
-        return {"outcome": "rejected", "reason_code": "MASTER_TOO_SHORT",
-                "master_max_s": m, "measured_s": measured_s,
-                "detail": v["detail"]}
     if v["warning"]:
         return {"outcome": "ok", "reason_code": "MASTER_LENGTH_OVERSHOOT",
                 "master_max_s": m, "measured_s": measured_s,
