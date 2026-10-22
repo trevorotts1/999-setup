@@ -8,6 +8,7 @@
 - unit/S75-W00-U2: S75-W00-U2: supervision loop and timer ownership for watch-tick.sh (merge 34dbb3fcd2ed)
 - unit/S75-W00-U3: S75-W00-U3: orchestrator allowlist, honest enforcement accounting, MiMo family identity, raw census, native cancel/restart (merge 9d567597d883)
 - unit/S75-W00-U4: S75-W00-U4: merge machinery for S75-WM — admission-shaped merge template + merge-train invocation contract (merge 132045c70a84)
+- unit/S75-WM-U2: S75-WM-U2: twin sync — packaged core regenerated from onboarding origin/main 860ee1fda via installer-registration/package_core.py (1 written: lip_sync/lip_gate/mouth_landmarks.py face-model fallback path, canonical fix 4710523d6). package_core --check 574/574 match; twin_sync_prove PARITY: PROVEN + --selftest PASS; test_parity_layout ALL PASS; test_cli_smoke ALL PASS. Per-file hashes: work/S75-WM-U2/PARITY-HASHES.txt. No version-string parity claims. (merge 8161cc2ad81d)
 
 ## [1.38.0] — 2026-10-14
 
