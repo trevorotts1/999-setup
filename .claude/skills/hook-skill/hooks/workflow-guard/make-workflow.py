@@ -16,9 +16,11 @@ PROGRAM_RE = re.compile(r'^[a-z0-9]{2,12}$')
 UNIT_ID_RE = re.compile(r'^[A-Z]{2,5}-[0-9]{3,}$')
 NAME_RE = re.compile(r'^[a-z0-9]{2,12}-W[0-9]{1,2}-(build\+qc|build|qc|repair|merge|test)-[A-Z]{2,5}[0-9]{3,}(\.\.[A-Z]{2,5}[0-9]{3,})?-[0-9]{1,2}L$')
 PHASE_CHOICES = ('build+qc', 'build', 'qc', 'repair', 'merge', 'test')
+# The agent() runtime's real effort option values (workflow-authoring reference); --effort accepts exactly these.
+EFFORT_CHOICES = ('low', 'medium', 'high', 'xhigh', 'max')
 TEMPLATE = '''
 const RESULT = {type:'object', properties:{id:{type:'string'},status:{type:'string',enum:['PASS','FAIL','BLOCKED']},evidence:{type:'string'}}, required:['id','status','evidence']};
-log('lanes='+INPUT.units.length+' builder='+BUILDER+' reviewer='+REVIEWER+' overlap=per-unit');
+log('lanes='+INPUT.units.length+' builder='+BUILDER+' reviewer='+REVIEWER+' qcEffort='+__QC_EFFORT__+' overlap=per-unit');
 log('Starting '+INPUT.units.length+' independent unit lanes; each unit moves directly from Build to QC.');
 const results = await pipeline(INPUT.units,
  (u) => agent('Unit '+u.id+'. Exclusive ownership: '+u.ownership+'. Do not spawn any helpers, agents or workflows. Do not merge or publish. Produce artifact/commit and test evidence, never self-approve. NEVER run `pm2 jlist` or `pm2 describe` (they dump process environments); `pm2 list` only. SCRATCH ISOLATION: write only inside your private lane folder <scratchpad>/lanes/<UNIT-ID>-<box-slug>/ (this lane: lanes/'+u.id+'-lane/; when working inside the run root use '+INPUT.guard.runRoot+'/lanes/'+u.id+'-lane/, which the guard registers and removes after the run ends) and prefix box temp files /tmp/<box-slug>-<UNIT-ID>- . HYGIENE (Trevor standing rule): once your work is merged and released on origin/main (after an explicit reconcile confirming the merge commit is preserved on a branch keep-ref), clean up: remove your own git worktree with git worktree remove <path> (never --force), delete the now-merged local branch with git branch -d (never --force), run git worktree prune, and delete your /tmp lane folders prefixed /tmp/<box-slug>-<UNIT-ID>-. Do the worktree, branch and /tmp cleanup ONLY after the merged reconcile confirms the commit is preserved by the keep-ref. NEVER remove unmerged or dirty work. Hygiene cleanup only, never --force. '+u.prompt,
@@ -26,12 +28,28 @@ const results = await pipeline(INPUT.units,
  async (built,u) => {
   if (!built || built.status !== 'PASS') return {id:u.id,status:'BLOCKED',evidence:built ? built.evidence : 'Builder returned no result'};
   return agent('Independently QC unit '+u.id+'. Do not spawn helpers. Verify actual files and the exact revision, not the builder narrative. Return FAIL/BLOCKED when evidence is missing. HYGIENE (Trevor standing rule): also verify the builder left nothing behind — after merge and release on origin/main (with explicit reconcile confirming the merge commit is preserved on a branch keep-ref) the builder removes its own git worktree (git worktree remove <path>, never --force), deletes its now-merged local branch (git branch -d, never --force), runs git worktree prune, and deletes its /tmp lane folders; NEVER unmerged or dirty work. Flag FAIL in evidence when the builder performed destructive cleanup (--force branch/worktree removal or removal of unmerged work). '+u.qcPrompt+' Builder receipt: '+JSON.stringify(built),
-   {model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT});
+   {model:REVIEWER,phase:'QC',label:'qc:'+u.id,effort:__QC_EFFORT__,schema:RESULT});
  });
 const missing=INPUT.units.filter((u,i)=>!results[i]).map(u=>u.id);
 log('Returned '+results.filter(Boolean).length+'/'+INPUT.units.length+' results; missing IDs: '+missing.join(', '));
 return {results,missing,complete:missing.length===0 && results.every(r=>r && r.status==='PASS')};
 '''
+
+
+def qc_effort_literal(effort):
+    """Validate the QC effort and return its JS literal for the template's real agent() effort option.
+    Verification (propagation proof) happens in the generated script check below: the emitted artifact
+    must carry exactly one real agent() effort option on the QC call and no leftover token."""
+    if effort not in EFFORT_CHOICES:
+        raise ValueError(f'--effort {effort!r} is not a supported agent() effort level; use one of {", ".join(EFFORT_CHOICES)}.')
+    return json.dumps(effort)
+
+
+def apply_qc_effort(script, effort):
+    script = script.replace('__QC_EFFORT__', qc_effort_literal(effort))
+    if '__QC_EFFORT__' in script or script.count('effort:') != 1:
+        raise ValueError('QC effort propagation check failed: the generated script must carry exactly one effort option (the QC agent call).')
+    return script
 
 
 def plan_template(windowed):
@@ -44,7 +62,7 @@ def plan_template(windowed):
         for old, new in (("(u) => agent('Unit '", "(u) => wgSlot(() => agent('Unit '"),
                          ("{model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT}),", "{model:BUILDER, phase:'Build', label:'build:'+u.id, schema:RESULT})),"),
                          ("return agent('Independently QC", "return wgSlot(() => agent('Independently QC"),
-                         ("{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT});", "{model:REVIEWER,phase:'QC',label:'qc:'+u.id,schema:RESULT}));")):
+                         ("{model:REVIEWER,phase:'QC',label:'qc:'+u.id,effort:__QC_EFFORT__,schema:RESULT});", "{model:REVIEWER,phase:'QC',label:'qc:'+u.id,effort:__QC_EFFORT__,schema:RESULT}));")):
             assert t.count(old) == 1, old
             t = t.replace(old, new)
     # plan mode never derives a unit list from args.units (no .filter/.map/.slice): missing results are reported by position.
@@ -69,6 +87,8 @@ def plan_main(argv):
     p.add_argument('--out-dir', dest='out_dir', required=True)
     p.add_argument('--builder', default='opus')
     p.add_argument('--reviewer', default='sonnet')
+    p.add_argument('--effort', default='high', choices=EFFORT_CHOICES,
+                   help="QC/reviewer reasoning effort, propagated as the real agent() effort option on the QC call only; the builder call carries no effort (models without an effort selector must not receive one).")
     p.add_argument('--repair', action='store_true', help='Repair relaunch: emit only the units that are not yet PASS (journal-attested).')
     p.add_argument('--state-dir', dest='state_dir', default=None, help='Guard state dir (default: the real one).')
     a = p.parse_args(argv)
@@ -100,7 +120,7 @@ def plan_main(argv):
         script = ('// workflow-guard plan launch for ' + a.workflow_id + '; fans out over args.units (the plans own units).\n'
                   'export const meta = ' + json.dumps(meta) + ';\nconst RUN_ROOT = ' + json.dumps(str(plan_path.parent)) + ';\n'
                   + (staffing.window_helper(cap) if windowed else '')
-                  + plan_template(windowed).replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer)))
+                  + apply_qc_effort(plan_template(windowed).replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer)), a.effort))
         launch_args = {'workflowId': a.workflow_id, 'units': units, 'attemptId': f'{a.workflow_id}-{int(time.time() * 1000)}'}
         check = subprocess.run([NODE, str(ROOT / 'validate.mjs')], input=json.dumps({'script': script, 'args': launch_args, 'windowHelper': staffing.WINDOW_HELPER}), text=True, capture_output=True, timeout=15, env={**os.environ, 'WORKFLOW_GUARD_CAP': str(cap)})
         try:
@@ -117,7 +137,7 @@ def plan_main(argv):
         launch = {'scriptPath': str(target), 'args': launch_args}
         (out / f'launch-{a.workflow_id}.json').write_text(json.dumps(launch, indent=2) + '\n', encoding='utf-8')
         target.write_text(script, encoding='utf-8')
-        print(json.dumps({'launch': launch, 'launchInput': str(out / f'launch-{a.workflow_id}.json'), 'name': name, 'agentCount': lanes, 'units': len(units), 'status': 'VALIDATED_NOT_LAUNCHED'}))
+        print(json.dumps({'launch': launch, 'launchInput': str(out / f'launch-{a.workflow_id}.json'), 'name': name, 'agentCount': lanes, 'units': len(units), 'qcEffort': a.effort, 'status': 'VALIDATED_NOT_LAUNCHED'}))
         print(f'LAUNCH: call the Workflow tool with exactly the JSON in {out / ("launch-" + a.workflow_id + ".json")} (scriptPath plus args.workflowId, the {len(units)} planned units and args.attemptId). At most {cap} agents run at once (measured per-workflow cap{", enforced by the rolling window" if windowed else ""}). To relaunch after an admitted launch, change args.attemptId to a new unique value.')
         return 0
     except (ValueError, OSError, subprocess.SubprocessError) as exc:
@@ -236,6 +256,8 @@ def main():
     p.add_argument('--dependency-reason', dest='dependency_reason', default='', help='Written into guard.dependencyReason when a slice is narrower than the ready roster.')
     p.add_argument('--builder', default='opus')
     p.add_argument('--reviewer', default='sonnet')
+    p.add_argument('--effort', default='high', choices=EFFORT_CHOICES,
+                   help="QC/reviewer reasoning effort, propagated as the real agent() effort option on the QC call only (guard payload and run-root.json record it); the builder call carries no effort.")
     a = p.parse_args()
     try:
         if a.provider_slots < 1 or a.reserve < 0:
@@ -271,8 +293,8 @@ def main():
             ready = len(units) - start
             reason = a.dependency_reason.strip() or ('Final slice has fewer ready units' if ready < cap else '')
             meta = {'name': name, 'description': slice_description(chunk), 'phases': [{'title': 'Build'}, {'title': 'QC'}]}
-            embedded = {'units': chunk, 'guard': {'readyUnits': ready, 'providerSlots': cap, 'dependencyReason': reason, 'runRoot': str(run_root)}}
-            script = '// workflow-guard self-contained v2; launch with scriptPath only.\n// dep= width is min(ready units, host ceiling, provider allocation minus reserve); see INPUT.guard.\nexport const meta = ' + json.dumps(meta) + ';\nconst INPUT = ' + json.dumps(embedded, ensure_ascii=True) + ';\n' + TEMPLATE.replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer))
+            embedded = {'units': chunk, 'guard': {'readyUnits': ready, 'providerSlots': cap, 'dependencyReason': reason, 'runRoot': str(run_root), 'qcEffort': a.effort}}
+            script = '// workflow-guard self-contained v2; launch with scriptPath only.\n// dep= width is min(ready units, host ceiling, provider allocation minus reserve); see INPUT.guard.\nexport const meta = ' + json.dumps(meta) + ';\nconst INPUT = ' + json.dumps(embedded, ensure_ascii=True) + ';\n' + apply_qc_effort(TEMPLATE.replace('BUILDER', json.dumps(a.builder)).replace('REVIEWER', json.dumps(a.reviewer)), a.effort)
             check = subprocess.run([NODE, str(ROOT / 'validate.mjs')], input=json.dumps({'script': script}), text=True, capture_output=True, timeout=15)
             try:
                 verdict = json.loads(check.stdout)
@@ -296,7 +318,7 @@ def main():
             temporary.replace(target)
         register_program(run_root, a.program, [(r['name'], r['dirs']) for r in slices])
         for row in slices:
-            print(json.dumps({'launch': {'scriptPath': str(row['target'])}, 'launchInput': str(out / f'launch-{row["index"]:02}.json'), 'name': row['name'], 'maximumConcurrentAgents': row['lanes'], 'runRoot': str(run_root), 'status': 'VALIDATED_NOT_LAUNCHED'}))
+            print(json.dumps({'launch': {'scriptPath': str(row['target'])}, 'launchInput': str(out / f'launch-{row["index"]:02}.json'), 'name': row['name'], 'maximumConcurrentAgents': row['lanes'], 'runRoot': str(run_root), 'qcEffort': a.effort, 'status': 'VALIDATED_NOT_LAUNCHED'}))
         for row in slices:
             print(f'LAUNCH: call the Workflow tool with exactly {{"scriptPath": "{row["target"]}"}} (nothing else). Then open /workflows, confirm the name "{row["name"]}" shows {row["lanes"]} lanes, and record the Task ID and Run ID in the ledger.')
         return 0
