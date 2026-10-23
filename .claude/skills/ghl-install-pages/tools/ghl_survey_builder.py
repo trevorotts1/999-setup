@@ -3197,6 +3197,18 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
         field_map_path  — str.
         shots           — list[str].
     """
+    # W10B2 entry wiring — dispatch into the accepted v27.1.74 behavior
+    # (skill_runner's four canonical slices) BEFORE anything else runs.
+    # install() is idempotent and routes THROUGH this dist's own
+    # launch/session/path adapters via ._impl delegation — nothing is
+    # overwritten. A missing skill_runner.py fails loudly: the accepted
+    # behavior is never silently skipped. Proof:
+    # tests/test_s06_entry_wiring_skill_runner.py (positive + negative control).
+    _sr_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _sr_root not in sys.path:
+        sys.path.insert(0, _sr_root)
+    import skill_runner
+    skill_runner.install()
     started = time.monotonic()
 
     # task['dry_run'] overrides the kwarg so the dispatcher can control it
