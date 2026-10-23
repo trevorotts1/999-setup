@@ -312,7 +312,7 @@ def build_fixtures():
         "schema_version": "blackceo.timeline/v1",
         "fps": 30, "width": 1920, "height": 1080,
         "song_path": None,
-        "transition": "fade", "transition_duration": 0.4,
+        "transition": "none", "transition_duration": 0.4,
         "timing": {"sections": [{"lyrics": [
             {"line_id": "gift01", "start": 0.0, "end": 2.0},
             {"line_id": "offer01", "start": 2.0, "end": 4.0},
