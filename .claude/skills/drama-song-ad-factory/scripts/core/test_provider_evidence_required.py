@@ -254,6 +254,71 @@ def test_k_existing_ledger_migrates():
           q(db, "SELECT COUNT(*) FROM jobs")[0], 2)
 
 
+def test_l_migration_backfills_hanging_attempt():
+    """The live upgrade case: a job in `unknown` when the column is added must
+    be flagged, or it could be reconciled without evidence and retried."""
+    db = fresh("pev-backfill-")
+    d = L.digest_request({"k": 20})
+    hung = _to_unknown(db, "video/hung", d)
+    planned = L.plan(db, RUN, "video/planned", "", d, 100)["attempt_id"]
+
+    con = sqlite3.connect(db)
+    try:
+        con.execute("ALTER TABLE jobs DROP COLUMN uncertain")
+        con.commit()
+    finally:
+        con.close()
+
+    L._open(db).close()          # the migration runs here
+    check("l1: a hanging attempt is backfilled to uncertain=1",
+          q(db, "SELECT uncertain FROM jobs WHERE attempt_id=?", (hung,))[0], 1)
+    check("l2: a merely planned attempt is not backfilled",
+          q(db, "SELECT uncertain FROM jobs WHERE attempt_id=?",
+            (planned,))[0], 0)
+
+    # the behaviour the backfill exists for: reconcile it without evidence...
+    r = L.reconcile(db, RUN, "video/hung", hung, "failed", 100)
+    check("l3: reconcile stays permissive after the backfill",
+          r["outcome"], "ok")
+    p = L.plan(db, RUN, "video/hung", "", d, 100)
+    check("l4: and the retry is refused, so the live window is closed",
+          p["reason_code"], "PROVIDER_LOOKUP_REQUIRED")
+
+
+def test_m_receipt_lookup_uses_an_index():
+    """The gate's lookup must be index-served, not a table scan. Drops the
+    index to simulate a ledger created before it, then reopens."""
+    db = fresh("pev-index-")
+    d = L.digest_request({"k": 21})
+    aid = _to_unknown(db, "video/idx", d)
+    L.reconcile(db, RUN, "video/idx", aid, "failed", 100,
+                provider_ref="task-idx")
+
+    con = sqlite3.connect(db)
+    try:
+        con.execute("DROP INDEX idx_receipts_attempt")
+        con.commit()
+    finally:
+        con.close()
+    check("m1: index really gone before migration",
+          q(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='index' "
+                "AND name='idx_receipts_attempt'")[0], 0)
+
+    L._open(db).close()          # the migration recreates it
+    check("m2: migration recreates the index",
+          q(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='index' "
+                "AND name='idx_receipts_attempt'")[0], 1)
+
+    plan = sqlite3.connect(db).execute(
+        "EXPLAIN QUERY PLAN SELECT provider_ref,evidence_ref FROM receipts "
+        "WHERE run_id=? AND logical_key=? AND attempt_id=?",
+        (RUN, "video/idx", aid)).fetchall()
+    detail = " | ".join(str(r[-1]) for r in plan)
+    check("m3: the lookup names the index", "idx_receipts_attempt" in detail,
+          True)
+    check("m4: and is not a table scan", "SCAN receipts" in detail, False)
+
+
 def test_i_cli_exit_code():
     tmp = tempfile.mkdtemp(prefix="pev-cli-")
     db = os.path.join(tmp, "spend.db")
@@ -336,8 +401,10 @@ def main():
                test_c_whitespace_is_not_evidence, test_d_with_ref_retries,
                test_e_succeeded_needs_no_ref, test_f_abandon_path,
                test_g_never_submitted, test_h_pre_fix_ledger_is_gated,
-               test_k_existing_ledger_migrates, test_i_cli_exit_code,
-               test_j_identity_untouched):
+               test_k_existing_ledger_migrates,
+               test_l_migration_backfills_hanging_attempt,
+               test_m_receipt_lookup_uses_an_index,
+               test_i_cli_exit_code, test_j_identity_untouched):
         try:
             fn()
         except Exception as e:                       # noqa: BLE001

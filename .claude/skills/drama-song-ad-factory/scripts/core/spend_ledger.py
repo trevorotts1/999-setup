@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS receipts(
   logical_key TEXT NOT NULL, attempt_id TEXT NOT NULL, amount INTEGER NOT NULL,
   currency TEXT NOT NULL DEFAULT 'USD', provider_ref TEXT, evidence_ref TEXT,
   created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_receipts_attempt
+  ON receipts(run_id, logical_key, attempt_id);
 CREATE TABLE IF NOT EXISTS events(
   event_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
   logical_key TEXT NOT NULL, attempt_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -157,6 +159,22 @@ def _open(db_path, create=False):
         if cols and "uncertain" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN uncertain INTEGER "
                          "NOT NULL DEFAULT 0")
+            # Backfill the one case a pre-fix ledger can still prove: a job
+            # sitting in `unknown` at upgrade time. Without this, upgrading
+            # while an attempt is hanging would let the operator reconcile it
+            # without evidence and retry -- the exact hole this gate closes.
+            conn.execute("UPDATE jobs SET uncertain=1 WHERE state='unknown'")
+        # NAMED POST-UPGRADE WINDOW: an attempt that had already been
+        # reconciled from `unknown` before this column existed carries no
+        # record of ever being uncertain, and such a failure is
+        # indistinguishable from an ordinary provider-reported failure (shipped
+        # dispatch passes no ref on an ordinary settle). Those rows cannot be
+        # backfilled without inventing history, so the gate cannot see their
+        # first retry. Closing this for real needs a transition history, not a
+        # flag; until then it is a one-retry window per legacy attempt, not a
+        # silent pass.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_receipts_attempt "
+                     "ON receipts(run_id, logical_key, attempt_id)")
     except sqlite3.DatabaseError:
         conn.close()
         raise
@@ -221,18 +239,16 @@ def _lookup_evidence(conn, run_id, logical_key, attempt_id):
     """True when a provider lookup (or operator evidence) is recorded for the
     attempt whose outcome was uncertain.
 
-    Schema decision (deliberate): the evidence is read by JOINING `receipts`,
-    not by adding a jobs column written by mark_submitted. reconcile() already
-    writes provider_ref/evidence_ref onto the receipt in the same transaction
-    that settles the job, so the receipt is the single writer of this fact; a
-    second copy on `jobs` could drift from it and would need every future
-    reconciler to remember a second write. `jobs.remote_task_id` remains the
-    only provider key plan() reads directly, and it is what decides whether the
+    Schema decision (deliberate): a flag column `jobs.uncertain` records that
+    the attempt's provider outcome was never established, and this join to
+    `receipts` supplies provider_ref/evidence_ref. No provider ref is
+    duplicated into `jobs` -- reconcile() already writes both fields onto the
+    receipt in the transaction that settles the job, so the receipt stays the
+    single writer of that fact and a second copy could drift. `jobs.remote_task_id`
+    is the only provider key plan() reads directly, and it decides whether the
     attempt ever reached a provider at all.
-    ponytail: receipts are scanned for one attempt, which is fine at one
-    receipt per reconciled attempt. Add an index on
-    (run_id, logical_key, attempt_id) if a ledger ever carries a very large
-    receipts table."""
+    The lookup is served by idx_receipts_attempt (run_id, logical_key,
+    attempt_id), created in the DDL and in the _open migration."""
     recs = conn.execute(
         "SELECT provider_ref,evidence_ref FROM receipts WHERE run_id=? AND "
         "logical_key=? AND attempt_id=?",
