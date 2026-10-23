@@ -1402,8 +1402,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              settle=True):
         """Leave the ledger clean and return the envelope."""
         if settle:
+            # A real remote task id IS the provider evidence: reconcile refuses
+            # to settle a paid attempt as failed without one, because that state
+            # unlocks a new paid attempt. sync- ids are local placeholders.
+            prov = (evidence or {}).get("task_id") or ""
+            if str(prov).startswith("sync-"):
+                prov = ""
             rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
-                          job_state, final, cost)
+                          job_state, final, cost, provider_ref=prov)
             if rec["outcome"] not in ("ok", "parked"):
                 outcome, reason = "error", "ledger-settle-failed"
                 next_action = rec.get("next_action", "") or next_action

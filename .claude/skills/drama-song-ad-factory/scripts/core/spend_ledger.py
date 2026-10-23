@@ -592,6 +592,27 @@ def reconcile(db_path, run_id, logical_key, attempt_id, final_outcome,
                             "reread current version %d" % job[14],
                             run_id=run_id, logical_key=logical_key,
                             attempt_id=attempt_id, state_version=job[14])
+        # plan() accepts a reconciled `failed` job as grounds for a NEW paid
+        # attempt. A job that reached the provider (remote_task_id persisted by
+        # mark_submitted) carries a lookup key that must be reconciled against;
+        # without a ref there is nothing proving the paid take failed, so the
+        # retry path is refused here. A never-submitted attempt has no provider
+        # id to look up -- cancel/mark_unknown is its evidence -- and keeps the
+        # plain failure path. ponytail: a crash between remote submit and
+        # mark_submitted leaves remote_task_id empty; add an operator-attested
+        # task id column if that gap ever needs closing.
+        if final_outcome == "failed" and job[8] \
+                and not (provider_ref or "").strip() \
+                and not (evidence_ref or "").strip():
+            conn.execute("ROLLBACK")
+            return envelope(
+                "reconcile", "rejected", "MISSING_PROVIDER_EVIDENCE",
+                "remote task %s is a paid attempt and a failed outcome permits "
+                "a new paid attempt; pass --provider-ref or --evidence-ref. To "
+                "abandon without evidence use mark_unknown or cancel, which "
+                "never permit a paid retry" % job[8],
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id, state_version=job[14])
         now = _now_iso()
         conn.execute(
             "INSERT INTO receipts(run_id,logical_key,attempt_id,amount,currency,"
@@ -761,8 +782,14 @@ def _cli():
     a.add_argument("--attempt", required=True)
     a.add_argument("--final", choices=("succeeded", "failed"), required=True)
     a.add_argument("--actual", type=int, required=True)
-    a.add_argument("--provider-ref", default="")
-    a.add_argument("--evidence-ref", default="")
+    a.add_argument("--provider-ref", default="",
+                   help="provider task id; for a submitted job one of "
+                        "--provider-ref/--evidence-ref is required when "
+                        "--final failed, since a reconciled failure unlocks a "
+                        "new paid attempt")
+    a.add_argument("--evidence-ref", default="",
+                   help="operator evidence reference; alternative to "
+                        "--provider-ref for --final failed")
     a.add_argument("--owner", default="cli")
     a.add_argument("--expected-version", type=int, default=0)
 
