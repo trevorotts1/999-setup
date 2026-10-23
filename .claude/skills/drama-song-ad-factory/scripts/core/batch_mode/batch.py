@@ -629,7 +629,7 @@ def materialize(card, root, price_fn=None, outbox=None,
             raise BatchError("PRICE_UNAVAILABLE",
                              "no ceiling for %s" % book["title"])
         init = L.init_run(str(ledger_db), book["run_id"],
-                          int(round(ceiling * 100)))  # ponytail: batch.py money stays float USD; ledger contract is integer cents. Deeper unify (integer cents through _cents/manifests) would break USD float assertions — convert only at this boundary until that lands.
+                          int(round(ceiling * 100)))  # Ledger budgets are cents; card prices are USD.
         if init.get("outcome") != "ok":
             raise BatchError("LEDGER_RUN_FAILED",
                              "%s: %s" % (book["run_id"], init.get("reason")))

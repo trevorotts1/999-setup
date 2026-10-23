@@ -5,7 +5,7 @@
  "checked": "2026-10-09",
  "keyframe_usd": 0.02,
  "song_usd": 0.06,
- "redo_rate": 0.2,
+ "redo_rate": 0.5,
  "models": [
   {
    "n": 1,
