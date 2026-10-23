@@ -64,7 +64,15 @@ FIRST_SING_TARGET = 0.15
 ACCEPT_PTS, FLAG_PTS = 5, 10
 SUNO_STYLE_FIELD_MAX = 1000          # Suno style field character limit
 MIN_HOOK_REPEATS = 2
-MAX_SUNG_LINE_SYLLABLES = 8
+#: S75-W05-U3: the sung line is judged by the WRITER's own band
+#: (lyric_writer SUNG_SYL_MIN=4 / SUNG_SYL_MAX=12, W-G-002 G5), never by a
+#: second, tighter rule set of this module's own. hard_max None = no hard
+#: syllable bound: a preferred-band miss warns, it never refuses. This replaces
+#: the old hard 8-syllable cap, which refused lines the writer had accepted.
+SUNG_LINE_PREFERRED_MIN = 4
+SUNG_LINE_PREFERRED_MAX = 12
+SUNG_LINE_HARD_MAX = None
+CONSTRAINT_POLICY_VERSION = "blackceo.constraint-policy/v1"
 BAND_WORDING = "the full band keeps playing continuously under them"
 #: WW-16: the mandated opening vocalise is BOUNDED. Every sheet must still open
 #: with a wordless vocalise (rule 4), but its cue must ask for a SHORT lead-in
@@ -674,9 +682,89 @@ def _norm_char(name):
     return re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
 
 
+def constraint_policy():
+    """THE sung-line band this recipe enforces (S75-W05-U3).
+
+    The band is the WRITER's own (lyric_writer SUNG_SYL_MIN / SUNG_SYL_MAX) when
+    that module answers; the fallback carries the same 4-12 numbers, so this
+    module never keeps a second rule set of its own. ``hard_max_syllables`` is
+    None: a preferred-band miss warns and never refuses.
+    """
+    lo, hi = SUNG_LINE_PREFERRED_MIN, SUNG_LINE_PREFERRED_MAX
+    try:
+        from lyric_writer import lyric_writer as _LW  # noqa: PLC0415
+        lo = int(getattr(_LW, "SUNG_SYL_MIN", lo))
+        hi = int(getattr(_LW, "SUNG_SYL_MAX", hi))
+    except (ImportError, AttributeError, TypeError, ValueError):
+        pass
+    return {"policy_version": CONSTRAINT_POLICY_VERSION,
+            "mode": "dramatization",
+            "sung_line": {"preferred_min_syllables": lo,
+                          "preferred_max_syllables": hi,
+                          "hard_max_syllables": SUNG_LINE_HARD_MAX},
+            "source": ("suno_recipe fallback of the S75-W05-U2 policy "
+                       "(lyric_writer SUNG_SYL_MIN=4 / SUNG_SYL_MAX=12, "
+                       "W-G-002 G5)")}
+
+
+def _policy_reason_ok(policy):
+    """True unless the policy contradicts the canonical band with NO reason.
+
+    D09 / spec 6.3: an accepted line cannot be contradicted downstream without
+    a clear mode-specific reason. A hard bound tighter than the canonical
+    preferred band must carry ``mode_specific_reason``; an unreasoned
+    contradiction is ignored (and so cannot refuse a line).
+    """
+    hard = (policy.get("sung_line") or {}).get("hard_max_syllables")
+    tight = (hard is not None and
+             hard < SUNG_LINE_PREFERRED_MAX)
+    if not tight:
+        return True
+    return bool(str(policy.get("mode_specific_reason") or "").strip())
+
+
+def evaluate_sheet_constraints(sheet, policy=None):
+    """Policy findings for one sheet: {"errors", "warnings", "policy"}.
+
+    The preferred sung-line band warns outside it; only a hard bound with a
+    clear mode-specific reason refuses. Warnings never join the errors list --
+    they can never be converted into a failure downstream.
+    """
+    pol = policy or constraint_policy()
+    errors, warnings = [], []
+    sung = pol.get("sung_line") or {}
+    pref_min = sung.get("preferred_min_syllables")
+    pref_max = sung.get("preferred_max_syllables")
+    hard_max = sung.get("hard_max_syllables") if _policy_reason_ok(pol) else None
+    for s in sheet or []:
+        tag = str(s.get("tag", ""))
+        head = tag.lower().split()[0] if tag else ""
+        if s.get("delivery") == "sung" and head != "vocalise":
+            for ln in s.get("lines") or []:
+                n = syllables(ln)
+                if hard_max is not None and n > hard_max:
+                    errors.append("sung line over the policy hard bound of %d "
+                                  "syllables (mode-specific reason: %s): %r"
+                                  % (hard_max, pol.get("mode_specific_reason"), ln))
+                elif (pref_min is not None and n < pref_min) or \
+                        (pref_max is not None and n > pref_max):
+                    warnings.append("sung line at %d syllables is outside the "
+                                    "preferred %s-%s band (accepted with "
+                                    "warning): %r"
+                                    % (n, pref_min, pref_max, ln))
+    return {"errors": errors, "warnings": warnings, "policy": pol}
+
+
 def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
-                      style_id=None, hook_plan=None):
+                      style_id=None, hook_plan=None, policy=None,
+                      warnings_out=None):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
+
+    S75-W05-U3: sung lines are judged against THE one constraint policy
+    (``policy``, else ``constraint_policy()``) -- the writer's 4-12 preferred
+    band, with no hard syllable bound. ``warnings_out`` (optional list)
+    receives the policy's accept-with-warning findings; they never appear in
+    the returned errors and can never be converted into failure downstream.
 
     With length_s (delivered seconds) the I8 hook count and the length-formula
     word budget are enforced too. FU-U1: rap sections are counted in the total
@@ -707,10 +795,13 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
         head = s["tag"].lower().split()[0]
         if s["delivery"] == "spoken" and head not in ("intro", "outro"):
             errs.append("spoken section %r: spoken tags are only allowed in [Intro]/[Outro]" % s["tag"])
-        if s["delivery"] == "sung" and head != "vocalise":
-            for ln in s["lines"]:
-                if syllables(ln) > MAX_SUNG_LINE_SYLLABLES:
-                    errs.append("sung line over %d syllables: %r" % (MAX_SUNG_LINE_SYLLABLES, ln))
+    # S75-W05-U3: the sung-line band decides the former hard 8-syllable rule.
+    # A preferred-band miss WARNS, never refuses; no hard bound is in force
+    # unless the policy carries one WITH a clear mode-specific reason.
+    findings = evaluate_sheet_constraints(sheet, policy)
+    errs += findings["errors"]
+    if warnings_out is not None:
+        warnings_out.extend(findings["warnings"])
     sung = [s for s in sheet if s["delivery"] == "sung"]
     if not sung:
         return errs + ["no sung section"]
@@ -1039,8 +1130,10 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
+    warnings = []
     errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
-                             style_id=style_id, hook_plan=hook_plan)
+                             style_id=style_id, hook_plan=hook_plan,
+                             warnings_out=warnings)
     errs += check_no_voice_lines(render_lyrics(sheet, style_id))
     d = delivered_s if delivered_s is not None else length_s
     # FU-HOOK-PLACEMENT rule 1, always on (no length = UNMEASURED: length_s)
@@ -1054,7 +1147,8 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
     return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender, pace_plan),
             "lyrics": render_lyrics(sheet, style_id),
-            "negative_tags": negative_tags(style_id)}
+            "negative_tags": negative_tags(style_id),
+            "warnings": warnings}
 
 
 def envelope_input(req):
