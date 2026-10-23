@@ -47,13 +47,21 @@ count, the same as Skill 49's own `auto`) is passed to Skill 49's dispatch when
 that dispatcher has a `parallel` argument; if it does not yet, the report says `serial (...)` instead of
 claiming parallel. The plan is always reported: `dispatch-report.json` -> `lane_plan`.
 
-## The picture choices (the client's questions)
+## The picture choices (three of the client's questions, not the whole interview)
 
-The intake carries an optional `image_plan`. `python3 -m launcher_core.cli questions` prints the three
+The intake carries an optional `image_plan`. `python3 -m launcher_core.cli questions` prints the three picture
 questions (look A/B/C, image service, picture ceiling) as data: plain text, why we ask, at most three choices
 plus "I'm not sure, help me", the help text, the safe default and its flag. A harness asks them its own way
 (a structured picker in Claude Code or claude-nine, a numbered chat message in OpenClaw) and records the same
 answers in `image_plan`.
+
+**These three are not the guided interview.** The full client conversation comes from the shared bank
+(`shared-utils/client_intake/question-bank.json`) through `shared-utils/signature_launch/experience/`: the
+introduction and the A/B/C opening, then one question at a time, then the plan review that ends the interview.
+`questions` exists for the picture lane only; a harness that shows these three and stops has run a fragment of
+the interview, never the whole of it. In Black Friday mode the same foundation is followed by the five seasonal
+decisions (`promo_dates`, `promo_offer`, `promo_limits`, `promo_audience`, `promo_followup`), asked one at a time,
+with no invented urgency and no invented scarcity.
 
 | Choice | If the client does not know | Never defaulted |
 | --- | --- | --- |
@@ -74,7 +82,7 @@ that value to Skill 71 before a production run can close with it.
 
 For every page, desktop and mobile wireframe sections and review PDF, desktop and mobile mockup sections and
 review PDF, and an overview board, each file labeled with its own page (`upsell-1_DESKTOP_WIREFRAMES.pdf`).
-The required set is read from `49-signature-funnel/structure/page_types.json` when that file exists, else the
+The required set is read from Skill 49's `structure/page_types.json` (resolved by slug, so the 999 layout under `.claude/skills/` and the onboarding layout at the repository root both work) when that file exists, else the
 built-in set above (the check reports which). Placeholder pictures fail a package that is not `test_only`.
 The design board and the final mockups are recorded as `awaiting_client_approval` until the client approves.
 
@@ -83,7 +91,7 @@ The design board and the final mockups are recorded as `awaiting_client_approval
 `launcher_core/graphics_hooks.py` writes the SOP-GIP-02 image QC request and the SOP-GIP-03 delivery record.
 It never uploads or publishes; with no live hosted link it records the missing capability. Skill 71 carries
 the AF-G1..AF-G8 list as data, the independent reviewer model rule, the text read-back and logo accuracy
-checks, and the text-capable model and PNG rule (see `71-blackceo-signature-page/references/qc-contract.md`).
+checks, and the text-capable model and PNG rule (see Skill 71's `references/qc-contract.md`).
 
 ## Out of scope (recorded follow-ups)
 

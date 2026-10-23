@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -67,8 +68,17 @@ MODES = ("know", "help", "choose_for_me")
 STATES = ("collecting", "recommendation_ready", "awaiting_plan_approval",
           "approved", "building", "paused", "awaiting_missing_fact",
           "revision_requested", "cancelled")
+# The three assistance preferences, and the older phrasings they replaced. A recommends a
+# plan for the client to review, B guides each decision, C acts on the client's own plan.
 _MODE_FROM_CHOICE = {"i know what i want": "know", "help me choose": "help",
-                     "choose a setup for me to review": "choose_for_me"}
+                     "choose a setup for me to review": "choose_for_me",
+                     "a": "choose_for_me", "b": "help", "c": "know",
+                     "a. recommend a plan for me": "choose_for_me",
+                     "b. guide me through each decision": "help",
+                     "c. i already have a plan": "know",
+                     "recommend a plan for me": "choose_for_me",
+                     "guide me through each decision": "help",
+                     "i already have a plan": "know"}
 _THINK_FOR_ME = ("you decide", "think for me", "up to you", "whatever you think",
                  "you choose", "your call", "i don't know", "not sure", "unsure")
 
@@ -305,7 +315,14 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
 # --- per-question handlers -------------------------------------------------
 def _h_mode(s, q, raw, value, ref):
     choice = _match_choice(raw, q["choices"]) or raw
-    s["mode"] = _MODE_FROM_CHOICE.get(_norm(choice), "help")
+    low = _norm(choice)
+    mode = _MODE_FROM_CHOICE.get(low)
+    if mode is None:  # "A", "A.", "a) ..." and any phrasing that names a letter first
+        letter = re.match(r"^\(?([abc])\b", low)
+        mode = _MODE_FROM_CHOICE[letter.group(1)] if letter else None
+    if mode is None and low != raw.lower():  # the matched label may be the only recognisable form
+        mode = _MODE_FROM_CHOICE.get(_norm(_match_choice(raw, q["choices"]) or ""))
+    s["mode"] = mode or "help"
     _set(s, "interview.mode", s["mode"], "provided", q["id"], ref)
 
 

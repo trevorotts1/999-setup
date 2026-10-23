@@ -40,20 +40,55 @@ class Detect(unittest.TestCase):
 
 
 class Questions(unittest.TestCase):
-    def test_structured_is_valid_tool_shape(self):
+    def test_structured_is_valid_tool_shape_and_asks_one_at_a_time(self):
         calls = rq.structured(QS)
+        # one question per call, in bank order: the client is never handed a wall of pickers
         self.assertEqual([c["ids"] for c in calls],
-                         [["brand_primary_color", "brand_fonts"], ["offer_price"], ["design_style"]])
+                         [["brand_primary_color"], ["brand_fonts"], ["offer_price"], ["design_style"]])
         for c in calls:
+            self.assertEqual(len(c["questions"]), 1)
             for q in c["questions"]:
                 self.assertTrue(2 <= len(q["options"]) <= 4, q)
                 self.assertLessEqual(len(q["header"]), 12)
                 self.assertEqual(q["options"][-1]["label"], rq.HELP_LABEL)
                 self.assertTrue(all(o["description"] for o in q["options"]))
+                self.assertNotIn("Use this one", [o["description"] for o in q["options"]])
 
-    def test_more_than_four_questions_in_a_group_are_split(self):
+    def test_many_questions_never_batch(self):
         many = [{"id": f"q{i}", "text": "t", "group": "g"} for i in range(9)]
-        self.assertEqual([len(c["questions"]) for c in rq.structured(many)], [4, 4, 1])
+        self.assertEqual([len(c["questions"]) for c in rq.structured(many)], [1] * 9)
+
+    def test_nested_help_examples_and_default_survive_rendering(self):
+        q = {"id": "timing", "group": "launch", "text": "When do the doors open?",
+             "why": "Every message is timed from it.",
+             "help": {"explain": "Give the date and both times.",
+                      "examples": ["Doors open 14 Nov 2026 9:00 a.m. New York",
+                                   "Launch 1 Dec 2026 10:00 a.m. London time"]},
+             "default": {"value": "no deadline until you give one", "flag": "to confirm"},
+             "never_default": False, "choices": []}
+        n = rq.normalize(q)
+        self.assertEqual(n["examples"], q["help"]["examples"])
+        self.assertEqual(n["safe_default"], "no deadline until you give one")
+        self.assertEqual(n["help_text"], "Give the date and both times.")
+        msg = rq.chat(q)
+        self.assertIn("Doors open 14 Nov 2026 9:00 a.m. New York", msg)
+        self.assertIn("Give the date and both times.", msg)
+
+    def test_per_option_explanations_are_kept(self):
+        q = {"id": "design_style", "text": "Which look?", "choices": [
+            {"value": "A", "label": "A, Block", "example": "Clean rectangular photos."},
+            {"value": "B", "label": "B, Circle"}]}
+        n = rq.normalize(q)
+        self.assertEqual(n["choices"][0]["description"], "Clean rectangular photos.")
+        self.assertTrue(n["choices"][1]["description"])  # never an empty explanation
+
+    def test_help_option_names_the_coaching_ways_out(self):
+        q = {"id": "channels", "text": "Email only or email and text?",
+             "help": {"explain": "Email always works."}, "default": {"value": "Email only"}}
+        opts = rq.structured([q])[0]["questions"][0]["options"]
+        self.assertEqual(opts[-1]["label"], rq.HELP_LABEL)
+        self.assertIn("show me an example", opts[-1]["description"])
+        self.assertIn("recommend", opts[-1]["description"])
 
     def test_three_choice_cap_reported_not_silent(self):
         n = rq.normalize(QS[3])
@@ -79,7 +114,8 @@ class Questions(unittest.TestCase):
         self.assertEqual(rq.parse_reply(q, "3")["kind"], "help")
         self.assertEqual(rq.parse_reply(q, "Help"), {"kind": "help", "value": None})
         self.assertEqual(rq.parse_reply(q, "I don't know.")["kind"], "help")
-        for r in ("I\u2019m not sure", "I don\u2019t know", "not sure?", "Not sure, help", "No clue", "I have no idea", "?", "??"):
+        for r in ("I\u2019m not sure", "I don\u2019t know", "not sure?", "Not sure, help", "No clue", "I have no idea", "?", "??",
+                  "help me answer", "show me an example", "recommend using what is known"):
             self.assertEqual(rq.parse_reply(q, r)["kind"], "help", r)
             self.assertEqual(rq.parse_reply(QS[2], r)["kind"], "help", r)
         self.assertEqual(rq.parse_reply(q, "default"), {"kind": "default", "value": "#2B2B2B"})
