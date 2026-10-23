@@ -244,13 +244,19 @@ open(fake, "w").write("import sys, os\nc = os.path.join(os.environ['FAKE_DIR'], 
 os.environ["FAKE_DIR"] = tempfile.mkdtemp(dir=TMP)
 os.environ["DSAF_GOVERNOR_DIR"] = tempfile.mkdtemp(dir=TMP)
 os.environ[LG.load_governor.POLL_ENV] = "0"
+_governor_sleep = LG.load_governor.time.sleep
 LG.load_governor.time.sleep = lambda s: None          # skip the real 2 s / 4 s backoff
-run = KD.make_runner(30)
-for cmd in ("health", "wait", "save"):
-    run([fake, cmd, "--json"])
-check("make_runner: polls/health/save leave the generation bucket untouched",
-      not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
-rc, out = run([fake, "submit", "--request", "r.json"])
+try:
+    run = KD.make_runner(30)
+    for cmd in ("health", "wait", "save"):
+        run([fake, cmd, "--json"])
+    check("make_runner: polls/health/save leave the generation bucket untouched",
+          not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
+    rc, out = run([fake, "submit", "--request", "r.json"])
+finally:
+    # this file runs at import under pytest: never leak a patched stdlib into
+    # other test modules sharing the process.
+    LG.load_governor.time.sleep = _governor_sleep
 check("make_runner: submit 429 resubmitted until it runs",
       '"ok"' in out and open(os.path.join(os.environ["FAKE_DIR"], "n")).read() == "3")
 check("make_runner: 3 submit attempts drew 3 generation tokens", len(json.load(open(os.path.join(
