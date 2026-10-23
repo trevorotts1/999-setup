@@ -13,7 +13,7 @@ section 3.10 ("Batch mode"):
   * never mix books or authors -- characters, lyrics, assets and files stay
     inside that book's campaign (``isolation.py`` owns those checks);
   * the approval card shows the batch total, computed from Skill 74 ``price``
-    for every book in the list, plus the 20% retake allowance.
+    for every book in the list, plus the 50% retake allowance.
 
 Price is a SEAM, never computed here: every number comes from the injected
 ``price_fn(book, card)`` (the Skill 74 ``price`` adapter). With no seam, with
@@ -52,6 +52,13 @@ except ImportError as _e:
     from .. import style_defaults as SD           # type: ignore
 
 try:
+    import budget_contingency as BC               # the one retake rate
+except ImportError as _e:
+    if "budget_contingency" not in str(_e):
+        raise
+    from .. import budget_contingency as BC       # type: ignore
+
+try:
     from choice_card.stl_voice_guard import (     # D25: STL is always All Suno
         CLIENT_REASON as STL_CLIENT_REASON,
         REASON_CODE as STL_REASON_CODE,
@@ -76,8 +83,9 @@ SOURCE = "D26, plan 6.14 (choice-card-spec 3.10)"
 #: The five fields chosen ONCE for the batch. Spec card order.
 CARD_FIELDS = ("length", "shape", "style", "music", "voice")
 
-#: choice-card-spec section 4.3: the approved price carries 20% retake.
-RETAKE_ALLOWANCE = 0.20
+#: choice-card-spec section 4.3: the approved price carries 50% retake
+#: (canonical ruling F1/F2, batch-8a). One copy, in budget_contingency.
+RETAKE_ALLOWANCE = BC.RATE
 
 #: The book brief (choice-card-spec 3.9), still inside the three-question cap.
 BRIEF_REQUIRED = ("title", "author")
@@ -386,7 +394,7 @@ def adapter_for_env(choice, catalog, adapter):
 
 
 def price_batch(card, price_fn=None):
-    """Price the batch: one Skill 74 price per book, plus the 20% retake.
+    """Price the batch: one Skill 74 price per book, plus the 50% retake.
 
     ``price_fn(book, card_fields) -> USD number`` is the Skill 74 ``price``
     adapter; it is never supplied from a table in this repository. When no
@@ -468,7 +476,7 @@ def card_lines(card):
                  % ("Books:", len(card.get("books") or []),
                     "" if len(card.get("books") or []) == 1 else "s"))
     if card.get("price_status") == "ok":
-        lines.append("  %-13s $%.2f  (%d book%s, +20%% retake allowance)"
+        lines.append("  %-13s $%.2f  (%d book%s, +50%% retake allowance)"
                      % ("Batch total:", card["price_usd"],
                         len(card.get("books") or []),
                         "" if len(card.get("books") or []) == 1 else "s"))
@@ -483,7 +491,7 @@ def approve_batch(card):
     """One click, whole batch. Refuses while the price is unavailable.
 
     Returns the approval record written onto the parent campaign: the five
-    fields, every book, the ceiling (price + 20% retake) and the card digest.
+    fields, every book, the ceiling (price + 50% retake) and the card digest.
     There is no per-book approval -- one card, one approval.
     """
     if not isinstance(card, dict) or card.get("card_type") != "batch":
