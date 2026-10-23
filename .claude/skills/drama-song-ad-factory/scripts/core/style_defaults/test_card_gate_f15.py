@@ -275,7 +275,7 @@ def _recompute(kind, rate, res):
     per-second models: 120 s x rate; Veo: ceil(120/8) clips x clip price;
     Gemini: ceil(120/10) clips; keyframes = shots x $0.02; one Suno V6
     generation $0.06; both shapes doubles video+keyframes, music once;
-    retakes = 20% of one shape's video+keyframes."""
+    retakes = 50% of one shape's video+keyframes."""
     if kind == "veo":
         shots = math.ceil(120 / 8); video = shots * rate
     elif kind == "gemi":
@@ -284,7 +284,7 @@ def _recompute(kind, rate, res):
         shots = math.ceil(120 / 15); video = 120 * rate
     kf = shots * 0.02
     return (round(video + kf + 0.06, 2), round(2 * video + 2 * kf + 0.06, 2),
-            round(0.2 * (video + kf), 2), shots)
+            round(0.5 * (video + kf), 2), shots)
 
 def test_2min_rows_equal_90s_rate_derivation():
     text = PRICE_MENU.read_text(encoding="utf-8")
