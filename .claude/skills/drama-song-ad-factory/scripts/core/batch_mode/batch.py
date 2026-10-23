@@ -34,7 +34,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,16 +103,34 @@ VOICE_LABELS = {
     "all-suno": "All Suno",
     "velvet-voiceover": "Velvet Voiceover",
 }
-LENGTH_VALUES = (
-    "60 seconds", "90 seconds", "3 minutes", "5 minutes",
-    "10-minute long version",
-)
+#: S75-W05-U3: the scattered label list (which dropped the 2-minute option,
+#: contradicting the F15 card menu) is REMOVED. The card labels derive from
+#: THE one table: suno_recipe.duration_registry (D12).
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+try:
+    from suno_recipe.duration_registry import (   # noqa: E402
+        CANONICAL_DURATION_S, DURATION_LABELS_S)
+except ImportError:
+    try:
+        from duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S)
+    except ImportError:
+        from ..suno_recipe.duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S)
+
+LENGTH_VALUES = tuple(DURATION_LABELS_S[s] for s in CANONICAL_DURATION_S)
 SHAPE_VALUES = ("9:16", "16:9", "both")
 #: The spellings the rest of the factory already puts on a card.
 SHAPE_ALIASES = {
     "9:16 vertical": "9:16",
     "16:9 widescreen": "16:9",
 }
+
+#: The card's length label -> planned seconds (the registry is the one table).
+_SECONDS_BY_LABEL = {label: secs for secs, label in DURATION_LABELS_S.items()}
 
 DEFAULT_VOICE = "all-suno"
 DEFAULT_LENGTH = "60 seconds"
@@ -448,12 +468,7 @@ def price_batch(card, price_fn=None):
 def _batch_manifest(card, books):
     """The batch's shot/cue manifest: one planned ad job and one song cue per
     book, projected from the card's chosen length (v3.0 section 8)."""
-    # Reuse the installed pricing duration table without changing the menu.
-    try:
-        from ..catalog_calculator.card_render import LENGTH_SECONDS
-    except ImportError:
-        from catalog_calculator.card_render import LENGTH_SECONDS
-    seconds = LENGTH_SECONDS.get(card.get("length"))
+    seconds = _SECONDS_BY_LABEL.get(card.get("length"))
     if seconds is None:
         raise BC.ContingencyUnmeasured("the batch card names no planned length")
     return {"projected": True,

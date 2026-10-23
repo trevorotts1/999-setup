@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: v2.9.98
+version: v2.9.99
 ---
 
 # Drama Song Ad Factory
@@ -12,6 +12,39 @@ skill share the same creative doctrine, project/run schema, provider
 abstraction, stage names, retry and QC logic, failure semantics, campaign
 artifact contract and licensing decisions. Only the runtime adapters differ.
 The lockstep is enforced by `tests/test_parity_layout.py`, not by hope.
+
+## What changed in behaviour (forward-port 2026-10-23)
+
+Behaviour ported from the canonical skill; every item names the code and the
+check that proves it.
+
+- **A story may open on the consequence.** The twelve beats keep their ids and
+  causal order; a record may declare how they are told
+  (`presentation.order` / `presentation_order`) and the script, the performed
+  lines and the shots must be that same order
+  (`story_arc.check_presentation_order`).
+  Check: `scripts/core/story_arc/test_presentation_order_u1.py`.
+- **The production projection.** `method_plan.teaching_map`,
+  `musical_turns`, `shot_seeds`, `storyboard_input`, `music_request_input`.
+  Check: `scripts/core/method_plan/test_method_plan.py`.
+- **Script validation knows what the run is for.** The purpose is read from
+  `$RUN/control/method.json` and handed to `validate_story`; it is never guessed
+  from the text. Check: `scripts/core/script_approval/test_stage_purpose.py`.
+- **Purpose card for a new run; ledger rebuild.** The intake card asks the
+  purpose flow for a new run and the method record is rebuilt from it.
+  Check: `scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py`,
+  `scripts/core/choice_card/intake_card/test_opening_flow_default_s75x.py`.
+- **The opening scene.** `shot_planner.opening_scene` builds the first shot in
+  song order (line, action, intended emotion, reading context) without
+  reordering the shots. Check: `scripts/core/shot_planner/test_opening_scene_w4.py`.
+- **Music request inputs.** The blueprint's own cues - instrumental flag,
+  delivered length, the two pace seams, `true_at_beat` - reach the request; a
+  collapsed blueprint refuses. Check:
+  `scripts/core/music_director/test_blueprint_inputs_s75xw4u2.py`.
+- **Lip-sync coverage is a share of the duration** (see the lip-sync doctrine
+  below): 25-30% target, 35% hard maximum, first 12 s articulated.
+  Check: `scripts/core/test_lipsync_clips.py`,
+  `scripts/core/final_assembler/test_lipsync_coverage_e6.py`.
 
 Default production mode name: `drama-song-vsl`. Never make a third-party
 brand name the public product identity.
@@ -716,7 +749,7 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
   per line, product words pronunciation-tested, truthfulness preserved.
 - The song is the master timeline; lip-sync is applied to selected lines
   only (owner decision D10, superseded 2026-10-07): the pain peak, the
-  product line, the call to action and the chorus hook, DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4 to 6 seconds (30 to 40 seconds, was 15 to 20), scaled linearly with the ad length, no clip over 6 seconds (`core/lipsync_clips.py`); clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so the cost roughly doubles and a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`, priced at the worst case of 2 tries per clip, `lipsync_clips.MAX_TRIES`). Chosen by the factory and listed on the approval
+  product line, the call to action and the chorus hook, APPROVED DIRECTION 2026-10-23 (supersedes the 2026-10-08 doubling): coverage is 25-30% of the selected duration with a 35% HARD MAXIMUM nothing may cross, in 4 to 6 second clips, no clip over 6 seconds, never fewer than 3 clips, and the first 12 seconds clearly articulated (`core/lipsync_clips.py` is the one source: `TARGET_SHARE`, `MAX_SHARE`, `OPENING_WINDOW_S`); a duration whose bounds collide fails `LIPSYNC_DURATION_CONFLICT` instead of being silently re-planned; clips go first on every sung hook, the spoken opener and the spoken closing line. Each clip is a paid job, so a plan past the spend cap is refused loudly (`lipsync_clips.check_budget`, priced at the worst case of 2 tries per clip, `lipsync_clips.MAX_TRIES`). Chosen by the factory and listed on the approval
   card. Every other shot stays exactly as the video model made it, and the
   song remains narrator / internal voice while characters act. The version 1
   rule this replaces read "no lip-sync by default"; it is kept here only so

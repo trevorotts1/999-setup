@@ -1,11 +1,17 @@
 # 999-setup
 
-> **Skill 75 v2.9.98 — lip-sync delivery evidence.** The skill version is pinned in
-> `.claude/skills/drama-song-ad-factory/skill-version.txt` and the `SKILL.md` frontmatter. Approved shot,
-> speaker and line identities must survive generation and the final timeline;
-> delivery verifies the packaged clean video against the export receipt. Missing
-> or unused evidence fails closed. This release does not change numeric quotas
-> or the duration formula, and does not update active client runs.
+> **Skill 75 v2.9.99 — music duration and lyric rules now match canonical.** The
+> duration decision, its outcome and correction classification, the one constraint
+> policy and the one duration table are now in this distribution, so a take within
+> the overshoot allowance is preserved with a warning instead of being refused, a
+> 9-11 syllable line the writer accepted is no longer refused here, a spoken scene
+> outside Intro/Outro is kept, and the two-minute (120 s) length is offered again.
+> The skill version is pinned in
+> `.claude/skills/drama-song-ad-factory/skill-version.txt` and the `SKILL.md` frontmatter.
+> The previously shipped lip-sync delivery evidence rules are unchanged: approved
+> shot, speaker and line identities must survive generation and the final timeline,
+> and missing or unused evidence still fails closed. This release does not change
+> numeric quotas or activate an existing client run.
 
 > **Do not run this on the operator Mac Mini.** The operator machine already runs its
 > own `claude-nine` with a separate, dedicated config root. This installer would replace
