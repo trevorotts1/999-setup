@@ -33,7 +33,9 @@ proposed before/after and the reason. ``--apply`` is the one-time mutation; it
 takes a recoverable backup, runs in one IMMEDIATE transaction, updates only
 records whose value still matches the planned before (compare-and-set), writes
 a per-record idempotency marker, and records a ledger-level marker. Re-running
-never double-applies: markers short-circuit to ``already_migrated``.
+never double-applies: a per-record marker short-circuits that record to
+``already_migrated``. A ledger-level marker alone does not: records without
+their own marker stay ``ambiguous`` and visible in every later plan.
 
 Currency, reservation/state, transaction identity and supporting evidence are
 never touched -- only the five monetary columns above are scaled.
@@ -161,7 +163,7 @@ def _ledger_marker(conn):
 def _record_key(row, keys):
     return "|".join(str(row[k]) for k in keys)
 
-def _classify(conn, version, unit, provenance_reason):
+def _classify(conn, version, unit, provenance_reason, ledger_marker=None):
     """-> list of dicts: table, record_key, field, before, after, status, reason."""
     markers = _markers(conn)
     rows = []
@@ -194,6 +196,18 @@ def _classify(conn, version, unit, provenance_reason):
                                 reason="migration marker: %s" % marker["reason"])
                     rows.append(base)
                     continue
+                if ledger_marker is not None:
+                    base.update(status=AMBIGUOUS,
+                                reason="ledger-level migration marker present but this "
+                                       "record has no per-record marker; resolve manually")
+                    rows.append(base)
+                    continue
+                if version not in LEGACY_SCHEMA_VERSIONS:
+                    base.update(status=AMBIGUOUS,
+                                reason="schema version %r is not a recognised legacy "
+                                       "schema; cannot classify" % (version,))
+                    rows.append(base)
+                    continue
                 if value is None:
                     base.update(status=CORRECT, reason="no amount recorded")
                     rows.append(base)
@@ -211,11 +225,6 @@ def _classify(conn, version, unit, provenance_reason):
                     base.update(status=AMBIGUOUS,
                                 reason="row is partially migrated; an unmarked field "
                                        "cannot be safely classified")
-                    rows.append(base)
-                    continue
-                if version not in LEGACY_SCHEMA_VERSIONS:
-                    base.update(status=CORRECT,
-                                reason="schema version %r is not legacy" % (version,))
                     rows.append(base)
                     continue
                 if unit == "cents":
@@ -242,21 +251,20 @@ def plan(db_path, provenance_path):
     try:
         version = _schema_version(conn)
         marker = _ledger_marker(conn)
-        if marker is not None:
-            return {"tool": TOOL_NAME, "tool_version": TOOL_VERSION, "mode": "dry-plan",
-                    "db": db_path, "schema_version": version,
-                    "ledger_marker": marker,
-                    "summary": {ELIGIBLE: 0, CORRECT: 0, MIGRATED: "all", AMBIGUOUS: 0},
-                    "records": [], "note": "ledger already migrated; nothing to do"}
         unit, reason = _load_provenance(provenance_path, conn)
-        records = _classify(conn, version, unit, reason)
+        records = _classify(conn, version, unit, reason, marker)
         summary = {k: 0 for k in (ELIGIBLE, CORRECT, MIGRATED, AMBIGUOUS)}
         for r in records:
             summary[r["status"]] += 1
-        return {"tool": TOOL_NAME, "tool_version": TOOL_VERSION, "mode": "dry-plan",
-                "db": db_path, "schema_version": version,
-                "provenance": {"money_unit": unit, "reason": reason},
-                "summary": summary, "records": records}
+        out = {"tool": TOOL_NAME, "tool_version": TOOL_VERSION, "mode": "dry-plan",
+               "db": db_path, "schema_version": version,
+               "provenance": {"money_unit": unit, "reason": reason},
+               "summary": summary, "records": records}
+        if marker is not None:
+            out["ledger_marker"] = marker
+            out["note"] = ("ledger-level marker present; per-record validation still "
+                           "applied, unresolved records remain visible")
+        return out
     finally:
         conn.close()
 
@@ -278,9 +286,6 @@ def _backup(db_path, backup_dir):
 def apply(db_path, provenance_path, backup_dir=None):
     """One-time mutation. Atomic; idempotent through markers."""
     dry = plan(db_path, provenance_path)
-    if dry["summary"].get(MIGRATED) == "all":
-        return dict(dry, mode="apply", applied=0,
-                    note="ledger already migrated; nothing written")
     eligible = [r for r in dry["records"] if r["status"] == ELIGIBLE]
     if not eligible:
         return dict(dry, mode="apply", applied=0,
