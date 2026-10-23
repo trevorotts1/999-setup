@@ -49,8 +49,8 @@
       "source_version": "v2.1.11",
       "files": 129,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:11a24e91d658069e5db0e2139a6806e0ffd356ff7ef4c1299dc1e424a6e9c161",
-      "999_version": "v2.1.18"
+      "sha256": "sha256:ccc000d145f4cc0b3a0e141db192fad2acea62800ba71b6db0a4b7f979053fcb",
+      "999_version": "v2.1.22"
     },
     {
       "id": "tree-78-signature-product-selection",
@@ -256,8 +256,8 @@
       "source_version": "0.2.0",
       "files": 49,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:b1bbe1bf269fd780cb076ba7eacd8aac098cf5f45c7a629bf16d5e8477ec699b",
-      "999_version": "0.2.4"
+      "sha256": "sha256:bda3e7abddd337ec9501d2a2bbd39e1b6a897699bfd138e09d9d0a230ac2db68",
+      "999_version": "0.2.9"
     },
     {
       "id": "skill-number-assigned",
