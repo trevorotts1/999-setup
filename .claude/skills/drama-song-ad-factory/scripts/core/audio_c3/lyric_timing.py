@@ -394,12 +394,33 @@ class WhisperSession:
         self._guard()
         if self.model is None:
             if self._loader is None:
+                # Wire the ONE permitted loader here: the production path never
+                # passed one, so tier 2 refused even with faster-whisper
+                # installed and every take's word timing died UNMEASURED.
+                try:
+                    from faster_whisper import WhisperModel as _WM  # noqa: PLC0415
+                except Exception as _e:  # noqa: BLE001
+                    raise LyricTimingError(
+                        "LOCAL_MODEL_LOAD_REFUSED",
+                        "no faster-whisper loader wired and the package is "
+                        "not importable (%s); PREREQS faster-whisper-optional"
+                        % type(_e).__name__) from _e
+                # The injected-loader contract is positional (size, compute):
+                # that is how the onboarding twin declares and calls it, and
+                # the suite's fakes encode the same signature. faster-whisper
+                # >=0.10 takes compute_type as a KEYWORD (positionally it lands
+                # as the device and raises "unsupported device int8"), so adapt
+                # at THIS wiring point instead of changing the shared contract.
+                self._loader = lambda size, compute: _WM(size, compute_type=compute)
+            try:
+                self.model = self._loader(self.model_size, self.compute_type)
+            except TypeError as _e:
+                # A TypeError here is a wiring/signature bug, never missing
+                # data: name it so it cannot be read as "no timings".
                 raise LyricTimingError(
-                    "LOCAL_MODEL_LOAD_REFUSED",
-                    "no faster-whisper loader wired (PREREQS "
-                    "faster-whisper-optional: install only when this "
-                    "fallback is enabled)")
-            self.model = self._loader(self.model_size, self.compute_type)
+                    "WHISPER_LOADER_TYPEERROR",
+                    "faster-whisper loader raised TypeError(%s); the injected "
+                    "loader contract is (size, compute) positionally" % _e) from _e
             self.loads += 1
 
     def _guard(self):
@@ -412,7 +433,14 @@ class WhisperSession:
             self._ensure_loaded()
             out = []
             for t in tracks or []:
-                segs = self.model(t.get("audio_path", "") or dict(t))
+                _path = t.get("audio_path", "") or dict(t)
+                _fn = getattr(self.model, "transcribe", None)
+                if callable(_fn) and not isinstance(self.model, type(lambda: None)):
+                    # faster-whisper >=0.10: WhisperModel.transcribe(...)
+                    _segs, _info = _fn(_path, word_timestamps=True)
+                    segs = list(_segs)
+                else:                      # older callable-model API
+                    segs = self.model(_path)
                 tx = {"task_id": (t or {}).get("task_id"),
                       "audio_id": (t or {}).get("audio_id"), "segments": segs}
                 out.append(tx)
@@ -429,6 +457,13 @@ def words_from_segments(segments: Iterable[Any]) -> List[Dict[str, Any]]:
     -> one flat normalized word list."""
     out: List[Dict[str, Any]] = []
     for seg in segments or []:
+        if not isinstance(seg, dict):
+            # faster-whisper Segment objects: .words is a list of Word objects.
+            for w in (getattr(seg, "words", None) or []):
+                out.append({"word": str(getattr(w, "word", "")).strip(),
+                            "start": float(getattr(w, "start", 0.0) or 0.0),
+                            "end": float(getattr(w, "end", 0.0) or 0.0)})
+            continue
         if isinstance(seg, dict) and isinstance(seg.get("words"), list):
             for w in seg["words"]:
                 if isinstance(w, dict) and "word" in w:
@@ -600,7 +635,8 @@ def provide_word_timings(track: Dict[str, Any], *,
     # ── tier 3: both earlier tiers failed ──
     if cloud is None:
         return {"ok": False, "error_code": t2.code,
-                "evidence": {"tier1_error": t1_err, "tier2_error": t2.code},
+                "evidence": {"tier1_error": t1_err, "tier2_error": t2.code,
+                             "tier2_detail": str(t2)[:200]},
                 "next_action":
                     "tier 1 (%s) and tier 2 (%s) both failed; wire the "
                     "client's own cloud STT (word timestamps, client key "

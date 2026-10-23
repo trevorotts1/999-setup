@@ -40,20 +40,64 @@ class Detect(unittest.TestCase):
 
 
 class Questions(unittest.TestCase):
-    def test_structured_is_valid_tool_shape(self):
+    def test_structured_is_valid_tool_shape_and_asks_one_at_a_time(self):
         calls = rq.structured(QS)
+        # one question per call, in bank order: the client is never handed a wall of pickers
         self.assertEqual([c["ids"] for c in calls],
-                         [["brand_primary_color", "brand_fonts"], ["offer_price"], ["design_style"]])
+                         [["brand_primary_color"], ["brand_fonts"], ["offer_price"], ["design_style"]])
         for c in calls:
+            self.assertEqual(len(c["questions"]), 1)
             for q in c["questions"]:
                 self.assertTrue(2 <= len(q["options"]) <= 4, q)
                 self.assertLessEqual(len(q["header"]), 12)
                 self.assertEqual(q["options"][-1]["label"], rq.HELP_LABEL)
                 self.assertTrue(all(o["description"] for o in q["options"]))
+                self.assertNotIn("Use this one", [o["description"] for o in q["options"]])
 
-    def test_more_than_four_questions_in_a_group_are_split(self):
+    def test_many_questions_never_batch(self):
         many = [{"id": f"q{i}", "text": "t", "group": "g"} for i in range(9)]
-        self.assertEqual([len(c["questions"]) for c in rq.structured(many)], [4, 4, 1])
+        self.assertEqual([len(c["questions"]) for c in rq.structured(many)], [1] * 9)
+
+    def test_nested_help_examples_and_default_survive_rendering(self):
+        q = {"id": "timing", "group": "launch", "text": "When do the doors open?",
+             "why": "Every message is timed from it.",
+             "help": {"explain": "Give the date and both times.",
+                      "examples": ["Doors open 14 Nov 2026 9:00 a.m. New York",
+                                   "Launch 1 Dec 2026 10:00 a.m. London time"]},
+             "default": {"value": "no deadline until you give one", "flag": "to confirm"},
+             "never_default": False, "choices": []}
+        n = rq.normalize(q)
+        self.assertEqual(n["examples"], q["help"]["examples"])
+        self.assertEqual(n["safe_default"], "no deadline until you give one")
+        self.assertEqual(n["help_text"], "Give the date and both times.")
+        msg = rq.chat(q)
+        self.assertIn("Doors open 14 Nov 2026 9:00 a.m. New York", msg)
+        self.assertIn("Give the date and both times.", msg)
+
+    def test_per_option_explanations_are_kept(self):
+        q = {"id": "design_style", "text": "Which look?", "choices": [
+            {"value": "A", "label": "A, Block", "example": "Clean rectangular photos."},
+            {"value": "B", "label": "B, Circle"}]}
+        n = rq.normalize(q)
+        self.assertEqual(n["choices"][0]["description"], "Clean rectangular photos.")
+        self.assertTrue(n["choices"][1]["description"])  # never an empty explanation
+
+    def test_a_one_sentence_help_is_kept_as_the_explanation(self):
+        """Skill 83's picture questions carry `help` as a plain sentence; its coaching must survive."""
+        q = {"id": "image_provider", "text": "Standard image service?",
+             "help": "Say yes unless someone told you otherwise."}
+        self.assertEqual(rq.normalize(q)["help_text"], "Say yes unless someone told you otherwise.")
+        self.assertIn("explain it in plain language",
+                      rq.structured([q])[0]["questions"][0]["options"][-1]["description"])
+        self.assertIn("Say yes unless someone told you otherwise", rq.chat(q))
+
+    def test_help_option_names_the_coaching_ways_out(self):
+        q = {"id": "channels", "text": "Email only or email and text?",
+             "help": {"explain": "Email always works."}, "default": {"value": "Email only"}}
+        opts = rq.structured([q])[0]["questions"][0]["options"]
+        self.assertEqual(opts[-1]["label"], rq.HELP_LABEL)
+        self.assertIn("show me an example", opts[-1]["description"])
+        self.assertIn("recommend", opts[-1]["description"])
 
     def test_three_choice_cap_reported_not_silent(self):
         n = rq.normalize(QS[3])
@@ -79,7 +123,8 @@ class Questions(unittest.TestCase):
         self.assertEqual(rq.parse_reply(q, "3")["kind"], "help")
         self.assertEqual(rq.parse_reply(q, "Help"), {"kind": "help", "value": None})
         self.assertEqual(rq.parse_reply(q, "I don't know.")["kind"], "help")
-        for r in ("I\u2019m not sure", "I don\u2019t know", "not sure?", "Not sure, help", "No clue", "I have no idea", "?", "??"):
+        for r in ("I\u2019m not sure", "I don\u2019t know", "not sure?", "Not sure, help", "No clue", "I have no idea", "?", "??",
+                  "help me answer", "show me an example", "recommend using what is known"):
             self.assertEqual(rq.parse_reply(q, r)["kind"], "help", r)
             self.assertEqual(rq.parse_reply(QS[2], r)["kind"], "help", r)
         self.assertEqual(rq.parse_reply(q, "default"), {"kind": "default", "value": "#2B2B2B"})
@@ -88,17 +133,54 @@ class Questions(unittest.TestCase):
         self.assertEqual(rq.parse_reply(q, "  ")["kind"], "repeat")
         self.assertEqual(rq.parse_reply(QS[2], "1499")["value"], "1499")  # no choices: digits are an answer
 
-    def test_resume_skips_provided_and_defaulted_only(self):
-        left = [q["id"] for q in rq.pending(QS, ANS)]
-        self.assertEqual(left, ["offer_price", "design_style"])  # suggested is asked again
-        self.assertEqual(len(rq.pending(QS, None)), 4)
-        as_list = {"answers": [{"question_id": "offer_price", "status": "provided", "value": "997"}]}
-        self.assertNotIn("offer_price", [q["id"] for q in rq.pending(QS, as_list)])
+    def test_resume_asks_one_at_a_time_and_suggested_is_still_asked(self):
+        # the resume path is no longer a list: it is exactly ONE question, chosen by the engine
+        self.assertEqual([q["id"] for q in rq.pending(QS, ANS)], ["offer_price"])
+        self.assertEqual(len(rq.pending(QS, None)), 1)
+        self.assertEqual(rq.pending(QS, None)[0]["id"], "brand_primary_color")
+        as_list = {"answers": [{"question_id": "brand_primary_color", "status": "provided", "value": "x"},
+                               {"question_id": "brand_fonts", "status": "provided", "value": "y"}]}
+        self.assertEqual([q["id"] for q in rq.pending(QS, as_list)], ["offer_price"])
+        # a suggestion is not the client's answer: design_style comes back once the rest is answered
+        all_but = {"answers": {k: {"value": "v", "status": "provided"}
+                               for k in ("brand_primary_color", "brand_fonts", "offer_price")}}
+        self.assertEqual([q["id"] for q in rq.pending(QS, all_but)], ["design_style"])
+
+    def test_conditional_questions_never_render_when_inapplicable(self):
+        bank = {"help_label": rq.HELP_LABEL, "questions": [
+            {"id": "always_one", "text": "Always?", "condition": "always"},
+            {"id": "bf_only", "text": "Black Friday only?", "condition": "mode == bf"},
+            {"id": "legacy_only", "text": "Legacy only?", "condition": "mode == legacy"}]}
+        self.assertEqual([q["id"] for q in rq.pending(bank, None, "launch")], ["always_one"])
+        self.assertEqual([q["id"] for q in rq.pending(bank, None, "bf")], ["always_one"])
+        self.assertEqual(rq.pending({"questions": []}, None), [])
+
+    def test_every_applicable_question_stays_reachable(self):
+        """Nothing is silently skipped: walking the one-at-a-time flow covers every applicable one."""
+        answered, seen = {}, []
+        for _ in range(20):
+            one = rq.pending(QS, answered)
+            if not one:
+                break
+            seen.append(one[0]["id"])
+            answered.setdefault("answers", {})[one[0]["id"]] = {"value": "v", "status": "provided"}
+        self.assertEqual(seen, [q["id"] for q in QS])  # all four, in bank order, one per step
+
+    def test_done_renders_nothing(self):
+        answered = {"answers": {q["id"]: {"value": "v", "status": "provided"} for q in QS}}
+        self.assertEqual(rq.render(rq.pending(QS, answered), hp.detect("claude-code")), [])
+        self.assertEqual(rq.render(rq.pending(QS, answered), hp.detect("openclaw")), [])
+
+    def test_open_question_keeps_its_default_and_help_even_from_the_engine(self):
+        one = rq.pending({"help_label": rq.HELP_LABEL, "questions": [QS[1]]}, None)[0]
+        self.assertEqual(one["help_label"], rq.HELP_LABEL)  # engine labels the help option
+        self.assertIn('"default"', rq.render([one], hp.detect("openclaw"))[0]["message"])
 
     def test_same_bank_same_answers_file_any_harness(self):
         a = rq.render(rq.pending(QS, ANS), hp.detect("claude-code"))
         b = rq.render(rq.pending(QS, ANS), hp.detect("openclaw"))
         self.assertEqual([i for c in a for i in c["ids"]], [m["id"] for m in b])
+        self.assertEqual(len(a), 1)  # one question, never a wall, in either shape
 
 
 class Reports(unittest.TestCase):

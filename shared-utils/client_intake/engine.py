@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import tempfile
+from datetime import date, datetime, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -215,25 +216,50 @@ def cond_met(doc, cond):
 
 def applicable(doc, bank=None):
     autofill_roles(doc)
-    return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q["condition"])]
+    return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q.get("condition"))]
 
 
 # ---------------------------------------------------------------- asking
+def _help_of(q):
+    """The nested help object. Skill 83's picture questions carry `help` as a plain sentence, so a
+    string is read as its explanation: same question, same coaching, no second shape to maintain."""
+    h = q.get("help")
+    if isinstance(h, dict):
+        return h
+    return {"explain": str(h)} if isinstance(h, str) and h.strip() else {}
+
+
 def hydrate(doc, q):
     """The question exactly as a client should see it (text filled in, dynamic choices resolved)."""
     q = json.loads(json.dumps(q))
+    q.setdefault("condition", "always")
+    q["help"] = _help_of(q)
     if q.get("dynamic") == "colors":
         role = q["id"].split("_", 1)[1]
         pool = _colors(doc) if role == "primary" else _remaining(doc)
         q["text"] = q["text"].replace("{colors}", "(" + ", ".join(pool) + ")")
         q["choices"] = (pool + (["None"] if role == "accent" else []))[:3]
     if q["id"] == "design_style":
-        q["help"]["examples"] = q["help"]["examples"] + _style_links()
+        q["help"]["examples"] = (q["help"].get("examples") or []) + _style_links()
+    if q["id"] == "packages":
+        said = offer_summary(doc)
+        if said and needs_another_offer(doc):
+            q["text"] = (said + " Would a second package help your buyers, for example a smaller one? "
+                         "If one package is enough, tell me and I will use it as it is.")
+            q["why"] = ("Buyers only need a choice page when there is a real choice. I never add a package "
+                        "you did not name, and I never add an upgrade you did not ask for.")
+        elif said:
+            q["text"] = said + " Is that right?"
     return q
 
 
 def _style_links():
+    """Visual examples for the design style. The same code runs in the onboarding layout
+    (skills at the repository root) and in a 999 package (skills under .claude/skills)."""
+    roots = []
     for base in Path(__file__).resolve().parents:
+        roots += [base, base / ".claude" / "skills", base / "skills"]
+    for base in roots:
         f = base / "71-blackceo-signature-page" / "references" / "design-styles.json"
         if f.is_file():
             try:
@@ -243,20 +269,27 @@ def _style_links():
     return []
 
 
-def _askable(doc, q):
+def _askable(doc, q, include_suggested=False):
+    """Still to ask: unanswered, or answered only with "I don't know". A never-default
+    question is NEVER skipped after a help request: skipping it would move the flow past a
+    fact the build cannot proceed without, and check() would have to name it later anyway.
+
+    `include_suggested` also asks a question whose answer is only a suggestion. The renderer
+    uses it, because a suggestion is not the client's answer until they confirm it; the
+    engine's own flow keeps treating a suggestion as given, as check() already does."""
     e = get(doc, q["id"])
     if e is None:
         return True
-    if e["status"] != "unknown":
-        return False
-    return not (q["never_default"] and e.get("unknown_count", 0) >= 2)  # keep moving; check() names the blocker
+    if include_suggested and e["status"] == "suggested":
+        return True
+    return e["status"] == "unknown"
 
 
-def next_question(doc, bank=None):
-    todo = [q for q in applicable(doc, bank) if _askable(doc, q)]
+def next_question(doc, bank=None, include_suggested=False):
+    todo = [q for q in applicable(doc, bank) if _askable(doc, q, include_suggested)]
     if not todo:
         return None
-    todo.sort(key=lambda q: not q["condition"].startswith("needs_role"))  # color-role follow-ups come right after the colors
+    todo.sort(key=lambda q: not str(q.get("condition") or "always").startswith("needs_role"))  # color-role follow-ups come right after the colors
     total = len(applicable(doc, bank))
     h = hydrate(doc, todo[0])
     h["help_label"] = (bank or load_bank())["help_label"]
@@ -282,7 +315,7 @@ def wants_help(q, value):
     if not isinstance(value, str):
         return False
     n = _norm(value).replace("'", "")
-    if q["id"] == "interview_mode" and _pick(value, q["choices"]):
+    if q["id"] == "interview_mode" and (_pick(value, q["choices"]) or _interview_mode_value(value) != "help"):
         return False
     return n in HELP_WORDS or n.startswith("help me") or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"])
 
@@ -314,6 +347,38 @@ def _need(msg):
     return {"ok": False, "message": msg}
 
 
+# The three assistance preferences. A is "recommend a plan for me", B is "guide me
+# through each decision", C is "I already have a plan". The stored values are the ones
+# Skill 49's launch intake reads (know / help / choose_for_me); the client sees letters.
+_MODE_BY_LETTER = {"a": "choose_for_me", "b": "help", "c": "know"}
+_MODE_BY_WORDS = {"i know what i want": "know", "help me choose": "help",
+                  "set it up for me to review": "choose_for_me",
+                  "choose a setup for me to review": "choose_for_me",
+                  "recommend a plan for me": "choose_for_me",
+                  "guide me through each decision": "help",
+                  "i already have a plan": "know"}
+
+
+def _interview_mode_value(raw):
+    """The stored mode from A/B/C, the old three phrases, or a full label. Never a guess:
+    unrecognised text is a help request, so the client is coached instead of skipped."""
+    low = _norm(raw).replace("'", "")
+    if not low:
+        return "help"
+    head = re.match(r"^\(?([abc])\b", low)
+    if head:
+        return _MODE_BY_LETTER[head.group(1)]
+    if low in _MODE_BY_WORDS:
+        return _MODE_BY_WORDS[low]
+    for words, mode in _MODE_BY_WORDS.items():
+        if words in low:
+            return mode
+    for letter, mode in _MODE_BY_LETTER.items():
+        if re.search(r"\b" + letter + r"\b", low):
+            return mode
+    return "help"
+
+
 def _normalize(doc, q, raw):
     """(value, status, note) or a _need() dict. Free text always wins over the listed choices."""
     qid, t, ch = q["id"], q["answer_type"], q["choices"]
@@ -321,7 +386,7 @@ def _normalize(doc, q, raw):
     low = _norm(text) if isinstance(text, str) else ""
     pick = _pick(text, ch) if isinstance(text, str) else None
     if qid == "interview_mode":
-        return ({"i know what i want": "know", "help me choose": "help", "set it up for me to review": "choose_for_me"}.get(_norm(pick or text), "help"), "provided", None)
+        return (_interview_mode_value(pick or text), "provided", None)
     if qid == "design_style":
         m = re.match(r"^\(?([abc])\b", low) or re.search(r"\b(block|circle|hybrid)\b", low)
         if not m:
@@ -455,6 +520,7 @@ def _normalize(doc, q, raw):
         return {"community_url": url.group(0).rstrip(".,;"), "bonus": bonus, "founder_text_confirmed": True}, "provided", None
     if t == "packages":
         rows = text if isinstance(text, list) else [ln for ln in str(text).splitlines() if ln.strip()]
+        existing = list(val(doc, "packages") or [])  # offers already given are kept
         pk = []
         for row in rows:
             if isinstance(row, dict):
@@ -462,14 +528,28 @@ def _normalize(doc, q, raw):
                 continue
             sym = re.findall(r"[\$€£]\s*\d[\d,]*(?:\.\d+)?", row)
             m = _money(sym[-1]) if sym else _money(row.split("|")[-1]) if "|" in row else None
-            name = re.split(r"\s*(?:\||:|\s-\s|\(|\$|€|£)\s*", row.strip(" -*\u2022"), maxsplit=1)[0].strip()
-            rest = [x.strip() for x in re.split(r"\|", row)[1:] if x.strip() and not re.fullmatch(r"[\$€£]?\s*[\d,.]+(\s*(usd|eur|gbp))?", x.strip(), re.I)]
-            inc = [i.strip() for r in rest for i in re.split(r";", r) if i.strip()]
+            if "|" in row:  # the older pipe form: name | what they get | price
+                parts = [x.strip() for x in row.split("|")]
+                name, inc = parts[0], [i.strip() for r in parts[1:-1] for i in re.split(r";", r) if i.strip()]
+            else:  # a plain sentence: "Premium, 12 lessons and 4 live calls, $497"
+                parts = [x.strip() for x in re.split(r",|\s-\s|;", row.strip(" -*\u2022")) if x.strip()]
+                parts = [x for x in parts if not re.fullmatch(r"[\$€£]?\s*[\d,.]+(\s*(usd|eur|gbp))?", x, re.I)]
+                name = parts[0] if parts else ""
+                inc = parts[1:]
+            name = re.split(r"\s*(?:\||:|\(|\$|€|£)\s*", name, maxsplit=1)[0].strip(" ,.")
             if name and m:
                 pk.append({"display_name": name, "deliverables": inc, "price": m})
-        if len(pk) < 2 or any(not (p.get("display_name") and isinstance(p.get("price"), dict)) for p in pk):
-            return _need("I need at least two, each with a name and a price, one per line. For example: Premium | 12 lessons; 4 live calls | $497")
-        return pk, "provided", None
+        if not pk or any(not (p.get("display_name") and isinstance(p.get("price"), dict)) for p in pk):
+            return _need("Tell me one offer in your own words: what it is called, what the buyer gets, "
+                         "and the price. For example: Premium, 12 lessons and 4 live calls, $497.")
+        for o in pk:  # a new name is added; the same name is a correction, replaced in place
+            slot = next((i for i, e in enumerate(existing)
+                         if _norm(e.get("display_name")) == _norm(o.get("display_name"))), None)
+            if slot is None:
+                existing.append(o)
+            else:
+                existing[slot] = o
+        return existing, "provided", None
     if t == "list":
         items = text if isinstance(text, list) else [s.strip(" -*•") for s in re.split(r"\n|;|,(?=\s)", text) if s.strip(" -*•")]
         return (items, "provided", None) if items else _need("Please give me at least one.")
@@ -478,6 +558,42 @@ def _normalize(doc, q, raw):
     if not text or (isinstance(text, str) and not text.strip()):
         return _need("Please give me an answer, or say 'help'.")
     return text, "provided", None
+
+
+def offer_summary(doc):
+    """The client's offer read back in their own plain words. Nothing is added to it."""
+    v = view(doc)
+    pk = v.get("packages") or []
+    if pk:
+        parts = []
+        for o in pk:
+            price = o.get("price") or {}
+            amount = price.get("amount_minor")
+            money = (f"{price.get('currency', 'USD')} {amount / 100:,.0f}" if isinstance(amount, int)
+                     and amount % 100 == 0 else f"{price.get('currency', 'USD')} {amount / 100:,.2f}"
+                     if isinstance(amount, int) else "")
+            gets = "; ".join(o.get("deliverables") or [])
+            parts.append(f"{o.get('display_name')}" + (f", {gets}" if gets else "") + (f", {money}" if money else ""))
+        return "Here is what I understood: " + " and ".join(parts) + "."
+    name = v.get("offer_name") or v.get("offer_description")
+    if not name:
+        return None
+    price = v.get("price")
+    if isinstance(price, dict) and isinstance(price.get("amount_minor"), int):
+        amount = price["amount_minor"] / 100
+        shown = f"{price.get('currency', 'USD')} {amount:,.0f}" if price["amount_minor"] % 100 == 0 \
+            else f"{price.get('currency', 'USD')} {amount:,.2f}"
+        return f"Here is what I understood: {name}, at {shown}."
+    return f"Here is what I understood: {name}."
+
+
+def needs_another_offer(doc):
+    """True while the funnel shape needs a second package and only one is named. The client
+    is asked whether another one would help, never handed a three-column form."""
+    shape = val(doc, "funnel_shape")
+    if shape != "multiple_options":
+        return False
+    return len(view(doc).get("packages") or []) < 2
 
 
 def record(doc, qid, value, *, source="client", status=None, note=None):
@@ -607,6 +723,24 @@ def apply_default(doc, qid):
     return e
 
 
+def coach_options(q):
+    """The three ways out every question offers when the client does not know. Named in
+    plain words, so the client is helped rather than told to try again."""
+    out = [{"id": "example", "label": "Show me an example",
+            "detail": (q["help"]["examples"][0] if q["help"]["examples"]
+                       else "I will show you what a good answer looks like.")},
+           {"id": "explain", "label": "Help me answer",
+            "detail": q["help"]["explain"]}]
+    if q["default"] is not None and not q["never_default"]:
+        out.append({"id": "recommend", "label": "Recommend using what is known",
+                    "detail": f"I would suggest: {_say(q['id'], q['default']['value'])}."})
+    else:
+        out.append({"id": "recommend", "label": "Recommend using what is known",
+                    "detail": "I can suggest the parts I already know and leave only what must come "
+                              "from you, which I will name in plain words."})
+    return out
+
+
 def resolve_unknown(doc, qid, *, logo=None, website=None, palette=None, mood=None, fetch=None):
     """The client does not know. First time: help. Second time: a safe default flagged 'to confirm'
     (never for a never-default question, which stays blocked and is named)."""
@@ -620,11 +754,12 @@ def resolve_unknown(doc, qid, *, logo=None, website=None, palette=None, mood=Non
     e["unknown_count"] = n + 1
     h = q["help"]
     payload = {"id": qid, "explain": h["explain"], "examples": h["examples"], "why": q["why"], "attempt": n + 1}
-    if q["never_default"]:
-        payload.update(action="blocked", message=f"I cannot guess this one, because {q['why'][0].lower() + q['why'][1:]} {h['explain']} Take your time; the build waits for this answer and I will list it as the thing I need.")
+    if q["never_default"] and n > 0:
+        payload.update(action="blocked", message=f"I still cannot guess this one, because {q['why'][0].lower() + q['why'][1:]} {h['explain']} Take your time; the build waits for this answer and I will list it as the thing I need.")
         return payload
     if n == 0:
-        payload.update(action="help", message=h["explain"])
+        payload.update(action="help", message=h["explain"],
+                       coaching=coach_options(q))
         if h["kind"] == "palette":
             seed = (_colors(doc) or [None])[0]
             payload.update(options=[{"id": "logo", "label": "Read the colors from my logo (send the file)"},
@@ -756,6 +891,252 @@ def _offer_text(x):
 _STATE = {"provided": "provided", "suggested": "recommended_unapproved", "default_to_confirm": "recommended_unapproved", "unknown": "unknown"}
 
 
+# ---------------------------------------------------------------- launch answers, typed
+# The eight launch-operation answers a Signature Launch (Skill 49) or a Black Friday
+# launch (Skill 83) must carry end to end. Raw client text is NEVER forwarded as-is: a
+# string is not a boolean, and "No, not yet" must never read as a truthy carrier approval.
+# Each adapter below returns a typed value or None (kept unknown), plus the provenance of
+# the answer it came from. The question ids are the shared bank's topic ids; the ledger
+# keys are the names Skill 49 and Skill 83 already read.
+LAUNCH_LEDGER_KEYS = (
+    ("timing", ("launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone")),
+    ("channels", ("launch.channels",)),
+    ("conversation_ai", ("launch.conversation_ai",)),
+    ("access_delivery", ("launch.access_delivery",)),
+    ("payment_plans", ("launch.payment_plans",)),
+    ("sender_name", ("launch.sender_name",)),
+    ("reply_email", ("launch.reply_to_email",)),
+    ("texting_readiness", ("launch.a2p_ready",)),
+)
+
+# Older answers files and the onboarding bank spell three of the eight topics differently.
+LAUNCH_TOPIC_ALIASES = {"timing": ("timing", "launch_calendar"),
+                        "reply_email": ("reply_email", "reply_to_email"),
+                        "texting_readiness": ("texting_readiness", "a2p_ready", "texting")}
+
+_TRUE_WORDS = {"conversation_ai": ("yes, add the bot",),
+               "access_delivery": ("yes, send access after purchase",),
+               "payment_plans": ("payment plans offered",),
+               "texting_readiness": ("yes, it is approved",),
+               "a2p_ready": ("yes, it is approved",)}
+_FALSE_WORDS = {"conversation_ai": ("no, not this launch",),
+                "access_delivery": ("no, nothing to deliver",),
+                "payment_plans": ("paid in full",),
+                "texting_readiness": ("no, not yet",),
+                "a2p_ready": ("no, not yet",)}
+
+_TZ_ALIASES = (
+    ("new york", "America/New_York"), ("eastern", "America/New_York"),
+    ("los angeles", "America/Los_Angeles"), ("pacific", "America/Los_Angeles"),
+    ("chicago", "America/Chicago"), ("central", "America/Chicago"),
+    ("denver", "America/Denver"), ("mountain", "America/Denver"),
+    ("phoenix", "America/Phoenix"), ("toronto", "America/Toronto"),
+    ("london", "Europe/London"), ("berlin", "Europe/Berlin"), ("paris", "Europe/Paris"),
+    ("dubai", "Asia/Dubai"), ("singapore", "Asia/Singapore"),
+    ("mumbai", "Asia/Kolkata"), ("kolkata", "Asia/Kolkata"),
+    ("sydney", "Australia/Sydney"), ("utc", "UTC"), ("gmt", "UTC"),
+)
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+
+
+def topic_entry(doc, topic):
+    """The answers-file entry for a launch topic, following its older spellings."""
+    for qid in LAUNCH_TOPIC_ALIASES.get(topic, (topic,)):
+        e = get(doc, qid)
+        if e is not None:
+            return qid, e
+    return topic, None
+
+
+def _typed_bool(qid, value):
+    """A real boolean from a chosen answer, or None. A non-empty string is never truthy."""
+    if isinstance(value, bool):
+        return value
+    if not isinstance(value, str):
+        return None
+    n = _norm(value)
+    if any(n == w or n.startswith(w) for w in _TRUE_WORDS.get(qid, ())):
+        return True
+    if any(n == w or n.startswith(w) for w in _FALSE_WORDS.get(qid, ())):
+        return False
+    if n == "yes" or n.startswith("yes "):
+        return True
+    if n == "no" or n.startswith("no "):
+        return False
+    return None
+
+
+def _typed_channels(value):
+    """["email"] or ["email", "text"], or None when the answer says nothing usable."""
+    if isinstance(value, str):
+        low = value.lower()
+        has_text = "text" in low or "sms" in low
+        if "email" in low or has_text:
+            return ["email", "text"] if has_text else ["email"]
+        return None
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            low = str(item).strip().lower()
+            if low in ("email", "e-mail") and "email" not in out:
+                out.append("email")
+            elif ("text" in low or "sms" in low) and "text" not in out:
+                out.append("text")
+        return out or None
+    return None
+
+
+def _find_date(text):
+    m = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", text)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3))), m.span()
+        except ValueError:
+            return None, None
+    for pattern, order in (
+            (r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})", "dmy"),
+            (r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})", "mdy")):
+        m = re.search(pattern, text, re.I)
+        if m:
+            g = [x for x in m.groups()]
+            month = _MONTHS[g[0][:3].lower()] if order == "mdy" else _MONTHS[g[1][:3].lower()]
+            day = int(g[1]) if order == "mdy" else int(g[0])
+            try:
+                return date(int(g[2]), month, day), m.span()
+            except ValueError:
+                return None, None
+    return None, None
+
+
+def _find_time(text):
+    low = text.lower()
+    if re.search(r"\bnoon\b", low):
+        return time(12, 0)
+    if re.search(r"\bmidnight\b", low):
+        return time(0, 0)
+    m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b", text, re.I)
+    if not m:
+        return None
+    hour, minute = int(m.group(1)), int(m.group(2) or 0)
+    pm = m.group(3).lower().startswith("p")
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    if pm and hour != 12:
+        hour += 12
+    elif not pm and hour == 12:
+        hour = 0
+    return time(hour, minute)
+
+
+def _find_timezone(text):
+    low = str(text).lower()
+    for alias, zone in _TZ_ALIASES:
+        if re.search(r"\b" + re.escape(alias) + r"\b", low):
+            return zone
+    return None
+
+
+def _iso(day, clock, zone):
+    """ISO 8601 for the client's own words. With no zone the wall time is kept and the
+    plan names the missing timezone; nothing is guessed."""
+    dt = datetime.combine(day, clock)
+    if zone:
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.replace(tzinfo=ZoneInfo(zone))
+        except Exception:  # no tz database: keep the wall time rather than invent an offset
+            pass
+    return dt.isoformat()
+
+
+def parse_launch_calendar(text):
+    """The client's launch sentence as four typed timestamps. Anything not stated stays
+    None; a partial calendar is never filled in from another sentence unless the client
+    said only the time (e.g. 'launch at noon' after naming the doors-open day)."""
+    out = {"launch_at": None, "doors_open_at": None, "doors_close_at": None, "timezone": None}
+    if not isinstance(text, str) or not text.strip():
+        return out
+    zone = _find_timezone(text)
+    out["timezone"] = zone
+    parsed = {}
+    for clause in re.split(r"[;]", text):
+        for piece in re.split(r",", clause):
+            low = piece.lower()
+            key = None
+            if re.search(r"doors?\s+open", low) or re.search(r"\b(starts?|begins?|from)\b", low):
+                key = "doors_open_at"
+            elif re.search(r"doors?\s+close", low) or re.search(r"\b(ends?|until|through|closes?)\b", low):
+                key = "doors_close_at"
+            elif re.search(r"\blaunch(?:es|ing)?\b", low) and not re.search(r"launch\s+(?:e-?mail)", low):
+                key = "launch_at"
+            if key is None or key in parsed:
+                continue
+            day, span = _find_date(piece)
+            rest = (piece[:span[0]] + " " + piece[span[1]:]) if span else piece
+            clock = _find_time(rest)
+            if day and clock:
+                parsed[key] = (day, clock)
+            elif clock and key == "launch_at":
+                parsed[key] = (None, clock)  # resolved from the doors day below
+    for key, (day, clock) in parsed.items():
+        if day is None:
+            day = (parsed.get("doors_open_at") or (None, None))[0] or \
+                  (parsed.get("doors_close_at") or (None, None))[0]
+        if day:
+            out[key] = _iso(day, clock, zone)
+    return out
+
+
+def launch_answers(doc):
+    """The eight launch-operation answers as typed ledger entries, keyed by the names
+    Skill 49 and Skill 83 already read.
+
+    Each entry is {value, state, source_ref, provenance}; state is the launch intake
+    field state (provided / recommended_unapproved / unknown) so a default or a
+    suggestion can never be read as an approval. Nothing is returned in legacy mode:
+    those launches have no email, text or automation plan."""
+    if doc.get("meta", {}).get("mode") == "legacy":
+        return {}
+    out = {}
+
+    def put(qid, key, value, entry=None):
+        e = entry if entry is not None else get(doc, qid)
+        if e is None:
+            return
+        state = _STATE[e["status"]]
+        v = value
+        if state == "unknown" or v is None:
+            state, v = "unknown", None
+        out[key] = {"value": v, "state": state, "source_ref": f"answers-file:{qid}",
+                    "provenance": {"question_id": qid, "raw": e.get("value"),
+                                   "answer_status": e["status"], "answer_source": e.get("source", "")}}
+
+    timing_qid, timing = topic_entry(doc, "timing")
+    if timing is None:  # a Black Friday run names the same facts as promo_dates
+        e = get(doc, "promo_dates")
+        if e is not None:
+            timing_qid, timing = "promo_dates", e
+    if timing is not None:
+        typed = parse_launch_calendar(timing.get("value"))
+        cal_state = _STATE[timing["status"]]
+        for key in LAUNCH_LEDGER_KEYS[0][1]:
+            put(timing_qid, key, typed[key.split(".", 1)[1]], entry=timing)
+            if cal_state != "provided" and key in out:  # a defaulted calendar is a proposal, not a fact
+                out[key]["state"] = cal_state
+    ch_qid, ch = topic_entry(doc, "channels")
+    put(ch_qid, "launch.channels", _typed_channels((ch or {}).get("value")), entry=ch)
+    for topic in ("conversation_ai", "access_delivery", "payment_plans", "texting_readiness"):
+        qid, e = topic_entry(doc, topic)
+        key = dict(LAUNCH_LEDGER_KEYS)[topic][0]
+        put(qid, key, _typed_bool(qid, (e or {}).get("value")), entry=e)
+    for topic, key in (("sender_name", "launch.sender_name"), ("reply_email", "launch.reply_to_email")):
+        qid, e = topic_entry(doc, topic)
+        raw = (e or {}).get("value")
+        put(qid, key, str(raw).strip() if isinstance(raw, str) and raw.strip() else None, entry=e)
+    return out
+
+
 def to_launch_known(doc):
     """Skill 49 launch_intake `known` entries ({field: {value, state, source_ref}}) from the one answers file.
     A default or suggestion becomes recommended_unapproved, so it can never pass as approved."""
@@ -803,6 +1184,7 @@ def to_launch_known(doc):
                                         "approval": "separate paid_asset_budget approval required"}, "paid_render_approval")
     elif pra:  # no paid pieces, or decide later: nothing paid is approved
         out["paid_asset_budget"] = {"value": None, "state": "not_applicable", "source_ref": "answers-file:paid_render_approval"}
+    out.update(launch_answers(doc))  # typed, with provenance; unknown and unapproved survive
     return out
 
 

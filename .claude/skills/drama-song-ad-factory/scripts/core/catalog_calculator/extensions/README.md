@@ -60,7 +60,7 @@ D26 batch (plan 6.14, price-menu 6): one card per book, then
 
 ```text
 batch total = sum over books of (Skill 74 price for that book's choices)
-              + 20% retake allowance
+              + 50% retake allowance
 ```
 
 The total is the exact sum of the per-ad card prices (whole cents, so

@@ -45,10 +45,13 @@ LOUD CODES (loud_failure.py, printed to stderr AND carried in the envelope)
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
+import shutil
 import sqlite3
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -176,9 +179,31 @@ def _json(path):
 
 
 def _ro(db_path):
-    """Read-only connection. A run is NEVER mutated by this module."""
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    return sqlite3.connect(uri, uri=True, timeout=5)
+    """Read-only connection. A run is NEVER mutated by this module.
+
+    A WAL database whose -wal/-shm sidecars cannot be attached refuses
+    mode=ro (SQLITE_CANTOPEN), and connect() is lazy, so the failure only
+    showed on the first statement. Retry on a private temp copy instead.
+    """
+    path = Path(db_path).resolve()
+    try:
+        con = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)
+        con.execute("PRAGMA schema_version").fetchone()
+        return con
+    except sqlite3.Error:
+        try:
+            con.close()                       # noqa: F821
+        except Exception:                     # noqa: BLE001
+            pass
+    tmp = tempfile.mkdtemp(prefix="run-watch-")
+    atexit.register(shutil.rmtree, tmp, True)
+    for name in (path.name, path.name + "-wal", path.name + "-shm"):
+        src = path.with_name(name)
+        if src.is_file():
+            shutil.copy2(src, os.path.join(tmp, name))
+    con = sqlite3.connect(os.path.join(tmp, path.name), timeout=5)
+    con.execute("PRAGMA query_only=ON")
+    return con
 
 
 def _utc_iso(epoch):
@@ -243,6 +268,39 @@ def read_state(run_dir):
         last = float(at) if last is None else max(last, float(at))
     return {"run_id": run_id, "stages": stages,
             "events_by_stage": by_stage, "last_event_at": last}, None
+
+
+_HUMAN_DECISION_FILES = ("control/method.json", "control/card-answers.json",
+                         "control/studio-order.json",
+                         "music/acceptance/operator-decision.json",
+                         "song-choices/fork-decision.json")
+
+
+def human_decision_at(run_dir):
+    """Newest human/operator decision artifact in the run, or None.
+
+    The 3-hour window measures from the LAST HUMAN DECISION, not from intake:
+    a client-paced run otherwise expires before the client ever answers, which
+    is exactly how a 25-hour stall reported HEARTBEAT_EXPIRED instead of
+    continuing the work a person had already approved.
+    """
+    newest = 0.0
+    for rel in _HUMAN_DECISION_FILES:
+        p = Path(run_dir) / rel
+        try:
+            if p.is_file():
+                newest = max(newest, p.stat().st_mtime)
+        except OSError:
+            pass
+    try:
+        for p in Path(run_dir).rglob("script-approval.json"):
+            try:
+                newest = max(newest, p.stat().st_mtime)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return newest or None
 
 
 def runs_created_at(run_dir, run_id):
@@ -399,6 +457,9 @@ def stall_check(run_dir, state, row, now):
     if row is None:
         return False, ""
     stage, st = row["stage"], row["state"]
+    if st == "COMPLETE":
+        # A finished stage has nothing left to move.
+        return False, ""
     if st == "STALE":
         return True, ("the run marked %s stale: %s"
                       % (stage, row.get("reason") or "no reason recorded"))
@@ -471,7 +532,33 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
 
 
 # --- the one look ------------------------------------------------------------
-def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None):
+def configured_max_hours(run_dir, fallback=DEFAULT_MAX_HOURS):
+    """The run's own cap: config.json "max_hours", else RUN_WATCH_MAX_HOURS,
+    else the 3 h default. A human-paced production run needs a longer window
+    than the anti-runaway default, and the owner sets it per run."""
+    try:
+        import json as _json
+        with open(Path(run_dir) / "config.json", encoding="utf-8") as fh:
+            cfg = _json.load(fh)
+        if isinstance(cfg, dict):
+            v = cfg.get("max_hours")
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
+    except (OSError, ValueError):
+        pass
+    try:
+        import os as _os
+        v = float(_os.environ.get("RUN_WATCH_MAX_HOURS", ""))
+        if v > 0:
+            return v
+    except (TypeError, ValueError):
+        pass
+    return fallback
+
+
+def build(run_dir, max_hours=None, now=None):
+    if max_hours is None:
+        max_hours = configured_max_hours(run_dir)
     now = time.time() if now is None else float(now)
     run_dir = str(run_dir)
     loud = []
@@ -505,12 +592,22 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None):
     if ledger_start is not None:
         anchors.append(ledger_start)
     started = min(anchors) if anchors else now
+    human = human_decision_at(run_dir)
+    if human is not None and human > started:
+        started = human
     elapsed_minutes = max(0, int((now - started) // 60))
     stalled, stall_detail = stall_check(run_dir, state, row, now)
     decisions = (intake_decisions(run_dir)
                  + approval_decisions(run_dir, state["stages"])
                  + fork_decisions(run_dir))
-    expired = elapsed_minutes >= int(max_hours * 60) and not complete
+    # The cap measures the STUDIO's own delay. A run parked on a client
+    # answer is not late: it is waiting, and the clock must not turn that
+    # into HEARTBEAT_EXPIRED (the client was being told the run ran out of
+    # time while the only missing thing was their own reply).
+    waiting_on_client = bool(decisions) or bool(
+        row and row["state"] == "WAITING_APPROVAL")
+    expired = (elapsed_minutes >= int(max_hours * 60)
+               and not complete and not waiting_on_client)
     if stalled:
         loud.append(_fail("HEARTBEAT_STALLED",
                           "%s/%s: %s" % (state["run_id"], row["stage"],
@@ -547,7 +644,7 @@ def main(argv=None):
     ap.add_argument("--run-dir", required=True, help="the run folder ($RUN)")
     ap.add_argument("--interval-check", action="store_true",
                     help="one tick of the 10-minute driver: exit 10 stops the loop")
-    ap.add_argument("--max-hours", type=float, default=DEFAULT_MAX_HOURS,
+    ap.add_argument("--max-hours", type=float, default=None,
                     help="the hard cap from the run's start (default 3)")
     ap.add_argument("--now", type=float, default=None,
                     help="epoch seconds to judge 'now' by (tests; default: the clock)")

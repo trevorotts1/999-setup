@@ -1,5 +1,10 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.22 - 2026-10-23 - guided client experience: the intake engine shows exactly one next applicable question
+
+- Version markers rolled to the canonical cohort release v2.1.22 (`skill-version.txt` + `SKILL.md` frontmatter), matching openclaw-onboarding `06421e97c` (`chore(s49,s83): integrator version pair-bumps v2.1.22 / 0.2.9`).
+- The v2.2 contract this number stands for is the guided-intake correction: `shared-utils/signature_launch/experience/render_question.py` selects exactly ONE next applicable question instead of listing every unanswered question. That runtime repair lands in the same batch, merged first by the integrator; this entry claims parity only alongside that implementation, never from the numbers alone.
+- Skill 83 pair-bumped in the same batch (0.2.9, five markers). Skill 49 carries no separate 83-style parity test at this HEAD; `scripts/qc-assert-skill-frontmatter-version.sh` gates `SKILL.md` frontmatter against `skill-version.txt`.
 ## v2.1.18 - 2026-10-20 - batch: a zero-image run is FAILED (Skill 71 1.3.4)
 
 - `scripts/checkout_wrapper.py` passes `--validation-only` to Skill 71 `shared_page_service.py`: that call is the admission seam only, and the stages that follow generate. Skill 71 now FAILS a generation run that produced no images.

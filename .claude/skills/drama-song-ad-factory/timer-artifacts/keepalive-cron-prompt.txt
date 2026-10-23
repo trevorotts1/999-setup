@@ -57,3 +57,43 @@ You are the skill 75 keepalive for this box. One job, every 10 minutes, no spend
 
 Never print a key, a token or a path under ~/.openclaw/secrets. Never mention
 internal codes to the client. Never spend. Never write to the run folder.
+
+7. If the reported stage is `continuity-bible` and its stage_state is
+   NOT_STARTED or READY: this stage is agent-authored. Author its artifacts per
+   references/stage-runbook.md -- the Character DNA, the product DNA and the
+   style bible -- then write $RUN/continuity/qc-records.json and
+   $RUN/continuity/makers.json using check ids qc_gate recognizes, and run
+
+   python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"
+
+   once. `next` reconciles continuity-bible from those records and advances the
+   run to storyboard. Never write a PASS for a check you did not prove: leave
+   it FAIL and report it. Spend no money at this stage.
+
+8. If the reported stage is `storyboard` and its stage_state is NOT_STARTED or
+   READY: this stage is agent-authored too. Build $RUN/storyboard/shot-list.json
+   from creative/story-plan.json and the lyric timing -- one entry per beat,
+   every villain shot tagged `villain`, the pain and rise tags on those same
+   shots -- then run
+
+   python3 scripts/core/shot_planner/speaker_check/speaker_check.py check --env "$RUN/storyboard/shot-list.json"
+
+   until it passes. Write $RUN/storyboard/gate.json with {"shots": [...]} and
+   $RUN/storyboard/approval.json {"state":"approved"} ONLY when
+   control/card-receipt.json really records the client's delegated "just make
+   it" for storyboard; cite that receipt in the file. Then run
+   `python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"` once
+   so the reconciler advances it. Spend no money at this stage.
+
+9. If the reported stage is `image-keyframes`, OR `next` reports
+   `storyboard-approval-required` while storyboard/stills is missing or empty
+   (approval cannot happen without the stills): this stage is PAID. Build
+   $RUN/generation/req.json from the approved shot list, then run the runbook's
+   own dispatch row verbatim:
+
+   python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <image-model-id>      --request "$RUN/generation/req.json" --prompt-file "$RUN/generation/req.prompt.txt" --save-dir "$RUN/generation"      --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key keyframes      --attempt-id a1 --cost 0
+
+   Take <image-model-id> from the skill's own model policy -- never invent one
+   and never substitute an operator key. One dispatch per tick, then re-run
+   `factory.py next` once. Stop immediately if the spend ledger refuses on the
+   run's ceiling; report the refusal, never retry around it.

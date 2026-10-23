@@ -1158,6 +1158,22 @@ def check_script_approval_gate(model, request, save_dir=None):
                                      req.get("lyrics") or inp.get("lyrics") or "")
 
 
+def _saved_hashes(paths):
+    """Receipt-time file identity; missing/unreadable saves never gain evidence."""
+    import hashlib
+    result = {}
+    for path in paths:
+        try:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+            result[os.path.realpath(path)] = h.hexdigest()
+        except (OSError, TypeError):
+            continue
+    return result
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
@@ -1188,6 +1204,23 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
                         evidence=cap_refusal["evidence"])
+
+    # Bind lip-sync generation to the CURRENT approved shot before any spend.
+    # This uses the storyboard's existing approval; it creates no new approval.
+    lipsync_binding = None
+    lipsync_inputs = None
+    if ML.is_locked_lipsync(model):
+        from lipsync_evidence import binding_for_request, inputs_for_request, LipsyncEvidenceError
+        try:
+            lipsync_binding = binding_for_request(
+                request.get("run_dir"),
+                {**(request.get("lipsync_binding") or {}), "run_id": run_id})
+            lipsync_inputs = inputs_for_request(request.get("run_dir"), {**request, "run_id": run_id})
+        except (LipsyncEvidenceError, TypeError, ValueError) as exc:
+            return envelope("dispatch", "rejected",
+                            getattr(exc, "code", "LIPSYNC_EVIDENCE_MISSING"),
+                            str(exc), run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id, evidence={"generated": False})
 
     # ---- 0. WW-30 music contract (retired legacy route / envelope) --------
     # Before ANY other gate, ledger row or paid call: a music job rides the
@@ -1379,8 +1412,13 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     if pl["outcome"] != "ok":
         return envelope("dispatch", pl["outcome"], pl["reason_code"],
                         pl.get("next_action", ""), run_id=run_id,
-                        logical_key=logical_key, attempt_id=attempt_id,
+                        logical_key=logical_key,
+                        attempt_id=pl.get("attempt_id") or attempt_id,
                         state_version=pl.get("state_version", 0))
+    # An empty attempt_id asked the ledger to mint one; the id it committed is
+    # the only identity this job may use from here on. Minting is never a
+    # string suffix of a prior attempt and never a default "a1".
+    attempt_id = pl.get("attempt_id") or attempt_id
     rs = L.reserve(ledger_db, run_id, logical_key, attempt_id, owner=owner)
     if rs["outcome"] != "ok":
         return envelope("dispatch", rs["outcome"], rs["reason_code"],
@@ -1503,6 +1541,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         # Split of the old single `run` call (manual C2): the outer subprocess
         # timer used to fire before Skill 74's own wait, so a long video left
         # an unknown row with no task id and the resolver zero-settled spend.
+        if lipsync_inputs is not None:
+            try:
+                current_inputs = inputs_for_request(request.get("run_dir"), {**request, "run_id": run_id})
+                if current_inputs != lipsync_inputs:
+                    raise LipsyncEvidenceError("LIPSYNC_INPUT_CHANGED", "inputs changed before submit")
+            except (LipsyncEvidenceError, TypeError, ValueError) as exc:
+                return stop("rejected", getattr(exc, "code", "LIPSYNC_EVIDENCE_MISSING"),
+                            str(exc), {"generated": False})
         req_file = os.path.join(tmp, "request.json")
         with open(req_file, "w", encoding="utf-8") as f:
             json.dump(request, f, sort_keys=True)
@@ -1721,6 +1767,10 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             evidence={"adapter_mode": mode, "generated": True,
                       "task_id": task_id,
                       "saved_paths": saved,
+                      "lipsync_binding": lipsync_binding,
+                      "lipsync_inputs": lipsync_inputs,
+                      "lipsync_model": model if lipsync_binding else None,
+                      "saved_sha256": _saved_hashes(saved) if lipsync_binding else {},
                       "credits_consumed": credits,
                       "actual_cost": actual, "warnings": warn,
                       "wait_timeout_s": wait_s, "retries": 0,
@@ -1764,6 +1814,10 @@ def main(argv=None):
     x.add_argument("--adapter", default=None,
                    help="Path to kie_live_adapter.py (default: search).")
     x.add_argument("--timeout", type=int, default=300)
+    x.add_argument("--state-store", default=None,
+                   help="run state DB (control/state.sqlite3) for the F14 "
+                        "video-model lock; without it a video job can never "
+                        "pass F14 from the CLI")
     a = ap.parse_args(argv)
 
     if a.cmd == "dispatch":
@@ -1775,6 +1829,13 @@ def main(argv=None):
             else:
                 with open(a.prompt_file, encoding="utf-8") as f:
                     prompt = f.read()
+                # A file written with a trailing newline must not change the
+                # bytes an H3 prompt receipt was issued over: the receipt
+                # hashes the prompt itself, so one 0x0A makes every templated
+                # H3 job refuse PROMPT_NOT_TEMPLATED. Reading a prompt file
+                # drops exactly one trailing newline.
+                if prompt.endswith("\n"):
+                    prompt = prompt[:-1]
         else:
             prompt = a.prompt or ""
         env = dispatch(model=a.model, request=request, save_dir=a.save_dir,
@@ -1782,7 +1843,7 @@ def main(argv=None):
                        logical_key=a.logical_key, attempt_id=a.attempt_id,
                        estimated_cost=a.cost, prompt=prompt, units=a.units,
                        stage=a.stage, owner=a.owner, adapter_path=a.adapter,
-                       timeout=a.timeout)
+                       timeout=a.timeout, state_store=a.state_store)
         json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
         sys.stdout.write("\n")
         return EXIT[env["outcome"]]

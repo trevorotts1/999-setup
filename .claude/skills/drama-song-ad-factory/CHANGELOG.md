@@ -1,5 +1,39 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## Unreleased - 2026-10-23 - retake contingency aligned to the canonical 50% ruling
+
+Skill 75 now quotes the approved canonical retake allowance (F1/F2, batch-8a,
+v2.9.90) of 50%, held once in `scripts/core/budget_contingency.RATE` and aliased
+by every pricing consumer: the catalogue card, the price extension, the batch
+card and the catalogue calculator. Those four sites previously hardcoded 20%, so
+a card rendered here quoted a smaller retake buffer than the canonical build.
+
+Client-facing text now states the same 50%: the spend question, the video-model
+price line, the published price menu's "+50% retakes" column (every table
+recomputed as 50% of one shape's video plus keyframes), the card-gate model
+sentence, the client guide and the choice-card spec.
+
+The duration-only 20% retake allowance in `agnes_plan` is a shot-count budget,
+not money, and is unchanged.
+
+## v2.9.98 - 2026-10-23 - lip-sync evidence follows the final delivery
+
+Missing lip-sync markers, speaker/line identities or approved storyboard evidence
+now fail closed. The render contract binds included segments to their approved
+shots, successful generation receipts and materialized media; Q8 reconciles that
+proof with the final export and the delivery package's clean-video hash. Generated
+but unused clips cannot satisfy delivery. Existing measured and flagged kept-take
+rules and paid-retry approval conditions remain in force.
+
+The existing provider route now has an instrumented audio producer: selected-song
+revision and hashes, source upload, separation task, measured offset and executed
+cut window are carried into the upload and final export proof. Legacy records
+without that operation history fail closed; paid artifacts are preserved.
+
+This release repairs evidence enforcement only. It does not select a new numeric
+lip-sync quota, change the duration formula or activate an existing client run.
+The revised percentage schedule remains pending a separate policy decision.
+
 ## [v2.9.78] — twin sync of onboarding v2.9.78 (duration overshoot flag, client-authority song fork)
  - 2026-10-21
 

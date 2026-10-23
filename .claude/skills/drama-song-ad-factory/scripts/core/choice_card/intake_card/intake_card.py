@@ -143,7 +143,7 @@ def _usd(x):
 
 def spend_question(price=None, limit=None, from_brief=False):
     """The ONE money question, asked here and nowhere else (FU-ONE-SPEND-QUESTION).
-    price: the card's total in dollars (20% redo allowance included). limit: a
+    price: the card's total in dollars (50% redo allowance included). limit: a
     maximum already known. from_brief: that maximum came from the brief (not a --limit
     override). Neither is ever defaulted: the client must reply."""
     opts, vals = [], {}
@@ -151,7 +151,7 @@ def spend_question(price=None, limit=None, from_brief=False):
         opts.append(("Your max: " + _usd(limit), "from your brief" if from_brief else None))
         vals[len(opts)] = str(limit).lstrip("$")
     if price is not None:
-        opts.append((_usd(price), "the estimated price for your video, including a 20% allowance for redoing shots"))
+        opts.append((_usd(price), "the estimated price for your video, including a 50% allowance for redoing shots"))
         vals[len(opts)] = str(price).lstrip("$")
     opts.append(("A different maximum", "reply with a dollar amount, like $25"))
     return {"id": "spend", "why": "This keeps you in control of the cost.",
@@ -222,7 +222,7 @@ def _model_price_line(length_label):
     client chose. The card's ask and the studio-json export both read it here,
     so the two price surfaces cannot drift apart."""
     from choice_card.video_models import video_models as VM
-    return ("Prices are for your %s ad, with the song, pictures and a 20%% "
+    return ("Prices are for your %s ad, with the song, pictures and a 50%% "
             "redo allowance." % VM.length_phrase(VM.length_seconds(length_label)))
 
 
@@ -1136,13 +1136,50 @@ def telegram_payload(chat_id, text):
     return {"chat_id": chat_id, "text": text}
 
 
+def _staged_media(media):
+    """Copy outbound attachments into the platform's own delivery media root.
+
+    `openclaw message send` refuses a local media path outside its allowed
+    roots with LocalMediaAccessError, and a run folder is not one of those
+    roots -- so every client delivery from a run used to fail. The
+    delivery-queue media dir (<state>/delivery-queue-media) is the root the
+    platform reserves for delivery, so attachments are staged there and the
+    caller's file is never moved or edited.
+    """
+    import shutil
+    roots = []
+    state = os.environ.get("OPENCLAW_STATE_DIR") or os.path.expanduser("~/.openclaw")
+    for cand in (state, os.path.expanduser("~/.openclaw")):
+        d = os.path.join(cand, "delivery-queue-media")
+        try:
+            os.makedirs(d, exist_ok=True)
+            roots.append(d)
+            break
+        except OSError:
+            continue
+    out = []
+    for m in media or ():
+        p = str(m)
+        if not roots or not os.path.isfile(p):
+            out.append(p)
+            continue
+        dst = os.path.join(roots[0], os.path.basename(p))
+        try:
+            if os.path.abspath(p) != os.path.abspath(dst):
+                shutil.copy2(p, dst)
+            out.append(dst)
+        except OSError:
+            out.append(p)
+    return out
+
+
 def openclaw_send_argv(target, text, media=()):
     """Exact argv for ``openclaw message send`` on Telegram. A list, not a
     shell string: run it with subprocess (shell=False) and the newlines in
     ``text`` reach the sender untouched."""
     return (["openclaw", "message", "send", "--channel", "telegram",
              "--target", str(target), "--message", text]
-            + [x for m in media for x in ("--media", str(m))])
+            + [x for m in _staged_media(media) for x in ("--media", str(m))])
 
 
 # --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------
@@ -1494,7 +1531,7 @@ def main(argv=None):
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
     ap.add_argument("--price", default=None,
-                    help="the card total in dollars (20%% redo allowance included); "
+                    help="the card total in dollars (50%% redo allowance included); "
                          "shown as spend option 1 or 2")
     ap.add_argument("--limit", default=None,
                     help="a spend limit the brief already gave, in dollars; "

@@ -1286,7 +1286,12 @@ def _real_generate(run_dir, ledger, run_id):
                            request=payload, save_dir=save_dir, ledger_db=ledger,
                            run_id=run_id or (os.path.basename(run_dir) or "run"),
                            logical_key="song/%s" % variant["id"],
-                           attempt_id="a1", estimated_cost=_SD.GEN_COST_CENTS,
+                           # Empty: the ledger mints the attempt identity and
+                           # dispatch() carries the committed id back. A literal
+                           # "a1" made every retry after a failed paid take
+                           # refuse DUPLICATE_ATTEMPT, so the retry path was
+                           # structurally dead.
+                           attempt_id="", estimated_cost=_SD.GEN_COST_CENTS,
                            prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
         _write_envelope(run_dir, variant["id"], ev)
@@ -1295,8 +1300,10 @@ def _real_generate(run_dir, ledger, run_id):
         # acknowledgment; terminal_at at the first terminal provider response.
         # No receipt when the provider never acknowledged or never terminated:
         # the gate then reports UNAVAILABLE, which is never a pass.
-        if ev.get("accepted_submit_at") and ev.get("terminal_at"):
-            receipt_for(run_dir, variant, request, "a1", ev.get("task_id"),
+        # The ledger's committed attempt id, never the caller's literal.
+        _aid = (env.get("attempt_id") if isinstance(env, dict) else None) or ""
+        if _aid and ev.get("accepted_submit_at") and ev.get("terminal_at"):
+            receipt_for(run_dir, variant, request, _aid, ev.get("task_id"),
                         ev["accepted_submit_at"], ev["terminal_at"])
         # Provenance for lyric_timing (reads take["task_id"] / take["audio_id"]).
         # The envelope carries the generation task id only; the per-track Suno
