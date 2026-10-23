@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS jobs(
   estimated_cost INTEGER, actual_cost INTEGER,
   owner TEXT NOT NULL DEFAULT '', lease_expires INTEGER NOT NULL DEFAULT 0,
   last_seq INTEGER NOT NULL DEFAULT 0,
+  uncertain INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY(logical_key, attempt_id));
 CREATE INDEX IF NOT EXISTS idx_jobs_run_state ON jobs(run_id, state);
@@ -68,6 +69,8 @@ CREATE TABLE IF NOT EXISTS receipts(
   logical_key TEXT NOT NULL, attempt_id TEXT NOT NULL, amount INTEGER NOT NULL,
   currency TEXT NOT NULL DEFAULT 'USD', provider_ref TEXT, evidence_ref TEXT,
   created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_receipts_attempt
+  ON receipts(run_id, logical_key, attempt_id);
 CREATE TABLE IF NOT EXISTS events(
   event_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
   logical_key TEXT NOT NULL, attempt_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -147,6 +150,34 @@ def _open(db_path, create=False):
         conn.close()
         raise IncompatibleStateError(
             "INCOMPATIBLE_STATE: schema=%s" % (row[0] if row else None))
+    # ponytail: the `uncertain` flag is added in place rather than versioned.
+    # Ceiling: one additive column, no rewrite. Upgrade path: bump
+    # SCHEMA_VERSION and add a real migration the first time an existing DB
+    # must be reshaped (not merely widened) or a second column lands.
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+        if cols and "uncertain" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN uncertain INTEGER "
+                         "NOT NULL DEFAULT 0")
+            # Backfill the one case a pre-fix ledger can still prove: a job
+            # sitting in `unknown` at upgrade time. Without this, upgrading
+            # while an attempt is hanging would let the operator reconcile it
+            # without evidence and retry -- the exact hole this gate closes.
+            conn.execute("UPDATE jobs SET uncertain=1 WHERE state='unknown'")
+        # NAMED POST-UPGRADE WINDOW: an attempt that had already been
+        # reconciled from `unknown` before this column existed carries no
+        # record of ever being uncertain, and such a failure is
+        # indistinguishable from an ordinary provider-reported failure (shipped
+        # dispatch passes no ref on an ordinary settle). Those rows cannot be
+        # backfilled without inventing history, so the gate cannot see their
+        # first retry. Closing this for real needs a transition history, not a
+        # flag; until then it is a one-retry window per legacy attempt, not a
+        # silent pass.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_receipts_attempt "
+                     "ON receipts(run_id, logical_key, attempt_id)")
+    except sqlite3.DatabaseError:
+        conn.close()
+        raise
     return conn
 
 
@@ -203,6 +234,31 @@ def _get_job(conn, logical_key, attempt_id):
         "WHERE logical_key=? AND attempt_id=?",
         (logical_key, attempt_id)).fetchone()
 
+
+def _lookup_evidence(conn, run_id, logical_key, attempt_id):
+    """True when a provider lookup (or operator evidence) is recorded for the
+    attempt whose outcome was uncertain.
+
+    Schema decision (deliberate): a flag column `jobs.uncertain` records that
+    the attempt's provider outcome was never established, and this join to
+    `receipts` supplies provider_ref/evidence_ref. No provider ref is
+    duplicated into `jobs` -- reconcile() already writes both fields onto the
+    receipt in the transaction that settles the job, so the receipt stays the
+    single writer of that fact and a second copy could drift. `jobs.remote_task_id`
+    is the only provider key plan() reads directly, and it decides whether the
+    attempt ever reached a provider at all.
+    The lookup is served by idx_receipts_attempt (run_id, logical_key,
+    attempt_id), created in the DDL and in the _open migration."""
+    recs = conn.execute(
+        "SELECT provider_ref,evidence_ref FROM receipts WHERE run_id=? AND "
+        "logical_key=? AND attempt_id=?",
+        (run_id, logical_key, attempt_id)).fetchall()
+    # str.strip() in Python, not SQL TRIM: SQLite's TRIM drops only spaces, so
+    # a tab-only reference would pass for evidence.
+    for provider_ref, evidence_ref in recs:
+        if (provider_ref or "").strip() or (evidence_ref or "").strip():
+            return True
+    return False
 
 def _active_for_key(conn, run_id, logical_key):
     q = ("SELECT attempt_id,state FROM jobs WHERE run_id=? AND logical_key=?"
@@ -348,7 +404,8 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
                 % act[0][0], run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id, state_version=run[6])
         prior = conn.execute(
-            "SELECT attempt_id,state,final_outcome,attempt_no FROM jobs "
+            "SELECT attempt_id,state,final_outcome,attempt_no,uncertain,"
+            "remote_task_id FROM jobs "
             "WHERE run_id=? AND logical_key=? ORDER BY attempt_no",
             (run_id, logical_key)).fetchall()
         derived = (prior[-1][3] if prior else 0) + 1
@@ -377,6 +434,30 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
                                 "retry count exceeds approved repair cap",
                                 run_id=run_id, logical_key=logical_key,
                                 attempt_id=attempt_id, state_version=run[6])
+        # A new paid attempt may not be minted while any earlier attempt's
+        # provider outcome was never established: reconcile must carry the
+        # lookup evidence first. The gate sits HERE, at the resubmission, not
+        # in reconcile -- so reconciling an abandoned/undeterminable attempt
+        # stays legal and the operator can still stop. An attempt that never
+        # reached a provider (no remote_task_id) has nothing to look up and is
+        # never gated.
+        # ponytail: scoped to attempts that passed through unknown. A
+        # `submitted` attempt reconciled straight to failed is treated as a
+        # verified failure, because shipped dispatch does not pass a provider
+        # ref on an ordinary settle and gating on remote_task_id alone would
+        # refuse every legitimate retry. Widen to remote_task_id alone once
+        # dispatch records the provider task id on every failed settle.
+        for row in prior:
+            if row[4] and (row[5] or "").strip():
+                if not _lookup_evidence(conn, run_id, logical_key, row[0]):
+                    conn.execute("ROLLBACK")
+                    return envelope(
+                        "plan", "rejected", "PROVIDER_LOOKUP_REQUIRED",
+                        "attempt %s outcome was uncertain; record its provider "
+                        "lookup (reconcile --provider-ref/--evidence-ref) "
+                        "before any resubmission" % row[0],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, state_version=run[6])
         minted = False
         if not attempt_id:
             attempt_id = _mint_attempt_id(run_id, logical_key, derived,
@@ -534,11 +615,14 @@ def mark_submitted(db_path, run_id, logical_key, attempt_id, remote_task_id,
 def mark_unknown(db_path, run_id, logical_key, attempt_id, owner="cli",
                  expected_version=0):
     """reserved|submitted -> unknown. Retains reservation; never resubmits."""
+    # uncertain=1 is the durable fact that this attempt's provider outcome was
+    # never established, so a later resubmission owes a provider lookup.
     return _mutate(db_path, "mark_unknown", run_id, logical_key, attempt_id,
                    owner, expected_version, ("reserved", "submitted"),
                    "unknown",
                    "reconcile via provider records or operator evidence; "
-                   "do not auto-resubmit; park if undeterminable")
+                   "do not auto-resubmit; park if undeterminable",
+                   uncertain=1)
 
 
 def mark_terminal(db_path, run_id, logical_key, attempt_id, outcome,
@@ -597,7 +681,7 @@ def reconcile(db_path, run_id, logical_key, attempt_id, final_outcome,
             "INSERT INTO receipts(run_id,logical_key,attempt_id,amount,currency,"
             "provider_ref,evidence_ref,created_at) VALUES(?,?,?,?,?,?,?,?)",
             (run_id, logical_key, attempt_id, actual_cost, run[2],
-             provider_ref, evidence_ref, now))
+             (provider_ref or "").strip(), (evidence_ref or "").strip(), now))
         conn.execute(
             "UPDATE jobs SET state='reconciled',final_outcome=?,actual_cost=?,"
             "updated_at=?,version=version+1,owner=? WHERE logical_key=? AND "
@@ -661,7 +745,8 @@ def cancel(db_path, run_id, logical_key, attempt_id, owner="cli",
     return _mutate(db_path, "cancel", run_id, logical_key, attempt_id, owner,
                    expected_version, ("planned", "reserved", "submitted"),
                    "unknown",
-                   "cancellation preserved receipts; reconcile remote work")
+                   "cancellation preserved receipts; reconcile remote work",
+                   uncertain=1)
 
 
 def park_run(db_path, run_id, reason="OPERATOR_PARK"):
