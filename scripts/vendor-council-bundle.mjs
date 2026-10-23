@@ -22,12 +22,16 @@
 //           aggregate it derives from.
 //   - Bibliographic records (sources.json, coverage.json) stay
 //     byte-identical: references stay, the private material goes.
-//   - The source tree is refused if it is dirty: no node_modules, no
-//     runtime/dist, no council state files, and its manifest aggregate
-//     must recompute exactly. The tree's generated .skill archive is
-//     recorded by hash and deliberately not vendored (the vendored
-//     folder is itself the distribution). When the source sits in a
-//     git worktree, HEAD must equal --source-commit.
+//   - The source tree is refused if it is dirty: no council state files,
+//     and its manifest aggregate must recompute exactly. node_modules is
+//     build-time only and is never hashed or shipped. runtime/dist ships
+//     WITH the distribution (executable + dependencies + instructions
+//     together) but only as the exact recorded build: manifest.json must
+//     carry runtime_entry and the bytes must match it, so a fresh install
+//     and an upgrade deliver the executable and never an old bundle. The
+//     tree's generated .skill archive is recorded by hash and deliberately
+//     not vendored (the vendored folder is itself the distribution). When
+//     the source sits in a git worktree, HEAD must equal --source-commit.
 //
 // Usage:
 //   node scripts/vendor-council-bundle.mjs \
@@ -81,6 +85,9 @@ const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
 function walk(dir, base = dir, acc = []) {
   for (const name of readdirSync(dir).sort()) {
+    // node_modules is build-time only: the bundle embeds its dependencies.
+    // It is never hashed, never shipped, and never a dirtiness signal.
+    if (name === "node_modules") continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) walk(p, base, acc);
     else acc.push(relative(base, p).split("\\").join("/"));
@@ -94,9 +101,15 @@ function treeHashes(root) {
   }
   return map;
 }
+// The tree aggregate implements the canonical hash method the manifests
+// record: manifest.json, any .skill archive and the generated
+// runtime/dist and runtime/node_modules trees are excluded (the built
+// entry point is recorded in runtime_entry instead).
 function aggregateOf(map) {
   const entries = [...map.entries()]
-    .filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill"))
+    .filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill")
+      && p !== "runtime/dist" && !p.startsWith("runtime/dist/")
+      && p !== "runtime/node_modules" && !p.startsWith("runtime/node_modules/"))
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([p, h]) => `${h}  ${p}`);
   return {
@@ -115,18 +128,27 @@ if (!existsSync(join(source, "manifest.json"))) {
 }
 
 // ---- Source cleanliness gates -------------------------------------------
+// The built runtime (runtime/dist) rides WITH the distribution so a fresh
+// install and an upgrade deliver the executable, its bundled dependencies
+// and the skill instructions together. It is accepted only as the exact
+// recorded build (manifest.json runtime_entry): an unrecorded or
+// hand-edited runtime is refused like any other dirty source.
+const canonicalManifest = JSON.parse(readFileSync(join(source, "manifest.json"), "utf8"));
+const runtimeEntry = canonicalManifest.runtime_entry ?? null;
 const srcFiles = walk(source);
 for (const rel of srcFiles) {
-  if (rel.includes("node_modules/") || rel.startsWith("runtime/dist/")
-    || /\.(sqlite3?|db)$/i.test(rel)
+  if (/\.(sqlite3?|db)$/i.test(rel)
     || /^(state|sessions|data)\//.test(rel)) {
     fail(`source tree is dirty, refusing to vendor: ${rel}`);
+  }
+  if (rel.startsWith("runtime/dist/") && !runtimeEntry) {
+    fail(`source carries an unrecorded built runtime (${rel}): package it with ` +
+      "`node scripts/build-bundles.mjs` so manifest.json records runtime_entry");
   }
   if (rel.endsWith(".skill") && rel !== "council-of-wise-elders.skill") {
     fail(`unexpected archive in the source tree, refusing to vendor: ${rel}`);
   }
 }
-const canonicalManifest = JSON.parse(readFileSync(join(source, "manifest.json"), "utf8"));
 const srcHashes = treeHashes(source);
 srcHashes.delete("manifest.json");
 // The generated distributable archive is a sibling artifact of the same
@@ -156,6 +178,27 @@ try {
 } catch {
   fail("source is not inside a git worktree; cannot prove the source commit");
 }
+// ---- Built runtime gate (installer truth) --------------------------------
+// The 999 distribution must ship the executable: a source-only package is
+// visibly incomplete here, never silently vendored without its entry point.
+if (!runtimeEntry) {
+  fail("canonical manifest.json records no runtime_entry: the 999 distribution would ship without the " +
+    "executable. Build it with `npm ci --no-audit --no-fund && npm run build` in runtime/ and repackage " +
+    "with `node scripts/build-bundles.mjs` first");
+} else {
+  const entryAbs = join(source, runtimeEntry.path);
+  if (!existsSync(entryAbs)) {
+    fail(`canonical runtime entry missing: ${runtimeEntry.path}`);
+  } else {
+    const entrySha = sha256(readFileSync(entryAbs));
+    if (entrySha !== runtimeEntry.sha256) {
+      fail(`canonical runtime entry is stale: ${runtimeEntry.path} sha256 ${entrySha} != manifest ` +
+        `${runtimeEntry.sha256}: rebuild and repackage before vendoring`);
+    } else {
+      pass(`canonical runtime entry verified: ${runtimeEntry.path} ${runtimeEntry.bytes} bytes, sha256 ${entrySha}`);
+    }
+  }
+}
 if (failures > 0) process.exit(1);
 
 // ---- Copy ----------------------------------------------------------------
@@ -163,9 +206,12 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 cpSync(source, out, {
   recursive: true,
-  filter: (p) => !p.endsWith(".skill"),
+  filter: (p) => {
+    const rel = relative(source, p).split("\\").join("/");
+    return !p.endsWith(".skill") && !rel.split("/").includes("node_modules");
+  },
 });
-pass(`copied canonical tree to ${out} (generated .skill archive excluded)`);
+pass(`copied canonical tree to ${out} (generated .skill archive and node_modules excluded)`);
 
 // ---- Brunson private-scope strip ------------------------------------------
 // Sentence split that keeps terminators; a string with no terminator is
@@ -378,6 +424,8 @@ const finalHashes = treeHashes(out);
 finalHashes.delete("manifest.json");
 const distAgg = aggregateOf(finalHashes);
 const filesList = [...finalHashes.entries()]
+  .filter(([p]) => p !== "runtime/dist" && !p.startsWith("runtime/dist/")
+    && p !== "runtime/node_modules" && !p.startsWith("runtime/node_modules/"))
   .sort((a, b) => (a[0] < b[0] ? -1 : 1))
   .map(([p, h]) => ({ path: p, sha256: h, bytes: statSync(join(out, p)).size }));
 const distManifest = {
@@ -389,6 +437,7 @@ const distManifest = {
   file_count: distAgg.count,
   aggregate_sha256: distAgg.aggregate,
   hash_method: canonicalManifest.hash_method,
+  runtime_entry: runtimeEntry,
   // The vendored folder is an EXTRACTED distribution, never a source
   // package: it deliberately carries no .skill archive. The canonical
   // archive contract therefore requires status
@@ -423,9 +472,13 @@ const record = {
     distribution_file_count: distAgg.count,
   },
   canonical_files: Object.fromEntries(
-    [...srcHashes.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
+    [...srcHashes.entries()]
+      .filter(([p]) => p !== "runtime/dist" && !p.startsWith("runtime/dist/"))
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))),
+  runtime_entry: runtimeEntry,
   verification: {
     canonical_manifest_recomputed: true,
+    runtime_entry_verified: true,
     residual_private_references: residual,
     unexpected_byte_differences: changedFiles,
     doctor: "PASS (run by this tool against the vendored tree)",
