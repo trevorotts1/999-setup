@@ -32,7 +32,7 @@ hash-pin still verifies the untouched legacy core.
 
 | Script | Job |
 |---|---|
-| `launch_intake.py` | Guided interview state machine (doc 03): durable session, per-field provenance ledger, deterministic recommendation rules, plan assembly, plain-language summary, pause/resume. Question bank: `intake/launch-questions.json`. |
+| `launch_intake.py` | Guided interview state machine (doc 03): durable session, per-field provenance ledger, deterministic recommendation rules, plan assembly, plain-language summary, pause/resume. Its own bank is `intake/launch-questions.json`; the client-facing conversation in every harness reads the shared bank (`shared-utils/client_intake/question-bank.json`) through `shared-utils/signature_launch/experience/guided_experience.py` and `render_question.py`, so the opening A/B/C choice, the one-question-at-a-time flow, the coaching on "I don't know", the computed length estimate and the plan review are the same everywhere. |
 | `validate_launch_plan.py` | Domain-law plan validator plus `assert_plan_build_approved`, the plan-approval gate (hash binding, client identity, no worker self-approval, revocation/expiry, separate approval types). |
 | `compile_launch_route.py` | Deterministic route compiler/validator/resolver. One source produces `route-graph.json`, a readable route table, and machine test cases. Graph hash = SHA-256 of the emitted file bytes. |
 | `dispatch_launch.py` | Turns an approved plan into specialist page requests (idempotent dispatch keys), optionally executing them through consumer adapters (`launch-adapters.example.json`). Emission is not execution: the manifest says `emitted_not_executed` until a consumer really answers with a valid result. |
@@ -41,6 +41,28 @@ hash-pin still verifies the untouched legacy core.
 | `checkout_wrapper.py` | The design-only adapter for the `checkout` role: Skill 71's shared image service builds the order form page's desktop and mobile wireframes and mockups on the five-section checkout role spec (never the native form, which stays Skill 06's). Staged inputs: the approved checkout manuscript, the run's measured design system as `{work_dir}/design-prose-checkout.json` (required: `--design-prose`, a JSON object with `notes`, `traits`, `rules_md` and `rules_json` keys as `build_production_request.py` reads it; without it the default image-model prompt band refuses every checkout section below the 16000-char floor and the wrapper exits 2), brand file, brand owner, image cap and design style. Stub provider by default. |
 | `collect_launch_receipts.py` | Aggregates page results into a launch checkpoint: request echo required, self-review never counts as independent review, weakest proof class reported. |
 | `legacy_adapter.py` | Migrates a legacy LOCKED brief into a launch-mode draft (status `collecting`, no plan approval — the legacy lock is not one), with a mapping report that names every unmapped field (notably the second downsell, which has no launch counterpart). Legacy files are never edited. |
+
+## What the client actually experiences
+
+The client is an entrepreneur, not an engineer. The conversation is built for that reader and lives in
+`shared-utils/signature_launch/experience/`:
+
+- **Introduction, then one choice.** `guided_experience.opening()` says what is about to happen, promises plain
+  language and no technical detail, and asks *"What is the best way for me to help you with your launch?"* with
+  A (recommend a plan for me), B (guide me through each decision) and C (I already have a plan). The preference can
+  change at any time.
+- **One question at a time**, each with a one-line reason and at most three choices, plus **I'm not sure, help me**.
+  The help option names the three ways out: show an example, help me answer, recommend using what is already known.
+- **"I don't know" is a help request.** It is never stored as an answer and the interview never skips past it.
+- **Length is computed, progress covers what applies.** `estimate_line()` and `progress_line()` count the questions
+  that actually apply to this run; a changed estimate says why it changed.
+- **Offers are built one at a time.** One offer in the client's own words, read back, then a plain question about
+  whether a second would help. No table to fill in, no automatic upsell.
+- **The ending is a plan review, not a pitch.** `plan_review()` shows what the client told us, what we understand and
+  recommend and why, what will be built and the outcome it is meant to produce, and the remaining assumptions,
+  limits and costs. It recommends; it never approves, and it promises no sales figures.
+- **Approval is separate and explicit.** A recommendation is a proposal, never permission to spend; paid pictures
+  carry their own approval.
 
 ## Every page gets its designs
 

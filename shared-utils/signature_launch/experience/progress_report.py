@@ -15,13 +15,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness_profile  # noqa: E402
 
 FINISHED = ("done", "failed", "blocked")
-_LABELS = Path(__file__).resolve().parents[3] / "71-blackceo-signature-page" / "scripts"
+
+
+def _labels_dir():
+    """Skill 71's page labels, under either layout: the onboarding repository keeps skills
+    at the repository root, a 999 package keeps them under .claude/skills. Resolved by
+    walking up, never by spelling one distribution's directory."""
+    bases = []
+    for base in Path(__file__).resolve().parents:
+        bases += [base, base / ".claude" / "skills", base / "skills"]
+    for base in bases:
+        for name in ("71-blackceo-signature-page", "blackceo-signature-page"):
+            candidate = base / name / "scripts"
+            if (candidate / "deliverable_labels.py").is_file():
+                return candidate
+    return None
+
+
+_LABELS = _labels_dir()
 
 
 def label_of(row):
     if row.get("label"):
         return str(row["label"])
     role = row.get("role") or row.get("page_key")
+    if _LABELS is None:  # no Skill 71 tree installed: a readable name, never an ImportError
+        return str(role or "page").replace("_", " ").title()
     sys.path.insert(0, str(_LABELS))
     try:
         import deliverable_labels
