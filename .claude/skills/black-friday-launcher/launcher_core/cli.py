@@ -14,7 +14,7 @@ from typing import Any, List
 
 from . import (checks, council, dependencies, image_plan, intake, launch_bridge,
                package, route)
-from .constants import DECIDED, SEAMS
+from .constants import DECIDED, REPO_ROOT, SEAMS
 
 
 def _read_json(path: Path) -> Any:
@@ -77,9 +77,31 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_questions(_args: argparse.Namespace) -> int:
-    """The picture questions as canonical question objects, for any harness to ask in its own way."""
-    _emit({"questions": image_plan.QUESTIONS})
+def _experience():
+    """shared-utils/signature_launch/experience/render_question.py: the ONE selection authority
+    for what a client is asked. Never a second copy of the selection rules."""
+    exp = REPO_ROOT / "shared-utils" / "signature_launch" / "experience"
+    if str(exp) not in sys.path:
+        sys.path.insert(0, str(exp))
+    import render_question  # noqa: E402
+    return render_question
+
+
+def cmd_questions(args: argparse.Namespace) -> int:
+    """The picture questions as canonical question objects, for any harness to ask in its own way.
+
+    With `--answers-file`, prints exactly the ONE next applicable question instead of the data
+    list, using the shared intake engine's selection: a question whose condition is false is
+    never offered, and a confirmed answer is never asked twice."""
+    if not args.answers_file:
+        _emit({"questions": image_plan.QUESTIONS})
+        return 0
+    rq = _experience()
+    answers = json.loads(Path(args.answers_file).read_text(encoding="utf-8"))
+    one = rq.pending({"help_label": rq.HELP_LABEL, "questions": image_plan.QUESTIONS},
+                     answers, args.mode)
+    _emit({"next_id": one[0]["id"] if one else None, "done": not one,
+           "question": one[0] if one else None})
     return 0
 
 
@@ -154,6 +176,12 @@ def build_parser() -> argparse.ArgumentParser:
     x.set_defaults(fn=cmd_dispatch)
 
     q = sub.add_parser("questions", help="the picture questions a client is asked, as data")
+    q.add_argument("--answers-file",
+                   help="ask for the ONE next applicable question this run still needs, "
+                        "using the shared intake engine's selection (conditional and already "
+                        "answered questions are never offered)")
+    q.add_argument("--mode", choices=("launch", "legacy", "bf"),
+                   help="run mode when the answers file does not name one")
     q.set_defaults(fn=cmd_questions)
 
     c = sub.add_parser("check", help="run package completeness checks")

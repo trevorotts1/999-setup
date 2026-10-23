@@ -216,20 +216,31 @@ def cond_met(doc, cond):
 
 def applicable(doc, bank=None):
     autofill_roles(doc)
-    return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q["condition"])]
+    return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q.get("condition"))]
 
 
 # ---------------------------------------------------------------- asking
+def _help_of(q):
+    """The nested help object. Skill 83's picture questions carry `help` as a plain sentence, so a
+    string is read as its explanation: same question, same coaching, no second shape to maintain."""
+    h = q.get("help")
+    if isinstance(h, dict):
+        return h
+    return {"explain": str(h)} if isinstance(h, str) and h.strip() else {}
+
+
 def hydrate(doc, q):
     """The question exactly as a client should see it (text filled in, dynamic choices resolved)."""
     q = json.loads(json.dumps(q))
+    q.setdefault("condition", "always")
+    q["help"] = _help_of(q)
     if q.get("dynamic") == "colors":
         role = q["id"].split("_", 1)[1]
         pool = _colors(doc) if role == "primary" else _remaining(doc)
         q["text"] = q["text"].replace("{colors}", "(" + ", ".join(pool) + ")")
         q["choices"] = (pool + (["None"] if role == "accent" else []))[:3]
     if q["id"] == "design_style":
-        q["help"]["examples"] = q["help"]["examples"] + _style_links()
+        q["help"]["examples"] = (q["help"].get("examples") or []) + _style_links()
     if q["id"] == "packages":
         said = offer_summary(doc)
         if said and needs_another_offer(doc):
@@ -258,21 +269,27 @@ def _style_links():
     return []
 
 
-def _askable(doc, q):
+def _askable(doc, q, include_suggested=False):
     """Still to ask: unanswered, or answered only with "I don't know". A never-default
     question is NEVER skipped after a help request: skipping it would move the flow past a
-    fact the build cannot proceed without, and check() would have to name it later anyway."""
+    fact the build cannot proceed without, and check() would have to name it later anyway.
+
+    `include_suggested` also asks a question whose answer is only a suggestion. The renderer
+    uses it, because a suggestion is not the client's answer until they confirm it; the
+    engine's own flow keeps treating a suggestion as given, as check() already does."""
     e = get(doc, q["id"])
     if e is None:
+        return True
+    if include_suggested and e["status"] == "suggested":
         return True
     return e["status"] == "unknown"
 
 
-def next_question(doc, bank=None):
-    todo = [q for q in applicable(doc, bank) if _askable(doc, q)]
+def next_question(doc, bank=None, include_suggested=False):
+    todo = [q for q in applicable(doc, bank) if _askable(doc, q, include_suggested)]
     if not todo:
         return None
-    todo.sort(key=lambda q: not q["condition"].startswith("needs_role"))  # color-role follow-ups come right after the colors
+    todo.sort(key=lambda q: not str(q.get("condition") or "always").startswith("needs_role"))  # color-role follow-ups come right after the colors
     total = len(applicable(doc, bank))
     h = hydrate(doc, todo[0])
     h["help_label"] = (bank or load_bank())["help_label"]
