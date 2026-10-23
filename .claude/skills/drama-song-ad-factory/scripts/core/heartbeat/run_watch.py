@@ -270,6 +270,39 @@ def read_state(run_dir):
             "events_by_stage": by_stage, "last_event_at": last}, None
 
 
+_HUMAN_DECISION_FILES = ("control/method.json", "control/card-answers.json",
+                         "control/studio-order.json",
+                         "music/acceptance/operator-decision.json",
+                         "song-choices/fork-decision.json")
+
+
+def human_decision_at(run_dir):
+    """Newest human/operator decision artifact in the run, or None.
+
+    The 3-hour window measures from the LAST HUMAN DECISION, not from intake:
+    a client-paced run otherwise expires before the client ever answers, which
+    is exactly how a 25-hour stall reported HEARTBEAT_EXPIRED instead of
+    continuing the work a person had already approved.
+    """
+    newest = 0.0
+    for rel in _HUMAN_DECISION_FILES:
+        p = Path(run_dir) / rel
+        try:
+            if p.is_file():
+                newest = max(newest, p.stat().st_mtime)
+        except OSError:
+            pass
+    try:
+        for p in Path(run_dir).rglob("script-approval.json"):
+            try:
+                newest = max(newest, p.stat().st_mtime)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return newest or None
+
+
 def runs_created_at(run_dir, run_id):
     """The run's own start, from spend_ledger runs.created_at (the 3h anchor)."""
     db = Path(run_dir) / "spend.sqlite3"
@@ -499,7 +532,33 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
 
 
 # --- the one look ------------------------------------------------------------
-def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None):
+def configured_max_hours(run_dir, fallback=DEFAULT_MAX_HOURS):
+    """The run's own cap: config.json "max_hours", else RUN_WATCH_MAX_HOURS,
+    else the 3 h default. A human-paced production run needs a longer window
+    than the anti-runaway default, and the owner sets it per run."""
+    try:
+        import json as _json
+        with open(Path(run_dir) / "config.json", encoding="utf-8") as fh:
+            cfg = _json.load(fh)
+        if isinstance(cfg, dict):
+            v = cfg.get("max_hours")
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
+    except (OSError, ValueError):
+        pass
+    try:
+        import os as _os
+        v = float(_os.environ.get("RUN_WATCH_MAX_HOURS", ""))
+        if v > 0:
+            return v
+    except (TypeError, ValueError):
+        pass
+    return fallback
+
+
+def build(run_dir, max_hours=None, now=None):
+    if max_hours is None:
+        max_hours = configured_max_hours(run_dir)
     now = time.time() if now is None else float(now)
     run_dir = str(run_dir)
     loud = []
@@ -533,6 +592,9 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None):
     if ledger_start is not None:
         anchors.append(ledger_start)
     started = min(anchors) if anchors else now
+    human = human_decision_at(run_dir)
+    if human is not None and human > started:
+        started = human
     elapsed_minutes = max(0, int((now - started) // 60))
     stalled, stall_detail = stall_check(run_dir, state, row, now)
     decisions = (intake_decisions(run_dir)
@@ -582,7 +644,7 @@ def main(argv=None):
     ap.add_argument("--run-dir", required=True, help="the run folder ($RUN)")
     ap.add_argument("--interval-check", action="store_true",
                     help="one tick of the 10-minute driver: exit 10 stops the loop")
-    ap.add_argument("--max-hours", type=float, default=DEFAULT_MAX_HOURS,
+    ap.add_argument("--max-hours", type=float, default=None,
                     help="the hard cap from the run's start (default 3)")
     ap.add_argument("--now", type=float, default=None,
                     help="epoch seconds to judge 'now' by (tests; default: the clock)")

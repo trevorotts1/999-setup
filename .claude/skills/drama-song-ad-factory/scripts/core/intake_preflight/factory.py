@@ -764,6 +764,38 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
         if state != "QC":
             row = st.transition(rid, MUSIC, "QC", owner, expected_version=row["version"])
         if res["gate"] != "PASS":
+            # Operator order 2026-10-21: a recorded operator decision overcomes
+            # a QC block. NOTHING is relabelled -- the failed checks stay FAIL
+            # in the evidence, and the acceptance is its own audited artifact.
+            if operator_decision is not None:
+                import json as _json
+                import time as _time
+                failed = [f.get("check_id") or f.get("code") or ""
+                          for f in (res.get("failures") or [])]
+                acc_dir = Path(run_dir) / "music" / "acceptance"
+                acc_dir.mkdir(parents=True, exist_ok=True)
+                rec = {
+                    "schema_version": "blackceo.qc-risk-acceptance/v1",
+                    "decision": "QC_ACCEPTED_RISK",
+                    "operator": owner,
+                    "at_utc": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+                    "qc_gate": res.get("gate"),
+                    "reason_code": res.get("reason_code"),
+                    "failed_checks": failed,
+                    "failures": res.get("failures") or [],
+                    "operator_decision": operator_decision,
+                }
+                (acc_dir / "qc-risk-acceptance.json").write_text(
+                    _json.dumps(rec, indent=1, default=str))
+                row = st.transition(rid, MUSIC, "COMPLETE", owner,
+                                    expected_version=row["version"],
+                                    reason="QC_ACCEPTED_RISK by %s: %s; failed %s"
+                                    % (owner, res.get("reason_code"),
+                                       ",".join(failed)[:200]))
+                return _mres("ok", "music-complete-accepted-risk",
+                             "music COMPLETE under recorded operator risk "
+                             "acceptance (%s); failed checks kept FAIL: %s"
+                             % (res.get("reason_code"), ",".join(failed)[:160]), row)
             return block("QC_" + res["gate"], res["reason_code"])
         row = st.transition(rid, MUSIC, "COMPLETE", owner, expected_version=row["version"],
                             reason="qc %s; audio %s" % (res["reason_code"], ",".join(audio)))
