@@ -22,6 +22,7 @@ from song_choices import song_choices as SC                     # noqa: E402
 import length_formula as LF                                     # noqa: E402
 import kie_dispatch.kie_dispatch as KD                          # noqa: E402
 import factory as F                                             # noqa: E402
+import budget_contingency as BC                                 # noqa: E402
 
 N = len(IC.QUESTIONS)
 IDS = [q["id"] for q in IC.QUESTIONS]
@@ -417,7 +418,7 @@ def test_card_price_includes_two_extra_songs_when_yes():
     assert ok1 and ok2 and "Song picks:" not in base and "Song picks:" in yes
     tot = lambda t: float(t.split("= $")[1].split()[0])
     music = float([l for l in base.splitlines() if l.strip().startswith("Music:")][0].split("$")[-1])
-    assert abs((tot(yes) - tot(base)) - 2 * music * 1.2) < 0.02, (tot(yes), tot(base), music)
+    assert abs((tot(yes) - tot(base)) - 2 * music * (1 + float(BC.RATE))) < 0.02, (tot(yes), tot(base), music)
     assert "added $" in yes
     assert SC.extra_cost_cents() == 2 * SC._SD.GEN_COST_CENTS
 
