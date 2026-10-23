@@ -34,7 +34,9 @@ from datetime import datetime, timezone
 TOOL_NAME = "spend_ledger"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
-COMPATIBLE = {"1.0.0"}
+# 1.1.0 is a strict additive superset: it only adds columns, tables and an
+# index, so this 1.0.0 reader reads it. 999 still writes 1.0.0.
+COMPATIBLE = {"1.0.0", "1.1.0"}
 
 STATES = ("planned", "reserved", "submitted", "unknown",
           "succeeded", "failed", "reconciled")
