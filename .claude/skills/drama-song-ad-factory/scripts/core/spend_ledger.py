@@ -219,8 +219,20 @@ def _get_job(conn, logical_key, attempt_id):
 
 def _lookup_evidence(conn, run_id, logical_key, attempt_id):
     """True when a provider lookup (or operator evidence) is recorded for the
-    attempt whose outcome was uncertain. reconcile() writes both fields onto
-    the receipt, so no separate lookup table is needed."""
+    attempt whose outcome was uncertain.
+
+    Schema decision (deliberate): the evidence is read by JOINING `receipts`,
+    not by adding a jobs column written by mark_submitted. reconcile() already
+    writes provider_ref/evidence_ref onto the receipt in the same transaction
+    that settles the job, so the receipt is the single writer of this fact; a
+    second copy on `jobs` could drift from it and would need every future
+    reconciler to remember a second write. `jobs.remote_task_id` remains the
+    only provider key plan() reads directly, and it is what decides whether the
+    attempt ever reached a provider at all.
+    ponytail: receipts are scanned for one attempt, which is fine at one
+    receipt per reconciled attempt. Add an index on
+    (run_id, logical_key, attempt_id) if a ledger ever carries a very large
+    receipts table."""
     recs = conn.execute(
         "SELECT provider_ref,evidence_ref FROM receipts WHERE run_id=? AND "
         "logical_key=? AND attempt_id=?",
@@ -413,6 +425,12 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
         # stays legal and the operator can still stop. An attempt that never
         # reached a provider (no remote_task_id) has nothing to look up and is
         # never gated.
+        # ponytail: scoped to attempts that passed through unknown. A
+        # `submitted` attempt reconciled straight to failed is treated as a
+        # verified failure, because shipped dispatch does not pass a provider
+        # ref on an ordinary settle and gating on remote_task_id alone would
+        # refuse every legitimate retry. Widen to remote_task_id alone once
+        # dispatch records the provider task id on every failed settle.
         for row in prior:
             if row[4] and (row[5] or "").strip():
                 if not _lookup_evidence(conn, run_id, logical_key, row[0]):
