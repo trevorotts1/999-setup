@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
   "version": "1.0.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'.",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. The launch-operation topics (timing, channels, conversation_ai, access_delivery, payment_plans, sender_name, reply_email, texting_readiness) are CONDITIONAL: they apply to launch and bf modes, never to legacy, so they are extra decisions inside the interview, not a mandatory interrogation. The black-friday topics (promo_dates, promo_offer, promo_limits, promo_audience, promo_followup) apply to bf mode only and are asked one at a time. The number of questions, the length estimate and the progress percentage are always computed from the applicable questions at run time, never stored. The launch date and the sender facts are never defaulted, so no deadline or sender is invented.",
   "help_label": "I'm not sure, help me",
   "modes": [
     "launch",
@@ -36,24 +36,28 @@
     {
       "id": "interview_mode",
       "group": "start",
-      "text": "How would you like to set this up?",
-      "why": "It decides how much I suggest and how much I ask.",
+      "text": "What is the best way for me to help you with your launch?",
+      "why": "It decides how much I recommend for you and how much I ask you.",
       "answer_type": "choice",
       "choices": [
-        "I know what I want",
-        "Help me choose",
-        "Set it up for me to review"
+        "A. Recommend a plan for me",
+        "B. Guide me through each decision",
+        "C. I already have a plan"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Pick the first if you have your answers ready. Pick the second and I will explain each choice. Pick the third and I will suggest everything for you to review before anything is built.",
-        "examples": []
+        "explain": "A: I use what is already known, ask only what is still missing, and let you review a plan before anything is built. B: I explain each choice in plain language and help you decide, one question at a time. C: you already have a plan; I help you act on it and flag anything important that may have been missed. You can change this at any time.",
+        "examples": [
+          "A: show me a plan I can review",
+          "B: walk me through each choice and help me pick",
+          "C: help me put my own plan into action"
+        ]
       },
       "default": {
-        "value": "Help me choose",
+        "value": "B. Guide me through each decision",
         "flag": "to confirm",
-        "reason": "Most people want explanations; you can change this any time."
+        "reason": "Most people want each choice explained; you can change this at any time."
       },
       "never_default": false,
       "required": "always",
@@ -426,17 +430,17 @@
     {
       "id": "packages",
       "group": "offer",
-      "text": "Tell me each package or level on its own line: its name, what is in it, and its price. For example: Premium | 12 lessons; 4 live calls | $497",
+      "text": "Let's build your offers one at a time. What is the first one called, and what does the buyer get for the price? Plain words are fine; I will summarize it back to you.",
       "why": "A page where buyers choose, or levels, is built only from packages you name and price. I never invent them.",
       "answer_type": "packages",
       "choices": [],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Give at least two. Each one needs a name and a price; list what is included after the name.",
+        "explain": "Start with the one you want most people to buy. Give me a name, what is included and the price in your own words. I will read it back, and then ask whether another package would help. At least two packages are needed only when buyers actually choose between them.",
         "examples": [
-          "Starter | 6 video lessons | $297",
-          "Premium | 12 lessons; 4 live calls; templates | $497"
+          "Starter, six video lessons, $297",
+          "Premium, twelve lessons plus four live calls and the templates, $497"
         ]
       },
       "default": null,
@@ -1343,6 +1347,387 @@
       "required_by": [
         "83:entitlement_attestation"
       ]
+    },
+    {
+      "id": "timing",
+      "group": "launch",
+      "text": "When do the doors open and close for this launch, and when should the launch messages go out? A rough sentence with your time zone is fine.",
+      "why": "Every email and text is timed from these moments, and I never invent a deadline.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Give the date and both times with your time zone in one sentence. If the date is not set yet, say so; nothing is timed until you give it.",
+        "examples": [
+          "Doors open 14 Nov 2026 9:00 a.m. New York, launch at noon, doors close 16 Nov 2026 11:59 p.m.",
+          "Launch 1 Dec 2026 at 10:00 a.m. London time, doors close 7 Dec 2026 at midnight London time"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "timing"
+      ],
+      "legacy_ids": [
+        "launch_calendar"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "channels",
+      "group": "launch",
+      "text": "Should this launch reach people by email only, or by email and text message?",
+      "why": "Text messages cost money, need carrier registration and are capped; email always works.",
+      "answer_type": "choice",
+      "choices": [
+        "Email only",
+        "Email and text"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose email only if you do not have a text list or carrier approval yet. Choose email and text only if you want texts; they stay as drafts until the carrier approves them.",
+        "examples": []
+      },
+      "default": {
+        "value": "Email only",
+        "flag": "to confirm",
+        "reason": "Email always works; texts wait for carrier approval."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "channels"
+      ],
+      "legacy_ids": [
+        "channels"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "conversation_ai",
+      "group": "launch",
+      "text": "Would you like a helper that answers people automatically when they reply?",
+      "why": "It is optional; when it is not requested, nothing is built and the package says so.",
+      "answer_type": "choice",
+      "choices": [
+        "No, not this launch",
+        "Yes, add the bot"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "This is an automatic reply that answers common questions, books calls or sends a checkout link. Choose no if you would rather a person answer every message.",
+        "examples": []
+      },
+      "default": {
+        "value": "No, not this launch",
+        "flag": "to confirm",
+        "reason": "Optional; you can add it later."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "conversation_ai"
+      ],
+      "legacy_ids": [
+        "conversation_ai"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "access_delivery",
+      "group": "launch",
+      "text": "After someone pays, do they need a log-in or an access link from you?",
+      "why": "It decides whether the access email, the access automation and the delivery link are planned.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, send access after purchase",
+        "No, nothing to deliver"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose yes for a course, a membership or an event that needs a log-in, a link or a schedule. Choose no for a service where a person follows up by hand.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "access_delivery"
+      ],
+      "legacy_ids": [
+        "access_delivery"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "payment_plans",
+      "group": "launch",
+      "text": "Will this offer be paid in full, or do you offer payment plans?",
+      "why": "Payment plans turn on the recovery note for a failed payment; without them it is never built.",
+      "answer_type": "choice",
+      "choices": [
+        "Paid in full",
+        "Payment plans offered"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose payment plans if a buyer can split the price into installments. How the checkout charges them still follows your billing answer.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "payment_plans"
+      ],
+      "legacy_ids": [
+        "payment_plans"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "sender_name",
+      "group": "launch",
+      "text": "What sender name should people see on your emails and texts?",
+      "why": "It is the name in the From line and the text signature; it must be real and recognizable.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Use the name your audience already knows: your business name or your own name. Never use a name you do not own.",
+        "examples": [
+          "Elevation Coaching",
+          "Maya Ortiz"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "sender_name"
+      ],
+      "legacy_ids": [
+        "sender_name"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "reply_email",
+      "group": "launch",
+      "text": "Which email address should replies go to?",
+      "why": "Real replies must reach a mailbox you actually read.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Any address you check, like hello@yourdomain.com. It has to be a real mailbox, not a no-reply address.",
+        "examples": [
+          "hello@elevationcoaching.com"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "reply_email"
+      ],
+      "legacy_ids": [
+        "reply_to_email"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "texting_readiness",
+      "group": "launch",
+      "text": "Is your business approved by the phone carriers to send text messages yet?",
+      "why": "Text messages cannot send until that approval is in place; until then every text stays a draft.",
+      "answer_type": "choice",
+      "choices": [
+        "Yes, it is approved",
+        "No, not yet"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The phone carriers require a business registration before a business can text customers in the United States. Check your text message provider for its status. If it is not approved, I plan the texts as drafts and tell you plainly that they cannot send yet.",
+        "examples": []
+      },
+      "default": {
+        "value": "No, not yet",
+        "flag": "to confirm",
+        "reason": "Texts stay as drafts until you confirm the approval."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "texting_readiness",
+        "a2p_ready"
+      ],
+      "legacy_ids": [
+        "a2p_ready"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "promo_dates",
+      "group": "black-friday",
+      "text": "For the Black Friday promotion, when does it start and when does it end? A rough sentence with your time zone is fine.",
+      "why": "The dates set every message in the promotion, and I never invent urgency.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "One sentence with the start and the end and your time zone. If the dates are not decided yet, say so.",
+        "examples": [
+          "Starts Friday 27 Nov 2026 8:00 a.m. New York, ends Monday 30 Nov 2026 11:59 p.m. New York"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "promo_dates"
+      ],
+      "legacy_ids": [
+        "launch_calendar"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "promo_offer",
+      "group": "black-friday",
+      "text": "What is the seasonal offer: a discount, a bonus, or both? Say it in your own words.",
+      "why": "The offer is a commercial fact; I never invent a discount or a bonus.",
+      "answer_type": "choice",
+      "choices": [
+        "A discount",
+        "A bonus",
+        "Both"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A discount lowers the price. A bonus adds something real, like an extra session or a template pack. If you are not sure yet, say so and I will show you what each one means for the checkout.",
+        "examples": [
+          "Twenty percent off the usual price",
+          "The usual price plus a free planning call"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "promo_offer"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "promo_limits",
+      "group": "black-friday",
+      "text": "What are the real limits of this offer? For example a number of places, or an end date that cannot move.",
+      "why": "Stated limits must be true; I never invent scarcity.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Only say limits that are true. If there is no limit, say none and nothing about scarcity will be written.",
+        "examples": [
+          "Only 20 places",
+          "No limit, it just ends on the Monday"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "promo_limits"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "promo_audience",
+      "group": "black-friday",
+      "text": "Should this promotion go to your existing customers, to new buyers, or to both?",
+      "why": "Existing customers and new buyers need different messages, and some offers are only fair to one of them.",
+      "answer_type": "choice",
+      "choices": [
+        "New buyers only",
+        "Existing customers only",
+        "Both, worded separately"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose existing customers if the offer would feel unfair to someone who paid full price recently. Choose both and I will write the two messages separately.",
+        "examples": []
+      },
+      "default": {
+        "value": "Both, worded separately",
+        "flag": "to confirm",
+        "reason": "Most launches want both; the messages stay separate."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "promo_audience"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "promo_followup",
+      "group": "black-friday",
+      "text": "After someone buys in the promotion, what should happen next: a welcome, access, or a personal follow-up?",
+      "why": "Delivery is part of the promise; nothing is assumed about how a buyer is looked after.",
+      "answer_type": "choice",
+      "choices": [
+        "A welcome and access",
+        "A personal follow-up",
+        "Both"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Say what actually happens today. If a person follows up by hand, say so and no automation will pretend otherwise.",
+        "examples": []
+      },
+      "default": {
+        "value": "A welcome and access",
+        "flag": "to confirm",
+        "reason": "The usual first step after a purchase."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "promo_followup"
+      ],
+      "legacy_ids": [],
+      "required_by": []
     },
     {
       "id": "plan_approval",
