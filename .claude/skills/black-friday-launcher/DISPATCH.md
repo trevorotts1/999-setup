@@ -55,6 +55,11 @@ plus "I'm not sure, help me", the help text, the safe default and its flag. A ha
 (a structured picker in Claude Code or claude-nine, a numbered chat message in OpenClaw) and records the same
 answers in `image_plan`.
 
+With `--answers-file` the same command asks for the ONE next picture question this run still needs:
+`python3 -m launcher_core.cli questions --answers-file <answers.json> [--mode launch|legacy|bf]` prints
+`next_id` plus that one question, or `done: true`. The selection is the shared intake engine's, not a second
+copy: an already answered or inapplicable question is never offered.
+
 **These three are not the guided interview.** The full client conversation comes from the shared bank
 (`shared-utils/client_intake/question-bank.json`) through `shared-utils/signature_launch/experience/`: the
 introduction and the A/B/C opening, then one question at a time, then the plan review that ends the interview.

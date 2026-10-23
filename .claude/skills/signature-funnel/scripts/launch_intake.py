@@ -80,7 +80,33 @@ _MODE_FROM_CHOICE = {"i know what i want": "know", "help me choose": "help",
                      "guide me through each decision": "help",
                      "i already have a plan": "know"}
 _THINK_FOR_ME = ("you decide", "think for me", "up to you", "whatever you think",
-                 "you choose", "your call", "i don't know", "not sure", "unsure")
+                 "you choose", "your call")
+
+# "I don't know" is a request for coaching, never an answer (doc 03 §1). These are the bare
+# replies that name it; a longer sentence that merely mentions uncertainty is a real answer.
+_HELP_WORDS = {"help", "help me", "help me answer", "?", "??", "not sure", "not sure yet",
+               "im not sure", "i'm not sure", "i am not sure", "idk", "i dont know",
+               "i don't know", "dont know", "don't know", "no idea", "no clue", "unsure",
+               "show me an example", "give me an example", "recommend using what is known"}
+
+
+def is_help(reply: Any) -> bool:
+    """True when the reply asks for help rather than answering the question."""
+    return _norm(reply).strip(" .!?") in {w.strip(" .!?") for w in _HELP_WORDS}
+
+
+def coaching(q: Dict[str, Any]) -> Dict[str, Any]:
+    """What the client is offered instead of an answer: an example, an explanation, or a
+    recommendation from what is already known. The question stays open."""
+    ways = ["Show me an example"]
+    if q.get("reason"):
+        ways.append(f"Here is why I ask: {q['reason']}")
+    if q.get("choices"):
+        ways.append("Your options: " + " / ".join(q["choices"]))
+    ways.append("Or ask me to recommend one from what you already told me.")
+    return {"ok": False, "kind": "help", "question_id": q["id"],
+            "prompt": q["prompt"], "coaching": ways,
+            "message": "That is not an answer, and I am not going to guess one. " + " ".join(ways)}
 
 
 class IntakeError(ValueError):
@@ -282,6 +308,15 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     if q is None:
         raise IntakeError(f"unknown question {question_id!r}")
     value = value or {}
+    # "I don't know" is a coaching request, never a substantive answer: nothing is recorded,
+    # the question stays open and is asked again, and the client is told what they can do.
+    if is_help(raw) and not value:
+        session.setdefault("help_requested", {})[question_id] = \
+            session.get("help_requested", {}).get(question_id, 0) + 1
+        session["history"].append({"at": _now(), "event": "help_requested",
+                                   "question_id": question_id})
+        _persist(session)
+        return coaching(q)
     # A volunteered multi-field payload fills its fields first (echoed, not
     # re-asked) — states default to provided.
     for field_key, fv in (value.get("fields") or {}).items():
@@ -291,7 +326,8 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
         else:
             _set(session, field_key, fv, "provided", question_id, source_message_ref)
 
-    session.setdefault("asked_ids", []).append(question_id)
+    if question_id not in session.setdefault("asked_ids", []):
+        session["asked_ids"].append(question_id)
     handler = _HANDLERS.get(question_id)
     if handler is not None:
         handler(session, q, raw, value, source_message_ref)
@@ -1161,6 +1197,21 @@ def _self_test() -> int:
     assemble_plan(s6)
     say(s6["plan_revision"] == 2 and s6["plan_hash"] != old_hash,
         "changed price after approval -> new revision, new plan hash")
+
+    # --- "I don't know" is coaching, never an answer: the question stays open
+    s7 = mk()
+    answer(s7, "m0_mode", "B. Guide me through each decision")
+    before = dict(s7["answers"])
+    r = answer(s7, "a1_offer", "I don't know")
+    say(r["ok"] is False and r["kind"] == "help" and s7["answers"] == before,
+        "I don't know records nothing and returns coaching")
+    say(len(r["coaching"]) >= 2, "coaching names the ways out (example, why, recommendation)")
+    say(next_question(s7)["id"] == "a1_offer",
+        "the question is not skipped past: it is still the next one asked")
+    answer(s7, "a1_offer", "A retreat")
+    say(s7["answers"]["offers.main.description"]["value"] == "A retreat"
+        and next_question(s7)["id"] != "a1_offer",
+        "a real answer records and moves the flow on")
 
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
