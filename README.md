@@ -1,5 +1,12 @@
 # 999-setup
 
+> **Skill 75 v2.9.98 — lip-sync delivery evidence.** The skill version is pinned in
+> `.claude/skills/drama-song-ad-factory/skill-version.txt` and the `SKILL.md` frontmatter. Approved shot,
+> speaker and line identities must survive generation and the final timeline;
+> delivery verifies the packaged clean video against the export receipt. Missing
+> or unused evidence fails closed. This release does not change numeric quotas
+> or the duration formula, and does not update active client runs.
+
 > **Do not run this on the operator Mac Mini.** The operator machine already runs its
 > own `claude-nine` with a separate, dedicated config root. This installer would replace
 > `~/.claude/skills/nine-router-setup` and `~/.local/bin/claude-nine` with this repo's

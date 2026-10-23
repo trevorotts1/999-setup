@@ -20,6 +20,8 @@ defaulting to today's behaviour:
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sys
 
@@ -130,3 +132,46 @@ def revise_shot(shots, contracts, stills, shot_id, changes, make_still,
                 breakthrough_s=breakthrough_s, platform_row=platform_row)
     e = next(i for i in pkg["items"] if i["shot_id"] == shot_id)
     return contracts, stills, "Updated shot %d.\n\n%s\n\n%s" % (e["n"], _text(e), FOOTER)
+
+
+def shot_revision(shot, contract, still_path):
+    """Stable revision identity for one shot's approval binding: the contract
+    and shot record bytes plus the still bytes (the spec's revision/hash
+    binding — an approval survives only while this digest holds)."""
+    h = hashlib.sha256()
+    h.update(json.dumps({"shot": shot, "contract": contract},
+                        sort_keys=True, ensure_ascii=True,
+                        default=str).encode("utf-8"))
+    try:
+        with open(still_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        h.update(b"missing-still")
+    return h.hexdigest()
+
+
+def approval_entries(shots, contracts, stills, at=None):
+    """Per-shot approval records: {shot_id: {status, revision, still_sha256}}.
+
+    ``status`` is "pending" until the client approves; the runner flips it to
+    "approved" and back to "invalidated" on a scoped revision."""
+    out = {}
+    for s in sorted(shots or [], key=lambda x: (x["song_start"], x["song_end"])):
+        sid = s["shot_id"]
+        still = (stills or {}).get(sid) or ""
+        out[sid] = {"status": "pending",
+                    "revision": shot_revision(s, (contracts or {}).get(sid), still),
+                    "still_sha256": _file_sha(still)}
+    return out
+
+
+def _file_sha(path):
+    try:
+        with open(path, "rb") as f:
+            h = hashlib.sha256()
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+            return h.hexdigest()
+    except OSError:
+        return ""
