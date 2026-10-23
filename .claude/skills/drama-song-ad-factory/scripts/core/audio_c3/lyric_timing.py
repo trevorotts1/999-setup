@@ -405,13 +405,22 @@ class WhisperSession:
                         "no faster-whisper loader wired and the package is "
                         "not importable (%s); PREREQS faster-whisper-optional"
                         % type(_e).__name__) from _e
-                self._loader = _WM
-            # faster-whisper >=0.10: WhisperModel(size, device="auto",
-            # compute_type=...) -- pass the compute type as a KEYWORD;
-            # positionally it lands as the device and raises
-            # "unsupported device int8".
-            self.model = self._loader(self.model_size,
-                                      compute_type=self.compute_type)
+                # The injected-loader contract is positional (size, compute):
+                # that is how the onboarding twin declares and calls it, and
+                # the suite's fakes encode the same signature. faster-whisper
+                # >=0.10 takes compute_type as a KEYWORD (positionally it lands
+                # as the device and raises "unsupported device int8"), so adapt
+                # at THIS wiring point instead of changing the shared contract.
+                self._loader = lambda size, compute: _WM(size, compute_type=compute)
+            try:
+                self.model = self._loader(self.model_size, self.compute_type)
+            except TypeError as _e:
+                # A TypeError here is a wiring/signature bug, never missing
+                # data: name it so it cannot be read as "no timings".
+                raise LyricTimingError(
+                    "WHISPER_LOADER_TYPEERROR",
+                    "faster-whisper loader raised TypeError(%s); the injected "
+                    "loader contract is (size, compute) positionally" % _e) from _e
             self.loads += 1
 
     def _guard(self):
@@ -626,7 +635,8 @@ def provide_word_timings(track: Dict[str, Any], *,
     # ── tier 3: both earlier tiers failed ──
     if cloud is None:
         return {"ok": False, "error_code": t2.code,
-                "evidence": {"tier1_error": t1_err, "tier2_error": t2.code},
+                "evidence": {"tier1_error": t1_err, "tier2_error": t2.code,
+                             "tier2_detail": str(t2)[:200]},
                 "next_action":
                     "tier 1 (%s) and tier 2 (%s) both failed; wire the "
                     "client's own cloud STT (word timestamps, client key "

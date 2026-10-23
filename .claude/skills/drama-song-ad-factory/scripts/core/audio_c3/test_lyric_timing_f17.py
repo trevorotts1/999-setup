@@ -194,6 +194,27 @@ def test_tier2_size_guard():
     except LT.LyricTimingError as e:
         check("size large refused", e.code == "WHISPER_SIZE_FORBIDDEN", e.code)
 
+def test_tier2_loader_typeerror_is_named_never_swallowed():
+    """A loader TypeError must surface by name, never as "no timings".
+
+    The injected-loader contract is (size, compute) positionally. A loader
+    that rejects that call is a wiring bug; swallowing it into an empty or
+    generic tier-2 failure hides the fault from every downstream consumer.
+    """
+    def typeerror_loader(size, compute):
+        raise TypeError("loader rejects the (size, compute) contract")
+    got = LT.provide_word_timings(dict(TRACK), dispatcher=fail_dispatch,
+                                  whisper_loader=typeerror_loader,
+                                  ledger_db=os.path.join(make_tmp(), "l.db"))
+    check("loader TypeError: not ok", got.get("ok") is False,
+          got.get("error_code"))
+    check("loader TypeError: named, not missing data",
+          got.get("error_code") == "WHISPER_LOADER_TYPEERROR",
+          got.get("error_code"))
+    check("loader TypeError: TypeError named in the evidence",
+          "TypeError" in str((got.get("evidence") or {}).get("tier2_detail", "")),
+          got.get("evidence"))
+
 
 # ── 3. tier 3: both fail -> client key only, operator keys refused ──────────
 
@@ -399,6 +420,7 @@ def main():
     test_tier2_multi_track_one_session_counts_one_load()
     test_tier2_never_openai_whisper_loader()
     test_tier2_size_guard()
+    test_tier2_loader_typeerror_is_named_never_swallowed()
     test_tier3_fires_only_after_both_fail_and_cites_client_key()
     test_tier3_no_cloud_wired_reports_chain()
     test_tier3_refuses_operator_keys()
