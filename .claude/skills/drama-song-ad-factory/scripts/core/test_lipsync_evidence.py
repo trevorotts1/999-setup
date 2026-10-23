@@ -135,6 +135,13 @@ def fixture_request(plan, run_id=None, shot_id=None):
                                                "kind": "speech", "isolated": True}}}
     def cut_runner(argv, *args, **kwargs):
         Path(argv[-1]).write_bytes(("synthetic-own-speaker-" + sid).encode())
+    card = root / "control/card-receipt-block.json"
+    if not card.exists():
+        card.parent.mkdir(parents=True, exist_ok=True)
+        card.write_text(json.dumps({
+            "answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
+                        "length": 60, "video_model": "Hailuo 02 Standard"},
+            "who": "fixture", "at": "2026-10-17T10:00:00Z"}), encoding="utf-8")
     separation_runner = skill74_runner(str(root), lambda p: "https://fixture.invalid/selected-song",
                                        {}, lambda result: result["evidence"]["isolated_stem"],
                                        dispatch_fn=fake_dispatch)
