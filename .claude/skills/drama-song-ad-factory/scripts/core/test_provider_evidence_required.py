@@ -48,7 +48,12 @@ if HERE not in sys.path:
 L = importlib.import_module("spend_ledger")
 
 FAILS = []
+_TEST_FAILS = []
 RUN = "run-pev"
+
+
+class _CheckFailure(AssertionError):
+    """Raised at the END of a test that recorded a failed check."""
 
 
 def check(name, got, want):
@@ -57,6 +62,38 @@ def check(name, got, want):
     else:
         print("FAIL %s: got %r want %r" % (name, got, want))
         FAILS.append(name)
+        _TEST_FAILS.append(name)
+
+
+def _finish():
+    """Fail the CALLING test after every check in it has run.
+
+    Why deferred: if check() raised immediately, only the first bad assertion
+    would ever be reported and the full failure list would be lost. But a test
+    function that never raises is invisible to pytest, which collects these
+    functions directly and never calls main() -- it would report green on a
+    tree whose checks all failed. Tests are wrapped at import time (see the
+    loop at the end of this module) so both runners agree: every check still
+    runs, then the test raises.
+    """
+    failed = list(_TEST_FAILS)
+    _TEST_FAILS.clear()
+    if failed:
+        raise _CheckFailure("checks failed: %s" % ", ".join(failed))
+
+
+def _guarded(fn):
+    def wrapper(*a, **kw):
+        try:
+            result = fn(*a, **kw)
+        except Exception:
+            _TEST_FAILS.clear()      # an unexpected error: report it as-is
+            raise
+        _finish()                    # raises only if a check in THIS test failed
+        return result
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
 
 
 def fresh(prefix="pev-"):
@@ -407,6 +444,8 @@ def main():
                test_i_cli_exit_code, test_j_identity_untouched):
         try:
             fn()
+        except _CheckFailure:
+            pass          # the individual check names are already recorded
         except Exception as e:                       # noqa: BLE001
             import traceback
             traceback.print_exc()
@@ -418,6 +457,14 @@ def main():
         return 1
     print("ALL PASS")
     return 0
+
+
+# Wrap every test so pytest (which calls these functions directly, never
+# main()) fails the same way the __main__ runner does. Must run after all test
+# functions are defined.
+for _name, _fn in list(globals().items()):
+    if _name.startswith("test_") and callable(_fn):
+        globals()[_name] = _guarded(_fn)
 
 
 if __name__ == "__main__":
