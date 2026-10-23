@@ -49,7 +49,7 @@
       "source_version": "v2.1.11",
       "files": 129,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:ccc000d145f4cc0b3a0e141db192fad2acea62800ba71b6db0a4b7f979053fcb",
+      "sha256": "sha256:069ad620f76e299bbefa35888f9dd527f4086e6f81355edb7c8b668a95087874",
       "999_version": "v2.1.22"
     },
     {
@@ -181,9 +181,9 @@
       "999_path": "shared-utils/signature_launch",
       "source_path": "shared-utils/signature_launch",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "files": 79,
+      "files": 80,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:a5c33e7bf330bc10778926dc86b434b243011dba88b9667c26465dfa0dff2d7c",
+      "sha256": "sha256:d494299ae5a3705c986b878c96bb780baa22f1379a357762484623d9bc52b393",
       "999_version": null
     },
     {
@@ -256,7 +256,7 @@
       "source_version": "0.2.0",
       "files": 49,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:bda3e7abddd337ec9501d2a2bbd39e1b6a897699bfd138e09d9d0a230ac2db68",
+      "sha256": "sha256:3508984f3d97150490f9300ef4547c621d0a5c90c5e811f339aedabcaf636946",
       "999_version": "0.2.9"
     },
     {
