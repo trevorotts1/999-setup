@@ -98,6 +98,44 @@ def envelope(command, run_id, outcome, reason_code, next_action,
             or {"expected": None, "current": run_id}}
 
 
+def _ro_connect(db, timeout=5):
+    """Read-only connection that survives a WAL db whose -wal/-shm are gone.
+
+    The state store and the spend ledger are both WAL mode. With the sidecars
+    absent, opening the file ``mode=ro`` raises "unable to open database
+    file" and the caller reported the run as unreadable -- a healthy run
+    looked dead until a writer happened to recreate them. Retry on a private
+    temp copy; the run's own file is never written.
+    """
+    import atexit
+    import shutil
+    import tempfile
+
+    path = os.path.abspath(str(db))
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % path, uri=True,
+                              timeout=timeout)
+        # connect() is lazy: a WAL db with missing sidecars only fails when a
+        # statement touches the file. Force the real open here.
+        con.execute("PRAGMA schema_version").fetchone()
+        return con
+    except sqlite3.Error:
+        try:
+            con.close()                       # noqa: F821  (may be unbound)
+        except Exception:                     # noqa: BLE001
+            pass
+    tmp = tempfile.mkdtemp(prefix="factory-ro-")
+    atexit.register(shutil.rmtree, tmp, True)
+    base = os.path.basename(path)
+    for name in (base, base + "-wal", base + "-shm"):
+        src = os.path.join(os.path.dirname(path), name)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(tmp, name))
+    con = sqlite3.connect(os.path.join(tmp, base), timeout=timeout)
+    con.execute("PRAGMA query_only=ON")
+    return con
+
+
 def _load(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -999,44 +1037,12 @@ def _proven_music(run_dir, run_id=""):
 
 #: stage -> proven-artifact predicate. The ONLY reconciled stages: each
 #: predicate reads exactly the artifacts its OWN stage gate writes.
-def _proven_continuity(run_dir, run_id=""):
-    """(proven, evidence): continuity-bible is proven by its OWN QC records.
-
-    The runbook drives this stage with `qc_gate.py evaluate --stage
-    continuity-bible --records $RUN/continuity/qc-records.json --makers ...
-    --required <checks>`; the agent authors the Character DNA, product DNA and
-    style-bible records, and those records are the gate. Before this
-    reconciler existed the stage had no CLI and no reconciler at all, so a run
-    that finished music could never leave continuity-bible. No records ->
-    not proven; nothing is invented here.
-    """
-    cdir = Path(run_dir) / "continuity"
-    try:
-        with open(cdir / "qc-records.json", encoding="utf-8") as fh:
-            recs = json.load(fh)      # a LIST: _read_json only returns dicts
-    except (OSError, ValueError):
-        recs = None
-    makers = _read_json(cdir / "makers.json")
-    if not isinstance(recs, list) or not recs:
-        return False, {"missing": "continuity/qc-records.json"}
-    try:
-        qg = _core_mod("qc_gate")
-        checked = sorted({str(r.get("check_id")) for r in recs
-                          if isinstance(r, dict) and r.get("check_id")}
-                         & set(qg.CHECKS))
-        if not checked:
-            return False, {"missing": "no recognized check ids in continuity records"}
-        res = qg.evaluate(run_id or Path(run_dir).name or "reconcile",
-                          "continuity-bible", recs, makers or {}, checked)
-    except Exception as exc:  # noqa: BLE001 - a broken gate never advances
-        return False, {"gate_error": repr(exc)[:200]}
-    return (res.get("gate") == "PASS",
-            {"gate": res.get("gate"), "reason_code": res.get("reason_code"),
-             "checks": checked})
-
-
-_RECONCILIERS = {"storyboard": _proven_storyboard, "music": _proven_music,
-                 "continuity-bible": _proven_continuity}
+_RECONCILIERS = {"storyboard": _proven_storyboard, "music": _proven_music}
+try:  # the continuity stage owns its predicate; wire it, never copy it
+    from character_continuity import stage as _cc_stage  # noqa: PLC0415
+    _cc_stage.register(_RECONCILIERS)
+except Exception:  # noqa: BLE001 - no module means no reconciler, never a pass
+    pass
 
 def _reconcile_stages(run_dir, got):
     """L4.1: reconcile stage rows from proven artifacts through state_store.
@@ -1144,7 +1150,7 @@ def _remaining_ledger_balance(run_dir):
     # must be the run dir's own name (a run folder named for its run id).
     try:
         import sqlite3
-        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        con = _ro_connect(db, timeout=5)
         try:
             ids = [r[0] for r in con.execute("SELECT run_id FROM runs")]
         finally:
@@ -1481,7 +1487,7 @@ def cmd_next(a):
     # Read-only projection of the store: states already say what is eligible.
     try:
         import sqlite3
-        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
+        con = _ro_connect(db, timeout=10)
         try:
             got = dict(con.execute(
                 "SELECT stage, state FROM stages ORDER BY rowid").fetchall())
@@ -1558,12 +1564,13 @@ def cmd_next(a):
             _c = str(Path(__file__).resolve().parent.parent)
             if _c not in sys.path:
                 sys.path.insert(0, _c)
-            from song_choices import song_choices as _sc  # noqa: PLC0415
             # WW-08 item 3: the pick must be in AND every offered song's
             # constituent-evidence receipt current before a later stage runs.
             # One hold implementation: the same _song_hold the music stage
-            # uses, so a recorded operator decision that opens the hold
-            # for `music --action complete` also opens it for `next`.
+            # uses, so a recorded operator-decision.json that opens the
+            # acceptance hold for `music --action complete` also opens it
+            # here -- measured gates stay FAIL and MANUAL_RELABEL stays
+            # absolute either way.
             hold = _song_hold(run_dir)
         except Exception as exc:  # noqa: BLE001 - a broken gate never opens
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}

@@ -316,15 +316,31 @@
 #   WATCH_SPEECH_TIMEOUT=<secs>   fixture only: how long one lint run may take
 #                               before the tick moves on without it (default 25).
 #                               Nothing else should.
-#   MERGE_BATCH_MINUTES=10      batch merge cadence: every N minutes the tick runs
-#                               `tools/merge-train.sh <home> --batch` with no --repo,
-#                               so merge-train runs EVERY registered repo's train,
-#                               each under its own lock (lock-guarded here too,
-#                               never two batches at once; merge-train decides what waits)
+#   MERGE_BATCH_MINUTES=10      merge-window cadence: every N minutes the tick
+#                               reaches a merge WINDOW and writes ONE durable
+#                               request into <area>/wm-queue/ for the visible
+#                               S75-WM workflow (see 4e). The timer NEVER runs
+#                               tools/merge-train.sh and never integrates:
+#                               only S75-WM's visible native workflow runs the
+#                               train, serially per repo under its own lock.
+#                               0 is REJECTED (exit 2): zero made the interval
+#                               check eligible on every tick — the bug 4e
+#                               closes. Use MERGE_BATCH_DISABLE=1 to disable.
+#   MERGE_BATCH_DISABLE=1       explicit disable for the merge windows; the
+#                               S-CHECK line says so. 0 is never a disable.
 #   WATCH_SWEEP_NET_TIMEOUT=60  seconds one fetch / ls-remote / push of the repo sweeps may take
 #   WATCH_STALE_UNMERGED_MIN=120  minutes without a commit before an unmerged worktree
 #                               branch is STALE-UNMERGED (the orphan sweep, 4g)
-#   WATCH_MERGE_TRAIN_SH=<path>   selftest stub only: the merge train the batch runs
+#   WATCH_MERGE_TRAIN_SH=<path>   CANARY ONLY: the timer must never execute it.
+#                               The selftest points it at a marker stub and
+#                               fails if the marker ever appears.
+#   WATCH_SUPERVISOR_TICK_SECONDS=60    the deterministic supervisor tick (4i)
+#   WATCH_SUPERVISOR_REPORT_SECONDS=600 the section 10.6 report cadence (4i)
+#   WATCH_SUPERVISOR_OVERDUE_SECONDS=180  a supervisor older than this pauses
+#                               new dispatch (4i) instead of declaring anything
+#   WATCH_SUPERVISOR_MAX_TICKS=0  selftest/fixture bound on the --supervise
+#                               loop (0 = run until stopped; the supervisor
+#                               never auto-stops)
 #   WATCH_REFRESH_TIMEOUT=120   seconds one profile `commands.refresh` run may take
 #   WATCH_TICK_LS=<path>        selftest stub only: the program the privacy probe
 #                               (4h) lists the project folder with
@@ -379,6 +395,9 @@ DO_ARM=0
 DO_CHECK=0
 DO_RECORD=0
 DO_SWEEP=0
+DO_SUPERVISE=0
+DO_SUP_STATUS=0
+DO_BRIDGE=0
 LOG_FILE=""
 
 STALE_MIN="${WATCH_STALE_MIN:-10}"
@@ -1151,52 +1170,626 @@ auto_resume() {  # auto_resume <elapsed-minutes> [phase]
 }
 
 #------------------------------------------------------------------------------
-# 4e. THE BATCH MERGE CADENCE (A4). Every MERGE_BATCH_MINUTES (default 10) the
-#     tick runs `tools/merge-train.sh <home> --batch` at the project root, with
-#     no --repo: merge-train loops every repo in <area>/repos.json (one train
-#     per repo, each under its own lock, so one repo never blocks another).
-#     merge-train owns "what is waiting": with nothing waiting it says so and
-#     exits 0, so the tick never guesses. Cadence is <area>/merge-batch.stamp's
-#     mtime (touched when a batch STARTS). <area>/merge-batch.lock.d (mkdir is
-#     atomic) holds this tick's pid while the batch runs, so two batches never
-#     overlap; a lock whose pid is gone is reclaimed. A failure is logged,
-#     never fatal. WATCH_MERGE_TRAIN_SH replaces the script (selftest stub only).
+# 4e. THE MERGE WINDOW IS AN ENQUEUE, NEVER A MERGE. Every MERGE_BATCH_MINUTES
+#     (default 10) the tick reaches a merge WINDOW and writes ONE durable
+#     request into <area>/wm-queue/<id>.request.json for the visible S75-WM
+#     workflow (SPEC 15.1 watcher row: "One durable request is delegated to
+#     visible WM; no timer-originated merge process, no duplicate train, and
+#     no unpermitted concurrent heavy gates"). A script cannot call the
+#     session-only Workflow tool (SPEC 10.1) and never writes here by magic:
+#     the supported bridge is one request file plus ONE line printed and
+#     ledgered — `ACTION|wm-merge-request|<id>|…` — which the visible S75-WM
+#     workflow consumes through its own native session. Only one OPEN request
+#     exists at a time: a new window while one is still open extends the SAME
+#     request (requested_windows+=1), so the queue cannot flood and the train
+#     is never duplicated. The request is done only when a receipt lands in
+#     <area>/wm-queue/done/ (WM's own visible workflow writes it, or a human).
+#
+#     THE BUG THIS CLOSES: MERGE_BATCH_MINUTES=0 used to make the interval
+#     check `age < 0` false on every tick — eligible on EVERY tick instead of
+#     never. 0 is now REJECTED at validation (exit 2, named), and the explicit
+#     disable is MERGE_BATCH_DISABLE=1, which is never mistaken for a cadence.
+#     The timer executes NO integration tool: WATCH_MERGE_TRAIN_SH may only
+#     name a canary stub that the selftest asserts this path never runs.
 #------------------------------------------------------------------------------
 MERGE_BATCH_MIN="${MERGE_BATCH_MINUTES:-10}"
-MERGE_TRAIN_SH="${WATCH_MERGE_TRAIN_SH:-${SCRIPT_DIR}/merge-train.sh}"
-MERGE_LOCK=""
+MERGE_BATCH_DISABLED="${MERGE_BATCH_DISABLE:-0}"
+MERGE_WM_QUEUE_REL="wm-queue"
 MERGE_NOTE=""
-merge_batch() {  # prints one MERGE-BATCH line when it acts; sets MERGE_NOTE
-  local stamp="${AREA}/merge-batch.stamp" lock="${AREA}/merge-batch.lock.d" lm age pid out rc
+# 4i supervisor cadence constants (validated with the rest, below).
+SUPERVISE_TICK_SEC="${WATCH_SUPERVISOR_TICK_SECONDS:-60}"
+SUPERVISE_REPORT_SEC="${WATCH_SUPERVISOR_REPORT_SECONDS:-600}"
+SUPERVISE_OVERDUE_SEC="${WATCH_SUPERVISOR_OVERDUE_SECONDS:-180}"
+merge_window() {  # prints one MERGE-WINDOW line when it acts; sets MERGE_NOTE
+  [[ "$MERGE_BATCH_DISABLED" == "1" ]] && { MERGE_NOTE="disabled(MERGE_BATCH_DISABLE=1)"; return 0; }
+  local stamp="${AREA}/merge-batch.stamp" lm age
   if [[ -f "$stamp" ]]; then
     lm="$(stat -f %m "$stamp" 2>/dev/null || stat -c %Y "$stamp" 2>/dev/null || echo 0)"
     age=$(( ($(epoch_now) - lm) / 60 ))
-    if (( age < MERGE_BATCH_MIN )); then MERGE_NOTE="not-due(last batch ${age}m ago, every ${MERGE_BATCH_MIN}m)"; return 0; fi
+    if (( age < MERGE_BATCH_MIN )); then MERGE_NOTE="not-due(next window in $(( MERGE_BATCH_MIN - age ))m, every ${MERGE_BATCH_MIN}m)"; return 0; fi
   fi
+  mkdir -p "${AREA}/${MERGE_WM_QUEUE_REL}/done"
+  # ONE open request at a time: extend it, never stack duplicates.
+  local open_req id file windows
+  open_req="$(find "${AREA}/${MERGE_WM_QUEUE_REL}" -maxdepth 1 -name '*.request.json' 2>/dev/null | sort | head -1)"
+  if [[ -n "$open_req" ]]; then
+    windows="$("$PYTHON3" -c 'import json,sys;print(int(json.load(open(sys.argv[1])).get("requested_windows",1))+1)' "$open_req" 2>/dev/null || echo "")"
+    [[ "$windows" =~ ^[0-9]+$ ]] || windows=""
+    if [[ -n "$windows" ]]; then
+      "$PYTHON3" -c 'import json,sys;p=sys.argv[1];d=json.load(open(p));d["requested_windows"]=int(sys.argv[2]);d["last_window"]=sys.argv[3];json.dump(d,open(p,"w"),sort_keys=True)' \
+        "$open_req" "$windows" "$(iso_now)" 2>/dev/null || true
+    fi
+    id="$(basename "$open_req" .request.json)"
+    MERGE_NOTE="enqueued(one-open:${id} windows=${windows:-?})"
+    printf 'MERGE-WINDOW | %s | delegated | wm-merge-request already open (%s), requested_windows=%s — the timer runs no merge process; visible S75-WM consumes %s\n' \
+      "$(iso_now)" "$id" "${windows:-?}" "$open_req"
+    return 0
+  fi
+  id="wm-$(date -u +%Y%m%d%H%M%S)-$$"
+  file="${AREA}/${MERGE_WM_QUEUE_REL}/${id}.request.json"
+  if ! "$PYTHON3" -c 'import json,sys;json.dump({"id":sys.argv[1],"from":"watch-tick.timer","to":"S75-WM","action":"run-merge-train-batch","home":sys.argv[2],"requested_windows":1,"first_window":sys.argv[3],"last_window":sys.argv[3],"note":"timer enqueues only; only visible S75-WM may integrate"},open(sys.argv[4],"w"),sort_keys=True)' \
+       "$id" "$HOME_DIR" "$(iso_now)" "$file" 2>/dev/null; then
+    MERGE_NOTE="enqueued-failed(queue write failed)"
+    printf 'MERGE-WINDOW | %s | NOT ENQUEUED | %s could not be written — the timer still runs no merge process; name the fault\n' "$(iso_now)" "$file"
+    return 0
+  fi
+  touch "$stamp"
+  MERGE_NOTE="enqueued(${id} -> S75-WM)"
+  printf 'MERGE-WINDOW | %s | delegated | wm-merge-request %s queued for visible S75-WM (%s) — no timer-originated merge process, no duplicate train\n' \
+    "$(iso_now)" "$id" "$file"
+  printf 'ACTION|wm-merge-request|%s|%s\n' "$id" "$file"
+}
+
+# 4e-2. THE CONTROL BRIDGE (SPEC 10.1). A cron/launchd task cannot call the
+#       session-only Workflow tool by magic. What the timer CAN do, through
+#       supported mechanisms, is exactly two things: write the durable request
+#       4e writes, and print/ledger the ACTION line a visible session consumes.
+#       The proof this is a bridge and not a claim is one instrument: this
+#       header section, the printed ACTION|wm-merge-request line, the request
+#       JSON, and the selftest case 56 that drives the full path with the
+#       merge-train canary armed and asserts the canary never ran. The named
+#       capability gap: a headless timer has NO session Workflow tool, no
+#       Workflow launch primitive, and cannot resume a dead conductor on its
+#       own. The repair through supported mechanisms is the enqueue/delegate
+#       contract above plus the visible-window AUTO-RESUME path (4d), which
+#       opens an ordinary interactive session — never a hidden replacement
+#       worker. Unattended supervision is therefore: deterministic 60-second
+#       tick (4i) + durable WM queue + visible resume. Nothing else is claimed.
+wm_requests_open() { find "${AREA}/${MERGE_WM_QUEUE_REL}" -maxdepth 1 -name '*.request.json' 2>/dev/null | "$GREP" -c '[^[:space:]]' || true; }
+
+#------------------------------------------------------------------------------
+# 4i. THE SUPERVISOR LOOP (SPEC 10.2). `--supervise` runs a deterministic tick
+#     every WATCH_SUPERVISOR_TICK_SECONDS (default 60) with immediate
+#     admission checks (S2/S3/S5/S6/S13 against the same parsers the five
+#     minute tick uses), publishes the full section 10.6 report at startup and
+#     every WATCH_SUPERVISOR_REPORT_SECONDS (default 600), and persists
+#     last_tick, next_report_due, supervisor identity, run epoch and queue
+#     state in <area>/supervisor.state (KEY=VALUE, written atomically).
+#
+#     CATCH-UP IS EXACTLY ONE REPORT. A restart that missed one or more report
+#     windows publishes ONE report (kind=catch-up), never one per missed
+#     window — the state carries next_report_due, not a backlog.
+#
+#     OVERDUE SUPERVISOR PAUSES DISPATCH. When the persisted last_tick is
+#     older than WATCH_SUPERVISOR_OVERDUE_SECONDS (default 180) the tick
+#     exposes the fault (SUPERVISOR-OVERDUE line + DRIFT-ALARM), pauses new
+#     dispatch (ACTION|pause-dispatch|supervisor-overdue replaces
+#     dispatch-now/widen/relabel), restores supervision by resuming ticks, and
+#     NEVER declares completion. The five-minute cron tick applies the same
+#     pause to its own dispatch actions.
+#
+#     HEALTH SIGNAL AND INDEPENDENT LIVENESS. Every tick writes
+#     <area>/supervisor.health (pid, run_epoch, last_tick) and the state file.
+#     `--supervisor-status` is the independent liveness check: it READS ONLY
+#     the persisted state (it never ticks, never dispatches) and prints
+#     HEALTHY / OVERDUE / ABSENT with the numbers behind the verdict.
+#
+#     The loop never auto-stops: it runs until killed, or until
+#     WATCH_SUPERVISOR_MAX_TICKS bounds it (selftest only).
+#------------------------------------------------------------------------------
+SUP_STATE_FILE="supervisor.state"
+SUP_HEALTH_FILE="supervisor.health"
+
+sup_state_path() { printf '%s/%s' "$AREA" "$SUP_STATE_FILE"; }
+
+sup_state_get() {  # sup_state_get <file> <key> -> value or rc 1
+  "$GREP" "^$2=" "$1" 2>/dev/null | head -1 | sed "s/^$2=//"
+}
+
+supervisor_identity() {
+  local host s
+  host="$(hostname -s 2>/dev/null || printf 'unknown-host')"
+  s="${CLAUDE_CODE_SESSION_ID:-no-session}"
+  printf '%s:pid-%s:%s' "$host" "$$" "$s"
+}
+
+sup_state_write() {  # sup_state_write <last_tick_iso> <last_tick_epoch> <next_due_iso> <next_due_epoch> <run_epoch> <tick_seq> <report_seq> <last_report_at> <dispatch_paused>
+  local f tmp
+  f="$(sup_state_path)"
   mkdir -p "$AREA"
-  if ! mkdir "$lock" 2>/dev/null; then
-    pid="$(cat "$lock/pid" 2>/dev/null || true)"
-    # ponytail: pid liveness only; a recycled pid holds the lock until that process exits.
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-      MERGE_NOTE="held(batch pid ${pid} still running)"
-      printf 'MERGE-BATCH | held | a batch is still running (pid %s); no second batch\n' "$pid"
+  tmp="${f}.tmp.$$"
+  {
+    printf 'last_tick=%s\n' "$1"
+    printf 'last_tick_epoch=%s\n' "$2"
+    printf 'next_report_due=%s\n' "$3"
+    printf 'next_report_due_epoch=%s\n' "$4"
+    printf 'supervisor_id=%s\n' "$(supervisor_identity)"
+    printf 'supervisor_pid=%s\n' "$$"
+    printf 'supervisor_started_at=%s\n' "${SUP_STARTED_AT:-$1}"
+    printf 'run_epoch=%s\n' "$5"
+    printf 'tick_seq=%s\n' "$6"
+    printf 'report_seq=%s\n' "$7"
+    printf 'last_report_at=%s\n' "$8"
+    printf 'queue_open=%s\n' "$(wm_requests_open)"
+    printf 'queue_ids=%s\n' "$(find "${AREA}/${MERGE_WM_QUEUE_REL}" -maxdepth 1 -name '*.request.json' 2>/dev/null | sed 's#.*/##; s#\.request\.json##' | paste -sd, - 2>/dev/null || true)"
+    printf 'dispatch_paused=%s\n' "$9"
+    printf 'tick_seconds=%s\nreport_seconds=%s\noverdue_seconds=%s\n' "$SUPERVISE_TICK_SEC" "$SUPERVISE_REPORT_SEC" "$SUPERVISE_OVERDUE_SEC"
+  } > "$tmp" || die_tool "could not stage the supervisor state into ${tmp}"
+  mv "$tmp" "$f" || die_tool "could not install the supervisor state into ${f}"
+  printf 'run_epoch=%s\nlast_tick=%s\npid=%s\n' "$5" "$1" "$$" > "${AREA}/${SUP_HEALTH_FILE}" 2>/dev/null || true
+}
+
+# The shared overdue read (SPEC 10.2). Sets SUP_NOTE / SUP_AGE / SUP_OVERDUE /
+# SUP_PRESENT. ABSENT is not overdue: no supervisor was armed, so there is
+# nothing to pause for — the pause exists to stop dispatch under a DEAD
+# supervisor, not under no supervisor.
+supervisor_state_check() {
+  SUP_NOTE="absent(no ${AREA_REL}/${SUP_STATE_FILE}; no --supervise is armed)"
+  SUP_AGE=""; SUP_OVERDUE=0; SUP_PRESENT=0
+  local f lt
+  f="$(sup_state_path)"
+  [[ -f "$f" ]] || return 0
+  SUP_PRESENT=1
+  lt="$(sup_state_get "$f" last_tick_epoch)"
+  if [[ ! "$lt" =~ ^[0-9]+$ ]]; then
+    SUP_NOTE="undetermined(${AREA_REL}/${SUP_STATE_FILE} carries no parseable last_tick_epoch)"
+    return 0
+  fi
+  SUP_AGE=$(( $(epoch_now) - lt ))
+  if (( SUP_AGE > SUPERVISE_OVERDUE_SEC )); then
+    SUP_OVERDUE=1
+    SUP_NOTE="overdue(last tick ${SUP_AGE}s ago, ceiling ${SUPERVISE_OVERDUE_SEC}s)"
+  else
+    SUP_NOTE="healthy(last tick ${SUP_AGE}s ago)"
+  fi
+  return 0
+}
+
+# The pause filter (SPEC 10.2: an overdue supervisor pauses new dispatch
+# instead of declaring completion). Dispatch-creating actions are dropped and
+# replaced by ONE pause action; recovery actions (requeue, mint-check, resume,
+# repair of reporting faults) are NOT dispatch and survive.
+apply_dispatch_pause() {  # apply_dispatch_pause <actions-file> -> rewrites it and VERBS
+  local f="$1" tmp
+  tmp="${f}.pause.$$"
+  : > "$tmp"
+  while IFS= read -r line; do
+    case "$line" in
+      ACTION\|dispatch-now\|*|ACTION\|widen\|*|ACTION\|relabel-and-redispatch\*) continue ;;
+      *) printf '%s\n' "$line" >> "$tmp" ;;
+    esac
+  done < "$f"
+  printf 'ACTION|pause-dispatch|supervisor-overdue|%s — new dispatch is PAUSED while the supervisor is overdue (SPEC 10.2); this is a fault to restore, never a completion\n' \
+    "$(sanitize "$SUP_NOTE")" >> "$tmp"
+  mv "$tmp" "$f"
+  local verbs="" v
+  while IFS= read -r v; do
+    [[ -n "$v" ]] || continue
+    case "$v" in dispatch-now|widen|relabel-and-redispatch) continue ;; esac
+    if [[ -z "$verbs" ]]; then verbs="$v"; else verbs="${verbs},${v}"; fi
+  done < <(printf '%s' "$VERBS" | tr ',' '\n')
+  if [[ -z "$verbs" ]]; then VERBS="pause-dispatch"; else verbs="${verbs},pause-dispatch"; VERBS="$verbs"; fi
+}
+
+# The immediate admission checks of one 60-second supervisor tick: S2, S3, S5,
+# S6 and S13 against the same parsers, emitting ACTION lines at once (the
+# five-minute cron tick remains the outer reconciliation layer and owns the
+# reconcile/sweeps; this is the fast lane, not a second copy of everything).
+admission_check() {
+  ADM_V=0 ADM_ACTS="" ADM_OPEN=0 ADM_TREES=0 ADM_LABELS=0 ADM_MAXWIDTH=0 ADM_AGENTSUM=0 ADM_MODELS=""
+  if is_profiled "$HOME_DIR"; then
+    ADM_ACTS="undetermined(profiled: admission rows live in the bound state; the profile tick owns them)"
+    return 0
+  fi
+  local CHK="$HOME_DIR/CONTROL/CHECKLIST.md" DL="$HOME_DIR/CONTROL/dispatch-log.md"
+  local LED="$HOME_DIR/CONTROL/LEDGER.md" HB="$HOME_DIR/CONTROL/HEARTBEAT.md"
+  if [[ ! -f "$CHK" || ! -f "$DL" ]]; then
+    ADM_ACTS="undetermined(pre-plan or no CONTROL census: CHECKLIST.md/dispatch-log.md absent)"
+    return 0
+  fi
+  local W="${WORKDIR}/adm"
+  mkdir -p "$W"
+  : > "$W/results.txt"
+  [[ -f "$LED" ]] && awk_results "$LED" > "$W/results.txt" 2>/dev/null || true
+  awk_rows "$DL" > "$W/rows.tsv" 2>/dev/null || true
+  : > "$W/open.tsv"
+  local u stage lok tree ts label
+  while IFS=$'\t' read -r u stage lok tree ts label; do
+    [[ -n "$u" ]] || continue
+    "$GREP" -qxF -- "$u" "$W/results.txt" 2>/dev/null || \
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$u" "$stage" "$lok" "$tree" "$ts" "$label" >> "$W/open.tsv"
+  done < "$W/rows.tsv"
+  local OPEN RUNNABLE TREES
+  OPEN="$("$GREP" -c '[^[:space:]]' "$W/open.tsv" || true)"; [[ -n "$OPEN" ]] || OPEN=0
+  cut -f1 "$W/open.tsv" | LC_ALL=C sort -u > "$W/open-units.txt"
+  awk_checklist "$CHK" | LC_ALL=C sort -u > "$W/boxes.txt"
+  comm -23 "$W/boxes.txt" "$W/open-units.txt" > "$W/runnable.txt"
+  RUNNABLE="$("$GREP" -c '[^[:space:]]' "$W/runnable.txt" || true)"; [[ -n "$RUNNABLE" ]] || RUNNABLE=0
+  TREES="$(cut -f4 "$W/open.tsv" | "$GREP" -v '^[[:space:]]*$' | LC_ALL=C sort -u | "$GREP" -c '[^[:space:]]' || true)"
+  [[ -n "$TREES" ]] || TREES=0
+  ADM_ACTS="runnable=${RUNNABLE} open=${OPEN} trees=${TREES}"
+  ADM_OPEN="$OPEN"; ADM_TREES="$TREES"
+  # The report's agent/model census: distinct labels, the widest declared
+  # [<model> xN] width, and the distinct model names — raw observed values,
+  # never clamped to a declared peak (SPEC 10.3).
+  ADM_LABELS="$("$AWK" -F '\t' '{print $6}' "$W/open.tsv" 2>/dev/null | LC_ALL=C sort -u | "$GREP" -c '[^[:space:]]' || true)"
+  [[ -n "$ADM_LABELS" ]] || ADM_LABELS=0
+  ADM_MAXWIDTH="$(cut -f6 "$W/open.tsv" 2>/dev/null | sed -n 's/.*[x×]\([0-9][0-9]*\)\].*/\1/p' | sort -n | tail -1)"
+  [[ "$ADM_MAXWIDTH" =~ ^[0-9]+$ ]] || ADM_MAXWIDTH=0
+  ADM_AGENTSUM="$(cut -f6 "$W/open.tsv" 2>/dev/null | sed -n 's/.*[x×]\([0-9][0-9]*\)\].*/\1/p' | "$AWK" '{s+=$1} END {print s+0}')"
+  ADM_MODELS="$(cut -f6 "$W/open.tsv" 2>/dev/null | sed -n 's/^[[:space:]]*\[\([^] x×]*\).*/\1/p' | LC_ALL=C sort -u | paste -sd, - 2>/dev/null || true)"
+  if (( SUP_OVERDUE == 1 )); then
+    ADM_ACTS="${ADM_ACTS} | paused(${SUP_NOTE})"
+    return 0
+  fi
+  # S2
+  if (( RUNNABLE > 0 && OPEN == 0 )); then
+    ADM_V=$(( ADM_V + 1 ))
+    printf 'ACTION|dispatch-now|%s|S2 zero-workflow on the 60s tick: runnable=%s open=0\n' "$(head -3 "$W/runnable.txt" | tr '\n' ' ')" "$RUNNABLE"
+  fi
+  # S3
+  while IFS=$'\t' read -r u stage lok tree ts label; do
+    [[ -n "$u" && "$lok" != "1" ]] || continue
+    ADM_V=$(( ADM_V + 1 ))
+    printf 'ACTION|relabel-and-redispatch|%s|S3 label: open row carries no [<model> x<N>] label\n' "$u"
+  done < "$W/open.tsv"
+  # S5
+  if [[ -n "${WATCH_CLIENT_CAP:-}" ]] && [[ "${WATCH_CLIENT_CAP}" =~ ^[0-9]+$ ]] \
+     && (( RUNNABLE > 0 && TREES > 0 && OPEN < WATCH_CLIENT_CAP * TREES )); then
+    ADM_V=$(( ADM_V + 1 ))
+    printf 'ACTION|widen|%s tree(s)|S5 idle capacity on the 60s tick\n' "$TREES"
+  fi
+  # S6/S13 — staleness and finished-but-alive, from the heartbeat map. S6
+  # judges OPEN rows (stale work); S13 judges CLOSED rows (RESULT present,
+  # heartbeat still fresh) — the same jurisdictions the five-minute tick has.
+  if [[ -f "$HB" ]]; then
+    local NOW thr age ep hbu hbl hts
+    NOW="$(epoch_now)"
+    : > "$W/hb-unit.tsv"; : > "$W/hb-label.tsv"
+    while IFS=$'\t' read -r hbu hbl hts; do
+      [[ -n "$hts" ]] || continue
+      if ep="$(iso_to_epoch "$hts")"; then
+        [[ -n "$hbu" ]] && printf '%s\t%s\n' "$hbu" "$ep" >> "$W/hb-unit.tsv"
+        [[ -n "$hbl" ]] && printf '%s\t%s\n' "$hbl" "$ep" >> "$W/hb-label.tsv"
+      fi
+    done < <(awk_heartbeat "$HB")
+    hb_ep() {  # hb_ep <unit> <label> -> newest epoch or empty (never 0 — 0 would be a 54-year-old stamp that fires S6 on a row with no heartbeat at all)
+      local e
+      e="$("$AWK" -F '\t' -v u="$1" '$1==u {if ($2+0 > b+0) b=$2} END {if (b != "") print b}' "$W/hb-unit.tsv" 2>/dev/null)"
+      if [[ -z "$e" && -n "$2" ]]; then
+        e="$("$AWK" -F '\t' -v l="$2" '$1==l {if ($2+0 > b+0) b=$2} END {if (b != "") print b}' "$W/hb-label.tsv" 2>/dev/null)"
+      fi
+      printf '%s' "$e"
+    }
+    # S6 over the OPEN rows.
+    while IFS=$'\t' read -r u stage lok tree ts label; do
+      [[ -n "$u" ]] || continue
+      case "$(printf '%s' "$stage" | tr 'A-Z' 'a-z')" in *merge*) thr="$MERGE_STALE_MIN" ;; *) thr="$STALE_MIN" ;; esac
+      ep="$(hb_ep "$u" "$label")"
+      [[ -n "$ep" ]] || continue
+      age=$(( (NOW - ep) / 60 ))
+      if (( age > thr )); then
+        ADM_V=$(( ADM_V + 1 ))
+        printf 'ACTION|reconcile-native-identity|%s|S6 stale on the 60s tick: last stamp %sm ago (ceiling %sm)\n' "$u" "$age" "$thr"
+      fi
+    done < "$W/open.tsv"
+    # S13 over the CLOSED rows: RESULT on the ledger, heartbeat still fresh.
+    while IFS=$'\t' read -r u stage lok tree ts label; do
+      [[ -n "$u" ]] || continue
+      "$GREP" -qxF -- "$u" "$W/results.txt" 2>/dev/null || continue
+      case "$(printf '%s' "$stage" | tr 'A-Z' 'a-z')" in *merge*) thr="$MERGE_STALE_MIN" ;; *) thr="$STALE_MIN" ;; esac
+      ep="$(hb_ep "$u" "$label")"
+      [[ -n "$ep" ]] || continue
+      age=$(( (NOW - ep) / 60 ))
+      if (( age <= thr )); then
+        ADM_V=$(( ADM_V + 1 ))
+        printf 'ACTION|reconcile-native-identity|%s|S13 finished-but-alive on the 60s tick: RESULT present, heartbeat %sm fresh (ceiling %sm)\n' "$u" "$age" "$thr"
+      fi
+    done < "$W/rows.tsv"
+  fi
+  return 0
+}
+
+# ---- the section 10.6 report (SPEC 10.6). Every field is present with an
+#      actual value or an explicit UNDETERMINED naming its source and owner;
+#      an absent field is a reporting defect and unknown is never a pass.
+report_10_6() {  # report_10_6 <kind: startup|catch-up|periodic>
+  local kind="$1" now_iso now_e
+  now_iso="$(iso_now)"; now_e="$(epoch_now)"
+  local ba="undetermined(no ${AREA_REL}/build-acceptance.json: verified_weight/total; owner: independent QC)"
+  local bv="" bt=""
+  if [[ -f "${AREA}/build-acceptance.json" ]]; then
+    bv="$("$GREP" -o '"verified_weight"[[:space:]]*:[[:space:]]*[0-9]*' "${AREA}/build-acceptance.json" | "$GREP" -o '[0-9]*$')"
+    bt="$("$GREP" -o '"total"[[:space:]]*:[[:space:]]*[0-9]*' "${AREA}/build-acceptance.json" | "$GREP" -o '[0-9]*$')"
+    if [[ "$bv" =~ ^[0-9]+$ && "$bt" =~ ^[0-9]+$ && "$bt" -gt 0 ]]; then
+      ba="${bv}/${bt} = $(( bv * 100 / bt ))% (source: ${AREA_REL}/build-acceptance.json)"
+    else
+      ba="undetermined(${AREA_REL}/build-acceptance.json present but carries no parseable verified_weight/total; owner: independent QC)"
+    fi
+  fi
+  local amp="undetermined(no ${AREA_REL}/merge-progress.json: landed_weight/required_code_weight; owner: S75-WM)"
+  if [[ -f "${AREA}/merge-progress.json" ]]; then
+    local lw rw
+    lw="$("$GREP" -o '"landed_weight"[[:space:]]*:[[:space:]]*[0-9]*' "${AREA}/merge-progress.json" | "$GREP" -o '[0-9]*$')"
+    rw="$("$GREP" -o '"required_code_weight"[[:space:]]*:[[:space:]]*[0-9]*' "${AREA}/merge-progress.json" | "$GREP" -o '[0-9]*$')"
+    if [[ "$lw" =~ ^[0-9]+$ && "$rw" =~ ^[0-9]+$ && "$rw" -gt 0 ]]; then
+      amp="${lw}/${rw} = $(( lw * 100 / rw ))% (source: ${AREA_REL}/merge-progress.json; denominator frozen at kickoff)"
+    fi
+  fi
+  local q_open q_ids cb batch
+  q_open="$(wm_requests_open)"; [[ -n "$q_open" ]] || q_open=0
+  q_ids="$(find "${AREA}/${MERGE_WM_QUEUE_REL}" -maxdepth 1 -name '*.request.json' 2>/dev/null | sed 's#.*/##; s#\.request\.json##' | paste -sd, - 2>/dev/null || true)"
+  if [[ -f "${AREA}/wm-queue/batch-status.json" ]]; then
+    local bm bf
+    bm="$("$GREP" -o '"merged_in_batch"[[:space:]]*:[[:space:]]*[0-9]*' "${AREA}/wm-queue/batch-status.json" | "$GREP" -o '[0-9]*$')"
+    bf="$("$GREP" -o '"frozen_in_batch"[[:space:]]*:[[:space:]]*[0-9]*' "${AREA}/wm-queue/batch-status.json" | "$GREP" -o '[0-9]*$')"
+    if [[ "$bm" =~ ^[0-9]+$ && "$bf" =~ ^[0-9]+$ ]]; then
+      if (( bf == 0 )); then cb="N/A (no qualified units — never 100%)"
+      else cb="${bm}/${bf} = $(( bm * 100 / bf ))% (membership frozen by S75-WM at batch start; source: ${AREA_REL}/wm-queue/batch-status.json)"; fi
+    else
+      cb="undetermined(${AREA_REL}/wm-queue/batch-status.json present but carries no parseable merged_in_batch/frozen_in_batch; owner: S75-WM)"
+    fi
+  elif (( q_open > 0 )); then
+    cb="undetermined(${q_open} request(s) pending on S75-WM (${q_ids}) — batch membership is frozen by S75-WM only, and the timer holds none; owner: S75-WM)"
+  else
+    cb="N/A (no qualified units — never 100%)"
+  fi
+  local nw aa models swarm modelc overall viol
+  nw="projection(CONTROL/dispatch-log.md rows: running=${ADM_OPEN:-?} unfinished=${ADM_OPEN:-?} trees=${ADM_TREES:-?}); native census=undetermined(control-bridge gap CB-1: a headless timer cannot read the session-only Workflow census — the native runtime is the authority, Command Center is a projection)"
+  aa="declared_agents_total=${ADM_AGENTSUM:-?}(sum of [<model> xN] widths over open rows) distinct_labels=${ADM_LABELS:-?}; maximum in one workflow=${ADM_MAXWIDTH:-?}/10 (declared widths read from the rows; raw observed counts, never clamped to a declared peak)"
+  models="builder=undetermined, QC=undetermined, effort=undetermined (labels seen: ${ADM_MODELS:-none}; the resolved model/effort travel the provider request path a shell cannot read — control-bridge gap CB-1; owner: W00-U1 route receipts)"
+  # Compliance: a point is earned only by CURRENT evidence this instrument
+  # holds; unknown is not a pass. Provable here: swarm 6 (supervisor on time),
+  # swarm 7 (this report is current), swarm 10 (merge queue moving by durable
+  # enqueue within policy). Everything else needs the native census or the
+  # route receipts and is reported UNDETERMINED, not passed.
+  local s6=0 s7=0 s10=0
+  (( SUP_OVERDUE == 0 && SUP_PRESENT == 1 )) && s6=1
+  s7=1
+  (( s7 == 1 )) && s10=1
+  swarm=$(( s6 + s7 + s10 ))
+  modelc=0
+  overall=$(( swarm < modelc ? swarm : modelc ))
+  viol="none"
+  [[ -n "${SUP_ADM_OUT:-}" ]] && viol="admission findings this tick: $(sanitize "$SUP_ADM_OUT")"
+  if (( SUP_OVERDUE == 1 )); then
+    viol="supervisor-overdue(${SUP_NOTE}) — new dispatch PAUSED; completion NOT declared (SPEC 10.2)"
+  fi
+  local lastmerge nextwin udec milestone
+  lastmerge="$("$GREP" -h 'MERGED:' "${AREA}/LEDGER.md" "$HOME_DIR/CONTROL/LEDGER.md" 2>/dev/null | tail -1 | sed 's/^[[:space:]]*//' || true)"
+  if [[ -n "$lastmerge" ]]; then
+    lastmerge="$(sanitize "$lastmerge") (claim; proof of merge is the repo sweep — a false claim prints MERGE-CLAIM-FALSE)"
+  else
+    lastmerge="none recorded (no MERGED: line in ${AREA_REL}/LEDGER.md or CONTROL/LEDGER.md)"
+  fi
+  if [[ "$MERGE_BATCH_DISABLED" == "1" ]]; then
+    nextwin="N/A (MERGE_BATCH_DISABLE=1 — the explicit disable, never 0)"
+  else
+    local lm
+    lm="$(stat -f %m "${AREA}/merge-batch.stamp" 2>/dev/null || stat -c %Y "${AREA}/merge-batch.stamp" 2>/dev/null || echo 0)"
+    nextwin="$(date -u -r $(( lm + MERGE_BATCH_MIN * 60 )) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$(( lm + MERGE_BATCH_MIN * 60 ))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo undetermined)(every ${MERGE_BATCH_MIN}m; ${q_open} request(s) already open)"
+  fi
+  if [[ -f "${AREA}/user-decision.txt" ]]; then
+    udec="$(head -1 "${AREA}/user-decision.txt" | cut -c1-160) (recorded in ${AREA_REL}/user-decision.txt; the timer never fabricates a decision)"
+  else
+    udec="none recorded (${AREA_REL}/user-decision.txt absent)"
+  fi
+  milestone="$( "$GREP" -m1 '^[[:space:]]*[-*][[:space:]]*\[[[:space:]]\]' "$HOME_DIR/CONTROL/TODO.md" 2>/dev/null | sed 's/^[[:space:]]*[-*][[:space:]]*\[[[:space:]]*\][[:space:]]*//' | cut -c1-160 || true)"
+  [[ -n "$milestone" ]] || milestone="undetermined (no open row in CONTROL/TODO.md; owner: conductor)"
+  {
+    printf 'Skill 75 repair — %s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(date '+%Z %z')"
+    printf 'Report: kind=%s | run_epoch=%s | tick_seq=%s | report_seq=%s | supervisor=%s\n' \
+      "$kind" "${SUP_RUN_EPOCH:-unknown}" "${SUP_TICK_SEQ:-0}" "${SUP_REPORT_SEQ:-0}" "$(supervisor_identity)"
+    printf 'Build acceptance: %s\n' "$ba"
+    printf 'Accepted-scope merge progress: %s\n' "$amp"
+    printf 'Current batch: %s\n' "$cb"
+    printf 'Native workflows: %s\n' "$nw"
+    printf 'Active agents: %s\n' "$aa"
+    printf 'Models: %s\n' "$models"
+    printf 'Swarm compliance: %s/10; model compliance: %s/10; overall=%s/10 (swarm provable here: 6 supervisor on time=%s, 7 report current=%s, 10 merge queue by durable enqueue=%s; points 1-5,8-9 and all model points UNDETERMINED under CB-1 — unknown is not a pass)\n' \
+      "$swarm" "$modelc" "$overall" "$s6" "$s7" "$s10"
+    printf 'Violations/recovery: %s\n' "$viol"
+    printf 'Last proven merge: %s; next batch due: %s\n' "$lastmerge" "$nextwin"
+    printf 'Current user decision: %s\n' "$udec"
+    printf 'Next concrete milestone: %s\n' "$milestone"
+  } | tee -a "${AREA}/supervisor-reports.log"
+}
+
+# ---- one deterministic supervisor tick.
+supervise_tick() {  # supervise_tick <kind hint: startup|tick>
+  local hint="$1" now_iso now_e f old_last old_next run_epoch tick_seq report_seq last_report paused=0
+  now_iso="$(iso_now)"; now_e="$(epoch_now)"
+  WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/watch-tick-sup.XXXXXX")"
+  f="$(sup_state_path)"
+  run_epoch="${SUP_RUN_EPOCH:-}"
+  tick_seq="${SUP_TICK_SEQ:-0}"; report_seq="${SUP_REPORT_SEQ:-0}"; last_report="${SUP_LAST_REPORT:-}"
+  old_last=""; old_next=""
+  if [[ -f "$f" ]]; then
+    old_last="$(sup_state_get "$f" last_tick_epoch)"
+    old_next="$(sup_state_get "$f" next_report_due_epoch)"
+    [[ -n "$run_epoch" ]] || run_epoch="$(sup_state_get "$f" run_epoch)"
+    local v
+    v="$(sup_state_get "$f" tick_seq)"; [[ "$v" =~ ^[0-9]+$ ]] && tick_seq=$v
+    v="$(sup_state_get "$f" report_seq)"; [[ "$v" =~ ^[0-9]+$ ]] && report_seq=$v
+    last_report="$(sup_state_get "$f" last_report_at)"
+  fi
+  [[ -n "$run_epoch" ]] || run_epoch="run-$(date -u +%Y%m%d%H%M%S)-$$"
+  SUP_RUN_EPOCH="$run_epoch"
+
+  # The overdue read happens BEFORE the new stamp: a gap left by a dead or
+  # suspended supervisor is the fault this tick must expose and pause under.
+  supervisor_state_check
+  if (( SUP_PRESENT == 1 && SUP_OVERDUE == 1 )); then
+    paused=1
+    printf 'SUPERVISOR-OVERDUE | %s | %s | last_tick_epoch=%s | new dispatch PAUSED this tick; supervision restored by this tick; completion NOT declared\n' \
+      "$now_iso" "$SUP_NOTE" "${old_last:-?}"
+    tick_ledger "$(iso_now) | DRIFT-ALARM | supervisor-overdue | $(sanitize "$SUP_NOTE") | $(sanitize "the supervision loop missed its tick; new dispatch paused and supervision restored (SPEC 10.2)")"
+  fi
+
+  # Immediate admission checks on the 60-second cadence. The call writes to a
+  # file, not $(): admission_check's ADM_* census must survive into the 10.6
+  # report, and command substitution would run it in a subshell.
+  : > "$WORKDIR/adm.out"
+  set +e
+  admission_check > "$WORKDIR/adm.out" 2>&1
+  set -e
+  SUP_ADM_OUT="$(cat "$WORKDIR/adm.out")"
+
+  # The merge window, if due: a durable enqueue to S75-WM, never a merge.
+  merge_window
+
+  # Persist before reporting: last_tick, next_report_due, supervisor identity,
+  # run epoch and queue state are the crash-safe record.
+  local next_due_e next_due_iso kind rep=0
+  if [[ "$hint" == "startup" || "$hint" == "catch-up" ]]; then
+    kind="$hint"; rep=1
+  elif [[ -n "$old_next" && "$old_next" =~ ^[0-9]+$ ]] && (( now_e >= old_next )); then
+    kind="periodic"; rep=1
+  elif [[ -z "$old_next" ]]; then
+    kind="startup"; rep=1
+  else
+    kind="none"
+  fi
+  # ONE missed report after a restart, never a flood: a catch-up covers every
+  # missed window with a single report and then the cadence restarts from now.
+  if (( rep == 1 )); then
+    report_seq=$(( report_seq + 1 ))
+    next_due_e=$(( now_e + SUPERVISE_REPORT_SEC ))
+    last_report="$now_iso"
+  else
+    next_due_e="${old_next:-$(( now_e + SUPERVISE_REPORT_SEC ))}"
+  fi
+  next_due_iso="$(date -u -r "$next_due_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$next_due_e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$next_due_e")"
+  tick_seq=$(( tick_seq + 1 ))
+  SUP_TICK_SEQ="$tick_seq"; SUP_REPORT_SEQ="$report_seq"; SUP_LAST_REPORT="$last_report"
+  sup_state_write "$now_iso" "$now_e" "$next_due_iso" "$next_due_e" "$run_epoch" "$tick_seq" "$report_seq" "$last_report" "$paused"
+
+  printf 'SUPERVISOR-TICK | %s | tick_seq=%s | run_epoch=%s | admission=[%s] | merge=%s | queue_open=%s | health=ok | next_report_due=%s\n' \
+    "$now_iso" "$tick_seq" "$run_epoch" "$(sanitize "${SUP_ADM_OUT:-none}")" "$(sanitize "${MERGE_NOTE:-not-run}")" \
+    "$(wm_requests_open)" "$next_due_iso"
+  [[ -n "$SUP_ADM_OUT" ]] && printf '%s\n' "$SUP_ADM_OUT"
+
+  if (( rep == 1 )); then
+    printf 'SUPERVISOR-REPORT | %s | kind=%s | report_seq=%s\n' "$now_iso" "$kind" "$report_seq"
+    report_10_6 "$kind"
+  fi
+  rm -rf "$WORKDIR"; WORKDIR=""
+  return 0
+}
+
+supervise_loop() {
+  [[ -n "$HOME_DIR" ]] || die_tool "no project home given. Usage: watch-tick.sh <project-home> --supervise"
+  bind_paths "$HOME_DIR"
+  SUP_STARTED_AT="$(iso_now)"
+  local max="${WATCH_SUPERVISOR_MAX_TICKS:-0}"
+  [[ "$max" =~ ^[0-9]+$ ]] || die_tool "WATCH_SUPERVISOR_MAX_TICKS must be a non-negative integer (got: ${max})"
+  local n=0 first=1
+  printf 'SUPERVISOR-START | %s | pid=%s | run_epoch-pending | tick=%ss report=%ss overdue=%ss | control-bridge=CB-1 durable enqueue + ACTION lines + visible AUTO-RESUME (a cron task cannot call the session-only Workflow tool)\n' \
+    "$(iso_now)" "$$" "$SUPERVISE_TICK_SEC" "$SUPERVISE_REPORT_SEC" "$SUPERVISE_OVERDUE_SEC"
+  while :; do
+    if (( first == 1 )); then
+      # Startup: publish exactly one report — kind=startup on a fresh run,
+      # kind=catch-up when a report window was missed (exactly one, no flood).
+      local f old_next now_e
+      f="$(sup_state_path)"; now_e="$(epoch_now)"
+      if [[ -f "$f" ]]; then
+        old_next="$(sup_state_get "$f" next_report_due_epoch)"
+        if [[ "$old_next" =~ ^[0-9]+$ ]] && (( now_e >= old_next )); then supervise_tick "catch-up"
+        else supervise_tick "startup"; fi
+      else
+        supervise_tick "startup"
+      fi
+      first=0
+    else
+      supervise_tick "tick"
+    fi
+    n=$(( n + 1 ))
+    if (( max > 0 && n >= max )); then
+      printf 'SUPERVISOR-STOP | %s | ticks=%s (WATCH_SUPERVISOR_MAX_TICKS=%s bound — the supervisor never auto-stops without one)\n' "$(iso_now)" "$n" "$max"
       return 0
     fi
-    rm -rf "$lock"
-    mkdir "$lock" 2>/dev/null || { MERGE_NOTE="held(lock taken by another tick)"; return 0; }
+    # Deterministic cadence: wake on the next WATCH_SUPERVISOR_TICK_SECONDS
+    # boundary, so ticks land on the clock, not on drift-accumulated sleeps.
+    local now sl
+    now="$(date +%s)"
+    sl=$(( SUPERVISE_TICK_SEC - (now % SUPERVISE_TICK_SEC) ))
+    (( sl <= 0 )) && sl=$SUPERVISE_TICK_SEC
+    sleep "$sl"
+  done
+}
+
+# ---- the independent liveness check (--supervisor-status). READ-ONLY: it
+#      reads the persisted state and reports; it never ticks, never dispatches,
+#      never writes. 0 healthy, 3 overdue/absent (attention), 2 undetermined.
+supervisor_status_cmd() {
+  bind_paths "$HOME_DIR"
+  local f lt e
+  f="$(sup_state_path)"
+  if [[ ! -f "$f" ]]; then
+    printf 'SUPERVISOR | ABSENT (exit 3) | no %s/%s — no supervisor is armed; the five-minute cron tick is an outer layer, not the 60s supervisor (SPEC 10.2)\n' "$AREA_REL" "$SUP_STATE_FILE"
+    return 3
   fi
-  MERGE_LOCK="$lock"
-  printf '%s\n' "$$" > "$lock/pid"
-  touch "$stamp"
-  set +e
-  if [[ -x "$MERGE_TRAIN_SH" ]]; then out="$(cd "$HOME_DIR" && "$MERGE_TRAIN_SH" "$HOME_DIR" --batch 2>&1)"; rc=$?
-  else out="$(cd "$HOME_DIR" && bash "$MERGE_TRAIN_SH" "$HOME_DIR" --batch 2>&1)"; rc=$?; fi
-  set -e
-  rm -rf "$lock"; MERGE_LOCK=""
-  [[ -z "$out" ]] || printf '%s\n' "$out"
-  out="$(printf '%s\n' "$out" | "$GREP" -v '^[[:space:]]*$' | tail -1 || true)"
-  MERGE_NOTE="ran(rc=${rc}: $(sanitize "${out:-no output}"))"
-  printf 'MERGE-BATCH | rc=%s | %s\n' "$rc" "$(sanitize "${out:-no output}")"
+  lt="$(sup_state_get "$f" last_tick_epoch)"
+  if [[ ! "$lt" =~ ^[0-9]+$ ]]; then
+    printf 'SUPERVISOR | UNDETERMINED (exit 2) | %s carries no parseable last_tick_epoch — the state is unreadable, which is never a pass\n' "$f"
+    return 2
+  fi
+  e=$(( $(epoch_now) - lt ))
+  local epoch sid due
+  epoch="$(sup_state_get "$f" run_epoch)"; sid="$(sup_state_get "$f" supervisor_id)"; due="$(sup_state_get "$f" next_report_due)"
+  if (( e > SUPERVISE_OVERDUE_SEC )); then
+    printf 'SUPERVISOR | OVERDUE (exit 3) | last tick %ss ago (ceiling %ss) | run_epoch=%s | supervisor=%s | next_report_due=%s | queue_open=%s — new dispatch is PAUSED until supervision is restored\n' \
+      "$e" "$SUPERVISE_OVERDUE_SEC" "$epoch" "$sid" "$due" "$(sup_state_get "$f" queue_open)"
+    return 3
+  fi
+  printf 'SUPERVISOR | HEALTHY (exit 0) | last tick %ss ago (ceiling %ss) | run_epoch=%s | supervisor=%s | next_report_due=%s | queue_open=%s\n' \
+    "$e" "$SUPERVISE_OVERDUE_SEC" "$epoch" "$sid" "$due" "$(sup_state_get "$f" queue_open)"
+  return 0
+}
+
+# ---- the control-bridge statement (SPEC 10.1). Printed verbatim by
+#      `--control-bridge` and cited by the selftest; the capability gap and
+#      the supported repair, in one place.
+control_bridge_statement() {
+  cat <<'CBEOF'
+CONTROL BRIDGE — CB-1 (SPEC 10.1)
+CAPABILITY GAP, EXACT: a cron/launchd/systemd task runs as a plain shell
+process. It cannot call the session-only Workflow tool — there is no session
+attached to it, no Workflow launch primitive in a shell, and no supported way
+for a timer to revive a dead conductor by magic. Any design that claims a
+timer "runs the workflow" is claiming an interface the host does not have.
+
+SUPPORTED REPAIR — the three mechanisms this file actually uses:
+  1. DURABLE ENQUEUE (4e): a merge window writes ONE request file under
+     <area>/wm-queue/ addressed to S75-WM (from=watch-tick.timer,
+     action=run-merge-train-batch, timer never integrates), and prints ONE
+     ACTION|wm-merge-request line. The visible S75-WM native workflow
+     consumes the request inside its own session — the only place session
+     tools exist. One open request at a time; a new window extends it.
+  2. ACTION LINES (the tick's stdout and log): command-shaped
+     ACTION|<verb>|<target>|<evidence> lines the in-session conductor reads
+     and dispatches. The timer states facts and requests; the session acts.
+  3. VISIBLE RESUME (4d): when a run stalls, the tick opens a VISIBLE Terminal
+     window running the recorded launcher with --resume — an ordinary
+     interactive session, never a hidden replacement worker.
+
+PROOF: selftest cases 55-64 — the 0-cadence bug is rejected (55), the merge
+window enqueues exactly one durable S75-WM request while the merge-train
+canary proves no timer-originated merge process ran (56-57, 64), the cadence
+persists state and catches up exactly one report (59-60), an overdue
+supervisor pauses dispatch instead of declaring completion (61), and the
+independent liveness check reads only state (62).
+CBEOF
 }
 
 #------------------------------------------------------------------------------
@@ -1749,6 +2342,9 @@ while (( $# )); do
     --check)     DO_CHECK=1; shift ;;
     --record-session) DO_RECORD=1; shift ;;
     --sweep)     DO_SWEEP=1; shift ;;
+    --supervise) DO_SUPERVISE=1; shift ;;
+    --supervisor-status) DO_SUP_STATUS=1; shift ;;
+    --control-bridge) DO_BRIDGE=1; shift ;;
     --log)       [[ $# -ge 2 && -n "$2" ]] || die_tool "--log needs a file path"
                  LOG_FILE="$2"; shift 2 ;;
     -h|--help)   usage; exit 0 ;;
@@ -1763,7 +2359,18 @@ done
 [[ "$STALE_MIN"       =~ ^[0-9]+$ ]] || die_tool "WATCH_STALE_MIN must be a non-negative integer (got: ${STALE_MIN})"
 [[ "$MERGE_STALE_MIN" =~ ^[0-9]+$ ]] || die_tool "WATCH_MERGE_STALE_MIN must be a non-negative integer (got: ${MERGE_STALE_MIN})"
 [[ "$STALLED_MIN"     =~ ^[0-9]+$ ]] || die_tool "WATCH_STALLED_MIN must be a non-negative integer (got: ${STALLED_MIN})"
-[[ "$MERGE_BATCH_MIN" =~ ^[0-9]+$ ]] || die_tool "MERGE_BATCH_MINUTES must be a non-negative integer (got: ${MERGE_BATCH_MIN})"
+# MERGE_BATCH_MINUTES=0 was the "always eligible" bug (4e): zero made the
+# interval check fire on every tick. 0 is therefore REJECTED, named — the
+# explicit disable is MERGE_BATCH_DISABLE=1 and is never a cadence value.
+[[ "$MERGE_BATCH_MIN" =~ ^[0-9]+$ ]] && (( MERGE_BATCH_MIN >= 1 )) \
+  || die_tool "MERGE_BATCH_MINUTES must be a positive integer of minutes (got: ${MERGE_BATCH_MIN}) — 0 is not a disable switch and made the interval check eligible on every tick; disable the merge windows explicitly with MERGE_BATCH_DISABLE=1"
+case "$MERGE_BATCH_DISABLED" in 0|1) : ;; *) die_tool "MERGE_BATCH_DISABLE must be 0 or 1 (got: ${MERGE_BATCH_DISABLED})" ;; esac
+[[ "$SUPERVISE_TICK_SEC" =~ ^[0-9]+$ ]] && (( SUPERVISE_TICK_SEC >= 1 )) \
+  || die_tool "WATCH_SUPERVISOR_TICK_SECONDS must be a positive integer of seconds (got: ${SUPERVISE_TICK_SEC})"
+[[ "$SUPERVISE_REPORT_SEC" =~ ^[0-9]+$ ]] && (( SUPERVISE_REPORT_SEC >= 1 )) \
+  || die_tool "WATCH_SUPERVISOR_REPORT_SECONDS must be a positive integer of seconds (got: ${SUPERVISE_REPORT_SEC})"
+[[ "$SUPERVISE_OVERDUE_SEC" =~ ^[0-9]+$ ]] && (( SUPERVISE_OVERDUE_SEC >= 1 )) \
+  || die_tool "WATCH_SUPERVISOR_OVERDUE_SECONDS must be a positive integer of seconds (got: ${SUPERVISE_OVERDUE_SEC})"
 [[ "$SWEEP_NET_TIMEOUT" =~ ^[0-9]+$ && "$SWEEP_NET_TIMEOUT" -gt 0 ]] || die_tool "WATCH_SWEEP_NET_TIMEOUT must be a positive integer of seconds (got: ${SWEEP_NET_TIMEOUT})"
 [[ "$STALE_UNMERGED_MIN" =~ ^[0-9]+$ ]] || die_tool "WATCH_STALE_UNMERGED_MIN must be a non-negative integer (got: ${STALE_UNMERGED_MIN})"
 [[ "$REFRESH_TIMEOUT" =~ ^[0-9]+$ && "$REFRESH_TIMEOUT" -gt 0 ]] || die_tool "WATCH_REFRESH_TIMEOUT must be a positive integer of seconds (got: ${REFRESH_TIMEOUT})"
@@ -1828,9 +2435,10 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
     ret=3
   fi
 
-  # A4 then A3: a merge is a state-changing step, so the refresh runs after it.
-  # The repo sweeps (4g) follow the batch: they re-prove what it claimed.
-  merge_batch
+  # A4 then A3: the merge WINDOW (4e) is a durable enqueue to S75-WM — the
+  # timer integrates nothing. The repo sweeps (4g) follow it: they re-prove
+  # whatever claims exist, independently of who made them.
+  merge_window
   repo_sweeps || true
   sweep_actions_print
   [[ -s "$SWEEP_ACTS" ]] && ret=3
@@ -1864,9 +2472,11 @@ run_profile_tick() {  # 0 = validate rc 0; 3 = stall; exit 2 when the profile ca
 #==============================================================================
 run_tick() {
   [[ -n "$HOME_DIR" ]] || die_tool "no project home given. Usage: watch-tick.sh <project-home> [--cron-line|--arm]"
-  # The plain tick (4h): probe privacy BEFORE anything reads the home, then
-  # open the log the cron line names.
-  if (( ! DO_CRON_LINE && ! DO_ARM && ! DO_RECORD && ! DO_CHECK && ! DO_SWEEP )); then
+  # The plain tick and the supervisor loop (4h/4i): probe privacy BEFORE
+  # anything reads the home, then open the log the cron line names.
+  # --supervisor-status is the exception: it is a READ-ONLY liveness answer
+  # for a caller, so its verdict goes to that caller's stdout, never a log.
+  if (( ! DO_CRON_LINE && ! DO_ARM && ! DO_RECORD && ! DO_CHECK && ! DO_SWEEP && ! DO_SUP_STATUS )); then
     privacy_gate "$HOME_DIR"
     if [[ -n "$LOG_FILE" ]]; then exec >> "$LOG_FILE" 2>&1 || die_tool "cannot append to the log ${LOG_FILE}"; fi
   fi
@@ -1927,6 +2537,23 @@ run_tick() {
     exit 0
   fi
 
+  # --supervise: the deterministic 60-second supervisor loop (4i) — immediate
+  # admission checks, the section 10.6 report at startup and every
+  # WATCH_SUPERVISOR_REPORT_SECONDS, persisted state, and the overdue pause.
+  if (( DO_SUPERVISE )); then
+    local src=0
+    set +e; supervise_loop; src=$?; set -e
+    exit "$src"
+  fi
+
+  # --supervisor-status: the INDEPENDENT liveness check (4i). Reads only the
+  # persisted state; never ticks, never dispatches, never writes.
+  if (( DO_SUP_STATUS )); then
+    local stc=0
+    set +e; supervisor_status_cmd; stc=$?; set -e
+    exit "$stc"
+  fi
+
   self_prove
   privacy_pickup
 
@@ -1941,6 +2568,17 @@ run_tick() {
     return "$prc"
   fi
   bind_paths "$HOME_DIR"
+
+  # 4i: the supervisor read. An overdue supervisor (persisted last_tick older
+  # than WATCH_SUPERVISOR_OVERDUE_SECONDS) pauses this tick's NEW DISPATCH
+  # below (apply_dispatch_pause) and exposes the fault here on the ledger;
+  # it never declares completion (SPEC 10.2).
+  supervisor_state_check
+  if (( SUP_OVERDUE == 1 )); then
+    ledger_write "CONTROL/LEDGER.md" \
+      "$(iso_now) | DRIFT-ALARM | supervisor-overdue | $(sanitize "$SUP_NOTE") | $(sanitize "the supervision loop missed its tick; new dispatch paused and supervision restored on this tick (SPEC 10.2)")"
+    printf 'SUPERVISOR-OVERDUE | %s | %s | new dispatch PAUSED this tick; completion NOT declared\n' "$(iso_now)" "$SUP_NOTE"
+  fi
 
   local CHK DL LED HB FLAG CAPLED
   CHK="$HOME_DIR/CONTROL/CHECKLIST.md"
@@ -2028,10 +2666,11 @@ run_tick() {
 
   [[ -f "$CHK" ]] || die_tool "CONTROL/CHECKLIST.md is missing at ${CHK} — the runnable count has no source. Checked: ${CHK}. Not checked: the dispatch log and the heartbeat, because the run stopped here."
 
-  # A4: the batch merge cadence, once the plan exists (4e). Logged in the
+  # A4: the merge window cadence, once the plan exists (4e) — a durable
+  # enqueue to visible S75-WM, never a timer-originated merge. Logged in the
   # S-CHECK line's merge-batch= field; never a verdict and never fatal.
   # Then the repo sweeps (4g): their findings are emitted with the S-checks.
-  merge_batch
+  merge_window
   repo_sweeps || true
 
   #--------------------------------------------------------------------------
@@ -2739,6 +3378,15 @@ run_tick() {
   #     is zero: `S-CHECK | violations=0` is state; a contentless tick is the
   #     disease this loop exists to stop (references/loops.md Loop 9).
   #--------------------------------------------------------------------------
+  # 4i: an overdue supervisor pauses NEW dispatch before anything is printed.
+  # The filter swaps dispatch-now/widen/relabel for ONE pause action and keeps
+  # every repair action; the fault is exposed, not hidden, and nothing here
+  # declares completion (SPEC 10.2). Unconditional on an overdue tick: the
+  # pause action is the visible proof even when nothing was queued to pause.
+  if (( SUP_OVERDUE == 1 )); then
+    apply_dispatch_pause "$WORKDIR/actions.txt"
+    V=$(( V + 1 ))
+  fi
   [[ -s "$WORKDIR/actions.txt" ]] && cat "$WORKDIR/actions.txt"
 
   local ACTS="none"
@@ -2747,7 +3395,7 @@ run_tick() {
   [[ -n "$UNDET" ]] && UND="$UNDET"
 
   local LINE
-  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | merge-batch=$(sanitize "${MERGE_NOTE:-not-run}") | sweeps=$(sanitize_long "$SWEEP_NOTE") | trees-detail=${TREE_NOTE} | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
+  LINE="$(iso_now) | S-CHECK | violations=${V} | runnable=${RUNNABLE} open=${OPEN} trees=${TREES} | cap=${CAP_NOTE} | anchor=${ANCHOR_NOTE} | bar=$(sanitize "$BAR_NOTE") | speech=$(sanitize "$SPEECH_NOTE") | stalled-turn=$(sanitize "$STALL_NOTE") | published=$(sanitize "$PUB_NOTE") | merge-batch=$(sanitize "${MERGE_NOTE:-not-run}") | sweeps=$(sanitize_long "$SWEEP_NOTE") | trees-detail=${TREE_NOTE} | supervisor=$(sanitize "$SUP_NOTE") | actions=$(sanitize "$ACTS") | undetermined=$(sanitize_long "$UND")"
   ledger_write "CONTROL/LEDGER.md" "$LINE"
   printf '%s\n' "$LINE"
 
@@ -2860,6 +3508,32 @@ run_tick() {
 #  53  AUTO-RESUME'S FALLBACK — open fails, osascript opens the window.
 #  54  FALLBACK B — neither opens: nothing started, AUTO-RESUME-NOT-OPENED on
 #      the ledger and the continue command in the morning report.
+#  55  MERGE_BATCH_MINUTES=0 REJECTED (exit 2, named) — zero used to make the
+#      interval check eligible on every tick; MERGE_BATCH_DISABLE=1 is the
+#      only disable.
+#  56  THE MERGE WINDOW ENQUEUES — exactly ONE durable request to visible
+#      S75-WM, MERGE-WINDOW + ACTION|wm-merge-request lines, no merge process
+#      (canary marker absent).
+#  57  ONE-OPEN RULE — a second due window extends the open request
+#      (requested_windows=2); never a duplicate request or ACTION.
+#  58  --control-bridge prints the CB-1 capability gap and the three
+#      supported repair mechanisms verbatim.
+#  59  THE SUPERVISOR TICK — persisted state (last_tick, next_report_due,
+#      supervisor identity, run epoch, queue state), one startup report with
+#      every section 10.6 field, no flood on the second tick.
+#  60  CATCH-UP IS EXACTLY ONE REPORT — 24 missed windows produce one
+#      kind=catch-up report; report_seq advances by exactly one.
+#  61  OVERDUE SUPERVISOR PAUSES DISPATCH — no dispatch-now/widen;
+#      ACTION|pause-dispatch|supervisor-overdue, S-CHECK supervisor=overdue,
+#      DRIFT-ALARM on the ledger; no completion declared.
+#  62  --supervisor-status — the independent liveness check: HEALTHY exit 0,
+#      OVERDUE exit 3, ABSENT exit 3, state never written (cksum unchanged).
+#  63  THE POSITIVE CADENCE CONTROL — a fresh merge-batch.stamp gates the
+#      window: not-due, zero requests, zero MERGE-WINDOW lines.
+#  64  THE CANARY CLOSURE — across all cases the WATCH_MERGE_TRAIN_SH canary
+#      stub was never executed: the timer performed zero merge processes.
+#  NOTE cases 55-64 run with MERGE_BATCH_DISABLE=1 globally (no case gains a
+#      merge enqueue by accident) except 56-57/63, which set it to 0.
 #==============================================================================
 selftest() {
   local T PASSES=0 FAILS=0 RC OUT ok
@@ -2874,9 +3548,17 @@ selftest() {
   printf '#!/bin/sh\necho "$*" >> "%s"\n/bin/bash "$3"\n' "$T/open.args" > "$T/open-ok.stub"
   printf '#!/bin/sh\nfor a; do f="$a"; done\n/bin/bash "$f"\n' > "$T/osa-ok.stub"
   chmod +x "$T/open-ok.stub" "$T/osa-ok.stub"
-  # Nor may any case run the real merge train: the batch cadence (4e) runs this
-  # no-op stub in every fixture.
-  export WATCH_MERGE_TRAIN_SH=/usr/bin/true
+  # Nor may any case run a merge process: WATCH_MERGE_TRAIN_SH points at a
+  # CANARY stub that writes a marker the moment ANY path executes it, and case
+  # 64 asserts the marker never appears. The timer must never integrate: 4e
+  # only enqueues to visible S75-WM.
+  printf '#!/bin/sh\necho executed > "%s"\nexit 0\n' "$T/merge-train-executed.marker" > "$T/merge-train-canary"
+  chmod +x "$T/merge-train-canary"
+  export WATCH_MERGE_TRAIN_SH="$T/merge-train-canary"
+  # Merge windows are DISABLED by default in the fixtures (so no case gains an
+  # ACTION|wm-merge-request line by accident); cases 56-57 re-enable them with
+  # MERGE_BATCH_DISABLE=0 and prove the enqueue path itself.
+  export MERGE_BATCH_DISABLE=1
   # Nor may any case touch the real per-user state (4h's privacy record).
   export XDG_STATE_HOME="$T/xdg"
 
@@ -3865,6 +4547,217 @@ selftest() {
      && "$GREP" -A3 '^## Operator notes' "$T/c54/MORNING-REPORT-2026-01-01.md" | "$GREP" -q '^- AUTO-RESUME-NOT-OPENED: the run stalled .*type `claude-nine --resume`, press Return, pick this project'; then ok=1; fi
   report 54 "auto-resume-not-opened" "$ok" "open and osascript both failed: launcher stub ran=$([[ -e "$T/c54.args" ]] && echo yes || echo no) (want no — nothing hidden is started); AUTO-RESUME-NOT-OPENED on the ledger and the continue command under the morning report's Operator notes"
 
+  # --- cases 55-64 (unit S75-W00-U2): the supervision loop and timer
+  #     ownership. 55 proves MERGE_BATCH_MINUTES=0 is REJECTED (it used to
+  #     make the interval check eligible on every tick) and 0-disable works
+  #     only through MERGE_BATCH_DISABLE=1. 56-57 prove the merge window
+  #     ENQUEUES one durable S75-WM request and never a merge process (the
+  #     canary marker must never appear). 58 proves the control-bridge
+  #     statement names the capability gap and its supported repair. 59-60
+  #     prove the 60s tick persists state and catches up EXACTLY ONE report
+  #     after a restart. 61 proves an overdue supervisor pauses new dispatch
+  #     visibly instead of declaring completion. 62 proves --supervisor-status
+  #     is the independent read-only liveness check. 63 proves the positive
+  #     cadence (a fresh stamp is not-due). 64 is the canary closure.
+
+  # --- case 55: MERGE_BATCH_MINUTES=0 REJECTED, exit 2, named. The old code
+  #     accepted 0 and then `age < 0` was false on every tick — always eligible.
+  mk_home "$T/c55"
+  set +e
+  OUT="$(MERGE_BATCH_DISABLE=0 MERGE_BATCH_MINUTES=0 bash "$SELF" "$T/c55" 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if (( RC == 2 )) && printf '%s' "$OUT" | "$GREP" -q 'MERGE_BATCH_MINUTES must be a positive integer' \
+     && printf '%s' "$OUT" | "$GREP" -q 'MERGE_BATCH_DISABLE=1' \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'S-CHECK'; then ok=1; fi
+  report 55 "merge-batch-zero-rejected" "$ok" "rc=${RC} (want 2); the zero cadence is refused by name with the explicit disable named — 0 never behaves as always-eligible again"
+
+  # --- case 56: THE MERGE WINDOW IS AN ENQUEUE. One window -> exactly ONE
+  #     durable request file addressed to visible S75-WM, the ACTION line, and
+  #     NO merge process (the canary marker must not exist).
+  mk_home "$T/c56"
+  MERGE_BATCH_DISABLE=0 runw "$T/c56"
+  local q56 n56
+  q56="$(find "$T/c56/CONTROL/wm-queue" -maxdepth 1 -name '*.request.json' 2>/dev/null | head -1)"
+  n56="$(find "$T/c56/CONTROL/wm-queue" -maxdepth 1 -name '*.request.json' 2>/dev/null | "$GREP" -c '[^[:space:]]' || true)"
+  ok=0
+  if [[ -n "$q56" && "$n56" == "1" ]] \
+     && "$GREP" -q '"to": "S75-WM"' "$q56" && "$GREP" -q '"from": "watch-tick.timer"' "$q56" \
+     && "$GREP" -q '"action": "run-merge-train-batch"' "$q56" \
+     && printf '%s' "$OUT" | "$GREP" -q '^MERGE-WINDOW | .* | delegated | wm-merge-request' \
+     && printf '%s' "$OUT" | "$GREP" -q "^ACTION|wm-merge-request|" \
+     && [[ ! -e "$T/merge-train-executed.marker" ]]; then ok=1; fi
+  report 56 "merge-window-enqueues-wm" "$ok" "rc=${RC}; exactly ${n56} durable request (want 1) at ${q56:-<none>} addressed to S75-WM from watch-tick.timer; MERGE-WINDOW + ACTION|wm-merge-request lines present; merge-train canary executed=$([[ -e "$T/merge-train-executed.marker" ]] && echo YES || echo no)"
+
+  # --- case 57: THE ONE-OPEN RULE. A second due window while the request is
+  #     still open EXTENDS the same request (requested_windows=2) and never
+  #     stacks a duplicate — one durable request, no duplicate train.
+  touch "${T}/c56/CONTROL/merge-batch.stamp" 2>/dev/null
+  TZ=UTC touch -t 202001010000 "$T/c56/CONTROL/merge-batch.stamp"
+  MERGE_BATCH_DISABLE=0 runw "$T/c56"
+  local n57 w57
+  n57="$(find "$T/c56/CONTROL/wm-queue" -maxdepth 1 -name '*.request.json' 2>/dev/null | "$GREP" -c '[^[:space:]]' || true)"
+  w57="$("$GREP" -o '"requested_windows": [0-9]*' "$q56" | "$GREP" -o '[0-9]*$')"
+  ok=0
+  if [[ "$n57" == "1" && "$w57" == "2" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'wm-merge-request already open' \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^ACTION|wm-merge-request|' \
+     && [[ ! -e "$T/merge-train-executed.marker" ]]; then ok=1; fi
+  report 57 "merge-window-one-open" "$ok" "rc=${RC}; request count stayed ${n57} (want 1) with requested_windows=${w57} (want 2); the second window extended the open request and emitted NO second ACTION (one durable request, one delegation)"
+
+  # --- case 58: THE CONTROL BRIDGE STATEMENT names the capability gap and
+  #     the supported repair, verbatim, from the one place that owns it.
+  set +e
+  OUT="$(bash "$SELF" --control-bridge 2>&1)"; RC=$?
+  set -e
+  ok=0
+  if (( RC == 0 )) \
+     && printf '%s' "$OUT" | "$GREP" -q 'CAPABILITY GAP, EXACT: a cron/launchd/systemd task runs as a plain shell' \
+     && printf '%s' "$OUT" | "$GREP" -q 'cannot call the session-only Workflow tool' \
+     && printf '%s' "$OUT" | "$GREP" -q 'SUPPORTED REPAIR' \
+     && printf '%s' "$OUT" | "$GREP" -q 'DURABLE ENQUEUE' \
+     && printf '%s' "$OUT" | "$GREP" -q 'ACTION LINES' \
+     && printf '%s' "$OUT" | "$GREP" -q 'VISIBLE RESUME'; then ok=1; fi
+  report 58 "control-bridge-statement" "$ok" "rc=${RC} (want 0); --control-bridge prints the CB-1 gap and the three supported repair mechanisms by name"
+
+  # --- case 59: THE SUPERVISOR TICK persists last_tick, next_report_due,
+  #     supervisor identity, run epoch and queue state, publishes the full
+  #     10.6 report at startup, and a second tick publishes NO report (the
+  #     cadence, not a flood).
+  mk_home "$T/c59"
+  set +e
+  OUT="$(WATCH_SUPERVISOR_TICK_SECONDS=1 WATCH_SUPERVISOR_REPORT_SECONDS=30 \
+         WATCH_SUPERVISOR_MAX_TICKS=2 bash "$SELF" "$T/c59" --supervise 2>&1)"; RC=$?
+  set -e
+  local sf59="$T/c59/CONTROL/supervisor.state" nr59
+  nr59="$("$GREP" -c '^SUPERVISOR-REPORT |' <(printf '%s\n' "$OUT") || true)"
+  ok=0
+  if (( RC == 0 )) && [[ -f "$sf59" ]] \
+     && "$GREP" -q '^last_tick=' "$sf59" && "$GREP" -q '^next_report_due=' "$sf59" \
+     && "$GREP" -q '^supervisor_id=' "$sf59" && "$GREP" -q '^run_epoch=' "$sf59" \
+     && "$GREP" -q '^queue_open=' "$sf59" && "$GREP" -q '^tick_seq=2$' "$sf59" \
+     && [[ "$nr59" == "1" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q '^Skill 75 repair — ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Build acceptance: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Accepted-scope merge progress: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Current batch: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Native workflows: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Active agents: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Models: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Swarm compliance: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Violations/recovery: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Last proven merge: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Current user decision: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^Next concrete milestone: ' \
+     && printf '%s' "$OUT" | "$GREP" -q '^SUPERVISOR-TICK | '; then ok=1; fi
+  report 59 "supervise-tick-persists-and-reports" "$ok" "rc=${RC} (want 0); state has last_tick/next_report_due/supervisor_id/run_epoch/queue_open and tick_seq=2; ${nr59} SUPERVISOR-REPORT line over 2 ticks (want 1 — startup only); every section 10.6 field printed"
+
+  # --- case 60: EXACTLY ONE MISSED REPORT AFTER RESTART. The state says the
+  #     report window was missed (next_report_due two hours ago = ~24 missed
+  #     windows at the default cadence) — the restart publishes ONE report
+  #     (kind=catch-up), never one per missed window.
+  local now60 due60
+  now60="$(date -u +%s)"; due60=$(( now60 - 7200 ))
+  "$PYTHON3" - "$T/c59/CONTROL/supervisor.state" "$due60" <<'PY60'
+import sys
+p,e=sys.argv[1],sys.argv[2]
+lines=[]
+for ln in open(p):
+    k=ln.split('=',1)[0]
+    if k=='next_report_due_epoch': lines.append('next_report_due_epoch=%s\n'%e)
+    elif k=='next_report_due':    lines.append('next_report_due=missed-by-7200s\n')
+    elif k=='report_seq':         lines.append('report_seq=5\n')
+    else: lines.append(ln)
+open(p,'w').writelines(lines)
+PY60
+  set +e
+  OUT="$(WATCH_SUPERVISOR_TICK_SECONDS=1 WATCH_SUPERVISOR_REPORT_SECONDS=30 \
+         WATCH_SUPERVISOR_MAX_TICKS=1 bash "$SELF" "$T/c59" --supervise 2>&1)"; RC=$?
+  set -e
+  local n60 k60
+  n60="$("$GREP" -c '^SUPERVISOR-REPORT |' <(printf '%s\n' "$OUT") || true)"
+  k60="$("$GREP" -o 'kind=[a-z-]*' <(printf '%s\n' "$OUT") | head -1)"
+  ok=0
+  if (( RC == 0 )) && [[ "$n60" == "1" && "$k60" == "kind=catch-up" ]] \
+     && "$GREP" -q '^report_seq=6$' "$T/c59/CONTROL/supervisor.state" \
+     && ! printf '%s' "$OUT" | "$GREP" -q 'COMPLETE'; then ok=1; fi
+  report 60 "supervise-catchup-once" "$ok" "rc=${RC} (want 0); 24 missed windows produced exactly ${n60} report (want 1, ${k60}); report_seq 5->6 exactly; no completion claim"
+
+  # --- case 61: AN OVERDUE SUPERVISOR PAUSES NEW DISPATCH. The persisted
+  #     last_tick is far older than the overdue ceiling: the legacy tick must
+  #     NOT emit dispatch-now — it emits ACTION|pause-dispatch|
+  #     supervisor-overdue, exposes the fault on the S-CHECK line and in the
+  #     ledger, and declares no completion.
+  mk_home "$T/c61"
+  printf -- '- [ ] U-01 build the parser\n- [ ] U-02 qc the parser\n' > "$T/c61/CONTROL/CHECKLIST.md"
+  printf '# Dispatch log\n' > "$T/c61/CONTROL/dispatch-log.md"
+  local old61
+  old61=$(( $(date -u +%s) - 900 ))
+  printf 'last_tick=2020-01-01T00:00:00Z\nlast_tick_epoch=%s\nnext_report_due=2020-01-01T00:10:00Z\nnext_report_due_epoch=%s\nsupervisor_id=dead-host:pid-1:no-session\nsupervisor_pid=1\nsupervisor_started_at=2020-01-01T00:00:00Z\nrun_epoch=run-dead\ntick_seq=9\nreport_seq=1\nlast_report_at=2020-01-01T00:10:00Z\nqueue_open=0\nqueue_ids=\ndispatch_paused=0\ntick_seconds=60\nreport_seconds=600\noverdue_seconds=180\n' \
+    "$old61" "$old61" > "$T/c61/CONTROL/supervisor.state"
+  runw "$T/c61"
+  ok=0
+  if (( RC == 3 )) \
+     && printf '%s' "$OUT" | "$GREP" -q '^ACTION|pause-dispatch|supervisor-overdue|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^ACTION|dispatch-now|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^ACTION|widen|' \
+     && printf '%s' "$OUT" | "$GREP" -q 'S-CHECK | .*supervisor=overdue(' \
+     && "$GREP" -q '| DRIFT-ALARM | supervisor-overdue |' "$T/c61/CONTROL/LEDGER.md" 2>/dev/null \
+     && ! printf '%s' "$OUT" | "$GREP" -qi 'delivered\|RELEASE_COMPLETE'; then ok=1; fi
+  report 61 "overdue-supervisor-pauses-dispatch" "$ok" "rc=${RC} (want 3); dispatch-now suppressed and ACTION|pause-dispatch|supervisor-overdue emitted; supervisor=overdue on the S-CHECK line and a DRIFT-ALARM on the ledger; no completion declared"
+
+  # --- case 62: THE INDEPENDENT LIVENESS CHECK. --supervisor-status reads
+  #     ONLY the persisted state: fresh -> HEALTHY exit 0, stale -> OVERDUE
+  #     exit 3, absent -> ABSENT exit 3 — and it never writes the state
+  #     (cksum before == after) and never dispatches.
+  local ck62a ck62b
+  ck62a="$(cksum < "$T/c59/CONTROL/supervisor.state")"
+  set +e
+  OUT="$(bash "$SELF" "$T/c59" --supervisor-status 2>&1)"; RC=$?
+  set -e
+  ck62b="$(cksum < "$T/c59/CONTROL/supervisor.state")"
+  local rc62b rc62c out62c
+  ok=0
+  if (( RC == 0 )) && printf '%s' "$OUT" | "$GREP" -q '^SUPERVISOR | HEALTHY (exit 0)' \
+     && [[ "$ck62a" == "$ck62b" ]] \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^ACTION|'; then
+    set +e
+    OUT="$(bash "$SELF" "$T/c61" --supervisor-status 2>&1)"; rc62b=$?
+    set -e
+    if (( rc62b == 3 )) && printf '%s' "$OUT" | "$GREP" -q '^SUPERVISOR | OVERDUE (exit 3)'; then
+      mk_home "$T/c62"
+      set +e
+      out62c="$(bash "$SELF" "$T/c62" --supervisor-status 2>&1)"; rc62c=$?
+      set -e
+      if (( rc62c == 3 )) && printf '%s' "$out62c" | "$GREP" -q '^SUPERVISOR | ABSENT (exit 3)'; then ok=1; fi
+    fi
+  fi
+  report 62 "supervisor-status-independent" "$ok" "fresh=exit ${RC} HEALTHY (state cksum unchanged: $([[ "$ck62a" == "$ck62b" ]] && echo yes || echo NO), no ACTION line); stale=exit ${rc62b:-?} OVERDUE; absent=exit ${rc62c:-?} ABSENT"
+
+  # --- case 63: THE POSITIVE CADENCE CONTROL for 55-57. A fresh stamp means
+  #     not-due: no request is written and no ACTION is printed. 55 rejected
+  #     the zero cadence; this proves a real cadence actually gates.
+  mk_home "$T/c63"
+  mkdir -p "$T/c63/CONTROL/wm-queue"
+  touch "$T/c63/CONTROL/merge-batch.stamp"
+  MERGE_BATCH_DISABLE=0 runw "$T/c63"
+  local n63
+  n63="$(find "$T/c63/CONTROL/wm-queue" -maxdepth 1 -name '*.request.json' 2>/dev/null | "$GREP" -c '[^[:space:]]' || true)"
+  ok=0
+  if [[ "$n63" == "0" ]] \
+     && printf '%s' "$OUT" | "$GREP" -q 'merge-batch=not-due(' \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^ACTION|wm-merge-request|' \
+     && ! printf '%s' "$OUT" | "$GREP" -q '^MERGE-WINDOW |'; then ok=1; fi
+  report 63 "merge-window-not-due" "$ok" "rc=${RC}; a fresh stamp gates the window: ${n63} request(s) written (want 0), merge-batch=not-due on the S-CHECK line, no MERGE-WINDOW/ACTION line"
+
+  # --- case 64: THE CANARY CLOSURE. Across every case above — including the
+  #     ones that reached a merge window — WATCH_MERGE_TRAIN_SH named a stub
+  #     that writes a marker the instant ANY path executes it. The timer ran
+  #     ZERO merge processes: the marker must not exist.
+  ok=0
+  [[ ! -e "$T/merge-train-executed.marker" ]] && ok=1
+  report 64 "no-timer-originated-merge-process" "$ok" "the merge-train canary marker $([[ -e "$T/merge-train-executed.marker" ]] && echo EXISTS || echo 'never appeared') after cases 55-63 — the timer only enqueued; integration belongs to visible S75-WM's native workflow"
+
   printf '\n%s\n' "-------------------------------------------------------------"
   printf 'watch-tick.sh selftest: %s passed, %s failed\n' "$PASSES" "$FAILS"
   if (( FAILS > 0 )); then return 1; fi
@@ -3877,6 +4770,14 @@ selftest() {
 if (( DO_SELFTEST )); then
   selftest
   exit $?
+fi
+
+# --control-bridge prints the CB-1 statement (4e-2) verbatim: the named
+# capability gap and its supported repair. No project home is needed — it is
+# the answer to "what can a scheduled task actually do?", not a tick.
+if (( DO_BRIDGE )); then
+  control_bridge_statement
+  exit 0
 fi
 
 set +e

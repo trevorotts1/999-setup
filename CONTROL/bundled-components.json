@@ -28,7 +28,7 @@
     ],
     "spec-protocol": [
       {
-        "version": "1.38.0",
+        "version": "1.38.1",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/spec-protocol",
@@ -73,7 +73,7 @@
     ],
     "hook-skill": [
       {
-        "version": "1.2.0",
+        "version": "1.2.1",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/hook-skill",

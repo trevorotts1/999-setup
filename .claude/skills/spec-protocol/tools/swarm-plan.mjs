@@ -141,7 +141,8 @@ export function validate(plan) {
 }
 
 // Model family (same rule as staffing.py model_family): vendor prefix, version, date and case stripped.
-const FAMILIES = ['opus', 'sonnet', 'haiku', 'fable', 'gpt', 'gemini', 'deepseek', 'glm', 'kimi', 'qwen', 'llama', 'mistral', 'grok', 'minimax', 'nemotron', 'gemma', 'codex', 'agnes'];
+// 'mimo' included so Pro/Flash variants cannot masquerade as independent families (spec 10.1, D16).
+const FAMILIES = ['opus', 'sonnet', 'haiku', 'fable', 'gpt', 'gemini', 'deepseek', 'glm', 'kimi', 'mimo', 'qwen', 'llama', 'mistral', 'grok', 'minimax', 'nemotron', 'gemma', 'codex', 'agnes'];
 export function modelFamily(name) {
   const s = String(name || '').trim().toLowerCase().split('/').pop().split(':')[0];
   for (const tok of s.split(/[^a-z]+/)) if (FAMILIES.includes(tok)) return tok;

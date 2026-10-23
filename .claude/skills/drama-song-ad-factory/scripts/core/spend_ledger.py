@@ -296,9 +296,23 @@ def _park_locked(conn, run_id, reason):
     return reason
 
 
+def _mint_attempt_id(run_id, logical_key, ordinal, request_digest):
+    """Ledger-owned attempt identity: content-derived and ordinal-bound, never
+    a string suffix of a prior attempt, never re-minted silently on error."""
+    canon = "|".join((run_id, logical_key, str(ordinal), request_digest or ""))
+    return "att-%04d-%s" % (
+        ordinal, hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12])
+
+
 def plan(db_path, run_id, logical_key, attempt_id, request_digest,
-         estimated_cost=None, stage="", attempt_no=1, owner="cli"):
-    """Record a planned job: digest + logical key + attempt persisted first."""
+         estimated_cost=None, stage="", attempt_no=None, owner="cli"):
+    """Record a planned job: digest + logical key + attempt persisted first.
+
+    An EMPTY attempt_id asks the ledger to mint the identity inside the
+    allocation transaction; the caller must then use the id it returns. A
+    caller-supplied ordinal is honoured only when it equals the ordinal
+    derived from persisted history.
+    """
     if not request_digest:
         return envelope("plan", "rejected", "MISSING_DIGEST",
                         "persist the request digest before dispatch",
@@ -318,10 +332,11 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
                             "reconcile or operator unpark", run_id=run_id,
                             logical_key=logical_key, attempt_id=attempt_id,
                             state_version=run[6])
-        if _get_job(conn, logical_key, attempt_id):
+        if attempt_id and _get_job(conn, logical_key, attempt_id):
             conn.execute("ROLLBACK")
             return envelope("plan", "rejected", "DUPLICATE_ATTEMPT",
-                            "attempt ID already exists; use a new attempt ID",
+                            "attempt ID already exists; the ledger mints new "
+                            "identities, never reuses one",
                             run_id=run_id, logical_key=logical_key,
                             attempt_id=attempt_id)
         act = _active_for_key(conn, run_id, logical_key)
@@ -332,13 +347,23 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
                 "logical job already active as %s; poll it, never resubmit"
                 % act[0][0], run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id, state_version=run[6])
-        if attempt_no > 1:
-            prior = conn.execute(
-                "SELECT state,final_outcome FROM jobs WHERE run_id=? AND "
-                "logical_key=? ORDER BY attempt_no DESC LIMIT 1",
-                (run_id, logical_key)).fetchone()
-            ok_retry = prior and (prior[0] == "failed" or (
-                prior[0] == "reconciled" and prior[1] == "failed"))
+        prior = conn.execute(
+            "SELECT attempt_id,state,final_outcome,attempt_no FROM jobs "
+            "WHERE run_id=? AND logical_key=? ORDER BY attempt_no",
+            (run_id, logical_key)).fetchall()
+        derived = (prior[-1][3] if prior else 0) + 1
+        if attempt_no is not None and attempt_no != derived:
+            conn.execute("ROLLBACK")
+            return envelope(
+                "plan", "rejected", "ORDINAL_MISMATCH",
+                "ordinal %d is derived from persisted history; %d would break "
+                "monotonicity" % (derived, attempt_no),
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id, state_version=run[6])
+        if derived > 1:
+            last = prior[-1]
+            ok_retry = last[1] == "failed" or (
+                last[1] == "reconciled" and last[2] == "failed")
             if not ok_retry:
                 conn.execute("ROLLBACK")
                 return envelope(
@@ -346,23 +371,31 @@ def plan(db_path, run_id, logical_key, attempt_id, request_digest,
                     "retry only known failed artifacts; prior attempt not failed",
                     run_id=run_id, logical_key=logical_key,
                     attempt_id=attempt_id, state_version=run[6])
-            if attempt_no - 1 > run[4]:
+            if derived - 1 > run[4]:
                 conn.execute("ROLLBACK")
                 return envelope("plan", "rejected", "REPAIR_CAP",
                                 "retry count exceeds approved repair cap",
                                 run_id=run_id, logical_key=logical_key,
                                 attempt_id=attempt_id, state_version=run[6])
+        minted = False
+        if not attempt_id:
+            attempt_id = _mint_attempt_id(run_id, logical_key, derived,
+                                          request_digest)
+            minted = True
         now = _now_iso()
         conn.execute(
             "INSERT INTO jobs(logical_key,attempt_id,run_id,request_digest,stage,"
             "attempt_no,state,estimated_cost,owner,lease_expires,created_at,"
             "updated_at,version) VALUES(?,?,?,?,?,?,'planned',?,?,0,?,?,1)",
             (logical_key, attempt_id, run_id, request_digest, stage,
-             attempt_no, estimated_cost, owner, now, now))
+             derived, estimated_cost, owner, now, now))
         conn.execute("COMMIT")
         return envelope("plan", "ok", "OK", "reserve before dispatch",
                         run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id, state_version=1)
+                        attempt_id=attempt_id,
+                        evidence={"attempt_no": derived,
+                                  "identity_minted_by_ledger": minted},
+                        state_version=1)
     except Exception:
         try:
             conn.execute("ROLLBACK")
@@ -694,7 +727,8 @@ def _cli():
     a.add_argument("--digest", required=True)
     a.add_argument("--est", type=int, default=None)
     a.add_argument("--stage", default="")
-    a.add_argument("--attempt-no", type=int, default=1)
+    a.add_argument("--attempt-no", type=int, default=None,
+                   help="claimed ordinal; omit to derive it from persisted history")
     a.add_argument("--owner", default="cli")
 
     for name in ("reserve", "mark_unknown", "cancel"):

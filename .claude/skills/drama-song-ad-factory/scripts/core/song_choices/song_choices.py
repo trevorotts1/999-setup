@@ -1261,30 +1261,6 @@ def _sheet_lyric_words(spec):
     return spec.get("sheet_text") or ""
 
 
-def _next_attempt_id(ledger_db, run_id, logical_key):
-    """Mint the next attempt id from the spend ledger.
-
-    spend_ledger.plan() refuses a duplicate (logical_key, attempt_id) on
-    purpose, but the shipped generate path used a literal "a1" for every
-    dispatch, so a retry after a failed paid take was refused
-    DUPLICATE_ATTEMPT and the retry path was structurally dead.
-    """
-    try:
-        import sqlite3
-        con = sqlite3.connect(ledger_db)
-        rows = con.execute(
-            "SELECT attempt_id FROM jobs WHERE logical_key=? AND run_id=?",
-            (logical_key, run_id)).fetchall()
-        con.close()
-        import re as _re
-        nums = [int(m.group(1)) for (aid,) in rows
-                if (m := _re.match(r"a(\d+)$", str(aid or "")))]
-        n = (max(nums) + 1) if nums else 1
-    except Exception:
-        n = 1
-    return "a%d" % max(n, 1)
-
-
 def _real_generate(run_dir, ledger, run_id):
     """The default per-variant worker: ONE KIE dispatch per call, and the
     per-variant envelope carries the two aware-UTC stamps the overlap
@@ -1306,13 +1282,16 @@ def _real_generate(run_dir, ledger, run_id):
             receipt = _card_receipt(run_dir)
             if receipt is not None:
                 payload["card_receipt"] = receipt
-        att_id = _next_attempt_id(ledger, run_id or (os.path.basename(run_dir) or "run"),
-                                  "song/%s" % variant["id"])
         env = _KD.dispatch(model=payload.get("model") or "ai-music-api/generate",
                            request=payload, save_dir=save_dir, ledger_db=ledger,
                            run_id=run_id or (os.path.basename(run_dir) or "run"),
                            logical_key="song/%s" % variant["id"],
-                           attempt_id=att_id, estimated_cost=_SD.GEN_COST_CENTS,
+                           # Empty: the ledger mints the attempt identity and
+                           # dispatch() carries the committed id back. A literal
+                           # "a1" made every retry after a failed paid take
+                           # refuse DUPLICATE_ATTEMPT, so the retry path was
+                           # structurally dead.
+                           attempt_id="", estimated_cost=_SD.GEN_COST_CENTS,
                            prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
         _write_envelope(run_dir, variant["id"], ev)
@@ -1321,8 +1300,10 @@ def _real_generate(run_dir, ledger, run_id):
         # acknowledgment; terminal_at at the first terminal provider response.
         # No receipt when the provider never acknowledged or never terminated:
         # the gate then reports UNAVAILABLE, which is never a pass.
-        if ev.get("accepted_submit_at") and ev.get("terminal_at"):
-            receipt_for(run_dir, variant, request, att_id, ev.get("task_id"),
+        # The ledger's committed attempt id, never the caller's literal.
+        _aid = (env.get("attempt_id") if isinstance(env, dict) else None) or ""
+        if _aid and ev.get("accepted_submit_at") and ev.get("terminal_at"):
+            receipt_for(run_dir, variant, request, _aid, ev.get("task_id"),
                         ev["accepted_submit_at"], ev["terminal_at"])
         # Provenance for lyric_timing (reads take["task_id"] / take["audio_id"]).
         # The envelope carries the generation task id only; the per-track Suno
