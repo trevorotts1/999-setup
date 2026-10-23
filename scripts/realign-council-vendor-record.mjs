@@ -79,10 +79,15 @@ const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const recon = JSON.parse(readFileSync(reconPath, "utf8"));
 const errors = [];
 
-// Tree hashes (the canonical hash method excludes manifest.json and *.skill).
+// Tree hashes (the canonical hash method excludes manifest.json, *.skill
+// and the generated runtime/dist and runtime/node_modules trees; the
+// built entry point is recorded in runtime_entry instead).
+const isGeneratedRuntime = (p) =>
+  p === "runtime/dist" || p.startsWith("runtime/dist/")
+  || p === "runtime/node_modules" || p.startsWith("runtime/node_modules/");
 const present = walk(tree);
 const hashes = new Map(present.map((rel) => [rel, sha256(readFileSync(join(tree, rel)))]));
-const sealed = [...hashes.entries()].filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill")).sort(byPath);
+const sealed = [...hashes.entries()].filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill") && !isGeneratedRuntime(p)).sort(byPath);
 
 // Patch artifacts: their sha256 and the paths they touch.
 const patches = readdirSync(patchDir).filter((n) => n.endsWith(".patch")).sort();
@@ -98,10 +103,26 @@ for (const name of patches) {
 }
 
 // Divergence = tree files that are not their recorded canonical bytes.
+// The built runtime is not divergence: it is a recorded build artifact,
+// verified byte for byte against the manifest's runtime_entry (a missing
+// or unrecorded build is a visible failure, never silently accepted).
 const canonical = record.canonical_files ?? {};
+const runtimeEntry = manifest.runtime_entry ?? record.runtime_entry ?? null;
+const distFiles = present.filter((rel) => rel.startsWith("runtime/dist/"));
+if (runtimeEntry) {
+  const entryRel = runtimeEntry.path;
+  const entrySha = hashes.get(entryRel) ?? null;
+  if (entrySha === null) errors.push(`recorded runtime entry is missing from the tree: ${entryRel}`);
+  else if (entrySha !== runtimeEntry.sha256) {
+    errors.push(`stale runtime entry: ${entryRel} is ${entrySha} but the manifest records ${runtimeEntry.sha256}`);
+  }
+} else if (distFiles.length > 0) {
+  errors.push(`tree carries an unrecorded built runtime (${distFiles[0]}): the manifest records no runtime_entry`);
+}
 const diverged = [];
 for (const [rel, h] of hashes) {
   if (DECLARED.has(rel)) continue;
+  if (isGeneratedRuntime(rel)) continue;
   if (canonical[rel] === h) continue;
   diverged.push({ path: rel, kind: rel in canonical ? "modified" : "added", sha256: h, canonical_sha256: canonical[rel] ?? null });
 }
@@ -125,7 +146,7 @@ const reconText = JSON.stringify(nextRecon, null, 2) + "\n";
 
 // Reseal: the reconciliation report is part of the tree, so hash it as it will be written.
 hashes.set("DISTRIBUTION-RECONCILIATION.json", sha256(Buffer.from(reconText, "utf8")));
-const entries = [...hashes.entries()].filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill")).sort(byPath);
+const entries = [...hashes.entries()].filter(([p]) => p !== "manifest.json" && !p.endsWith(".skill") && !isGeneratedRuntime(p)).sort(byPath);
 const aggregate = sha256(Buffer.from(entries.map(([p, h]) => `${h}  ${p}`).join("\n") + "\n", "utf8"));
 const nextManifest = {
   ...manifest,
