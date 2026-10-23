@@ -16,7 +16,7 @@ Adds four things to the choice-card total and to the D26 batch total:
     shared Suno song and its packs no.
   * **batch total** (plan 6.14, price-menu 6): one card per book, then
     ``batch total = sum over books of (Skill 74 price for that book's
-    choices)``, plus the same 20% retake allowance.
+    choices)``, plus the same 50% retake allowance.
 
 Everything is done through unit V2-W0-U2's ``price_card`` / ``price_line`` /
 ``credits_to_usd``. This module never re-implements that arithmetic, never
@@ -38,6 +38,7 @@ _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 import lipsync_clips                    # the doubled-lip-sync numbers (one source)
+import budget_contingency as BC         # the one retake rate
 
 try:  # package import (core.catalog_calculator.extensions)
     from . import base_bridge
@@ -49,7 +50,7 @@ BATCH_UNIT_NAME = "catalog-calculator.extensions.batch"
 
 # Plan 4.1 / choice-card-spec 4.3: the retake allowance. A policy percentage,
 # not a price - unit V2-W0-U2 applies the same one to its own total.
-RETAKE_RATE = 0.20
+RETAKE_RATE = BC.RATE
 
 # Decision 33 / choice-card-spec 3.6: the lip-sync roster is closed - Kling
 # avatar first, InfiniTalk as the backup. A model outside it is never offered
@@ -64,7 +65,7 @@ def _is_int(value):
 
 
 def retake_allowance(price_usd):
-    """Plan 4.1: the 20% retake allowance, half-up to the cent."""
+    """Plan 4.1: the 50% retake allowance, half-up to the cent."""
     return math.floor(price_usd * RETAKE_RATE * 100 + 0.5) / 100.0
 
 
@@ -307,7 +308,7 @@ def price_batch(ads, catalog, skill74, approval=None, calculator_path=None):
     Any ad that cannot be priced takes the whole batch down: the envelope then
     says "Price unavailable" with no numbers anywhere and ``start_paid`` false
     (choice-card-spec 4.4). On success ``batch.total`` is the exact sum of the
-    per-ad card prices, with the 20% retake allowance on top.
+    per-ad card prices, with the 50% retake allowance on top.
     """
     if not isinstance(ads, (list, tuple)) or not ads:
         return _fail("error", ["BATCH_EMPTY"], approval, unit=BATCH_UNIT_NAME)

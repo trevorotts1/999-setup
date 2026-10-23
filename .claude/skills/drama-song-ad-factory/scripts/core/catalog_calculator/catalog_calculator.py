@@ -25,6 +25,11 @@ import math
 import os
 import sys
 
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import budget_contingency as BC         # the one retake rate
+
 UNIT_NAME = "catalog-calculator"
 
 # 1 KIE credit = 0.005 USD list price. Currency conversion, not a model rate:
@@ -327,7 +332,7 @@ def _build_card(norm, entry, lines, is_default):
     """lines = {"video":..., "music":..., "image":...}, all priced."""
     total_credits = round(sum(lines[k]["credits"] for k in ("video", "music", "image")), 4)
     total_usd = credits_to_usd(total_credits)
-    retake_usd = math.floor(total_usd * 0.20 * 100 + 0.5) / 100.0  # plan 4.1: +20% retake
+    retake_usd = math.floor(total_usd * BC.RATE * 100 + 0.5) / 100.0  # plan 4.1: +50% retake
     shots = video_shot_count(norm["length_seconds"], entry.get("max_shot_seconds"))
     cap_pictures = storyboard_cap()  # one config read; cap is data, not code
     items = []
