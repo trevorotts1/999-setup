@@ -1,5 +1,49 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.99 - 2026-10-23 - music duration and lyric rules now match canonical
+
+This release closes the last gap this distribution had against the canonical
+build in the music recipe. In plain terms:
+
+- **A take that comes out a little long is kept, not thrown away.** A 62-second
+  take made for a 60-second brief used to be treated as a failure here. It is now
+  kept and shown with a warning. When the placement has a real maximum, the
+  existing assembly step trims to that maximum and protects the opening, the key
+  plot points, the hook and the call to action. Regenerating the whole song is
+  never automatic and the only good take is never destroyed for a two-second
+  overshoot.
+- **Every duration decision gets a name.** Each measured take is classified as a
+  deterministic edit, a repair inside the allowed margin, or a choice for the
+  client, so nothing is corrected silently.
+- **Warnings stay warnings.** A finding is marked required, accepted-with-warning
+  or needing a decision, and the two lists never merge, so a warning cannot turn
+  into a refusal somewhere downstream.
+- **One length table.** The six durations (60, 90, 120, 180, 300, 600 seconds)
+  and both shapes come from one registry. The two-minute (120 s) length the
+  scattered tables had dropped is offered again in the batch card and in intake.
+- **One lyric policy, and the old local rules are gone.** The recipe no longer
+  carries its own eight-syllable cap: sung lines are judged against the writer's
+  preferred 4-12 syllable band with no hard maximum, so a 9-11 syllable line the
+  writer accepted is accepted here. The legacy "spoken only in Intro/Outro"
+  restriction is removed: a meaningful spoken scene anywhere in the song is kept.
+  A tighter rule can only refuse a line if it carries a clear, mode-specific
+  reason.
+
+The module docstring that still said "5-6 syllables aimed, 8 at most" now
+describes the live 4-12 preferred band with hard max None.
+
+New files: `scripts/core/suno_recipe/duration_registry.py` (the one table) and
+`scripts/core/suno_recipe/test_duration_policy_u3.py` (23 tests). The consumers
+`batch_mode/batch.py` and `intake_preflight/intake.py` now derive their length
+labels from that table instead of keeping their own copies.
+
+This is the release identity `v2.9.99`: the 999 adapter's own next number after
+its previous `v2.9.98`. It is deliberately not `v2.9.103`, the canonical build's
+current number, because this distribution still carries its own adapter text and
+does not yet contain every canonical change.
+
+Also released here: the retake-contingency alignment recorded below.
+
 ## Unreleased - 2026-10-23 - retake contingency aligned to the canonical 50% ruling
 
 Skill 75 now quotes the approved canonical retake allowance (F1/F2, batch-8a,
