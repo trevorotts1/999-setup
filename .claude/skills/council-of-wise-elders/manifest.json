@@ -5,7 +5,7 @@
   "source_commit": "77eb96e738b8145877ac0d1729d9aef6b0be9560",
   "canonical_aggregate_sha256": "f1f13e7aa124a006f7e66b2f594d0a29389ea5c4ce70660731199efc8bb9ae5b",
   "file_count": 776,
-  "aggregate_sha256": "a12403aa07c76f7904462c8e6188b6ccae64dedb76650dca0b2cf032d3a0d489",
+  "aggregate_sha256": "6b0b9a2f8bed57808ecf881ac82a58c523b6770d2f726cd256806547a7c3bd7e",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -30,8 +30,8 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "7375a1b1bef42fcd59b3f429d3d255cf62edda1d022095d910c8f6d9b0532535",
-      "bytes": 3886
+      "sha256": "94cf73b74711f5072edde23a3aedb1921e91ad828c0ae6c5b62f21d14b56ed68",
+      "bytes": 4988
     },
     {
       "path": "EXAMPLES.md",
@@ -1700,8 +1700,8 @@
     },
     {
       "path": "runtime/.gitignore",
-      "sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0",
-      "bytes": 87
+      "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
+      "bytes": 319
     },
     {
       "path": "runtime/README.md",

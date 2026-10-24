@@ -74,6 +74,24 @@
       "kind": "manifest_regenerated",
       "file": "manifest.json",
       "rule": "Regenerated over the distribution tree with the canonical hash method; the canonical aggregate it derives from is recorded above and inside manifest.json."
+    },
+    {
+      "kind": "local_divergence",
+      "rule": "999-only changes applied on top of the vendored canonical tree by scripts/revendor-council.mjs with git apply. They are NOT in the Council source (canonical_files carries only canonical hashes) and a plain re-vendor with scripts/vendor-council-bundle.mjs deletes them. Each file is recorded with its distribution hash and, when canonical has the file, the canonical hash it replaces; the patch artifacts are recorded by hash. Whether to upstream them is a decision for the Council source owner.",
+      "patch_artifacts": [
+        {
+          "path": "installer-registration/council-local-patches/03-runtime-dist-not-ignored.patch",
+          "sha256": "3a1df484f663f014267c9c025bd308645ecee9e3aa380dd2e83e2729fd77ce2f"
+        }
+      ],
+      "files": [
+        {
+          "path": "runtime/.gitignore",
+          "kind": "modified",
+          "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
+          "canonical_sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0"
+        }
+      ]
     }
   ]
 }

@@ -1,13 +1,23 @@
 # Council local patches (999-only)
 
 These patches are NOT in the Council source (`trevorotts1/openclaw-onboarding`,
-`77-council-of-wise-elders`)... or were not: both have since been **upstreamed**,
-and the canonical tree now carries each fix (in extended form). Per the policy
-below ("drop it once Council carries the fix"), the patch files are dropped at
-the re-vendor to Council `77eb96e738b8145877ac0d1729d9aef6b0be9560` (v1.0.51).
-Their intent is preserved by the canonical files named here; the patch bytes
-stay recoverable from 999-setup git history (`0fd08bd4` and the vendoring
-record they were sealed under).
+`77-council-of-wise-elders`). They are 999-setup changes applied on top of the
+vendored canonical tree. Whether to upstream them is the Council source owner's decision.
+
+## Current patches
+
+| Patch | Effect |
+|---|---|
+| `03-runtime-dist-not-ignored.patch` | `runtime/.gitignore`: stops ignoring `dist/`. The canonical source-tree rule ("generated locally, never committed") is right for the source repo but wrong for the 999 DISTRIBUTION, which must carry the built executable: with the rule in place a plain `git add` silently drops `runtime/dist` and the repository recreates the stale source-only package. `node_modules/` stays ignored (build-time only; the bundle embeds its dependencies). |
+
+## Dropped patches (upstreamed — preserved here for intent and provenance)
+
+Earlier patches have since been **upstreamed**, and the canonical tree now carries
+each fix (in extended form). Per the policy below ("drop it once Council carries
+the fix"), they were dropped at the re-vendor to Council
+`77eb96e738b8145877ac0d1729d9aef6b0be9560` (v1.0.51). Their intent is preserved
+by the canonical files named here; the patch bytes stay recoverable from
+999-setup git history (`0fd08bd4` and the vendoring record they were sealed under).
 
 | Patch | Intent | Disposition at Council v1.0.51 |
 |---|---|---|
@@ -37,7 +47,6 @@ order, then runs `scripts/realign-council-vendor-record.mjs --write`, which decl
 divergence (files, hashes, these patch artifacts) as a `local_divergence` entry in
 `installer-registration/council-vendoring.json` and in the bundle's
 `DISTRIBUTION-RECONCILIATION.json`. `canonical_files` carries canonical hashes only.
-(With this directory empty of patches, the local divergence is simply empty.)
 
 If a patch stops applying after a Council update, the wrapper fails; refresh the patch
 against the new canonical file (or drop it once Council carries the fix — the two
