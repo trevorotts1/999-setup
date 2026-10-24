@@ -569,16 +569,31 @@ so_print_paths() {
     "      ~/Library/Logs/BlackCEO-999, API docs.md" \
     "    skipped: nine-router-setup (the installer itself); any skill dir that is a symlink elsewhere," \
     "      a plain file, or has no source in this clone; any destination FILE that is a symlink" \
+    "    never overwritten: a symlinked skill or file stays untouched, but when its content differs" \
+    "      from this bundle it is reported STALE and the run exits 3 (content was NOT delivered there)" \
     "    never: backups, ~/.claude-skill-backups, moving or deleting any file, installing Node/9Router/gh/Vercel"
 }
 
-so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_SAME SO_SKP SO_FAIL
+so_same_tree() { # so_same_tree <src> <dst-dir> -> 0 when every bundled file is present and identical
+  local src="$1" dst="$2" rel
+  [ -d "$dst" ] || return 1
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    [ -f "$dst/$rel" ] || return 1
+    cmp -s "$src/$rel" "$dst/$rel" || return 1
+  done < <(cd "$src" && find . -type f ! -name .DS_Store | LC_ALL=C sort)
+  return 0
+}
+
+so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_SAME SO_SKP SO_STALE SO_FAIL
   local src="$1" dst="$2" check="$3" label="$4" rel st
-  SO_NEW=0; SO_CHG=0; SO_SAME=0; SO_SKP=0; SO_FAIL=0
+  SO_NEW=0; SO_CHG=0; SO_SAME=0; SO_SKP=0; SO_STALE=0; SO_FAIL=0
   while IFS= read -r rel; do
     rel="${rel#./}"
     if [ -L "$dst/$rel" ]; then
-      printf '    SKIP (destination file is a symlink) %s/%s\n' "$label" "$rel"; SO_SKP=$((SO_SKP + 1)); continue
+      if cmp -s "$src/$rel" "$dst/$rel" 2>/dev/null; then SO_SAME=$((SO_SAME + 1))
+      else printf '    STALE (destination file is a symlink to different content) %s/%s -> %s\n' "$label" "$rel" "$(readlink "$dst/$rel")"; SO_STALE=$((SO_STALE + 1)); fi
+      continue
     elif [ ! -e "$dst/$rel" ]; then st=NEW
     elif cmp -s "$src/$rel" "$dst/$rel"; then SO_SAME=$((SO_SAME + 1)); continue
     else st=CHANGED; fi
@@ -595,7 +610,7 @@ so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_S
 
 skills_only_mode() { # skills_only_mode <check:0|1>
   local check="$1" markers="" roots="" r d s src src_real dst dst_real verb
-  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 skills_root="$SKILL_DIR/.."
+  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 skills_root="$SKILL_DIR/.."
 
   # 9Router detection - read-only: two stats and one local GET on /api/health.
   [ ! -d "$HOME/.9router" ] || markers="$markers ~/.9router"
@@ -636,7 +651,8 @@ $d
       if [ -L "$dst" ]; then
         dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
         if [ "$dst_real" = "$src_real" ]; then printf '  OK   %s: symlink already points at this clone\n' "$s"; t_same=$((t_same + 1))
-        else printf '  SKIP %s: symlink to somewhere else (%s) - left alone\n' "$s" "${dst_real:-broken link}"; t_skip=$((t_skip + 1)); fi
+        elif so_same_tree "$src" "$dst_real"; then printf '  OK   %s: symlink to another root carrying identical content (%s)\n' "$s" "$dst_real"; t_same=$((t_same + 1))
+        else printf '  STALE %s: symlink to a tree that differs from this bundle (%s) - left alone, content NOT delivered there\n' "$s" "${dst_real:-broken link}"; t_stale=$((t_stale + 1)); fi
         continue
       fi
       if [ -e "$dst" ] && [ ! -d "$dst" ]; then printf '  SKIP %s: %s is not a directory - left alone\n' "$s" "$dst"; t_skip=$((t_skip + 1)); continue; fi
@@ -644,14 +660,15 @@ $d
         printf '  SKIP %s: source and destination are the same directory\n' "$s"; t_skip=$((t_skip + 1)); continue
       fi
       so_sync "$src" "$dst" "$check" "$dst"
-      t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_skip=$((t_skip + SO_SKP)); t_fail=$((t_fail + SO_FAIL))
-      printf '  %-5s %s: %d new, %d changed, %d unchanged, %d skipped\n' "$verb" "$s" "$SO_NEW" "$SO_CHG" "$SO_SAME" "$SO_SKP"
+      t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_skip=$((t_skip + SO_SKP)); t_stale=$((t_stale + SO_STALE)); t_fail=$((t_fail + SO_FAIL))
+      printf '  %-5s %s: %d new, %d changed, %d unchanged, %d skipped, %d stale\n' "$verb" "$s" "$SO_NEW" "$SO_CHG" "$SO_SAME" "$SO_SKP" "$SO_STALE"
     done < <(bundled_skills | grep -v -x nine-router-setup || true)
   done < <(printf '%s' "$roots")
-  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d error(s)\n' \
+  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d stale; %d error(s)\n' \
     "$([ "$check" = 1 ] && echo check || echo apply)" "$t_new" "$t_chg" \
-    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_fail"
+    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_stale" "$t_fail"
   [ "$t_fail" -eq 0 ] || return 1
+  [ "$t_stale" -eq 0 ] || return 3
 }
 
 main() {
@@ -701,7 +718,7 @@ main() {
 
   # --skills-only [--check]: skills content only, never the install path below.
   if [ "$SKILLS_ONLY" = 1 ]; then
-    skills_only_mode "$CHECK_ONLY" || exit 1
+    skills_only_mode "$CHECK_ONLY" || exit $?
     exit 0
   fi
 
