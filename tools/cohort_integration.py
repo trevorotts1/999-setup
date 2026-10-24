@@ -107,7 +107,8 @@ def verify_remote(plan, remote):
 
     Remote mode additionally requires `target_owner.observed_lease_sha` and
     `repairs[].remote_read.tree_sha`; without them there is nothing to compare
-    the remote against and the plan is refused.
+    the remote against and the plan is refused. The lease read-back is never
+    skipped: a `lease_ref` outside `refs/` is refused instead.
     """
     refusals = []
 
@@ -155,6 +156,12 @@ def verify_remote(plan, remote):
             refuse("remote.lease_sha_mismatch",
                    "lease ref %s holds %r, plan claims %r"
                    % (lease_ref, (body.get("object") or {}).get("sha"), expected_lease_sha))
+    else:
+        # Never skip this read-back: a lease ref with no remote address is not
+        # evidence of a single owner, and the verdict must not claim one.
+        refuse("remote.lease_ref_invalid",
+               "target_owner.lease_ref must be a full refs/... ref to read the lease back, got %r"
+               % (lease_ref,))
 
     # ---- protection and required contexts --------------------------------
     # 404 on this sub-resource means "not protected" in this environment, proven
@@ -340,10 +347,16 @@ def evaluate(plan, remote=None):
         generation = owner.get("generation")
         if not isinstance(holder, str) or not holder:
             refuse("owner.missing", "target_owner.holder must be a non-empty native agent id")
-        if not isinstance(generation, int) or generation < 1:
+        if not isinstance(generation, int) or isinstance(generation, bool) or generation < 1:
             refuse("owner.missing", "target_owner.generation must be an integer >= 1")
-        if not isinstance(owner.get("lease_ref"), str) or not owner.get("lease_ref"):
+        lease_ref = owner.get("lease_ref")
+        if not isinstance(lease_ref, str) or not lease_ref:
             refuse("owner.missing", "target_owner.lease_ref is required (remote ref CAS lock)")
+        elif not lease_ref.startswith("refs/"):
+            # A ref outside refs/ has no remote read-back: accepting it here
+            # would let verify_remote skip the lease proof and still claim it.
+            refuse("owner.lease_ref_invalid",
+                   "target_owner.lease_ref must be a full refs/... ref, got %r" % (lease_ref,))
         if owner.get("observed_holder") != holder:
             refuse("owner.not_holder",
                    "lease preflight observed %r, plan claims %r"
@@ -353,7 +366,7 @@ def evaluate(plan, remote=None):
                    "lease preflight observed generation %r, plan claims %r"
                    % (owner.get("observed_generation"), generation))
         ttl = owner.get("ttl_seconds")
-        if not isinstance(ttl, int) or ttl <= 0:
+        if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl <= 0:
             refuse("owner.invalid_ttl", "ttl_seconds must be a positive integer")
         if owner.get("expired") is True:
             refuse("owner.expired_requires_fence",
@@ -361,7 +374,13 @@ def evaluate(plan, remote=None):
         if not isinstance(owner.get("expired"), bool):
             refuse("owner.missing", "target_owner.expired must be an explicit boolean")
     extra_owners = plan.get("additional_owners")
-    if isinstance(extra_owners, list) and extra_owners:
+    if extra_owners is not None and not isinstance(extra_owners, list):
+        # A non-list declaration cannot be counted, so it cannot be proven
+        # empty: fail closed instead of reading an unparseable owner set as one.
+        refuse("owner.multiple",
+               "single shared target owner violated: additional_owners must be a list, got %s"
+               % type(extra_owners).__name__)
+    elif isinstance(extra_owners, list) and extra_owners:
         refuse("owner.multiple",
                "single shared target owner violated: %d additional owner(s) declared" % len(extra_owners))
 
@@ -532,7 +551,9 @@ def evaluate(plan, remote=None):
     else:
         contexts = surface.get("required_contexts")
         protected = surface.get("protection_observed")
-        if surface.get("source") != "remote-api-read" or not isinstance(surface.get("observed_at"), str):
+        if surface.get("source") != "remote-api-read" \
+                or not isinstance(surface.get("observed_at"), str) \
+                or not surface.get("observed_at"):
             refuse("checks.surface_unproven",
                    "check_surface must come from a remote api read with an observed_at timestamp")
         if not isinstance(protected, bool):
