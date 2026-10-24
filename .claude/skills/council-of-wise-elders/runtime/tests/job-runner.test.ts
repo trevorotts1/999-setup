@@ -37,7 +37,7 @@
  * requeued exactly once).
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -53,6 +53,8 @@ import {
   buildSampleSession,
 } from '../src/cli/fixture-transport.js';
 import type { StoredSession } from '../src/cli/host-ports.js';
+import { SubprocessHostCallTransport } from '../src/cli/host-call-transport.js';
+import { translateTransportFailure } from '../src/protocol/challenge.js';
 import {
   RunAdmissionService,
   RunAuthorizationService,
@@ -1273,4 +1275,161 @@ test('capacity: a full runtime defers the job unspent; a later cycle runs it', a
   assert.equal(executor.dispatches, 1);
   jobs = runner.listSessionJobs(worker, setup.session.spec.session_id);
   assert.equal(jobs[0].state, 'succeeded');
+});
+
+test('W30: one live lease per session: a second claim waits, so the in-flight settle is never fenced', async () => {
+  const setup = setupRunningSession('w30-single');
+  const { ctx, worker } = setup;
+  const executor = new FakeExecutor();
+  const runner = makeRunner(ctx, executor);
+  const sessionId = setup.session.spec.session_id;
+  const [seatA, seatB] = setup.session.spec.seat_ids;
+  enqueueSeatOperation(runner, setup, seatA, 'w30-1');
+  enqueueSeatOperation(runner, setup, seatB, 'w30-2');
+
+  const claimA = runner.claimNextOperation(worker, sessionId, 'worker-a');
+  assert.ok(claimA);
+  // Different worker or the same one: neither may claim the second job
+  // while the first holds a live lease (the claim would raise the
+  // session epoch and fence the first settle).
+  assert.equal(runner.claimNextOperation(worker, sessionId, 'worker-b'), null);
+  assert.equal(runner.claimNextOperation(worker, sessionId, 'worker-a'), null);
+  const outcomeA = await runner.executeClaimedOperation(worker, claimA);
+  assert.equal(outcomeA.status, 'committed');
+
+  const claimB = runner.claimNextOperation(worker, sessionId, 'worker-b');
+  assert.ok(claimB, 'the second job is claimable once the first lease ended');
+  assert.equal((await runner.executeClaimedOperation(worker, claimB)).status, 'committed');
+  assert.deepEqual(
+    runner.listSessionJobs(worker, sessionId).map((j) => j.state),
+    ['succeeded', 'succeeded'],
+  );
+});
+
+test('W30: the supervisor recovers an expired lease every cycle, no restart needed', async () => {
+  const setup = setupRunningSession('w30-recover');
+  const { ctx, worker } = setup;
+  const executor = new FakeExecutor();
+  const timers = new ManualTimers();
+  const runner = makeRunner(ctx, executor, { timers });
+  const sessionId = setup.session.spec.session_id;
+  const handle = startCouncilWorkers({
+    runner,
+    scopes: [{ envelope: worker, worker_id: 'worker-1' }],
+    supervisor_id: 'cwe027-w30-recover',
+    timers,
+  });
+  try {
+    enqueueSeatOperation(runner, setup, setup.session.spec.seat_ids[0], 'w30-r1');
+    // The same worker claims and then dies: a stranded leased job that a
+    // claim never reclaims from its own worker id.
+    assert.ok(runner.claimNextOperation(worker, sessionId, 'worker-1'));
+    advanceClock(61_000);
+    wakeCouncilWorkers(handle);
+    await handle.stop();
+    assert.equal(executor.dispatches, 1);
+    assert.deepEqual(
+      runner.listSessionJobs(worker, sessionId).map((j) => j.state),
+      ['succeeded'],
+    );
+  } finally {
+    await stopCouncilWorkers(handle);
+  }
+});
+
+test('W30: a worker failure reaches on_error with its session, never swallowed', async () => {
+  const setup = setupRunningSession('w30-onerror');
+  const { worker } = setup;
+  const seen: Array<{ message: string; session_id?: string }> = [];
+  const boom = new Error('claim exploded');
+  const fakeRunner = {
+    reconcileScope: () => undefined,
+    listSessions: () => [setup.session],
+    claimNextOperation: () => {
+      throw boom;
+    },
+  } as unknown as DurableJobRunner;
+  const handle = startCouncilWorkers({
+    runner: fakeRunner,
+    scopes: [{ envelope: worker, worker_id: 'worker-1' }],
+    supervisor_id: 'cwe027-w30-onerror',
+    timers: new ManualTimers(),
+    on_error: (error, context) =>
+      seen.push({ message: (error as Error).message, session_id: context?.session_id }),
+  });
+  await stopCouncilWorkers(handle);
+  assert.deepEqual(seen, [
+    { message: 'claim exploded', session_id: setup.session.spec.session_id },
+  ]);
+});
+
+test('W35: a provider deadline aborts the dispatch signal, journals why, and never replays', async () => {
+  const setup = setupRunningSession('w35-deadline');
+  const { ctx, worker } = setup;
+  const timers = new ManualTimers();
+  let seenSignal: AbortSignal | undefined;
+  const executor = new FakeExecutor(async (dispatchCtx) => {
+    seenSignal = dispatchCtx.signal;
+    return new Promise<OperationDispatchResult>(() => {}); // hangs past the deadline
+  });
+  const runner = makeRunner(ctx, executor, { timers });
+  enqueueSeatOperation(runner, setup, setup.session.spec.seat_ids[0], 'w35-deadline-1');
+  const claim = runner.claimNextOperation(worker, setup.session.spec.session_id, 'worker-1');
+  assert.ok(claim);
+  const execution = runner.executeClaimedOperation(worker, claim);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(seenSignal?.aborted, false);
+  timers.releaseDelays();
+  const outcome = await execution;
+  assert.equal(outcome.status, 'provider_completion_unknown');
+  assert.equal(seenSignal?.aborted, true, 'the runner gives up by killing the harness child');
+  assert.equal(executor.dispatches, 1, 'unknown completion is never replayed');
+  const failed = ctx.repositories.journal
+    .list(worker, setup.session.spec.session_id, 0)
+    .map((e) => e.payload as Record<string, unknown>)
+    .filter((p) => p.kind === 'attempt_failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].outcome_code, 'provider_completion_unknown');
+  assert.match(String(failed[0].message), /did not return within \d+ s/);
+});
+
+test('W35: a harness that never starts is retried once with a fresh call and the seat commits', async () => {
+  const setup = setupRunningSession('w35-nostart');
+  const { ctx, worker } = setup;
+  // Spawn 1 hangs before printing its init line; spawn 2 answers.
+  const dir = mkdtempSync(join(tmpdir(), 'w35-harness-'));
+  const exe = join(dir, 'fake-harness');
+  const init = JSON.stringify({ type: 'system', subtype: 'init' });
+  writeFileSync(
+    exe,
+    `#!/bin/sh\nif [ "$1" = "--help" ]; then echo 'Usage: claude [options] --output-format stream-json'; exit 0; fi\ncat >/dev/null\nN=$(cat '${dir}/n' 2>/dev/null || echo 0); N=$((N+1)); echo $N > '${dir}/n'\nif [ "$N" = 1 ]; then exec sleep 30; fi\nprintf '%s\\n' '${init}'\nprintf '%s\\n' '{"type":"result","is_error":false,"result":"ok"}'\n`,
+    'utf8',
+  );
+  chmodSync(exe, 0o755);
+  const transport = new SubprocessHostCallTransport({ executable: exe, startupTimeoutMs: 300 });
+  const executor = new FakeExecutor(async (dispatchCtx) => {
+    try {
+      await transport.generate({
+        purpose: 'advisor',
+        session_id: dispatchCtx.session.spec.session_id,
+        signal: dispatchCtx.signal,
+        system: 's',
+        input: {},
+      } as unknown as Parameters<typeof transport.generate>[0]);
+    } catch (error) {
+      throw translateTransportFailure(error);
+    }
+    return fixtureResult(dispatchCtx);
+  });
+  const runner = makeRunner(ctx, executor);
+  const op = enqueueSeatOperation(runner, setup, setup.session.spec.seat_ids[0], 'w35-nostart-1');
+  const claim = runner.claimNextOperation(worker, setup.session.spec.session_id, 'worker-1');
+  assert.ok(claim);
+  const outcome = await runner.executeClaimedOperation(worker, claim);
+  assert.equal(outcome.status, 'committed');
+  assert.equal(executor.dispatches, 2, 'exactly one fresh retry');
+  const snap = ctx.budget.snapshot(worker, setup.session.spec.session_id, setup.grantId);
+  assert.equal(snap.envelope_breakdown.transport_retries, 1);
+  assert.equal(snap.consumed.provider_requests, 1, 'the never-started attempt was released, not counted');
+  assert.ok(op.operationId);
 });

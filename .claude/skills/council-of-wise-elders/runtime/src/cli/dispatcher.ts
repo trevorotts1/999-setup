@@ -53,6 +53,7 @@ import {
   handleAuthorizationCommand,
   mirrorSession,
 } from './authorization.js';
+import { runConvene, runRoutes } from './convene.js';
 import { exportVerdictReport } from './report-export.js';
 import { resolveDataDir } from './paths.js';
 
@@ -122,23 +123,32 @@ function isSkillFolder(dir: string): boolean {
 /**
  * The ACTUAL skill folder. Two mechanisms, in order:
  *
- * 1. The install record written by scripts/council-runtime-install.sh
- *    (`../../install-record.json`, relative to the bundled entry at
- *    runtime/dist/council-entry.mjs). The installed prefix carries no
- *    SKILL.md, advisors/ or manifest.json, so the climb below can never
- *    find the skill folder there; the record is the install's own
- *    statement of which folder it was built from.
+ * 1. The install record, read from `../../install-record.json` beside
+ *    the running module. Neither installed layout has a SKILL.md,
+ *    advisors/ or manifest.json above it, so the record is the
+ *    install's own statement of which folder it was built from. Two
+ *    installers write it, one per layout:
+ *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
+ *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
+ *      writes <prefix>/releases/install-record.json;
+ *    - the 999-setup vendoring's scripts/council-runtime-install.sh
+ *      (that repo only, not this tree) installs
+ *      <prefix>/runtime/dist/council-entry.mjs and writes
+ *      <prefix>/install-record.json.
  * 2. A layout-independent walk to the nearest ancestor carrying the
  *    skill signature (SKILL.md beside advisors/ and manifest.json).
  *
  * null when neither applies: the guard then has no root, and every
  * command that must keep state out of the skill tree refuses rather
- * than measuring a guessed boundary.
+ * than measuring a guessed boundary (see runCli: doctor reports
+ * data_dir_outside_skill_tree as not ready; session, authorization,
+ * sample and the host-backed commands throw invalidInput).
  */
 export function skillRootForAssets(): string | null {
-  // From the bundled entry (runtime/dist/<entry>) the record is two
-  // levels up; the dispatcher's own source and dist locations are also
-  // two levels down from runtime/, so one relative URL serves all three.
+  // From <prefix>/releases/<id>/dist/<entry> this URL is
+  // <prefix>/releases/install-record.json; from the 999 bundle
+  // <prefix>/runtime/dist/<entry> it is <prefix>/install-record.json;
+  // from runtime/{src,dist}/cli/ it is runtime/install-record.json.
   try {
     const record = JSON.parse(
       readFileSync(new URL('../../install-record.json', import.meta.url), 'utf8'),
@@ -324,15 +334,15 @@ const USAGE = [
   '  create --spec FILE --brief FILE     Create a session from frozen spec and brief JSON',
   '  create --sample                     Create the labeled synthetic sample session',
   '  sample run [--json]                 Run the labeled sample end to end (fixture transport, spends nothing)',
-  '  start SESSION --grant-ref REF       Start a session under a resolved run grant',
-  '  resume SESSION --grant-ref REF      Resume a paused or blocked session',
   '  status SESSION [--json]             Session state summary',
   '  pause SESSION                       Pause an active session',
   '  cancel SESSION                      Cancel a session (late results are fenced out)',
   '  verdict SESSION [--json]           The validated verdict, when one exists',
   '  replay SESSION [--json]             Committed event history (read only, spends nothing)',
   '  export SESSION --format md|json|pdf [--out FILE]',
-  '  authorization preview|approve|status|revoke   Run authorization service (CWE-049)',
+  '  routes [--origin URL] [--json]      Model routes and harness defaults from the council service',
+  '  convene (--sample | --brief FILE) [--route ID] [--model ID] [--harness H] [--fresh-facts FILE] [--mode M] [--origin URL]',
+  '                                      Convene a council on the running service (starts it now)',
   '',
   'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
 ].join('\n');
@@ -357,7 +367,24 @@ export async function runCli(
     const skillRoot = resolvedRoot ?? undefined;
     const makeHost =
       deps.createHost ?? ((opts) => createLocalHost({ ...opts, skillRoot }));
-    const hostFor = (): LocalHost => makeHost({ dataDir, skillRoot });
+    // No skill folder found: there is no boundary to measure, so every
+    // command that resolves a data dir refuses (Section 16.1) rather
+    // than skipping the guard or measuring a guessed boundary.
+    const refuseWithoutRoot = (): void => {
+      if (resolvedRoot === null) {
+        throw invalidInput(
+          'The skill folder could not be located (no install-record.json and no SKILL.md + advisors/ + manifest.json above this binary), so the data directory cannot be checked against Section 16.1. Refusing.',
+        );
+      }
+    };
+    const dataDirFor = (): string => {
+      refuseWithoutRoot();
+      return resolveDataDir({ override: dataDir ?? null, skillRoot });
+    };
+    const hostFor = (): LocalHost => {
+      refuseWithoutRoot();
+      return makeHost({ dataDir, skillRoot });
+    };
     const engineFor = (host: CouncilHost) => new CouncilEngine(host);
 
     if (command === undefined) {
@@ -382,7 +409,7 @@ export async function runCli(
         });
         let dir: string | null = null;
         try {
-          dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+          dir = dataDirFor();
           checks.push({
             name: 'data_dir_outside_skill_tree',
             ok: true,
@@ -425,7 +452,7 @@ export async function runCli(
           name: 'run_authorization_service',
           ok: true,
           detail:
-            'grant service composed (CWE-049, composed by CWE-050): authorization preview/approve/status/revoke are live and session starts resolve grants through the authorization store',
+            'run record service composed (CWE-049, composed by CWE-050): session starts resolve their run records through the store',
         });
         // Offline structural checks are not evidence of an installed,
         // runnable Council. Preserve the legacy `ok` field as the
@@ -515,6 +542,16 @@ export async function runCli(
         return 0;
       }
 
+      case 'routes':
+      case 'convene': {
+        // W28: client over the service HTTP API; handles its own errors.
+        const rest = [...argv];
+        rest.splice(rest.indexOf(command), 1);
+        return command === 'routes'
+          ? runRoutes(rest, { io })
+          : runConvene(rest, { io });
+      }
+
       case 'probe': {
         throw featureNotReady(
           'Live route probing',
@@ -529,7 +566,7 @@ export async function runCli(
         // Confirmation is wired to the controlling terminal, never
         // stdin; in --json mode results stay on stdout and the
         // confirmation still uses the terminal.
-        const dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+        const dir = dataDirFor();
         await handleAuthorizationCommand(sub, positionals.slice(2), flags, {
           dataDir: dir,
           json,
@@ -574,7 +611,7 @@ export async function runCli(
             `Could not read session input files: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
-        const dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+        const dir = dataDirFor();
         const created = await engine.createSession({
           spec,
           brief,
@@ -611,6 +648,7 @@ export async function runCli(
         if (sub !== 'run') {
           throw usageError('Usage: blackceo-council sample run [--json]');
         }
+        refuseWithoutRoot();
         const sample = buildSampleSession();
         const { host } = createLocalHost({
           dataDir,

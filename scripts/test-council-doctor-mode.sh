@@ -118,6 +118,11 @@ const m = JSON.parse(fs.readFileSync(join(out, "manifest.json"), "utf8"));
 m.files = entries;
 m.file_count = entries.length;
 m.aggregate_sha256 = hashLines(entries);
+// A canonical source package (build-bundles.mjs shape) records no
+// runtime_entry: the built entry is a distribution artifact. The fixture
+// strips runtime/dist above, so the copied distribution record must go
+// with it.
+delete m.runtime_entry;
 m.archive = { ...m.archive, status: "generated", sha256: createHash("sha256").update(fs.readFileSync(join(out, "council-of-wise-elders.skill"))).digest("hex") };
 fs.writeFileSync(join(out, "manifest.json"), JSON.stringify(m, null, 2) + "\n");
 console.log("canonical fixture:", entries.length, "files, aggregate", m.aggregate_sha256);

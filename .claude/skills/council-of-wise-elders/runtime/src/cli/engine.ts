@@ -62,7 +62,6 @@
 
 import {
   canonicalHash,
-  cardAuthorJsonSchema,
   computeOptionScore,
   labelForScore,
   validateCard,
@@ -97,6 +96,7 @@ import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/index.js';
 import { deriveHardConstraintFindings } from '../scoring/decision.js';
 import {
   cardContractInstruction,
+  cardOutputContract,
   cardRepairInstruction,
 } from './card-contract.js';
 import { parseCardResponseText } from './card-text.js';
@@ -408,11 +408,11 @@ export class CouncilEngine {
     if (!grant) {
       throw new CouncilError(
         'RUN_AUTHORIZATION_REQUIRED',
-        'No valid run authorization was found for this session. A council run spends the client\'s inference allowance, so it cannot start without a real grant (Section 25.6).',
+        'This session has no valid run record, so it cannot start (Section 25.6).',
         {
           retryable: false,
           action:
-            'Create a run preview and approve it through the run-authorization service (CWE-049), then start with that grant reference.',
+            'Convene the council again with the convene command or from the Council room.',
           exitCode: 3,
         },
       );
@@ -442,7 +442,7 @@ export class CouncilEngine {
         `The supplied run grant cannot admit this session: ${problems.join('; ')}.`,
         {
           retryable: false,
-          action: 'Approve a preview that matches this exact session, brief, mode, and seats.',
+          action: 'Convene the council again so the run matches this exact session, brief, mode, and seats.',
           exitCode: 3,
         },
       );
@@ -864,11 +864,7 @@ export class CouncilEngine {
             )
             .filter((v): v is string => v !== null)
         : null;
-    const outputContract = {
-      card_kind: purpose,
-      instruction: cardContractInstruction(purpose, challengeIds),
-      json_schema: cardAuthorJsonSchema(purpose),
-    };
+    const outputContract = cardOutputContract(purpose, challengeIds);
     const systemWithContract = `${system}\n${outputContract.instruction}`;
     const requestInput: Record<string, unknown> = {
       brief: session.brief,

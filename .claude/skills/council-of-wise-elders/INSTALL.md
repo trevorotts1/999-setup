@@ -10,7 +10,7 @@
 
 Follow these steps in this exact order. Do not skip, reorder, or combine
 steps. The order is the onboarding installer contract order: preflight,
-backup, verified copy, isolated dependency install, registry and core
+backup, verified copy, runtime build and service (wire.sh), registry and core
 update, nonsecret configuration, migrations through the owning app,
 offline QC, permitted live acceptance, release receipt.
 
@@ -23,17 +23,27 @@ skill's own scripts), a writable per-user installation prefix, the verified
 skill bundle, and correct schema, core, and source-pack versions once the
 runtime and packs land.
 
-Required to run (later units, stated here so nobody mistakes an installed
-scaffold for a working council): a valid client scope, approved source
-packs, a selected functioning route, a data store, budget and permission,
-and sufficient context and capacity.
+Required to run: a valid client scope, approved source packs, a selected
+functioning route, a data store, and sufficient context and capacity. The
+runtime itself needs Node.js 22.13 or newer (or 24+) with built-in SQLite;
+wire.sh checks this and reports NODE_TOO_OLD when it is not met.
 
-Required for visual managed mode: a compatible Command Center, an
-authenticated pairing and scope, the council migration applied through the
-Command Center, job and event integration, and UI assets. No compatible
-Command Center release exists yet; see references/install-matrix.md for
-the precise not-ready state. An older Command Center may receive this
-portable skill but must not be told the visual experience is ready.
+Installed means usable. A box counts as installed only when the Council
+service is running from a verified release AND the client has a signed-in
+way to open the Roast Room chamber. Copying the skill folder is only the
+first step; Step 4 (wire.sh) builds and starts the service, the client's
+Council address is published automatically (see Client access below), and
+`scripts/verify-council-box.sh` is the proof.
+
+Optional, for the Command Center managed visual mode only: a compatible
+Command Center, an authenticated pairing and scope, the council migration
+applied through the Command Center, job and event integration, and UI
+assets. The standalone Roast Room chamber does NOT need any of this: it is
+served by the Council service itself and opened at the client's own
+council address (see Client access). No Command Center release carrying
+the managed council contract exists yet; see references/install-matrix.md
+for the precise not-ready state. An older Command Center may receive this
+portable skill but must not be told the managed visual mode is ready.
 
 Required only for new knowledge authoring: the relevant Skill 22
 extractors and authorized source content. A client install does NOT need
@@ -101,25 +111,42 @@ restore never resurrects stale council state.
    from the manifest status, and never use distribution mode to certify a
    source release. These checks prove file consistency, not publisher identity.
 
-## Step 4: Isolated dependency install
+## Step 4: Runtime build and service (wire.sh does this; nobody hand-runs npm)
 
-The complete runtime declares exact pinned dependencies in
-runtime/package.json: zod for the contracts, and TypeScript, tsx,
-esbuild, and @types/node for the build. Install them in isolation
-inside runtime/ only and build the runtime:
+The fleet roll runs `77-council-of-wise-elders/wire.sh` (update-skills.sh
+runs a skill's wire.sh first). Do not run npm, tsx or install-runtime.mjs by
+hand to "finish" an install: no roll can satisfy a manual step, and a
+hand-built tree drifts from the verified release. wire.sh is idempotent and
+does the whole job:
 
-    node scripts/install-runtime.mjs
+1. Resolves OPENCLAW_ROOT: `$OPENCLAW_ROOT`, else `/data/.openclaw`, else
+   `~/.openclaw`.
+2. Builds the runtime into an immutable release under
+   `$OPENCLAW_ROOT/council-runtime` (it runs `scripts/install-runtime.mjs`:
+   Node and SQLite preflight, pinned `npm ci`, build, receipts, then an
+   atomic switch of `active.json`). The skill folder is never built in
+   place. Durable council data lives in `$OPENCLAW_ROOT/council-data`,
+   outside every replaceable tree.
+3. Registers and starts the service on loopback port 8787 and keeps it
+   running across updates and reboots: Mac uses the LaunchAgent
+   `ai.blackceo.council-service`; VPS uses the pm2 app
+   `council-of-wise-elders` inside the container. The service runs from the
+   immutable release as
+   `<node> <release>/node_modules/tsx/dist/cli.mjs <release>/scripts/service-launch.mjs`.
+4. Writes `council-runtime/service.json` (port, origin, public_origin or
+   null, manager launchd, pm2 or external, name, release id), plus the
+   launcher `council-runtime/bin/council-service` and the command line tool
+   `council-runtime/bin/blackceo-council`.
+5. Prints one result line, `COUNCIL_WIRE: READY`, `NOOP`, `ADOPTED_EXISTING`,
+   `DEFERRED_NO_GUI` or `NOT_READY <code>`. The codes (NODE_TOO_OLD, NO_NPM,
+   NO_PM2, RUNNING_AS_ROOT, PORT_IN_USE, SERVICE_UNHEALTHY,
+   RUNTIME_BUILD_FAILED, UNSUPPORTED_PLATFORM) and their fixes are in
+   references/install-matrix.md. A NOT_READY line is a precise state to
+   report, never a reason to simulate a council.
 
-The script derives the pinned package set from runtime/package.json
-(every version must be an exact pin), runs the pinned install
-(`npm install --no-save` with those exact versions, so neither
-package.json nor the lockfile is rewritten), then runs the runtime
-build (`npm run build`: tsc plus the esbuild CLI bundle) and verifies
-that runtime/dist/ exists. Never install globally, never into another
-skill's tree, and never copy a native binary built for a different OS
-or architecture. A native module ABI mismatch fails the installation
-precisely, with no data reset. The source repository tree itself is
-never built in place; the build happens in the installed copy.
+wire.sh never touches client credentials, model defaults or route
+selection. The client's route choice (including claude-nine and
+claude-configured, not only DeepSeek) is read at convene time.
 
 ## Step 5: Registry and core update
 
@@ -171,7 +198,8 @@ council tables are created by the Command Center's own migration path
 when the compatible Command Center release is installed; the onboarding
 installer must never migrate a managed Command Center database behind
 its back. In standalone mode the local council database is created by
-the runtime on first use, outside the skills tree. The managed
+the runtime on first use in `$OPENCLAW_ROOT/council-data`, outside the
+skills tree. The managed
 council migration number remains unallocated in this release (the
 compatibility negotiation surfaces it as the MIGRATION_ID_UNALLOCATED
 advisory); the correct receipt entry states exactly which migrations
@@ -187,27 +215,45 @@ From the INSTALLED folder (not only the source tree):
    then escalate). The installer who runs this QC is never the agent
    that performed the install (no self-QC).
 
+Then prove the box can actually be used. Run, read-only, on the box:
+
+    bash scripts/verify-council-box.sh
+
+Its last line is `COUNCIL_BOX: READY`, `DEGRADED <codes>` or
+`NOT_READY <codes>` (exit 0, 0, 1; exit 2 means the verifier itself could
+not run). It checks, in order: the release receipt, the release hash, the
+service registration (LaunchAgent or pm2), the local `/status`, a usable
+model route, the `blackceo-council` command, the public address and its
+Cloudflare Access sign-in gate, and (VPS) a tunnel connector inside the
+container. Every code and its fix is in references/install-matrix.md.
+READY is the only state that means the client can use the Council today.
+
 ## Step 9: Permitted live acceptance
 
-Only with explicit authorization, a real client-selected route, and a
-recorded budget:
+Only with a real client-selected route:
 
 - The runtime and all nine advisor packs are built and ship in this
   package. Live acceptance convenes one bounded council on a
   synthetic, unmistakably labeled fixture decision through the
-  installed runtime, under the run-authorization lifecycle (preview,
-  approve, start), and verifies the full report order in
-  references/report-template.md, the saved session readback, and the
-  provider usage against the recorded budget.
-- Without that authorization, record the installation as
+  installed runtime (convening is the approval; there is no separate
+  approval step), and verifies the full report order in
+  references/report-template.md and the saved session readback.
+- Without a live route, record the installation as
   INSTALLED_NOT_LIVE_VERIFIED: installed and offline-verified, live
   unverified. Never simulate a session or invent a verdict to fill
   the gap.
 - The not-ready report is still the correct result wherever a named
-  prerequisite is actually missing (no client-selected route, no
-  compatible Command Center release for managed mode, no run grant);
+  prerequisite is actually missing (no client-selected route, or a
+  COUNCIL_WIRE / COUNCIL_BOX code from Step 4 or Step 8);
   it names the missing prerequisite precisely rather than claiming
   the council itself is unbuilt.
+- The agent convenes with `blackceo-council` (or
+  `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
+  PATH) and sends the client the `chamber_url` when the command prints one.
+  When it prints none, the agent never invents or guesses a link and never
+  sends a 127.0.0.1 link (that address only works on the box itself); it
+  tells the client the Council runs, the result will be shared, and their
+  private Council link is still being set up.
 
 ## Step 10: Release receipt
 
@@ -216,8 +262,10 @@ Record, in the install work log or the box's onboarding state:
 - Discovery of slot 77 and the installed path.
 - Source, core, and pack hashes (the tree aggregate and archive hash
   recorded in manifest.json; all nine packs ship in this package).
-- The compatible Command Center version, or the precise not-ready state
-  from references/install-matrix.md.
+- The COUNCIL_WIRE line from the roll and the COUNCIL_BOX line from
+  `scripts/verify-council-box.sh`.
+- Whether the managed Command Center mode is available (optional), or the
+  precise not-ready state from references/install-matrix.md.
 - The registered capability identity (council-of-wise-elders), the SOP
   ID (SOP-COUNCIL-01), and the governance persona binding state
   (deferred until a real company context exists).
@@ -237,6 +285,194 @@ by keeping them where they already live: outside this folder. A
 standard-company placeholder is not evidence of actual revenue, cash,
 mission, or customer demand, and council intake must keep unconfirmed
 scaffold data separate from client-confirmed facts.
+
+## Client access (automatic)
+
+The client opens the Roast Room chamber at
+`https://<slug>-council.zerohumanworkforce.com`, where `<slug>` is the
+first label of their Command Center address, and signs in with the same
+email addresses that sign in to their Command Center. The address rides the
+box's existing Cloudflare tunnel (or the box's own dedicated `council-<slug>`
+tunnel when the Command Center tunnel is local-managed or the Command Center
+runs inside a container) behind a Cloudflare Access application
+that copies the Command Center's allow-list and then follows its email list:
+when an email is added to or removed from the Command Center login page, the
+next run adds it to or removes it from the Council login page (`SYNCED`,
+counts only), editing only the Council app's own allow policy, keeping its
+other rules, and reading it back. The Command Center app is never edited by
+that step. It refuses (`FAILED`, zero writes) when the Council app is not
+`Council - <slug>` on `<slug>-council.<zone>`, when an email to remove sits
+on a reusable or non-allow policy, or when either app's allow rules hold
+something other than emails and service tokens (everyone, an email domain, a
+group), or when the two apps' exclude/require rules differ (a revocation by
+exclude on the Command Center page is never silently missed).
+
+Nobody does anything to get it, for existing clients and for every client
+added later:
+
+- Every client has a Command Center from install (it ships first, locked to
+  the interview until closeout), so every client gets an address whether or
+  not the AI Workforce Interview is finished. Nothing in this path reads the
+  interview or `.workforce-build-state.json`.
+- An operator-side job, `scripts/council-access-autoprovision.sh`, runs every
+  30 minutes on the operator Mac. It finds every Command Center from the
+  Cloudflare zone and publishes any missing Council address, so a new
+  client has one within about 30 minutes of their Command Center existing.
+  It is idempotent, writes nothing on any client box, and is never run on
+  a client box or by a client.
+- The box resolves its address each time `blackceo-council convene` runs and
+  uses it only when it answers with a Cloudflare Access sign-in. The first
+  council after the address exists prints `chamber_url =
+  <public_origin>/chamber/#session=<id>`: no roll, no `wire.sh` re-run, no
+  manual step.
+
+### Command Center login pages (operator side)
+
+Step 1 of that job, `scripts/ensure-cc-access.sh`, keeps every client's
+Command Center login page (its Cloudflare Access application) letting in
+the operator emails and every verified client email, so the client can sign
+in with Google or a one-time PIN:
+
+- A Command Center with no login page gets one (`CREATED`), only once a
+  verified client email is known; otherwise `NEEDS_EMAIL`, retried every run.
+- An existing login page gets each missing operator or client email added
+  to its allow policy (`RECONCILED`). Additive only: every existing rule
+  (emails, service tokens, anything else) is kept in place and in order,
+  nothing is removed, and the policy is read back to prove it. Nothing to
+  add is `ALREADY_PRESENT` with zero writes. A page that admits everyone,
+  has no allow policy, or uses a reusable (shared) allow policy is `DRIFT`:
+  reported, never edited.
+- Client emails are found by the automation, not asked for: the emails
+  file, the non-operator emails already on the client's own login page and
+  on its `rescue-<slug>` page, and a read-only GoHighLevel (Convert and
+  Flow) lookup in the Black CEO LLC location (`scripts/ghl-client-emails.py`):
+  contacts carrying one of those emails, or whose company name is the host
+  name read as a business name, plus the same person's duplicate contacts
+  (same full name and same phone). Never a one-word host name (often a
+  first name) and never a company that is only the contact's own name.
+  Two different people matched, or a nameless contact among several, is
+  `ambiguous` and adds nothing.
+
+The emails file is `~/.claude/state/council-elders/cc-access-emails.json`
+(override `COUNCIL_CC_EMAILS_FILE`), every key optional:
+
+```json
+{"operator": ["<operator email>"],
+ "clients": {"<host-slug>": ["<client email>"]},
+ "ghl": {"location_id": "<Black CEO LLC location id>"}}
+```
+
+The GoHighLevel token is `GOHIGHLEVEL_API_KEY`, parsed (never sourced) from
+`~/.openclaw/secrets/.env`, then `~/.openclaw/.env`. The location id comes
+from `COUNCIL_GHL_LOCATION_ID`, else `ghl.location_id` above; the location
+variables in the env files name a different location, so it is never taken
+from them. With no token or no location id the lookup is skipped and the run
+prints one line, `ghl: skipped (no credentials/location)`. Emails are never
+printed, logged or put in receipts: counts only.
+
+Until then `verify-council-box.sh` reports DEGRADED PUBLIC_ORIGIN_UNSET and
+the agent sends no chamber link: it tells the client plainly that the
+Council runs, the result will be shared here, and their private Council
+link is still being set up. It never invents a link, sends a local one, or
+mentions scripts, fleet or Cloudflare to the client. If the verifier ever
+reports ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as
+a security failure and do not send the link.
+
+A box whose Command Center tunnel is local-managed first tries to ride the
+client's own rescue tunnel on the same machine, exactly like a remote-managed
+Command Center tunnel (the result line says `rides rescue tunnel <name>`; no
+new tunnel, no token file, no connector delivery). It rides only when all of
+these hold: the Command Center tunnel reports the host at
+`http://localhost:4000` or `http://127.0.0.1:4000` (Contabo containers on
+19003-19005 never match); exactly one tunnel is named `rescue-<slug>` (or
+`rescue-<slug>-...`, the slug as a whole word); that tunnel is healthy,
+remote-managed and has an `ssh://` rule for `rescue-<slug>.<zone>` itself
+(so `rescue-<slug>-x`, another client's tunnel, is never ridden); the active connectors of both
+tunnels report `origin_ip` sets that are non-empty and overlap (the same
+machine); no `<slug>-council` record already points at another tunnel; and
+`COUNCIL_TUNNEL_OVERRIDES` has no entry for the slug (trevor keeps
+`council-desktop`). Otherwise it falls back to the dedicated tunnel below.
+
+A Command Center record whose tunnel, or the tunnel's configuration, no
+longer exists (HTTP 404, `Configuration for tunnel not found`, a deleted
+tunnel) is an orphan: both `ensure-cc-access.sh` and
+`provision-council-access.sh` report `SKIPPED_ORPHAN` (zero writes, exit 0,
+named in the receipts). A transient read error (5xx, timeout, auth) stays
+`FAILED`, and so does a tunnel that is healthy but whose configuration
+cannot be read: a live tunnel is never an orphan.
+
+Failing that, a box whose Command Center tunnel is local-managed (it cannot
+take an API ingress rule) gets a dedicated remote-managed tunnel
+`council-<slug>` from the operator side instead. No `<slug>-council` DNS record exists until that
+tunnel has an active connector: the first `--apply` creates the tunnel, its
+route, the Access app and the saved token and ends `CONNECTOR_PENDING` with
+zero DNS writes; the first run that sees the connector creates the record
+(`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
+zero writes, nothing deleted. File contract: the connector token sits at
+`$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
+token - the in-container path for container hosts (`OPENCLAW_ROOT` resolves
+to `/data/.openclaw` or `~/.openclaw` as wire.sh does), the host path
+`~/.openclaw/secrets/tunnel-council.token` for host-run connectors; the
+`CONNECTOR_PENDING` line names both delivery paths. How it reaches the box
+is an operator delivery step, never wire.sh,
+which fetches nothing. When the file exists, wire.sh keeps
+`cloudflared tunnel run --token-file <file>` running (Mac LaunchAgent
+`ai.blackceo.council-tunnel`, VPS pm2 app `cloudflared-council`), restarts
+it only when the file changes, never touches the Command Center connector,
+never prints the token, and prints one `COUNCIL_CONNECTOR:` line
+(`READY`, `NOOP`, `DEFERRED_NO_GUI`, or `NOT_READY` with `TOKEN_UNREADABLE`,
+`NO_CLOUDFLARED` or `CONNECTOR_START_FAILED`). With no file it does nothing.
+The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
+when it is not running).
+
+When the `<slug>-council` record already points at a healthy tunnel that
+already routes the exact path-less rule
+`<slug>-council.<zone> -> http://127.0.0.1:8787`
+(equivalent loopback forms count; a path-scoped rule does not count), the host is ADOPTED by that tunnel:
+`ALREADY_PROVISIONED` with the detail `Council address already wired via
+tunnel <name>`, zero writes, and no dedicated tunnel is ever planned for it.
+The `Council - <slug>` Access app and the edge 302 check still apply to the
+adopted route. Only a record pointing at a tunnel with no such rule (a
+genuinely foreign or broken claim), or at a dead or deleted tunnel, stays
+`CONFLICT` and fails the run.
+
+A remote-managed Command Center tunnel whose rule points at a private bridge
+address (an IPv4 in 172.16.0.0/12, 10.0.0.0/8 or 192.168.0.0/16, or the
+literal `host.docker.internal`, on the Command Center port) takes that same
+dedicated tunnel path: the Council
+never rides the Command Center tunnel (a connector on the host cannot reach
+the container's loopback), `provision-council-access.sh` creates
+`council-<slug>` remote-managed with the route
+`<slug>-council -> http://127.0.0.1:8787`, saves the token operator side.
+The private-bridge shape alone never proves a container: the in-container
+wording (the connector must run INSIDE the client's container) fires only
+with positive container evidence the operator side can gather -
+`COUNCIL_CONTAINER_HOSTS` names the host (comma list of slugs, the explicit
+operator override), or the tunnel's other ingress rules use a
+container-bridge pattern. With no evidence the same dedicated path runs
+unchanged and the message says the connector runs ON THE HOST; the
+`CONNECTOR_PENDING` line always names both delivery paths (in-container
+`$OPENCLAW_ROOT/secrets/tunnel-council.token`, host
+`~/.openclaw/secrets/tunnel-council.token`, plus the operator-side saved
+token). The DNS record still appears only after the connector is active, and the
+Council login page still mirrors the Command Center's. Every other
+non-loopback origin keeps the `ORIGIN_NOT_LOOPBACK` refusal; a bridge
+origin on a non-Command-Center port is allowed only on the local-managed
+path, never the remote-managed one.
+
+## Front-door service launcher
+
+`runtime/scripts/service-launch.mjs` is the launcher. wire.sh starts it from
+the immutable release, never from the skill folder, as
+`<node> <release>/node_modules/tsx/dist/cli.mjs <release>/scripts/service-launch.mjs`
+(tsx is installed inside the release; plain `node` cannot load the
+extensionless imports in the tsc `dist/` output). The launcher calls the
+composition root `startCouncilService(...)`, never a bare
+`CouncilFrontDoor`: a bare door leaves the event, admission and session
+adapters unbound (events answer 501). It binds loopback only, defaults to
+port 8787, takes the data directory from `COUNCIL_SERVICE_DATA_DIR`
+(wire.sh sets it to `$OPENCLAW_ROOT/council-data`), logs one JSON object per
+stdout line, and stops on SIGTERM or SIGINT.
 
 ## Restarts
 

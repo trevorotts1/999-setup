@@ -104,7 +104,13 @@ import type {
   TransportResponse,
 } from '../cli/host-ports.js';
 import { CHALLENGE_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
-import { parseCardResponseText } from '../cli/card-text.js';
+import { authorPayloadFromText } from '../cli/card-text.js';
+import {
+  cardOutputContract,
+  cardRequestSystem,
+  cardSystemBytes,
+} from '../cli/card-contract.js';
+import { WEB_TODAY_SYSTEM_RULE } from '../sources/elder-knowledge.js';
 import {
   SimulatedCrashError,
   TransportDispatchError,
@@ -226,6 +232,7 @@ export interface LaterRoundDeps {
    */
   readonly loadSeatBriefing?: (
     seatId: SeatId,
+    session?: StoredSession,
   ) => Promise<{ briefing_text: string } | null>;
   /**
    * Optional actual-charge pricer for transports that meter money.
@@ -259,7 +266,14 @@ export function assembleSeatContext(args: {
   }
   const route: RouteContextBudget = {
     ...limits,
-    system_rules_bytes: new TextEncoder().encode(args.systemText).length,
+    system_rules_bytes: cardSystemBytes(
+      args.systemText,
+      args.operation === 'round_3_ratification'
+        ? 'ratification'
+        : args.operation === 'consult'
+          ? 'consult'
+          : 'advisor',
+    ),
   };
   const seatBudgets: Partial<Record<SeatId, number>> = {};
   for (const other of SEAT_IDS) {
@@ -724,7 +738,7 @@ export function cruxSetSha256(cruxes: readonly Crux[]): string {
  * CWE-050 consolidation: the single source is CHALLENGE_SYSTEM in
  * cli/engine.ts; this name is kept as the protocol surface.
  */
-export const CHALLENGE_ROUND_SYSTEM = CHALLENGE_SYSTEM;
+export const CHALLENGE_ROUND_SYSTEM = `${CHALLENGE_SYSTEM}\n${WEB_TODAY_SYSTEM_RULE}`;
 
 /** Identity kind tag for a Round 2 challenge input manifest. */
 export const CHALLENGE_INPUT_KIND = 'wise-elders.challenge-input/v1';
@@ -894,21 +908,25 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     }
 
     const pack = this.deps.loadSeatBriefing
-      ? await this.deps.loadSeatBriefing(seatId)
+      ? await this.deps.loadSeatBriefing(seatId, session)
       : null;
 
     const assigned = assignedCruxesFor(cruxes, seatId);
     const ownOpening = round1Cards.find((c) => c.seat_id === seatId) ?? null;
     const briefView = payloadBriefView(context);
 
-    const system =
-      ctx.attempt_kind === 'output_repair' && ctx.repair_issues.length > 0
-        ? `${CHALLENGE_ROUND_SYSTEM}\nYour previous output failed validation: ${ctx.repair_issues.join('; ')}. Return a corrected card only.`
-        : CHALLENGE_ROUND_SYSTEM;
+    const challengeIds = assigned.map((crux) => crux.crux_id);
+    const system = cardRequestSystem(
+      CHALLENGE_ROUND_SYSTEM,
+      'advisor',
+      challengeIds,
+      ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+    );
 
     let response: TransportResponse;
     try {
       response = await transport.generate({
+        signal: ctx.signal,
         purpose: 'advisor',
         session_id: session.spec.session_id,
         seat_id: seatId,
@@ -943,6 +961,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
             assigned.length === 0
               ? 'No targeted challenge is assigned to your seat. Confirm or update your opening position against the evidence; a fresh Round 2 card is still required.'
               : null,
+          output_contract: cardOutputContract('advisor', challengeIds),
         },
       });
     } catch (error) {
@@ -957,16 +976,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     // prose-wrapped or fenced output and validated unchanged. A
     // response with no recoverable object still yields the empty
     // author payload, so validation drives the same bounded repair.
-    let author: Record<string, unknown> = {};
-    const parsedCard = parseCardResponseText(response.text);
-    if (
-      parsedCard.ok &&
-      parsedCard.value !== null &&
-      typeof parsedCard.value === 'object' &&
-      !Array.isArray(parsedCard.value)
-    ) {
-      author = parsedCard.value as Record<string, unknown>;
-    }
+    const { author, parse_error } = authorPayloadFromText(response.text);
 
     const priced = this.deps.priceActual
       ? this.deps.priceActual({ response, snapshot: claim.route_snapshot })
@@ -974,6 +984,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
 
     return {
       author,
+      parse_error,
       provider_request_id: response.provider_request_id,
       actual_minor: priced ?? claim.descriptor.estimate_minor,
       input_tokens: response.usage.input_tokens,

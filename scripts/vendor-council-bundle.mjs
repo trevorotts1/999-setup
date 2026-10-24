@@ -26,12 +26,18 @@
 //     and its manifest aggregate must recompute exactly. node_modules is
 //     build-time only and is never hashed or shipped. runtime/dist ships
 //     WITH the distribution (executable + dependencies + instructions
-//     together) but only as the exact recorded build: manifest.json must
-//     carry runtime_entry and the bytes must match it, so a fresh install
-//     and an upgrade deliver the executable and never an old bundle. The
-//     tree's generated .skill archive is recorded by hash and deliberately
-//     not vendored (the vendored folder is itself the distribution). When
-//     the source sits in a git worktree, HEAD must equal --source-commit.
+//     together): the built entry is verified (present, node --check) and
+//     recorded as runtime_entry {path, sha256, bytes} in the distribution
+//     manifest and the vendoring record, bound to the exact bytes copied,
+//     so a fresh install and an upgrade deliver the executable and never
+//     an old bundle. When the canonical manifest records its own
+//     runtime_entry, the bytes must match it (a stale recorded build is
+//     refused); this canonical records none, so the entry is derived from
+//     the canonical build. A source-only package (no runtime/dist) is
+//     refused: regeneration can never recreate one. The tree's generated
+//     .skill archive is recorded by hash and deliberately not vendored
+//     (the vendored folder is itself the distribution). When the source
+//     sits in a git worktree, HEAD must equal --source-commit.
 //
 // Usage:
 //   node scripts/vendor-council-bundle.mjs \
@@ -131,19 +137,14 @@ if (!existsSync(join(source, "manifest.json"))) {
 // The built runtime (runtime/dist) rides WITH the distribution so a fresh
 // install and an upgrade deliver the executable, its bundled dependencies
 // and the skill instructions together. It is accepted only as the exact
-// recorded build (manifest.json runtime_entry): an unrecorded or
-// hand-edited runtime is refused like any other dirty source.
+// verified build (see the built runtime gate below): a source-only tree is
+// refused there, visibly, never silently vendored without its entry point.
 const canonicalManifest = JSON.parse(readFileSync(join(source, "manifest.json"), "utf8"));
-const runtimeEntry = canonicalManifest.runtime_entry ?? null;
 const srcFiles = walk(source);
 for (const rel of srcFiles) {
   if (/\.(sqlite3?|db)$/i.test(rel)
     || /^(state|sessions|data)\//.test(rel)) {
     fail(`source tree is dirty, refusing to vendor: ${rel}`);
-  }
-  if (rel.startsWith("runtime/dist/") && !runtimeEntry) {
-    fail(`source carries an unrecorded built runtime (${rel}): package it with ` +
-      "`node scripts/build-bundles.mjs` so manifest.json records runtime_entry");
   }
   if (rel.endsWith(".skill") && rel !== "council-of-wise-elders.skill") {
     fail(`unexpected archive in the source tree, refusing to vendor: ${rel}`);
@@ -181,21 +182,35 @@ try {
 // ---- Built runtime gate (installer truth) --------------------------------
 // The 999 distribution must ship the executable: a source-only package is
 // visibly incomplete here, never silently vendored without its entry point.
-if (!runtimeEntry) {
-  fail("canonical manifest.json records no runtime_entry: the 999 distribution would ship without the " +
-    "executable. Build it with `npm ci --no-audit --no-fund && npm run build` in runtime/ and repackage " +
-    "with `node scripts/build-bundles.mjs` first");
+// runtime_entry truth: the canonical manifest's recorded entry when it
+// carries one (bytes must match — a stale recorded build is refused), else
+// the entry derived from the canonical build. Either way the distribution
+// records {path, sha256, bytes} of the exact bytes shipped, and the entry
+// must pass `node --check` before it is accepted.
+// ponytail: freshness binding to a canonical runtime_entry record, add when
+// the canonical manifest records one (this canonical does not).
+const ENTRY_DEFAULT = "runtime/dist/blackceo-council.mjs";
+const recordedEntry = canonicalManifest.runtime_entry ?? null;
+const entryRel = recordedEntry?.path ?? ENTRY_DEFAULT;
+const entryAbs = join(source, entryRel);
+let runtimeEntry = null;
+if (!existsSync(entryAbs)) {
+  fail(`canonical runtime entry missing: ${entryRel}: the 999 distribution would ship without the ` +
+    "executable. Build it with `npm ci --no-audit --no-fund && npm run build` in runtime/ first");
 } else {
-  const entryAbs = join(source, runtimeEntry.path);
-  if (!existsSync(entryAbs)) {
-    fail(`canonical runtime entry missing: ${runtimeEntry.path}`);
+  const entryBytes = statSync(entryAbs).size;
+  const entrySha = sha256(readFileSync(entryAbs));
+  if (recordedEntry && (recordedEntry.sha256 !== entrySha || recordedEntry.bytes !== entryBytes)) {
+    fail(`canonical runtime entry is stale: ${entryRel} sha256 ${entrySha} != manifest ` +
+      `${recordedEntry.sha256}: rebuild and repackage before vendoring`);
   } else {
-    const entrySha = sha256(readFileSync(entryAbs));
-    if (entrySha !== runtimeEntry.sha256) {
-      fail(`canonical runtime entry is stale: ${runtimeEntry.path} sha256 ${entrySha} != manifest ` +
-        `${runtimeEntry.sha256}: rebuild and repackage before vendoring`);
-    } else {
-      pass(`canonical runtime entry verified: ${runtimeEntry.path} ${runtimeEntry.bytes} bytes, sha256 ${entrySha}`);
+    try {
+      execFileSync(process.execPath, ["--check", entryAbs], { stdio: "pipe" });
+      runtimeEntry = { path: entryRel, sha256: entrySha, bytes: entryBytes };
+      pass(`canonical runtime entry verified: ${entryRel} ${entryBytes} bytes, sha256 ${entrySha}` +
+        (recordedEntry ? " (bound to canonical manifest runtime_entry)" : " (derived from the canonical build; canonical manifest records none)"));
+    } catch {
+      fail(`canonical runtime entry fails node --check: ${entryRel}`);
     }
   }
 }
@@ -212,6 +227,16 @@ cpSync(source, out, {
   },
 });
 pass(`copied canonical tree to ${out} (generated .skill archive and node_modules excluded)`);
+// Bind the shipped entry to the recorded runtime_entry: the distribution
+// manifest must describe the exact bytes that landed, not the source's.
+if (runtimeEntry) {
+  const shippedSha = sha256(readFileSync(join(out, runtimeEntry.path)));
+  if (shippedSha !== runtimeEntry.sha256) {
+    fail(`shipped runtime entry drifted in the copy: ${runtimeEntry.path} ${shippedSha} != recorded ${runtimeEntry.sha256}`);
+  } else {
+    pass(`shipped runtime entry matches runtime_entry: ${runtimeEntry.path}`);
+  }
+}
 
 // ---- Brunson private-scope strip ------------------------------------------
 // Sentence split that keeps terminators; a string with no terminator is
