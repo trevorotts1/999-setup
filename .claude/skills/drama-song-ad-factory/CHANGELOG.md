@@ -1,5 +1,27 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.100 - 2026-10-24 - durable intake answers and exact menu identity
+
+The step-by-step intake now saves each accepted answer before presenting the
+next question. Restarting the CLI resumes those saved answers instead of
+requiring the client to repeat them. The session records the raw reply, its
+source and time, and the exact rendered question and options that it answered.
+Unknown choices, mismatched question identities and stale menu revisions are
+refused without silently assigning a different choice or losing valid answers.
+Completion requires all current questions and an explicit recap confirmation;
+asking to approve a script, song or storyboard remains a preference for its
+separate artifact approval gate.
+
+MiniMax H3 is restored as the first recommended video-model choice, with the
+exact `minimax-h3/image-to-video` route and its own rate data. The restoration
+comes from the accepted canonical H3 repair; no Hailuo alias is used.
+
+The ordinary and campaign duration menus use the existing six-duration registry:
+60, 90, 120, 180, 300 and 600 seconds. Campaign intake preserves the client's
+120-second selection. All unrelated question wording, descriptions, styles,
+options and order are unchanged. This release does not install or deploy any
+runtime or fleet update.
+
 ## v2.9.99 - 2026-10-23 - music duration and lyric rules now match canonical
 
 This release closes the last gap this distribution had against the canonical
