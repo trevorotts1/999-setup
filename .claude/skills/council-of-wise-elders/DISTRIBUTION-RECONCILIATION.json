@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "77eb96e738b8145877ac0d1729d9aef6b0be9560",
-    "canonical_aggregate_sha256": "f1f13e7aa124a006f7e66b2f594d0a29389ea5c4ce70660731199efc8bb9ae5b",
-    "canonical_file_count": 775,
-    "skill_version": "1.0.51"
+    "source_commit": "087d7d684adb575928acb686d298dd3e0dafb2f5",
+    "canonical_aggregate_sha256": "cdecfd5162dfb92c86a082421fe4f2a5e732271102990c3a4338426de5deff17",
+    "canonical_file_count": 779,
+    "skill_version": "1.0.54"
   },
   "intentional_distribution_differences": [
     {
@@ -61,8 +61,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "3674cc0496b656eb6d346a66dfef055d8bae580b16a61ac483c7ac4f35ec1061",
-      "archive_bytes": 74922377,
+      "archive_sha256": "964741d9e31653e639966fcd3971592a06faa2a925c1139ff228d18cb2871ae6",
+      "archive_bytes": 76141233,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -74,24 +74,6 @@
       "kind": "manifest_regenerated",
       "file": "manifest.json",
       "rule": "Regenerated over the distribution tree with the canonical hash method; the canonical aggregate it derives from is recorded above and inside manifest.json."
-    },
-    {
-      "kind": "local_divergence",
-      "rule": "999-only changes applied on top of the vendored canonical tree by scripts/revendor-council.mjs with git apply. They are NOT in the Council source (canonical_files carries only canonical hashes) and a plain re-vendor with scripts/vendor-council-bundle.mjs deletes them. Each file is recorded with its distribution hash and, when canonical has the file, the canonical hash it replaces; the patch artifacts are recorded by hash. Whether to upstream them is a decision for the Council source owner.",
-      "patch_artifacts": [
-        {
-          "path": "installer-registration/council-local-patches/03-runtime-dist-not-ignored.patch",
-          "sha256": "3a1df484f663f014267c9c025bd308645ecee9e3aa380dd2e83e2729fd77ce2f"
-        }
-      ],
-      "files": [
-        {
-          "path": "runtime/.gitignore",
-          "kind": "modified",
-          "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
-          "canonical_sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0"
-        }
-      ]
     }
   ]
 }
