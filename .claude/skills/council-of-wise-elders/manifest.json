@@ -1,12 +1,12 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "1.0.51",
+  "skill_version": "1.0.54",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "77eb96e738b8145877ac0d1729d9aef6b0be9560",
-  "canonical_aggregate_sha256": "f1f13e7aa124a006f7e66b2f594d0a29389ea5c4ce70660731199efc8bb9ae5b",
-  "file_count": 776,
-  "aggregate_sha256": "6b0b9a2f8bed57808ecf881ac82a58c523b6770d2f726cd256806547a7c3bd7e",
-  "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded.",
+  "source_commit": "087d7d684adb575928acb686d298dd3e0dafb2f5",
+  "canonical_aggregate_sha256": "cdecfd5162dfb92c86a082421fe4f2a5e732271102990c3a4338426de5deff17",
+  "file_count": 780,
+  "aggregate_sha256": "dc91803a0517ba77dc0a4446967fae44a58773f34360df56cbf5f292b75f51a1",
+  "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
     "sha256": "b10bb16b740c2a20fa66a49f66c75361df35112754c533556b3e89093626186b",
@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "8e6999e12d9b199c208b2aeb7303e97da2f691268bac44f1c99a93476b9760c6",
-      "bytes": 79002
+      "sha256": "9083dacf81ec60e2c0cebc549ed5ca9c2a463ac70f9877aee4f7c2a8b9634165",
+      "bytes": 86059
     },
     {
       "path": "CORE_UPDATES.md",
@@ -30,8 +30,8 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "94cf73b74711f5072edde23a3aedb1921e91ad828c0ae6c5b62f21d14b56ed68",
-      "bytes": 4988
+      "sha256": "730536615de097fa65daff2eeaa32645bb394cd809419e0aa151a24108b7965b",
+      "bytes": 3886
     },
     {
       "path": "EXAMPLES.md",
@@ -60,7 +60,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "492d2274c51d3d5d120e9a229f352dddc2f9e9383ad07ed364e059638e1a87ca",
+      "sha256": "82b7bb1dd02591568257472af60d13fc994f4276c01adf5a61baffc21e0b5f32",
       "bytes": 16367
     },
     {
@@ -1700,8 +1700,8 @@
     },
     {
       "path": "runtime/.gitignore",
-      "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
-      "bytes": 319
+      "sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0",
+      "bytes": 87
     },
     {
       "path": "runtime/README.md",
@@ -3490,8 +3490,8 @@
     },
     {
       "path": "scripts/build-bundles.mjs",
-      "sha256": "9acfaf3f1c6f44d42632bcadf70e0db331b3cc97cbabe0f23038d7541b5d1ce5",
-      "bytes": 14966
+      "sha256": "da6e33049671e0e7540fcb27eaeb58c7a1b5544d16fd51f4a40a7af604b28d10",
+      "bytes": 17064
     },
     {
       "path": "scripts/chamber-visual.sh",
@@ -3512,6 +3512,11 @@
       "path": "scripts/ensure-cc-access.sh",
       "sha256": "6c9749820bbb247d1b9814ca0714e99803ef26e77addcd56a8bd85d6d103f23f",
       "bytes": 30131
+    },
+    {
+      "path": "scripts/entry-point-gate.mjs",
+      "sha256": "157ab054a2949a0f12bfad9ee522594c89548a83bcac13341ee6a60d294c5661",
+      "bytes": 4573
     },
     {
       "path": "scripts/export-skill22.mjs",
@@ -3550,8 +3555,8 @@
     },
     {
       "path": "scripts/install-runtime.mjs",
-      "sha256": "cacc6f1b2cd0ed7465eb379b57ca1478471e94a82709be7e0cc61f511c7d2f6c",
-      "bytes": 30088
+      "sha256": "011432fd98415fc29deef7b2d5d828a92eb87a6d3adb4d0cd5fcd531b31b6ba7",
+      "bytes": 31746
     },
     {
       "path": "scripts/inventory-live-personas.mjs",
@@ -3597,6 +3602,11 @@
       "path": "scripts/render-counsel-artifact.mjs",
       "sha256": "4e39a93ef0555753e29e9906d557f86c63f02dead8eec66e586aa53845b19c68",
       "bytes": 21371
+    },
+    {
+      "path": "scripts/selected-tree-gate.mjs",
+      "sha256": "9942ad7e42a86dd4bb8ea4cdd92b828049ef290a46602a3c4069bbb22cd99d84",
+      "bytes": 37573
     },
     {
       "path": "scripts/supervisor/health-collector.mjs",
@@ -3799,6 +3809,11 @@
       "bytes": 24900
     },
     {
+      "path": "scripts/tests/entry-point-gate.test.mjs",
+      "sha256": "b02b0947f770ff3bb96285afac7a45332c3ed863b86a4f585cac89be7df43088",
+      "bytes": 3025
+    },
+    {
       "path": "scripts/tests/fake-cloudflare-api.py",
       "sha256": "8f3459b4186909f2b314f2acc41fbcae41dab4487a1b2bb3d2a2602467a1f716",
       "bytes": 13621
@@ -3815,8 +3830,8 @@
     },
     {
       "path": "scripts/tests/install-runtime.test.mjs",
-      "sha256": "5827a8391b9114888261f080f3acd4e4c21922e7f73773f8d32d810154706a0f",
-      "bytes": 17687
+      "sha256": "b468b70292c23eb0b6c5d3676231855b1345f25e197b13a0a39e7fff3578aad9",
+      "bytes": 19720
     },
     {
       "path": "scripts/tests/node-runtime-preflight.test.mjs",
@@ -3832,6 +3847,11 @@
       "path": "scripts/tests/render-counsel-artifact.test.mjs",
       "sha256": "f325885267aeb121b9e23ccc8f35d117c593dbde75afca29e0f04036878e4564",
       "bytes": 11647
+    },
+    {
+      "path": "scripts/tests/selected-tree-gate.test.mjs",
+      "sha256": "e698812ecc3c56bfbc288df73c8e057ef9248b715a4e45f17dc8e3e9601776cd",
+      "bytes": 22368
     },
     {
       "path": "scripts/tests/verify-cohort-parity.test.mjs",
@@ -3860,8 +3880,8 @@
     },
     {
       "path": "scripts/verify-bundles.mjs",
-      "sha256": "4061d79f9119ee526f61dedac9bd546b929e4602989ca64d75f54ce8564b15ab",
-      "bytes": 4355
+      "sha256": "ac90b21bc2856141326ff0bf412c18610a97311bcb7d7dfc892e4528a0acef18",
+      "bytes": 4932
     },
     {
       "path": "scripts/verify-cohort-parity.mjs",
@@ -3875,7 +3895,7 @@
     },
     {
       "path": "skill-version.txt",
-      "sha256": "f1b4c70b9572929ff658acb84594f0213d45661313b52293dc8decdb74e854a2",
+      "sha256": "cfc755374fd0a5eabf3acae3c7ce0f23a81e50bbb8cbbbdd071e9adf4e9a82ac",
       "bytes": 8
     },
     {
@@ -3890,13 +3910,13 @@
     },
     {
       "path": "version",
-      "sha256": "b03dbf0dd88faee7c78f184823e7c0270208f0465dc8e61fbe354544acb93239",
+      "sha256": "a0a93a44cc212c268474e5d33de91cccac5c3c307f394fe45f845972f04fad29",
       "bytes": 7
     },
     {
       "path": "wire.sh",
-      "sha256": "f9ea1d2347fe586b458f3a0c9578a840bceb6b0cb726fab823491c3cd0d169b5",
-      "bytes": 23597
+      "sha256": "119825670268d7aebd571e2e853c85615fbf5f8ede81458e657c53df5c957aec",
+      "bytes": 26565
     }
   ]
 }
