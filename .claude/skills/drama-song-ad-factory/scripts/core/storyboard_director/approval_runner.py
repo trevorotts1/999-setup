@@ -9,7 +9,8 @@ next`` will not hand out the video command until ``gate_open(run_dir)``;
   (the same sender the choice card uses), record the run as waiting, stop.
   A reply of GO calls ``approve()``; ``shot N: change ...`` calls
   ``revise_shot()`` and re-sends only that shot. A call with no reply never
-  re-sends (resume-safe).
+  re-sends while presented revisions match. Changed or unverifiable packages
+  are presented again and wait for a fresh whole-package reply.
 * client chose No: ``approve()`` straight away, nothing is sent.
 
 Run-dir files (all under ``$RUN``): ``storyboard/shot-list.json``,
@@ -68,39 +69,40 @@ def _state(run_dir):
     return _read(_p(run_dir, "storyboard", "approval.json"), {}) or {}
 
 
-def _same_revisions(entries, saved):
-    return (isinstance(saved, dict) and bool(entries) and set(entries) == set(saved)
-            and all(isinstance(saved[sid], dict)
-                    and saved[sid].get("revision") == rec["revision"]
-                    and saved[sid].get("still_sha256") == rec["still_sha256"]
-                    for sid, rec in entries.items()))
+def _same_revisions(previous, current):
+    """Exact scope; old revision hashes already include shot/contract/still bytes."""
+    if not isinstance(previous, dict) or not previous or set(previous) != set(current):
+        return False
+    for sid, now in current.items():
+        old = previous.get(sid)
+        if not isinstance(old, dict) or not old.get("revision") or old["revision"] != now["revision"]:
+            return False
+        # Supported older per-shot maps may lack this redundant still hash.
+        # Their matching revision is verified, never reconstructed or rewritten.
+        if not now.get("still_sha256") or ("still_sha256" in old and old["still_sha256"] != now["still_sha256"]):
+            return False
+    return True
 
-
-def _unverified(reason="STORYBOARD_APPROVAL_UNVERIFIED"):
-    return {"action": "waiting", "message_sent": False, "reason_code": reason,
-            "next_action": "Preserve this record; present the current whole storyboard package for an explicit decision."}
-
+def _presentation_refusal(st, entries):
+    previous = st.get("shots")
+    if (st.get("state") not in ("pending", "approved") or
+            not isinstance(previous, dict) or not previous or
+            any(not isinstance(row, dict) or not row.get("revision") for row in previous.values()) or
+            (st.get("state") == "pending" and not st.get("sent_at"))):
+        return "STORYBOARD_PRESENTATION_UNVERIFIED"
+    return None if _same_revisions(previous, entries) else "STORYBOARD_PRESENTATION_CHANGED"
 
 def gate_open(run_dir):
-    """A whole-package decision remains valid only for its recorded revisions."""
+    """Current per-shot revision proof is required; a bare boolean is unknown."""
     st = _state(run_dir)
     if st.get("state") != "approved":
         return False
     try:
         shots, contracts, stills = _load(run_dir)
-        entries = AP.approval_entries(shots, contracts, stills)
-        saved = st.get("shots")
-        if not _same_revisions(entries, saved):
-            return False
-        if any(rec.get("status") != "approved" for rec in saved.values()):
-            return False
-        if st.get("choice") == "yes":
-            decision = st.get("decision") or {}
-            return (bool(st.get("sent_at")) and decision.get("scope") == "whole-package"
-                    and bool(decision.get("at"))
-                    and bool(re.fullmatch(r"go[.!]?", decision.get("reply_text") or "", re.I)))
-        return st.get("choice") == "no"
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        current = AP.approval_entries(shots, contracts, stills)
+        return (_same_revisions(st.get("shots"), current) and
+                all(row.get("status") == "approved" for row in st["shots"].values()))
+    except Exception:                              # noqa: BLE001
         return False
 
 
@@ -192,14 +194,37 @@ def _load(run_dir):
     return shots or [], contracts, stills
 
 
-def _approve(run_dir, shots, contracts, stills, choice, reply=None):
+def _present(run_dir, shots, contracts, stills, send, st=None, reason=None):
+    # Capture the whole package before the sender reads mutable asset paths.
+    entries = AP.approval_entries(shots, contracts, stills)
+    pkg = AP.build(shots, contracts, stills)
+    send(pkg["message"], [(e["n"], e["still"]) for e in pkg["items"]])
+    pending = dict(st or {})
+    if pending.get("state") == "approved":
+        pending["previous_approval"] = {k: pending[k] for k in
+            ("state", "choice", "at", "shots", "decision", "continuation") if k in pending}
+    pending.update(state="pending", choice="yes", sent_at=time.time(), redo=None,
+                   shots=entries, invalidations=pending.get("invalidations") or [])
+    _write(_p(run_dir, "storyboard", "approval.json"), pending)
+    _record(run_dir, "WAITING_APPROVAL")
+    result = {"action": "waiting", "message_sent": True, "images": len(pkg["images"])}
+    if reason:
+        result.update(reason_code=reason,
+                      detail="The current package has been shown. Its presented revisions need a fresh approval reply.")
+    return result
+
+
+def _approve(run_dir, shots, contracts, stills, choice, st=None, reply=None):
+    # Re-read the saved presentation rather than trusting an override record.
     st = _state(run_dir)
     entries = AP.approval_entries(shots, contracts, stills)
     if choice == "yes":
-        if not st.get("sent_at") or not _same_revisions(entries, st.get("shots")):
-            return _unverified("STORYBOARD_PRESENTATION_CHANGED")
         if not re.fullmatch(r"go[.!]?", reply or "", re.I):
-            return _unverified()
+            return {"action": "waiting", "message_sent": False,
+                    "reason_code": "STORYBOARD_APPROVAL_REPLY_REQUIRED"}
+        reason = _presentation_refusal(st, entries)
+        if reason:
+            return {"action": "waiting", "message_sent": False, "reason_code": reason}
     approved = AP.approve(shots, contracts, stills)
     review = None
     try:
@@ -211,11 +236,13 @@ def _approve(run_dir, shots, contracts, stills, choice, reply=None):
     now = time.time()
     for rec in entries.values():
         rec.update(status="approved", at=now)
-    decision = ({"scope": "whole-package", "reply_text": reply, "at": now}
-                if choice == "yes" else None)
-    _write(_p(run_dir, "storyboard", "approval.json"),
-           {"state": "approved", "choice": choice, "at": now,
-            "sent_at": st.get("sent_at"), "shots": entries, "decision": decision})
+    approved_state = dict(st, state="approved", choice=choice, at=now,
+                          shots=entries, invalidations=st.get("invalidations") or [])
+    if choice == "yes":
+        approved_state["decision"] = {"scope": "whole-package", "reply_text": reply, "at": now}
+    else:
+        approved_state.pop("decision", None)
+    _write(_p(run_dir, "storyboard", "approval.json"), approved_state)
     _record(run_dir, "READY")
     return {"action": "approved", "message_sent": False}
 
@@ -238,34 +265,33 @@ def run(run_dir, send, reply=None, make_still=None):
     approved | waiting | revised | regenerate_still | unrecognized."""
     run_dir = os.path.abspath(run_dir)
     st = _state(run_dir)
-    if st.get("state") == "approved":
-        if not gate_open(run_dir):
-            return _unverified()
-        return {"action": "approved", "message_sent": False}
+    text = (reply or "").strip()
     shots, contracts, stills = _load(run_dir)
     if not wants_approval(run_dir):
+        if st.get("state") == "approved" and gate_open(run_dir):
+            return {"action": "approved", "message_sent": False}
         return _approve(run_dir, shots, contracts, stills, "no")
+    if st.get("state") == "approved" and gate_open(run_dir):
+        return {"action": "approved", "message_sent": False}
+    if not st:
+        return _present(run_dir, shots, contracts, stills, send)
     sb_state = lambda **kw: _write(_p(run_dir, "storyboard", "approval.json"),   # noqa: E731
                                    dict(st, state="pending", choice="yes", **kw))
-    if not st:   # first time: show everything once, then wait
-        presented = AP.approval_entries(shots, contracts, stills)
-        pkg = AP.build(shots, contracts, stills)
-        send(pkg["message"], [(e["n"], e["still"]) for e in pkg["items"]])
-        sb_state(sent_at=time.time(), shots=presented)
-        _record(run_dir, "WAITING_APPROVAL")
-        return {"action": "waiting", "message_sent": True, "images": len(pkg["images"])}
-    text = (reply or "").strip()
     redo = st.get("redo")
+    if not redo:
+        reason = _presentation_refusal(st, AP.approval_entries(shots, contracts, stills))
+        if reason:
+            return _present(run_dir, shots, contracts, stills, send, st, reason)
     if not text and not redo:
-        return {"action": "waiting", "message_sent": False}   # resume: never re-send
-    if re.fullmatch(r"go[.!]?", text, re.I):
-        return _approve(run_dir, shots, contracts, stills, "yes", reply=text)
-    if not st.get("sent_at") or not _same_revisions(
-            AP.approval_entries(shots, contracts, stills), st.get("shots")):
-        return _unverified("STORYBOARD_PRESENTATION_CHANGED")
+        return {"action": "waiting", "message_sent": False}   # unchanged presentation: never re-send
     if redo:                       # finish a pending redo first
         sid, change = redo["shot_id"], redo["change"]
     else:
+        if re.fullmatch(r"go[.!]?", text, re.I):
+            result = _approve(run_dir, shots, contracts, stills, "yes", reply=text)
+            if result["action"] == "waiting":
+                return _present(run_dir, shots, contracts, stills, send, st, result["reason_code"])
+            return result
         m = re.match(r"shot\s+(\d+)\s*[:\-]\s*(?:change\s+)?(.+)", text, re.I | re.S)
         if not m:
             return {"action": "unrecognized", "message_sent": False}

@@ -34,7 +34,7 @@ def check(name, cond, detail=""):
         FAILS.append(name)
 
 
-def make_run(choice="yes"):
+def make_run(choice="yes", *, governed=False):
     run = os.path.join(tempfile.mkdtemp(prefix="sbrun-"), "run1")
     sb = os.path.join(run, "storyboard")
     os.makedirs(sb)
@@ -44,6 +44,15 @@ def make_run(choice="yes"):
         sid = "s%d" % (i + 1)
         shots.append({"shot_id": sid, "song_start": i * 8.0, "song_end": i * 8.0 + 8.0,
                       "story_stage": "frozen", "location_id": "kitchen"})
+        if governed:
+            shots[-1].update(lyric_line_ids=["l%d" % (i + 1)],
+                             visual_objective="she makes choice %d" % (i + 1),
+                             character_ids=["christine"], wardrobe_ids=["suit"],
+                             product_visibility="featured" if i == 1 else "none",
+                             camera_direction="close-up direction %d" % (i + 1), reference_assets=[],
+                             image_model_capability_request={}, video_model_capability_request={},
+                             continuity_constraints=[], negative_constraints=[], cost_estimate=10,
+                             qc_requirements=["speaker-visibility"], status="planned")
         contracts[sid] = {"lyric_text": "line %d" % (i + 1),
                           "viewer_understanding": "she is stuck %d" % (i + 1),
                           "character_action": "sitting at table %d" % (i + 1),
@@ -53,10 +62,19 @@ def make_run(choice="yes"):
     json.dump({"shots": shots}, open(os.path.join(sb, "shot-list.json"), "w"))
     json.dump(contracts, open(os.path.join(sb, "contracts.json"), "w"))
     json.dump(stills, open(os.path.join(sb, "stills.json"), "w"))
-    if choice:
-        json.dump({"storyboard_approval": choice}, open(os.path.join(run, "control", "card-receipt.json"), "w"))
-    with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
-        st.init_run("run1", [s for s, _ in BATCH.STAGES])
+    if governed:
+        from test_production_process import confirmed_run, complete_stage, approve_script
+        confirmed_run(run, script=True, song=False, storyboard=True)
+        for stage in ("research", "creative-strategy", "script-lyrics"):
+            complete_stage(run, stage)
+        approve_script(run)
+        for stage in ("music", "continuity-bible", "storyboard", "image-keyframes"):
+            complete_stage(run, stage)
+    else:
+        if choice:
+            json.dump({"storyboard_approval": choice}, open(os.path.join(run, "control", "card-receipt.json"), "w"))
+        with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
+            st.init_run("run1", [s for s, _ in BATCH.STAGES])
     return run
 
 
@@ -102,15 +120,7 @@ def nxt(run):
 
 
 def test_yes_sends_card_and_three_images_before_any_video():
-    run, w = make_run("yes"), World()
-    # advance state store so video-generation is the next stage
-    with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
-        for s, _ in BATCH.STAGES:
-            if s == "video-generation":
-                break
-            st.transition("run1", s, "READY", "t")
-            st.claim("run1", s, "t")
-            st.transition("run1", s, "COMPLETE", "t")
+    run, w = make_run("yes", governed=True), World()
     env = nxt(run)
     check("next refuses the video command before approval",
           env["outcome"] == "waiting" and env["reason_code"] == "storyboard-approval-required", env)
