@@ -47,3 +47,5 @@ jobs:
         run: bash scripts/test-council-vendor.sh
       - name: Council install battery
         run: bash scripts/test-council-install.sh
+      - name: Council swap battery (gitignored dist materialised from the recorded entry)
+        run: bash scripts/test-council-swap.sh
