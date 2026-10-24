@@ -110,6 +110,60 @@ class CompletionApprovalProjection(unittest.TestCase):
         self.assertEqual(refused["reason_code"], "SONG_PICK_MISSING")
         self.assertEqual(stamps(run), before)
 
+    def test_operator_risk_closure_is_read_only_and_normal_gate_keeps_cache_writer(self):
+        from song_dispatch import song_dispatch as songs
+        master = self.run / "music" / "picked-song.mp3"
+        master.write_bytes(b"synthetic local risk-acceptance fixture")
+        take = self.run / "music" / "takes" / "v1" / "take-1.mp3"
+        take.parent.mkdir(parents=True)
+        take.write_bytes(master.read_bytes())
+        revision = process._script_proof(self.run, self.run.name)["approved_script"]["script_sha256"]
+        binding = songs.take_binding(str(master), revision)
+        results = {gate: {"verdict": "PASS", "binding": dict(binding)}
+                   for gate in ("D1", "D2", "D3", "D4", "D5")}
+        results["D5"]["verdict"] = "UNMEASURED"
+        songs.record_acceptance(str(self.run), "v1", binding, results)
+        digest = songs.sha256_evidence_records(
+            {"v1": songs.measure_evidence_digest(str(self.run), "v1")})
+        songs.record_operator_decision(str(self.run), {
+            "decision": "ACCEPTED_RISK", "operator": "fixture-owner",
+            "at_utc": "2026-10-24T12:00:00Z", "gates_not_proven": ["D5"],
+            "measured_evidence_digest": digest,
+            "reason": "D5 remains unmeasured; the fixture owner explicitly accepts that risk."})
+        evidence = self.run / "music" / "acceptance" / "v1.json"
+        original = evidence.read_bytes()
+        cache = evidence.with_name("ww21-risk-acceptance.json")
+        self.assertFalse(cache.exists())
+        for cached in (False, True):
+            with self.subTest(cache_present=cached):
+                if cached:
+                    before = stamps(self.run)
+                    self.assertIsNone(factory._song_hold(self.run))
+                    after = stamps(self.run)
+                    self.assertEqual(set(after) - set(before), {str(cache.relative_to(self.run))})
+                    self.assertTrue(all(after[name] == stamp for name, stamp in before.items()))
+                    self.assertEqual(json.loads(cache.read_bytes())["schema_version"],
+                                     "blackceo.ww21-risk-acceptance/v1")
+                self.assertTrue(self.inspect()["ok"])
+                self.assertEqual(cache.exists(), cached)
+                for changed in ("stale", "missing"):
+                    with self.subTest(evidence=changed):
+                        try:
+                            if changed == "stale":
+                                record = json.loads(original)
+                                record["results"]["D5"]["binding"]["creative_revision"] = "changed"
+                                write_json(evidence, record)
+                            else:
+                                evidence.unlink()
+                            refused = self.inspect()
+                            self.assertFalse(refused["ok"], refused)
+                            self.assertEqual(refused["reason_code"], "ACCEPTANCE_NOT_PROVEN")
+                            self.assertEqual(cache.exists(), cached)
+                        finally:
+                            evidence.write_bytes(original)
+        self.assertEqual(json.loads(evidence.read_bytes())["results"]["D5"]["verdict"],
+                         "UNMEASURED")
+
     def test_existing_cache_can_only_veto_verified_proofs(self):
         self.assertTrue(self.inspect()["ok"])
         cache_path = self.run / "control" / "approvals.json"

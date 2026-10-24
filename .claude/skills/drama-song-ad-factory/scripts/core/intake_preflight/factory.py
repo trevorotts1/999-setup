@@ -647,7 +647,7 @@ def _music_audio(run_dir):
         return []
 
 
-def _song_hold(run_dir):
+def _song_hold(run_dir, *, write_cache=True):
     """The existing song-pick / acceptance / constituent gate; fail closed.
     L2 (WW-21): a recorded, well-formed OPERATOR DECISION does not open the
     WW-21 acceptance hold by ITSELF — the decision is recorded at complete
@@ -655,7 +655,8 @@ def _song_hold(run_dir):
     records; only a relabel-shaped MANUAL_RELABEL refusal stays absolute."""
     try:
         sc = _core_mod("song_choices")
-        ref = sc.refusal(str(run_dir))
+        ref = (sc.refusal(str(run_dir)) if write_cache else
+               sc.refusal(str(run_dir), write_cache=False))
         if ref is not None and ref.get("reason_code") == "ACCEPTANCE_NOT_PROVEN":
             sd = _core_mod("song_dispatch")
             dec = sd.read_operator_decision(str(run_dir))

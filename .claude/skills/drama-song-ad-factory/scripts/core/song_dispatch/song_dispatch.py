@@ -1173,7 +1173,7 @@ def acceptance_from_run(run_dir):
             "allowed": not bad, "blocked": bad, "variants": records}
 
 
-def acceptance_refusal(run_dir, action):
+def acceptance_refusal(run_dir, action, *, write_cache=True):
     """The delivery-boundary refusal: None when nothing is held, else the
     refusal record. Mirrors ``song_choices.overlap._overlap_refusal``; the
     BLOCK reaches the offer, the pick and every paid job. L2 (WW-21): the
@@ -1197,6 +1197,8 @@ def acceptance_refusal(run_dir, action):
         # on the record as NOT PROVEN; every variant still faces its gates.
         dec, rs = decision_applies(run_dir)
         if dec is not None and not rs:
+            if not write_cache:
+                return None  # Read-only inspection uses the same verified decision.
             try:
                 out = os.path.join(run_dir, _ACCEPTANCE_DIR,
                                    "ww21-risk-acceptance.json")

@@ -335,7 +335,7 @@ def inspect_completion_approvals(run_dir, *, run_id=None):
             if not song or song.get("required") is not True:
                 return refuse("PRODUCTION_SONG_PREFERENCE_MISMATCH", "The elected song choice is missing or disabled.")
         from intake_preflight import factory
-        hold = factory._song_hold(root)
+        hold = factory._song_hold(root, write_cache=False)
         if hold:
             return refuse(hold["reason_code"], hold.get("detail") or hold.get("next_action") or "The current song decision is still pending.")
         checks["music"] = {"ok": True, "proof_kind": "existing-song-and-operator-decision-validators",
