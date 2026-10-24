@@ -50,6 +50,12 @@ def main():
         st.init_run("run-wal", list(F._stages()))
         st.transition("run-wal", "research", "READY", "w1")
 
+    # The public next entrypoint needs the real confirmed intake as well as
+    # a readable database. Keep this run's existing identity and READY row.
+    from test_production_process import confirmed_run
+    confirmed_id = confirmed_run(run)
+    assert confirmed_id == "run-wal"
+
     # seal the store: frames in -wal, no -shm, directory not writable
     con = sqlite3.connect(str(db))
     con.execute("PRAGMA wal_autocheckpoint=0")
@@ -57,6 +63,13 @@ def main():
     con.commit()
     sealed = Path(tmp) / "sealed"
     (sealed / "control").mkdir(parents=True)
+    # Carry the actual confirmation, answers and model bindings into the
+    # read-only copy; leave SQLite sidecars to the deliberate WAL fixture.
+    for source in run.rglob("*"):
+        if source.is_file() and not source.name.startswith("state.sqlite3"):
+            target = sealed / source.relative_to(run)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
     for suf in ("", "-wal"):
         src = Path(str(db) + suf)
         if src.exists():
