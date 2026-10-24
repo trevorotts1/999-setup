@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: v2.9.100
+version: v2.9.101
 ---
 
 # Drama Song Ad Factory
@@ -1162,11 +1162,18 @@ This skill never picks, forces or recommends a model, an alias or an agent.
 The one AI MODELS question on the intake card asks which AI
 builds and which AI checks, with OpenRouter recommended and Ollama allowed. Its
 number is whatever the card prints for it - never a position asserted by the
-agent (count truth, "Start here: the enforced flow"). It
-only RECORDS the answer as `ai_models` in the approved intake summary, as a
-preference for the operator. The run itself still uses the session's own model;
-nothing here switches models. Names that are not routable are refused, and the
-checker must differ from the builder. Code: `scripts/core/choice_card/intake_card/ai_models.py`.
+agent (count truth, "Start here: the enforced flow").
+
+The AI MODELS question records the client's exact builder/checker pair and
+requires different, routable choices. Explicit recap confirmation binds that
+pair to this run through `ai_models.bind_roles`; stage dispatch admission reads
+those bindings through `admit_dispatch`. Build work uses the selected builder;
+QC and repair use the selected checker. Literal configured aliases stay intact:
+no chain member is selected for the client, and no global model setting changes.
+An admitted dispatch is `admitted_not_called`, not proof of provider execution.
+Router-chain attempts remain `CHAIN_RESOLUTION_UNVERIFIED` until supported
+provider identity evidence proves the actual call. Code:
+`scripts/core/choice_card/intake_card/ai_models.py`.
 
 ## Main window: orchestrate only, all work visible, no silent failure
 
