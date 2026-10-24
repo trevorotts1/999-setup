@@ -219,6 +219,10 @@ else
     || die COUNCIL_STAGE_FAILED "bundle resolver missing beside this script" 5
 
   NPM_FLAGS="--no-audit --no-fund"
+  # The cache rides as its own quoted argument, never inside $NPM_FLAGS:
+  # that string is expanded unquoted and a spaced cache path (fixture roots
+  # with spaces) would split into garbage --cache values.
+  NPM_CACHE_ARG=""
   # npm ci --offline must be provable offline. npm reads a userconfig ABOVE
   # an exported npm_config_cache, and a fixture HOME's cache is cold, so the
   # one reliable pin is the command line: --cache=<dir> when the caller set
@@ -232,7 +236,7 @@ else
     fi
     NPM_FLAGS="$NPM_FLAGS --offline"
     if [ -n "$NPM_CACHE_DIR" ]; then
-      NPM_FLAGS="$NPM_FLAGS --cache=$NPM_CACHE_DIR"
+      NPM_CACHE_ARG="$NPM_CACHE_DIR"
       if [ ! -d "$NPM_CACHE_DIR/_cacache" ] && [ -n "${HOME:-}" ] \
         && [ -d "$HOME/.npm/_cacache" ] && [ "$HOME/.npm" != "$NPM_CACHE_DIR" ]; then
         mkdir -p "$NPM_CACHE_DIR" 2>/dev/null \
@@ -241,7 +245,7 @@ else
     fi
   fi
   say "installing runtime dependencies (npm ci)..."
-  if ! (cd "$STAGE/runtime" && "$NPM_BIN" ci $NPM_FLAGS >"$STAGE/npm-ci.log" 2>&1); then
+  if ! (cd "$STAGE/runtime" && "$NPM_BIN" ci $NPM_FLAGS ${NPM_CACHE_ARG:+--cache="$NPM_CACHE_ARG"} >"$STAGE/npm-ci.log" 2>&1); then
     tail -5 "$STAGE/npm-ci.log" >&2 || true
     if [ "$OFFLINE" -eq 1 ]; then
       rm -rf "$STAGE"

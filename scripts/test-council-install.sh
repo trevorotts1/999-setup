@@ -17,8 +17,9 @@
 #   5. Update path against a stale real directory: external backup,
 #      converged link, idempotent runtime reinstall.
 #   6. Custom config root and paths with spaces.
-#   7. Offline install: warm cache succeeds; cold cache refuses with
-#      COUNCIL_NPM_OFFLINE_CACHE_MISS and leaves no current.
+#   7. Offline install: warm cache succeeds (including a spaced cache
+#      path), cold cache refuses with COUNCIL_NPM_OFFLINE_CACHE_MISS and
+#      leaves no current.
 #   8. Native dependency errors: broken node and failing npm surface as
 #      named errors, never a partial install.
 #   9. WER-004 prerequisite probe: a resolved Node that fails the canonical
@@ -241,6 +242,16 @@ HOME="$H5" npm_config_cache="$BASE/cold-cache" bash "$INSTALL_SH" --offline \
   || fail "cold-cache offline install: rc=$RC (want 5 with the named error)"
 [ ! -e "$H5/data/runtime/current" ] && pass "refused offline install leaves no current" \
   || fail "refused offline install left a current link"
+# Regression: the npm cache must reach npm as ONE argument. $NPM_FLAGS is
+# expanded unquoted, so a cache path with spaces used to split into garbage
+# --cache values and every offline install died on a cache miss.
+H5B="$BASE/home5b"; mkdir -p "$H5B/.claude"
+link_root "$H5B" "$H5B/.claude"
+cp -R "$BASE/npm-cache" "$BASE/npm cache"
+HOME="$H5B" npm_config_cache="$BASE/npm cache" bash "$INSTALL_SH" --offline \
+  --data-dir "$H5B/data" > "$BASE/install5b.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "offline install succeeds with a spaced npm cache path" \
+  || { fail "spaced-cache offline install exited $RC"; tail -3 "$BASE/install5b.log"; }
 
 echo "== 8. native dependency errors =="
 STUB="$BASE/stubbin"; mkdir -p "$STUB"
