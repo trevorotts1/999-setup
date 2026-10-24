@@ -1,5 +1,32 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.101 - 2026-10-24 - selected AI roles and safe intake handoff
+
+Confirmed intake now binds the exact client-selected builder and checker to
+that run. An explicit `deepseek-chain` builder and `opus-chain` checker remain
+literal: build admission uses DeepSeek, and QC plus repair use the selected
+checker. Existing global recommendations and router chain members are not
+changed. Existing identical bindings and attempt records are preserved;
+conflicting bindings are refused instead of replaced. Router-chain execution
+remains unverified without supported evidence of the actual provider call.
+
+Confirmation also prepares missing canonical stages through `Store.init_run`,
+all initially `NOT_STARTED`, while preserving existing run IDs, stage states,
+approvals, bindings and attempts. `factory.py next` exposes the admitted saved
+role for its pending stage; neither bootstrap nor that plan calls a language
+model or generates media. Runtime defaults to this Claude-Nine distribution
+when omitted, preserves an existing binding runtime and honors explicit
+`--runtime` choices.
+
+A previously confirmed session can finish a missing handoff only after its
+original raw-answer provenance, explicit recap and existing model-lock database
+are verified. This does not replay preference or asset-approval writers;
+missing, corrupt or conflicting evidence stays blocked.
+
+A run-bound card uses the durable intake path even without `--step`. Static
+Studio exports and unbound previews keep their existing rendering behavior.
+Question wording, option identities and global model defaults are unchanged.
+
 ## v2.9.100 - 2026-10-24 - durable intake answers and exact menu identity
 
 The step-by-step intake now saves each accepted answer before presenting the
