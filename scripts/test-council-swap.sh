@@ -62,6 +62,19 @@ git -C "$REPO_ROOT" archive "$LAST_VENDOR_COMMIT^" ".claude/skills/$SKILL_NAME" 
   || { echo "FAIL: could not extract the previous vendored bundle"; exit 1; }
 mv "$BASE/.claude/skills/$SKILL_NAME" "$SKILL1/bundle"
 SKILL1="$SKILL1/bundle"
+# runtime/dist/ is gitignored, so a git-archive extraction can never carry the
+# built entry: the historical bundle is source-only by construction. Materialise
+# the entry the previous bundle RECORDS, from this repo's tracked vendored dist,
+# and refuse when the bytes do not match that record (never substitute silently).
+SKILL1_ENTRY_SHA="$(node -e 'const m=require(process.argv[1]);console.log((m.runtime_entry||{}).sha256||"")' "$SKILL1/manifest.json" 2>/dev/null || true)"
+if [ ! -f "$SKILL1/runtime/dist/blackceo-council.mjs" ] && [ -n "$SKILL1_ENTRY_SHA" ]; then
+  mkdir -p "$SKILL1/runtime/dist"
+  cp "$VENDORED/runtime/dist/blackceo-council.mjs" "$SKILL1/runtime/dist/blackceo-council.mjs" \
+    || { echo "FAIL: could not materialise the previous bundle entry"; exit 1; }
+  GOT_SHA="$(shasum -a 256 "$SKILL1/runtime/dist/blackceo-council.mjs" 2>/dev/null | awk '{print $1}')"
+  [ "$GOT_SHA" = "$SKILL1_ENTRY_SHA" ] || { echo "FAIL: materialised entry $GOT_SHA != recorded $SKILL1_ENTRY_SHA"; exit 1; }
+  echo "  note: previous bundle entry materialised from the tracked vendored dist (gitignored path), sha verified"
+fi
 AGG1="$(read_agg "$SKILL1")"
 [ -n "$AGG1" ] && [ "$AGG1" != "$AGG2" ] && pass "previous bundle aggregate differs: $AGG1" \
   || fail "previous bundle aggregate did not differ (agg1=$AGG1 agg2=$AGG2)"
