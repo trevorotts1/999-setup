@@ -261,5 +261,113 @@ case "$OUT" in *"run the FULL install"*) pass "updater: human action (the full i
 case "$OUT" in *"updater-stale"*) pass "updater: counted in the RESULT line";; *) fail "updater: not counted in RESULT";; esac
 [ "$RC" -eq 5 ] && [ "$F_U" = "$(fsnap "$H1")" ] && pass "updater: counted in the exit status (rc 5), installer untouched" || fail "updater: rc=$RC or installer touched"
 
+# --- 13. --refresh-updater: opt-in self-refresh of the installed installer ----
+# The --skills-only path never touches nine-router-setup unless the operator
+# opts in. The refresh is in place and per-file atomic (temp + rename, so a
+# file is always complete - old or new, never truncated); a foreign symlink is
+# never followed or replaced; nothing is ever deleted (extra old entries are
+# kept and reported); a second run is a no-op; a failure leaves the previous
+# copy usable. When a safe in-place refresh cannot be guaranteed the whole
+# refresh is refused BEFORE anything is written (BLOCKED + the full-install
+# command) instead of half-updating. All cases run against a FAKE bundle whose
+# manifest names only nine-router-setup (excluded from the sync loop), so only
+# the updater path is exercised.
+U="$ROOT/fake-upd"
+mkdir -p "$U/.claude/skills/nine-router-setup/scripts/common" "$U/.claude/skills/nine-router-setup/tests" "$U/CONTROL"
+printf 'nine-router-setup\n' > "$U/CONTROL/bundled-skills.txt"
+# settings-lock.sh is sourced at script load, so the fake bundle must carry it.
+cp "$BUNDLE/nine-router-setup/scripts/common/settings-lock.sh" "$U/.claude/skills/nine-router-setup/scripts/common/settings-lock.sh"
+printf 'FAKE UPDATER v2 SKILL\n'  > "$U/.claude/skills/nine-router-setup/SKILL.md"
+printf 'FAKE UPDATER v2 SCRIPT\n' > "$U/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+printf 'FAKE UPDATER v2 TEST\n'   > "$U/.claude/skills/nine-router-setup/tests/test-skills-only.sh"
+FAKE_SCRIPTS="$U/.claude/skills/nine-router-setup/scripts"
+upbox() { # upbox <home> — already-9Router box with a STALE installed updater copy
+  okbox "$1"
+  mkdir -p "$1/.claude/skills/nine-router-setup/scripts" "$1/.claude/skills/nine-router-setup/tests"
+  printf 'OLD SKILL v1\n'  > "$1/.claude/skills/nine-router-setup/SKILL.md"
+  printf 'OLD SCRIPT v1\n' > "$1/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+  printf 'OLD TEST v1\n'   > "$1/.claude/skills/nine-router-setup/tests/test-skills-only.sh"
+}
+
+# 13a. updater behind + NO flag -> unchanged and UPDATER_STALE (exit 5);
+#      with the flag in CHECK mode -> WOULD REFRESH, still strictly read-only.
+H15="$ROOT/h15"; upbox "$H15"; B15="$(snap "$H15")"
+run "$H15" --skills-only
+case "$OUT" in *"UPDATER_STALE"*"$H15/.claude/skills/nine-router-setup"*) pass "updater behind: reported UPDATER_STALE with the exact path (no flag)";; *) fail "updater behind: not reported";; esac
+[ "$RC" -eq 5 ] && [ "$B15" = "$(snap "$H15")" ] && pass "updater behind: without the flag nothing is written (exit 5)" || fail "updater behind: rc=$RC or something was written"
+run "$H15" --skills-only --check --refresh-updater
+case "$OUT" in *"WOULD REFRESH nine-router-setup"*"$H15/.claude/skills/nine-router-setup"*) pass "refresh-updater check: reports WOULD REFRESH with the exact path";; *) fail "refresh-updater check: not reported";; esac
+[ "$B15" = "$(snap "$H15")" ] && pass "refresh-updater check: still strictly read-only" || fail "refresh-updater check: wrote something"
+
+# 13b. --refresh-updater refreshes in place; the second run is a no-op (exit 0)
+H16="$ROOT/h16"; upbox "$H16"
+run "$H16" --skills-only --refresh-updater
+[ "$RC" -eq 0 ] && pass "refresh-updater: stale updater refreshed, exit 0" || fail "refresh-updater: rc=$RC"
+case "$OUT" in *"REFRESHED nine-router-setup"*"$H16/.claude/skills/nine-router-setup"*) pass "refresh-updater: action and exact path reported";; *) fail "refresh-updater: not reported";; esac
+cmp -s "$U/.claude/skills/nine-router-setup/SKILL.md" "$H16/.claude/skills/nine-router-setup/SKILL.md" \
+  && cmp -s "$U/.claude/skills/nine-router-setup/scripts/setup-macos.sh" "$H16/.claude/skills/nine-router-setup/scripts/setup-macos.sh" \
+  && cmp -s "$U/.claude/skills/nine-router-setup/tests/test-skills-only.sh" "$H16/.claude/skills/nine-router-setup/tests/test-skills-only.sh" \
+  && pass "refresh-updater: installed copy carries this bundle's updater files" || fail "refresh-updater: content not delivered"
+B16="$(snap "$H16")"; run "$H16" --skills-only --refresh-updater; A16="$(snap "$H16")"
+[ "$RC" -eq 0 ] && [ "$B16" = "$A16" ] && pass "refresh-updater: second run is a no-op (exit 0)" || fail "refresh-updater: second run changed files (rc=$RC)"
+case "$OUT" in *"UPDATER nine-router-setup: up to date"*) pass "refresh-updater: second run reports up to date";; *) fail "refresh-updater: second run not up to date";; esac
+
+# 13c. installed updater is a SYMLINK elsewhere -> refused (BLOCKED, exit 4),
+#      target byte-identical, link and whole HOME untouched.
+H17="$ROOT/h17"; okbox "$H17"
+mkdir -p "$ROOT/elsewhere/upd-target/scripts" "$ROOT/elsewhere/upd-target/tests"
+printf 'OLD SKILL v1\n'  > "$ROOT/elsewhere/upd-target/SKILL.md"
+printf 'OLD SCRIPT v1\n' > "$ROOT/elsewhere/upd-target/scripts/setup-macos.sh"
+printf 'OLD TEST v1\n'   > "$ROOT/elsewhere/upd-target/tests/test-skills-only.sh"
+ln -s "$ROOT/elsewhere/upd-target" "$H17/.claude/skills/nine-router-setup"
+TU="$(snap "$ROOT/elsewhere/upd-target")"; B17="$(snap "$H17")"
+run "$H17" --skills-only --refresh-updater
+[ "$RC" -eq 4 ] && pass "updater symlink: refresh refused (BLOCKED), exit 4" || fail "updater symlink: rc=$RC"
+case "$OUT" in *"BLOCKED"*"$H17/.claude/skills/nine-router-setup"*"symlink"*) pass "updater symlink: refused with a specific BLOCKED reason and the exact path";; *) fail "updater symlink: refusal not reported";; esac
+case "$OUT" in *"run the FULL install"*) pass "updater symlink: full-install command printed instead of half-updating";; *) fail "updater symlink: full-install command missing";; esac
+[ "$TU" = "$(snap "$ROOT/elsewhere/upd-target")" ] && [ -L "$H17/.claude/skills/nine-router-setup" ] && [ "$B17" = "$(snap "$H17")" ] \
+  && pass "updater symlink: target byte-identical, link and HOME untouched" || fail "updater symlink: something was written"
+
+# 13c2. a SYMLINKED DIRECTORY inside the installed updater -> refused too
+# (a write there would follow a foreign link into another tree).
+H17b="$ROOT/h17b"; upbox "$H17b"
+mkdir -p "$ROOT/elsewhere/upd-parent"
+printf 'FOREIGN TREE FILE\n' > "$ROOT/elsewhere/upd-parent/setup-macos.sh"
+rm "$H17b/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+rmdir "$H17b/.claude/skills/nine-router-setup/scripts"
+ln -s "$ROOT/elsewhere/upd-parent" "$H17b/.claude/skills/nine-router-setup/scripts"
+TP="$(snap "$ROOT/elsewhere/upd-parent")"; B17b="$(snap "$H17b")"
+run "$H17b" --skills-only --refresh-updater
+[ "$RC" -eq 4 ] && pass "updater inner symlink dir: refresh refused (BLOCKED), exit 4" || fail "updater inner symlink dir: rc=$RC"
+case "$OUT" in *"BLOCKED"*"scripts"*"symlink"*"foreign link"*) pass "updater inner symlink dir: refused with the exact path and reason";; *) fail "updater inner symlink dir: refusal not reported";; esac
+[ "$TP" = "$(snap "$ROOT/elsewhere/upd-parent")" ] && [ -L "$H17b/.claude/skills/nine-router-setup/scripts" ] && [ "$B17b" = "$(snap "$H17b")" ] \
+  && pass "updater inner symlink dir: foreign target byte-identical, nothing written" || fail "updater inner symlink dir: something was written"
+
+# 13d. failure MID-REFRESH -> the previous copy is still usable
+# The bundle's scripts/setup-macos.sh is made unreadable (the pre-scan does not
+# read sources), so the copy fails after SKILL.md was already delivered:
+# the refresh stops at the first error, every file stays complete (old or new),
+# nothing is deleted, and this run's temp file is cleaned up.
+H18="$ROOT/h18"; upbox "$H18"
+chmod 000 "$U/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+run "$H18" --skills-only --refresh-updater
+chmod 644 "$U/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
+[ "$RC" -eq 1 ] && pass "mid-refresh failure: write error stops the refresh (exit 1)" || fail "mid-refresh failure: rc=$RC"
+case "$OUT" in *"ERROR could not write"*"$H18/.claude/skills/nine-router-setup/scripts/setup-macos.sh"*) pass "mid-refresh failure: error names the exact path";; *) fail "mid-refresh failure: error not reported with its path";; esac
+cmp -s "$U/.claude/skills/nine-router-setup/SKILL.md" "$H18/.claude/skills/nine-router-setup/SKILL.md" \
+  && pass "mid-refresh failure: refresh had started (earlier file delivered)" || fail "mid-refresh failure: refresh never started"
+[ "$(cat "$H18/.claude/skills/nine-router-setup/scripts/setup-macos.sh")" = "OLD SCRIPT v1" ] \
+  && [ "$(cat "$H18/.claude/skills/nine-router-setup/tests/test-skills-only.sh")" = "OLD TEST v1" ] \
+  && [ -d "$H18/.claude/skills/nine-router-setup" ] && [ ! -L "$H18/.claude/skills/nine-router-setup" ] \
+  && pass "mid-refresh failure: previous copy still usable (complete old files, nothing deleted)" \
+  || fail "mid-refresh failure: previous copy damaged"
+[ -z "$(find "$H18/.claude/skills/nine-router-setup" -name '*.refresh-tmp*' -print 2>/dev/null)" ] \
+  && pass "mid-refresh failure: no temp litter left in the tree" || fail "mid-refresh failure: temp file left in the tree"
+
+# guard: --refresh-updater alone is refused
+run "$H16" --refresh-updater
+[ "$RC" -ne 0 ] && pass "guard: --refresh-updater alone is refused" || fail "guard: --refresh-updater alone accepted"
+FAKE_SCRIPTS=""
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

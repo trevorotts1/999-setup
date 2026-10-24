@@ -556,10 +556,32 @@ cron_privacy_check() {
 #                          reported STALE (exit 3). A foreign symlink is NEVER written
 #                          through, with or without the flag. Every write is idempotent:
 #                          a second run is a no-op.
+#   --skills-only --refresh-updater
+#                          OPT-IN self-refresh of the installed nine-router-setup
+#                          copy (the one skill the sync deliberately excludes), in
+#                          place, with the same safety rules as --repair-links and
+#                          stricter on failure: every file is written to a temp name
+#                          and renamed over the target, so a file is always COMPLETE
+#                          (old or new, never truncated) and the FIRST error stops
+#                          the refresh - a failure therefore always leaves the
+#                          previous copy usable. A foreign symlink is never followed,
+#                          replaced or written through; nothing is ever deleted (extra
+#                          old entries are kept and reported with their exact paths);
+#                          a second run is a no-op. When a safe in-place refresh
+#                          cannot be guaranteed (a destination entry that is a symlink
+#                          or not a regular file, no source in this bundle, a
+#                          non-writable directory), the WHOLE refresh is refused
+#                          BEFORE anything is written - each blocker reported BLOCKED
+#                          with its exact path and reason and the full-install command
+#                          printed - instead of half-updating. Without the flag nothing
+#                          changes: the installed copy is only reported UPDATER_STALE
+#                          (exit 5).
 #
 # Unlike link_one_skill: NO backup dir, NO moving or deleting anything (the one
 # exception is unlinking a stale symlink itself under --repair-links, which never
-# touches its target). A real skill dir is refreshed file by file in place.
+# touches its target, and removing the one temp file a --refresh-updater run
+# itself created when its rename fails - that file never existed before). A real
+# skill dir is refreshed file by file in place.
 # nine-router-setup itself is excluded from the sync: it is the installer, and
 # replacing it is exactly what must not happen on these boxes. It is NEVER
 # silently excluded from the report: when the installed copy differs from this
@@ -570,7 +592,10 @@ cron_privacy_check() {
 #   OK/delivered   content at the destination matches this bundle
 #   BLOCKED        delivery impossible: no source in this bundle, or the
 #                  destination is a plain file where a skill directory is
-#                  expected. Counted separately, reported with the exact path
+#                  expected - or a --refresh-updater that cannot be done
+#                  safely (the whole refresh is refused before anything is
+#                  written and the full-install command is printed).
+#                  Counted separately, reported with the exact path
 #                  and reason, and never reported as delivered; nothing is
 #                  written for that skill.
 #   STALE          a symlinked destination (or a symlinked file inside a real
@@ -582,7 +607,8 @@ cron_privacy_check() {
 #                  silently ignored (APPLY refreshes a real file's mode).
 #
 # Exit status: 0 delivered; 1 write error; 3 stale symlink(s) left alone;
-# 4 blocked (incomplete delivery); 5 updater stale. When several apply, the
+# 4 blocked (incomplete delivery, or a refused updater refresh); 5 updater
+# stale. When several apply, the
 # most severe wins (1, then 4, then 3, then 5); the RESULT line always carries
 # every count.
 #
@@ -608,6 +634,10 @@ so_print_paths() {
     "    state: Keychain token, ~/Library/Application Support/BlackCEO/999, ~/.local/share/999," \
     "      ~/Library/Logs/BlackCEO-999, API docs.md" \
     "    skipped: nine-router-setup (the installer itself - reported UPDATER_STALE when the installed copy differs); source and destination are the same directory" \
+    "    --refresh-updater only: the installed nine-router-setup copy is refreshed in place from this bundle" \
+    "      (per-file temp+rename writes - a file is always complete, old or new; the first error stops the" \
+    "      refresh and the previous copy stays usable; nothing is deleted - extra old entries are kept and" \
+    "      reported; a foreign symlink is never followed or replaced - it refuses the whole refresh)" \
     "    blocked (counted separately, never reported as delivered): a bundled skill with no source in this" \
     "      bundle, or a destination that is a plain file where a skill directory is expected" \
     "    never overwritten: a symlinked skill or file stays untouched, but when its content differs" \
@@ -763,9 +793,161 @@ so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_S
   done < <(cd "$src" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
 }
 
+so_refresh_updater() { # so_refresh_updater <src> <dst> <check:0|1> -> SO_RU=refreshed|would|blocked|error
+  # OPT-IN self-refresh of the installed nine-router-setup copy
+  # (--refresh-updater). In place, with the same safety rules as
+  # --repair-links and stricter on failure:
+  #   - a foreign symlink is never followed, replaced or written through;
+  #   - nothing is ever deleted (extra old entries are kept and reported);
+  #   - every line names the exact path and the action taken;
+  #   - idempotent: a second run writes nothing;
+  #   - a failure leaves the previous copy usable: each file is written to a
+  #     temp name in its own directory and renamed over the target, so a file
+  #     is always COMPLETE (old or new, never truncated) and the FIRST error
+  #     stops the refresh. The only entry ever removed is the temp file THIS
+  #     run created (it did not exist before; removing it is what keeps the
+  #     tree exact).
+  # Pass 1 is a read-only safety pre-scan: when a safe in-place refresh cannot
+  # be guaranteed the WHOLE refresh is refused before anything is written
+  # (no half-update), every blocker printed as BLOCKED with its exact path and
+  # reason; the caller then prints the full-install command. Sets
+  # SO_NEW/SO_CHG/SO_SAME/SO_MODE/SO_KEPT/SO_FAIL counts.
+  local src="$1" dst="$2" check="$3" rel parent tmp need bad sx dx st
+  SO_RU=refreshed; SO_NEW=0; SO_CHG=0; SO_SAME=0; SO_MODE=0; SO_KEPT=0; SO_FAIL=0
+
+  # ---- pass 1: safety pre-scan (read-only) --------------------------------
+  if [ ! -f "$src/SKILL.md" ]; then
+    printf '    BLOCKED %s: no updater source in this bundle (%s) - nothing written\n' "$dst" "$src"
+    SO_RU=blocked; return 0
+  fi
+  if [ -L "$dst" ]; then
+    printf '    BLOCKED %s: installed updater is a symlink (-> %s) - a refresh would replace or write through a foreign link; nothing written\n' "$dst" "$(readlink "$dst")"
+    SO_RU=blocked; return 0
+  fi
+  if [ ! -d "$dst" ]; then
+    printf '    BLOCKED %s: installed updater is not a directory - nothing written\n' "$dst"
+    SO_RU=blocked; return 0
+  fi
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    need=1
+    if [ -L "$src/$rel" ]; then
+      if [ -L "$dst/$rel" ] && [ "$(readlink "$dst/$rel")" = "$(readlink "$src/$rel")" ]; then need=0; fi
+    elif [ -f "$dst/$rel" ] && [ ! -L "$dst/$rel" ] && cmp -s "$src/$rel" "$dst/$rel" 2>/dev/null; then
+      sx=0; dx=0
+      case "$(stat -f %Lp "$src/$rel" 2>/dev/null)" in *[1357]) sx=1 ;; esac
+      case "$(stat -f %Lp "$dst/$rel" 2>/dev/null)" in *[1357]) dx=1 ;; esac
+      [ "$sx" = "$dx" ] && need=0
+    fi
+    [ "$need" = 1 ] || continue
+    # this entry WOULD be written - it must be safe to write
+    if [ -e "$dst/$rel" ] || [ -L "$dst/$rel" ]; then
+      if [ -L "$dst/$rel" ]; then
+        printf '    BLOCKED %s/%s: destination entry is a symlink (-> %s) - a refresh would replace or write through a foreign link; nothing written\n' "$dst" "$rel" "$(readlink "$dst/$rel")"
+        SO_RU=blocked; continue
+      fi
+      if [ -L "$src/$rel" ]; then
+        printf '    BLOCKED %s/%s: this bundle ships a symlink (-> %s) where the installed copy has a real entry - a refresh would have to delete it; nothing written\n' "$dst" "$rel" "$(readlink "$src/$rel")"
+        SO_RU=blocked; continue
+      fi
+      if [ ! -f "$dst/$rel" ]; then
+        printf '    BLOCKED %s/%s: destination entry is not a regular file - nothing written\n' "$dst" "$rel"
+        SO_RU=blocked; continue
+      fi
+    fi
+    bad=0; parent="$(dirname "$dst/$rel")"
+    # a symlinked directory anywhere below the updater root would send the
+    # write into a foreign tree - never follow it, refuse the whole refresh
+    probe="$parent"
+    while [ "$probe" != "$dst" ] && [ "$probe" != "/" ] && [ "$probe" != "." ]; do
+      if [ -L "$probe" ]; then
+        printf '    BLOCKED %s/%s: directory %s is a symlink (-> %s) - a write would follow a foreign link; nothing written\n' "$dst" "$rel" "$probe" "$(readlink "$probe")"
+        SO_RU=blocked; bad=1; break
+      fi
+      probe="$(dirname "$probe")"
+    done
+    [ "$bad" = 1 ] && continue
+    while [ ! -d "$parent" ]; do
+      if [ -e "$parent" ] || [ -L "$parent" ]; then
+        printf '    BLOCKED %s/%s: %s exists but is not a directory - nothing written\n' "$dst" "$rel" "$parent"
+        SO_RU=blocked; bad=1; break
+      fi
+      [ "$parent" = "$(dirname "$parent")" ] && break
+      parent="$(dirname "$parent")"
+    done
+    [ "$bad" = 1 ] && continue
+    if [ ! -w "$parent" ]; then
+      printf '    BLOCKED %s/%s: directory %s is not writable - a safe in-place refresh cannot be guaranteed; nothing written\n' "$dst" "$rel" "$parent"
+      SO_RU=blocked
+    fi
+  done < <(cd "$src" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
+  [ "$SO_RU" = blocked ] && return 0
+  [ "$check" = 0 ] || SO_RU=would
+
+  # ---- pass 2: writes (per-file atomic temp+rename; first error stops) ----
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    if [ -L "$src/$rel" ]; then
+      if [ -L "$dst/$rel" ]; then SO_SAME=$((SO_SAME + 1)); continue; fi   # equal target (pass 1)
+      if [ "$check" = 1 ]; then
+        printf '    WOULD NEW %s/%s (symlink -> %s)\n' "$dst" "$rel" "$(readlink "$src/$rel")"
+      elif mkdir -p "$(dirname "$dst/$rel")" && ln -s "$(readlink "$src/$rel")" "$dst/$rel"; then
+        printf '    NEW %s/%s (symlink -> %s)\n' "$dst" "$rel" "$(readlink "$src/$rel")"
+      else
+        printf '    ERROR could not write %s/%s - refresh stopped here; the previous copy is unchanged from here on\n' "$dst" "$rel"
+        SO_FAIL=$((SO_FAIL + 1)); SO_RU=error; return 0
+      fi
+      SO_NEW=$((SO_NEW + 1)); continue
+    fi
+    if [ ! -e "$dst/$rel" ]; then st=NEW
+    elif cmp -s "$src/$rel" "$dst/$rel" 2>/dev/null; then
+      sx=0; dx=0
+      case "$(stat -f %Lp "$src/$rel" 2>/dev/null)" in *[1357]) sx=1 ;; esac
+      case "$(stat -f %Lp "$dst/$rel" 2>/dev/null)" in *[1357]) dx=1 ;; esac
+      if [ "$sx" != "$dx" ]; then
+        if [ "$check" = 1 ]; then
+          printf '    WOULD FIX MODE %s/%s\n' "$dst" "$rel"
+        elif chmod "$(stat -f %Lp "$src/$rel" 2>/dev/null)" "$dst/$rel"; then
+          printf '    FIXED MODE %s/%s -> %s\n' "$dst" "$rel" "$(stat -f %Lp "$src/$rel" 2>/dev/null)"
+        else
+          printf '    ERROR could not fix mode %s/%s - refresh stopped here; the previous copy is unchanged from here on\n' "$dst" "$rel"
+          SO_FAIL=$((SO_FAIL + 1)); SO_RU=error; return 0
+        fi
+        SO_MODE=$((SO_MODE + 1))
+      else SO_SAME=$((SO_SAME + 1)); fi
+      continue
+    else st=CHANGED; fi
+    if [ "$check" = 1 ]; then
+      printf '    WOULD %s %s/%s\n' "$st" "$dst" "$rel"
+    else
+      tmp="$(dirname "$dst/$rel")/.$(basename "$rel").refresh-tmp.$$"
+      if mkdir -p "$(dirname "$dst/$rel")" && cp -p "$src/$rel" "$tmp" && mv -f "$tmp" "$dst/$rel"; then
+        printf '    %s %s/%s\n' "$st" "$dst" "$rel"
+      else
+        rm -f "$tmp"   # this run's own temp only - nothing else is ever removed
+        printf '    ERROR could not write %s/%s - refresh stopped here; the previous copy is unchanged from here on (every file is complete: old or new)\n' "$dst" "$rel"
+        SO_FAIL=$((SO_FAIL + 1)); SO_RU=error; return 0
+      fi
+    fi
+    if [ "$st" = NEW ]; then SO_NEW=$((SO_NEW + 1)); else SO_CHG=$((SO_CHG + 1)); fi
+  done < <(cd "$src" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
+
+  # extra old entries are KEPT (never deleted) and reported with exact paths
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    if [ ! -e "$src/$rel" ] && [ ! -L "$src/$rel" ]; then
+      if [ "$check" = 1 ]; then printf '    WOULD KEEP (extra old entry, never deleted) %s/%s\n' "$dst" "$rel"
+      else printf '    KEPT (extra old entry, never deleted) %s/%s\n' "$dst" "$rel"; fi
+      SO_KEPT=$((SO_KEPT + 1))
+    fi
+  done < <(cd "$dst" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
+  return 0
+}
+
 skills_only_mode() { # skills_only_mode <check:0|1>
   local check="$1" markers="" roots="" r d s src src_real dst dst_real verb up old_target
   local repair="$REPAIR_LINKS"
+  local refresh="${REFRESH_UPDATER:-0}"
   local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 t_blocked=0 t_mode=0 t_updater=0 skills_root="$SKILL_DIR/.."
 
   # 9Router detection - read-only: two stats and one local GET on /api/health.
@@ -788,6 +970,9 @@ $d
   else verb=DONE; printf '[skills-only] mode: APPLY - bundled skill content only\n'; fi
   if [ "$repair" = 1 ]; then
     printf '[skills-only] --repair-links: a stale symlinked skill is replaced (the link only) with this bundle tree\n'
+  fi
+  if [ "$refresh" = 1 ]; then
+    printf '[skills-only] --refresh-updater: the installed nine-router-setup copy is refreshed IN PLACE from this bundle (per-file atomic writes; never through a foreign symlink; nothing is deleted)\n'
   fi
   printf '[skills-only] source clone: %s\n' "$(cd -P "$skills_root" && pwd -P)"
   if [ -n "$markers" ]; then
@@ -854,12 +1039,35 @@ $d
 
     # nine-router-setup is excluded from the sync (it is the installer) but is
     # NEVER silently excluded from the report: an installed copy that differs
-    # from this bundle is UPDATER_STALE and needs the full install to update.
+    # from this bundle is UPDATER_STALE and needs the full install to update -
+    # unless the operator opted in to the in-place self-refresh below.
     up="$d/nine-router-setup"
     if [ ! -e "$up" ] && [ ! -L "$up" ]; then
       printf '  UPDATER nine-router-setup: not installed at %s - nothing to check\n' "$up"
     elif so_tree_diff "$skills_root/nine-router-setup" "$up" 0; then
       printf '  UPDATER nine-router-setup: up to date (%s)\n' "$up"
+    elif [ "$refresh" = 1 ]; then
+      so_refresh_updater "$skills_root/nine-router-setup" "$up" "$check"
+      case "$SO_RU" in
+        blocked)
+          printf '  UPDATER NOT REFRESHED nine-router-setup: safe in-place refresh refused (reasons above) - nothing was written at %s; human action required: run the FULL install (bash %s with no --skills-only flag) to update the installer\n' "$up" "$_SELF_DIR/setup-macos.sh"
+          t_blocked=$((t_blocked + 1)) ;;
+        error)
+          printf '  UPDATER REFRESH INCOMPLETE nine-router-setup: stopped at %s with %d error(s) (see the ERROR line); every file is complete (old or new) so the previous copy is still usable - human action required: run the FULL install (bash %s with no --skills-only flag) to update the installer\n' "$up" "$SO_FAIL" "$_SELF_DIR/setup-macos.sh"
+          t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_mode=$((t_mode + SO_MODE))
+          t_fail=$((t_fail + 1)); t_updater=$((t_updater + 1)) ;;
+        would)
+          printf '  WOULD REFRESH nine-router-setup: %d new + %d changed file(s) WOULD be written at %s; %d unchanged; %d mode drift WOULD be fixed; %d extra old entry(ies) WOULD be kept (never deleted)\n' "$SO_NEW" "$SO_CHG" "$up" "$SO_SAME" "$SO_MODE" "$SO_KEPT"
+          t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_mode=$((t_mode + SO_MODE)) ;;
+        refreshed)
+          printf '  REFRESHED nine-router-setup: %d new + %d changed file(s) written at %s; %d unchanged; %d mode drift fixed; %d extra old entry(ies) kept (never deleted)\n' "$SO_NEW" "$SO_CHG" "$up" "$SO_SAME" "$SO_MODE" "$SO_KEPT"
+          t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_mode=$((t_mode + SO_MODE))
+          if ! so_tree_diff "$skills_root/nine-router-setup" "$up" 0; then
+            # kept extras still make the installed copy differ from this bundle
+            printf '  UPDATER_STALE nine-router-setup: refreshed from this bundle but extra old entry(ies) were kept (never deleted, listed above): %s - human action required: run the FULL install (bash %s with no --skills-only flag) to replace the whole copy\n' "$up" "$_SELF_DIR/setup-macos.sh"
+            t_updater=$((t_updater + 1))
+          fi ;;
+      esac
     else
       printf '  UPDATER_STALE nine-router-setup: installed copy differs from this bundle: %s - human action required: run the FULL install (bash %s with no --skills-only flag) to update the installer; --skills-only never touches it\n' "$up" "$_SELF_DIR/setup-macos.sh"
       t_updater=$((t_updater + 1))
@@ -885,7 +1093,7 @@ main() {
   # 600) only when supplied; never printed, never guessed.
   OPERATOR_GH_TOKEN="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
   OPERATOR_VERCEL_TOKEN="${VERCEL_TOKEN:-}"
-  SKILLS_ONLY=0; CHECK_ONLY=0; REPAIR_LINKS=0; OPERATOR_FLAG=0; UPDATE_COMBOS=0
+  SKILLS_ONLY=0; CHECK_ONLY=0; REPAIR_LINKS=0; REFRESH_UPDATER=0; OPERATOR_FLAG=0; UPDATE_COMBOS=0
   # DeepSeek route: direct (DEEPSEEK_API_KEY) or openrouter (OPENROUTER_API_KEY,
   # openrouter/deepseek/deepseek-v4.1-flash). Flag wins over NINE_DEEPSEEK_ROUTE.
   NINE_DEEPSEEK_ROUTE="${NINE_DEEPSEEK_ROUTE:-}"
@@ -898,8 +1106,9 @@ main() {
       --update-combos) UPDATE_COMBOS=1 ;;
       --skills-only) SKILLS_ONLY=1 ;;
       --repair-links) REPAIR_LINKS=1 ;;
+      --refresh-updater) REFRESH_UPDATER=1 ;;
       --check) CHECK_ONLY=1 ;;
-      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --deepseek-route direct|openrouter | --update-combos | --skills-only [--check] [--repair-links])" ;;
+      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --deepseek-route direct|openrouter | --update-combos | --skills-only [--check] [--repair-links] [--refresh-updater])" ;;
     esac
     shift
   done
@@ -909,6 +1118,7 @@ main() {
   esac
   [ "$CHECK_ONLY" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--check only applies with --skills-only (the full install has no dry-run). Nothing was written."
   [ "$REPAIR_LINKS" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--repair-links only applies with --skills-only. Nothing was written."
+  [ "$REFRESH_UPDATER" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--refresh-updater only applies with --skills-only. Nothing was written."
   [ "$SKILLS_ONLY" = 0 ] || [ "$OPERATOR_FLAG" = 0 ] || fail "--skills-only never writes operator keys; do not combine it with --operator-remote-owner. Nothing was written."
   case "$OPERATOR_REMOTE_OWNER" in
     "") ;;
