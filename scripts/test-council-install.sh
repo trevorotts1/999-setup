@@ -36,6 +36,13 @@
 #  13. Doctor mode battery (scripts/test-council-doctor-mode.sh): the
 #      canonical source still passes source mode with the archive binding,
 #      and a masked distribution is refused.
+#  14. --refresh-record reconciliation: the record is rewritten to the
+#      given source, a second run is a byte-identical no-op, a wrong
+#      recorded aggregate refuses without --source-dir (and reconciles
+#      with one), the bare flag refuses without --skill-dir, and a failed
+#      integrity check leaves the record untouched. Nondestructive: the
+#      runtime, .install-complete, current and the executable are never
+#      touched.
 #
 # Everything runs under a fixture HOME in ${TMPDIR:-/tmp}.
 # Run: bash scripts/test-council-install.sh
@@ -44,8 +51,10 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The fixture HOMEs below define the discovery roots; an inherited
 # CLAUDE_CONFIG_DIR would silently redirect discovery at the operator's
-# live install and make this battery non-reproducible.
-unset CLAUDE_CONFIG_DIR
+# live install and make this battery non-reproducible. The same rule
+# governs the source resolver: an inherited COUNCIL_CANONICAL_SOURCE
+# would redirect SOURCE_DIR away from the fixtures.
+unset CLAUDE_CONFIG_DIR COUNCIL_CANONICAL_SOURCE
 SETUP_SH="$REPO_ROOT/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
 INSTALL_SH="$REPO_ROOT/scripts/council-runtime-install.sh"
 INSTALL_PS1="$REPO_ROOT/scripts/council-runtime-install.ps1"
@@ -359,6 +368,98 @@ echo "== 13. doctor mode derivation: canonical source and masked negative =="
 bash "$REPO_ROOT/scripts/test-council-doctor-mode.sh" > "$BASE/doctor-mode.log" 2>&1; RC=$?
 [ "$RC" = 0 ] && pass "canonical source still passes source mode; masked distribution refused" \
   || { fail "doctor mode battery exited $RC"; grep 'FAIL' "$BASE/doctor-mode.log" | head -8; }
+
+echo "== 14. --refresh-record: record reconciliation (nondestructive) =="
+# The live defect: the prefix is installed and gated, the tree lives at a
+# new path with the same aggregate, and install-record.json keeps pointing
+# at the old skill_dir with no supported way to reconcile it. Each case
+# snapshots the record and cmp's it afterwards: every refusal must leave
+# the record byte-identical, and only the record is ever rewritten.
+NEWSRC="$BASE/new source tree"
+cp -R "$VENDORED" "$NEWSRC" || fail "could not copy the portable source"
+NEWSRC_ABS="$(cd "$NEWSRC" && pwd -P)"
+PREFIX14="$DATA1/runtime/$AGG"
+RECORD14="$PREFIX14/install-record.json"
+rec_field() { node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[process.argv[2]])' "$RECORD14" "$1" 2>/dev/null; }
+[ -f "$RECORD14" ] && pass "installed record present at runtime/$AGG" \
+  || fail "installed record missing: $RECORD14"
+[ "$(rec_field skill_dir)" != "$NEWSRC_ABS" ] && pass "record starts out pointing at the old skill_dir" \
+  || fail "record already points at the new source"
+cp "$RECORD14" "$BASE/record14.baseline"
+cmp -s "$H1/.local/bin/blackceo-council" "$REPO_ROOT/launchers/macos/blackceo-council" \
+  && pass "executable baseline matches the launcher template" \
+  || fail "executable baseline drifted"
+
+# 14.1 refresh rewrites the record to the given source
+HOME="$H1" bash "$INSTALL_SH" --refresh-record --skill-dir "$NEWSRC" --source-dir "$NEWSRC" \
+  --data-dir "$DATA1" > "$BASE/refresh1.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "--refresh-record exits 0" \
+  || { fail "--refresh-record exited $RC"; tail -3 "$BASE/refresh1.log"; }
+[ "$(rec_field skill_dir)" = "$NEWSRC_ABS" ] && pass "record skill_dir rewritten to the given source" \
+  || fail "record skill_dir is '$(rec_field skill_dir)' (want $NEWSRC_ABS)"
+[ "$(rec_field source_dir)" = "$NEWSRC_ABS" ] && pass "record source_dir rewritten to the given source" \
+  || fail "record source_dir is '$(rec_field source_dir)' (want $NEWSRC_ABS)"
+[ "$(rec_field aggregate)" = "$AGG" ] && pass "record aggregate is the verified aggregate" \
+  || fail "record aggregate is '$(rec_field aggregate)' (want $AGG)"
+[ -f "$PREFIX14/.install-complete" ] && pass ".install-complete still present after refresh" \
+  || fail ".install-complete disappeared after refresh"
+[ "$(readlink "$DATA1/runtime/current" 2>/dev/null || true)" = "$AGG" ] \
+  && pass "current link untouched by refresh" || fail "current link changed"
+cmp -s "$H1/.local/bin/blackceo-council" "$REPO_ROOT/launchers/macos/blackceo-council" \
+  && pass "executable untouched by refresh" || fail "executable changed"
+if find "$PREFIX14" -maxdepth 1 -name '.install-record.json.tmp.*' | grep -q .; then
+  fail "stale record temp files left inside the prefix"
+else
+  pass "no record temp files left inside the prefix"
+fi
+
+# 14.2 second run is a byte-identical no-op
+cp "$RECORD14" "$BASE/record14.first"
+HOME="$H1" bash "$INSTALL_SH" --refresh-record --skill-dir "$NEWSRC" --source-dir "$NEWSRC" \
+  --data-dir "$DATA1" > "$BASE/refresh2.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && pass "second --refresh-record exits 0 (idempotent)" \
+  || fail "second --refresh-record exited $RC"
+cmp -s "$RECORD14" "$BASE/record14.first" && pass "second run leaves the record byte-identical" \
+  || fail "second run changed the record"
+
+# 14.3 wrong recorded aggregate: refuse without --source-dir, reconcile with one
+printf '{ "aggregate": "not-the-verified-aggregate", "skill_dir": "%s", "source_dir": "%s", "node": "v0.0.0" }\n' \
+  "$NEWSRC_ABS" "$NEWSRC_ABS" > "$RECORD14"
+cp "$RECORD14" "$BASE/record14.corrupt"
+HOME="$H1" bash "$INSTALL_SH" --refresh-record --skill-dir "$NEWSRC" --data-dir "$DATA1" \
+  > "$BASE/refresh3.log" 2>&1; RC=$?
+[ "$RC" = 4 ] && grep -q 'COUNCIL_RECORD_AGGREGATE_MISMATCH' "$BASE/refresh3.log" \
+  && pass "wrong recorded aggregate without --source-dir refuses (exit 4)" \
+  || fail "wrong aggregate: rc=$RC (want 4 with COUNCIL_RECORD_AGGREGATE_MISMATCH)"
+cmp -s "$RECORD14" "$BASE/record14.corrupt" && pass "refused refresh left the record untouched" \
+  || fail "refused refresh changed the record"
+HOME="$H1" bash "$INSTALL_SH" --refresh-record --skill-dir "$NEWSRC" --source-dir "$NEWSRC" \
+  --data-dir "$DATA1" > "$BASE/refresh3b.log" 2>&1; RC=$?
+[ "$RC" = 0 ] && [ "$(rec_field aggregate)" = "$AGG" ] \
+  && pass "an explicit --source-dir reconciles the wrong aggregate" \
+  || fail "explicit --source-dir refresh exited $RC with aggregate '$(rec_field aggregate)'"
+
+# 14.4 the flag without --skill-dir refuses
+cp "$RECORD14" "$BASE/record14.before4"
+HOME="$H1" bash "$INSTALL_SH" --refresh-record --data-dir "$DATA1" > "$BASE/refresh4.log" 2>&1; RC=$?
+[ "$RC" = 4 ] && grep -q 'COUNCIL_REFRESH_SKILL_DIR_REQUIRED' "$BASE/refresh4.log" \
+  && pass "--refresh-record without --skill-dir refuses (exit 4)" \
+  || fail "bare flag: rc=$RC (want 4 with COUNCIL_REFRESH_SKILL_DIR_REQUIRED)"
+cmp -s "$RECORD14" "$BASE/record14.before4" && pass "bare-flag refusal left the record untouched" \
+  || fail "bare-flag refusal changed the record"
+
+# 14.5 a failed integrity check leaves the record untouched
+TAMPERED2="$BASE/tampered refresh source"
+cp -R "$VENDORED" "$TAMPERED2"
+printf '\nhand edit\n' >> "$TAMPERED2/SKILL.md"
+cp "$RECORD14" "$BASE/record14.before5"
+HOME="$H1" bash "$INSTALL_SH" --refresh-record --skill-dir "$TAMPERED2" --source-dir "$TAMPERED2" \
+  --data-dir "$DATA1" > "$BASE/refresh5.log" 2>&1; RC=$?
+[ "$RC" = 4 ] && grep -q 'COUNCIL_SOURCE_INTEGRITY_FAILED' "$BASE/refresh5.log" \
+  && pass "hand-edited source refuses at the integrity gate (exit 4)" \
+  || fail "tampered refresh: rc=$RC (want 4 with COUNCIL_SOURCE_INTEGRITY_FAILED)"
+cmp -s "$RECORD14" "$BASE/record14.before5" && pass "failed integrity check leaves the record untouched" \
+  || fail "failed integrity check changed the record"
 
 echo "== preservation, after everything =="
 [ "$(sha256sum "$H1/.claude-nine/settings.json" | cut -d' ' -f1)" = "$SETTINGS_HASH_BEFORE" ] \

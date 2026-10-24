@@ -39,9 +39,19 @@
 #   scripts/council-runtime-install.sh [--skill-dir DIR] [--source-dir DIR]
 #                                      [--data-dir DIR] [--bin-dir DIR]
 #                                      [--offline] [--check]
+#   scripts/council-runtime-install.sh --refresh-record --skill-dir DIR
+#                                      [--source-dir DIR] [--data-dir DIR]
+# Nondestructive record reconciliation: --refresh-record re-runs the
+# source-integrity and doctor gates above, then rewrites ONLY the installed
+# prefix's install-record.json (temp + rename in the same directory) to
+# {aggregate, skill_dir, source_dir, node} pointing at the resolved source.
+# It requires an explicit --skill-dir, refuses when the record's aggregate
+# is not the verified aggregate unless --source-dir was explicitly given,
+# and never deletes the runtime, removes .install-complete, or touches the
+# current symlink or the executable.
 # Exit codes: 0 ok; 4 preflight (node/npm/skill/manifest/source integrity,
-# prerequisite probe, or a foreign executable); 5 dependency install
-# failed; 6 build failed; 7 doctor gate failed.
+# prerequisite probe, foreign executable, or a refused record refresh);
+# 5 dependency install failed; 6 build failed; 7 doctor gate failed.
 set -uo pipefail
 
 SELF="${BASH_SOURCE[0]}"
@@ -54,26 +64,36 @@ REPO_ROOT="$(cd "$SELF_DIR/.." && pwd -P)"
 unset _t
 
 SKILL_DIR=""
+SKILL_DIR_OPT=""
 SOURCE_DIR_OPT=""
 DATA_DIR=""
 BIN_DIR="$HOME/.local/bin"
 OFFLINE=0
 CHECK=0
+REFRESH_RECORD=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --skill-dir) SKILL_DIR="$2"; shift 2 ;;
+    --skill-dir) SKILL_DIR="$2"; SKILL_DIR_OPT="$2"; shift 2 ;;
     --source-dir) SOURCE_DIR_OPT="$2"; shift 2 ;;
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --offline) OFFLINE=1; shift ;;
     --check) CHECK=1; shift ;;
-    -h|--help) sed -n '2,44p' "$SELF"; exit 0 ;;
+    --refresh-record) REFRESH_RECORD=1; shift ;;
+    -h|--help) sed -n '2,54p' "$SELF"; exit 0 ;;
     *) echo "council-runtime-install: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
 say() { echo "council-runtime-install: $*"; }
 die() { say "ERROR $1: $2" >&2; exit "$3"; }
+
+# --refresh-record reconciles an existing prefix record; it is meaningless
+# without the install context an explicit --skill-dir names, so refuse the
+# bare form instead of silently reconciling against a discovered tree.
+if [ "$REFRESH_RECORD" -eq 1 ] && [ -z "$SKILL_DIR_OPT" ]; then
+  die COUNCIL_REFRESH_SKILL_DIR_REQUIRED "--refresh-record requires an explicit --skill-dir; refusing to reconcile the record of a discovered install" 4
+fi
 
 # Doctor verification mode for a resolved skill tree: prints "source" or
 # "distribution", prints ERROR and returns 1 when neither applies. The rule
@@ -174,6 +194,34 @@ say "distribution aggregate: $AGGREGATE"
 RUNTIME_DIR="$DATA_DIR/runtime"
 PREFIX="$RUNTIME_DIR/$AGGREGATE"
 CURRENT="$RUNTIME_DIR/current"
+
+# --- --refresh-record: reconcile the installed prefix record ---------------
+# The supported way to repoint install-record.json after the resolver
+# selects a tree at a new path: the source-integrity and doctor gates above
+# already ran and any failure stopped before here. Only the record is
+# rewritten, atomically (temp + rename in the same directory); the runtime,
+# .install-complete, the current link and the executable are never touched.
+if [ "$REFRESH_RECORD" -eq 1 ]; then
+  RECORD="$PREFIX/install-record.json"
+  [ -d "$PREFIX" ] \
+    || die COUNCIL_REFRESH_TARGET_MISSING "no installed prefix for the verified aggregate at $PREFIX; nothing to refresh" 4
+  RECORDED_AGGREGATE=""
+  if [ -f "$RECORD" ]; then
+    RECORDED_AGGREGATE="$("$NODE_BIN" -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).aggregate)' "$RECORD" 2>/dev/null || true)"
+  fi
+  if [ "$RECORDED_AGGREGATE" != "$AGGREGATE" ] && [ -z "$SOURCE_DIR_OPT" ]; then
+    die COUNCIL_RECORD_AGGREGATE_MISMATCH "the installed record $RECORD carries aggregate '${RECORDED_AGGREGATE:-<none>}' but the verified source is $AGGREGATE; pass an explicit --source-dir to reconcile deliberately" 4
+  fi
+  TMP_RECORD="$PREFIX/.install-record.json.tmp.$$"
+  rm -f "$TMP_RECORD"
+  printf '{ "aggregate": "%s", "skill_dir": "%s", "source_dir": "%s", "node": "%s" }\n' \
+    "$AGGREGATE" "$SOURCE_DIR" "$SOURCE_DIR" "$("$NODE_BIN" --version)" > "$TMP_RECORD" \
+    || { rm -f "$TMP_RECORD"; die COUNCIL_RECORD_WRITE_FAILED "could not stage the refreshed install record in $PREFIX" 4; }
+  mv "$TMP_RECORD" "$RECORD" \
+    || { rm -f "$TMP_RECORD"; die COUNCIL_RECORD_WRITE_FAILED "could not move the refreshed install record into place" 4; }
+  say "install-record refreshed: $RECORD"
+  exit 0
+fi
 
 prefix_gates() {
   # $1 = prefix root to gate. Package doctor on the skill folder plus the
