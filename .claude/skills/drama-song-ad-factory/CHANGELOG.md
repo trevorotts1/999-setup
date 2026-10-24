@@ -1,5 +1,30 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.103 - 2026-10-24 - S75 story-first batch from ONB main (partial sync)
+
+Story-first Skill 75 work taken from openclaw-onboarding main `9488ccbc8`
+(nine units: T05, T14, T18, T19, T20, T22, T25 from batch 1; T03, T23 from
+batch 2) into this Claude-Nine / Claude Code distribution's own layout.
+
+New modules and their suites land whole: character identity schema (T05),
+Notion character-library discovery (T14), the eighteen-style music catalog and
+its trait recipes (T18, T19, T20, T22), music word-fit and constraints (T25),
+the package-flavor adapter with its single seam over shared core plus the
+`contracts/flavor-999.json` contract and story-first record contracts (T03),
+and one-question intake help with answer reuse (T23).
+
+`music_styles/__init__.py`, `music_styles/music_styles.py` and
+`choice_card/intake_card/intake_session.py` are forward-synced to ONB main:
+999's prior blobs for those three are ONB-main lineage states, so the advance
+is a sync, not a clobber.
+
+`choice_card/intake_card/intake_card.py` and `SKILL.md` are deliberately NOT
+taken from ONB. 999's copies carry history that does not exist anywhere in
+ONB, so an overwrite would destroy 999's own work. T23's four-line
+`intake_card.py` hook and ONB's SKILL.md story-first prose are therefore not
+present here; the T23 helper modules ship unattached. Known gap, stated rather
+than hidden.
+
 ## v2.9.102 - 2026-10-24 - governed production admission
 
 Factory stage commands and paid dispatch now verify authoritative intake,
