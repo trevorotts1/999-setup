@@ -68,12 +68,12 @@ def main():
     check("auth_status never assumed", (env.get("data") or {}).get("auth_status") == "missing",
           str((env.get("data") or {}).get("auth_status")))
 
-    # 3. preflight with no auth -> rejected / approval-missing, exit 4
+    # 3. preflight without intake answers -> waiting / CARD_UNANSWERED, exit 2
     rc, env, err = run(["preflight"])
-    check("preflight exit code 4 (rejected)", rc == 4, f"got {rc}")
-    check("preflight outcome rejected", env.get("outcome") == "rejected", str(env.get("outcome")))
-    check("preflight reason approval-missing",
-          env.get("reason_code") == "approval-missing", str(env.get("reason_code")))
+    check("preflight exit code 2 (waiting)", rc == 2, f"got {rc}")
+    check("preflight outcome waiting", env.get("outcome") == "waiting", str(env.get("outcome")))
+    check("preflight reason CARD_UNANSWERED",
+          env.get("reason_code") == "CARD_UNANSWERED", str(env.get("reason_code")))
     check("preflight next_action actionable", bool(env.get("next_action")),
           str(env.get("next_action")))
     check("preflight stderr empty", err == "", err[:200])
