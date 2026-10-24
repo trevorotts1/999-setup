@@ -504,10 +504,12 @@ def acceptance_from_run(run_dir):
     return _SD.acceptance_from_run(run_dir)
 
 
-def _acceptance_refusal(run_dir, action):
+def _acceptance_refusal(run_dir, action, *, write_cache=True):
     """None when the boundary is not applicable or has passed; else the
     refusal that holds the offer, the pick and every paid job."""
-    return _SD.acceptance_refusal(run_dir, action)
+    if write_cache:
+        return _SD.acceptance_refusal(run_dir, action)
+    return _SD.acceptance_refusal(run_dir, action, write_cache=False)
 
 
 def fan_in(results, run_dir, delivery_dir, **kw):
@@ -1072,13 +1074,14 @@ def record_pick(run_dir, reply):
     return o["label"]
 
 
-def refusal(run_dir):
+def refusal(run_dir, *, write_cache=True):
     """None when work may go on; else the refusal. No state file = answered No.
 
     WW-21 first: a take whose required gate set is not all PASS holds EVERY
     later stage (picture timing, paid video, image, lip-sync) before the pick
     check is even consulted."""
-    ahold = _acceptance_refusal(run_dir, "every later stage")
+    ahold = (_acceptance_refusal(run_dir, "every later stage") if write_cache else
+             _acceptance_refusal(run_dir, "every later stage", write_cache=False))
     if ahold:
         return ahold
     try:

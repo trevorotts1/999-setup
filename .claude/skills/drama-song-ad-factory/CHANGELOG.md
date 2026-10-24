@@ -1,5 +1,23 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.102 - 2026-10-24 - governed production admission
+
+Factory stage commands and paid dispatch now verify authoritative intake,
+canonical predecessor transitions and current artifact approval scope.
+Manual authorization JSON, four-pick receipts and manually initialized stage
+rows do not grant production admission. The live model lock, including pending
+SQLite WAL updates, must match the confirmed client selection. Paid requests
+are rechecked before submission; offline runner receipts remain explicitly
+non-authoritative.
+
+Unpaid planning and research do not require approval of unseen assets. This
+Claude-Nine distribution retains its existing explicit dependency checks and
+runtime adapters. Its delivery profiles now use the existing six-duration
+registry, including the owner's 120-second selection. Whole-package script,
+song and storyboard decisions retain their intended timing; unverified older
+evidence is preserved behind a specific hold. Intake question wording,
+creative dramatization and lip-sync policy are unchanged.
+
 ## v2.9.101 - 2026-10-24 - selected AI roles and safe intake handoff
 
 Confirmed intake now binds the exact client-selected builder and checker to

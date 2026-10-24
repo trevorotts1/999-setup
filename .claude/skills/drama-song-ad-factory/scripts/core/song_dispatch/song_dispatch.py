@@ -860,6 +860,8 @@ def decision_applies(run_dir, dec=None, required=None):
             return None, []
     req = tuple(required) if required is not None else _profile_required(acceptance_profile())
     rs = _decision_refusals(dec, req)
+    if not rs:
+        rs = _decision_evidence_refusals(run_dir, dec)
     return (None, rs) if rs else (dec, [])
 
 def decision_holds_gate(dec, gate):
@@ -891,6 +893,49 @@ def measure_evidence_digest(run_dir, variant_id):
         return None
     return sha256_evidence_records(rec["results"])
 
+
+def _decision_evidence_refusals(run_dir, dec):
+    """One current-evidence comparison for both decision writing and reading.
+
+    Keep the original sorted variant-to-record digest algorithm; reading an
+    accepted decision must bind it to the same evidence the writer checked.
+    This function reads only and never repairs a decision or a take record.
+    """
+    base = os.path.join(run_dir, _ACCEPTANCE_DIR)
+    try:
+        vids = sorted(str(v) for v in (dec.get("variants") or []))
+        if not vids:
+            # This flavor keeps a risk-acceptance cache beside take records.
+            # It is metadata, not a measured variant; explicit variant scopes
+            # still validate every named record below.
+            vids = [name[:-5] for name in sorted(os.listdir(base))
+                    if name.endswith(".json") and name not in (
+                        OPERATOR_DECISION_FILE, "ww21-risk-acceptance.json")]
+        if not vids:
+            return ["OPERATOR_DECISION_EVIDENCE_MISSING: no measured acceptance records exist"]
+        missing = [v for v in vids if not os.path.isfile(os.path.join(base, "%s.json" % v))]
+        if missing:
+            return ["OPERATOR_DECISION_EVIDENCE_MISSING: no acceptance record for %s"
+                    % ", ".join(missing)]
+        digs = {v: measure_evidence_digest(run_dir, v) for v in vids}
+        unreadable = [v for v in vids if digs[v] is None]
+        if unreadable:
+            return ["OPERATOR_DECISION_EVIDENCE_UNREADABLE: acceptance results are unreadable for %s"
+                    % ", ".join(unreadable)]
+    except FileNotFoundError:
+        return ["OPERATOR_DECISION_EVIDENCE_MISSING: the acceptance directory is missing"]
+    except (OSError, TypeError, ValueError) as exc:
+        return ["OPERATOR_DECISION_EVIDENCE_UNREADABLE: %s" % exc]
+    digest = sha256_evidence_records(digs)
+    claimed = str(dec.get("measured_evidence_digest")).strip().lower()
+    if claimed != digest:
+        return ["OPERATOR_DECISION_EVIDENCE_MISMATCH: measured_evidence_digest does not "
+                "match the measured evidence records on disk (claimed %s, on-disk "
+                "%s over %s); recompute sha256_evidence_records over those records "
+                "and record THAT digest -- a decision is bound to the evidence it "
+                "refuses to override." % (claimed[:12] or "none", digest[:12], ", ".join(digs))]
+    return []
+
 def record_operator_decision(run_dir, dec, required=None):
     """L2 (WW-21): validate ``dec`` and write it to
     <run>/music/acceptance/operator-decision.json. Every missing or malformed
@@ -904,25 +949,9 @@ def record_operator_decision(run_dir, dec, required=None):
     rs = _decision_refusals(dec, req)
     if rs:
         raise DispatchError("; ".join(rs))
-    vids = sorted(str(v) for v in (dec.get("variants") or []))
-    if vids:
-        digs = {v: (measure_evidence_digest(run_dir, v) or "") for v in vids}
-    else:
-        # whole-run decision: every acceptance record on disk stands today
-        digs = {name[:-5]: (measure_evidence_digest(run_dir, name[:-5]) or "")
-                for name in sorted(os.listdir(os.path.join(run_dir, _ACCEPTANCE_DIR)))
-                if name.endswith(".json") and name != OPERATOR_DECISION_FILE}
-    digest = sha256_evidence_records(digs)
-    claimed = str(dec.get("measured_evidence_digest")).strip().lower()
-    if claimed != digest:
-        # the operator's digest must match the evidence ON THE DISK they
-        # decided on; a digest nobody computed over that evidence is fabricated
-        raise DispatchError("OPERATOR_DECISION_REJECTED: measured_evidence_digest does not "
-                            "match the measured evidence records on disk (claimed %s, on-disk "
-                            "%s over %s); recompute sha256_evidence_records over those records "
-                            "and record THAT digest -- a decision is bound to the evidence it "
-                            "refuses to override." % (claimed[:12] or "none", digest[:12],
-                                                      ", ".join(digs) or "no records"))
+    rs = _decision_evidence_refusals(run_dir, dec)
+    if rs:
+        raise DispatchError("OPERATOR_DECISION_REJECTED: " + "; ".join(rs))
     out = dict(dec, recorded_at_utc=_dt.datetime.now(_dt.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ"))
     p = operator_decision_path(run_dir)
@@ -1144,7 +1173,7 @@ def acceptance_from_run(run_dir):
             "allowed": not bad, "blocked": bad, "variants": records}
 
 
-def acceptance_refusal(run_dir, action):
+def acceptance_refusal(run_dir, action, *, write_cache=True):
     """The delivery-boundary refusal: None when nothing is held, else the
     refusal record. Mirrors ``song_choices.overlap._overlap_refusal``; the
     BLOCK reaches the offer, the pick and every paid job. L2 (WW-21): the
@@ -1168,6 +1197,8 @@ def acceptance_refusal(run_dir, action):
         # on the record as NOT PROVEN; every variant still faces its gates.
         dec, rs = decision_applies(run_dir)
         if dec is not None and not rs:
+            if not write_cache:
+                return None  # Read-only inspection uses the same verified decision.
             try:
                 out = os.path.join(run_dir, _ACCEPTANCE_DIR,
                                    "ww21-risk-acceptance.json")

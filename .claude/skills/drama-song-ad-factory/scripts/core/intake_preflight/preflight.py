@@ -99,21 +99,19 @@ def _inside(root, p):
     return target == root or target.startswith(root + os.sep), target
 
 
-#: Version-2 delivery profiles (H8): five lengths x two shapes, named
-#: ``drama-<shape>-<length>s`` -- the only profiles preflight allows by
-#: default. The version-1 ``short-9x16-30s`` profile is retired.
-PROFILE_LENGTHS_S = (60, 90, 180, 300, 600)
-PROFILE_SHAPES = ("9x16", "16x9")
-DEFAULT_PROFILES = tuple(
-    "drama-%s-%ss" % (shape, secs)
-    for secs in PROFILE_LENGTHS_S for shape in PROFILE_SHAPES
-)
+# Reuse the existing leaf registry so the 120-second delivery profile cannot
+# disappear between the card and this distribution's explicit preflight.
+from suno_recipe.duration_registry import (durations, shapes, preflight_profiles)
+
+PROFILE_LENGTHS_S = durations()
+PROFILE_SHAPES = shapes()
+DEFAULT_PROFILES = preflight_profiles()
 
 
 def check(payload):
     """payload keys: tools, modules, storage_dir, min_free_bytes, approved_root,
     references[], profile, allowed_profiles[], schema_version, allowed_schemas[],
-    credentials[], env{}, auth{}, summary_digest. Returns outcome/reason/checks."""
+    credentials[], env{}, auth{}, summary_digest, run_dir, run_id, stage. Returns outcome/reason/checks."""
     p = payload or {}
     checks = {}
     schemas = p.get("allowed_schemas") or ["blackceo.campaign/v1"]
@@ -173,29 +171,63 @@ def check(payload):
         return {"outcome": "rejected", "reason_code": "credential-missing",
                 "checks": checks, "missing": sorted(k for k, v in creds.items() if not v),
                 "next_action": "Provide credentials (presence only; values never logged)."}
+    # Caller auth may restrict scope/expiry; it never creates production authority.
     auth = p.get("auth") or {}
-    if not auth:
-        return {"outcome": "rejected", "reason_code": "approval-missing",
-                "checks": checks, "next_action": "Record authorization scope before paid work."}
-    import time
-    exp = auth.get("expires_unix")
-    if isinstance(exp, (int, float)) and int(time.time()) > exp:
-        return {"outcome": "rejected", "reason_code": "approval-expired",
-                "checks": checks, "next_action": "Renew expired authorization."}
-    scope = auth.get("scope")
-    dgst = p.get("summary_digest")
-    if scope not in ("campaign", dgst):
-        return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
-                "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+    if auth:
+        import time
+        exp = auth.get("expires_unix")
+        if isinstance(exp, (int, float)) and int(time.time()) > exp:
+            return {"outcome": "rejected", "reason_code": "approval-expired",
+                    "checks": checks, "next_action": "Renew expired authorization."}
+        scope = auth.get("scope")
+        dgst = p.get("summary_digest")
+        if scope not in ("campaign", dgst):
+            return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
+                    "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+    # Preserve this distribution's explicit tool/module/storage/credential checks.
+    # Unlike the canonical distribution, this version has no D05 auto-derivation.
+    checks["mode"] = p.get("mode") or "quick"
+    checks["generating"] = checks["mode"] != "diagnostic"
+    if p.get("run_dir") and checks["generating"]:
+        import production_process
+        try:
+            if not production_process.needs_media_dependencies(p.get("stage")):
+                checks.update(mode="planning", generating=False)
+        except (ImportError, ValueError, TypeError, KeyError) as exc:
+            return {"outcome": "error", "reason_code": "PRODUCTION_PROCESS_UNVERIFIED",
+                    "checks": checks, "production_admitted": False,
+                    "next_action": "The canonical planning dependency graph cannot be verified: " + str(exc)}
+    if checks["mode"] == "diagnostic":
+        checks["readiness"] = "diagnostic-only"
+        return {"outcome": "ok", "reason_code": "preflight-pass-diagnostic",
+                "checks": checks, "mode": "diagnostic", "generating": False,
+                "readiness": "diagnostic-only", "production_admitted": False,
+                "next_action": "Diagnostic only: this is not production admission."}
     card_refusal = check_card_receipt(p.get("run_state"), p.get("card_receipt"))
-    # F15: paid work (which is what preflight gates) never starts on an
-    # unanswered card, whichever entry path launched the run.
-    if card_refusal is not None:
-        checks["card_recorded"] = False
+    checks["card_recorded"] = card_refusal is None
+    if card_refusal is not None and not p.get("run_dir"):
         return {"outcome": "waiting", "reason_code": card_refusal["reason_code"],
                 "checks": checks, "missing": card_refusal.get("missing", []),
-                "next_action": card_refusal.get(
-                    "next_action", "Show and answer the choice card first.")}
+                "next_action": card_refusal.get("next_action", "Show and answer the choice card first.")}
+    if not p.get("run_dir"):
+        checks["readiness"] = "dependencies-only"
+        return {"outcome": "ok", "reason_code": "preflight-pass-dependencies",
+                "checks": checks, "readiness": "dependencies-only", "production_admitted": False,
+                "next_action": "Dependencies checked. Resume governed intake, then name the run and stage for production admission."}
+    import production_process
+    stage = p.get("stage")
+    authority = (production_process.admit_production(p["run_dir"], stage, run_id=p.get("run_id"))
+                 if stage else production_process.inspect_intake(p["run_dir"], run_id=p.get("run_id")))
+    checks["production_process"] = authority
+    if not authority["ok"]:
+        checks["readiness"] = "unverified"
+        return {"outcome": "waiting", "reason_code": authority["reason_code"],
+                "checks": checks, "readiness": "unverified", "production_admitted": False,
+                "next_action": authority["detail"] + " " + authority["next_action"]}
     checks["card_recorded"] = True
-    return {"outcome": "ok", "reason_code": "preflight-pass",
-            "checks": checks, "next_action": "Proceed to claim eligible stage."}
+    admitted = bool(stage)
+    checks["readiness"] = "stage-admitted" if admitted else "planning-only"
+    return {"outcome": "ok", "reason_code": "preflight-pass" if admitted else "preflight-pass-planning",
+            "checks": checks, "readiness": checks["readiness"], "production_admitted": admitted,
+            "next_action": "Proceed through the admitted stage runner." if admitted else
+                           "Intake confirmed. Unpaid planning may proceed; paid stages require current admission."}
