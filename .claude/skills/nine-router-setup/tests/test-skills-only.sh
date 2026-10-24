@@ -8,6 +8,7 @@
 set -uo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/scripts/setup-macos.sh"
+BUNDLE="$(cd "$(dirname "$SCRIPT")/../.." && pwd)"
 if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
   echo "SKIP: setup-macos.sh is macOS arm64 only"; exit 0
 fi
@@ -47,7 +48,7 @@ mkbox() {
   echo 'NODE-DIR-CANARY' > "$h/.local/share/999/node-path"
   echo 'OLD INSTALLER' > "$h/.claude/skills/nine-router-setup/SKILL.md"
   echo 'stale eli5' > "$h/.claude/skills/eli5/SKILL.md"
-  mkdir -p "$ROOT/elsewhere/bro" && echo 'someone else' > "$ROOT/elsewhere/bro/SKILL.md"
+  mkdir -p "$ROOT/elsewhere" && cp -R "$BUNDLE/bro" "$ROOT/elsewhere/bro"
   ln -s "$ROOT/elsewhere/bro" "$h/.claude-nine/skills/bro"
 }
 run() { # run <home> <args...>  (stdout+stderr, rc in $RC)
@@ -88,8 +89,8 @@ if cmp -s "$SCRIPT/../../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md" 2>
    || cmp -s "$(dirname "$SCRIPT")/../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md"; then
   pass "apply: eli5 refreshed to the clone's content"
 else fail "apply: eli5 not refreshed"; fi
-[ "$(cat "$ROOT/elsewhere/bro/SKILL.md")" = "someone else" ] && [ -L "$H1/.claude-nine/skills/bro" ] \
-  && pass "apply: symlink to elsewhere left alone (target untouched)" || fail "apply: touched a foreign symlink"
+cmp -s "$BUNDLE/bro/SKILL.md" "$ROOT/elsewhere/bro/SKILL.md" && [ -L "$H1/.claude-nine/skills/bro" ] \
+  && pass "apply: symlink to an identical tree left alone (target untouched)" || fail "apply: touched a foreign symlink"
 [ ! -e "$H1/.claude-skill-backups" ] && [ ! -e "$MARK" ] && pass "apply: no backup dir, install path never reached" || fail "apply: backup dir created or install path reached"
 
 # --- 3. idempotent: second APPLY changes nothing ------------------------------
@@ -108,6 +109,47 @@ case "$OUT" in *"already-9Router box: NO"*) [ "$B4" = "$(snap "$H4")" ] && pass 
 run "$H1" --check;                                    [ "$RC" -ne 0 ] && pass "guard: --check alone is refused" || fail "guard: --check alone accepted"
 run "$H1" --skills-only --operator-remote-owner acme; [ "$RC" -ne 0 ] && pass "guard: --skills-only + --operator-remote-owner refused" || fail "guard: operator flag accepted"
 [ ! -e "$MARK" ] && pass "guard: install path never reached by any run" || fail "install path reached: $(cat "$MARK")"
+
+# --- 6. symlinked destinations: identical = OK, different = STALE exit 3 -------
+# A symlinked skill/file is never overwritten, but a stale target must not read as
+# success: it has to be reported and the run must exit 3 (content not delivered).
+BUNDLE="$(cd "$(dirname "$SCRIPT")/../.." && pwd)"
+okbox() { # okbox <home> — already-9Router markers only, no skills yet
+  mkdir -p "$1/.9router" "$1/.local/bin" "$1/.claude/skills"
+  echo 'ROUTER-SETTINGS-CANARY' > "$1/.9router/db.json"
+  echo 'LAUNCHER-CANARY' > "$1/.local/bin/claude-nine"
+}
+
+# 6a. skill dir is a symlink to a STALE tree -> STALE + exit 3, target untouched
+H6="$ROOT/h6"; okbox "$H6"; mkdir -p "$ROOT/elsewhere/stale-eli5"; echo 'stale eli5' > "$ROOT/elsewhere/stale-eli5/SKILL.md"
+ln -s "$ROOT/elsewhere/stale-eli5" "$H6/.claude/skills/eli5"
+run "$H6" --skills-only
+case "$OUT" in *"STALE eli5"*) pass "stale symlink: reported STALE, not silent SKIP";; *) fail "stale symlink: not reported as STALE";; esac
+[ "$RC" -eq 3 ] && pass "stale symlink: apply exits 3 (content not delivered)" || fail "stale symlink: expected rc 3, got $RC"
+case "$OUT" in *"1 stale"*) pass "stale symlink: counted in the RESULT line";; *) fail "stale symlink: RESULT line does not count it";; esac
+[ "$(cat "$ROOT/elsewhere/stale-eli5/SKILL.md")" = "stale eli5" ] && [ -L "$H6/.claude/skills/eli5" ] \
+  && pass "stale symlink: target and link left untouched" || fail "stale symlink: touched the foreign target"
+B6="$(snap "$H6")"
+run "$H6" --skills-only --check
+[ "$RC" -eq 3 ] && [ "$B6" = "$(snap "$H6")" ] && pass "stale symlink: check also exits 3, still read-only" || fail "stale symlink check: rc=$RC or wrote"
+
+# 6b. skill dir is a symlink to an IDENTICAL tree -> OK, exit 0
+H7="$ROOT/h7"; okbox "$H7"; cp -R "$BUNDLE/eli5" "$ROOT/elsewhere/eli5-same"
+ln -s "$ROOT/elsewhere/eli5-same" "$H7/.claude/skills/eli5"
+run "$H7" --skills-only
+case "$OUT" in *"identical content"*) pass "identical symlink: reported as identical content";; *) fail "identical symlink: not recognized as identical";; esac
+[ "$RC" -eq 0 ] && pass "identical symlink: exit 0 (nothing stale)" || fail "identical symlink: expected rc 0, got $RC"
+
+# 6c. a destination FILE inside a real skill dir is a stale symlink -> STALE + exit 3
+H8="$ROOT/h8"; okbox "$H8"; mkdir -p "$H8/.claude/skills/eli5" "$ROOT/elsewhere/file-target"
+echo 'different content' > "$ROOT/elsewhere/file-target/SKILL.md"
+ln -s "$ROOT/elsewhere/file-target/SKILL.md" "$H8/.claude/skills/eli5/SKILL.md"
+run "$H8" --skills-only
+case "$OUT" in *"STALE (destination file is a symlink to different content)"*"eli5/SKILL.md"*) pass "stale file symlink: reported STALE";; *) fail "stale file symlink: not reported";; esac
+[ "$RC" -eq 3 ] && pass "stale file symlink: exit 3" || fail "stale file symlink: expected rc 3, got $RC"
+[ "$(cat "$ROOT/elsewhere/file-target/SKILL.md")" = "different content" ] && [ -L "$H8/.claude/skills/eli5/SKILL.md" ] \
+  && pass "stale file symlink: target and link left untouched" || fail "stale file symlink: touched the foreign target"
+[ ! -e "$MARK" ] && pass "symlink cases: install path never reached" || fail "symlink cases reached the install path"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
