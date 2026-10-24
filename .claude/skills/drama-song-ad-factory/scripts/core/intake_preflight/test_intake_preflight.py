@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""W1-A-U3 (manual H8 + L4): version-2 intake defaults and ten profiles.
+"""W1-A-U3 (manual H8 + L4): version-2 intake defaults and twelve profiles.
 
 Proves, behaviourally:
   * DEFAULTS target_length_s == 60 and the v1 30s default is gone;
   * length_option / shape / look / music / voice flow through normalize with
     provenance (provided > inherited > default), look/music from D24;
   * a provided length_option feeds target_length_s only when it was assumed;
-  * the default allowed_profiles are the ten drama-<shape>-<length>s profiles
+  * the default allowed_profiles are the twelve drama-<shape>-<length>s profiles
     and `preflight --profile drama-16x9-300s` never says
     delivery-profile-unknown (the manual's Done-when);
   * FU-ONE-SPEND-QUESTION: the story questions never ask about money (the
@@ -108,18 +108,28 @@ def test_card_defaults_from_style_defaults():
           fields.get("target_length_s") == 60, repr(fields.get("target_length_s")))
 
 
-def test_ten_delivery_profiles():
+def test_twelve_delivery_profiles():
     got = P.DEFAULT_PROFILES
     want = tuple(
         "drama-%s-%ss" % (shape, secs)
-        for secs in (60, 90, 180, 300, 600)
+        for secs in (60, 90, 120, 180, 300, 600)
         for shape in ("9x16", "16x9"))
-    check("exactly the ten version-2 profiles",
+    check("exactly the twelve version-2 profiles",
           got == want, "%s != %s" % (got, want))
-    check("ten profiles, five lengths x two shapes",
-          len(got) == 10, str(len(got)))
+    check("twelve profiles, six lengths x two shapes",
+          len(got) == 12, str(len(got)))
     check("v1 profile retired from defaults",
           "short-9x16-30s" not in got)
+    with tempfile.TemporaryDirectory(prefix="s75-profile-roundtrip-") as tmp:
+        for seconds in (60, 90, 120, 180, 300, 600):
+            fields, provenance = I.normalize({"target_length_s": seconds}, {})
+            check("explicit %s seconds survives normalization" % seconds,
+                  fields["target_length_s"] == seconds and provenance["target_length_s"] == "provided")
+            for shape in ("9x16", "16x9"):
+                profile = "drama-%s-%ss" % (shape, fields["target_length_s"])
+                result = P.check({"storage_dir": tmp, "profile": profile, "mode": "diagnostic"})
+                check("%s preflight diagnostic round-trip" % profile,
+                      result.get("reason_code") == "preflight-pass-diagnostic", repr(result))
 
 
 def test_default_profile_known():
@@ -138,8 +148,9 @@ def test_default_profile_known():
 def test_cli_done_when():
     """The manual's Done-when, run verbatim through the real CLI.
 
-    F15 (owner order 2026-10-08) added the choice-card gate: paid preflight
-    also needs the recorded card receipt, so this test records one."""
+    This unbound dependency check carries the legacy four-pick receipt.
+    Its auth/card JSON does not establish authoritative production intake;
+    passing dependencies must explicitly withhold production readiness."""
     with tempfile.TemporaryDirectory() as tmp:
         auth = os.path.join(tmp, "auth.json")
         with open(auth, "w", encoding="utf-8") as fh:
@@ -170,9 +181,13 @@ def test_cli_done_when():
               env.get("reason_code") != "delivery-profile-unknown",
               "%s (exit %s, stderr %s)" % (env.get("reason_code"), run.returncode,
                                            run.stderr.strip()[:200]))
-        check("CLI: preflight passes end to end",
-              env.get("outcome") == "ok" and env.get("reason_code") == "preflight-pass",
+        check("CLI: dependency preflight passes end to end",
+              env.get("outcome") == "ok" and
+              env.get("reason_code") == "preflight-pass-dependencies",
               "%s/%s" % (env.get("outcome"), env.get("reason_code")))
+        check("CLI: unbound auth/card JSON does not grant production readiness",
+              (env.get("data") or {}).get("checks", {}).get("readiness") == "dependencies-only",
+              repr(env.get("data")))
         # and the F15 refusal still fires when the receipt is absent
         run2 = subprocess.run(
             [sys.executable, FACTORY, "preflight",
@@ -288,7 +303,7 @@ TESTS = [
     test_weekly_brief_fields_pass_through,
     test_explicit_target_length_wins,
     test_card_defaults_from_style_defaults,
-    test_ten_delivery_profiles,
+    test_twelve_delivery_profiles,
     test_default_profile_known,
     test_cli_done_when,
     test_thin_brief_asks_no_money_question,

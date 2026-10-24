@@ -17,7 +17,7 @@ Run-dir files (all under ``$RUN``): ``storyboard/shot-list.json``,
 ``control/card-receipt.json`` (key ``storyboard_approval``: true/false, written
 by ``record_card_answer`` when the intake card's recap is confirmed; no receipt
 file at all means an old run, treated as Yes, the card's recommended pick). Writes ``storyboard/approval.json``
-(state) and ``storyboard/gate.json`` ({shots, review}) for the video request's
+(whole-package presentation/decision and revision evidence) and ``storyboard/gate.json`` ({shots, review}) for the video request's
 ``storyboard`` block. Stdlib only.
 """
 from __future__ import annotations
@@ -68,9 +68,40 @@ def _state(run_dir):
     return _read(_p(run_dir, "storyboard", "approval.json"), {}) or {}
 
 
+def _same_revisions(entries, saved):
+    return (isinstance(saved, dict) and bool(entries) and set(entries) == set(saved)
+            and all(isinstance(saved[sid], dict)
+                    and saved[sid].get("revision") == rec["revision"]
+                    and saved[sid].get("still_sha256") == rec["still_sha256"]
+                    for sid, rec in entries.items()))
+
+
+def _unverified(reason="STORYBOARD_APPROVAL_UNVERIFIED"):
+    return {"action": "waiting", "message_sent": False, "reason_code": reason,
+            "next_action": "Preserve this record; present the current whole storyboard package for an explicit decision."}
+
+
 def gate_open(run_dir):
-    """True once the client approved (or chose No and the stills passed)."""
-    return _state(run_dir).get("state") == "approved"
+    """A whole-package decision remains valid only for its recorded revisions."""
+    st = _state(run_dir)
+    if st.get("state") != "approved":
+        return False
+    try:
+        shots, contracts, stills = _load(run_dir)
+        entries = AP.approval_entries(shots, contracts, stills)
+        saved = st.get("shots")
+        if not _same_revisions(entries, saved):
+            return False
+        if any(rec.get("status") != "approved" for rec in saved.values()):
+            return False
+        if st.get("choice") == "yes":
+            decision = st.get("decision") or {}
+            return (bool(st.get("sent_at")) and decision.get("scope") == "whole-package"
+                    and bool(decision.get("at"))
+                    and bool(re.fullmatch(r"go[.!]?", decision.get("reply_text") or "", re.I)))
+        return st.get("choice") == "no"
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False
 
 
 def wants_approval(run_dir):
@@ -161,7 +192,14 @@ def _load(run_dir):
     return shots or [], contracts, stills
 
 
-def _approve(run_dir, shots, contracts, stills, choice):
+def _approve(run_dir, shots, contracts, stills, choice, reply=None):
+    st = _state(run_dir)
+    entries = AP.approval_entries(shots, contracts, stills)
+    if choice == "yes":
+        if not st.get("sent_at") or not _same_revisions(entries, st.get("shots")):
+            return _unverified("STORYBOARD_PRESENTATION_CHANGED")
+        if not re.fullmatch(r"go[.!]?", reply or "", re.I):
+            return _unverified()
     approved = AP.approve(shots, contracts, stills)
     review = None
     try:
@@ -170,8 +208,14 @@ def _approve(run_dir, shots, contracts, stills, choice):
     except Exception:   # noqa: BLE001 - review is its own stage; gate.json just omits it
         pass
     _write(_p(run_dir, "storyboard", "gate.json"), {"shots": approved, "review": review})
+    now = time.time()
+    for rec in entries.values():
+        rec.update(status="approved", at=now)
+    decision = ({"scope": "whole-package", "reply_text": reply, "at": now}
+                if choice == "yes" else None)
     _write(_p(run_dir, "storyboard", "approval.json"),
-           {"state": "approved", "choice": choice, "at": time.time()})
+           {"state": "approved", "choice": choice, "at": now,
+            "sent_at": st.get("sent_at"), "shots": entries, "decision": decision})
     _record(run_dir, "READY")
     return {"action": "approved", "message_sent": False}
 
@@ -195,6 +239,8 @@ def run(run_dir, send, reply=None, make_still=None):
     run_dir = os.path.abspath(run_dir)
     st = _state(run_dir)
     if st.get("state") == "approved":
+        if not gate_open(run_dir):
+            return _unverified()
         return {"action": "approved", "message_sent": False}
     shots, contracts, stills = _load(run_dir)
     if not wants_approval(run_dir):
@@ -202,9 +248,10 @@ def run(run_dir, send, reply=None, make_still=None):
     sb_state = lambda **kw: _write(_p(run_dir, "storyboard", "approval.json"),   # noqa: E731
                                    dict(st, state="pending", choice="yes", **kw))
     if not st:   # first time: show everything once, then wait
+        presented = AP.approval_entries(shots, contracts, stills)
         pkg = AP.build(shots, contracts, stills)
         send(pkg["message"], [(e["n"], e["still"]) for e in pkg["items"]])
-        sb_state(sent_at=time.time())
+        sb_state(sent_at=time.time(), shots=presented)
         _record(run_dir, "WAITING_APPROVAL")
         return {"action": "waiting", "message_sent": True, "images": len(pkg["images"])}
     text = (reply or "").strip()
@@ -212,7 +259,10 @@ def run(run_dir, send, reply=None, make_still=None):
     if not text and not redo:
         return {"action": "waiting", "message_sent": False}   # resume: never re-send
     if re.fullmatch(r"go[.!]?", text, re.I):
-        return _approve(run_dir, shots, contracts, stills, "yes")
+        return _approve(run_dir, shots, contracts, stills, "yes", reply=text)
+    if not st.get("sent_at") or not _same_revisions(
+            AP.approval_entries(shots, contracts, stills), st.get("shots")):
+        return _unverified("STORYBOARD_PRESENTATION_CHANGED")
     if redo:                       # finish a pending redo first
         sid, change = redo["shot_id"], redo["change"]
     else:
@@ -233,7 +283,8 @@ def run(run_dir, send, reply=None, make_still=None):
         return {"action": "regenerate_still", "shot_id": sid, "message_sent": False}
     _write(_p(run_dir, "storyboard", "contracts.json"), contracts)
     _write(_p(run_dir, "storyboard", "stills.json"), stills)
+    presented = AP.approval_entries(shots, contracts, stills)
     send(msg, [(n, stills[sid]) for n, s in enumerate(sorted(
         shots, key=lambda s: (s["song_start"], s["song_end"])), 1) if s["shot_id"] == sid])
-    sb_state(redo=None)
+    sb_state(redo=None, shots=presented)
     return {"action": "revised", "shot_id": sid, "message_sent": True}

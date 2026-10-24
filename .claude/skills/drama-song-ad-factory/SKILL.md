@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: Build a complete drama-song ad - a sung direct-response story with music, storyboard, generated clips, assembly and delivery - through the shared Python control layer (intake, preflight, spend ledger, state store, QC gates). This is the Claude-Nine / Claude Code distribution of the same canonical BlackCEO methodology the OpenClaw skill ships: one skill folder, one control CLI, two runtime adapters, no second config root. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus) or landing pages (use blackceo-signature-page).
-version: v2.9.101
+version: v2.9.102
 ---
 
 # Drama Song Ad Factory
@@ -1360,3 +1360,12 @@ one). Full contract: `references/ready-post-kit.md`; proof:
 - Book bullets and `QC.md` book line - FU-U11's `BOOK_BLANK_PAGES`,
   `BOOK_PLAN_NOT_APPROVED` and the Book shots block are described as an open
   branch: refresh when FU-U11 lands.
+
+## Governed production admission
+
+Use the run-bound preflight and stage entrypoints described in
+[the intake session contract](references/intake-session-contract.md#governed-production-admission).
+Production requires confirmed answer provenance, the canonical predecessor
+states and current artifact decisions. Dependency diagnostics, creative drafts,
+intake preferences and caller-written authorization files do not grant paid
+production admission. Whole-script and storyboard approval remain package gates.
