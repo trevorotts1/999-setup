@@ -130,6 +130,7 @@ import { CouncilJobs, type JobRecord } from '../persistence/jobs.js';
 import type { CouncilRepositories } from '../persistence/repositories.js';
 import type { CouncilDatabase } from '../persistence/sqlite.js';
 import type { StoredSession } from '../cli/host-ports.js';
+import { NOT_JSON_ISSUE } from '../cli/card-contract.js';
 import { RuntimeCapacity, type CapacityToken } from './capacity.js';
 import {
   JobRunnerError,
@@ -248,11 +249,19 @@ export interface OperationDispatchContext {
   attempt_kind: DispatchAttemptKind;
   /** Validation issues from the previous output, for output_repair dispatches. */
   repair_issues: string[];
+  /**
+   * Aborted when the runner gives up on this dispatch (provider deadline),
+   * so the executor can kill its harness child instead of leaving it to
+   * overlap the next seat. Executors pass it to transport.generate.
+   */
+  signal?: AbortSignal;
 }
 
 export interface OperationDispatchResult {
   /** The card author payload, WITHOUT the host stamp (the runner stamps). */
   author: Record<string, unknown>;
+  /** Why the reply did not parse into an author payload (author is then {}). */
+  parse_error?: string;
   provider_request_id: string | null;
   /** The actual charge for this dispatch, in minor units. */
   actual_minor: number;
@@ -442,6 +451,12 @@ export interface DurableJobRunnerDeps {
   heartbeatMs?: number;
   /** Route-specific deadline when known; default 600s (Section 15.8). */
   providerDeadlineMs?: number;
+  /**
+   * Called when a paid response is discarded because the settle was
+   * fenced (a newer lease epoch, or a revoked grant). Never swallowed:
+   * the host logs and journals it. A throw here is ignored.
+   */
+  onFencedSettle?: (error: JobRunnerError, context: { session_id: string }) => void;
 }
 
 export class DurableJobRunner {
@@ -459,6 +474,7 @@ export class DurableJobRunner {
   private readonly leaseTtlMs: number;
   private readonly heartbeatMs: number;
   private readonly providerDeadlineMs: number;
+  private readonly onFencedSettle: DurableJobRunnerDeps['onFencedSettle'];
   private readonly capacityTokens = new Map<string, CapacityToken>();
 
   constructor(deps: DurableJobRunnerDeps) {
@@ -473,6 +489,7 @@ export class DurableJobRunner {
     this.executor = deps.executor;
     this.timers = deps.timers ?? systemTimers;
     this.capacity = deps.capacity ?? null;
+    this.onFencedSettle = deps.onFencedSettle;
     this.leaseTtlMs = deps.leaseTtlMs ?? OPERATION_LEASE_TTL_MS;
     this.heartbeatMs = deps.heartbeatMs ?? OPERATION_LEASE_HEARTBEAT_MS;
     this.providerDeadlineMs = deps.providerDeadlineMs ?? DEFAULT_PROVIDER_DEADLINE_MS;
@@ -628,6 +645,32 @@ export class DurableJobRunner {
     });
   }
 
+  /** Failed operation jobs of a session, oldest first: the seat and the code it ended with. */
+  listSessionFailures(
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+  ): Array<{ seat_id: string | null; phase_job_key: string; outcome_code: string | null }> {
+    const rows = this.db.read((handle) =>
+      handle
+        .prepare(
+          `SELECT payload_json, terminal_reason
+             FROM council_jobs
+            WHERE tenant_id = ? AND company_id = ? AND session_id = ?
+              AND kind = 'operation' AND state IN ('failed', 'dead_letter')
+            ORDER BY created_at ASC, id ASC`,
+        )
+        .all(envelope.tenant_id, envelope.company_id, sessionId),
+    ) as Array<{ payload_json: string; terminal_reason: string | null }>;
+    return rows.map((row) => {
+      const payload = JSON.parse(row.payload_json) as StoredJobPayload;
+      return {
+        seat_id: payload.seat_id,
+        phase_job_key: payload.phase_job_key,
+        outcome_code: row.terminal_reason,
+      };
+    });
+  }
+
   // -------------------------------------------------------------- claim
 
   /**
@@ -648,6 +691,17 @@ export class DurableJobRunner {
     let session = this.sessionOrThrow(envelope, sessionId);
     if (!RUNNABLE_STATES.has(session.state.state)) return null;
     const candidates = this.listSessionJobs(envelope, sessionId);
+    // One live lease per session: every claim raises the session fencing
+    // generation, so claiming while an operation is in flight would fence
+    // that operation's settle and lose its paid response. Wait for the
+    // live lease to end or expire (T051).
+    const now = this.nowMs();
+    const live = candidates.some(
+      (c) =>
+        (c.state === 'leased' || c.state === 'running') &&
+        (c.lease_expires_at === null || Date.parse(c.lease_expires_at) > now),
+    );
+    if (live) return null;
     for (const candidate of candidates) {
       if (candidate.state === 'leased' || candidate.state === 'running') {
         if (
@@ -1070,6 +1124,7 @@ export class DurableJobRunner {
       }
     });
     let result: OperationDispatchResult;
+    const giveUp = new AbortController();
     try {
       const dispatchPromise = this.executor.dispatch({
         session,
@@ -1077,6 +1132,7 @@ export class DurableJobRunner {
         dispatch_operation_id: dispatchOperationId,
         attempt_kind: attemptKind,
         repair_issues: repairIssues,
+        signal: giveUp.signal,
       });
       dispatchPromise.catch(() => {
         // A deadline overrun resolves the race first; the late
@@ -1089,14 +1145,22 @@ export class DurableJobRunner {
         this.timers.delay(this.providerDeadlineMs).then(() => ({ tag: 'timeout' as const })),
       ]);
       if (raced.tag === 'timeout') {
-        return this.settleUnknown(envelope, claim, session, dispatchOperationId, dispatchesSoFar);
+        giveUp.abort();
+        return this.settleUnknown(
+          envelope,
+          claim,
+          session,
+          dispatchOperationId,
+          dispatchesSoFar,
+          `The provider call did not return within ${Math.round(this.providerDeadlineMs / 1000)} s; whether the provider completed is unknown, so it is not replayed.`,
+        );
       }
       result = raced.value;
     } catch (error) {
       if (isSimulatedCrash(error)) throw error;
       if (error instanceof TransportDispatchError) {
         if (error.unknownCompletion) {
-          return this.settleUnknown(envelope, claim, session, dispatchOperationId, dispatchesSoFar);
+          return this.settleUnknown(envelope, claim, session, dispatchOperationId, dispatchesSoFar, error.message);
         }
         if (error.retryable) {
           // The provider did not accept this attempt: release its
@@ -1109,6 +1173,7 @@ export class DurableJobRunner {
             reason: 'transport_not_accepted',
           });
           this.updateAttempt(envelope, dispatchOperationId, 'failed', 'transport_not_accepted', { retry_safe: true });
+          this.journalAttemptFailure(envelope, claim, dispatchOperationId, 'transport_not_accepted', error.message);
           if (isInitial && dispatchKind === 'provider_request') {
             return this.admitAndDispatchFollowOn(
               envelope,
@@ -1140,6 +1205,7 @@ export class DurableJobRunner {
         this.updateAttempt(envelope, dispatchOperationId, 'failed', 'transport_rejected', {
           actual_minor: error.actual_minor,
         });
+        this.journalAttemptFailure(envelope, claim, dispatchOperationId, 'transport_rejected', error.message);
         this.saveCheckpoint(envelope, claim, session, 'failed', null, {
           input_tokens: null,
           output_tokens: null,
@@ -1156,7 +1222,11 @@ export class DurableJobRunner {
     // A result arrived. Stamp it as the host and validate canonically
     // (plus the executor's deeper validation when provided).
     const card = this.stampCard(envelope, claim, session, result);
-    const issues = this.validateStamped(envelope, claim, session, dispatchOperationId, attemptKind, card);
+    // An unparseable reply is repaired as "not valid JSON", never as the
+    // schema errors the empty payload would produce.
+    const issues = result.parse_error !== undefined
+      ? [`${NOT_JSON_ISSUE}${result.parse_error}`]
+      : this.validateStamped(envelope, claim, session, dispatchOperationId, attemptKind, card);
     if (issues.length > 0) {
       // The request completed and is charged; settle it, then enter
       // the bounded repair path (initial attempt only).
@@ -1173,6 +1243,7 @@ export class DurableJobRunner {
         input_tokens: result.input_tokens,
         output_tokens: result.output_tokens,
       });
+      this.journalAttemptFailure(envelope, claim, dispatchOperationId, 'output_validation_failed', issues.join('; '));
       if (isInitial && dispatchKind === 'provider_request') {
         return this.admitAndDispatchFollowOn(
           envelope,
@@ -1193,6 +1264,43 @@ export class DurableJobRunner {
       return { status: 'failed', operation_id: claim.operation_id, reason: 'output_validation_failed', card: null };
     }
     return this.commitResult(envelope, claim, session, dispatchOperationId, card, result, dispatchesSoFar);
+  }
+
+  /**
+   * Keep why an attempt failed. The attempts table stores only the
+   * outcome code, so the message (at most 300 characters, key-shaped
+   * text redacted) is journaled beside it; the service reads it back to
+   * explain a BLOCKED session. Never throws: it must not fail a dispatch.
+   */
+  private journalAttemptFailure(
+    envelope: AuthorizationEnvelope,
+    claim: JobClaim,
+    operationId: string,
+    outcomeCode: string,
+    message: string,
+  ): void {
+    try {
+      const safe = message.replace(SECRET_SHAPE, '[redacted]').slice(0, 300);
+      this.db.write((handle) =>
+        this.repositories.journal.append(handle, envelope, claim.job.session_id, {
+          event_id: this.ids.newId(),
+          type: 'operation_completed',
+          from_state: null,
+          to_state: null,
+          actor_subject: envelope.actor_subject,
+          payload: {
+            kind: 'attempt_failed',
+            operation_id: operationId,
+            seat_id: claim.seat_id,
+            outcome_code: outcomeCode,
+            message: safe,
+          },
+          created_at: this.nowIso(),
+        }),
+      );
+    } catch (error) {
+      if (isSimulatedCrash(error)) throw error;
+    }
   }
 
   /** Admit a retry or repair follow-on operation and dispatch it. */
@@ -1258,6 +1366,7 @@ export class DurableJobRunner {
     session: StoredSession,
     dispatchOperationId: string,
     dispatchesSoFar: number,
+    message: string,
   ): OperationOutcome {
     try {
       this.admission.recordConsumption(envelope, {
@@ -1281,8 +1390,10 @@ export class DurableJobRunner {
       ) {
         throw error;
       }
+      this.keepFencedReservationCounted(envelope, claim, dispatchOperationId);
     }
     this.updateAttempt(envelope, dispatchOperationId, 'provider_completion_unknown', 'completion_unknown');
+    this.journalAttemptFailure(envelope, claim, dispatchOperationId, 'provider_completion_unknown', message);
     this.saveCheckpoint(envelope, claim, session, 'provider_completion_unknown', null, {
       input_tokens: null,
       output_tokens: null,
@@ -1387,6 +1498,35 @@ export class DurableJobRunner {
   }
 
   /**
+   * A fenced settle cannot finalize money, but the provider call was
+   * paid for: mark the still-reserved hold 'unknown' under the session's
+   * current epoch so it stays counted at its estimate. Left alone it
+   * would lapse to 'expired' and free its allowance, dropping a paid
+   * call from the ledger.
+   */
+  private keepFencedReservationCounted(
+    envelope: AuthorizationEnvelope,
+    claim: JobClaim,
+    operationId: string,
+  ): void {
+    const sessionId = claim.job.session_id;
+    const reservation = this.budget.getReservation(envelope, sessionId, operationId);
+    const fresh = this.repositories.getSession(envelope, sessionId);
+    if (!reservation || reservation.state !== 'reserved' || !fresh) return;
+    try {
+      this.admission.recordConsumption(envelope, {
+        grant_id: claim.descriptor.grant_id,
+        session_id: sessionId,
+        operation_id: operationId,
+        lease_epoch: fresh.state.lease_epoch,
+        outcome: 'unknown',
+      });
+    } catch {
+      // the epoch moved again; the hold remains reserved for the current owner's recovery
+    }
+  }
+
+  /**
    * Discard a late or authority-less result: no card is committed,
    * nothing downstream can build a verdict on it, and the job ends.
    * The consumption is still recorded whenever this worker's fencing
@@ -1424,6 +1564,7 @@ export class DurableJobRunner {
       ) {
         throw error;
       }
+      this.keepFencedReservationCounted(envelope, claim, dispatchOperationId);
     }
     this.updateAttempt(envelope, dispatchOperationId, 'cancelled', reason, {
       actual_minor: result.actual_minor,
@@ -1453,6 +1594,22 @@ export class DurableJobRunner {
       cancelled ? 'cancelled' : 'failed',
       reason,
     );
+    // A discarded paid response is surfaced, never swallowed. A user
+    // cancel is expected and is not an error.
+    if (!cancelled) {
+      try {
+        this.onFencedSettle?.(
+          new JobRunnerError(
+            'OPERATION_LEASE_FENCED',
+            `The paid response for ${dispatchOperationId} was discarded (${reason}); its reservation stays counted.`,
+            { detail: { session_id: claim.job.session_id, operation_id: dispatchOperationId, reason } },
+          ),
+          { session_id: claim.job.session_id },
+        );
+      } catch {
+        // reporting must never break settling
+      }
+    }
     return {
       status: 'fenced',
       operation_id: claim.operation_id,
@@ -2165,6 +2322,8 @@ export class DurableJobRunner {
 }
 
 // ------------------------------------------------------------- helpers
+
+const SECRET_SHAPE = /sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S+/g;
 
 function isJobFence(error: unknown): boolean {
   return error instanceof JobRunnerError && error.code === 'JOB_LEASE_FENCED';

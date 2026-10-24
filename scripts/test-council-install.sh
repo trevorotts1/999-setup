@@ -133,9 +133,9 @@ PREFIX1="$DATA1/runtime/$AGG"
 [ -f "$PREFIX1/runtime/dist/migrations/0001-council-schema.sql" ] \
   && pass "built prefix carries the persistence schema asset (CWE-039 F-1 layout: dist/migrations)" \
   || fail "prefix dist/migrations/0001-council-schema.sql missing"
-[ ! -e "$VENDORED/runtime/node_modules" ] && [ ! -e "$VENDORED/runtime/dist" ] \
-  && pass "no node modules or dist in the synchronized skill folder" \
-  || fail "build content leaked into the skill folder"
+[ ! -e "$VENDORED/runtime/node_modules" ] && [ -f "$VENDORED/runtime/dist/blackceo-council.mjs" ] \
+  && pass "skill folder ships the built entry and no node modules" \
+  || fail "skill folder missing runtime/dist/blackceo-council.mjs or carrying node_modules"
 WRAP="$PREFIX1/runtime/dist/claude-nine-host-wrapper.mjs"
 [ -f "$WRAP" ] && pass "generated host wrapper emitted into the prefix dist" \
   || fail "generated host wrapper missing"
@@ -156,10 +156,14 @@ COUNCIL() { HOME="$H1" "$H1/.local/bin/blackceo-council" "$@"; }
 COUNCIL doctor > "$BASE/cli-doctor.log" 2>&1; RC=$?
 [ "$RC" = 0 ] && pass "blackceo-council doctor exits 0" || { fail "doctor exited $RC"; tail -3 "$BASE/cli-doctor.log"; }
 USAGE_OUT="$(COUNCIL 2>&1)"
+# The entry contract, not the legacy grant surface: v1.0.51 convening is
+# the approval (no grant to resolve, no approval step), so `start`,
+# `resume` and the `authorization` workflow are gone by design and the
+# inventory below is what the shipped CLI must expose.
 for sig in 'doctor' 'models' 'probe' 'create --spec' 'create --sample' 'sample run' \
-  'start SESSION' 'resume SESSION' 'status SESSION' 'pause SESSION' 'cancel SESSION' \
+  'status SESSION' 'pause SESSION' 'cancel SESSION' \
   'verdict SESSION' 'replay SESSION' 'export SESSION' \
-  'authorization preview|approve|status|revoke'; do
+  'routes' 'convene'; do
   case "$USAGE_OUT" in *"$sig"*) pass "CLI inventory includes: $sig" ;;
     *) fail "CLI inventory missing: $sig" ;; esac
 done

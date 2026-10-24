@@ -77,8 +77,14 @@ function verifySource(dir) {
   for (const rel of walk(dir)) {
     hashes.set(rel, createHash("sha256").update(readFileSync(join(dir, rel))).digest("hex"));
   }
+  // The canonical hash method excludes manifest.json, any .skill archive
+  // and the generated runtime/dist + runtime/node_modules trees; the built
+  // entry point rides with the tree but is bound through runtime_entry
+  // below, never hashed into the aggregate.
+  const isGeneratedRuntime = (p) => p === "runtime/dist" || p.startsWith("runtime/dist/")
+    || p === "runtime/node_modules" || p.startsWith("runtime/node_modules/");
   const entries = [...hashes.entries()]
-    .filter(([path]) => path !== "manifest.json" && !path.endsWith(".skill"))
+    .filter(([path]) => path !== "manifest.json" && !path.endsWith(".skill") && !isGeneratedRuntime(path))
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([path, hash]) => `${hash}  ${path}`);
   const aggregate = createHash("sha256")
@@ -86,6 +92,17 @@ function verifySource(dir) {
     .digest("hex");
   if (aggregate !== manifest.aggregate_sha256 || entries.length !== manifest.file_count) {
     fail(`portable source does not recompute: computed ${aggregate} over ${entries.length}, manifest says ${manifest.aggregate_sha256} over ${manifest.file_count}. A hand-edited copy is not a canonical source`);
+  }
+  const runtimeEntry = manifest.runtime_entry ?? null;
+  const distFiles = [...hashes.keys()].filter((rel) => rel.startsWith("runtime/dist/"));
+  if (runtimeEntry) {
+    if (!hashes.has(runtimeEntry.path)) fail(`recorded runtime entry is missing from the tree: ${runtimeEntry.path}`);
+    const entryBytes = readFileSync(join(dir, runtimeEntry.path));
+    const entrySha = createHash("sha256").update(entryBytes).digest("hex");
+    if (entrySha !== runtimeEntry.sha256) fail(`runtime entry hash drift: ${runtimeEntry.path}`);
+    if (entryBytes.length !== runtimeEntry.bytes) fail(`runtime entry byte-count drift: ${runtimeEntry.path}`);
+  } else if (distFiles.length > 0) {
+    fail(`tree carries an unrecorded built runtime (${distFiles[0]}): the manifest records no runtime_entry`);
   }
   let reconciliation = null;
   const reconciliationPath = join(dir, "DISTRIBUTION-RECONCILIATION.json");

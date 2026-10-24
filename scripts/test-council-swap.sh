@@ -65,7 +65,16 @@ SKILL1="$SKILL1/bundle"
 AGG1="$(read_agg "$SKILL1")"
 [ -n "$AGG1" ] && [ "$AGG1" != "$AGG2" ] && pass "previous bundle aggregate differs: $AGG1" \
   || fail "previous bundle aggregate did not differ (agg1=$AGG1 agg2=$AGG2)"
-node "$SKILL1/scripts/doctor.mjs" --root "$SKILL1" > "$BASE/skill1-doctor.log" 2>&1
+# The extracted previous bundle is a shipped EXTRACTED DISTRIBUTION (no
+# archive): run the package doctor in the mode its own shape declares, the
+# same derivation the installer uses (council-doctor-mode.mjs). Running it
+# mode-blind assumed a source package and broke once shipped bundles
+# became extracted distributions.
+if [ -f "$SKILL1/council-of-wise-elders.skill" ]; then
+  node "$SKILL1/scripts/doctor.mjs" --root "$SKILL1" > "$BASE/skill1-doctor.log" 2>&1
+else
+  node "$SKILL1/scripts/doctor.mjs" --root "$SKILL1" --distribution > "$BASE/skill1-doctor.log" 2>&1
+fi
 [ $? -eq 0 ] && pass "previous bundle passes the package doctor" || fail "previous bundle doctor failed"
 
 H="$BASE/home"; mkdir -p "$H"

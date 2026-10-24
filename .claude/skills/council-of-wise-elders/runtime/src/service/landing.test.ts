@@ -14,9 +14,9 @@
  *   packaged chamber entry page exists (no loopback host in the header);
  * - `GET /chamber/` serves the chamber HTML, which never carries the
  *   diagnostics banner;
- * - `GET /status` serves the previous diagnostics page unchanged, with
- *   UI_NOT_BUNDLED, the identity table and no external asset or foreign
- *   origin;
+ * - `GET /status` serves the diagnostics page with the identity table,
+ *   a link to the packaged Council room (no stale UI_NOT_BUNDLED notice)
+ *   and no external asset or foreign origin;
  * - without the packaged assets `GET /` keeps that honest status page and
  *   `/chamber/` falls back to the unchanged catch-all 404;
  * - the catch-all 404 and every existing route keep their prior status
@@ -31,7 +31,8 @@ import { renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { CouncilFrontDoor } from './front-door.js';
+import type { CouncilEventStreamAdapter, CouncilSessionReader } from './events.js';
+import { CouncilFrontDoor, type FrontDoorOptions } from './front-door.js';
 import { buildServiceIdentity } from './identity.js';
 import type { ReadinessObservation } from './readiness.js';
 import type { ServiceIdentity } from './types.js';
@@ -56,8 +57,10 @@ const nowUtc = (): string => FIXED_NOW;
 
 async function withService<T>(
   body: (service: CouncilFrontDoor, origin: string) => Promise<T>,
+  extra: Partial<FrontDoorOptions> = {},
 ): Promise<T> {
   const service = new CouncilFrontDoor({
+    ...extra,
     identity: identity(),
     ports: [0],
     readiness: {
@@ -115,7 +118,7 @@ test('GET /chamber/ serves the chamber HTML without the diagnostics banner', asy
 
 // ----------------------------------------------------------- status page
 
-test('GET /status serves the unchanged diagnostics page', async () => {
+test('GET /status serves the diagnostics page', async () => {
   await withService(async (service, origin) => {
     const response = await fetch(`${origin}/status`);
     const body = await response.text();
@@ -140,8 +143,9 @@ test('GET /status serves the unchanged diagnostics page', async () => {
     assert.ok(body.includes(FIXED_NOW), 'readiness observation time is rendered');
 
     // Honest about what is and is not packaged.
-    assert.ok(body.includes('UI_NOT_BUNDLED'), 'UI_NOT_BUNDLED is named');
-    assert.ok(body.includes('WER-021'), 'WER-021 full packaging is named');
+    assert.equal(body.includes('<strong>UI_NOT_BUNDLED</strong>'), false, 'the chamber is packaged, so no stale notice');
+    assert.equal(body.includes('is not packaged'), false, 'the page never says the chamber is missing');
+    assert.ok(body.includes(`href="${origin}/chamber/"`), 'the page points at the Council room');
     assert.ok(
       body.includes('<strong>not</strong> the full Council chamber UI'),
       'the page says it is not the full chamber UI',
@@ -173,6 +177,41 @@ test('GET /status serves the unchanged diagnostics page', async () => {
   });
 });
 
+// ------------------------------------------- notices follow the bindings
+
+const boundEvents: CouncilEventStreamAdapter = { open: () => ({ replay: () => [] }) };
+const boundReader: CouncilSessionReader = { read: () => null };
+
+test('GET /status drops the not-bound notice when the adapters are bound', async () => {
+  await withService(
+    async (_service, origin) => {
+      const body = await (await fetch(`${origin}/status`)).text();
+      assert.equal(
+        body.includes('EVENT_STREAM_ADAPTER_NOT_BOUND'),
+        false,
+        'a bound event stream must not be reported as unbound',
+      );
+      assert.equal(body.includes('adapter not bound'), false, 'no unbound route wording');
+      assert.equal(body.includes('not_bundled'), false, 'no unbound session wording');
+      assert.ok(body.includes('durable event stream'), 'the bound event route is described');
+      assert.ok(body.includes('durable session record'), 'the bound session route is described');
+      assert.equal(body.includes('<strong>UI_NOT_BUNDLED</strong>'), false, 'the packaged chamber is not reported missing');
+    },
+    { eventsAdapter: boundEvents, sessionReader: boundReader },
+  );
+});
+
+test('GET /status keeps the not-bound notice when only one adapter is bound', async () => {
+  await withService(
+    async (_service, origin) => {
+      const body = await (await fetch(`${origin}/status`)).text();
+      assert.equal(body.includes('EVENT_STREAM_ADAPTER_NOT_BOUND'), true);
+      assert.ok(body.includes('durable session record'), 'the bound reader is still described');
+    },
+    { sessionReader: boundReader },
+  );
+});
+
 // ------------------------------------------------ without packaged assets
 
 test('without packaged chamber assets GET / keeps the honest status page', async () => {
@@ -185,7 +224,7 @@ test('without packaged chamber assets GET / keeps the honest status page', async
       const body = await response.text();
       assert.equal(response.status, 200, 'no assets: the root serves the status page');
       assert.match(body, /Council of Wise Elders — service landing/);
-      assert.ok(body.includes('UI_NOT_BUNDLED'), 'the honest blocker is still named');
+      assert.ok(body.includes('<strong>UI_NOT_BUNDLED</strong>'), 'the honest blocker is still named');
 
       const chamber = await fetch(`${origin}/chamber/`, { redirect: 'manual' });
       assert.equal(chamber.status, 404, 'no assets: the chamber route falls through');

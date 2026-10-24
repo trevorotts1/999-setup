@@ -1,5 +1,250 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.51: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
+
+In plain English: every seat now has its own painted emblem - the council cover gets one too - so the rendered artifact page (W74-B's `render-counsel-artifact.mjs`, which defaults its asset source to `assets/seats/cover.png`) has the art it points at, in-repo.
+
+- New `assets/seats/` with ten PNG files: nine seat emblems (one per elder seat) plus `cover.png`, all generated as painted heraldic medallion emblems (navy and antique gold, ornate filigree border, symbolic objects only - no human faces, no likenesses of real people, no text in any image).
+- Branch merges upstream main (the W73 BUILD entry lands as v1.0.45 below this one), the W74-C/B/A/D entries renumber to v1.0.47 through v1.0.50, and this entry is the new top at v1.0.51.
+- Repository markers (SKILL.md frontmatter version, skill-version.txt, version file) agree at 1.0.51; manifest and archive regenerated with `scripts/build-bundles.mjs`.
+
+## v1.0.50: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact - on both doors (W74-D)
+
+In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) - the client only asks for the council, whichever side they are on.
+
+- One wired flow (`runtime/src/flow/convene-flow.ts`) in the exact order the skill prescribes: brief-builder FIRST (permitted context through the door's adapter), deliberation, verdict, then session-close manages the sitting and finalize calls `renderArtifact(sessionRecord)` and returns the delivery (reply link + chamber).
+- The render seam lands (`runtime/src/reports/artifact-renderer.ts`): the entry point the close protocol resolves by name, plus `assembleRenderRecord`, the projection from the stored session and the runtime rows (client name, model, question count, seat takes, verdict) into the renderer's fixed session record. Nothing is invented at the seam; the renderer's own validation still runs.
+- Both doors wired and documented: the OpenClaw door uses the OpenClaw adapter (memory.md, agents.md, soul.md, user.md), the claude-nine / Claude Code (999) door its adapter (CLAUDE.md, AGENTS.md, memory/MEMORY.md). Harness markers select the door; the brief shape and the flow are identical either way. SKILL.md, INSTRUCTIONS.md and EXAMPLES.md now say exactly how a client triggers each door and carry the close question and the artifact delivery.
+- New assert-style test `runtime/tests/convene-flow.test.ts` (no framework) proving the order on both doors - the deliberation leg receives the assembled brief, finalize really renders through the W74-B renderer, and the delivery carries the artifact link beside the chamber - plus the sitting cases (soft-close at 5m, close phrase finalizes, 10-minute auto-finalize).
+- Manifest and archive regenerated with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
+
+## v1.0.49: Council: a sitting now closes itself - one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
+
+In plain English: a council sitting is one session and every sitting gets closed. Five minutes after the client's last interaction the council asks exactly once "Is that all, or are we still working?"; an explicit close phrase ("that's all", "we're done", "finalize", ...) finalizes immediately; no answer within ten minutes of the question finalizes automatically; and nothing hangs open.
+
+- Session-close protocol in the runtime (`runtime/src/protocol/session-close.ts`): a 5-minute idle soft-close sends ONE question per quiet spell, an explicit close phrase finalizes immediately, and 10 minutes of silence after the question auto-finalizes. A client answer is a new interaction that restarts the quiet clock - never an auto-finalize over an answer.
+- Finalize marks the session closed in the store, hands the session record to the artifact renderer's `renderArtifact(sessionRecord)` (W74-B contract: returns artifact path + link), and the reply carries the link. Idempotent: a closed sitting renders once and never re-marks.
+- Close state derives from the store's own timestamps - the session's last journal event and the durable soft-close/close markers in the projection outbox - never from in-memory timers. A service restart continues the same quiet spell, loses nothing, and never sends a second soft-close question (proven over the real store in the test).
+- New assert-style test `runtime/tests/session-close.test.ts` (no framework) proving the four cases: idle fires the soft-close at 5m, an explicit close phrase finalizes immediately, 10 minutes of silence after the question auto-finalizes, and restart-safe derivation.
+- Skill instructions: "Closing a session" added to SKILL.md and INSTRUCTIONS.md. "Resolve existing sessions first, never create a duplicate" and one active session per client stay exactly as they were.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
+
+## v1.0.48: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
+
+In plain English: after a council sitting, the result now renders as one clean page: the decision and the overall consensus at the top, the nine elders with their seat emblems and their takes below, the action steps numbered, and a footer with the sitting facts. The page is print-ready and can produce a real PDF when the box has headless Chrome or cupsfilter; otherwise the client prints from the browser. The look is identical for every client and every sitting.
+
+- renderArtifact(sessionRecord) is a pure function of the session record (assembled from the council.db cards and verdicts): one fixed deep-green and gold template, no per-client theming, writing council-data/artifacts/<session-id>/index.html plus copied assets referenced by relative paths only, and returning { path, link, pdf }.
+- Five sections in fixed order: header (client name, date, the decision, slim cover band), overall consensus in large type, nine elder cards (seat emblem, name, lane, take), numbered action steps from the verdict record, footer (date, model used, question count in the sitting).
+- Print-ready CSS always in the template (page-break rules per elder card). PDF is best effort only: headless Chrome or macOS cupsfilter when present, degrading gracefully to print-from-browser, never blocking and never faked.
+- Artifacts are per-session folders bounded by the session count; the rotation note lives in the code.
+- New runnable check scripts/tests/render-counsel-artifact.test.mjs: renders one synthetic fixture session (clearly labeled synthetic) and asserts the five sections in order, the nine seat images, and no absolute paths in the HTML; nine tests total.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-scoped change only).
+
+## v1.0.47: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
+
+In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs - the OpenClaw door or the claude-nine door - and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
+
+- One module (`runtime/src/brief/permitted-brief.ts`), two source adapters (OpenClaw: memory.md, agents.md, soul.md, user.md; 999: CLAUDE.md, AGENTS.md, memory/MEMORY.md), identical brief shape regardless of door.
+- Permitted context only: the door's root files plus at most one hop of their pointer links; recursion never; a link can never escape the context root or touch a private path.
+- Private preferences stay in the private store: private sections and `private:` lines are stripped, `private/` paths and `*.private.md` are never read, and the brief carries only the opaque `private_preference_ref`.
+- Unknowns marked explicitly: unstated options or constraints and explicit "not yet known" markers land in `unknowns`, and items dropped by the cap are reported there too.
+- Bloat protection: `BRIEF_WORD_CAP` = 2000 words, hard; facts selected decision-relevant first, newest first inside a relevance class.
+- New runnable check `runtime/tests/brief-builder.test.ts` over fixture memory files: the decision-relevant fact is in the brief, the irrelevant private detail is out, the size cap holds, and unknowns are marked - proven on both doors.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
+## v1.0.46: Council: the Chamber link line is the single link source (FIX W76)
+
+In plain English: the client now gets exactly one link - the helper's `Chamber link:` line - and the raw `chamber_url` field is never sent on its own. This restores the fix that batch #2433 dropped when it merged the older #2431 snapshot instead of the later revision.
+
+- SKILL.md: the helper's `Chamber link:` line is the single source of truth for the client's link; the command's `chamber_url` field feeds that line and is never sent to the client on its own.
+- Both safety rules kept: never invent, guess, or build a link; never send a 127.0.0.1 link to a client.
+- Version markers rolled to v1.0.46 (G3 requires the version marker with a skill content change); manifest and archive regenerated with `scripts/build-bundles.mjs`.
+
+## v1.0.45: Council: the W73 chamber-visual package clears the QC gate and its version markers roll (BUILD W73)
+
+In plain English: the W73 chamber-visual change (the Roast Room visual pops up on desktop and the chamber link rides every reply) is unchanged. This patch rolls the version markers and repackages the archive so the pull request's required G3 check sees the skill content change and the skill-version.txt bump together.
+
+- skill-version.txt and version rolled from v1.0.44 to v1.0.45; SKILL.md frontmatter version rolled to match.
+- Package files carry no em dash character (the QC gate that failed on the previous push now passes: doctor, verify-cohort-parity, verify-bundles, qc-council-of-wise-elders.sh all green; chamber-visual.test.sh 17/17).
+- Manifest and archive regenerated once with `scripts/bump-version.sh` plus `scripts/build-bundles.mjs`.
+## v1.0.44: Council: the Roast Room visual pops up and the chamber link rides every reply (BUILD W73)
+
+In plain English: no matter how the client calls the elders — claude-nine terminal or chat — the chamber visual they see at the link shows up for them too: on a desktop box it opens in the browser on every convene, and the chamber link is always in the reply so phone and chat callers tap straight into the same visual.
+
+- New `scripts/chamber-visual.sh`: prints exactly one `Chamber link: <url>` line — resolved at runtime from env `COUNCIL_PUBLIC_URL`, then `WISE_ELDERS_PUBLIC_ORIGIN`, then `public_origin` in the box's own `service.json`, then the loopback service origin — and opens that URL in the default browser when a desktop session exists. Fire-and-forget: it never blocks the reply, and a headless box (CI, cron, server) gets zero pops with the link still emitted.
+- SKILL.md: new "The chamber visual on every call" — the `Chamber link:` line goes into every reply (terminal and chat alike), never rewritten or guessed; a local-only 127.0.0.1 link is never sent to a client.
+- New tests `scripts/tests/chamber-visual.test.sh` (17 cases): GUI present invokes `open` exactly once with the right URL, headless invokes nothing and still emits the link, the link is always in the output, URL source order, and a failed pop never breaks a convene.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill change only).
+
+## v1.0.43: Council: an existing council ingress rule keeps its own port (FIX W68)
+
+In plain English: the provisioner used to force every council rule back to port 8787. Now it never rewrites an existing rule — the box's own port is authoritative — and only creates a missing rule at the default 8787. A box whose Council serves on 8788 (a client webhook owns 8787 there) is left byte-identical from now on.
+
+- An existing council ingress rule (any port) is preserved byte-identical; the run reports it as preserved and names the box's own port.
+- Only an absent council rule is created, and it is created on `COUNCIL_SERVICE` (http://127.0.0.1:8787).
+- New regression tests: an existing rule at 8788 is never rewritten (zero PUTs, config byte-identical), a missing rule is created at 8787, an existing rule at 8787 stays.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
+
+## v1.0.42: Council: an already-wired Council address is adopted instead of conflicting, the client exclude list is honored everywhere, and container-connector instructions only appear with container evidence
+
+In plain English: when the Council address is already wired, the provisioner now adopts it instead of failing on a conflict; the client exclude list is honored everywhere; and container-connector instructions only appear with container evidence.
+
+- The provisioner adopts an already-wired Council address, and the client exclude list is honored everywhere.
+- Container-connector instructions only appear with container evidence.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.63).
+
+## v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector
+
+In plain English: when the Command Center lives inside a container reached through a bridge, the Council provisioner now stands up a dedicated tunnel and an in-container connector instead of failing.
+
+- The provisioner detects the container-host shape, creates a dedicated tunnel for it, and wires the in-container connector.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.62).
+
+## v1.0.40: Council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address
+
+In plain English: council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address. The Council login list now matches the Command Center login list and never lets in someone the Command Center excludes; records for tunnels that no longer exist are skipped instead of failing the whole run; and a Mac client's Council address can ride its own rescue tunnel.
+
+- Sync refuses (reports FAILED, writes nothing) when the Command Center allow policies carry exclude or require rules that differ, so a revoked person is never kept.
+- The rescue-tunnel ride only picks a tunnel that has the rescue rule for this exact client, and a failed read after an edge-check failure no longer overwrites the rescue tunnel's ingress.
+- A live Command Center on a healthy tunnel is never skipped as an orphan.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.61).
+
+## v1.0.39: Council: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss
+
+In plain English: the new-address check no longer depends on a resolver cache, so a new client's address is not rolled back by a stale DNS miss. After a new client's Council address is created, the check that it opens now asks the zone's own nameservers directly for the address instead of trusting a cached answer, so an earlier "no such name" lookup can no longer make a good setup get rolled back.
+
+- The edge check asks the zone's authoritative nameservers on every try and connects to the answer it gets, then still requires the Cloudflare Access login redirect.
+- If the lookup tool or nameservers are unavailable it falls back to the normal lookup; `COUNCIL_EDGE_RESOLVE=system` turns the new behavior off.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.60).
+
+## v1.0.38: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live
+
+In plain English: Council: login pages always list the operator and every client email found in GoHighLevel, and no Council address is published before its connector is live. A client's Council login page now keeps the operator and each client email found in GoHighLevel, and the Council address is only published once its connector is running.
+
+- The provisioner creates the Council address only after a connector shows as active, and says plainly when the connector is still pending or down.
+- The login page rule is kept in sync with the operator and GoHighLevel client emails without removing anyone already allowed.
+- A GoHighLevel contact is matched to a client only by a safe rule: a first name alone, a full name alone, or a contact with no name never gets added.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.59).
+
+## v1.0.37: Every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled
+
+In plain English: every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled. The operator's access job now covers older Command Centers, tunnels that are down and tunnels managed on the operator's machine, and each client box runs its own Council connector without touching the Command Center tunnel.
+
+- The provisioner finds the Command Center by what the tunnel serves, creates a dedicated Council tunnel when needed, and reports a down tunnel or a waiting connector instead of claiming done.
+- The box Council connector runs with its own config and a blank inherited tunnel token, so it can never start the Command Center tunnel by mistake.
+- The box check reports a missing or stopped connector plainly.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.58).
+
+## v1.0.36: A brand-new client's Council address now sets itself up with no human step
+
+In plain English: a brand-new client's Council address now sets itself up with no human step. The operator's automatic access job first gives the new client's Command Center its login, then creates the Council address, and tells the operator plainly when it is still waiting for the client's email.
+
+- The access job now runs `ensure-cc-access.sh` before `provision-council-access.sh` and records the result as `cc_access` in its receipt.
+- A missing client email or a login that differs from the expected one is reported and retried on the next run; it never fails the run.
+- Provisioning skips hosts that are not Command Centers and never reports a down connector as done.
+- The installer passes the client's owner email through, and the tunnel request retries instead of failing early.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.57).
+
+## v1.0.35: The client Council link is now fully automatic for every client, new and existing
+
+In plain English: the client Council link is now fully automatic for every client, new and existing. Every client gets a Command Center, so every client gets a link, even before the AI Workforce interview is done. The link is found when the Council is convened, and the operator's automatic access job keeps it working with no manual step.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.56).
+
+## v1.0.34: Clients only get a Council link that actually opens
+
+In plain English: clients only get a Council link that actually opens. Before handing one over, setup now checks that the link answers from the public internet and drops it if it does not. If there is no working link, the Council says so plainly and tells the client what to do next instead of sending a dead address.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.55).
+
+## v1.0.33: The Council screen is back to the approved look
+
+In plain English: the Council screen goes back to the look that was approved. There is no extra box above the room, Key Points are compact again, and no internal ids show on the page.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.54).
+
+## v1.0.32: Councils on claude-nine now finish; a blocked council shows the real reason
+
+In plain English: a council run through claude-nine could stall or lose its settings partway through, and a blocked council said the chair was still working. Now every claude-nine call keeps its safety settings, a stuck call is stopped cleanly and tried once more if it never started, the deadline is decided in one place and written down, and a blocked council names the seats that are missing and why.
+
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.51).
+
+## v1.0.31: clients can use the Council on their own box, and Claude Code routes are proven
+
+In plain English: until now the Council worked end to end only on the operator's own machine. After the next fleet roll, every client box builds the Council engine itself, keeps it running, and gives the client a signed-in way to open the Roast Room. Nothing changes about the client's models, keys or settings.
+
+- **Wiring on every box**: `wire.sh` builds the runtime the same way every time, starts the Council service, and restarts it after updates and reboots. Running it twice changes nothing.
+- **A private address per client**: `provision-council-access.sh` gives a box its own `<name>-council` address behind the same sign-in and email list as the client's Command Center. A box without a Command Center still gets Council answers from its agent, just no Roast Room link.
+- **Claude Code routes**: the Council now convenes through claude-nine and plain Claude Code, as well as a client's own configured provider such as DeepSeek. It uses the route the client already has and never switches it.
+- **Repair and clearer reasons**: a stuck session is repaired and a blocked one says why in plain words.
+- **Box check**: `verify-council-box.sh` reports whether a box is ready and names the exact missing step if not.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.49).
+
+## v1.0.30: the verdict says why, and Key Points show what the elders actually said
+
+In plain English: two gaps found on the first real live council. The screen said "Verdict: Wait" and showed nine of nine votes for Option B, but never said why the answer was Wait. And the Key Points list held only phase headings. Nothing about how a council runs has changed; the screen now shows more of what the session already recorded, with no new model calls.
+
+- **A short "Why" under the verdict**: what has to happen first (the conditions the elders attached), how strong the evidence is in plain words, how the vote went, and where the elders disagree (the strongest dissent, or the sharpest caution when nobody voted against).
+- **Key Points show real content**: each elder's lead argument, the fault lines the chair found, the conditions attached to the resolution, the changes elders asked for and their dissent. Every line names the elder in full. The phase headings stay as small group labels, and long lines show a short version with "Read more".
+- **Proof on real data**: the first live session (verdict Wait, Option B, 27 cards) is saved read-only as a test fixture, and new tests replay it.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.47).
+
+## v1.0.29: client polish on the live Council screen
+
+In plain English: five small clean-ups on what a client sees, found while checking the live Council screen. Nothing about how a council runs has changed.
+
+- **Plain wording in the New question window**: under the Convene button it now says "Convening starts the council now on the model you chose." It no longer talks about allowances or approval.
+- **Friendly model names**: Google Gemini, Ollama, OpenRouter, Agnes, 9Router and OpenAI now show their own names instead of "the selected model". A model that cannot be used yet says "Not available for the council yet" instead of a raw code.
+- **All six steps fit on a phone**: Brief, Openings, Fault lines, Debate, Vote and Verdict wrap onto two rows at phone width, so nothing hides off-screen in a sideways strip.
+- **Status page tells the truth**: the service status page (/status) no longer says the Council screen is not packaged. When it is packaged, the page links to it.
+- **Operator help cleaned up**: the command list no longer shows the old start/resume grant and authorization commands, and the recovery messages no longer send anyone to approve anything.
+- **Changelog wording**: the v1.0.26 note now says that release shipped inside v27.1.45 (it first carried the number v27.1.42 on its branch).
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.46).
+
+## v1.0.28: Roast-Room chamber screen (full reference structure, brand colors, Pixar portraits)
+
+Eight Opus-passed pieces, integrated once on top of v1.0.26 (W29-U001). In plain English: the chamber page is rebuilt as the full Roast-Room screen. A sticky top bar, a decision header with live option bars, a room of nine seated advisors with typing bubbles and a round headline, a key-points rail, and a click-to-open advisor card, all in BlackCEO colors, with 3D Pixar-style portraits.
+
+- **Page shell** (`patch/W29-A-shell`): top bar with the BlackCEO logo, a six-step progress strip (Brief, Openings, Fault lines, Debate, Vote, Verdict), and How it works, Past sessions and New question buttons. New question convenes a real council through the client-chosen model route. The front door now serves every new chamber file and the portrait images.
+- **Decision header** (`patch/W29-B-decision`): the question and its options with a bar and count per option that fill in as advisors take positions, and a verdict badge at the end.
+- **Room** (`patch/W29-C-room`): nine advisors in a shallow arc behind a table, a typing bubble over each, the active advisor highlighted, round label, timer, headline, "is weighing" line and progress bar. Clicking an advisor opens that advisor's card.
+- **Key points** (`patch/W29-D-keypoints`): a running list of milestones on the right (or below on narrow screens).
+- **Advisor card** (`patch/W29-E-seatcard`): portrait, role, the question that advisor owns, current position, and the plain "simulated advisor, not the person" note; closes with Escape, the backdrop or the Close button.
+- **Advisor data and portraits** (`patch/W29-F-seatdata`): names, roles and weighing lines for all nine advisors plus cut-out Pixar-style portraits.
+- **Brand theme** (`patch/W29-G-theme`): one set of BlackCEO color tokens (black, cream, gold) used everywhere; no navy.
+- **Live state** (`patch/W29-H-state`): turns the live event stream into what the screen shows, keeps a clearly labelled demo replay, and adds card details to the stream so bars, lines and the advisor card come from real cards.
+- **Full names and no model codes** (`W29-fullnames`): each advisor's name pill now shows the full name (Simon Sinek, Russell Brunson, Dennis Kimbro and so on; it wraps to two lines on narrow phones), and the screen shows a friendly model label such as "Sample replay" or "Claude Code" instead of an internal route code. On phones the front row of advisors now sits a little lower so a two-line full name never hides behind the row below.
+- **No budget line on the client page**: the New question window no longer shows a "Budget: ..." line under each route (the service stopped sending budgets when the approval step was removed, so it always read "not listed"); the route-budget test now scans the chamber scripts too.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.45).
+
+## v1.0.26: live council (client-chosen model, service driver, Book-to-Persona elders)
+
+Eight Opus-QC-passed patches, integrated once on top of v1.0.25 (W28-U001). In plain English: the client now picks the model for each council run, a convened session is actually deliberated end to end, and the elders speak from the client's own Book-to-Persona material with clearly labelled web research for current facts.
+
+- **Client picks the model per run** (`patch/W28-route-choice`): the model route is resolved per session and passed to the harness as `--model`. With no choice the running harness decides: the claude-nine configured default on claude-nine, Sonnet on Claude Code direct, and the latest DeepSeek Flash on DeepSeek direct (resolved from the provider's model list at run time, today the alias `deepseek-flash`). QC verdict: PASS.
+- **Token limits per route**: `config/route-budgets.json` ships the numbers measured so far (DeepSeek Flash); a route without measured numbers uses a conservative built-in default and the route's own window and answer limits, so it still convenes. `measure-route-bytes-per-token.mjs` remains an optional tool that refines the numbers. QC verdict: PASS.
+- **Find the client's Book-to-Persona store** (`patch/W28-persona-root-inventory`): resolves the client's own persona store and adds a read-only live inventory (`inventory-live-personas.mjs`) that reports unreadable stores and never prints absolute paths. QC verdict: PASS.
+- **Elder knowledge in three layers** (`patch/W28-elder-knowledge`): the live Book-to-Persona persona from the client's own store first; the shipped 2026-10-14 briefs as the per-elder fallback; and web research for current facts, stored apart from the books and shown under its own "From the web today" heading in the briefing and in the report. QC verdict: PASS.
+- **A convened session is really deliberated** (`patch/W28-convening-driver`): the service driver takes a session through the rounds, runs the workers, and writes `council_events` for the live SSE stream. Convening is the approval: there is no blocking spend gate, and every run is still audited. QC verdict: PASS.
+- **Service wiring** (`patch/W28-service-wiring`): binds the per-session route, the per-route token limits, elder knowledge and the driver into the service. Adds `GET /api/council/routes` and `POST /api/council/convene` behind the same fence as admissions, and removes the service-wide ROUTE_SELECTION_AMBIGUOUS failure (readiness is ready when one route can be composed). It keeps the W27 `GET /api/council/sessions` list route beside the new routes. QC verdict: PASS.
+- **CLI and agent instructions** (`patch/W28-cli-convene-and-skill-docs`): `blackceo-council routes` and `blackceo-council convene --brief FILE|--sample` with `--route`, `--model`, `--harness` and `--fresh-facts FILE`, and SKILL.md rewritten so the agent asks which model to use, researches current facts with labelled sources, and tells the client which model is running. QC verdict: PASS.
+- **Landing page notices tell the truth** (`patch/W27-landing-notices`): `/status` no longer shows "event stream not bound" and the unbound-route wording when the composition has bound them; the notices follow the real binding. This is the fix the live service already ran uncommitted. QC verdict: PASS.
+- **Real-run fix: one paid answer per seat** (`patch/W30-single-executor`): only one live worker may hold a session at a time, so a second claim can no longer cut off a response that was already paid for; a fenced settle is now reported (stderr and a `worker_error` event) and its paid hold stays counted instead of lapsing to free. QC verdict: PASS.
+- **Real-run fix: the model is told the card shape** (`patch/W30-response-schema`): every model request on the service path now carries the exact card response schema, so seats stop inventing their own card shape and failing validation. QC verdict: PASS.
+- **Real-run fix: the journal shows which knowledge each seat used** (`patch/W30-knowledge-layer`): each seat's briefing records once per session whether it used the client's live Book-to-Persona persona, the shipped brief, or nothing, plus the web fact count. QC verdict: PASS.
+- **A new install now convenes immediately; no approval step.** (`unit/W28-U001-live-council`): the first run on a fresh install is accepted on DeepSeek Flash and on any route without measured numbers; nothing is measured or approved first, and the routes list no longer carries an approval state.
+- **Real-run acceptance fix round 1: the model is told the last two card rules, and an unfinished round stops the session** (`unit/W28-U001-live-council`): the card instructions now say that evidence reference arrays may hold only evidence manifest IDs (never the brief's fact, assumption, unknown or constraint IDs) and that `lenses_used` belongs to T. D. Jakes alone, so two seats no longer fail Round 1 and block the council. A round that ends with work still queued (the grant refused a repair) or, in full mode, a seat with no card, now stops the session as BLOCKED and resumable instead of planning the next round from a partial record, which had made every Round 3 call refuse as input drift and wasted paid Round 2 calls. The convening repair ceiling now fits all 27 operations (27 repairs, 62 requests). A real DeepSeek Flash council on a private test instance completed: 27 cards, a verdict, 29 model calls, 2 Round 2 repairs.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (first numbered v27.1.42 on its branch; this release shipped to main inside v27.1.45).
+
+## v1.0.25: W27 hardening batch (status cold path, launcher, skill root, live chamber)
+
+Four Opus-QC-passed patches, integrated once (W27-U001):
+
+- **First `/status` is no longer cold** (`patch/W27-status-cold-path`): the front door runs one readiness pass at service start, so the first `GET /status` does not pay lazy-init and cold filesystem cost inside the request under macOS background QoS. Each request still re-observes live state. The focused test moved to `runtime/tests/service-status-cold-path.test.ts` so `npm test` actually collects it. QC verdict: PASS.
+- **Upstreamed service launcher** (`patch/W27-launcher-upstream`): `runtime/scripts/service-launch.mjs` starts the front door through `startCouncilService`, so the event, admission and session adapters are bound (a bare front door answers 501 on events). Data dir comes from `COUNCIL_SERVICE_DATA_DIR` or the platform default. INSTALL.md documents the `runtime/node_modules/.bin/tsx` run command from the skill root; guard test `runtime/tests/service-launcher.test.ts`. QC verdict: PASS.
+- **Installed binary finds its skill folder** (`patch/W27-skill-root-upstream`): `skillRootForAssets()` in `runtime/src/cli/dispatcher.ts` resolves the skill root from the install record (`skill_dir`), else the nearest ancestor holding SKILL.md, advisors/ and manifest.json; data-dir commands refuse when none is found. `scripts/install-runtime.mjs` now writes `releases/install-record.json` and heals prefixes installed without it. New `runtime/src/cli/skill-root.test.ts` covers both bundle layouts (`test:skill-root` npm script). QC verdict: PASS.
+- **Live chamber view over real sessions** (`patch/W27-live-chamber-view`): read-only `GET /api/council/sessions` (501 `SESSION_LIST_NOT_BOUND` when no listing reader is bound), selected-session committed events over the existing SSE route, an honest "No council sessions yet" state, and the fixture kept only as a hidden, labelled sample. The list refreshes in place by `session_id`, keeping keyboard focus and announcing "Loading" only on first load or Refresh. New `chamber-live.js` ships in the `public/chamber` allowlist. QC verdict: PASS.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.41).
+
 ## v1.0.24: the runtime test collection states the platform it actually runs on
 
 - `runtime/tests/core.test.ts` asserted the XDG data-directory default unconditionally, so it failed on macOS and Windows where `src/cli/paths.ts` documents and implements a per-platform default. The test now asserts the contract for the running platform: `~/Library/Application Support/BlackCEO/WiseElders` on darwin (and that `XDG_DATA_HOME` does not steer it), `%LOCALAPPDATA%\BlackCEO\WiseElders` on win32, XDG elsewhere.
