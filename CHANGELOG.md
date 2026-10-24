@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- evidence/PBB-176-T-02: `evidence/current-999-evidence.json` re-derives the current 999 bundle/adapter/CAF/install/update interfaces at `317bb241` with per-file sha256, executed check results and exact missing capabilities (T-02, C-02). Evidence only: no product behaviour, version or skill tree changed.
+
 ## [1.38.1] — 2026-10-22
 
 - fix/roll20261019-can009: nine-router-setup: the opencode-poll guard and the opencode-toolargs failover-guard and ollama-overload parts now locate their targets by content signature (templates whose renamed minified locals are captured, unique-match, fail-closed exit 3/2) instead of fixed anchor strings, so a clean 9Router 0.5.104 install or --upgrade passes the guards step (before: opencode-poll exit 3 "5 of 11 anchors not found", failover guard exit 2, which also blocked the ollama overload and ollama nonstream claude parts); output is byte-identical to the old guards on 0.5.95; install-9router-guards.sh proves opencode-poll with a rename-tolerant marker. May touch the same files as PR #262 (CAN002) and must merge after it. New check: tests/test-can009-opencode-signature.sh The installer content check for opencode-poll now also proves EDIT6 (length on explicit token limit) and EDIT7 (MAX_TOKENS on the Gemini wire), so a bundle missing them can no longer read OK. Branch merged with main 79a86e88 (#262) so the glm53 regression suite is main's.
