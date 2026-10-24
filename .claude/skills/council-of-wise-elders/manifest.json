@@ -1,11 +1,11 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "1.0.54",
+  "skill_version": "1.0.55",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "087d7d684adb575928acb686d298dd3e0dafb2f5",
-  "canonical_aggregate_sha256": "cdecfd5162dfb92c86a082421fe4f2a5e732271102990c3a4338426de5deff17",
+  "source_commit": "d967e6a3ebe21aaab32268932c3be65311e13408",
+  "canonical_aggregate_sha256": "95ca7ce40669c6af5707444c5f80184c527b157a29e30cff50cd11f36361a281",
   "file_count": 780,
-  "aggregate_sha256": "dc91803a0517ba77dc0a4446967fae44a58773f34360df56cbf5f292b75f51a1",
+  "aggregate_sha256": "4d3f2bc6478c91390cf630fb4ca2ee826effa70fd9f39b0f506ac57f489a1b1d",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "9083dacf81ec60e2c0cebc549ed5ca9c2a463ac70f9877aee4f7c2a8b9634165",
-      "bytes": 86059
+      "sha256": "5485da18e806666a2598aa2b35a6eadb9112c46ae8d36b6970109905b1c29c2d",
+      "bytes": 87005
     },
     {
       "path": "CORE_UPDATES.md",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "730536615de097fa65daff2eeaa32645bb394cd809419e0aa151a24108b7965b",
+      "sha256": "97b6c995a2b5494a08b5ef2a9cebdc9008f3fdb560a086c93f25a03940892c90",
       "bytes": 3886
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "82b7bb1dd02591568257472af60d13fc994f4276c01adf5a61baffc21e0b5f32",
-      "bytes": 16367
+      "sha256": "e4b8b876ccdb5b554795e9769f3540d894d9a8dd234c1aaf3e05f86a1131fd4d",
+      "bytes": 17425
     },
     {
       "path": "advisors/brene-brown/briefing.md",
@@ -3850,8 +3850,8 @@
     },
     {
       "path": "scripts/tests/selected-tree-gate.test.mjs",
-      "sha256": "e698812ecc3c56bfbc288df73c8e057ef9248b715a4e45f17dc8e3e9601776cd",
-      "bytes": 22368
+      "sha256": "90994fde4c4136e718b0feefa5080b4404625ae067ae195fe72528417ab65a94",
+      "bytes": 23024
     },
     {
       "path": "scripts/tests/verify-cohort-parity.test.mjs",
@@ -3895,7 +3895,7 @@
     },
     {
       "path": "skill-version.txt",
-      "sha256": "cfc755374fd0a5eabf3acae3c7ce0f23a81e50bbb8cbbbdd071e9adf4e9a82ac",
+      "sha256": "bcbfc07276d27a73104c7f1ae8c82f761658f819c0787cc3fe6e60056b86a440",
       "bytes": 8
     },
     {
@@ -3910,7 +3910,7 @@
     },
     {
       "path": "version",
-      "sha256": "a0a93a44cc212c268474e5d33de91cccac5c3c307f394fe45f845972f04fad29",
+      "sha256": "3520c77b8c3c8303904269efdaaf69c734d73ce481bb2510f3998a8dbb625263",
       "bytes": 7
     },
     {

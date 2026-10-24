@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "087d7d684adb575928acb686d298dd3e0dafb2f5",
-    "canonical_aggregate_sha256": "cdecfd5162dfb92c86a082421fe4f2a5e732271102990c3a4338426de5deff17",
+    "source_commit": "d967e6a3ebe21aaab32268932c3be65311e13408",
+    "canonical_aggregate_sha256": "95ca7ce40669c6af5707444c5f80184c527b157a29e30cff50cd11f36361a281",
     "canonical_file_count": 779,
-    "skill_version": "1.0.54"
+    "skill_version": "1.0.55"
   },
   "intentional_distribution_differences": [
     {
@@ -61,8 +61,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "964741d9e31653e639966fcd3971592a06faa2a925c1139ff228d18cb2871ae6",
-      "archive_bytes": 76141233,
+      "archive_sha256": "9c5bc243bafdc5eb7f463a49e3866fed7e22e5cdecf44b2a773d9bf9b33d37e4",
+      "archive_bytes": 76142172,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -78,23 +78,23 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "964741d9e31653e639966fcd3971592a06faa2a925c1139ff228d18cb2871ae6",
-    "bytes": 76141233
+    "sha256": "9c5bc243bafdc5eb7f463a49e3866fed7e22e5cdecf44b2a773d9bf9b33d37e4",
+    "bytes": 76142172
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "dc91803a0517ba77dc0a4446967fae44a58773f34360df56cbf5f292b75f51a1",
+    "distribution_aggregate_sha256": "4d3f2bc6478c91390cf630fb4ca2ee826effa70fd9f39b0f506ac57f489a1b1d",
     "distribution_file_count": 780
   },
   "canonical_files": {
-    "CHANGELOG.md": "9083dacf81ec60e2c0cebc549ed5ca9c2a463ac70f9877aee4f7c2a8b9634165",
+    "CHANGELOG.md": "5485da18e806666a2598aa2b35a6eadb9112c46ae8d36b6970109905b1c29c2d",
     "CORE_UPDATES.md": "24ebd304335662165ee2f7d52d12f749740485763fd4152e4cb9debeea9da308",
     "EXAMPLES.md": "4d8245365d28943b2ff2385d7079770e39a0f827ef52c6e87ad8e2ae622a7646",
     "INSTALL.md": "3e95af2dcdc85d253f39d0c8c49846c100086353ebcd3d03b326e794c441b9a1",
     "INSTRUCTIONS.md": "9c40a35ee3b37bad1f093acc7b8f45eadb3c389f98e44e9c47b917c61ec62332",
     "PREREQS.json": "cadfefaeef39d1b5a5f4f8562e4f19df7048dcabc874f754629f9c73eaa22871",
     "QC.md": "07cfe25db8920eee0b2548051f61ad9ef32149479b4bce5a5a6b998e325c8e9b",
-    "SKILL.md": "82b7bb1dd02591568257472af60d13fc994f4276c01adf5a61baffc21e0b5f32",
+    "SKILL.md": "e4b8b876ccdb5b554795e9769f3540d894d9a8dd234c1aaf3e05f86a1131fd4d",
     "advisors/brene-brown/briefing.md": "88f8c1a048e2d02b331ba594972b9bc259d50aeeb213646ea189a11506daf1ba",
     "advisors/brene-brown/communication.md": "1334fd2a595046005b03e47b0ee32dd8cb1edf35b90c3c2d43e5837c3cd218fd",
     "advisors/brene-brown/coverage.json": "acb622349e7f7fcd7985d7cc47df04457658863401e97e5db4dc241021f2d981",
@@ -852,7 +852,7 @@
     "scripts/tests/node-runtime-preflight.test.mjs": "ada1d7acd7f6300e1d3c7d607bc47b6d21799b79679058a52cfbdd0fc892029b",
     "scripts/tests/provision-council-access.test.sh": "05aaed901f65b6afebf0c32d764a6c69ce448e714940bc209e7a8fe1204c2003",
     "scripts/tests/render-counsel-artifact.test.mjs": "f325885267aeb121b9e23ccc8f35d117c593dbde75afca29e0f04036878e4564",
-    "scripts/tests/selected-tree-gate.test.mjs": "e698812ecc3c56bfbc288df73c8e057ef9248b715a4e45f17dc8e3e9601776cd",
+    "scripts/tests/selected-tree-gate.test.mjs": "90994fde4c4136e718b0feefa5080b4404625ae067ae195fe72528417ab65a94",
     "scripts/tests/verify-cohort-parity.test.mjs": "6ff1bda8e69312ef07bf146e9bed09c62aeb0a5117115fdfbcac6f2d2b85b030",
     "scripts/tests/verify-council-box.test.sh": "e3c91c090746e36ac2a1ebcdb3ba463ab0a4306ea3ba819f7be3fea79369c6c1",
     "scripts/tests/wire-connector.test.sh": "ad711a553d47cc8ce0a27b5e6e95b1b41878cace7869f6185606951df768837b",
@@ -861,10 +861,10 @@
     "scripts/verify-bundles.mjs": "ac90b21bc2856141326ff0bf412c18610a97311bcb7d7dfc892e4528a0acef18",
     "scripts/verify-cohort-parity.mjs": "6aebc56ba1065335f3175edb8cba2eff43915413a05c59ff07397f4682b0a5fc",
     "scripts/verify-council-box.sh": "dde1b4dd65b5c9cdeb6cbf1f0ecfb365e763b93735b84f748a9f2b4012155bfd",
-    "skill-version.txt": "cfc755374fd0a5eabf3acae3c7ce0f23a81e50bbb8cbbbdd071e9adf4e9a82ac",
+    "skill-version.txt": "bcbfc07276d27a73104c7f1ae8c82f761658f819c0787cc3fe6e60056b86a440",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
-    "version": "a0a93a44cc212c268474e5d33de91cccac5c3c307f394fe45f845972f04fad29",
+    "version": "3520c77b8c3c8303904269efdaaf69c734d73ce481bb2510f3998a8dbb625263",
     "wire.sh": "119825670268d7aebd571e2e853c85615fbf5f8ede81458e657c53df5c957aec"
   },
   "runtime_entry": {
