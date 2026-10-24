@@ -219,6 +219,35 @@ class OwnerTests(Base):
         plan["additional_owners"] = ["opus-chain"]
         self.assertRefuses(plan, "owner.multiple")
 
+    def test_lease_ref_must_be_a_full_ref(self):
+        # A bare ref name was accepted here and then silently skipped by the
+        # remote lease read-back (which only runs for refs/...), so the plan
+        # claimed remote verification of single ownership without any read.
+        plan = good_plan()
+        plan["target_owner"]["lease_ref"] = "lease-999-main"
+        self.assertRefuses(plan, "owner.lease_ref_invalid")
+
+    def test_additional_owners_string_is_a_second_owner(self):
+        plan = good_plan()
+        plan["additional_owners"] = "opus-chain"
+        self.assertRefuses(plan, "owner.multiple")
+
+    def test_additional_owners_object_is_a_second_owner(self):
+        plan = good_plan()
+        plan["additional_owners"] = {"holder": "opus-chain"}
+        self.assertRefuses(plan, "owner.multiple")
+
+    def test_generation_bool_is_not_an_integer(self):
+        plan = good_plan()
+        plan["target_owner"]["generation"] = True
+        plan["target_owner"]["observed_generation"] = True
+        self.assertRefuses(plan, "owner.missing")
+
+    def test_ttl_bool_is_not_an_integer(self):
+        plan = good_plan()
+        plan["target_owner"]["ttl_seconds"] = True
+        self.assertRefuses(plan, "owner.invalid_ttl")
+
     def test_candidate_must_name_the_holder(self):
         plan = good_plan()
         plan["candidates"][0]["target_owner"] = "opus-chain"
@@ -341,6 +370,11 @@ class RequiredCheckTests(Base):
     def test_surface_must_be_a_remote_read(self):
         plan = good_plan()
         plan["check_surface"]["source"] = "recalled"
+        self.assertRefuses(plan, "checks.surface_unproven")
+
+    def test_surface_observed_at_must_be_non_empty(self):
+        plan = good_plan()
+        plan["check_surface"]["observed_at"] = ""
         self.assertRefuses(plan, "checks.surface_unproven")
 
     def test_surface_missing(self):
@@ -515,6 +549,24 @@ class RemoteVerificationTests(Base):
         plan["target_owner"]["observed_lease_sha"] = "6" * 40
         result = ci.evaluate(plan, FakeRemote(remote_responses()))
         self.assertIn("remote.lease_sha_mismatch", codes(result))
+
+    def test_remote_requires_observed_lease_sha(self):
+        # the module docstring promises it: without it the plan is refused
+        plan = remote_plan()
+        del plan["target_owner"]["observed_lease_sha"]
+        result = ci.evaluate(plan, FakeRemote(remote_responses()))
+        self.assertEqual(result["verdict"], "REFUSE", result)
+        self.assertIn("remote.lease_sha_mismatch", codes(result))
+
+    def test_non_refs_lease_ref_never_skips_the_remote_read(self):
+        # A lease_ref outside refs/ skipped the lease read-back while the
+        # verdict still claimed read-only-remote-api verification ran.
+        plan = remote_plan()
+        plan["target_owner"]["lease_ref"] = "lease-999-main"
+        result = ci.evaluate(plan, FakeRemote(remote_responses()))
+        self.assertEqual(result["verdict"], "REFUSE", result)
+        self.assertIn("owner.lease_ref_invalid", codes(result))
+        self.assertIn("remote.lease_ref_invalid", codes(result))
 
     def test_remote_protection_mismatch(self):
         plan = remote_plan()
