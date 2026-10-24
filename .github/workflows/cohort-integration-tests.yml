@@ -1,0 +1,35 @@
+name: cohort-integration-tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/cohort_integration.py'
+      - 'tools/tests/test_cohort_integration.py'
+      - '.github/workflows/cohort-integration-tests.yml'
+  pull_request:
+    paths:
+      - 'tools/cohort_integration.py'
+      - 'tools/tests/test_cohort_integration.py'
+      - '.github/workflows/cohort-integration-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  cohort-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Cohort integration gate tests (single owner, cohort order, checks, repair proof)
+        run: |
+          python3 -m unittest discover -s tools/tests -p 'test_cohort_integration.py' -v
