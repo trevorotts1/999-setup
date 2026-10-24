@@ -178,31 +178,27 @@ def test_expired_lease_fenced_reclaim():
 
 # ── 5. full registry traversal through final delivery (crash + revision) ────
 def _make_full_run(run, stages=F.CANONICAL_STAGES):
-    """Controlled fixture: complete every stage with the artifacts the
-    strict-completion gate needs. Includes an independent final-QC record,
-    current approvals, and delivery receipts."""
-    (run / "control").mkdir(parents=True, exist_ok=True)
-    reg = F.STAGE_REGISTRY
-    plan = {"revision": "r7"}
-    (run / "control" / "plan-revision.json").write_text(json.dumps(plan))
-    approvals = {}
-    for s in stages:
-        entry = reg[s]
-        for rel in entry["required_artifacts"]:
-            p = run / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("artifact %s" % rel)
-        if entry["approval_policy"] != "none":
-            approvals[s] = {"state": "approved", "plan_revision": "r7"}
-        (run / entry["required_artifacts"][0]).write_text("artifact")
-    (run / "control" / "approvals.json").write_text(json.dumps(approvals))
-    fq = run / "final-qc" / "record.json"
-    fq.parent.mkdir(parents=True, exist_ok=True)
-    fq.write_text(json.dumps({"gate": "PASS",
-                              "producer": reg["final-qc"]["qc_producer"]}))
-    rec = run / "delivery" / "receipts.json"
-    rec.parent.mkdir(parents=True, exist_ok=True)
-    rec.write_text(json.dumps([{"dest": "chat", "status": "delivered"}]))
+    """Current intake, legal stage history and real artifact decision writers."""
+    from test_factory_method_agnes import make_run
+    import qc_gate
+
+    # Keep the generated root: its decisions and Store bind its run ID.
+    run = make_run(run, None, agnes="no")
+    (run / "control" / "plan-revision.json").write_text(json.dumps({"revision": "r7"}))
+    record = {"schema_version": "1.0.0", "check_id": "continuity-dna-1",
+              "run_id": run.name, "stage": "final-qc", "check": "continuity",
+              "verdict": "PASS", "evidence": {"summary": "Character DNA, product DNA and style "
+                  "bible records agree across every shot."}, "checker_version": "1.0.0",
+              "reviewer": {"identity": "qc-reviewer-1", "session": "s1", "authority": "qc"}}
+    verdict = qc_gate.evaluate(run.name, "final-qc", [record],
+                               {record["check_id"]: "fixture-build-worker"}, ["continuity"])
+    (run / "final-qc" / "record.json").write_text(json.dumps({
+        "gate": verdict["gate"], "producer": F.STAGE_REGISTRY["final-qc"]["qc_producer"],
+        "evaluation": verdict}))
+    # Controlled successful sink receipt; this fixture sends nothing externally.
+    (run / "delivery" / "receipts.json").write_text(json.dumps([
+        {"destination": "chat", "status": "delivered"}]))
+    return run
 
 
 def test_registry_traversal_and_completion():
@@ -211,7 +207,8 @@ def test_registry_traversal_and_completion():
 
     with tempfile.TemporaryDirectory() as td:
         run = Path(td) / "run-C"
-        _make_full_run(run)
+        run = _make_full_run(run)
+        assert not (run / "control" / "approvals.json").exists()
         got = {s: "COMPLETE" for s in F.CANONICAL_STAGES}
         d = F.select_next_action(got)
         assert d["all_complete"] is True, d
@@ -219,6 +216,13 @@ def test_registry_traversal_and_completion():
         assert delivered is True, report
         ok("complete registry traverses through final delivery -> delivered")
 
+        # Seed the negative-only legacy restriction from the real current proof.
+        # The cache was absent for successful delivery and cannot grant approval.
+        from production_process import inspect_completion_approvals
+        current = inspect_completion_approvals(run)
+        script = current["checks"]["script-lyrics"]["approved_script"]
+        (run / "control" / "approvals.json").write_text(json.dumps({
+            "script-lyrics": dict(script, state="approved", plan_revision="r7")}))
         # user revision: a script-lyrics approval invalidated (plan bump) -> not delivered
         (run / "control" / "plan-revision.json").write_text(json.dumps({"revision": "r8"}))
         delivered, report = F.evaluate_completion(run, got)
