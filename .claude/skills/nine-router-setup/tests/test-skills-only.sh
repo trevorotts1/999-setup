@@ -51,17 +51,25 @@ mkbox() {
   mkdir -p "$ROOT/elsewhere" && cp -R "$BUNDLE/bro" "$ROOT/elsewhere/bro"
   ln -s "$ROOT/elsewhere/bro" "$h/.claude-nine/skills/bro"
 }
+# FAKE_SCRIPTS: set to a fake NINE_SETUP_SCRIPT_DIR for the fake-bundle cases
+# (blocked-outcome tests); empty means the real script's own tree.
+FAKE_SCRIPTS=""
 run() { # run <home> <args...>  (stdout+stderr, rc in $RC)
   local h="$1"; shift
-  OUT="$(env -u CLAUDE_CONFIG_DIR HOME="$h" NINEROUTER_PORT=1 PATH="$SHIMS:/usr/bin:/bin:/usr/sbin:/sbin" bash "$SCRIPT" "$@" 2>&1)"; RC=$?
+  OUT="$(env -u CLAUDE_CONFIG_DIR HOME="$h" NINEROUTER_PORT=1 NINE_SETUP_SCRIPT_DIR="$FAKE_SCRIPTS" PATH="$SHIMS:/usr/bin:/bin:/usr/sbin:/sbin" bash "$SCRIPT" "$@" 2>&1)"; RC=$?
 }
 
 # --- 1. CHECK mode on an already-9Router box: writes NOTHING, exit 0 -----------
 H1="$ROOT/h1"; mkbox "$H1"; B1="$(snap "$H1")"
 run "$H1" --skills-only --check
 A1="$(snap "$H1")"
-if [ "$RC" -eq 0 ] && [ "$B1" = "$A1" ] && [ ! -e "$H1/.claude-skill-backups" ]; then
-  pass "check mode: exit 0, whole fake HOME byte/mtime identical before vs after"
+# MODIFIED assertion (spec: UPDATER_STALE is "counted in the RESULT line and in
+# the exit status"): mkbox installs an OLD nine-router-setup copy ('OLD
+# INSTALLER') that differs from the bundle, so this run now exits 5
+# (updater-stale) instead of 0. The write-check parts of the assertion are
+# unchanged. See also the updater case in section 13.
+if [ "$RC" -eq 5 ] && [ "$B1" = "$A1" ] && [ ! -e "$H1/.claude-skill-backups" ]; then
+  pass "check mode: exit 5 (updater-stale), whole fake HOME byte/mtime identical before vs after"
 else fail "check mode changed something or failed (rc=$RC)"; fi
 case "$OUT" in *"already-9Router box: YES"*) pass "check mode: recognizes an already-9Router box";; *) fail "check mode: did not recognize 9Router box";; esac
 case "$OUT" in *"WILL NOT touch"*"~/.9router"*"~/.local/bin/claude-nine"*) pass "check mode: prints the will/will-not touch list";; *) fail "check mode: touch list missing";; esac
@@ -82,8 +90,11 @@ echo '{"canary":true}' > "$H1/.claude-nine/settings.json"; touch -r "$H1/.claude
 F_BEFORE="$(fsnap "$H1")"
 run "$H1" --skills-only
 F_AFTER="$(fsnap "$H1")"
-if [ "$RC" -eq 0 ] && [ "$F_BEFORE" = "$F_AFTER" ] && [ -n "$F_BEFORE" ]; then
-  pass "apply: 9Router, claude-nine launcher, settings, state and nine-router-setup byte-identical"
+# MODIFIED assertion (spec: UPDATER_STALE counts in the exit status): the
+# fixture's old nine-router-setup copy makes this run exit 5 (updater-stale);
+# the forbidden-path byte-identity check is unchanged.
+if [ "$RC" -eq 5 ] && [ "$F_BEFORE" = "$F_AFTER" ] && [ -n "$F_BEFORE" ]; then
+  pass "apply: exit 5 (updater-stale); 9Router, claude-nine launcher, settings, state and nine-router-setup byte-identical"
 else fail "apply: forbidden path changed or failed (rc=$RC)"; fi
 if cmp -s "$SCRIPT/../../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md" 2>/dev/null \
    || cmp -s "$(dirname "$SCRIPT")/../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md"; then
@@ -95,7 +106,9 @@ cmp -s "$BUNDLE/bro/SKILL.md" "$ROOT/elsewhere/bro/SKILL.md" && [ -L "$H1/.claud
 
 # --- 3. idempotent: second APPLY changes nothing ------------------------------
 B3="$(snap "$H1")"; run "$H1" --skills-only; A3="$(snap "$H1")"
-[ "$RC" -eq 0 ] && [ "$B3" = "$A3" ] && pass "idempotent: second apply is a no-op" || fail "idempotent: second apply changed files (rc=$RC)"
+# MODIFIED assertion (spec: UPDATER_STALE counts in the exit status): same
+# fixture updater as above, so rc is 5, not 0; the no-op check is unchanged.
+[ "$RC" -eq 5 ] && [ "$B3" = "$A3" ] && pass "idempotent: second apply is a no-op (exit 5, updater-stale)" || fail "idempotent: second apply changed files (rc=$RC)"
 case "$OUT" in *"0 new + 0 changed"*) pass "idempotent: reports 0 new + 0 changed";; *) fail "idempotent: summary not zero";; esac
 
 # --- 4. a box that does NOT run 9Router: apply refuses, check reports NO -------
@@ -150,6 +163,103 @@ case "$OUT" in *"STALE (destination file is a symlink to different content)"*"el
 [ "$(cat "$ROOT/elsewhere/file-target/SKILL.md")" = "different content" ] && [ -L "$H8/.claude/skills/eli5/SKILL.md" ] \
   && pass "stale file symlink: target and link left untouched" || fail "stale file symlink: touched the foreign target"
 [ ! -e "$MARK" ] && pass "symlink cases: install path never reached" || fail "symlink cases reached the install path"
+
+# --- 7. blocked outcomes: incomplete delivery is never reported complete ------
+# A bundled skill that cannot land as a skill directory at its destination is
+# BLOCKED: reported with the exact path and reason, counted in the RESULT line,
+# exit 4, and nothing is written for it. Both cases run against a FAKE bundle
+# (NINE_SETUP_SCRIPT_DIR) whose manifest names exactly the skill under test.
+FAKE="$ROOT/fake"
+mkdir -p "$FAKE/.claude/skills/nine-router-setup" "$FAKE/CONTROL"
+ln -s "$BUNDLE/nine-router-setup/scripts" "$FAKE/.claude/skills/nine-router-setup/scripts"
+FAKE_SCRIPTS="$FAKE/.claude/skills/nine-router-setup/scripts"
+
+# 7a. manifest skill with no source in the bundle -> BLOCKED, exit 4, nothing written
+printf 'ghost-skill\n' > "$FAKE/CONTROL/bundled-skills.txt"
+H9="$ROOT/h9"; okbox "$H9"; B9="$(snap "$H9")"
+run "$H9" --skills-only
+[ "$RC" -eq 4 ] && [ "$B9" = "$(snap "$H9")" ] && [ ! -e "$H9/.claude/skills/ghost-skill" ] \
+  && pass "blocked: missing source exits 4, destination skill stays missing, nothing written" \
+  || fail "blocked: missing source rc=$RC, or something was written"
+case "$OUT" in *"BLOCKED ghost-skill"*"$H9/.claude/skills/ghost-skill"*) pass "blocked: missing source reported with the exact destination path";; *) fail "blocked: missing source not reported with its path";; esac
+case "$OUT" in *"1 blocked"*) pass "blocked: counted in the RESULT line";; *) fail "blocked: RESULT line does not count it";; esac
+
+# 7b. destination is a plain file where a skill directory is expected -> BLOCKED
+cp -R "$BUNDLE/eli5" "$FAKE/.claude/skills/eli5"
+printf 'eli5\n' > "$FAKE/CONTROL/bundled-skills.txt"
+H10="$ROOT/h10"; okbox "$H10"; printf 'plain file here\n' > "$H10/.claude/skills/eli5"
+B10="$(snap "$H10")"
+run "$H10" --skills-only
+[ "$RC" -eq 4 ] && [ "$B10" = "$(snap "$H10")" ] && [ -f "$H10/.claude/skills/eli5" ] \
+  && pass "blocked: plain-file destination exits 4, nothing written, file intact" \
+  || fail "blocked: plain-file rc=$RC, or something was written"
+case "$OUT" in *"BLOCKED eli5"*"$H10/.claude/skills/eli5"*"not a directory"*) pass "blocked: plain-file destination reported with path and reason";; *) fail "blocked: plain-file destination not reported";; esac
+FAKE_SCRIPTS=""
+
+# --- 8. --repair-links: replace the stale symlink with the bundled tree -------
+# Opt-in: the STALE SYMLINK ITSELF is unlinked and this bundle's tree is
+# materialised at the destination path; the old target directory is reported
+# and left completely untouched. Without the flag, case 6a's leave-alone stands.
+H11="$ROOT/h11"; okbox "$H11"; mkdir -p "$ROOT/elsewhere/stale-eli5b"
+printf 'stale eli5\n' > "$ROOT/elsewhere/stale-eli5b/SKILL.md"
+ln -s "$ROOT/elsewhere/stale-eli5b" "$H11/.claude/skills/eli5"
+TB="$(snap "$ROOT/elsewhere/stale-eli5b")"
+run "$H11" --skills-only --repair-links
+[ "$RC" -eq 0 ] && pass "repair-links: stale link repaired, exit 0 (delivered)" || fail "repair-links: rc=$RC"
+[ -d "$H11/.claude/skills/eli5" ] && [ ! -L "$H11/.claude/skills/eli5" ] && cmp -s "$BUNDLE/eli5/SKILL.md" "$H11/.claude/skills/eli5/SKILL.md" \
+  && pass "repair-links: destination is a real directory carrying the bundled tree" || fail "repair-links: destination not materialised"
+[ "$TB" = "$(snap "$ROOT/elsewhere/stale-eli5b")" ] && pass "repair-links: old target left intact and untouched" || fail "repair-links: old target was touched"
+case "$OUT" in *"REPAIRED eli5"*"$ROOT/elsewhere/stale-eli5b"*"left untouched"*) pass "repair-links: old target path reported";; *) fail "repair-links: old target not reported";; esac
+run "$H11" --repair-links
+[ "$RC" -ne 0 ] && pass "guard: --repair-links alone is refused" || fail "guard: --repair-links alone accepted"
+
+# --- 9. repair idempotence: a second repair run is a no-op --------------------
+B11="$(snap "$H11")"; run "$H11" --skills-only --repair-links; A11="$(snap "$H11")"
+[ "$RC" -eq 0 ] && [ "$B11" = "$A11" ] && pass "repair-links: second run is a no-op" || fail "repair-links: second run changed files (rc=$RC)"
+case "$OUT" in *"0 new + 0 changed"*) pass "repair-links: second run reports 0 new + 0 changed";; *) fail "repair-links: summary not zero";; esac
+
+# --- 10. a symlink inside a destination tree is never overwritten -------------
+# Even WITH --repair-links: a foreign symlink INSIDE a real skill dir stays
+# untouched and reported (repair-links repairs a stale skill-level link only).
+H12="$ROOT/h12"; okbox "$H12"; mkdir -p "$H12/.claude/skills/eli5" "$ROOT/elsewhere/file-target2"
+printf 'different content\n' > "$ROOT/elsewhere/file-target2/SKILL.md"
+ln -s "$ROOT/elsewhere/file-target2/SKILL.md" "$H12/.claude/skills/eli5/SKILL.md"
+T12="$(snap "$ROOT/elsewhere/file-target2")"
+run "$H12" --skills-only --repair-links
+case "$OUT" in *"STALE (destination file is a symlink to different content)"*"eli5/SKILL.md"*) pass "inner symlink: differing link reported even with --repair-links";; *) fail "inner symlink: not reported";; esac
+[ "$RC" -eq 3 ] && pass "inner symlink: exit 3 (content not delivered)" || fail "inner symlink: rc=$RC"
+[ "$T12" = "$(snap "$ROOT/elsewhere/file-target2")" ] && [ -L "$H12/.claude/skills/eli5/SKILL.md" ] \
+  && pass "inner symlink: link and foreign target untouched (never written through)" || fail "inner symlink: target or link touched"
+
+# --- 11. executable mode drift is reported and never silently ignored --------
+# The bundle ships +x scripts; a copy that lost the executable bit is drift.
+H13="$ROOT/h13"; okbox "$H13"; cp -R "$BUNDLE/drama-studio" "$H13/.claude/skills/drama-studio"
+chmod -x "$H13/.claude/skills/drama-studio/studio.py"
+run "$H13" --skills-only --check
+case "$OUT" in *"MODE DRIFT"*"drama-studio/studio.py"*) pass "mode drift: +x difference reported";; *) fail "mode drift: not reported";; esac
+case "$OUT" in *"mode drift"*) pass "mode drift: counted in the RESULT line";; *) fail "mode drift: not counted in RESULT";; esac
+run "$H13" --skills-only
+[ -x "$H13/.claude/skills/drama-studio/studio.py" ] && pass "mode drift: apply refreshes the executable bit" || fail "mode drift: apply left the +x difference"
+
+# The same drift behind a symlinked tree: equivalence must NOT claim identical.
+H14="$ROOT/h14"; okbox "$H14"; cp -R "$BUNDLE/drama-studio" "$ROOT/elsewhere/drama-stale"
+chmod -x "$ROOT/elsewhere/drama-stale/studio.py"
+ln -s "$ROOT/elsewhere/drama-stale" "$H14/.claude/skills/drama-studio"
+run "$H14" --skills-only
+case "$OUT" in *"MODE DRIFT"*"drama-stale/studio.py"*) pass "mode drift: tree comparison reports it";; *) fail "mode drift: tree comparison silent";; esac
+case "$OUT" in *"identical content"*) fail "mode drift: drifted tree falsely claimed identical";; *) pass "mode drift: drifted tree not claimed identical";; esac
+[ "$RC" -eq 3 ] && pass "mode drift: drifted symlinked tree is stale, exit 3" || fail "mode drift: rc=$RC"
+
+# --- 12. the installed updater is reported, never silently excluded ----------
+# nine-router-setup is excluded from the sync, but an installed copy that
+# differs from this bundle is UPDATER_STALE: exact path, human action (the full
+# install), counted in the RESULT line AND in the exit status (rc 5).
+F_U="$(fsnap "$H1")"
+run "$H1" --skills-only --check
+case "$OUT" in *"UPDATER_STALE"*"$H1/.claude/skills/nine-router-setup"*) pass "updater: stale installer reported with the exact path";; *) fail "updater: stale installer not reported";; esac
+case "$OUT" in *"run the FULL install"*) pass "updater: human action (the full install) reported";; *) fail "updater: human action missing";; esac
+case "$OUT" in *"updater-stale"*) pass "updater: counted in the RESULT line";; *) fail "updater: not counted in RESULT";; esac
+[ "$RC" -eq 5 ] && [ "$F_U" = "$(fsnap "$H1")" ] && pass "updater: counted in the exit status (rc 5), installer untouched" || fail "updater: rc=$RC or installer touched"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

@@ -537,22 +537,62 @@ cron_privacy_check() {
 }
 
 # ---------------------------------------------------------------------------
-# --skills-only [--check]: for boxes that ALREADY run 9Router and whose router
-# settings must not change. Syncs bundled skill CONTENT only and NEVER reaches
-# the install path: main() calls skills_only_mode and exits.
+# --skills-only [--check] [--repair-links]: for boxes that ALREADY run 9Router
+# and whose router settings must not change. Syncs bundled skill CONTENT only
+# and NEVER reaches the install path: main() calls skills_only_mode and exits.
 #
 #   --skills-only          APPLY: add/refresh skill files under EXISTING skills roots.
 #   --skills-only --check  CHECK: strictly read-only. No write command is reachable on
 #                          this path (no mkdir/cp/ln/rm/mktemp, no redirect to a file,
 #                          no here-doc - bash 3.2 here-docs create temp files); it only
 #                          reports what APPLY would add or change.
+#   --skills-only --repair-links
+#                          OPT-IN repair of a stale installation. For a bundled skill
+#                          whose destination is a STALE SYMLINK, the link itself is
+#                          unlinked and this bundle's tree is materialised at the
+#                          destination path. The link's old target directory is left
+#                          completely untouched and its path is reported. Without the
+#                          flag, today's behaviour stands: the link is left alone and
+#                          reported STALE (exit 3). A foreign symlink is NEVER written
+#                          through, with or without the flag. Every write is idempotent:
+#                          a second run is a no-op.
 #
-# Unlike link_one_skill: NO backup dir, NO moving or deleting anything. A real skill
-# dir is refreshed file by file in place; a symlink to somewhere else is left alone.
-# nine-router-setup itself is excluded: it is the installer, and replacing it is
-# exactly what must not happen on these boxes.
-# ponytail: content-only compare (exec-bit drift ignored), stale files in a skill are
-# kept, cp is not atomic (a re-run repairs); add a prune/mode/atomic pass if needed.
+# Unlike link_one_skill: NO backup dir, NO moving or deleting anything (the one
+# exception is unlinking a stale symlink itself under --repair-links, which never
+# touches its target). A real skill dir is refreshed file by file in place.
+# nine-router-setup itself is excluded from the sync: it is the installer, and
+# replacing it is exactly what must not happen on these boxes. It is NEVER
+# silently excluded from the report: when the installed copy differs from this
+# bundle it is reported UPDATER_STALE with its exact path and the human action
+# (the full install), counted in the RESULT line and in the exit status.
+#
+# Per bundled skill and destination the run distinguishes:
+#   OK/delivered   content at the destination matches this bundle
+#   BLOCKED        delivery impossible: no source in this bundle, or the
+#                  destination is a plain file where a skill directory is
+#                  expected. Counted separately, reported with the exact path
+#                  and reason, and never reported as delivered; nothing is
+#                  written for that skill.
+#   STALE          a symlinked destination (or a symlinked file inside a real
+#                  skill dir) carries content that differs from this bundle and
+#                  was left alone (--repair-links repairs skill-level stale
+#                  links only, never a file inside a foreign tree).
+#   UPDATER_STALE  the installed nine-router-setup copy differs from this bundle.
+#   MODE DRIFT     an executable-mode difference; a +x difference is never
+#                  silently ignored (APPLY refreshes a real file's mode).
+#
+# Exit status: 0 delivered; 1 write error; 3 stale symlink(s) left alone;
+# 4 blocked (incomplete delivery); 5 updater stale. When several apply, the
+# most severe wins (1, then 4, then 3, then 5); the RESULT line always carries
+# every count.
+#
+# Equivalence is checked per entry and never claimed from regular-file byte
+# comparison alone: file sets (missing and extra entries count), regular files
+# by content and size, symlinks by target (with a destination symlink that
+# would escape the tree flagged), and executable mode bits (drift reported).
+# The comparison is read-only in every mode.
+# ponytail: stale files in a real skill dir are kept (no prune); cp is not
+# atomic (a re-run repairs); add a prune/atomic pass if needed.
 # ---------------------------------------------------------------------------
 so_print_paths() {
   printf '%s\n' \
@@ -567,35 +607,150 @@ so_print_paths() {
     "    other config: any settings.json (hooks, Agent Teams, auto-compact, ultracode override), operator.env" \
     "    state: Keychain token, ~/Library/Application Support/BlackCEO/999, ~/.local/share/999," \
     "      ~/Library/Logs/BlackCEO-999, API docs.md" \
-    "    skipped: nine-router-setup (the installer itself); any skill dir that is a symlink elsewhere," \
-    "      a plain file, or has no source in this clone; any destination FILE that is a symlink" \
+    "    skipped: nine-router-setup (the installer itself - reported UPDATER_STALE when the installed copy differs); source and destination are the same directory" \
+    "    blocked (counted separately, never reported as delivered): a bundled skill with no source in this" \
+    "      bundle, or a destination that is a plain file where a skill directory is expected" \
     "    never overwritten: a symlinked skill or file stays untouched, but when its content differs" \
     "      from this bundle it is reported STALE and the run exits 3 (content was NOT delivered there)" \
+    "    --repair-links only: a STALE symlinked skill is replaced by this bundle's tree at the destination" \
+    "      path (the link is unlinked; its old target directory is left untouched and reported)" \
     "    never: backups, ~/.claude-skill-backups, moving or deleting any file, installing Node/9Router/gh/Vercel"
 }
 
-so_same_tree() { # so_same_tree <src> <dst-dir> -> 0 when every bundled file is present and identical
-  local src="$1" dst="$2" rel
-  [ -d "$dst" ] || return 1
-  while IFS= read -r rel; do
-    rel="${rel#./}"
-    [ -f "$dst/$rel" ] || return 1
-    cmp -s "$src/$rel" "$dst/$rel" || return 1
-  done < <(cd "$src" && find . -type f ! -name .DS_Store | LC_ALL=C sort)
-  return 0
+so_link_escapes() { # so_link_escapes <tree-root> <entry-rel> <target> -> 0 when the link leaves the tree
+  local root="$1" rel="$2" tgt="$3" seg rest depth=0
+  case "$tgt" in
+    /*) case "$tgt" in "$root"/*) return 1 ;; *) return 0 ;; esac ;;
+  esac
+  rest="$(dirname "$rel")/$tgt"
+  while [ -n "$rest" ]; do
+    seg="${rest%%/*}"
+    if [ "$seg" = "$rest" ]; then rest=""; else rest="${rest#*/}"; fi
+    case "$seg" in
+      ''|.) ;;
+      ..) depth=$((depth - 1)); [ "$depth" -lt 0 ] && return 0 ;;
+      *) depth=$((depth + 1)) ;;
+    esac
+  done
+  return 1
 }
 
-so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_SAME SO_SKP SO_STALE SO_FAIL
-  local src="$1" dst="$2" check="$3" label="$4" rel st
-  SO_NEW=0; SO_CHG=0; SO_SAME=0; SO_SKP=0; SO_STALE=0; SO_FAIL=0
+so_tree_diff() { # so_tree_diff <src> <dst-dir> <detail:0|1> -> 0 when dst carries exactly this bundle's tree
+  # Read-only typed equivalence: file sets both ways (missing/extra entries
+  # count), regular files by content and size, symlinks by target (with a
+  # destination symlink that would escape the tree flagged), executable mode
+  # bits (drift reported, never silently ignored). Sets SO_TD_MODE to the
+  # mode-drift count; SO_TD_DIFF=1 when anything differs.
+  local src="$1" dst="$2" detail="$3" rel sx dx s_tgt d_tgt
+  SO_TD_DIFF=0; SO_TD_MODE=0
+  if [ ! -d "$dst" ]; then
+    if [ "$detail" = 1 ]; then printf '    DIFF: destination tree missing: %s\n' "$dst"; fi
+    return 1
+  fi
   while IFS= read -r rel; do
     rel="${rel#./}"
+    if [ -L "$src/$rel" ]; then
+      if [ ! -L "$dst/$rel" ]; then
+        if [ "$detail" = 1 ]; then printf '    DIFF %s/%s: bundle entry is a symlink (-> %s), destination is not\n' "$dst" "$rel" "$(readlink "$src/$rel")"; fi
+        SO_TD_DIFF=1; continue
+      fi
+      s_tgt="$(readlink "$src/$rel")"; d_tgt="$(readlink "$dst/$rel")"
+      if [ "$s_tgt" != "$d_tgt" ]; then
+        if [ "$detail" = 1 ]; then printf '    DIFF %s/%s: symlink target differs (bundle -> %s, destination -> %s)\n' "$dst" "$rel" "$s_tgt" "$d_tgt"; fi
+        SO_TD_DIFF=1
+      fi
+      if so_link_escapes "$dst" "$rel" "$d_tgt"; then
+        if [ "$detail" = 1 ]; then printf '    FLAG %s/%s: destination symlink escapes the tree -> %s\n' "$dst" "$rel" "$d_tgt"; fi
+      fi
+    else
+      if [ -L "$dst/$rel" ]; then
+        if [ "$detail" = 1 ]; then printf '    DIFF %s/%s: bundle entry is a regular file, destination is a symlink (-> %s)\n' "$dst" "$rel" "$(readlink "$dst/$rel")"; fi
+        SO_TD_DIFF=1; continue
+      elif [ ! -f "$dst/$rel" ]; then
+        if [ "$detail" = 1 ]; then
+          if [ -e "$dst/$rel" ]; then printf '    DIFF %s/%s: bundle entry is a regular file, destination is not a regular file\n' "$dst" "$rel"
+          else printf '    DIFF %s/%s: missing at the destination\n' "$dst" "$rel"; fi
+        fi
+        SO_TD_DIFF=1; continue
+      fi
+      if ! cmp -s "$src/$rel" "$dst/$rel"; then
+        if [ "$detail" = 1 ]; then printf '    DIFF %s/%s: content or size differs\n' "$dst" "$rel"; fi
+        SO_TD_DIFF=1; continue
+      fi
+      sx=0; dx=0
+      case "$(stat -f %Lp "$src/$rel" 2>/dev/null)" in *[1357]) sx=1 ;; esac
+      case "$(stat -f %Lp "$dst/$rel" 2>/dev/null)" in *[1357]) dx=1 ;; esac
+      if [ "$sx" != "$dx" ]; then
+        if [ "$detail" = 1 ]; then printf '    MODE DRIFT %s/%s: bundle %s vs destination %s\n' "$dst" "$rel" "$(stat -f %Lp "$src/$rel" 2>/dev/null)" "$(stat -f %Lp "$dst/$rel" 2>/dev/null)"; fi
+        SO_TD_MODE=$((SO_TD_MODE + 1)); SO_TD_DIFF=1
+      fi
+    fi
+  done < <(cd "$src" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    if [ ! -e "$src/$rel" ] && [ ! -L "$src/$rel" ]; then
+      if [ "$detail" = 1 ]; then printf '    DIFF %s/%s: extra entry at the destination, not in this bundle\n' "$dst" "$rel"; fi
+      SO_TD_DIFF=1
+    fi
+  done < <(cd "$dst" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
+  [ "$SO_TD_DIFF" -eq 0 ]
+}
+
+so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_SAME SO_SKP SO_STALE SO_MODE SO_FAIL
+  local src="$1" dst="$2" check="$3" label="$4" rel st sx dx tgt
+  SO_NEW=0; SO_CHG=0; SO_SAME=0; SO_SKP=0; SO_STALE=0; SO_MODE=0; SO_FAIL=0
+  while IFS= read -r rel; do
+    rel="${rel#./}"
+    if [ -L "$src/$rel" ]; then
+      # A bundle symlink is delivered as a link and compared by target, never
+      # by following it. A destination link is never written through.
+      tgt="$(readlink "$src/$rel")"
+      if [ -L "$dst/$rel" ]; then
+        if so_link_escapes "$dst" "$rel" "$(readlink "$dst/$rel")"; then
+          printf '    FLAG %s/%s: destination symlink escapes the tree -> %s\n' "$label" "$rel" "$(readlink "$dst/$rel")"
+        fi
+        if [ "$(readlink "$dst/$rel")" = "$tgt" ]; then SO_SAME=$((SO_SAME + 1))
+        else printf '    STALE (destination symlink differs from the bundle) %s/%s -> %s (bundle -> %s)\n' "$label" "$rel" "$(readlink "$dst/$rel")" "$tgt"; SO_STALE=$((SO_STALE + 1)); fi
+        continue
+      fi
+      if [ -e "$dst/$rel" ]; then
+        printf '    STALE (bundle entry is a symlink -> %s; destination is not a symlink - left alone) %s/%s\n' "$tgt" "$label" "$rel"
+        SO_STALE=$((SO_STALE + 1)); continue
+      fi
+      if [ "$check" = 1 ]; then
+        printf '    WOULD NEW %s/%s (symlink -> %s)\n' "$label" "$rel" "$tgt"
+      elif mkdir -p "$(dirname "$dst/$rel")" && ln -s "$tgt" "$dst/$rel"; then
+        :
+      else
+        printf '    ERROR could not write %s/%s\n' "$label" "$rel"; SO_FAIL=$((SO_FAIL + 1)); continue
+      fi
+      SO_NEW=$((SO_NEW + 1)); continue
+    fi
     if [ -L "$dst/$rel" ]; then
+      if so_link_escapes "$dst" "$rel" "$(readlink "$dst/$rel")"; then
+        printf '    FLAG %s/%s: destination symlink escapes the tree -> %s\n' "$label" "$rel" "$(readlink "$dst/$rel")"
+      fi
       if cmp -s "$src/$rel" "$dst/$rel" 2>/dev/null; then SO_SAME=$((SO_SAME + 1))
       else printf '    STALE (destination file is a symlink to different content) %s/%s -> %s\n' "$label" "$rel" "$(readlink "$dst/$rel")"; SO_STALE=$((SO_STALE + 1)); fi
       continue
     elif [ ! -e "$dst/$rel" ]; then st=NEW
-    elif cmp -s "$src/$rel" "$dst/$rel"; then SO_SAME=$((SO_SAME + 1)); continue
+    elif cmp -s "$src/$rel" "$dst/$rel"; then
+      # Identical content, but a +x difference is never silently ignored.
+      sx=0; dx=0
+      case "$(stat -f %Lp "$src/$rel" 2>/dev/null)" in *[1357]) sx=1 ;; esac
+      case "$(stat -f %Lp "$dst/$rel" 2>/dev/null)" in *[1357]) dx=1 ;; esac
+      if [ "$sx" != "$dx" ]; then
+        printf '    MODE DRIFT %s/%s: bundle %s vs destination %s\n' "$label" "$rel" "$(stat -f %Lp "$src/$rel" 2>/dev/null)" "$(stat -f %Lp "$dst/$rel" 2>/dev/null)"
+        SO_MODE=$((SO_MODE + 1))
+        if [ "$check" = 1 ]; then
+          printf '    WOULD FIX MODE %s/%s\n' "$label" "$rel"
+        elif chmod "$(stat -f %Lp "$src/$rel" 2>/dev/null)" "$dst/$rel"; then
+          printf '    FIXED MODE %s/%s -> %s\n' "$label" "$rel" "$(stat -f %Lp "$src/$rel" 2>/dev/null)"
+        else
+          printf '    ERROR could not fix mode %s/%s\n' "$label" "$rel"; SO_FAIL=$((SO_FAIL + 1))
+        fi
+      fi
+      SO_SAME=$((SO_SAME + 1)); continue
     else st=CHANGED; fi
     if [ "$check" = 1 ]; then
       printf '    WOULD %s %s/%s\n' "$st" "$label" "$rel"
@@ -605,12 +760,13 @@ so_sync() { # so_sync <src> <dst> <check:0|1> <label> -> sets SO_NEW SO_CHG SO_S
       printf '    ERROR could not write %s/%s\n' "$label" "$rel"; SO_FAIL=$((SO_FAIL + 1)); continue
     fi
     if [ "$st" = NEW ]; then SO_NEW=$((SO_NEW + 1)); else SO_CHG=$((SO_CHG + 1)); fi
-  done < <(cd "$src" && find . -type f ! -name .DS_Store | LC_ALL=C sort)
+  done < <(cd "$src" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
 }
 
 skills_only_mode() { # skills_only_mode <check:0|1>
-  local check="$1" markers="" roots="" r d s src src_real dst dst_real verb
-  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 skills_root="$SKILL_DIR/.."
+  local check="$1" markers="" roots="" r d s src src_real dst dst_real verb up old_target
+  local repair="$REPAIR_LINKS"
+  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 t_blocked=0 t_mode=0 t_updater=0 skills_root="$SKILL_DIR/.."
 
   # 9Router detection - read-only: two stats and one local GET on /api/health.
   [ ! -d "$HOME/.9router" ] || markers="$markers ~/.9router"
@@ -630,6 +786,9 @@ $d
 
   if [ "$check" = 1 ]; then verb=WOULD; printf '[skills-only] mode: CHECK - read-only, nothing is written\n'
   else verb=DONE; printf '[skills-only] mode: APPLY - bundled skill content only\n'; fi
+  if [ "$repair" = 1 ]; then
+    printf '[skills-only] --repair-links: a stale symlinked skill is replaced (the link only) with this bundle tree\n'
+  fi
   printf '[skills-only] source clone: %s\n' "$(cd -P "$skills_root" && pwd -P)"
   if [ -n "$markers" ]; then
     printf '[skills-only] already-9Router box: YES (markers:%s)\n' "$markers"
@@ -646,29 +805,74 @@ $d
     while IFS= read -r s; do
       [ -n "$s" ] || continue
       src="$skills_root/$s"; dst="$d/$s"
-      if [ ! -f "$src/SKILL.md" ]; then printf '  SKIP %s: no source in this clone\n' "$s"; t_skip=$((t_skip + 1)); continue; fi
+      if [ ! -f "$src/SKILL.md" ]; then
+        printf '  BLOCKED %s: no source in this bundle (%s) - %s NOT delivered, nothing written\n' "$s" "$src" "$dst"
+        t_blocked=$((t_blocked + 1)); continue
+      fi
       src_real="$(cd -P "$src" && pwd -P)"
       if [ -L "$dst" ]; then
         dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
         if [ "$dst_real" = "$src_real" ]; then printf '  OK   %s: symlink already points at this clone\n' "$s"; t_same=$((t_same + 1))
-        elif so_same_tree "$src" "$dst_real"; then printf '  OK   %s: symlink to another root carrying identical content (%s)\n' "$s" "$dst_real"; t_same=$((t_same + 1))
-        else printf '  STALE %s: symlink to a tree that differs from this bundle (%s) - left alone, content NOT delivered there\n' "$s" "${dst_real:-broken link}"; t_stale=$((t_stale + 1)); fi
+        elif so_tree_diff "$src" "$dst_real" 1; then printf '  OK   %s: symlink to another root carrying identical content (%s)\n' "$s" "$dst_real"; t_same=$((t_same + 1))
+        else
+          t_mode=$((t_mode + SO_TD_MODE))
+          if [ "$repair" = 1 ] && [ "$check" = 0 ]; then
+            # Opt-in repair: unlink the STALE SYMLINK ITSELF, then materialise
+            # this bundle's tree at the destination path. The old target is
+            # never touched - only reported.
+            old_target="$(readlink "$dst")"
+            if rm -f "$dst" && mkdir -p "$dst"; then
+              printf '  REPAIRED %s: stale symlink at %s (was -> %s) replaced with this bundle tree; old target left untouched\n' "$s" "$dst" "$old_target"
+              so_sync "$src" "$dst" "$check" "$dst"
+              t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_skip=$((t_skip + SO_SKP)); t_stale=$((t_stale + SO_STALE)); t_mode=$((t_mode + SO_MODE)); t_fail=$((t_fail + SO_FAIL))
+              printf '  %-5s %s: %d new, %d changed, %d unchanged, %d skipped, %d stale, %d mode drift\n' "$verb" "$s" "$SO_NEW" "$SO_CHG" "$SO_SAME" "$SO_SKP" "$SO_STALE" "$SO_MODE"
+            else
+              printf '  ERROR could not replace the stale symlink at %s (nothing else was changed)\n' "$dst"
+              t_fail=$((t_fail + 1))
+            fi
+          elif [ "$repair" = 1 ]; then
+            printf '  WOULD REPAIR %s: replace the stale symlink at %s (currently -> %s) with this bundle tree; the old target is left untouched\n' "$s" "$dst" "${dst_real:-broken link}"
+            t_stale=$((t_stale + 1))
+          else
+            printf '  STALE %s: symlink to a tree that differs from this bundle (%s) - left alone, content NOT delivered there\n' "$s" "${dst_real:-broken link}"
+            t_stale=$((t_stale + 1))
+          fi
+        fi
         continue
       fi
-      if [ -e "$dst" ] && [ ! -d "$dst" ]; then printf '  SKIP %s: %s is not a directory - left alone\n' "$s" "$dst"; t_skip=$((t_skip + 1)); continue; fi
+      if [ -e "$dst" ] && [ ! -d "$dst" ]; then
+        printf '  BLOCKED %s: %s is not a directory (a skill directory is expected) - left alone, NOT delivered, nothing written\n' "$s" "$dst"
+        t_blocked=$((t_blocked + 1)); continue
+      fi
       if [ -d "$dst" ] && [ "$(cd -P "$dst" && pwd -P)" = "$src_real" ]; then
         printf '  SKIP %s: source and destination are the same directory\n' "$s"; t_skip=$((t_skip + 1)); continue
       fi
       so_sync "$src" "$dst" "$check" "$dst"
-      t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_skip=$((t_skip + SO_SKP)); t_stale=$((t_stale + SO_STALE)); t_fail=$((t_fail + SO_FAIL))
-      printf '  %-5s %s: %d new, %d changed, %d unchanged, %d skipped, %d stale\n' "$verb" "$s" "$SO_NEW" "$SO_CHG" "$SO_SAME" "$SO_SKP" "$SO_STALE"
+      t_new=$((t_new + SO_NEW)); t_chg=$((t_chg + SO_CHG)); t_same=$((t_same + SO_SAME)); t_skip=$((t_skip + SO_SKP)); t_stale=$((t_stale + SO_STALE)); t_mode=$((t_mode + SO_MODE)); t_fail=$((t_fail + SO_FAIL))
+      printf '  %-5s %s: %d new, %d changed, %d unchanged, %d skipped, %d stale, %d mode drift\n' "$verb" "$s" "$SO_NEW" "$SO_CHG" "$SO_SAME" "$SO_SKP" "$SO_STALE" "$SO_MODE"
     done < <(bundled_skills | grep -v -x nine-router-setup || true)
+
+    # nine-router-setup is excluded from the sync (it is the installer) but is
+    # NEVER silently excluded from the report: an installed copy that differs
+    # from this bundle is UPDATER_STALE and needs the full install to update.
+    up="$d/nine-router-setup"
+    if [ ! -e "$up" ] && [ ! -L "$up" ]; then
+      printf '  UPDATER nine-router-setup: not installed at %s - nothing to check\n' "$up"
+    elif so_tree_diff "$skills_root/nine-router-setup" "$up" 0; then
+      printf '  UPDATER nine-router-setup: up to date (%s)\n' "$up"
+    else
+      printf '  UPDATER_STALE nine-router-setup: installed copy differs from this bundle: %s - human action required: run the FULL install (bash %s with no --skills-only flag) to update the installer; --skills-only never touches it\n' "$up" "$_SELF_DIR/setup-macos.sh"
+      t_updater=$((t_updater + 1))
+    fi
   done < <(printf '%s' "$roots")
-  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d stale; %d error(s)\n' \
+  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d blocked; %d stale; %d mode drift; %d updater-stale; %d error(s)\n' \
     "$([ "$check" = 1 ] && echo check || echo apply)" "$t_new" "$t_chg" \
-    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_stale" "$t_fail"
+    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_blocked" "$t_stale" "$t_mode" "$t_updater" "$t_fail"
   [ "$t_fail" -eq 0 ] || return 1
+  [ "$t_blocked" -eq 0 ] || return 4
   [ "$t_stale" -eq 0 ] || return 3
+  [ "$t_updater" -eq 0 ] || return 5
+  return 0
 }
 
 main() {
@@ -681,7 +885,7 @@ main() {
   # 600) only when supplied; never printed, never guessed.
   OPERATOR_GH_TOKEN="${SPEC_PROTOCOL_OPERATOR_GH_TOKEN:-}"
   OPERATOR_VERCEL_TOKEN="${VERCEL_TOKEN:-}"
-  SKILLS_ONLY=0; CHECK_ONLY=0; OPERATOR_FLAG=0; UPDATE_COMBOS=0
+  SKILLS_ONLY=0; CHECK_ONLY=0; REPAIR_LINKS=0; OPERATOR_FLAG=0; UPDATE_COMBOS=0
   # DeepSeek route: direct (DEEPSEEK_API_KEY) or openrouter (OPENROUTER_API_KEY,
   # openrouter/deepseek/deepseek-v4.1-flash). Flag wins over NINE_DEEPSEEK_ROUTE.
   NINE_DEEPSEEK_ROUTE="${NINE_DEEPSEEK_ROUTE:-}"
@@ -693,8 +897,9 @@ main() {
       --deepseek-route=*) NINE_DEEPSEEK_ROUTE="${1#*=}" ;;
       --update-combos) UPDATE_COMBOS=1 ;;
       --skills-only) SKILLS_ONLY=1 ;;
+      --repair-links) REPAIR_LINKS=1 ;;
       --check) CHECK_ONLY=1 ;;
-      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --deepseek-route direct|openrouter | --update-combos | --skills-only [--check])" ;;
+      *) fail "unknown argument: $1 (options: --operator-remote-owner <github-org> | --deepseek-route direct|openrouter | --update-combos | --skills-only [--check] [--repair-links])" ;;
     esac
     shift
   done
@@ -703,6 +908,7 @@ main() {
     *) fail "--deepseek-route / NINE_DEEPSEEK_ROUTE must be direct or openrouter (got '$NINE_DEEPSEEK_ROUTE'). Nothing was written." ;;
   esac
   [ "$CHECK_ONLY" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--check only applies with --skills-only (the full install has no dry-run). Nothing was written."
+  [ "$REPAIR_LINKS" = 0 ] || [ "$SKILLS_ONLY" = 1 ] || fail "--repair-links only applies with --skills-only. Nothing was written."
   [ "$SKILLS_ONLY" = 0 ] || [ "$OPERATOR_FLAG" = 0 ] || fail "--skills-only never writes operator keys; do not combine it with --operator-remote-owner. Nothing was written."
   case "$OPERATOR_REMOTE_OWNER" in
     "") ;;
