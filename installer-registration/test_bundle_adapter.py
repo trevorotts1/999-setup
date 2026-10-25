@@ -157,7 +157,11 @@ class HashParityTests(FixtureCase):
         self.assertEqual(decision.stamp, "1.5.0",
                          "the stamp is the tree's, never the manifest's")
         lines, rc = ba.run_checks(bundle)
-        self.assertEqual(rc, 2)
+        # Drift is its own, fatal exit code (RC_DRIFT), never the undetermined
+        # code - a gate can then fail on drift while a genuinely-undetermined
+        # case stays distinguishable from a pass.
+        self.assertEqual(rc, ba.RC_DRIFT)
+        self.assertNotEqual(rc, ba.RC_UNDETERMINED)
         self.assertTrue(any("DRIFT spec-protocol manifest=9.9.9" in l
                             for l in lines))
 
@@ -285,6 +289,128 @@ class InstallerParityTests(FixtureCase):
                           encoding="utf-8")
         problems = ba.installer_parity_problems(root)
         self.assertTrue(any("installer missing" in p for p in problems))
+
+
+class ExitCodeTests(FixtureCase):
+    """D3: a gate must be able to fail on drift, and tell unknown from pass."""
+
+    def test_clean_tree_is_a_pass(self):
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        lines, rc = ba.run_checks(ba.load_bundle(root))
+        self.assertEqual(rc, ba.RC_PASS, "\n".join(lines))
+
+    def test_undetermined_is_distinct_from_pass_and_from_drift(self):
+        no_record = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)),
+                                with_record=False)
+        _, rc_undet = ba.run_checks(ba.load_bundle(no_record))
+        self.assertEqual(rc_undet, ba.RC_UNDETERMINED)
+        self.assertNotEqual(rc_undet, ba.RC_PASS)
+
+        drift = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        (drift / "CONTROL/bundled-components.json").write_text(
+            json.dumps(_components(version="9.9.9")), encoding="utf-8")
+        _, rc_drift = ba.run_checks(ba.load_bundle(drift))
+        self.assertEqual(rc_drift, ba.RC_DRIFT)
+        self.assertNotEqual(rc_drift, rc_undet,
+                            "drift and undetermined must not share a code")
+
+    def test_drift_is_never_masked_by_an_unrelated_undetermined(self):
+        # A missing record (undetermined) AND manifest drift together must still
+        # surface as drift, so a real drift can never be hidden by an unknown.
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        (root / "CONTROL/bundled-components.json").write_text(
+            json.dumps(_components(version="9.9.9")), encoding="utf-8")
+        (root / ba.DIGESTS_PATH).unlink()
+        lines, rc = ba.run_checks(ba.load_bundle(root))
+        self.assertEqual(rc, ba.RC_DRIFT, "\n".join(lines))
+
+
+class InstallerParityReportingTests(FixtureCase):
+    """D4: the no-installers case must not claim the installers agree."""
+
+    def test_no_installers_is_never_reported_as_agreement(self):
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        lines, rc = ba.run_checks(ba.load_bundle(root))
+        self.assertFalse(any("PASS installer-parity" in l for l in lines),
+                         "no installers must not report agreement:\n"
+                         + "\n".join(lines))
+        self.assertTrue(any("SKIP installer-parity" in l and
+                            "NOT the claim" in l for l in lines),
+                        "the no-installers case must say what it is:\n"
+                        + "\n".join(lines))
+
+    def test_present_and_delegating_installers_do_agree(self):
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        for rel in (ba.INSTALLER_MAC, ba.INSTALLER_WIN):
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text((REPO / rel).read_text(encoding="utf-8"),
+                              encoding="utf-8")
+        (root / "installer-registration").mkdir()
+        (root / "installer-registration/bundle_adapter.py").write_text(
+            (REPO / "installer-registration/bundle_adapter.py").read_text(
+                encoding="utf-8"), encoding="utf-8")
+        lines, rc = ba.run_checks(ba.load_bundle(root))
+        self.assertTrue(any("PASS installer-parity" in l for l in lines),
+                        "\n".join(lines))
+
+
+class HostInvocationTests(FixtureCase):
+    """D1: per-host claims that evidence can move, not a blanket constant."""
+
+    def _copied_root(self):
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        for rel in (ba.INSTALLER_MAC, ba.INSTALLER_WIN):
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text((REPO / rel).read_text(encoding="utf-8"),
+                              encoding="utf-8")
+        (root / "installer-registration").mkdir()
+        (root / "installer-registration/bundle_adapter.py").write_text(
+            (REPO / "installer-registration/bundle_adapter.py").read_text(
+                encoding="utf-8"), encoding="utf-8")
+        return root
+
+    def test_macos_claim_is_computed_not_a_blanket_unverified(self):
+        results = ba.verify_host_invocation(self._copied_root())
+        by_name = {name: (status, detail) for status, name, detail in results}
+        self.assertEqual(len(results), 5, "one claim per supported host")
+        self.assertEqual(by_name["mac-live-install"][0], "VERIFIED",
+                         "the real adapter invocation must clear the claim:\n"
+                         + repr(by_name["mac-live-install"]))
+        # The remaining hosts are per-host and name the probe that clears them.
+        for name in ("windows-live-install", "vps-runtime", "docker-runtime",
+                     "live-tenant-provision"):
+            self.assertEqual(by_name[name][0], "UNVERIFIED", name)
+            self.assertIn("probe:", by_name[name][1])
+
+    def test_macos_probe_moves_when_the_installer_stops_delegating(self):
+        root = self._copied_root()
+        mac = root / ba.INSTALLER_MAC
+        good = ba.verify_host_invocation(root)
+        self.assertEqual({n: s for s, n, _ in good}["mac-live-install"],
+                         "VERIFIED")
+        # Break the delegation: the claim MUST flip to a named failure.
+        mac.write_text(mac.read_text(encoding="utf-8").replace(
+            "--install-plan", "--something-else"), encoding="utf-8")
+        broken = {n: (s, d) for s, n, d in ba.verify_host_invocation(root)}
+        self.assertEqual(broken["mac-live-install"][0], "FAIL",
+                         "a broken installer must clear VERIFIED:\n"
+                         + repr(broken["mac-live-install"]))
+
+
+class WorkflowTriggerTests(FixtureCase):
+    """D2: CI must trigger on the inputs the digest check reads."""
+
+    def test_ci_triggers_on_control_and_skills(self):
+        wf = (REPO / ".github/workflows/helper-pin-guard.yml").read_text(
+            encoding="utf-8")
+        self.assertGreaterEqual(wf.count("- 'CONTROL/**'"), 2,
+                                "CONTROL/** must be in push.paths and "
+                                "pull_request.paths")
+        self.assertGreaterEqual(wf.count("- '.claude/skills/**'"), 2,
+                                ".claude/skills/** must be in push.paths and "
+                                "pull_request.paths")
 
 
 if __name__ == "__main__":

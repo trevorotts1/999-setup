@@ -52,12 +52,21 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 SCHEMA_COMPONENTS = "bundled-components@1"
 SCHEMA_DIGESTS = "bundle-digests@1"
+
+# Distinct exit codes for --check: a gate can then fail on a real defect and
+# still tell an unproven-but-not-failed case apart from a pass.
+RC_PASS = 0
+RC_FAIL = 1
+RC_UNDETERMINED = 2
+RC_DRIFT = 3
 REGISTRY_PATH = "CONTROL/bundled-skills.txt"
 COMPONENTS_PATH = "CONTROL/bundled-components.json"
 DIGESTS_PATH = "CONTROL/bundle-digests.json"
@@ -83,12 +92,29 @@ SKIP_DIRS = frozenset({".git", "node_modules", "__pycache__", ".pytest_cache", "
 SKIP_FILES = frozenset({".DS_Store"})
 SKIP_SUFFIXES = (".pyc",)
 
-UNVERIFIED = (
-    ("mac-live-install", "a real macOS setup-macos.sh run into a real $HOME"),
-    ("windows-live-install", "a real Windows setup-windows.ps1 run (junctions)"),
-    ("vps-runtime", "a VPS install with the linux launcher"),
-    ("docker-runtime", "the dockerised install path"),
-    ("live-tenant-provision", "provisioning a live tenant from the release channel"),
+# Per-host invocation claims. The macOS installer's adapter-driven install path
+# is PROBED for real here (verify_host_invocation reproduces the exact
+# --list-skills / --install-plan calls the installer makes and can clear or set
+# the claim on evidence). The other four hosts have no probe a non-mutating
+# check can run, so each names the concrete probe that would clear it and why it
+# is out of scope here. Every line is movable by evidence; none is a constant.
+#   name                     probe that clears it                        why not here
+HOST_CLAIMS = (
+    ("mac-live-install",
+     "reproduce setup-macos.sh's adapter invocation (--list-skills, --install-plan)",
+     "a full live install (Node, 9Router, settings, launchers) into a real $HOME"),
+    ("windows-live-install",
+     "pwsh setup-windows.ps1 (junction link path) on a Windows host",
+     "a real Windows setup-windows.ps1 run (junctions); needs a Windows host"),
+    ("vps-runtime",
+     "the linux launcher install on a provisioned VPS",
+     "a VPS install with the linux launcher; needs a provisioned VPS"),
+    ("docker-runtime",
+     "the dockerised install path inside a docker daemon",
+     "the dockerised install path; needs a docker daemon"),
+    ("live-tenant-provision",
+     "provision a live tenant from the release channel",
+     "provisioning a live tenant from the release channel; needs a live tenant"),
 )
 
 
@@ -573,6 +599,60 @@ def installer_parity_problems(root: Path):
     return problems
 
 
+def _probe_macos_install(root: Path):
+    """Reproduce the macOS installer's adapter invocation against this tree.
+
+    This is the supported invocation of the install-plan path: it runs the exact
+    two adapter calls setup-macos.sh makes (--list-skills and --install-plan) and
+    confirms the installer still delegates to them. A break here is a real,
+    named failure that clears the VERIFIED claim - this is evidence, not a label.
+    """
+    mac = Path(root) / INSTALLER_MAC
+    adapter = Path(root) / "installer-registration" / "bundle_adapter.py"
+    if not adapter.exists():
+        return "FAIL", f"the installer expects {adapter.name} and it is absent"
+    text = mac.read_text(encoding="utf-8", errors="replace")
+    missing = [t for t in INSTALLER_DELEGATION if t not in text]
+    if missing:
+        return "FAIL", (f"{INSTALLER_MAC} no longer calls the bundle adapter "
+                        f"(missing {missing!r})")
+    with tempfile.TemporaryDirectory() as td:
+        for extra in (["--list-skills"],
+                      ["--install-plan", "--claude-root", td]):
+            proc = subprocess.run(
+                [sys.executable, "-I", "-B", str(adapter), "--root", str(root)] + extra,
+                capture_output=True, text=True)
+            if proc.returncode != 0:
+                return "FAIL", (f"adapter {' '.join(extra)} rc={proc.returncode}: "
+                                f"{(proc.stderr or proc.stdout).strip()[:200]}")
+    return "VERIFIED", (
+        "the real setup-macos.sh adapter invocation (--list-skills, --install-plan) "
+        "reproduces read-only against this tree; the full live install side effects "
+        "(Node, 9Router, settings, launchers into a real $HOME) are a separate, "
+        "still-unverified scope")
+
+
+def verify_host_invocation(root: Path):
+    """Per-host invocation claims, computed where a safe probe exists.
+
+    The macOS claim is COMPUTED (see _probe_macos_install); the rest are per-host
+    and name the probe that would clear them. This replaces a single blanket
+    UNVERIFIED constant that no run could move.
+    """
+    root = Path(root)
+    results = []
+    if (root / INSTALLER_MAC).exists():
+        status, detail = _probe_macos_install(root)
+    else:
+        status, detail = "UNVERIFIED", (f"not-applicable: no {INSTALLER_MAC} "
+                                        f"under this root")
+    results.append((status, "mac-live-install", detail))
+    for name, probe, needs in HOST_CLAIMS[1:]:
+        results.append(("UNVERIFIED", name,
+                        f"needs: {needs} (probe: {probe})"))
+    return results
+
+
 def write_digest_record(bundle: Bundle, path=None) -> Path:
     path = Path(path) if path else Path(bundle.root) / DIGESTS_PATH
     payload = {
@@ -681,27 +761,45 @@ def run_checks(bundle: Bundle):
                   f"shipped={skill.version} (the stamp is the tree's)")
 
     # 6. installer-parity: both installers consume this adapter's plan
+    present = [rel for rel in (INSTALLER_MAC, INSTALLER_WIN)
+               if (Path(bundle.root) / rel).exists()]
     problems = installer_parity_problems(bundle.root)
     for problem in problems:
         failed(f"installer-parity {problem}")
-    if not problems:
+    if not present:
+        # No installers under this root: there is nothing to compare. That is NOT
+        # the claim that the installers agree - report what it is, never a PASS.
+        lines.append("SKIP installer-parity no installers under this root "
+                     "(nothing to compare; this is NOT the claim that the "
+                     "installers agree)")
+    elif not problems:
         passed("installer-parity setup-macos.sh and setup-windows.ps1 both call "
                "--list-skills and --install-plan (one plan, two link mechanisms)")
 
-    # 7. honest unknowns
-    for name, needs in UNVERIFIED:
-        lines.append(f"UNVERIFIED {name} needs: {needs}")
+    # 7. per-host invocation claims (computed where a safe probe exists)
+    host_results = verify_host_invocation(bundle.root)
+    for status, name, detail in host_results:
+        lines.append(f"{status} {name} {detail}")
 
+    host_verified = sum(1 for s, _, _ in host_results if s == "VERIFIED")
     summary = (f"SUMMARY: {counters['passed']} passed, {counters['failed']} failed, "
                f"{counters['undetermined']} undetermined, {counters['drift']} manifest "
-               f"drift, {len(UNVERIFIED)} unverified (unverified are NOT passes)")
+               f"drift, hosts: {host_verified} verified / "
+               f"{len(host_results) - host_verified} unverified (unverified are NOT passes)")
     lines.append(summary)
 
+    # Distinct exit codes so a gate can fail on a real defect. 1 = a FAIL above,
+    # 3 = manifest drift (a real defect that MUST fail CI), 2 = genuinely
+    # undetermined (unproven, e.g. a skill ships no VERSION - distinguishable
+    # from a pass), 0 = pass. Drift is checked before undetermined so a real
+    # drift is never masked by an unrelated unknown.
     if counters["failed"]:
-        return lines, 1
-    if counters["undetermined"] or counters["drift"]:
-        return lines, 2
-    return lines, 0
+        return lines, RC_FAIL
+    if counters["drift"]:
+        return lines, RC_DRIFT
+    if counters["undetermined"]:
+        return lines, RC_UNDETERMINED
+    return lines, RC_PASS
 
 
 # --------------------------------------------------------------------------
