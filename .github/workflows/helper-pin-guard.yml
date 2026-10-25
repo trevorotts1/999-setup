@@ -68,3 +68,15 @@ jobs:
         run: bash installer-registration/test-helper-install.sh
       - name: Signature page rules reference resolves from the installed skills root
         run: bash installer-registration/test-kie-rules-pointer.sh
+      - name: Bundle hash parity and installer parity (T-37)
+        run: python3 -I -B installer-registration/test_bundle_adapter.py
+      - name: Recorded bundle digests equal the digests built from the tree
+        run: |
+          set +e
+          python3 -I -B installer-registration/bundle_adapter.py --check
+          rc=$?
+          set -e
+          # 2 = undetermined (a skill ships no version). It is NOT a pass, and
+          # it must never be reported as one; 1 = a parity failure.
+          if [ "$rc" -eq 1 ]; then exit 1; fi
+          echo "bundle_adapter --check rc=$rc (2 = undetermined, not a pass)"
