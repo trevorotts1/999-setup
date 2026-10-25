@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "39823c6e7244c08491546d187562c65b17141e5b",
-    "canonical_aggregate_sha256": "03e7c696730b44aab6878fbf5865869ce9f9c7c839231751243cc87e9d0fbd85",
-    "canonical_file_count": 786,
-    "skill_version": "1.0.56"
+    "source_commit": "07f480df6c40db19f3f0eddc15378457c59f4c7f",
+    "canonical_aggregate_sha256": "5cd4642d2d1ad63656fd88f683ee2fb35458236df4d49a441085758c50ab3267",
+    "canonical_file_count": 787,
+    "skill_version": "1.0.57"
   },
   "intentional_distribution_differences": [
     {
@@ -61,8 +61,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "eb5e22e52982bf71d8229784016323a7933a8eed623f623b682067db77a132e2",
-      "archive_bytes": 76219197,
+      "archive_sha256": "ef875447ff8f15e468fac3c4a4bcbe5e20c5ed19a6548ff9dcb6203f425747bd",
+      "archive_bytes": 76228482,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -78,23 +78,23 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "eb5e22e52982bf71d8229784016323a7933a8eed623f623b682067db77a132e2",
-    "bytes": 76219197
+    "sha256": "ef875447ff8f15e468fac3c4a4bcbe5e20c5ed19a6548ff9dcb6203f425747bd",
+    "bytes": 76228482
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "322651903f444d33bbdd891d70a8c67b60cdd884170a84331e87c8e12c804aad",
-    "distribution_file_count": 787
+    "distribution_aggregate_sha256": "125304401b367f1c9b582294fe79af2a54e7eb01e8c852049b820ea1cf246687",
+    "distribution_file_count": 788
   },
   "canonical_files": {
-    "CHANGELOG.md": "c444e7720736a91831789931febc3c315745d290f0d8eef98abe01eceff67261",
+    "CHANGELOG.md": "a17e94b9fc45f7e6d00eb2eddd6b1939b68c183f88c52a10b878a7023b72c338",
     "CORE_UPDATES.md": "24ebd304335662165ee2f7d52d12f749740485763fd4152e4cb9debeea9da308",
     "EXAMPLES.md": "4d8245365d28943b2ff2385d7079770e39a0f827ef52c6e87ad8e2ae622a7646",
     "INSTALL.md": "3e95af2dcdc85d253f39d0c8c49846c100086353ebcd3d03b326e794c441b9a1",
-    "INSTRUCTIONS.md": "bbaef6ff3f15da9b60e2e7d188bddd7c26dd9ee7c5466f343f28272e8499133f",
+    "INSTRUCTIONS.md": "0a6861f924d8be957758c18bb67a4b5e692400040e9f2e0c4e83ef5cfe74f73b",
     "PREREQS.json": "cadfefaeef39d1b5a5f4f8562e4f19df7048dcabc874f754629f9c73eaa22871",
     "QC.md": "07cfe25db8920eee0b2548051f61ad9ef32149479b4bce5a5a6b998e325c8e9b",
-    "SKILL.md": "230162bdefdecc93e408e25e20931eebdb5380c02555523f71d397201693a933",
+    "SKILL.md": "6a1614eb63e147c8c23bdc8703ae6b2ec1346d1fe28aca6e4cc0a25d09399eaa",
     "advisors/brene-brown/briefing.md": "88f8c1a048e2d02b331ba594972b9bc259d50aeeb213646ea189a11506daf1ba",
     "advisors/brene-brown/communication.md": "1334fd2a595046005b03e47b0ee32dd8cb1edf35b90c3c2d43e5837c3cd218fd",
     "advisors/brene-brown/coverage.json": "acb622349e7f7fcd7985d7cc47df04457658863401e97e5db4dc241021f2d981",
@@ -407,7 +407,7 @@
     "launchd/ai.blackceo.council-access-autoprovision.plist.template": "42d949036eaf5a3ba5e36682bfa3ea34352862c85a5e26963ddbfd6c50bdb104",
     "qc-council-of-wise-elders.sh": "f90560b7858cb36927815fd87d13871f845eb2251eb1bc0d15412e16ca9c4e1f",
     "references/install-matrix.md": "cd2a25f23b2df44446c59059e24dcdbf3681fc25db5c80d6b3a5e505e91557de",
-    "references/model-routing.md": "cf2c58f6ecf736051ef579c13a0e135cdecc96630968b7beea66c5e04d5dcf95",
+    "references/model-routing.md": "85a552beabf77fe1b532e8cc801177cac14fcbe14735af35228425c85ef8f03f",
     "references/oprah-les-source-intake/README.md": "b5cffbb9f321abe2e2ccbeadf48332445d17391410c1fc320680f1c84f386161",
     "references/oprah-les-source-intake/canonical-export.json": "7c5f5c45892306c1aee4dcebfc16fb7d8f82afb08fd2d6598c18902de3527871",
     "references/oprah-les-source-intake/skill22-mapping.json": "46a6f519ce0a99d163611590531800728bfa9dc30b759d8ff7550e4a18db32ec",
@@ -503,13 +503,13 @@
     "runtime/src/budgets/index.ts": "0df64af90c97bd35d6fd0962b7ab69053d138b763eea953ef4eff93fa7386924",
     "runtime/src/budgets/route-budget.ts": "192e974bf435d992b6adfca882ae741faf54949c4d30919346d6181f765d9021",
     "runtime/src/budgets/route-snapshot.ts": "0aef69d39bc01ab7df0272a765557a745c23cf5fa47983a2f6c6fdb3dc584b60",
-    "runtime/src/budgets/service.ts": "3e11d9369c7098533b9f4203de7f4a32eccd275167a5bc3421f6a1e3616fa69f",
+    "runtime/src/budgets/service.ts": "704377dca6e7eb62b7205a11c9f10db5f72c824961b5ce8df3b09aa980c39b40",
     "runtime/src/cli/authorization.ts": "cda6feddbcc7ccaa12355657bb36fcc16a33c020016d9b835155dda76ac5deaf",
     "runtime/src/cli/budget.ts": "25696e2b52eb3108bfeb8a51e12b82e8845e833860ea28866f07dce71f4aa8ea",
     "runtime/src/cli/card-contract.ts": "973e876cdcc402eed0c1afbfa5f8731f5208e5d76bf6309d231fcccdd040f097",
     "runtime/src/cli/card-text.ts": "e10573d6c87bcbe6d2d6f43c6913ffe76b68d9aa09ece3f9deb3e7650ee88f1e",
     "runtime/src/cli/convene.ts": "c873f53400a37022fe26948ba2b92cbbf15b947ec0fd5e59cb769a41933aece2",
-    "runtime/src/cli/dispatcher.ts": "0501ad66e67254e532f38d7d1346eec6db38e351b1abd45dad54f4bb28c1194c",
+    "runtime/src/cli/dispatcher.ts": "9a080ef05d1fdd812fca1c68c2d4b25b673616d77cf8bd8847be5a35a8b10104",
     "runtime/src/cli/engine.ts": "abbde2b7a1355c6b06fcd8c23f8674ef5b6af0915f37ef4bf8af80f181174ccc",
     "runtime/src/cli/errors.ts": "7a067db8d1321c24d4d87137ecb1567e1ea653bdcb1bdb7bb0d8c3aae50a9831",
     "runtime/src/cli/executable-resolver.ts": "ee6ec38f66b20abb60a774a0a673dca6021534e34b3466c6b6737f5039903633",
@@ -517,7 +517,7 @@
     "runtime/src/cli/fixture-transport.ts": "77be38fcc55cd361009f64056ccb9b7850b2a2281cea1dc8f4bcaee989039418",
     "runtime/src/cli/host-call-transport.ts": "c3ca059c8afd6973cbc3a70d2acf7d2a9f5e27dedb6c23d672e37d2b28e5dd49",
     "runtime/src/cli/host-ports.ts": "d6d78a0e9a000bdbc9952630f65e1b8c99e5fa8b4ec335a96fc83c0c92c2bce5",
-    "runtime/src/cli/installed-seat-pack.ts": "d3bbc82aff2b16c03e378a9a879cc69933c0c5d0fb310c7a298284d6c76443e9",
+    "runtime/src/cli/installed-seat-pack.ts": "a06107f0728d2f73492046e9856b83229c3c65e4ddd011419198f58ce8fb70f1",
     "runtime/src/cli/leases.ts": "7e9046ff697424aba6cd49592163778c646a5bbb60599792b7d5d96a2e555954",
     "runtime/src/cli/local-host.ts": "8edbe19e314e710d53a2771605e732353fcead9bbaf5ead0b0f0996b1189ee9d",
     "runtime/src/cli/local-store.ts": "4198526e765361ffcbacd93ee25ccbf7a89a4628343577f7bea3265e802cf6a4",
@@ -596,7 +596,7 @@
     "runtime/src/platform/windows.test.ts": "ce6a2df096e07f9a462f9192c1060b0294e65f272576fbbb01eac966d0287e9c",
     "runtime/src/platform/windows.ts": "e618a0eb05a8bf3cf5d7cd5673d48f0f1d2582f3edbae3c6de37540661634ae0",
     "runtime/src/protocol/challenge.ts": "db0897d8a23b5e59482bf5c00bce72021e81130544267624b285e61d18aacad9",
-    "runtime/src/protocol/composition.ts": "24819b207f044975f3b7e5b21364bfda5082a3ef70b3a34544c89be938faa998",
+    "runtime/src/protocol/composition.ts": "d85780628beef8800e2462ed8853ded2d5d2b891c11dfb1cfc64404048b2c5d8",
     "runtime/src/protocol/consensus.ts": "3bc80ad5cad19bcee2b00e2402a0eac36f52fec5df3ddb8a23e2cbe04089729f",
     "runtime/src/protocol/errors.ts": "5bc60e14aa1d57a8c621938da4a26bd693e4a7a00c5b315bf31e73b182c421d1",
     "runtime/src/protocol/follow-up.ts": "e7a85d8c1e8cd1b1829f5c38944d52bfa3832609f63a94573d851ec3ac2ef5c5",
@@ -609,7 +609,7 @@
     "runtime/src/protocol/session-controls.ts": "c39799dfe0041189bb16a5a7507ade312c7baa3447ce284abc9b9bcdc23da65b",
     "runtime/src/protocol/settings.ts": "865758cf5f8b405c330a60604177cca183344e47d25cff96f1c90b61686a862e",
     "runtime/src/protocol/verdict.ts": "36a9b672fc4459c3929e5ed79324769c9b33c5e3cc84bb3317138e5cee3a48c2",
-    "runtime/src/providers/compatible.ts": "45cdc790e87993685b81d4e14dfc233155f388b12f1efbc7400c02d203a7ada0",
+    "runtime/src/providers/compatible.ts": "fb00822f249c6df117d373a2ca7bc50228084914c12d08405b8cbdad74badc3e",
     "runtime/src/providers/diagnostics.ts": "9e580a15caec344aa59285a44b82a6e6d69b349b41369cd3150002c01d718aa9",
     "runtime/src/providers/errors.ts": "12addc480f93d260dea572e9114a7d78131d155947a9c07faa8fe9bbacdfc7a6",
     "runtime/src/providers/http-core.ts": "3a83bf5356e7c187dc815bfd06f5a868c971b2200c6274f38f40de2c29603e5e",
@@ -646,7 +646,7 @@
     "runtime/src/scoring/index.ts": "79132e05ecfea19c3f210aec30c2d954bc92ac8b7ecffd6ea9d8c31ad1e55f26",
     "runtime/src/service/backend-composition.test.ts": "5557fe247cb4d1d1c59bb44c5815a169e54e9a7000ca02e5d72ab2f0c812bbdb",
     "runtime/src/service/composition.test.ts": "c3d6c733dd7891a4e4ce105b64ec5ce2a0251f440913885393b82c2b111182e0",
-    "runtime/src/service/composition.ts": "7609009728c98dc225e97b9c73cd56d3feae2961a7a0dc24e00e2d5e79de3b8e",
+    "runtime/src/service/composition.ts": "0cafdae92be92574bb684dd0eae08fa43a84afad9620d02f02e3500cd9b2def0",
     "runtime/src/service/driver.ts": "bcd641e54067f783bb09341d0b880954c3a10b15baa4f3ac7277b3e315e9ecff",
     "runtime/src/service/durable-admission.ts": "3beac931fdbae18b60b4104ac14dfa46a5a0f0263d51917f30d845ed68cdaeac",
     "runtime/src/service/events.ts": "d5ec00e8bc1698dd006e32d571b3c3c9cab07e57515f3b5c867ed8bfcdcc61de",
@@ -657,7 +657,7 @@
     "runtime/src/service/readiness.ts": "96d9f18bbd6e55a2f8ad281cb05ce5c3818f4e567aac543f350e44d8d87f9135",
     "runtime/src/service/route-choice.ts": "e7bc6e5a70031fca950abb6cc76ed96388d65678f6e0d496a4a9e29a785f86ce",
     "runtime/src/service/service.test.ts": "b6710440e04f5ef388dedca25e8d928894f809a865335805bf9b3654311826ef",
-    "runtime/src/service/sessions.ts": "fff4da42903f8d8debbe8eecd9a5546987d6acc55de16520555946bc086bb803",
+    "runtime/src/service/sessions.ts": "63193649faf94d6bda12c8c874554b53a757bfb3f1115408b974f8956481385c",
     "runtime/src/service/types.ts": "c9015dd651ec58ea95b0090b24e141187ce6413d2dfaee15185703ff6f69c83d",
     "runtime/src/sources/README.md": "02e6622409dceaf951211dc736d2a3bd8ce49a9667df9e2504b1a348cba85517",
     "runtime/src/sources/audit.ts": "c4e53fad1ca25c7580c14d232cd5ad467e90989dc32af1bd01947f652c815e72",
@@ -739,8 +739,9 @@
     "runtime/tests/job-runner.test.ts": "0d8888b0ee2a5c63791dbd1379591ef3424644423573c9aae09ce607ab5d15ef",
     "runtime/tests/later-rounds-runner.test.ts": "8751c16baa3852bfbef3853bb0882a100c652ff17bdc023d21b25e36c3c4db68",
     "runtime/tests/later-rounds.test.ts": "29a2754afc188ab92efe9fb728321524135d55349cd8a4abbad4f8909222f7aa",
+    "runtime/tests/lowfix-1057.test.ts": "e39994071a5274caedd2c210dbc71595e863d2cfa8013e0b12186adf7deaeaed",
     "runtime/tests/modes-77s.test.ts": "0ee5131cc3a21d4c94ede50c1469a75c027fbd39bbfe3d7a0cace150ca7d496b",
-    "runtime/tests/modes-e2e-77s.test.ts": "5b852da165298f1f3feaec5202a03935835514e3b9da52d64d07456267906389",
+    "runtime/tests/modes-e2e-77s.test.ts": "c023ae8e3bac6381f70f2ef40c72ade657ae08aeceefabde2a0a823bae2a538d",
     "runtime/tests/modes-protocol-77s.test.ts": "7c118c581c3f872d32e6e29565d098a483434f45b1c4ffa42f11f8e684baf3ef",
     "runtime/tests/modes-service.test.ts": "655870d101529433ea1fb11552e0176d1904b40d9993976e28a515af6b165419",
     "runtime/tests/opening.test.ts": "4409dbcf3c9d2cf7744ce213c13663fc8ea5a50cc36a685901f3e9184e43a270",
@@ -868,16 +869,16 @@
     "scripts/verify-bundles.mjs": "ac90b21bc2856141326ff0bf412c18610a97311bcb7d7dfc892e4528a0acef18",
     "scripts/verify-cohort-parity.mjs": "6aebc56ba1065335f3175edb8cba2eff43915413a05c59ff07397f4682b0a5fc",
     "scripts/verify-council-box.sh": "dde1b4dd65b5c9cdeb6cbf1f0ecfb365e763b93735b84f748a9f2b4012155bfd",
-    "skill-version.txt": "6754e54f17014b1f3f9816ca238c28437c370378cb38afe0522956c9be5845c5",
+    "skill-version.txt": "47c4bdaa7c971daafe53f81f20a98cec8961e374ef82d062d60c0241f1097520",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
-    "version": "43d0b979fc4252d77678fc80e376653e2f2ed749d61d26d4449997aa97e6283a",
+    "version": "936444f78a73525053954bbb81f540d6aeaa0b7fe3017bed0bcad71bd817c25f",
     "wire.sh": "119825670268d7aebd571e2e853c85615fbf5f8ede81458e657c53df5c957aec"
   },
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
-    "sha256": "91df870ab3005f63ddd527a0ee2775104385fc0a09254d530938c60cefb38c35",
-    "bytes": 1171994
+    "sha256": "8d76e81ce456e7312f2e4ee13b5df8311a9c2e078bf028ff66ea8651591eed71",
+    "bytes": 1173614
   },
   "verification": {
     "canonical_manifest_recomputed": true,

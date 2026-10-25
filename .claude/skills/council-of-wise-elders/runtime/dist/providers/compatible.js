@@ -419,7 +419,7 @@ export class CompatibleHttpTransport {
                     });
                 }
                 catch {
-                    throw new TransportError('TRANSPORT_BUDGET_EXHAUSTED', `The session budget does not allow a transport retry for route ${this.selection.routeId}. The original failure stands: ${err.message}`, { httpStatus: err.httpStatus });
+                    throw new TransportError('TRANSPORT_BUDGET_EXHAUSTED', `The session request limit does not allow a transport retry for route ${this.selection.routeId}. The original failure stands: ${err.message}`, { httpStatus: err.httpStatus });
                 }
                 const delay = this.retryDelayMs(err.retryAfterMs);
                 if (deadlineEnd - nowMs() - delay <= 0) {

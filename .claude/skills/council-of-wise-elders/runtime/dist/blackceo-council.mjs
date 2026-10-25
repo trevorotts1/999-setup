@@ -19426,7 +19426,9 @@ var DurableBudgetService = class {
       (handle) => this.sessionRows(handle, envelope, sessionId)
     );
     const facts = this.journalFacts(envelope, sessionId);
-    const ceilings = this.effectiveCeilings(null);
+    const ceilings = this.effectiveCeilings(
+      this.grantedCeilings(envelope, sessionId, grantId)
+    );
     const kindOf = (r) => facts.get(r.operation_id)?.kind;
     const inStates = (states) => rows.filter((r) => states.includes(r.state));
     const consumedStates = ["committed", "unknown"];
@@ -20159,6 +20161,39 @@ var DurableBudgetService = class {
       hold_expires_at: row.hold_expires_at,
       created_at: row.created_at,
       finalized_at: row.finalized_at
+    };
+  }
+  /**
+   * The tightest count ceilings carried by the run grants funding this
+   * session, so a report states the cap that is actually enforced instead
+   * of the service-wide maximum. The grant's ceilings live in the
+   * council_approvals scope proof, the same durable record the admission
+   * path enforces. An unreadable proof is skipped: it can neither widen
+   * nor narrow the reported cap.
+   */
+  grantedCeilings(envelope, sessionId, grantId) {
+    const rows = this.db.read((handle) => {
+      const select = `SELECT id, scope_proof FROM council_approvals
+          WHERE tenant_id = ? AND company_id = ? AND kind = 'run_grant'`;
+      return grantId ? handle.prepare(`${select} AND id = ?`).all(envelope.tenant_id, envelope.company_id, grantId) : handle.prepare(`${select} AND session_id = ?`).all(envelope.tenant_id, envelope.company_id, sessionId);
+    });
+    const found = [];
+    for (const row of rows) {
+      try {
+        const ceilings = JSON.parse(row.scope_proof).ceilings;
+        if (ceilings) found.push(ceilings);
+      } catch {
+      }
+    }
+    if (found.length === 0) return null;
+    const tightest = (pick2) => {
+      const values = found.map(pick2).filter((value) => typeof value === "number");
+      return values.length === 0 ? void 0 : Math.min(...values);
+    };
+    return {
+      max_provider_requests: tightest((c) => c.max_provider_requests),
+      max_output_repairs: tightest((c) => c.max_output_repairs),
+      max_transport_retries: tightest((c) => c.max_transport_retries)
     };
   }
   effectiveCeilings(tighten) {
@@ -24666,7 +24701,7 @@ var CompatibleHttpTransport = class {
         } catch {
           throw new TransportError(
             "TRANSPORT_BUDGET_EXHAUSTED",
-            `The session budget does not allow a transport retry for route ${this.selection.routeId}. The original failure stands: ${err.message}`,
+            `The session request limit does not allow a transport retry for route ${this.selection.routeId}. The original failure stands: ${err.message}`,
             { httpStatus: err.httpStatus }
           );
         }
@@ -26397,7 +26432,7 @@ function error51(message) {
   throw new CouncilError("COUNCIL_STORE_UNAVAILABLE", message, {
     retryable: false,
     exitCode: 3,
-    action: "Restore or reinstall the Council advisor pack from the verified Skill 77 source before starting a paid Council run."
+    action: "Restore or reinstall the Council advisor pack from the verified Skill 77 source before starting a Council run."
   });
 }
 function isObject2(value) {
@@ -30515,17 +30550,17 @@ var USAGE = [
   "blackceo-council: Council of Wise Elders portable core (foundation build)",
   "",
   "Commands:",
-  "  doctor [--json]                     Offline readiness checks (no paid work)",
+  "  doctor [--json]                     Offline readiness checks (no provider calls)",
   "  models [--json]                     Composed routes and model policy notes",
   "  probe                               Live route probe (not ready in this build)",
   "  create --spec FILE --brief FILE     Create a session from frozen spec and brief JSON",
   "  create --sample                     Create the labeled synthetic sample session",
-  "  sample run [--json]                 Run the labeled sample end to end (fixture transport, spends nothing)",
+  "  sample run [--json]                 Run the labeled sample end to end (fixture transport, offline, no provider calls)",
   "  status SESSION [--json]             Session state summary",
   "  pause SESSION                       Pause an active session",
   "  cancel SESSION                      Cancel a session (late results are fenced out)",
   "  verdict SESSION [--json]           The validated verdict, when one exists",
-  "  replay SESSION [--json]             Committed event history (read only, spends nothing)",
+  "  replay SESSION [--json]             Committed event history (read only, no provider calls)",
   "  export SESSION --format md|json|pdf [--out FILE]",
   "  routes [--origin URL] [--json]      Model routes and harness defaults from the council service",
   "  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID]",
@@ -30630,7 +30665,7 @@ async function runCli(argv, io = defaultIo, deps = {}) {
           "installed advisor-source qualification has not been verified",
           "a supervised durable Council worker has not been verified",
           "the authenticated Council browser UI has not been verified",
-          "a full paid Council session has not been independently verified"
+          "a full live Council session has not been independently verified"
         ];
         const data = {
           ok: checks.every((c) => c.ok || c.name === "live_routes_composed" || c.name === "run_authorization_service"),
@@ -30657,7 +30692,7 @@ async function runCli(argv, io = defaultIo, deps = {}) {
           io,
           json2,
           [
-            `Council core doctor (offline, no paid work)`,
+            `Council core doctor (offline, no provider calls)`,
             `Contracts: ${CONTRACT_PACKAGE_VERSION}`,
             `Data directory: ${dir ?? "unresolved"}`,
             ...checks.map((c) => `  [${c.ok ? "ok" : "not ready"}] ${c.name}: ${c.detail}`),
