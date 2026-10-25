@@ -1,0 +1,397 @@
+{
+  "schema": "pb.999-current-evidence/1",
+  "task": "T-02",
+  "title": "Reverify current 999 bundle, provisioning and update interfaces",
+  "builder_unit": "PBB-176",
+  "generated_at": "2026-10-24T20:31:03Z",
+  "acceptance_clause_verbatim": "Current bundle/adapter/caf/install/update discovery and hash evidence; exact missing capabilities.",
+  "requirements": ["R-26", "R-30"],
+  "check": {
+    "id": "C-02",
+    "required_qc_alias": "opus-chain",
+    "status_after_this_artifact": "UNVERIFIED",
+    "note": "This artifact supplies the evidence C-02 asks for. It is not a QC verdict and does not score C-02."
+  },
+  "repository": {
+    "url": "https://github.com/trevorotts1/999-setup.git",
+    "local_path": "/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup",
+    "branch": "pb/PBB-176/t-02",
+    "base_ref": "origin/main",
+    "head_sha": "317bb24172b3d4327c1fabaeebc68e797c32730e",
+    "head_short": "317bb24",
+    "head_commit_date": "2026-10-24T16:18:53-04:00",
+    "head_subject": "Merge pull request #319 from trevorotts1/batch/council-1055",
+    "version_file": "VERSION=1.38.1",
+    "tracked_files": 4424,
+    "worktree_dirty_at_start": 0,
+    "shallow_clone": true,
+    "prior_t02_head": "3b4e0b9714bad63fd13ab3250f38a6ae44aa9377",
+    "prior_to_current_commit_delta": 46,
+    "supersedes_note": "Prior T-02 recon artifacts (scratch/pb-skill38-20261024/T-02/) were read as a map only. Every number and hash below was re-derived by a command in this run at 317bb24."
+  },
+  "storage_proof": {
+    "external_root": "/Volumes/mac mini m4",
+    "repo_root": "/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup",
+    "scratch_lane": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-176-lane",
+    "tmp": "/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024",
+    "env_used": ["TMPDIR", "TMP", "TEMP", "PYTHONPYCACHEPREFIX", "npm_config_cache"],
+    "internal_disk_writes_by_task": "none observed; the only /private/tmp path seen was the harness's own background task output file, not a task command"
+  },
+  "spec_citations_root": {
+    "document_root": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build",
+    "why_this_is_stated": "Every file named below lives in that project directory, NOT in this repository. This repository also carries a CONTROL/TODO.md and a CONTROL/CHECKLIST.md; they are different documents (CONTROL/TODO.md lines 25-39 are reconciliation notes, CONTROL/CHECKLIST.md lines 130-136 and 150-156 are blank), so a reader who follows the bare filename into this repo lands on the wrong text. The first draft of this artifact named no root, which is the same defect class as a line range that does not cover its claim: a citation a reader cannot follow.",
+    "verified_at": "2026-10-24, repair PBB-268: all 8 line-range citations below were read at that root and each matches the sentence beside it; live-ledgers/checks.json C-02 scope matches verbatim."
+  },
+  "spec_citations": [
+    "TODO.md lines 25-39: T-02 output current-999-evidence.json; acceptance clause quoted verbatim in this file.",
+    "ACCEPTANCE-MATRIX.md line 59: R-26 guided setup, permitted provisioning, resume and operation on supported hosts; tasks include T-02; checks include C-02.",
+    "ACCEPTANCE-MATRIX.md line 67: R-30 999 bundle, adaptation, provisioning, updates and hash parity; tasks include T-02; checks include C-02.",
+    "CHECKLIST.md lines 130-136 and 150-156: same R-26 and R-30 task/check bindings.",
+    "live-ledgers/checks.json C-02 scope: 'Current bundle/adapter/caf/install/update discovery and hash evidence; exact missing capabilities.'",
+    "DISCOVERIES.md lines 217-231 (D-16): historical 999 bundle/adaptation/provisioning/update coverage incomplete; current hash evidence may supersede.",
+    "DISCOVERIES.md lines 399-413 (D-29): upgrades must preserve newer client fixes and state; a stale global green falsifies.",
+    "SPEC.md lines 8-11: guided bootstrap provisions only permitted actions, persists receipts and resumes idempotently.",
+    "SPEC.md lines 50-53: Mac, VPS and Docker use actual supported supervisors and persistent storage; installed/configured/running/activated are distinct."
+  ],
+  "method": {
+    "read_only_static": "File reads, grep, find, json inspection, git show/cat-file.",
+    "executed": "The repo's own checks and regression suites listed in executed_checks, all with TMPDIR on the external volume.",
+    "negative_rule": "Every zero-match claim below carries a same-instrument control that returned non-empty in the same command block.",
+    "not_executed": "No installer run against a real HOME, no CAF venv build, no Windows host, no network publish."
+  },
+  "interfaces": [
+    {
+      "id": "IF-01",
+      "area": "distribution_bundle",
+      "name": "Bundled-skill registry and both parsers",
+      "files": [
+        {"path": "CONTROL/bundled-skills.txt", "sha256": "c71fea9af73e1656f874170295ef20947d8224c06607bec73d3c33c3ed02036c", "lines": 18},
+        {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979},
+        {"path": ".claude/skills/nine-router-setup/scripts/setup-windows.ps1", "sha256": "a6dc1a72a33856b4533d8f663c6af47abde90c863cbd61d303ba5a3abd368815", "lines": 1119}
+      ],
+      "symbols": ["setup-macos.sh bundled_skills() L321", "setup-macos.sh link_one_skill() L352", "setup-macos.sh link_skills_into_root() L397", "setup-windows.ps1 Get-BundledSkills L212", "setup-windows.ps1 Link-BundledSkills L226"],
+      "measured": {
+        "registered_entries": 15,
+        "skill_dirs_with_SKILL_md": 24,
+        "unregistered_skill_dirs": 9,
+        "unregistered_names": ["conversational-ai-system", "convert-and-flow-operator", "email-engine", "ghl-install-pages", "kie", "signature-funnel", "signature-order-form", "signature-product-selection", "signature-upsell"],
+        "fallback_hardcoded_count_when_manifest_missing": 5
+      },
+      "capability": "PRESENT — the registry drives both installers and a negative control proves source presence alone does not install a skill (verify-registration.sh section D)."
+    },
+    {
+      "id": "IF-02",
+      "area": "distribution_bundle",
+      "name": "Bundle/adaptation adapter module",
+      "files": [
+        {"path": "installer-registration/bundle_adapter.py", "sha256": "ABSENT_ON_MAIN", "lines": 0}
+      ],
+      "measured": {
+        "absent_on_origin_main": true,
+        "absence_proof": "git cat-file -e 317bb24172b3d4327c1fabaeebc68e797c32730e:installer-registration/bundle_adapter.py fails; same-instrument control git cat-file -e 317bb24172b3d4327c1fabaeebc68e797c32730e:installer-registration/helper-deps.py succeeds.",
+        "present_only_on_branch": "pb/PBB-075/t37-999-adapter",
+        "branch_reachable_on_origin_now": false,
+        "branch_readback": "git ls-remote origin refs/heads/pb/PBB-075/t37-999-adapter returns no ref; control on the same instrument: git ls-remote origin returns 711 refs, 4 of them matching /PBB/i, so the lookup is alive and the absence is real.",
+        "commit_object_readback": "gh api repos/trevorotts1/999-setup/commits/47724690a66a9e39451a71958c0349df3d72aefb -> HTTP 422 'No commit found for SHA'; control on the same instrument: the same call for 5a773bb98bd8a2d16d748cc9383403d1756b9132 returns that SHA. git cat-file -t on the same object in a full clone also fails.",
+        "ancestor_of_main_exit": 1,
+        "branch_merge_base_with_main": "1d1545fc8412",
+        "branch_merge_base_readback": "resolves: git cat-file -t 1d1545fc8412 -> commit (1d1545fc84129d2995231347886c0a8822395935)."
+      },
+      "reported_unverified": {
+        "what": "figures this artifact can no longer reproduce from any reachable object on origin",
+        "caveat": "These are the values the 2026-10-24T20:31:03Z measurement recorded, kept as reported values only. This readback proves UNREPRODUCIBLE-NOW, not fabricated-then: GitHub garbage-collects unreachable objects, so a branch deleted after that measurement would produce exactly this. What was NOT checked: the GitHub events/audit trail for a branch deletion, and the builder's own scratch copy at /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup. An evidence artifact must not carry hash evidence its reader cannot recompute, so none of these values supports GAP-01 or any other claim in this file.",
+        "readback_commands": [
+          "git ls-remote origin refs/heads/pb/PBB-075/t37-999-adapter",
+          "gh api repos/trevorotts1/999-setup/commits/47724690a66a9e39451a71958c0349df3d72aefb",
+          "git cat-file -t 4cf84275b4a5a369e6d3a2e3673144803e7cdfbfab948983b1d204cdb53014a5"
+        ],
+        "values": {
+          "branch_tip": "47724690a66a9e39451a71958c0349df3d72aefb",
+          "branch_file_lines": 502,
+          "branch_file_sha256": "4cf84275b4a5a369e6d3a2e3673144803e7cdfbfab948983b1d204cdb53014a5"
+        },
+        "not_listed_here": "branch_merge_base_with_main 1d1545fc8412: the commit object resolves (see measured.branch_merge_base_readback), but the claim that it is the merge base of pb/PBB-075/t37-999-adapter with main cannot be recomputed because that branch is gone. The object is kept under measured as a resolvable object; its role in the old merge-base claim is not asserted."
+      },
+      "capability": "ABSENT on main — proven. The only reported adapter implementation is unmerged, and its branch ref and commit object are no longer reachable on origin, so its 502-line size, its sha256 and its '46 commits behind current main' position cannot be recomputed by a reader; those three are reported values only (see reported_unverified) and support no claim here."
+    },
+    {
+      "id": "IF-03",
+      "area": "caf",
+      "name": "CAF / Convert-and-Flow operator skill and its build entry point",
+      "files": [
+        {"path": ".claude/skills/convert-and-flow-operator/wire.sh", "sha256": "d6bf718d61ef1250fc72bd6b746dc1afdfc30bf238d9bdd127701e8943b6cf31", "lines": 188},
+        {"path": ".claude/skills/convert-and-flow-operator/tools/engine/install.sh", "sha256": "bda24735370ed22e6f4c2fe96b9377338f9c0feacc1aa8c48709eecd82b6bc4d", "lines": 82},
+        {"path": ".claude/skills/convert-and-flow-operator/skill-version.txt", "sha256": "8870174f990289a3a25d4fed35b7a58b39b4c3a07c0d10b961a153f1c8186183", "lines": 1}
+      ],
+      "measured": {
+        "skill_files": 158,
+        "skill_tree_digest_sha256": "ada9d9fd9a5a96023a1ddb06e9c4ae9d3cacbbf5d8b558664dbbbcd78308bf34",
+        "skill_version": "v2.1.23",
+        "registered_in_bundled_skills": false,
+        "installer_references_to_caf": 0,
+        "installer_references_to_convert_and_flow": 0,
+        "install_doc_references": 0,
+        "wire_sh_contract": "always exits 0 (lines 39, 187-188); builds the caf CLI in-tree from tools/engine",
+        "engine_cli_entry_files": ["tools/engine/caf", "tools/engine/convertandflow", "tools/engine/ghl"]
+      },
+      "capability": "PRESENT IN TREE / NEVER PROVISIONED. No orchestrator or documented step links the skill, runs wire.sh, or builds the caf CLI."
+    },
+    {
+      "id": "IF-04",
+      "area": "install",
+      "name": "macOS install orchestrator",
+      "files": [
+        {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979}
+      ],
+      "symbols": ["main() L1086", "OS gate L1131-1133", "probe_tool/probe_install L143-160", "write_nine_settings() L449", "set_operator_key() L508", "skills_only_mode() L947"],
+      "measured": {
+        "host_gate": "Darwin AND arm64 both required: `uname -s` must be Darwin at L1132 and `uname -m` must be arm64 at L1133, both inside the cited range 1131-1133 (the range opened at 1131-1132 in the first draft of this artifact, which left the arm64 half of the claim outside its own citation); anything else exits BLOCKER",
+        "numbered_stage_comments": 15,
+        "link_targets": ["$CLAUDE_CONFIG_DIR or ~/.claude", "~/.claude-nine when it is a real settings root", "~/.codex and ~/.agents when ~/.codex exists"],
+        "dry_run": "only --skills-only supports --check; the full install has no dry-run (line 1119 fail text)",
+        "resume_state": "none — grep for resume/--resume returned 0 matches; recovery is idempotent re-run"
+      },
+      "capability": "PARTIAL — installs skills, router, launcher and state on macOS arm64 only; no resume point after a mid-run failure."
+    },
+    {
+      "id": "IF-05",
+      "area": "install",
+      "name": "Windows install orchestrator",
+      "files": [
+        {"path": ".claude/skills/nine-router-setup/scripts/setup-windows.ps1", "sha256": "a6dc1a72a33856b4533d8f663c6af47abde90c863cbd61d303ba5a3abd368815", "lines": 1119}
+      ],
+      "symbols": ["param() L23", "OS gate L336-340", "Get-BundledSkills L212", "Link-BundledSkills L226", "DPAPI token L326"],
+      "measured": {
+        "host_gate": "Windows_NT only",
+        "numbered_stage_comments": 15,
+        "skills_only_mode": "ABSENT",
+        "repair_links": "ABSENT",
+        "refresh_updater": "ABSENT",
+        "bundle_sync_equivalent": "ABSENT (so_sync/so_tree_diff have no PowerShell counterpart)"
+      },
+      "capability": "PARTIAL — install parity for the main path; bundle sync/repair/refresh and check-mode parity are macOS-only."
+    },
+    {
+      "id": "IF-06",
+      "area": "install",
+      "name": "Pinned helper provisioning (KIE/Agnes)",
+      "files": [
+        {"path": "installer-registration/helper-deps.py", "sha256": "f6683a892e1a3108b882e042685a607963a0b4a7724616dc993e337127f13d45", "lines": 496},
+        {"path": "installer-registration/helper-dependencies.json", "sha256": "c245836028135042886bec6deb3b5ebeda378c02267ae7e5dcac73d37541974f", "lines": 202},
+        {"path": "installer-registration/check-helper-pins.py", "sha256": "dfd73e3f3c1197e882815567ad21828f786fffd3b25fd0cebb4dfadcd4312e8f", "lines": 315}
+      ],
+      "measured": {
+        "helper_pins": 9,
+        "required": 7,
+        "optional": 2,
+        "required_names": ["66-kie-image", "67-kie-video", "68-kie-audio", "74-kie-live-adapter", "46-kie-callback-relay", "07-kie-setup", "shared-utils"],
+        "optional_names": ["63-agnes-image", "64-agnes-video"],
+        "pins_generated_at": "2026-10-20T17:42:48Z",
+        "installer_invocations": 0,
+        "documented_install": "AGENT_INSTALL.md lines 169-170 and README.md lines 213-214 make it a manual repository-root command",
+        "doc_pin_drift": "AGENT_INSTALL.md lines 164 and 187 say 74-kie-live-adapter v1.1.6; the manifest pin is v1.1.9"
+      },
+      "capability": "PARTIAL — pinning and verification exist and pass, but no installer runs them; the step is manual and its documentation states a stale version."
+    },
+    {
+      "id": "IF-07",
+      "area": "update",
+      "name": "Update availability check (POSIX and Windows)",
+      "files": [
+        {"path": ".claude/skills/spec-protocol/tools/check-update.sh", "sha256": "f4cd4b9c8b2def6c9c7722e2f14374e8e2e74ee23a043cffbb693e9cf3354ef6", "lines": 273},
+        {"path": "tools/windows-parity/check-update.mjs", "sha256": "ff6917a0a4570e6d82b9a1bd0c28097052c63c07635a35f3c30bbd527d560e80", "lines": 227}
+      ],
+      "symbols": ["check-update.sh SKILLS=(nine-router-setup spec-protocol kaizen eli5 bro) L48", "check_one_skill() L129"],
+      "measured": {
+        "covered_skills": 5,
+        "registered_skills": 15,
+        "coverage_fraction": "5/15",
+        "local_version_source": "<skill>/VERSION; a missing or non-version file yields UNDETERMINED exit 2",
+        "local_version_gate_exact": "check-update.sh check_one_skill() L129 reads $LOCAL_SKILLS_ROOT/<skill>/VERSION by an EXACT-CASE path lookup with no fallback (local_file assigned at L131, missing-file refusal at L137-140), then requires the content to pass is_version() L77-88 (digits and dots only, no leading/trailing dot, no '..', <=32 chars). A missing file, an empty file, or content is_version() rejects all yield UNDETERMINED exit 2 — the skill cannot report an update at all. skill-version.txt is never read by the gate.",
+        "update_capability_under_the_gate": {
+          "instrument": "the gate above, applied to the committed tree; every figure in this object comes from that one instrument",
+          "registered_skills_can_report": 9,
+          "registered_skills_can_report_names": ["blackceo-signature-page", "bro", "eli5", "hook-skill", "kaizen", "kiss", "motion-video-plus", "nine-router-setup", "spec-protocol"],
+          "registered_skills_cannot_report": 6,
+          "registered_skills_cannot_report_names": ["black-friday-launcher", "council-of-wise-elders", "drama-song-ad-factory", "drama-studio", "signature-downsell", "signature-thank-you"],
+          "cannot_report_causes": {
+            "no_version_file_at_all": ["drama-studio"],
+            "version_file_present_but_content_rejected": ["drama-song-ad-factory (VERSION holds 'v2.9.103'; is_version() rejects the leading 'v'; its skill-version.txt holds the same rejected string)"],
+            "version_file_spelled_other_than_exact_VERSION": ["council-of-wise-elders (root entry 'version', lowercase, holding 1.0.55; the gate's lookup is case-sensitive)"],
+            "version_only_in_skill_version_txt": ["black-friday-launcher (skill-version.txt 0.2.9)", "signature-downsell (skill-version.txt 0.1.1)", "signature-thank-you (skill-version.txt 0.3.1)"]
+          },
+          "host_note": "On a case-INsensitive filesystem (macOS APFS default) the lowercase 'version' is found and council-of-wise-elders can report: 10 can / 5 cannot. On a case-SENSITIVE filesystem (Linux VPS and Docker, the hosts GAP-13 names) it is invisible: 9 can / 6 cannot. The gate's literal contract is the case-sensitive one. Presence is not usability: 10 registered skills carry a file named exactly VERSION and only 9 of those can report, and 4 more carry a usable version number in a file the gate never opens."
+        },
+        "registered_skills_without_VERSION": ["black-friday-launcher", "council-of-wise-elders", "drama-studio", "signature-downsell", "signature-thank-you"],
+        "skill_dirs_with_VERSION": 10,
+        "version_file_presence_instrument": "skill_dirs_with_VERSION counts every skill dir holding SKILL.md that has an exact-case root entry named VERSION; registered_skills_without_VERSION counts registry entries with no such entry. Both figures are from that one case-sensitive instrument and the second is 15 minus the 10 registered skills among them. File presence only — see update_capability_under_the_gate for what the gate can actually do with those files. The first draft of this artifact quoted skill_dirs_with_VERSION from this instrument and registered_skills_without_VERSION from a case-INsensitive one (which gives 11 and 4); the two cannot both hold.",
+        "skill_dirs_with_SKILL_md": 24
+      },
+      "capability": "PARTIAL — correct for 5 skills, blind to the other 10 registered skills. Under check-update.sh's own gate 6 registered skills can never report an update (5 on a case-insensitive host): drama-studio has no version file at all; drama-song-ad-factory's VERSION holds 'v2.9.103' which is_version() rejects; council-of-wise-elders ships lowercase 'version' which the case-sensitive lookup never reads; and black-friday-launcher, signature-downsell and signature-thank-you hold their version only in skill-version.txt, which the gate never opens."
+    },
+    {
+      "id": "IF-08",
+      "area": "update",
+      "name": "Self-update",
+      "files": [
+        {"path": ".claude/skills/spec-protocol/tools/self-update.sh", "sha256": "3861df08fb4995a1804d76a850c56e89b5a261a468c281e5c2188f5d74344adc", "lines": 466},
+        {"path": "tools/windows-parity/self-update.mjs", "sha256": "120729448e3b7b631dbc5919381b023465d83ca0d409657390f5dbdb383a53da", "lines": 268}
+      ],
+      "symbols": ["self-update.sh REPO_SKILL_SUBPATH=.claude/skills/spec-protocol L83", "path guard */skills/spec-protocol L206-208"],
+      "measured": {
+        "skill_scope": "spec-protocol only on both platforms",
+        "backup": "~/.spec-protocol-backups (POSIX); <skill>.bak-<version>-<ts> (Windows port)",
+        "never_downgrade": true,
+        "root_update_skills_sh": "ABSENT (ls exit 1)"
+      },
+      "capability": "PARTIAL — the announced update can be applied for exactly one skill."
+    },
+    {
+      "id": "IF-09",
+      "area": "update",
+      "name": "macOS bundle content sync (--skills-only)",
+      "files": [
+        {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979},
+        {"path": ".claude/skills/nine-router-setup/tests/test-skills-only.sh", "sha256": "ea4b8020812849d1a4a01a789046c4afce6ff915f5f70c0198e306b5b0bcd9de", "lines": 373}
+      ],
+      "symbols": ["so_link_escapes() L650", "so_tree_diff() L668", "so_sync() L729", "so_refresh_updater() L796", "skills_only_mode() L947", "main flags --skills-only/--check/--repair-links/--refresh-updater L1104-1108"],
+      "measured": {
+        "modes": ["--check (read-only)", "--repair-links (opt-in)", "--refresh-updater (opt-in, nine-router-setup only)"],
+        "preconditions": "box must already run 9Router (markers ~/.9router or ~/.local/bin/claude-nine or :20128 health)",
+        "test_outcome": "INCOMPLETE — test-skills-only.sh produced 11 PASS lines then had to be killed at 300s; no RESULT line; exit 144. Not counted as a pass."
+      },
+      "capability": "PRESENT (source) / UNPROVEN (full suite) — per-file diff, atomic writes and stale-symlink repair are implemented and named; the suite did not finish in this run."
+    },
+    {
+      "id": "IF-10",
+      "area": "update",
+      "name": "Dual-root skills mirror (sync-nine-skills.sh)",
+      "files": [
+        {"path": "scripts/sync-nine-skills.sh", "sha256": "80436b9019116e332862ba1b98b8cf186b83efab50d09ba79ca6958e95b3707a", "lines": 144},
+        {"path": "launchers/macos/claude-nine", "sha256": "cd70490e9fb490a083597c2d15fc6be601ba1493bb7b56ac8de2ea606df2cedf", "lines": 380}
+      ],
+      "measured": {
+        "launcher_invocation": "launchers/macos/claude-nine L205-206 runs $HOME/.local/bin/sync-nine-skills.sh --quiet when executable",
+        "self_install_flag": "--install (L67, L71, L84) copies itself to ~/.local/bin with mode 755",
+        "orchestrator_references": 0,
+        "doc_claim": "AGENT_INSTALL.md L234 says the installer places it at ~/.local/bin/sync-nine-skills.sh",
+        "self_test": "13 passed, 0 failed"
+      },
+      "capability": "PARTIAL / DOC-CODE DRIFT — the mirror works and is tested, but nothing in either orchestrator installs the launcher-invoked copy."
+    },
+    {
+      "id": "IF-11",
+      "area": "hash_parity",
+      "name": "Vendored-tree and helper hash parity",
+      "files": [
+        {"path": "DIST-02-PACKAGING-MANIFEST.json", "sha256": "0a12f679eab9fe02afc27e348ce08080c6e6fd06dcdf00457f29a4da6d2689b4", "lines": 360},
+        {"path": "installer-registration/helper-dependencies.json", "sha256": "c245836028135042886bec6deb3b5ebeda378c02267ae7e5dcac73d37541974f", "lines": 202},
+        {"path": "installer-registration/council-vendoring.json", "sha256": "830de6dd02fdacd9a20a604ae36a63de98ab5a65850c18cba4105776593ab17a", "lines": 882}
+      ],
+      "measured": {
+        "dist02_entries": 16,
+        "dist02_check": "OK 16 entries match the tree",
+        "dist02_entry_ids": ["tree-49-signature-funnel", "tree-78-signature-product-selection", "tree-79-signature-order-form", "tree-80-signature-upsell", "tree-81-signature-downsell", "tree-82-signature-thank-you", "tree-71-blackceo-signature-page", "tree-77-council-of-wise-elders", "shared-utils-signature-launch", "registry-line-81", "registry-line-82", "registry-line-launcher", "department-map-entry-launcher", "installer-registration-launcher", "skill-number-assigned", "runtime-jsonschema"],
+        "helper_pin_check": "ok — every pin equals openclaw-onboarding@origin/main and every vendored helper folder matches its pin",
+        "coverage_gap": "no per-file or tree hash covers setup-macos.sh, setup-windows.ps1, check-update.sh, self-update.sh, the 17 adapter runtime dirs, or the CAF skill tree"
+      },
+      "capability": "PARTIAL — parity is real and green for 16 vendored entries and 9 helper trees; it is not a bundle-wide hash proof."
+    },
+    {
+      "id": "IF-12",
+      "area": "adapter",
+      "name": "Runtime adapter directories inside skills",
+      "files": [],
+      "measured": {
+        "adapter_roots": 8,
+        "adapter_runtime_dirs": 17,
+        "adapter_files": 43,
+        "adapter_tree_digest_sha256": "3fb52105f33a6c635393e847aa81256a8f215c4e1bf2856750289da823774f7e",
+        "runtimes": {"claude-code": 6, "claude-nine": 6, "codex": 2, "openclaw": 3},
+        "skills_with_adapters": ["black-friday-launcher", "blackceo-signature-page", "drama-song-ad-factory", "hook-skill", "motion-video-plus", "signature-downsell", "signature-funnel", "signature-upsell"]
+      },
+      "capability": "PRESENT as content — adapters ship inside skill trees and are linked with them; no registry, hash pin, or install-time validation of adapter completeness exists."
+    },
+    {
+      "id": "IF-13",
+      "area": "verification",
+      "name": "Platform verification scripts",
+      "files": [
+        {"path": "tests/macos/verify-macos.sh", "sha256": "d29a9d04c7d23c730224af14466dbd9e9117294c7d3faf93429c13874b780a43", "lines": 118},
+        {"path": "tests/windows/verify-windows.ps1", "sha256": "a6fcae6d4a22e345b40dc93b02d9063ba84873a2e855d2a9b66e172c36c0bd6b", "lines": 131}
+      ],
+      "measured": {
+        "orchestrator_invocations": 0,
+        "documented_as_manual": "AGENT_INSTALL.md step 11",
+        "verdict_vocabulary": ["PASS", "FAIL", "BLOCKED"],
+        "macos_rows": "OS, arch, Documents, launcher presence/executable, login-shell resolution, route-state mode 600"
+      },
+      "capability": "PARTIAL — verification exists and distinguishes FAIL from BLOCKED, but install does not run it."
+    },
+    {
+      "id": "IF-14",
+      "area": "host_coverage",
+      "name": "Supported-host installers",
+      "files": [
+        {"path": "launchers/macos/claude-nine", "sha256": "cd70490e9fb490a083597c2d15fc6be601ba1493bb7b56ac8de2ea606df2cedf", "lines": 380},
+        {"path": "launchers/windows/claude-nine.ps1", "sha256": "9ecd5a16973cb0828b67f04ab29b94be2186e00f5ddb4f64c81ef66394d9a271", "lines": 285}
+      ],
+      "measured": {
+        "launcher_platforms": ["macos", "windows"],
+        "installer_platforms": ["macos-arm64", "windows"],
+        "dockerfiles": 1,
+        "dockerfile_paths": [".claude/skills/blackceo-signature-page/tests/docker/Dockerfile"],
+        "linux_or_vps_installer": "ABSENT"
+      },
+      "capability": "PARTIAL — two client hosts only; the single Dockerfile is a skill test harness, not a deployment supervisor."
+    }
+  ],
+  "executed_checks": [
+    {"name": "dist02_manifest_check", "command": "python3 -I .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py --check", "exit": 0, "observed": "OK 16 entries match the tree (DIST-02-PACKAGING-MANIFEST.json)"},
+    {"name": "helper_pin_check", "command": "python3 -I installer-registration/check-helper-pins.py --onboarding <pb-skill38 openclaw-onboarding clone>", "exit": 0, "observed": "helper pins: ok — every pin equals openclaw-onboarding@origin/main and every vendored helper folder matches its pin."},
+    {"name": "registry_install_proof", "command": "bash installer-registration/verify-registration.sh", "exit": 0, "observed": "RESULT: 35 passed, 0 failed (includes clean-install link and negative control: source present but unregistered -> NOT installed)"},
+    {"name": "windows_parity_suite", "command": "node tools/windows-parity/tests/parity-tests.mjs", "exit": 0, "observed": "PARITY GUARD: PASS — all tool selftests and cross-implementation goldens green"},
+    {"name": "check_update_regression", "command": "bash .claude/skills/spec-protocol/tools/check-update-tests.sh", "exit": 0, "observed": "RESULT: 11 passed, 0 failed (5-skill coverage, stale/missing/invalid/unreachable branches)"},
+    {"name": "sync_nine_skills_selftest", "command": "bash scripts/test-sync-nine-skills.sh", "exit": 0, "observed": "SUITES (sync-nine-skills): 13 passed, 0 failed"},
+    {"name": "skills_only_bundle_sync_test", "command": "bash .claude/skills/nine-router-setup/tests/test-skills-only.sh", "exit": 144, "observed": "INCOMPLETE — 11 PASS lines printed, no RESULT line, killed at the 300s harness timeout. Not a pass."}
+  ],
+  "negative_controls": [
+    {"claim": "no CAF reference in either orchestrator", "instrument": "grep -niE '\\bcaf\\b' setup-macos.sh setup-windows.ps1", "matches": 0, "exit": 1, "control": "grep -ncE 'install-claude-nine' setup-macos.sh -> 4 matches, exit 0"},
+    {"claim": "no resume/checkpoint flag in either orchestrator", "instrument": "grep -niE '\\bresume\\b|--resume' setup-macos.sh setup-windows.ps1", "matches": 0, "exit": 1, "control": "grep -ncE 'rerun|re-run' -> 9 (macOS) and 11 (Windows) matches, exit 0"},
+    {"claim": "no orchestrator installs sync-nine-skills.sh", "instrument": "grep -ncE 'sync-nine-skills' setup-macos.sh setup-windows.ps1", "matches": {"setup-macos.sh": 0, "setup-windows.ps1": 0}, "exit": 1, "control": "same instrument on 'install-claude-nine' -> 4 matches in setup-macos.sh, exit 0"},
+    {"claim": "no orchestrator installs pinned helpers", "instrument": "grep -niE 'helper-deps|helper-dependencies|check-helper-pins' setup-macos.sh setup-windows.ps1", "matches": 0, "exit": 1, "control": "grep -ncE 'nine-router-api\\.mjs' -> 1 match in each orchestrator, exit 0"},
+    {"claim": "install does not run platform verification", "instrument": "grep -ncE 'verify-macos|verify-windows|parity-tests' setup-macos.sh setup-windows.ps1", "matches": 0, "exit": 1, "control": "grep -ncE 'smoke' setup-macos.sh -> 7 matches, exit 0"},
+    {"claim": "CAF is absent from install documentation", "instrument": "grep -niE '\\bcaf\\b|convert-and-flow' AGENT_INSTALL.md README.md CLAUDE.md", "matches": 0, "exit": 1, "control": "grep -ncE 'drama-song-ad-factory' AGENT_INSTALL.md -> 1 match, exit 0"},
+    {"claim": "no root update-skills.sh", "instrument": "ls -la update-skills.sh", "exit": 1, "observed": "No such file or directory", "control": "ls scripts/sync-nine-skills.sh -> exists, 5085 bytes"}
+  ],
+  "missing_capabilities": [
+    {"id": "GAP-01", "capability": "Current bundle/adaptation adapter on main", "status": "ABSENT", "evidence": "IF-02: installer-registration/bundle_adapter.py is ABSENT on 317bb241 (git cat-file -e fails; control on helper-deps.py in the same tree succeeds). The only reported implementation sits on pb/PBB-075/t37-999-adapter, which no longer resolves on origin (git ls-remote returns no ref; control: 711 refs listed) and whose commit object GitHub reports as nonexistent (HTTP 422; control on 5a773bb9 succeeds), so its line count and sha256 are recorded as reported values only and support nothing here."},
+    {"id": "GAP-02", "capability": "CAF skill provisioning and caf CLI build", "status": "PRESENT UNWIRED", "evidence": "IF-03: 158-file CAF skill v2.1.23 is in the tree but is not in CONTROL/bundled-skills.txt; both orchestrators match caf 0 times; no install doc mentions it; wire.sh is never invoked."},
+    {"id": "GAP-03", "capability": "Complete bundled-skill registry", "status": "PARTIAL", "evidence": "IF-01: 15 registered, 24 on disk, 9 unregistered: conversational-ai-system, convert-and-flow-operator, email-engine, ghl-install-pages, kie, signature-funnel, signature-order-form, signature-product-selection, signature-upsell."},
+    {"id": "GAP-04", "capability": "Bundle component registry in lockstep with the skill registry", "status": "DRIFT", "evidence": "CONTROL/bundled-components.json has 8 components (generatedAt 2026-10-01T18:52:12Z) while bundled-skills.txt has 15; the 7 missing are black-friday-launcher, council-of-wise-elders, drama-song-ad-factory, drama-studio, motion-video-plus, signature-downsell, signature-thank-you."},
+    {"id": "GAP-05", "capability": "Update check across every bundled skill", "status": "PARTIAL", "evidence": "IF-07: check-update.sh and its Windows port hardcode 5 skills of 15. Of the 15 registered skills, 6 can never pass the local version gate (5 on a case-insensitive host): drama-studio has no version file at all; drama-song-ad-factory's VERSION holds 'v2.9.103' which is_version() rejects; council-of-wise-elders ships lowercase 'version', invisible to the case-sensitive lookup; and black-friday-launcher, signature-downsell and signature-thank-you carry their version only in skill-version.txt, which the gate never opens. The first draft of this artifact said 4 and reached that figure by counting file presence under a case-insensitive reading while its companion count of 10 used the case-sensitive one."},
+    {"id": "GAP-06", "capability": "Apply an announced update for any skill", "status": "PARTIAL", "evidence": "IF-08: self-update is spec-protocol only on both platforms (path guard */skills/spec-protocol); no root update-skills.sh exists."},
+    {"id": "GAP-07", "capability": "Windows bundle sync/repair/refresh parity", "status": "ABSENT", "evidence": "IF-05: setup-windows.ps1 has no --skills-only, --check, --repair-links or --refresh-updater; so_sync/so_tree_diff/so_refresh_updater exist only in setup-macos.sh."},
+    {"id": "GAP-08", "capability": "Resume after an interrupted install", "status": "ABSENT", "evidence": "IF-04: both orchestrators have zero resume/--resume matches (control: rerun/re-run 9 and 11 matches); recovery is a full idempotent re-run."},
+    {"id": "GAP-09", "capability": "Installer-driven pinned helper provisioning", "status": "MANUAL", "evidence": "IF-06: both orchestrators match helper-deps 0 times (control nine-router-api.mjs 1 each); AGENT_INSTALL.md 169-170 makes it a separate command; the doc states v1.1.6 while the pin is v1.1.9."},
+    {"id": "GAP-10", "capability": "Launcher-invoked dual-root mirror installed by the orchestrator", "status": "DOC-CODE DRIFT", "evidence": "IF-10: launcher runs $HOME/.local/bin/sync-nine-skills.sh when executable and the script supports --install, but neither orchestrator references it (0 matches) while AGENT_INSTALL.md L234 says the installer places it."},
+    {"id": "GAP-11", "capability": "Bundle-wide hash parity", "status": "PARTIAL", "evidence": "IF-11: DIST-02 proves 16 vendored entries and helper pins prove 9 helper trees; no hash covers the installers, update scripts, 17 adapter runtime dirs, or the CAF tree."},
+    {"id": "GAP-12", "capability": "Install-time verification", "status": "MANUAL", "evidence": "IF-13: verify-macos.sh and verify-windows.ps1 have 0 orchestrator references (control smoke -> 7) and are documented as step 11."},
+    {"id": "GAP-13", "capability": "VPS/Docker/other-host provisioning", "status": "ABSENT", "evidence": "IF-14: launchers are macos+windows only; the only Dockerfile is .claude/skills/blackceo-signature-page/tests/docker/Dockerfile (test harness); no Linux/VPS installer."},
+    {"id": "GAP-14", "capability": "Adapter completeness validation", "status": "ABSENT", "evidence": "IF-12: 8 adapter roots / 17 runtime dirs / 43 files ship as content; no registry, pin, or check asserts that a declared runtime has an adapter."}
+  ],
+  "unknowns": [
+    {"item": "Windows runtime behaviour", "status": "UNKNOWN", "reason": "No Windows host was available; Windows claims here are static file/line evidence plus the parity suite (node, exit 0), not execution of setup-windows.ps1."},
+    {"item": "CAF CLI build and runtime", "status": "UNKNOWN", "reason": "Building caf requires a venv + pip install -e inside tools/engine; not executed, so the binary's behaviour is unproven."},
+    {"item": "Full installer end-to-end on a clean host", "status": "UNKNOWN", "reason": "Running setup-macos.sh would mutate the operator box; its full path has no dry-run. Only the documented stages were read."},
+    {"item": "skills-only bundle apply after the first 11 rows", "status": "UNKNOWN", "reason": "test-skills-only.sh was killed at the 300s timeout with 11 PASS lines and no RESULT line (exit 144)."},
+    {"item": "Required CI status checks on main", "status": "NOT_MEASURED", "reason": "Out of this task's repo-interface scope; not claimed either way."},
+    {"item": "Remote HEAD after this run", "status": "UNKNOWN", "reason": "origin/main was 317bb24 at 2026-10-24T20:2xZ; later commits are not covered by these hashes."}
+  ],
+  "reporting_rules_followed": {
+    "every_number_measured": true,
+    "zero_match_controls": "see negative_controls; each zero is paired with a non-empty same-instrument control",
+    "no_invented_values": "unmeasured items are listed in unknowns",
+    "evidence_only": "no product behaviour was changed by this task"
+  }
+}
