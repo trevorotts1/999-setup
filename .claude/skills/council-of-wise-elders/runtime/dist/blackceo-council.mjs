@@ -62,7 +62,15 @@ var SEAT_ROSTER = [
 function advisorProfileLabel(displayName) {
   return `AI perspective inspired by the published work of ${displayName}. Not the individual and not an endorsement.`;
 }
-var SESSION_MODES = ["full", "selected", "quick", "consult"];
+var SESSION_MODES = [
+  "full",
+  "selected",
+  "quick",
+  "consult",
+  "light",
+  "medium",
+  "heavy"
+];
 var SESSION_VISIBILITIES = ["private", "company"];
 var SESSION_STATES = [
   "DRAFT",
@@ -205,6 +213,13 @@ var EVENT_TYPES = [
   "session_blocked",
   "session_failed"
 ];
+
+// src/contracts/modes.ts
+var COUNCIL_SIZES = ["light", "medium", "heavy"];
+var MAX_ADVISOR_ROUND = 10;
+function isCouncilSize(mode) {
+  return COUNCIL_SIZES.includes(mode);
+}
 
 // src/contracts/primitives.ts
 var ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
@@ -15095,6 +15110,20 @@ var sessionSpecSchema = external_exports.strictObject({
       message: "selected mode requires 2 to 8 seats"
     });
   }
+  if (spec.mode === "light" && spec.seat_ids.length !== 3) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["seat_ids"],
+      message: "light mode requires exactly three seats"
+    });
+  }
+  if ((spec.mode === "medium" || spec.mode === "heavy") && spec.seat_ids.length !== SEAT_IDS.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["seat_ids"],
+      message: `${spec.mode} mode requires all nine seats`
+    });
+  }
 });
 var conditionSchema = external_exports.strictObject({
   id: idSchema,
@@ -15160,7 +15189,7 @@ var cardBaseShape = {
 var advisorCardAuthorSchema = external_exports.strictObject({
   ...cardBaseShape,
   card_kind: external_exports.literal("advisor"),
-  round: external_exports.union([external_exports.literal(1), external_exports.literal(2)]),
+  round: external_exports.number().int().min(1).max(MAX_ADVISOR_ROUND),
   stance: external_exports.enum(STANCES),
   preferred_option_id: idSchema.nullable(),
   option_scores: external_exports.array(optionScoreSchema),
@@ -15436,7 +15465,7 @@ var councilEventSchema = external_exports.strictObject({
 });
 var councilSettingsSchema = external_exports.strictObject({
   schema_version: external_exports.literal("wise-elders.settings/v1"),
-  max_session_provider_requests: external_exports.number().int().min(1).max(50),
+  max_session_provider_requests: external_exports.number().int().min(1).max(100),
   max_output_repair_requests: external_exports.number().int().min(0),
   max_semantic_verification_requests: external_exports.number().int().min(0).max(2),
   max_transport_retries_total: external_exports.number().int().min(0),
@@ -15694,6 +15723,46 @@ var MODE_PATHS = {
     QUEUED: ["PREPARING"],
     PREPARING: ["CONSULTING"],
     CONSULTING: ["VERIFYING"],
+    VERIFYING: ["COMPLETED"]
+  },
+  // Council sizes (W77S-MODES). No separate ratification pass: the verdict
+  // is composed from the last completed round's advisor cards, so these
+  // paths never enter ROUND_3. Each extra challenge pass re-enters
+  // CRUX_REVIEW -> ROUND_2; the pass number lives in the job descriptor
+  // round and the card's round, never in a new state value.
+  light: {
+    DRAFT: ["READY"],
+    READY: ["QUEUED"],
+    QUEUED: ["PREPARING"],
+    PREPARING: ["ROUND_1"],
+    ROUND_1: ["CRUX_REVIEW"],
+    CRUX_REVIEW: ["ROUND_2"],
+    ROUND_2: ["DRAFT_RESOLUTION"],
+    DRAFT_RESOLUTION: ["VERIFYING"],
+    VERIFYING: ["COMPLETED"]
+  },
+  medium: {
+    DRAFT: ["READY"],
+    READY: ["QUEUED"],
+    QUEUED: ["PREPARING"],
+    PREPARING: ["ROUND_1"],
+    // A round-1 consensus stop may go straight to the resolution.
+    ROUND_1: ["CRUX_REVIEW", "DRAFT_RESOLUTION"],
+    CRUX_REVIEW: ["ROUND_2"],
+    // Re-entry: another challenge pass, or stop and compose the verdict.
+    ROUND_2: ["CRUX_REVIEW", "DRAFT_RESOLUTION"],
+    DRAFT_RESOLUTION: ["VERIFYING"],
+    VERIFYING: ["COMPLETED"]
+  },
+  heavy: {
+    DRAFT: ["READY"],
+    READY: ["QUEUED"],
+    QUEUED: ["PREPARING"],
+    PREPARING: ["ROUND_1"],
+    ROUND_1: ["CRUX_REVIEW", "DRAFT_RESOLUTION"],
+    CRUX_REVIEW: ["ROUND_2"],
+    ROUND_2: ["CRUX_REVIEW", "DRAFT_RESOLUTION"],
+    DRAFT_RESOLUTION: ["VERIFYING"],
     VERIFYING: ["COMPLETED"]
   }
 };
@@ -16809,6 +16878,12 @@ var systemEngineTimers = {
     return () => clearInterval(handle);
   }
 };
+function refuseCouncilSize(mode) {
+  if (!isCouncilSize(mode)) return;
+  throw invalidInput(
+    `The ${mode} council size convenes through the council service, not this local engine: run \`blackceo-council convene --mode ${mode}\` (or convene from the Council room and choose ${mode}). The local create/sample engine keeps the four older modes unchanged.`
+  );
+}
 var CouncilEngine = class {
   host;
   settings;
@@ -16824,6 +16899,7 @@ var CouncilEngine = class {
   }
   // -------------------------------------------------------------- sessions
   async createSession(input) {
+    refuseCouncilSize(input.spec.mode);
     const specResult = validateSessionSpec(input.spec);
     if (!specResult.ok) {
       throw invalidInput(
@@ -16919,6 +16995,7 @@ var CouncilEngine = class {
   // -------------------------------------------------------------- lifecycle
   async startSession(sessionId, grantRef) {
     let session = await this.getSession(sessionId);
+    refuseCouncilSize(session.spec.mode);
     if (session.state.state !== "DRAFT") {
       throw new CouncilError(
         "COUNCIL_STATE_CONFLICT",
@@ -16934,6 +17011,7 @@ var CouncilEngine = class {
   }
   async resumeSession(sessionId, grantRef) {
     let session = await this.getSession(sessionId);
+    refuseCouncilSize(session.spec.mode);
     const from = session.state.state;
     if (from !== "PAUSED" && from !== "BLOCKED") {
       throw new CouncilError(
@@ -20286,6 +20364,11 @@ function assertEnvelopePurpose(envelope, purpose, what) {
 // src/persistence/repositories.ts
 var DELETION_TOMBSTONE_SOURCE = "council-persistence";
 var DELETION_TOMBSTONE_OPERATION = "session_deleted";
+function sessionRowMode(mode) {
+  if (mode === "light") return "selected";
+  if (mode === "medium" || mode === "heavy") return "full";
+  return mode;
+}
 var STATE_EVENT_TYPES2 = [
   "session_created",
   "session_state_changed",
@@ -20407,7 +20490,7 @@ var CouncilRepositories = class {
       session.scope.owner_subject,
       envelope.actor_subject,
       session.state.archived ? 1 : 0,
-      session.spec.mode,
+      sessionRowMode(session.spec.mode),
       session.spec.visibility,
       session.state.state,
       session.state.state_version,
@@ -26500,6 +26583,14 @@ import {
   resolve as resolve4
 } from "node:path";
 
+// src/providers/ollama.ts
+var DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
+function ollamaCompatibleBaseUrl(baseUrl) {
+  const raw = (baseUrl ?? DEFAULT_OLLAMA_BASE_URL).trim().replace(/\/+$/, "");
+  if (raw.length === 0) return DEFAULT_OLLAMA_BASE_URL;
+  return /\/v1$/i.test(raw) ? raw : `${raw}/v1`;
+}
+
 // src/bridges/installed-cli.ts
 import { createHash as createHash2 } from "node:crypto";
 import { existsSync as existsSync3, readFileSync as readFileSync4, statSync as statSync2 } from "node:fs";
@@ -26798,8 +26889,14 @@ function routeDiscoveryInfo(route, composed) {
     kind: route.kind,
     identity_level: route.identityLevel,
     composed,
-    not_composed_reason: composed ? null : route.notComposableReason
+    not_composed_reason: composed ? null : route.notComposableReason,
+    usable_with_model: !composed && routeUsableWithModel(route),
+    model_candidates: [...route.compatible?.modelCandidates ?? []]
   };
+}
+function routeUsableWithModel(route) {
+  const compatible = route.compatible;
+  return route.failure?.code === "ROUTE_MODEL_AMBIGUOUS" && compatible !== void 0 && compatible.baseUrl.length > 0 && (compatible.apiFamily === "openai_compatible" || compatible.apiFamily === "ollama_chat") && compatible.credential.state !== "absent" && compatible.modelCandidates.length > 0;
 }
 var ROUTE_ROOT_ENV = ["OPENCLAW_ROOT", "OC_ROOT", "OC_CONFIG"];
 var ROUTE_CONFIG_ENV = ["OPENCLAW_CONFIG_PATH", "OC_JSON", "CONFIG_JSON"];
@@ -27644,9 +27741,10 @@ function discoverProviderRoutes(layout, config2, env) {
   for (const [providerId, rawProvider] of Object.entries(providers)) {
     const provider = asRecord(rawProvider);
     if (!provider) continue;
-    const baseUrl = typeof provider.baseUrl === "string" ? provider.baseUrl.trim() : "";
+    const configuredBaseUrl = typeof provider.baseUrl === "string" ? provider.baseUrl.trim() : "";
     const declaredApi = typeof provider.api === "string" ? provider.api : null;
     const apiFamily = apiFamilyOf(declaredApi);
+    const baseUrl = apiFamily === "ollama_chat" && configuredBaseUrl.length > 0 ? ollamaCompatibleBaseUrl(configuredBaseUrl) : configuredBaseUrl;
     const model = resolveConfiguredModel(providerId, provider, config2);
     const credential = baseUrl.length > 0 ? resolveCredential(providerId, provider, env, configEnv, layout.secretsEnvFiles, baseUrl) : {
       state: "absent",
@@ -27664,10 +27762,11 @@ function discoverProviderRoutes(layout, config2, env) {
       };
       reasons.push(failure2.detail);
     }
-    if (apiFamily !== "openai_compatible") {
+    const composedFamily = apiFamily === "openai_compatible" || apiFamily === "ollama_chat";
+    if (!composedFamily) {
       const detail = `provider ${providerId} declares API family ${JSON.stringify(
         declaredApi
-      )} (${apiFamily}); this runtime composes only an OpenAI-compatible wire protocol here and will not reinterpret another API family as compatible`;
+      )} (${apiFamily}); this runtime composes only an OpenAI-compatible wire protocol here (including Ollama's /v1 surface) and will not reinterpret another API family as compatible`;
       if (failure2 === null) failure2 = { code: "ROUTE_API_FAMILY_UNSUPPORTED", detail };
       reasons.push(detail);
     }
@@ -27685,7 +27784,7 @@ function discoverProviderRoutes(layout, config2, env) {
     routes.push({
       routeId: `${providerId}-configured`,
       providerSlug: providerId,
-      kind: apiFamily === "openai_compatible" ? "compatible" : "unsupported",
+      kind: composedFamily ? "compatible" : "unsupported",
       identityLevel: "configured",
       composable: reasons.length === 0,
       notComposableReason: reasons.length > 0 ? reasons.join("; ") : null,
@@ -28131,6 +28230,9 @@ var CONVENE_FLAGS = /* @__PURE__ */ new Set([
   "harness",
   "fresh-facts",
   "mode",
+  "seat-ids",
+  "ollama-plan",
+  "fallback-model",
   "origin",
   "public-origin",
   "json",
@@ -28339,6 +28441,28 @@ async function callService(origin, path, init, fetchImpl) {
   }
   return obj;
 }
+function runShapeLines(res) {
+  const mode = typeof res.mode === "string" ? res.mode : null;
+  if (mode === null) return [];
+  const lines = [`  mode: ${mode}`];
+  if (typeof res.seats === "number") lines.push(`  seats: ${res.seats}`);
+  const rounds = res.rounds;
+  if (rounds && typeof rounds === "object") {
+    const shape = rounds.min_rounds === rounds.max_rounds ? `${rounds.max_rounds}` : `${rounds.min_rounds}-${rounds.max_rounds}`;
+    const stop = typeof rounds.stop_from_round === "number" ? ` (may stop early from round ${rounds.stop_from_round})` : "";
+    lines.push(`  rounds: ${shape}${stop}`);
+  } else {
+    lines.push("  rounds: 3 (fixed)");
+  }
+  if (typeof res.request_cap === "number") {
+    lines.push(`  request cap: ${res.request_cap} provider requests`);
+  }
+  if (typeof res.parallel_limit === "number") {
+    lines.push(`  parallel limit: ${res.parallel_limit} at a time`);
+  }
+  if (typeof res.fallback === "string") lines.push(`  Fallback: ${res.fallback}`);
+  return lines;
+}
 function report(io, json2, err) {
   const council = err instanceof CouncilError ? err : new CouncilError("COUNCIL_INTERNAL", err instanceof Error ? err.message : String(err));
   if (json2) io.err(`${JSON.stringify(council.toEnvelope(), null, 2)}
@@ -28430,6 +28554,21 @@ async function runConvene(args, opts) {
       const v = str(p, flag);
       if (v !== null) body[key] = v;
     }
+    const seatIdsFlag = str(p, "seat-ids");
+    if (seatIdsFlag !== null) {
+      const seats = seatIdsFlag.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+      if (seats.length === 0) throw usageError("--seat-ids needs at least one seat id, like --seat-ids a,b,c.");
+      body.seat_ids = seats;
+    }
+    const ollamaPlan = str(p, "ollama-plan");
+    if (ollamaPlan !== null) {
+      if (ollamaPlan !== "20" && ollamaPlan !== "100") {
+        throw usageError("--ollama-plan must be 20 or 100 (the client's Ollama plan).");
+      }
+      body.ollama_plan = ollamaPlan;
+    }
+    const fallbackModel = str(p, "fallback-model");
+    if (fallbackModel !== null) body.fallback_model = fallbackModel;
     const factsPath = str(p, "fresh-facts");
     if (factsPath !== null) body.fresh_facts = readFreshFacts(factsPath);
     const res = await callService(origin, "/api/council/convene", { method: "POST", body }, opts.fetchImpl ?? fetch);
@@ -28454,6 +28593,7 @@ async function runConvene(args, opts) {
         `  route_id: ${res.route_id}`,
         `  model_label: ${res.model_label}`,
         `  selection_source: ${res.selection_source}`,
+        ...runShapeLines(res),
         ...chamberUrl === null ? [] : [`Open the Roast Room: ${chamberUrl}`],
         `  session: ${sessionUrl}`,
         `  events: ${eventsUrl}`,
@@ -29489,9 +29629,11 @@ function scoringCardsOf2(cards) {
     (c) => c.card_kind === "ratification"
   );
   if (ratification.length > 0) return ratification;
-  return cards.filter(
-    (c) => c.card_kind === "advisor" && c.round === 2
+  const advisors = cards.filter(
+    (c) => c.card_kind === "advisor"
   );
+  const lastRound = advisors.reduce((latest, card) => Math.max(latest, card.round), 0);
+  return advisors.filter((card) => card.round === lastRound);
 }
 function validateVerdictForPublication(input) {
   const { verdict, brief } = input;
@@ -30386,8 +30528,14 @@ var USAGE = [
   "  replay SESSION [--json]             Committed event history (read only, spends nothing)",
   "  export SESSION --format md|json|pdf [--out FILE]",
   "  routes [--origin URL] [--json]      Model routes and harness defaults from the council service",
-  "  convene (--sample | --brief FILE) [--route ID] [--model ID] [--harness H] [--fresh-facts FILE] [--mode M] [--origin URL]",
+  "  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID]",
+  "          [--harness H] [--ollama-plan 20|100] [--fallback-model ID] [--fresh-facts FILE] [--origin URL]",
   "                                      Convene a council on the running service (starts it now)",
+  "                                      --mode defaults to medium; the four older modes (full, selected,",
+  "                                      quick, consult) still convene exactly as before; --seat-ids names",
+  "                                      the light panel (3 seats), otherwise the brief picks them;",
+  "                                      --ollama-plan is asked once and remembered; --fallback-model is",
+  "                                      the OpenRouter model used when an Ollama route fails",
   "",
   "Global flags: --json, --data-dir DIR (default: per-user council data directory)"
 ].join("\n");

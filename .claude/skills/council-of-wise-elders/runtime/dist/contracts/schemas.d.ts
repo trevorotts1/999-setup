@@ -301,6 +301,9 @@ export declare const sessionSpecSchema: z.ZodObject<{
         selected: "selected";
         quick: "quick";
         consult: "consult";
+        light: "light";
+        medium: "medium";
+        heavy: "heavy";
     }>;
     visibility: z.ZodEnum<{
         private: "private";
@@ -394,8 +397,8 @@ export declare const actionProposalSchema: z.ZodObject<{
     due_at: z.ZodNullable<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
     depends_on_action_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
     risk_class: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
         critical: "critical";
     }>;
@@ -434,7 +437,7 @@ export declare const verifiedQuoteCandidateSchema: z.ZodObject<{
 export type VerifiedQuoteCandidate = z.infer<typeof verifiedQuoteCandidateSchema>;
 export declare const advisorCardAuthorSchema: z.ZodObject<{
     card_kind: z.ZodLiteral<"advisor">;
-    round: z.ZodUnion<readonly [z.ZodLiteral<1>, z.ZodLiteral<2>]>;
+    round: z.ZodNumber;
     stance: z.ZodEnum<{
         support: "support";
         conditional: "conditional";
@@ -498,8 +501,8 @@ export declare const advisorCardAuthorSchema: z.ZodObject<{
         }>;
     }, z.core.$strict>>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     minority_position: z.ZodNullable<z.ZodString>;
@@ -608,8 +611,8 @@ export declare const ratificationCardAuthorSchema: z.ZodObject<{
     accepted_condition_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
     unresolved_objections: z.ZodArray<z.ZodString>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     schema_version: z.ZodLiteral<"wise-elders.card/v1">;
@@ -668,7 +671,7 @@ export type ConsultCardAuthor = z.infer<typeof consultCardAuthorSchema>;
 /** Author-created card payloads. Carries NO host identity fields. */
 export declare const cardAuthorSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     card_kind: z.ZodLiteral<"advisor">;
-    round: z.ZodUnion<readonly [z.ZodLiteral<1>, z.ZodLiteral<2>]>;
+    round: z.ZodNumber;
     stance: z.ZodEnum<{
         support: "support";
         conditional: "conditional";
@@ -732,8 +735,8 @@ export declare const cardAuthorSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         }>;
     }, z.core.$strict>>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     minority_position: z.ZodNullable<z.ZodString>;
@@ -809,8 +812,8 @@ export declare const cardAuthorSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     accepted_condition_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
     unresolved_objections: z.ZodArray<z.ZodString>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     schema_version: z.ZodLiteral<"wise-elders.card/v1">;
@@ -867,7 +870,7 @@ export type CardAuthor = z.infer<typeof cardAuthorSchema>;
 /** A persisted card: the author payload plus the trusted host stamp. */
 export declare const advisorCardSchema: z.ZodObject<{
     card_kind: z.ZodLiteral<"advisor">;
-    round: z.ZodUnion<readonly [z.ZodLiteral<1>, z.ZodLiteral<2>]>;
+    round: z.ZodNumber;
     stance: z.ZodEnum<{
         support: "support";
         conditional: "conditional";
@@ -931,8 +934,8 @@ export declare const advisorCardSchema: z.ZodObject<{
         }>;
     }, z.core.$strict>>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     minority_position: z.ZodNullable<z.ZodString>;
@@ -1026,8 +1029,8 @@ export declare const ratificationCardSchema: z.ZodObject<{
     accepted_condition_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
     unresolved_objections: z.ZodArray<z.ZodString>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     schema_version: z.ZodLiteral<"wise-elders.card/v1">;
@@ -1117,7 +1120,7 @@ export declare const consultCardSchema: z.ZodObject<{
 }, z.core.$strict>;
 export declare const cardSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     card_kind: z.ZodLiteral<"advisor">;
-    round: z.ZodUnion<readonly [z.ZodLiteral<1>, z.ZodLiteral<2>]>;
+    round: z.ZodNumber;
     stance: z.ZodEnum<{
         support: "support";
         conditional: "conditional";
@@ -1181,8 +1184,8 @@ export declare const cardSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         }>;
     }, z.core.$strict>>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     minority_position: z.ZodNullable<z.ZodString>;
@@ -1275,8 +1278,8 @@ export declare const cardSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     accepted_condition_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
     unresolved_objections: z.ZodArray<z.ZodString>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     schema_version: z.ZodLiteral<"wise-elders.card/v1">;
@@ -1453,8 +1456,8 @@ export declare const scoredVerdictSchema: z.ZodObject<{
         "les-brown": "les-brown";
     }> & z.core.$partial, z.ZodNumber>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     hard_constraint_findings: z.ZodArray<z.ZodObject<{
@@ -1556,8 +1559,8 @@ export declare const scoredVerdictSchema: z.ZodObject<{
         due_at: z.ZodNullable<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
         depends_on_action_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
         risk_class: z.ZodEnum<{
-            low: "low";
             medium: "medium";
+            low: "low";
             high: "high";
             critical: "critical";
         }>;
@@ -1692,8 +1695,8 @@ export declare const verdictSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         "les-brown": "les-brown";
     }> & z.core.$partial, z.ZodNumber>;
     evidence_strength: z.ZodEnum<{
-        low: "low";
         medium: "medium";
+        low: "low";
         high: "high";
     }>;
     hard_constraint_findings: z.ZodArray<z.ZodObject<{
@@ -1795,8 +1798,8 @@ export declare const verdictSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         due_at: z.ZodNullable<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
         depends_on_action_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
         risk_class: z.ZodEnum<{
-            low: "low";
             medium: "medium";
+            low: "low";
             high: "high";
             critical: "critical";
         }>;
@@ -1901,6 +1904,9 @@ export declare const sessionStateRecordSchema: z.ZodObject<{
         selected: "selected";
         quick: "quick";
         consult: "consult";
+        light: "light";
+        medium: "medium";
+        heavy: "heavy";
     }>;
     state: z.ZodEnum<{
         DRAFT: "DRAFT";
@@ -2016,6 +2022,9 @@ export declare const runPreviewSchema: z.ZodObject<{
         selected: "selected";
         quick: "quick";
         consult: "consult";
+        light: "light";
+        medium: "medium";
+        heavy: "heavy";
     }>;
     seat_ids: z.ZodArray<z.ZodEnum<{
         "simon-sinek": "simon-sinek";
@@ -2082,6 +2091,9 @@ export declare const runGrantSchema: z.ZodObject<{
         selected: "selected";
         quick: "quick";
         consult: "consult";
+        light: "light";
+        medium: "medium";
+        heavy: "heavy";
     }>;
     seat_ids: z.ZodArray<z.ZodEnum<{
         "simon-sinek": "simon-sinek";

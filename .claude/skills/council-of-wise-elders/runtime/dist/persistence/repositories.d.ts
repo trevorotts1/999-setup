@@ -40,7 +40,7 @@
  *   read result_kind from the JSON. Flagged for the coordinator as a
  *   schema-mapping gap for CWE-005.
  */
-import { type Clock, type CouncilCard, type CouncilEventType, type DecisionBrief, type IdSource, type SessionState, type SessionStateRecord, type Verdict } from '../contracts/index.js';
+import { type Clock, type CouncilCard, type CouncilEventType, type DecisionBrief, type IdSource, type SessionMode, type SessionState, type SessionStateRecord, type Verdict } from '../contracts/index.js';
 import type { StoredSession } from '../cli/host-ports.js';
 import { type AuthorizationEnvelope } from './envelope.js';
 import { EventJournal, type JournalEvent } from './journal.js';
@@ -49,6 +49,15 @@ import type { CouncilDatabase } from './sqlite.js';
 import type { CouncilPersistenceConfig } from './config.js';
 export declare const DELETION_TOMBSTONE_SOURCE = "council-persistence";
 export declare const DELETION_TOMBSTONE_OPERATION = "session_deleted";
+/**
+ * ponytail: council_sessions.mode has a SQL CHECK (0001-council-schema.sql)
+ * that lists only the four old modes, and the column is never read back —
+ * the spec is rebuilt from the session_created journal event and the state
+ * record carries the real mode. So the row column stores a CHECK-satisfying
+ * alias only; spec, state and events keep the real mode. Upgrade: widen the
+ * CHECK in a later migration and delete this map.
+ */
+export declare function sessionRowMode(mode: SessionMode): SessionMode;
 export interface SessionRow {
     id: string;
     tenant_id: string;

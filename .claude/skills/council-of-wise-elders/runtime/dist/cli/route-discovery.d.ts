@@ -155,8 +155,25 @@ export interface RouteDiscoveryInfo {
     identity_level: 'configured';
     composed: boolean;
     not_composed_reason: string | null;
+    /**
+     * True when the route's only blocker is the choice of model: it
+     * becomes usable the moment the caller names one of
+     * `model_candidates`. The council never picks that model itself.
+     */
+    usable_with_model: boolean;
+    /** Every configured candidate model id (never a secret). */
+    model_candidates: string[];
 }
 export declare function routeDiscoveryInfo(route: DiscoveredRoute, composed: boolean): RouteDiscoveryInfo;
+/**
+ * True when the ONLY thing between this route and dispatch is which of
+ * its configured candidate models to use: endpoint present, API family
+ * composed by this runtime, credential present, and the single failure
+ * is ROUTE_MODEL_AMBIGUOUS. Naming a candidate makes it usable.
+ */
+export declare function routeUsableWithModel(route: DiscoveredRoute): boolean;
+/** True when `model` is one of the route's configured candidate models. */
+export declare function routeOffersModel(route: DiscoveredRoute, model: string | null): boolean;
 /** The WER-005 receipt bridge's answer about the installed runtime. */
 export interface HostRuntimeReceipt {
     installed: boolean;
@@ -234,6 +251,12 @@ export interface RouteSnapshotOptions {
     scope: TrustedScope;
     capabilityVersion: string;
     routeRevision?: number;
+    /**
+     * The model the CALLER chose, for a route whose only failure is
+     * ROUTE_MODEL_AMBIGUOUS. Ignored for combinations (their alias wins)
+     * and for a model the route does not list.
+     */
+    model?: string | null;
     /** Absent means UNKNOWN/not_probed. Never inferred from configuration. */
     transportReported?: TransportReportedRouteIdentity;
     /** Optional combination pin; each unreported member freezes as UNKNOWN. */
@@ -270,8 +293,12 @@ export declare function discoverConfiguredRoutes(options?: RouteDiscoveryOptions
  * Strict route resolution for dispatch. Every failure is explicit and
  * secret-free: missing config, unknown route id, unsupported API family,
  * ambiguous model, or an unresolved named secret reference.
+ *
+ * `explicitModel` is the model the CALLER chose. A route whose only
+ * failure is ROUTE_MODEL_AMBIGUOUS resolves when that model is one of
+ * its configured candidates; discovery itself never picks a model.
  */
-export declare function resolveRouteForDispatch(routeId: string, options?: RouteDiscoveryOptions): ResolvedRoute;
+export declare function resolveRouteForDispatch(routeId: string, options?: RouteDiscoveryOptions, explicitModel?: string | null): ResolvedRoute;
 /**
  * Freeze one discovered route into the published WER-006 contract. The
  * configured model is the configuration's own; transport-reported

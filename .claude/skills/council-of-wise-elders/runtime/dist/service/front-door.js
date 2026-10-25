@@ -572,7 +572,7 @@ export class CouncilFrontDoor {
             sendJson(res, 422, {
                 code: 'CONVENE_BODY_INVALID',
                 detail: parsed.detail,
-                recovery: 'Send a JSON object with sample or brief, and optionally route_id, model, harness, mode, seat_ids, visibility, fresh_facts and requested_by.',
+                recovery: 'Send a JSON object with sample or brief, and optionally route_id, model, harness, mode, seat_ids, ollama_plan, fallback_model, visibility, fresh_facts and requested_by.',
             });
             return;
         }
@@ -1039,6 +1039,8 @@ const CONVENE_BODY_KEYS = new Set([
     'brief',
     'mode',
     'seat_ids',
+    'ollama_plan',
+    'fallback_model',
     'visibility',
     'route_id',
     'model',
@@ -1099,6 +1101,12 @@ export function parseConveneBody(value) {
             return bad(`${key} must be a non-empty string.`);
         }
     }
+    if (body.ollama_plan !== undefined && body.ollama_plan !== '20' && body.ollama_plan !== '100') {
+        return bad('ollama_plan must be "20" or "100".');
+    }
+    if (body.fallback_model !== undefined && !nonEmptyString(body.fallback_model)) {
+        return bad('fallback_model must be a non-empty model id.');
+    }
     if (body.harness !== undefined &&
         !CONVENE_HARNESSES.includes(body.harness)) {
         return bad(`harness must be one of ${CONVENE_HARNESSES.join(', ')}.`);
@@ -1147,6 +1155,12 @@ export function parseConveneBody(value) {
         input.mode = body.mode;
     if (body.seat_ids !== undefined)
         input.seat_ids = body.seat_ids;
+    if (body.ollama_plan !== undefined) {
+        input.ollama_plan = body.ollama_plan;
+    }
+    if (body.fallback_model !== undefined) {
+        input.fallback_model = body.fallback_model;
+    }
     if (body.visibility !== undefined) {
         input.visibility = body.visibility;
     }

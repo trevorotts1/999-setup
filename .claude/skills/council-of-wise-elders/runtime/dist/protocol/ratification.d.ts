@@ -50,8 +50,11 @@
  *   missing seat is never disguised as an abstention (T021, T045);
  *   selected mode accounts for every selected seat by name (T023);
  *   quick mode completes without Round 3 only when the skip gate
- *   passes on the final proposed plan; three rounds is the ceiling,
- *   and a materially amended plan carries
+ *   passes on the final proposed plan; three rounds is the ceiling
+ *   for the four older modes (the council sizes run 2..10 advisor
+ *   rounds and no ratification pass, scoring from the LAST completed
+ *   round with ratification_status not_required), and a materially
+ *   amended plan carries
  *   material_change_unratified with its old support counted only
  *   against the original hash (T046, T047 family, T048, T147).
  *
@@ -276,6 +279,12 @@ export interface DeliberationAccounting {
     readonly round1: Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>;
     readonly round2: Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>;
     readonly round3: Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>;
+    /**
+     * Council sizes (light/medium/heavy) run 2..10 advisor rounds and no
+     * ratification pass, so every completed advisor round is accounted
+     * here by its own round number. Absent for the four older modes.
+     */
+    readonly rounds?: Readonly<Record<number, Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>>>;
 }
 export interface DeliberationOutcomeComplete {
     readonly status: 'complete';
@@ -298,7 +307,7 @@ export interface DeliberationOutcomeIncomplete {
     readonly panel_seat_ids: readonly SeatId[];
     /** Every unaccounted seat, by round: the visible partial record. */
     readonly missing: readonly {
-        readonly round: 1 | 2 | 3;
+        readonly round: number;
         readonly seat_id: SeatId;
     }[];
     readonly detail: string;

@@ -41,7 +41,15 @@ export const SEAT_ROSTER = [
 export function advisorProfileLabel(displayName) {
     return `AI perspective inspired by the published work of ${displayName}. Not the individual and not an endorsement.`;
 }
-export const SESSION_MODES = ['full', 'selected', 'quick', 'consult'];
+export const SESSION_MODES = [
+    'full',
+    'selected',
+    'quick',
+    'consult',
+    'light',
+    'medium',
+    'heavy',
+];
 export const SESSION_VISIBILITIES = ['private', 'company'];
 /**
  * Canonical session states (Sections 15.1 and 11.7). CONSULTING is a real
