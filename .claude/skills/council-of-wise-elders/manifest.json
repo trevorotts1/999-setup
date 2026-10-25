@@ -1,11 +1,11 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "1.0.57",
+  "skill_version": "1.0.59",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "07f480df6c40db19f3f0eddc15378457c59f4c7f",
-  "canonical_aggregate_sha256": "5cd4642d2d1ad63656fd88f683ee2fb35458236df4d49a441085758c50ab3267",
-  "file_count": 788,
-  "aggregate_sha256": "125304401b367f1c9b582294fe79af2a54e7eb01e8c852049b820ea1cf246687",
+  "source_commit": "13b44bcdfc45c15cf3c51acae38b4091bc81cdfa",
+  "canonical_aggregate_sha256": "3b0de855ca901b06f3965e27e504f8018b73a43a5157637ce0e74e6414a4145b",
+  "file_count": 789,
+  "aggregate_sha256": "024d0eace1257ff82f8dec92fa78779c8506672855349ae97f76a02a3fe92a3f",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "a17e94b9fc45f7e6d00eb2eddd6b1939b68c183f88c52a10b878a7023b72c338",
-      "bytes": 90871
+      "sha256": "2ea242dc68851205e17b698750002bf6683dff823cdae663f1d3bdaaf82bdc20",
+      "bytes": 95326
     },
     {
       "path": "CORE_UPDATES.md",
@@ -30,8 +30,8 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "adf2e4cd4a6468b5fb547ab53baba7a00f58d203d11b075c54923dd83e5606b7",
-      "bytes": 3886
+      "sha256": "23493c10facd8afcb8ff8fd9e85fc5c2bb50f05bf1797ef4ef48ef393829411d",
+      "bytes": 4988
     },
     {
       "path": "EXAMPLES.md",
@@ -60,7 +60,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "6a1614eb63e147c8c23bdc8703ae6b2ec1346d1fe28aca6e4cc0a25d09399eaa",
+      "sha256": "cfb71d0afbe635e22e3f076ffae6311667c24f95e498bc3fe15d2b5c0831f087",
       "bytes": 20073
     },
     {
@@ -1700,8 +1700,8 @@
     },
     {
       "path": "runtime/.gitignore",
-      "sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0",
-      "bytes": 87
+      "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
+      "bytes": 319
     },
     {
       "path": "runtime/README.md",
@@ -3530,8 +3530,8 @@
     },
     {
       "path": "scripts/build-bundles.mjs",
-      "sha256": "da6e33049671e0e7540fcb27eaeb58c7a1b5544d16fd51f4a40a7af604b28d10",
-      "bytes": 17064
+      "sha256": "850eed1a7dd931b49fb986c9b50dbca3b439ddde0a00c0a6ba3987aadc21b071",
+      "bytes": 16626
     },
     {
       "path": "scripts/chamber-visual.sh",
@@ -3545,8 +3545,8 @@
     },
     {
       "path": "scripts/doctor.mjs",
-      "sha256": "d7798c40cf1920ccea8df21426864c823dc5015cde99f5bd3456c15aadd4e75f",
-      "bytes": 10012
+      "sha256": "5c1871059dfc1c5345da14cc78c21a03623dca7da8015fc607620f4f70bfe8c6",
+      "bytes": 8849
     },
     {
       "path": "scripts/ensure-cc-access.sh",
@@ -3604,6 +3604,11 @@
       "bytes": 2145
     },
     {
+      "path": "scripts/manifest-tree.mjs",
+      "sha256": "5de063d9993eb6ae12a9cfc8130906e5f840df3ac31151e1b98844e999c83a63",
+      "bytes": 7304
+    },
+    {
       "path": "scripts/measure-route-bytes-per-token.mjs",
       "sha256": "fdc984af4ef8b390fbadd40e1a8db46a1714696cc0426ed95f0c9ada3d1a28b3",
       "bytes": 11490
@@ -3645,8 +3650,8 @@
     },
     {
       "path": "scripts/selected-tree-gate.mjs",
-      "sha256": "9942ad7e42a86dd4bb8ea4cdd92b828049ef290a46602a3c4069bbb22cd99d84",
-      "bytes": 37573
+      "sha256": "157eb6bd3a3bd7ab3804255e0ad84a4d2ac2b783255fc4d32dfbee89f0295606",
+      "bytes": 61162
     },
     {
       "path": "scripts/supervisor/health-collector.mjs",
@@ -3890,8 +3895,8 @@
     },
     {
       "path": "scripts/tests/selected-tree-gate.test.mjs",
-      "sha256": "90994fde4c4136e718b0feefa5080b4404625ae067ae195fe72528417ab65a94",
-      "bytes": 23024
+      "sha256": "0423a00452caf0197d887431ab9fc6c9763d93912e7ff63ae205f5a1d1db7c6c",
+      "bytes": 40841
     },
     {
       "path": "scripts/tests/verify-cohort-parity.test.mjs",
@@ -3920,8 +3925,8 @@
     },
     {
       "path": "scripts/verify-bundles.mjs",
-      "sha256": "ac90b21bc2856141326ff0bf412c18610a97311bcb7d7dfc892e4528a0acef18",
-      "bytes": 4932
+      "sha256": "9e04ec282d9a905528c9eeb9ea06269ae15f4fc2d437c1bba7d61a2f551d9543",
+      "bytes": 3905
     },
     {
       "path": "scripts/verify-cohort-parity.mjs",
@@ -3935,7 +3940,7 @@
     },
     {
       "path": "skill-version.txt",
-      "sha256": "47c4bdaa7c971daafe53f81f20a98cec8961e374ef82d062d60c0241f1097520",
+      "sha256": "58a3fdb5e3e269c38d19629876c482459650e31f4040d31acc2db33fdd00224c",
       "bytes": 8
     },
     {
@@ -3950,7 +3955,7 @@
     },
     {
       "path": "version",
-      "sha256": "936444f78a73525053954bbb81f540d6aeaa0b7fe3017bed0bcad71bd817c25f",
+      "sha256": "c71335e9f50a2d7861f37dfd0fddf9c91f62e2c06c0d4800821909abab760b9d",
       "bytes": 7
     },
     {
