@@ -37,6 +37,11 @@
     "env_used": ["TMPDIR", "TMP", "TEMP", "PYTHONPYCACHEPREFIX", "npm_config_cache"],
     "internal_disk_writes_by_task": "none observed; the only /private/tmp path seen was the harness's own background task output file, not a task command"
   },
+  "spec_citations_root": {
+    "document_root": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build",
+    "why_this_is_stated": "Every file named below lives in that project directory, NOT in this repository. This repository also carries a CONTROL/TODO.md and a CONTROL/CHECKLIST.md; they are different documents (CONTROL/TODO.md lines 25-39 are reconciliation notes, CONTROL/CHECKLIST.md lines 130-136 and 150-156 are blank), so a reader who follows the bare filename into this repo lands on the wrong text. The first draft of this artifact named no root, which is the same defect class as a line range that does not cover its claim: a citation a reader cannot follow.",
+    "verified_at": "2026-10-24, repair PBB-268: all 8 line-range citations below were read at that root and each matches the sentence beside it; live-ledgers/checks.json C-02 scope matches verbatim."
+  },
   "spec_citations": [
     "TODO.md lines 25-39: T-02 output current-999-evidence.json; acceptance clause quoted verbatim in this file.",
     "ACCEPTANCE-MATRIX.md line 59: R-26 guided setup, permitted provisioning, resume and operation on supported hosts; tasks include T-02; checks include C-02.",
@@ -83,14 +88,31 @@
       ],
       "measured": {
         "absent_on_origin_main": true,
+        "absence_proof": "git cat-file -e 317bb24172b3d4327c1fabaeebc68e797c32730e:installer-registration/bundle_adapter.py fails; same-instrument control git cat-file -e 317bb24172b3d4327c1fabaeebc68e797c32730e:installer-registration/helper-deps.py succeeds.",
         "present_only_on_branch": "pb/PBB-075/t37-999-adapter",
-        "branch_tip": "47724690a66a9e39451a71958c0349df3d72aefb",
-        "branch_file_lines": 502,
-        "branch_file_sha256": "4cf84275b4a5a369e6d3a2e3673144803e7cdfbfab948983b1d204cdb53014a5",
+        "branch_reachable_on_origin_now": false,
+        "branch_readback": "git ls-remote origin refs/heads/pb/PBB-075/t37-999-adapter returns no ref; control on the same instrument: git ls-remote origin returns 711 refs, 4 of them matching /PBB/i, so the lookup is alive and the absence is real.",
+        "commit_object_readback": "gh api repos/trevorotts1/999-setup/commits/47724690a66a9e39451a71958c0349df3d72aefb -> HTTP 422 'No commit found for SHA'; control on the same instrument: the same call for 5a773bb98bd8a2d16d748cc9383403d1756b9132 returns that SHA. git cat-file -t on the same object in a full clone also fails.",
+        "ancestor_of_main_exit": 1,
         "branch_merge_base_with_main": "1d1545fc8412",
-        "ancestor_of_main_exit": 1
+        "branch_merge_base_readback": "resolves: git cat-file -t 1d1545fc8412 -> commit (1d1545fc84129d2995231347886c0a8822395935)."
       },
-      "capability": "ABSENT on main. The only adapter implementation is unmerged and 46 commits behind current main."
+      "reported_unverified": {
+        "what": "figures this artifact can no longer reproduce from any reachable object on origin",
+        "caveat": "These are the values the 2026-10-24T20:31:03Z measurement recorded, kept as reported values only. This readback proves UNREPRODUCIBLE-NOW, not fabricated-then: GitHub garbage-collects unreachable objects, so a branch deleted after that measurement would produce exactly this. What was NOT checked: the GitHub events/audit trail for a branch deletion, and the builder's own scratch copy at /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup. An evidence artifact must not carry hash evidence its reader cannot recompute, so none of these values supports GAP-01 or any other claim in this file.",
+        "readback_commands": [
+          "git ls-remote origin refs/heads/pb/PBB-075/t37-999-adapter",
+          "gh api repos/trevorotts1/999-setup/commits/47724690a66a9e39451a71958c0349df3d72aefb",
+          "git cat-file -t 4cf84275b4a5a369e6d3a2e3673144803e7cdfbfab948983b1d204cdb53014a5"
+        ],
+        "values": {
+          "branch_tip": "47724690a66a9e39451a71958c0349df3d72aefb",
+          "branch_file_lines": 502,
+          "branch_file_sha256": "4cf84275b4a5a369e6d3a2e3673144803e7cdfbfab948983b1d204cdb53014a5"
+        },
+        "not_listed_here": "branch_merge_base_with_main 1d1545fc8412: the commit object resolves (see measured.branch_merge_base_readback), but the claim that it is the merge base of pb/PBB-075/t37-999-adapter with main cannot be recomputed because that branch is gone. The object is kept under measured as a resolvable object; its role in the old merge-base claim is not asserted."
+      },
+      "capability": "ABSENT on main — proven. The only reported adapter implementation is unmerged, and its branch ref and commit object are no longer reachable on origin, so its 502-line size, its sha256 and its '46 commits behind current main' position cannot be recomputed by a reader; those three are reported values only (see reported_unverified) and support no claim here."
     },
     {
       "id": "IF-03",
@@ -121,9 +143,9 @@
       "files": [
         {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979}
       ],
-      "symbols": ["main() L1086", "OS gate L1131-1132", "probe_tool/probe_install L143-160", "write_nine_settings() L449", "set_operator_key() L508", "skills_only_mode() L947"],
+      "symbols": ["main() L1086", "OS gate L1131-1133", "probe_tool/probe_install L143-160", "write_nine_settings() L449", "set_operator_key() L508", "skills_only_mode() L947"],
       "measured": {
-        "host_gate": "Darwin AND arm64 required (lines 1131-1132); anything else exits BLOCKER",
+        "host_gate": "Darwin AND arm64 both required: `uname -s` must be Darwin at L1132 and `uname -m` must be arm64 at L1133, both inside the cited range 1131-1133 (the range opened at 1131-1132 in the first draft of this artifact, which left the arm64 half of the claim outside its own citation); anything else exits BLOCKER",
         "numbered_stage_comments": 15,
         "link_targets": ["$CLAUDE_CONFIG_DIR or ~/.claude", "~/.claude-nine when it is a real settings root", "~/.codex and ~/.agents when ~/.codex exists"],
         "dry_run": "only --skills-only supports --check; the full install has no dry-run (line 1119 fail text)",
@@ -185,11 +207,27 @@
         "registered_skills": 15,
         "coverage_fraction": "5/15",
         "local_version_source": "<skill>/VERSION; a missing or non-version file yields UNDETERMINED exit 2",
-        "registered_skills_without_VERSION": ["drama-studio", "signature-downsell", "signature-thank-you", "black-friday-launcher"],
+        "local_version_gate_exact": "check-update.sh check_one_skill() L129 reads $LOCAL_SKILLS_ROOT/<skill>/VERSION by an EXACT-CASE path lookup with no fallback (local_file assigned at L131, missing-file refusal at L137-140), then requires the content to pass is_version() L77-88 (digits and dots only, no leading/trailing dot, no '..', <=32 chars). A missing file, an empty file, or content is_version() rejects all yield UNDETERMINED exit 2 — the skill cannot report an update at all. skill-version.txt is never read by the gate.",
+        "update_capability_under_the_gate": {
+          "instrument": "the gate above, applied to the committed tree; every figure in this object comes from that one instrument",
+          "registered_skills_can_report": 9,
+          "registered_skills_can_report_names": ["blackceo-signature-page", "bro", "eli5", "hook-skill", "kaizen", "kiss", "motion-video-plus", "nine-router-setup", "spec-protocol"],
+          "registered_skills_cannot_report": 6,
+          "registered_skills_cannot_report_names": ["black-friday-launcher", "council-of-wise-elders", "drama-song-ad-factory", "drama-studio", "signature-downsell", "signature-thank-you"],
+          "cannot_report_causes": {
+            "no_version_file_at_all": ["drama-studio"],
+            "version_file_present_but_content_rejected": ["drama-song-ad-factory (VERSION holds 'v2.9.103'; is_version() rejects the leading 'v'; its skill-version.txt holds the same rejected string)"],
+            "version_file_spelled_other_than_exact_VERSION": ["council-of-wise-elders (root entry 'version', lowercase, holding 1.0.55; the gate's lookup is case-sensitive)"],
+            "version_only_in_skill_version_txt": ["black-friday-launcher (skill-version.txt 0.2.9)", "signature-downsell (skill-version.txt 0.1.1)", "signature-thank-you (skill-version.txt 0.3.1)"]
+          },
+          "host_note": "On a case-INsensitive filesystem (macOS APFS default) the lowercase 'version' is found and council-of-wise-elders can report: 10 can / 5 cannot. On a case-SENSITIVE filesystem (Linux VPS and Docker, the hosts GAP-13 names) it is invisible: 9 can / 6 cannot. The gate's literal contract is the case-sensitive one. Presence is not usability: 10 registered skills carry a file named exactly VERSION and only 9 of those can report, and 4 more carry a usable version number in a file the gate never opens."
+        },
+        "registered_skills_without_VERSION": ["black-friday-launcher", "council-of-wise-elders", "drama-studio", "signature-downsell", "signature-thank-you"],
         "skill_dirs_with_VERSION": 10,
+        "version_file_presence_instrument": "skill_dirs_with_VERSION counts every skill dir holding SKILL.md that has an exact-case root entry named VERSION; registered_skills_without_VERSION counts registry entries with no such entry. Both figures are from that one case-sensitive instrument and the second is 15 minus the 10 registered skills among them. File presence only — see update_capability_under_the_gate for what the gate can actually do with those files. The first draft of this artifact quoted skill_dirs_with_VERSION from this instrument and registered_skills_without_VERSION from a case-INsensitive one (which gives 11 and 4); the two cannot both hold.",
         "skill_dirs_with_SKILL_md": 24
       },
-      "capability": "PARTIAL — correct for 5 skills, blind to the other 10 registered skills; 4 registered skills cannot ever report an update."
+      "capability": "PARTIAL — correct for 5 skills, blind to the other 10 registered skills. Under check-update.sh's own gate 6 registered skills can never report an update (5 on a case-insensitive host): drama-studio has no version file at all; drama-song-ad-factory's VERSION holds 'v2.9.103' which is_version() rejects; council-of-wise-elders ships lowercase 'version' which the case-sensitive lookup never reads; and black-friday-launcher, signature-downsell and signature-thank-you hold their version only in skill-version.txt, which the gate never opens."
     },
     {
       "id": "IF-08",
@@ -327,11 +365,11 @@
     {"claim": "no root update-skills.sh", "instrument": "ls -la update-skills.sh", "exit": 1, "observed": "No such file or directory", "control": "ls scripts/sync-nine-skills.sh -> exists, 5085 bytes"}
   ],
   "missing_capabilities": [
-    {"id": "GAP-01", "capability": "Current bundle/adaptation adapter on main", "status": "ABSENT", "evidence": "IF-02: installer-registration/bundle_adapter.py is ABSENT on 317bb24; the sole implementation is unmerged pb/PBB-075/t37-999-adapter (502 lines, sha 4cf84275…), not an ancestor of main (exit 1)."},
+    {"id": "GAP-01", "capability": "Current bundle/adaptation adapter on main", "status": "ABSENT", "evidence": "IF-02: installer-registration/bundle_adapter.py is ABSENT on 317bb241 (git cat-file -e fails; control on helper-deps.py in the same tree succeeds). The only reported implementation sits on pb/PBB-075/t37-999-adapter, which no longer resolves on origin (git ls-remote returns no ref; control: 711 refs listed) and whose commit object GitHub reports as nonexistent (HTTP 422; control on 5a773bb9 succeeds), so its line count and sha256 are recorded as reported values only and support nothing here."},
     {"id": "GAP-02", "capability": "CAF skill provisioning and caf CLI build", "status": "PRESENT UNWIRED", "evidence": "IF-03: 158-file CAF skill v2.1.23 is in the tree but is not in CONTROL/bundled-skills.txt; both orchestrators match caf 0 times; no install doc mentions it; wire.sh is never invoked."},
     {"id": "GAP-03", "capability": "Complete bundled-skill registry", "status": "PARTIAL", "evidence": "IF-01: 15 registered, 24 on disk, 9 unregistered: conversational-ai-system, convert-and-flow-operator, email-engine, ghl-install-pages, kie, signature-funnel, signature-order-form, signature-product-selection, signature-upsell."},
     {"id": "GAP-04", "capability": "Bundle component registry in lockstep with the skill registry", "status": "DRIFT", "evidence": "CONTROL/bundled-components.json has 8 components (generatedAt 2026-10-01T18:52:12Z) while bundled-skills.txt has 15; the 7 missing are black-friday-launcher, council-of-wise-elders, drama-song-ad-factory, drama-studio, motion-video-plus, signature-downsell, signature-thank-you."},
-    {"id": "GAP-05", "capability": "Update check across every bundled skill", "status": "PARTIAL", "evidence": "IF-07: check-update.sh and its Windows port hardcode 5 skills of 15; 4 registered skills have no VERSION file (drama-studio, signature-downsell, signature-thank-you, black-friday-launcher)."},
+    {"id": "GAP-05", "capability": "Update check across every bundled skill", "status": "PARTIAL", "evidence": "IF-07: check-update.sh and its Windows port hardcode 5 skills of 15. Of the 15 registered skills, 6 can never pass the local version gate (5 on a case-insensitive host): drama-studio has no version file at all; drama-song-ad-factory's VERSION holds 'v2.9.103' which is_version() rejects; council-of-wise-elders ships lowercase 'version', invisible to the case-sensitive lookup; and black-friday-launcher, signature-downsell and signature-thank-you carry their version only in skill-version.txt, which the gate never opens. The first draft of this artifact said 4 and reached that figure by counting file presence under a case-insensitive reading while its companion count of 10 used the case-sensitive one."},
     {"id": "GAP-06", "capability": "Apply an announced update for any skill", "status": "PARTIAL", "evidence": "IF-08: self-update is spec-protocol only on both platforms (path guard */skills/spec-protocol); no root update-skills.sh exists."},
     {"id": "GAP-07", "capability": "Windows bundle sync/repair/refresh parity", "status": "ABSENT", "evidence": "IF-05: setup-windows.ps1 has no --skills-only, --check, --repair-links or --refresh-updater; so_sync/so_tree_diff/so_refresh_updater exist only in setup-macos.sh."},
     {"id": "GAP-08", "capability": "Resume after an interrupted install", "status": "ABSENT", "evidence": "IF-04: both orchestrators have zero resume/--resume matches (control: rerun/re-run 9 and 11 matches); recovery is a full idempotent re-run."},
