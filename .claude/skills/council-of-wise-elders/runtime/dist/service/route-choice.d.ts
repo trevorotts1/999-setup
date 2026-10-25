@@ -73,6 +73,13 @@ export interface RouteOption {
     composable: boolean;
     failure_code: string | null;
     default_for: ConveningHarness[];
+    /**
+     * True when the route's only blocker is the choice of model: pass one
+     * of `model_candidates` and it is usable. The council never picks it.
+     */
+    usable_with_model: boolean;
+    /** Every configured candidate model id on this route. */
+    model_candidates: string[];
 }
 export declare function listRouteOptions(opts: Omit<RouteChoiceOptions, 'scope' | 'nowUtc'>): RouteOption[];
 export declare function resolveSessionRoute(req: RouteChoiceRequest, opts: RouteChoiceOptions): Promise<ResolvedSessionRoute>;

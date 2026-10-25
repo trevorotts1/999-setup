@@ -20,7 +20,7 @@ export declare const SEAT_ROSTER: ReadonlyArray<{
 }>;
 /** Mandatory label on every advisor profile (Section 8 source honesty). */
 export declare function advisorProfileLabel(displayName: string): string;
-export declare const SESSION_MODES: readonly ["full", "selected", "quick", "consult"];
+export declare const SESSION_MODES: readonly ["full", "selected", "quick", "consult", "light", "medium", "heavy"];
 export type SessionMode = (typeof SESSION_MODES)[number];
 export declare const SESSION_VISIBILITIES: readonly ["private", "company"];
 export type SessionVisibility = (typeof SESSION_VISIBILITIES)[number];

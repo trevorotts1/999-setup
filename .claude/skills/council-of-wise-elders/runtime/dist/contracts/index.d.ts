@@ -11,6 +11,7 @@
  */
 export * from './errors';
 export * from './enums';
+export * from './modes';
 export * from './primitives';
 export * from './canonical-json';
 export { sha256Hex } from './sha256';

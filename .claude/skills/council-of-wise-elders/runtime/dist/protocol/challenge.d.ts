@@ -221,7 +221,7 @@ export declare const MAX_CRUXES = 3;
  * genuine dissent (T039). Returns null when there is no unanimity or
  * no scored alternative to test.
  */
-export declare function unanimityStressCrux(round1Cards: readonly AdvisorCard[], brief: DecisionBrief, seatOrder: readonly SeatId[]): Crux | null;
+export declare function unanimityStressCrux(previousCards: readonly AdvisorCard[], brief: DecisionBrief, seatOrder: readonly SeatId[]): Crux | null;
 /**
  * Identify up to three decision-changing cruxes from valid committed
  * opening cards (Section 14.3). Deterministic: the same committed
@@ -230,7 +230,7 @@ export declare function unanimityStressCrux(round1Cards: readonly AdvisorCard[],
  * the labeled adversarial test last). Fabricates nothing: every
  * competing claim is composed from values the cards actually recorded.
  */
-export declare function extractCruxes(round1Cards: readonly AdvisorCard[], brief: DecisionBrief, seatOrder: readonly SeatId[]): Crux[];
+export declare function extractCruxes(previousCards: readonly AdvisorCard[], brief: DecisionBrief, seatOrder: readonly SeatId[]): Crux[];
 /** The cruxes one seat is responsible for, in crux order. */
 export declare function assignedCruxesFor(cruxes: readonly Crux[], seatId: SeatId): Crux[];
 /**
@@ -246,7 +246,7 @@ export interface PeerArgumentExcerpt {
     readonly decisive_arguments: readonly string[];
     readonly strongest_objection: string;
 }
-export declare function peerArgumentsFor(crux: Crux, round1Cards: readonly AdvisorCard[], forSeatId: SeatId): PeerArgumentExcerpt[];
+export declare function peerArgumentsFor(crux: Crux, previousCards: readonly AdvisorCard[], forSeatId: SeatId): PeerArgumentExcerpt[];
 /** Canonical digest of a set of committed cards' author payloads. */
 export declare function cardSetSha256(cards: readonly CouncilCard[]): string;
 /** Canonical digest of a crux set. */
@@ -266,14 +266,25 @@ export interface ChallengeInputIdentity {
     readonly brief_sha256: string;
     readonly seat_id: SeatId;
     readonly pack_version: string;
-    /** CWE-022 content hash of this seat's assembled Round 2 context. */
+    /** CWE-022 content hash of this seat's assembled challenge context. */
     readonly context_sha256: string;
     /** CWE-028 fingerprint of the pinned route snapshot. */
     readonly route_fingerprint: string;
-    /** Digest of the committed Round 1 card set the cruxes derive from. */
+    /**
+     * Digest of the committed PREVIOUS round's card set the cruxes derive
+     * from: round 1 cards for pass 2, round k-1 cards for pass k. The
+     * field name is kept for the round-2 identity the earlier tests pin.
+     */
     readonly round1_cards_sha256: string;
     /** Digest of the crux set extracted from those cards. */
     readonly cruxes_sha256: string;
+    /**
+     * The challenge pass this operation is. Round 2 is the first pass;
+     * medium and heavy re-enter the challenge with rounds 3..10, and the
+     * round is part of the input identity so every pass hashes differently
+     * even when the committed card set repeats.
+     */
+    readonly round?: number;
 }
 export declare function challengeInputManifestSha256(identity: ChallengeInputIdentity): string;
 /** A fully planned challenge seat operation, ready to enqueue. */
@@ -305,15 +316,17 @@ export interface ChallengeRoundPlan {
 export declare class ChallengeRoundExecutor implements OperationExecutorPort {
     private readonly deps;
     constructor(deps: LaterRoundDeps);
-    planSeat(session: StoredSession, snapshot: PinnedRouteSnapshot, seatId: SeatId): ChallengePlanResult;
+    planSeat(session: StoredSession, snapshot: PinnedRouteSnapshot, seatId: SeatId, round?: number): ChallengePlanResult;
     /**
-     * Plan the whole challenge round: extract the cruxes from the
-     * committed opening record once, then plan EVERY panel seat in spec
-     * order, challenged or not (T149).
+     * Plan one challenge pass: extract the cruxes from the PREVIOUS
+     * round's committed record once, then plan EVERY panel seat in spec
+     * order, challenged or not (T149). Round 2 is the first pass; medium
+     * and heavy re-enter with rounds 3..MAX_ADVISOR_ROUND, each pass
+     * deriving its cruxes from the round before it.
      */
-    planChallengeRound(session: StoredSession, snapshot: PinnedRouteSnapshot): ChallengeRoundPlan;
-    /** The cruxes the committed opening record currently yields. */
-    cruxesFor(session: StoredSession): Crux[];
+    planChallengeRound(session: StoredSession, snapshot: PinnedRouteSnapshot, round?: number): ChallengeRoundPlan;
+    /** The cruxes the committed record before `round` currently yields. */
+    cruxesFor(session: StoredSession, round?: number): Crux[];
     dispatch(ctx: OperationDispatchContext): Promise<OperationDispatchResult>;
     /**
      * Deep validation of a stamped Round 2 card: identity, the input
@@ -326,6 +339,7 @@ export declare class ChallengeRoundExecutor implements OperationExecutorPort {
      * CWE-012's card source-use rules.
      */
     validateCard(ctx: OperationDispatchContext, card: CouncilCard): string[];
-    private openingCards;
+    /** The committed advisor cards of the round BEFORE `round`. */
+    private previousCards;
     private prepareSeat;
 }

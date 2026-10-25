@@ -34,6 +34,7 @@
  * supplied by the host win; unchecked hard constraints are `unknown`
  * and block an unconditional recommendation.
  */
+import { isCouncilSize, MODE_ROUND_POLICY } from '../contracts/index.js';
 import { RunAdmissionService } from '../authorization/admission.js';
 import { RunAuthorizationService } from '../authorization/run-grants.js';
 import { DurableBudgetService } from '../budgets/service.js';
@@ -47,14 +48,27 @@ import { OPERATION_LEASE_TTL_MS } from '../cli/leases.js';
 import { deriveHardConstraintFindings } from '../scoring/decision.js';
 import { OpeningRoundExecutor } from './opening.js';
 import { ChallengeRoundExecutor } from './challenge.js';
+import { evaluateConsensusStop } from './consensus.js';
+import { isOllamaProvider } from '../providers/parallel.js';
 import { assembleConsultOutcome, assembleDeliberationOutcome, ConsultExecutor, evaluateQuickModeSkip, RatificationRoundExecutor, } from './ratification.js';
 import { ProtocolError } from './errors.js';
 import { SessionControlsService } from './session-controls.js';
 import { SessionHistoryService } from './history.js';
 import { FollowUpService } from './follow-up.js';
 import { OutcomeReviewService } from './outcomes.js';
-const ESTIMATE_MINOR = 100;
+/**
+ * Money hold per operation. Zero: W77S-MODES removed every money
+ * estimate and ceiling from the client path, and DurableBudgetService
+ * accepts a zero estimate for an `estimated` cost knowledge (the
+ * default), so the provider-request cap is the only enforced limit.
+ */
+const ESTIMATE_MINOR = 0;
 const ROUND_WAIT_POLL_MS = 250;
+/** Job terminal reasons that a fallback route may retry (Ollama only). */
+const FALLBACK_FAILURE_CODES = new Set([
+    'transport_failed',
+    'transport_rejected',
+]);
 export class DeliberationService {
     deps;
     repositories;
@@ -103,7 +117,12 @@ export class DeliberationService {
         this.challenge = new ChallengeRoundExecutor(roundDeps);
         this.ratification = new RatificationRoundExecutor(roundDeps);
         this.consult = new ConsultExecutor(roundDeps);
-        const routeExecutor = (round) => {
+        const routeExecutor = (round, mode) => {
+            // The council sizes run advisor passes 1..10 and no ratification
+            // pass: round 1 is the opening, every later pass challenges.
+            if (isCouncilSize(mode)) {
+                return round === 1 ? this.opening : this.challenge;
+            }
             if (round === 1)
                 return this.opening;
             if (round === 2)
@@ -112,9 +131,10 @@ export class DeliberationService {
                 return this.ratification;
             return this.consult;
         };
+        const executeFor = (ctx) => routeExecutor(ctx.claim.descriptor.round, ctx.session.spec.mode);
         const composite = {
-            dispatch: (ctx) => routeExecutor(ctx.claim.descriptor.round).dispatch(ctx),
-            validateCard: (ctx, card) => routeExecutor(ctx.claim.descriptor.round).validateCard?.(ctx, card) ?? [],
+            dispatch: (ctx) => executeFor(ctx).dispatch(ctx),
+            validateCard: (ctx, card) => executeFor(ctx).validateCard?.(ctx, card) ?? [],
         };
         this.runner = new DurableJobRunner({
             db,
@@ -250,26 +270,37 @@ export class DeliberationService {
         transition('QUEUED');
         transition('PREPARING');
         const findings = deriveHardConstraintFindings(session.brief, this.deps.recordedHardConstraintFindings?.(session) ?? []);
-        const enqueueRound = async (round, plans) => {
+        const enqueueRound = async (round, plans, routeSnapshot = options.route_snapshot, keySuffix = '', grantId = options.grant_id, 
+        // The wave width for THIS round's route. Defaults to the primary
+        // route's limit; the Ollama fallback overrides it because it runs
+        // on a different provider with a different parallel limit.
+        waveLimit = Math.max(1, options.parallel_limit ?? 1)) => {
+            const roundPrefix = `round-${round}:`;
             for (const [seatId, plan] of plans) {
                 this.runner.enqueueOperation(envelope, {
                     session_id: sessionId,
-                    phase_job_key: `round-${round}:${seatId}`,
+                    phase_job_key: `round-${round}:${seatId}${keySuffix}`,
                     seat_id: seatId,
                     input_sha256: plan.input_manifest_sha256,
                     descriptor: {
                         kind: 'provider_request',
                         purpose: options.purpose ?? 'council_run',
-                        grant_id: options.grant_id,
+                        grant_id: grantId,
                         estimate_minor: ESTIMATE_MINOR,
                         currency: 'USD',
                         round,
                         pack_version: plan.pack_version,
                     },
-                    route_snapshot: options.route_snapshot,
+                    route_snapshot: routeSnapshot,
                 });
             }
-            // Supervisor rhythm (CWE-024 flag 8): claim one, execute, repeat.
+            // Claim, execute and settle a WAVE of up to parallel_limit
+            // operations, then claim the next wave: every claim in a wave is
+            // awaited together before the next wave is claimed, so no
+            // in-flight operation is ever fenced by a later claim of the same
+            // round. Default limit 1 = one claim at a time, today's
+            // behaviour (and what the single-claim delegate returns).
+            //
             // An admission refusal returns the job to queued intact (the
             // grant cannot fund it), so a refused or deferred outcome stops
             // the round's driving: the assembly step then reports the round
@@ -282,31 +313,86 @@ export class DeliberationService {
             // state (or return to queued, which this loop then claims).
             // With no competing worker the first null claim ends the round,
             // exactly as before.
+            const limit = Math.max(1, waveLimit);
             const maxIterations = plans.size * 4 + 16;
             const timers = this.deps.timers ?? systemTimers;
             const pollMs = this.deps.roundWaitPollMs ?? ROUND_WAIT_POLL_MS;
             const maxWaits = Math.ceil((OPERATION_LEASE_TTL_MS * plans.size) / pollMs);
             const heldByOthers = () => this.runner
                 .listSessionJobs(envelope, sessionId)
-                .some((job) => job.phase_job_key.startsWith(`round-${round}:`) &&
+                .some((job) => job.phase_job_key.startsWith(roundPrefix) &&
                 (job.state === 'leased' || job.state === 'running'));
             let claims = 0;
             let waits = 0;
             while (claims < maxIterations) {
-                const claim = this.runner.claimNextOperation(envelope, sessionId, this.workerId);
-                if (!claim) {
+                const wave = this.runner.claimWave(envelope, sessionId, this.workerId, limit);
+                if (wave.length === 0) {
                     if (waits >= maxWaits || !heldByOthers())
                         break;
                     waits += 1;
                     await timers.delay(pollMs);
                     continue;
                 }
-                claims += 1;
-                const outcome = await this.runner.executeClaimedOperation(envelope, claim);
-                if (outcome.status === 'admission_refused' || outcome.status === 'deferred') {
+                claims += wave.length;
+                const outcomes = await Promise.all(wave.map((claim) => this.runner.executeClaimedOperation(envelope, claim)));
+                if (outcomes.some((outcome) => outcome.status === 'admission_refused' || outcome.status === 'deferred')) {
                     break;
                 }
             }
+        };
+        /**
+         * Ollama fallback (W77S-MODES): after a round's wave on an Ollama
+         * route, re-enqueue every seat whose jobs ended on a transport or
+         * rate-limit class failure and committed no card, on the fallback
+         * route snapshot, and run them all at once. No fallback snapshot,
+         * a non-Ollama primary route, or no failed seat: nothing happens and
+         * the existing failure path stands.
+         */
+        const fallbackAfterRound = async (round, planSeat) => {
+            const fallback = options.fallback_route_snapshot ?? null;
+            if (fallback === null)
+                return;
+            if (!isOllamaProvider(options.route_snapshot.providerSlug))
+                return;
+            const cards = this.repositories.listCards(envelope, sessionId);
+            const roundPrefix = `round-${round}:`;
+            const failed = new Set();
+            for (const failure of this.runner.listSessionFailures(envelope, sessionId)) {
+                if (failure.seat_id === null)
+                    continue;
+                if (!failure.phase_job_key.startsWith(roundPrefix))
+                    continue;
+                if (failure.phase_job_key.endsWith(':fallback'))
+                    continue;
+                if (!FALLBACK_FAILURE_CODES.has(failure.outcome_code ?? ''))
+                    continue;
+                const committed = cards.some((card) => 'round' in card && card.round === round && card.seat_id === failure.seat_id);
+                if (committed)
+                    continue;
+                failed.add(failure.seat_id);
+            }
+            if (failed.size === 0)
+                return;
+            const plans = new Map();
+            for (const seatId of session.spec.seat_ids) {
+                if (!failed.has(seatId))
+                    continue;
+                const planned = planSeat(seatId, fallback);
+                if (planned !== null && planned.status === 'planned') {
+                    plans.set(seatId, planned.plan);
+                }
+            }
+            if (plans.size === 0)
+                return;
+            // The fallback runs on ITS OWN provider, so the primary route's
+            // Ollama wave width does not apply: an OpenRouter fallback has no
+            // parallel limit and every failed seat re-runs in one wave. A
+            // fallback that is itself Ollama keeps the primary plan limit (the
+            // plan belongs to the client's Ollama account, not to the route).
+            const fallbackLimit = isOllamaProvider(fallback.providerSlug)
+                ? Math.max(1, options.parallel_limit ?? 1)
+                : Math.max(1, plans.size);
+            await enqueueRound(round, plans, fallback, ':fallback', options.fallback_grant_id ?? options.grant_id, fallbackLimit);
         };
         // A round that ended with its work unfinished must not feed the next
         // round's plan: a job still queued/leased/running (the grant refused
@@ -314,7 +400,14 @@ export class DeliberationService {
         // draft input hash, so every Round 3 dispatch would refuse as input
         // drift. In full mode a seat with no card can only end BLOCKED, so
         // continuing would spend paid Round 2/3 calls on a session that cannot
-        // produce a verdict. Stop in place (BLOCKED is resumable).
+        // produce a verdict. Stop in place.
+        //
+        // The stopped session is left BLOCKED with its committed cards intact,
+        // but it is NOT resumable by any runner this runtime ships: runSession
+        // is a one-shot driver, the service exposes no resume route, and the
+        // local CLI engine refuses the council sizes (only the four older
+        // modes have a resumable pipeline). BLOCKED here means "stopped, safe
+        // to inspect" — not "resume to finish" (W77S-MODES review).
         const stalledRound = (round) => {
             const prefix = `round-${round}:`;
             const unfinished = this.runner
@@ -323,14 +416,19 @@ export class DeliberationService {
                 (job.state === 'queued' || job.state === 'leased' || job.state === 'running'));
             const cards = this.repositories.listCards(envelope, sessionId);
             const missing = session.spec.seat_ids.filter((seatId) => !cards.some((c) => c.card_kind === 'advisor' && c.round === round && c.seat_id === seatId));
-            if (!unfinished && !(session.spec.mode === 'full' && missing.length > 0))
+            // A nine-seat council keeps every seat: full mode and the council
+            // sizes (medium/heavy are all nine; light keeps its fixed three).
+            const keepsAllSeats = session.spec.mode === 'full' || isCouncilSize(session.spec.mode);
+            if (!unfinished && !(keepsAllSeats && missing.length > 0))
                 return null;
             transition('BLOCKED');
             return {
                 status: 'incomplete',
                 detail: unfinished
                     ? `round ${round} ended with unfinished work (a job is still queued or running); the session is blocked and resumable instead of planning round ${round + 1} from a partial record`
-                    : `full mode keeps all nine seats: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`,
+                    : session.spec.mode === 'full'
+                        ? `full mode keeps all nine seats: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`
+                        : `${session.spec.mode} mode keeps its whole panel: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`,
                 missing: missing.map((seat_id) => ({ round, seat_id })),
                 budget: snapshotBudget(),
             };
@@ -388,6 +486,98 @@ export class DeliberationService {
             seatId,
             result.plan,
         ])));
+        // Council sizes (light/medium/heavy): Round 1 is the isolated
+        // opening; every later pass challenges the cruxes derived from the
+        // round before it, and no separate ratification pass ever runs. The
+        // stop rule (contracts/modes.ts) decides how many passes happen.
+        if (isCouncilSize(session.spec.mode)) {
+            const policy = MODE_ROUND_POLICY[session.spec.mode];
+            const optionIds = session.spec.options.map((option) => option.id);
+            const openingPlanFor = (seatId, snapshot) => {
+                const planned = this.opening.planSeat(current(), snapshot, seatId);
+                return planned.status === 'planned'
+                    ? { status: 'planned', plan: planned.plan }
+                    : { status: 'context_too_small' };
+            };
+            await fallbackAfterRound(1, openingPlanFor);
+            const stalledAfterOpening = stalledRound(1);
+            if (stalledAfterOpening)
+                return stalledAfterOpening;
+            let completedRound = 1;
+            for (;;) {
+                const roundCards = this.repositories
+                    .listCards(envelope, sessionId)
+                    .filter((card) => card.card_kind === 'advisor' && card.round === completedRound);
+                let continueRun;
+                if (completedRound < policy.min_rounds)
+                    continueRun = true;
+                else if (completedRound >= policy.max_rounds)
+                    continueRun = false;
+                else if (policy.stop_from_round !== null &&
+                    completedRound >= policy.stop_from_round &&
+                    evaluateConsensusStop(roundCards, optionIds).stop) {
+                    continueRun = false;
+                }
+                else
+                    continueRun = true;
+                if (!continueRun)
+                    break;
+                const nextRound = completedRound + 1;
+                // Every extra pass re-enters CRUX_REVIEW -> ROUND_2: the pass
+                // number lives in the job descriptor and the card, never in a
+                // new state value.
+                transition('CRUX_REVIEW');
+                transition('ROUND_2');
+                const pass = this.challenge.planChallengeRound(current(), options.route_snapshot, nextRound);
+                for (const result of pass.plans.values()) {
+                    if (result.status === 'context_too_small') {
+                        transition('BLOCKED');
+                        return {
+                            status: 'readiness_failed',
+                            readiness: 'CONTEXT_TOO_SMALL',
+                            detail: `a seat needs ${result.minimum_required_bytes} bytes; the pinned route offers ${result.available_bytes}`,
+                            budget: snapshotBudget(),
+                        };
+                    }
+                }
+                await enqueueRound(nextRound, new Map([...pass.plans].map(([seatId, result]) => [
+                    seatId,
+                    result.plan,
+                ])));
+                await fallbackAfterRound(nextRound, (seatId, snapshot) => {
+                    const planned = this.challenge.planSeat(current(), snapshot, seatId, nextRound);
+                    return planned.status === 'planned'
+                        ? { status: 'planned', plan: planned.plan }
+                        : { status: 'context_too_small' };
+                });
+                const stalled = stalledRound(nextRound);
+                if (stalled)
+                    return stalled;
+                completedRound = nextRound;
+            }
+            transition('DRAFT_RESOLUTION');
+            transition('VERIFYING');
+            const councilCards = this.repositories.listCards(envelope, sessionId);
+            const outcome = assembleDeliberationOutcome({
+                spec: session.spec,
+                brief: session.brief,
+                cards: councilCards,
+                hard_constraint_findings: findings,
+                verdict_revision: 1,
+            });
+            if (outcome.status !== 'complete') {
+                transition('BLOCKED');
+                return {
+                    status: 'incomplete',
+                    detail: outcome.detail,
+                    missing: outcome.missing.map((m) => ({ round: m.round, seat_id: m.seat_id })),
+                    budget: snapshotBudget(),
+                };
+            }
+            this.repositories.saveVerdict(envelope, outcome.verdict);
+            transition('COMPLETED');
+            return { status: 'completed', verdict: outcome.verdict, budget: snapshotBudget() };
+        }
         const stalledAfterRound1 = stalledRound(1);
         if (stalledAfterRound1)
             return stalledAfterRound1;

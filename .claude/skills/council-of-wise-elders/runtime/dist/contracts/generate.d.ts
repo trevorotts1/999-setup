@@ -16,7 +16,7 @@ export declare const JSON_SCHEMA_ARTIFACT_PATH = "../../../schemas/json-schemas.
 declare const CARD_AUTHOR_SCHEMAS: {
     readonly advisor: z.ZodObject<{
         card_kind: z.ZodLiteral<"advisor">;
-        round: z.ZodUnion<readonly [z.ZodLiteral<1>, z.ZodLiteral<2>]>;
+        round: z.ZodNumber;
         stance: z.ZodEnum<{
             support: "support";
             conditional: "conditional";
@@ -80,8 +80,8 @@ declare const CARD_AUTHOR_SCHEMAS: {
             }>;
         }, z.core.$strict>>;
         evidence_strength: z.ZodEnum<{
-            low: "low";
             medium: "medium";
+            low: "low";
             high: "high";
         }>;
         minority_position: z.ZodNullable<z.ZodString>;
@@ -158,8 +158,8 @@ declare const CARD_AUTHOR_SCHEMAS: {
         accepted_condition_ids: z.ZodArray<z.ZodString & z.ZodType<string, string, z.core.$ZodTypeInternals<string, string>>>;
         unresolved_objections: z.ZodArray<z.ZodString>;
         evidence_strength: z.ZodEnum<{
-            low: "low";
             medium: "medium";
+            low: "low";
             high: "high";
         }>;
         schema_version: z.ZodLiteral<"wise-elders.card/v1">;

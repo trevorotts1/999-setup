@@ -41,6 +41,9 @@ const CONVENE_FLAGS = new Set([
     'harness',
     'fresh-facts',
     'mode',
+    'seat-ids',
+    'ollama-plan',
+    'fallback-model',
     'origin',
     'public-origin',
     'json',
@@ -293,6 +296,37 @@ async function callService(origin, path, init, fetchImpl) {
     }
     return obj;
 }
+// The run shape the service accepted: mode, panel size, round policy, the
+// provider-request cap, how many seats run at once, and the fallback line.
+// Never a money, cost or budget figure.
+function runShapeLines(res) {
+    const mode = typeof res.mode === 'string' ? res.mode : null;
+    if (mode === null)
+        return [];
+    const lines = [`  mode: ${mode}`];
+    if (typeof res.seats === 'number')
+        lines.push(`  seats: ${res.seats}`);
+    const rounds = res.rounds;
+    if (rounds && typeof rounds === 'object') {
+        const shape = rounds.min_rounds === rounds.max_rounds ? `${rounds.max_rounds}` : `${rounds.min_rounds}-${rounds.max_rounds}`;
+        const stop = typeof rounds.stop_from_round === 'number'
+            ? ` (may stop early from round ${rounds.stop_from_round})`
+            : '';
+        lines.push(`  rounds: ${shape}${stop}`);
+    }
+    else {
+        lines.push('  rounds: 3 (fixed)');
+    }
+    if (typeof res.request_cap === 'number') {
+        lines.push(`  request cap: ${res.request_cap} provider requests`);
+    }
+    if (typeof res.parallel_limit === 'number') {
+        lines.push(`  parallel limit: ${res.parallel_limit} at a time`);
+    }
+    if (typeof res.fallback === 'string')
+        lines.push(`  Fallback: ${res.fallback}`);
+    return lines;
+}
 function report(io, json, err) {
     const council = err instanceof CouncilError
         ? err
@@ -391,6 +425,26 @@ export async function runConvene(args, opts) {
             if (v !== null)
                 body[key] = v;
         }
+        const seatIdsFlag = str(p, 'seat-ids');
+        if (seatIdsFlag !== null) {
+            const seats = seatIdsFlag
+                .split(',')
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+            if (seats.length === 0)
+                throw usageError('--seat-ids needs at least one seat id, like --seat-ids a,b,c.');
+            body.seat_ids = seats;
+        }
+        const ollamaPlan = str(p, 'ollama-plan');
+        if (ollamaPlan !== null) {
+            if (ollamaPlan !== '20' && ollamaPlan !== '100') {
+                throw usageError('--ollama-plan must be 20 or 100 (the client\'s Ollama plan).');
+            }
+            body.ollama_plan = ollamaPlan;
+        }
+        const fallbackModel = str(p, 'fallback-model');
+        if (fallbackModel !== null)
+            body.fallback_model = fallbackModel;
         const factsPath = str(p, 'fresh-facts');
         if (factsPath !== null)
             body.fresh_facts = readFreshFacts(factsPath);
@@ -415,6 +469,7 @@ export async function runConvene(args, opts) {
             `  route_id: ${res.route_id}`,
             `  model_label: ${res.model_label}`,
             `  selection_source: ${res.selection_source}`,
+            ...runShapeLines(res),
             ...(chamberUrl === null ? [] : [`Open the Roast Room: ${chamberUrl}`]),
             `  session: ${sessionUrl}`,
             `  events: ${eventsUrl}`,

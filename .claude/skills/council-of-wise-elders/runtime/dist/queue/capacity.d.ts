@@ -87,7 +87,7 @@ export interface CapacityUsage {
 /** Default composition values; hosts override through config. */
 export declare const DEFAULT_CAPACITY_CONFIG: CapacityConfig;
 export declare class RuntimeCapacity {
-    private readonly totalSlots;
+    private totalSlots;
     private readonly privateReservedSlots;
     private readonly slotTtlMs;
     private readonly nowMs;
@@ -97,6 +97,14 @@ export declare class RuntimeCapacity {
         nowMs?: () => number;
         newTokenId?: () => string;
     });
+    /**
+     * Wave admission (W77S-MODES): guarantee that `limit` operations of
+     * one class can be in flight at once, because a claimed wave runs to
+     * completion as a unit. Slots are only ever raised, never lowered, and
+     * the private reserve keeps its size, so no held token is invalidated
+     * and the fairness rule still leaves room for company work.
+     */
+    ensureConcurrentCapacity(limit: number): void;
     /** The admission ceiling for a class (Section 15.7 fairness rule). */
     classLimit(workClass: CapacityClass): number;
     /**

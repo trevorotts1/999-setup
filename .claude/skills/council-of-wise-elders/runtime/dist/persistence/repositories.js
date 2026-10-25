@@ -47,6 +47,21 @@ import { EventJournal } from './journal.js';
 import { ProjectionOutbox } from './outbox.js';
 export const DELETION_TOMBSTONE_SOURCE = 'council-persistence';
 export const DELETION_TOMBSTONE_OPERATION = 'session_deleted';
+/**
+ * ponytail: council_sessions.mode has a SQL CHECK (0001-council-schema.sql)
+ * that lists only the four old modes, and the column is never read back —
+ * the spec is rebuilt from the session_created journal event and the state
+ * record carries the real mode. So the row column stores a CHECK-satisfying
+ * alias only; spec, state and events keep the real mode. Upgrade: widen the
+ * CHECK in a later migration and delete this map.
+ */
+export function sessionRowMode(mode) {
+    if (mode === 'light')
+        return 'selected';
+    if (mode === 'medium' || mode === 'heavy')
+        return 'full';
+    return mode;
+}
 const STATE_EVENT_TYPES = [
     'session_created',
     'session_state_changed',
@@ -153,7 +168,7 @@ export class CouncilRepositories {
             archived, mode, visibility, state, state_version, brief_revision, brief_hash,
             selected_seats_json, cancellation_generation, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-            .run(session.spec.session_id, session.scope.tenant_id, session.scope.company_id, session.scope.installation_id, session.scope.owner_subject, envelope.actor_subject, session.state.archived ? 1 : 0, session.spec.mode, session.spec.visibility, session.state.state, session.state.state_version, session.state.brief_revision, session.spec.brief_sha256, canonicalStringify(session.spec.seat_ids), session.state.cancel_generation, session.spec.created_at, session.state.updated_at);
+            .run(session.spec.session_id, session.scope.tenant_id, session.scope.company_id, session.scope.installation_id, session.scope.owner_subject, envelope.actor_subject, session.state.archived ? 1 : 0, sessionRowMode(session.spec.mode), session.spec.visibility, session.state.state, session.state.state_version, session.state.brief_revision, session.spec.brief_sha256, canonicalStringify(session.spec.seat_ids), session.state.cancel_generation, session.spec.created_at, session.state.updated_at);
     }
     insertBriefRevisionRow(handle, envelope, brief, authorSubject, profile) {
         handle

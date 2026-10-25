@@ -362,6 +362,27 @@ export declare class DurableJobRunner {
      */
     claimNextOperation(envelope: AuthorizationEnvelope, sessionId: string, workerId: string): JobClaim | null;
     /**
+     * Claim up to `limit` queued runnable operations as ONE wave
+     * (W77S-MODES). The filters are exactly claimNextOperation's: a
+     * runnable session, no live lease anywhere in the session, and only
+     * queued jobs whose dispatch descriptor and cancellation generation
+     * are current. Expired leases are reconciled first, the same way.
+     *
+     * The wave bumps the session fencing generation ONCE, so every claim
+     * it returns carries the same `session_lease_epoch`. That is the
+     * whole point: the budget service and the card commit fence compare
+     * the presented epoch with the session's current one, so N claims
+     * each bumping their own epoch would fence the earlier settles out
+     * and lose paid responses. Waves run to completion before the next
+     * wave is claimed, so no in-flight operation is ever fenced.
+     *
+     * Returns [] when a live lease exists (another worker, or a previous
+     * wave, still owns work) or nothing is claimable: an empty wave IS
+     * the rejected claim, never an exception, because losing a claim
+     * race is normal operation.
+     */
+    claimWave(envelope: AuthorizationEnvelope, sessionId: string, workerId: string, limit: number): JobClaim[];
+    /**
      * Advance the session fencing generation for a new claim. Any token
      * minted under an earlier epoch (budget reservations, card commit
      * fences, in-flight workers) goes stale at this instant. Retried on
@@ -379,6 +400,18 @@ export declare class DurableJobRunner {
      * false, so a stale worker cannot free a live worker's job.
      */
     releaseClaim(envelope: AuthorizationEnvelope, claim: JobClaim): boolean;
+    /**
+     * Return one leased/running job to queued, but only for the owner at
+     * the epoch it holds. A stale owner's write matches nothing, so it
+     * cannot free a live worker's job.
+     */
+    private returnJobToQueued;
+    /**
+     * Retire a queued job written under a superseded cancellation
+     * generation: it can never run, so it is cancelled in place instead
+     * of being stranded queued forever.
+     */
+    private retireSupersededJob;
     /**
      * Renew the claim's job lease for another TTL. Renewal touches only
      * the job row's expiry: it never renews a spending grant, never
