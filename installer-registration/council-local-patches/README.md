@@ -6,9 +6,12 @@ vendored canonical tree. Whether to upstream them is the Council source owner's 
 
 ## Current patches
 
-| Patch | Effect |
-|---|---|
-| `03-runtime-dist-not-ignored.patch` | `runtime/.gitignore`: stops ignoring `dist/`. The canonical source-tree rule ("generated locally, never committed") is right for the source repo but wrong for the 999 DISTRIBUTION, which must carry the built executable: with the rule in place a plain `git add` silently drops `runtime/dist` and the repository recreates the stale source-only package. `node_modules/` stays ignored (build-time only; the bundle embeds its dependencies). |
+None. A distribution the release contract governs cannot carry a local divergence:
+Council v1.0.59's `manifest.distribution` records the digest of every file the
+distribution ships, and `77-council-of-wise-elders/scripts/selected-tree-gate.mjs`
+refuses any copy that differs on one byte. A `local_divergence` entry is not a kind
+the gate can prove, so a patch here now makes the vendored tree unable to prove it
+is the same release.
 
 ## Dropped patches (upstreamed — preserved here for intent and provenance)
 
@@ -28,6 +31,10 @@ Origin of the dropped patches: 999-setup commit `0fd08bd4` (diff of
 `0fd08bd4~1..0fd08bd4`). They applied cleanly (`git apply --check`) to the
 canonical tree at onboarding `bf2385c7553cea09d32f68c49b2765acd4867ddb`
 (Council v1.0.24), which is what the pre-re-vendor distribution carried.
+
+| Patch | Intent | Disposition |
+|---|---|---|
+| `03-runtime-dist-not-ignored.patch` | `runtime/.gitignore`: stop ignoring `dist/`, so a plain `git add` cannot silently drop `runtime/dist` and recreate the stale source-only package (CWE-040 entry contract). | **DROPPED — the release contract now carries the guard.** v1.0.59's `manifest.distribution` records the digest of `runtime/.gitignore` and of all 336 built files, so this patch made the vendored tree diverge from the release and the tree gate refused it. The guard it provided is replaced, actively: `scripts/vendor-council-bundle.mjs` refuses a distribution whose bytes differ from the recorded contract, and `scripts/test-council-vendor.sh` proves every recorded build file is present and byte-identical, so a `dist` file that exists but was never committed fails CI instead of riding along unverified. Distribution hash of the retired patched file: `1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421`.
 
 ## Re-vendoring
 
