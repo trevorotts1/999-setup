@@ -457,6 +457,15 @@ export declare class DurableBudgetService {
      */
     private journalFacts;
     private toRecord;
+    /**
+     * The tightest count ceilings carried by the run grants funding this
+     * session, so a report states the cap that is actually enforced instead
+     * of the service-wide maximum. The grant's ceilings live in the
+     * council_approvals scope proof, the same durable record the admission
+     * path enforces. An unreadable proof is skipped: it can neither widen
+     * nor narrow the reported cap.
+     */
+    private grantedCeilings;
     private effectiveCeilings;
     private effectiveMoneyLimit;
     private notFoundError;

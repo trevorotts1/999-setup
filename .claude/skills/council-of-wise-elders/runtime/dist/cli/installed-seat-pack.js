@@ -28,7 +28,7 @@ function error(message) {
     throw new CouncilError('COUNCIL_STORE_UNAVAILABLE', message, {
         retryable: false,
         exitCode: 3,
-        action: 'Restore or reinstall the Council advisor pack from the verified Skill 77 source before starting a paid Council run.',
+        action: 'Restore or reinstall the Council advisor pack from the verified Skill 77 source before starting a Council run.',
     });
 }
 function isObject(value) {
