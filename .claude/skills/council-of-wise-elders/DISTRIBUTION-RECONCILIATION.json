@@ -15,6 +15,11 @@
       "rule": "CWE-012 acceptance condition 3: material tagged scope private_scope is barred from every distributable artifact. Bibliographic records stay; the derived pack items go. Dropped items are recorded by file, index, and content hash only; distributed artifacts never name them.",
       "items": [
         {
+          "file": "advisors/russell-brunson/failure-patterns.json",
+          "item_index": 8,
+          "item_sha256": "099386353e3b49cb8b27d558b7e71cfb50bf6c7bc7495b114496e1c953f5ebba"
+        },
+        {
           "file": "advisors/russell-brunson/frameworks.json",
           "item_index": 7,
           "item_sha256": "e5db16233f98bf158f2fb9872a5261b0b38ae883b8170622a044be9241a6f29f"
@@ -23,11 +28,6 @@
           "file": "advisors/russell-brunson/frameworks.json",
           "item_index": 8,
           "item_sha256": "db70ee9120199c18e1c9eb277e9a64fa7e8db973df3464da6ec369f2b598e5fc"
-        },
-        {
-          "file": "advisors/russell-brunson/failure-patterns.json",
-          "item_index": 8,
-          "item_sha256": "099386353e3b49cb8b27d558b7e71cfb50bf6c7bc7495b114496e1c953f5ebba"
         }
       ]
     },
@@ -35,13 +35,6 @@
       "kind": "sentences_scrubbed",
       "rule": "Sentences referencing a dropped item id or a private evidence id are removed from pack JSON string fields; a field left empty is removed. Content is recorded by hash only, never reprinted here.",
       "fields": [
-        {
-          "file": "advisors/russell-brunson/failure-patterns.json",
-          "path": "advisors/russell-brunson/failure-patterns.json.items[7].correction",
-          "action": "sentences_scrubbed",
-          "before_sha256": "deee78f274853b3b6854457a2788e3e6adb02069208e325d6e6c8a1037a32839",
-          "after_sha256": "dabb85678fbfa7e3fe150af3865d69a40c7523ec6364fcf6b214b3ea63e0fd11"
-        },
         {
           "file": "advisors/russell-brunson/decision-rules.json",
           "path": "advisors/russell-brunson/decision-rules.json.items[3].note",
@@ -55,6 +48,55 @@
           "action": "field_removed",
           "before_sha256": "4fe0dc6ef770fa69f334c1d66c2a380db194f1d95d3595a42d3abe1853244d12",
           "after_sha256": null
+        },
+        {
+          "file": "advisors/russell-brunson/failure-patterns.json",
+          "path": "advisors/russell-brunson/failure-patterns.json.items[7].correction",
+          "action": "sentences_scrubbed",
+          "before_sha256": "deee78f274853b3b6854457a2788e3e6adb02069208e325d6e6c8a1037a32839",
+          "after_sha256": "dabb85678fbfa7e3fe150af3865d69a40c7523ec6364fcf6b214b3ea63e0fd11"
+        },
+        {
+          "file": "advisors/russell-brunson/failure-patterns.json",
+          "path": "advisors/russell-brunson/failure-patterns.json.note",
+          "action": "sentences_scrubbed",
+          "before_sha256": "d8dcdf8b72b260ff6f8eb80175685100e8bf85af1f812497285e8f3e6270ce41",
+          "after_sha256": "96e4fd4991671f02a1a617e96827ca211f249b1abc4db36a9c48fa78a0e9ce71"
+        },
+        {
+          "file": "advisors/russell-brunson/frameworks.json",
+          "path": "advisors/russell-brunson/frameworks.json.note",
+          "action": "sentences_scrubbed",
+          "before_sha256": "00ce8bdefd7ea5f9ba554119a9cf7cd1ac5ef7fa452d5290c0a8d94054080fe6",
+          "after_sha256": "73a8651f8934469ab5251a7080e400fd2b2bd7fe7382def94ee918dfa52ca781"
+        },
+        {
+          "file": "advisors/russell-brunson/profile.json",
+          "path": "advisors/russell-brunson/profile.json.distribution.contains_private_scope_material",
+          "action": "packaging_record_updated",
+          "before_sha256": "c80f8094448a4826c4bd107c99b904603b740d6fa5b7497a66ec608232eb6cdb",
+          "after_sha256": "bea1f8022792e55e2d0fc4884abf240fd5945d88472e19054b35db4590526794"
+        },
+        {
+          "file": "advisors/russell-brunson/profile.json",
+          "path": "advisors/russell-brunson/profile.json.distribution.distribution_ready",
+          "action": "packaging_record_updated",
+          "before_sha256": "c80f8094448a4826c4bd107c99b904603b740d6fa5b7497a66ec608232eb6cdb",
+          "after_sha256": "bea1f8022792e55e2d0fc4884abf240fd5945d88472e19054b35db4590526794"
+        },
+        {
+          "file": "advisors/russell-brunson/profile.json",
+          "path": "advisors/russell-brunson/profile.json.distribution.note",
+          "action": "packaging_record_updated",
+          "before_sha256": "c80f8094448a4826c4bd107c99b904603b740d6fa5b7497a66ec608232eb6cdb",
+          "after_sha256": "bea1f8022792e55e2d0fc4884abf240fd5945d88472e19054b35db4590526794"
+        },
+        {
+          "file": "advisors/russell-brunson/profile.json",
+          "path": "advisors/russell-brunson/profile.json.source_basis[2].status",
+          "action": "packaging_record_updated",
+          "before_sha256": "c80f8094448a4826c4bd107c99b904603b740d6fa5b7497a66ec608232eb6cdb",
+          "after_sha256": "bea1f8022792e55e2d0fc4884abf240fd5945d88472e19054b35db4590526794"
         }
       ]
     },
@@ -74,24 +116,6 @@
       "kind": "manifest_regenerated",
       "file": "manifest.json",
       "rule": "Regenerated over the distribution tree with the canonical hash method; the canonical aggregate it derives from is recorded above and inside manifest.json."
-    },
-    {
-      "kind": "local_divergence",
-      "rule": "999-only changes applied on top of the vendored canonical tree by scripts/revendor-council.mjs with git apply. They are NOT in the Council source (canonical_files carries only canonical hashes) and a plain re-vendor with scripts/vendor-council-bundle.mjs deletes them. Each file is recorded with its distribution hash and, when canonical has the file, the canonical hash it replaces; the patch artifacts are recorded by hash. Whether to upstream them is a decision for the Council source owner.",
-      "patch_artifacts": [
-        {
-          "path": "installer-registration/council-local-patches/03-runtime-dist-not-ignored.patch",
-          "sha256": "3a1df484f663f014267c9c025bd308645ecee9e3aa380dd2e83e2729fd77ce2f"
-        }
-      ],
-      "files": [
-        {
-          "path": "runtime/.gitignore",
-          "kind": "modified",
-          "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
-          "canonical_sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0"
-        }
-      ]
     }
   ]
 }

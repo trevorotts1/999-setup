@@ -46,13 +46,6 @@ const write = argv.includes("--write");
 const repoArg = argv.indexOf("--repo");
 const root = repoArg >= 0 ? resolve(argv[repoArg + 1]) : repoRoot;
 
-const DECLARED = new Set([
-  "advisors/russell-brunson/frameworks.json",
-  "advisors/russell-brunson/failure-patterns.json",
-  "advisors/russell-brunson/decision-rules.json",
-  "manifest.json",
-  "DISTRIBUTION-RECONCILIATION.json",
-]);
 const VENDORED = ".claude/skills/council-of-wise-elders";
 const PATCH_DIR = "installer-registration/council-local-patches";
 
@@ -78,6 +71,22 @@ const record = JSON.parse(readFileSync(recPath, "utf8"));
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const recon = JSON.parse(readFileSync(reconPath, "utf8"));
 const errors = [];
+
+// The files the release contract changes are taken from the vendoring tool's
+// own record (distribution.files), never from a hand-kept list here: a list
+// that happens to match today's release silently mis-declares the next one.
+const canonicalFiles = record.canonical_files ?? {};
+const contractFiles = new Map((record.distribution?.files ?? []).map((f) => [f.path, f.sha256]));
+if (contractFiles.size === 0) {
+  console.error("FAIL the vendoring record carries no distribution contract (distribution.files): " +
+    "re-vendor with scripts/vendor-council-bundle.mjs before realigning");
+  process.exit(1);
+}
+const DECLARED = new Set([
+  ...[...contractFiles.keys()].filter((p) => canonicalFiles[p] !== contractFiles.get(p)),
+  "manifest.json",
+  "DISTRIBUTION-RECONCILIATION.json",
+]);
 
 // Tree hashes (the canonical hash method excludes manifest.json, *.skill
 // and the generated runtime/dist and runtime/node_modules trees; the
@@ -106,7 +115,7 @@ for (const name of patches) {
 // The built runtime is not divergence: it is a recorded build artifact,
 // verified byte for byte against the manifest's runtime_entry (a missing
 // or unrecorded build is a visible failure, never silently accepted).
-const canonical = record.canonical_files ?? {};
+const canonical = canonicalFiles;
 const runtimeEntry = manifest.runtime_entry ?? record.runtime_entry ?? null;
 const distFiles = present.filter((rel) => rel.startsWith("runtime/dist/"));
 if (runtimeEntry) {
@@ -161,6 +170,9 @@ const nextRecord = {
   ...record,
   intentional_distribution_differences: nextRecon.intentional_distribution_differences,
   distribution: {
+    // Keep the release contract the vendoring tool recorded (files,
+    // runtime_dist, added_paths): resealing only restates the aggregate.
+    ...record.distribution,
     vendored_path: record.distribution.vendored_path,
     distribution_aggregate_sha256: aggregate,
     distribution_file_count: entries.length,

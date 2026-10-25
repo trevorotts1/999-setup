@@ -5,7 +5,7 @@
   "source_commit": "13b44bcdfc45c15cf3c51acae38b4091bc81cdfa",
   "canonical_aggregate_sha256": "3b0de855ca901b06f3965e27e504f8018b73a43a5157637ce0e74e6414a4145b",
   "file_count": 789,
-  "aggregate_sha256": "024d0eace1257ff82f8dec92fa78779c8506672855349ae97f76a02a3fe92a3f",
+  "aggregate_sha256": "31af13b62fb45713fb92f01c3025d4c162395ca63745a061c5c6205d97edc577",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -30,8 +30,8 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "23493c10facd8afcb8ff8fd9e85fc5c2bb50f05bf1797ef4ef48ef393829411d",
-      "bytes": 4988
+      "sha256": "7c8a81fd9a011224c3a5e48e04d8555f6cd9a2bf9d5e9f95f7eee01911da5413",
+      "bytes": 6276
     },
     {
       "path": "EXAMPLES.md",
@@ -345,18 +345,18 @@
     },
     {
       "path": "advisors/russell-brunson/failure-patterns.json",
-      "sha256": "1ada0f56738d1c57d43767abacb239512e3bb9ea79c59b4aeabc7ebad8aeef2a",
-      "bytes": 7367
+      "sha256": "c052ae00798c96042245173b6bf95eda891d49bf072eb14b92e3eff88bd252f7",
+      "bytes": 7243
     },
     {
       "path": "advisors/russell-brunson/frameworks.json",
-      "sha256": "62b0ef917fd679b9dc44eda87c90eb84c589dca5ed0513f1442284d7f83e4b06",
-      "bytes": 18906
+      "sha256": "715d2e52cffbe050d4a41cf37151d9ba63d74537478539ad0cfce87b6051f350",
+      "bytes": 16385
     },
     {
       "path": "advisors/russell-brunson/profile.json",
-      "sha256": "52482cca48e49dd2e60ead9d558c077cf42d9960cb73cbb6a6732c0b5a9a90dc",
-      "bytes": 3891
+      "sha256": "bea1f8022792e55e2d0fc4884abf240fd5945d88472e19054b35db4590526794",
+      "bytes": 3840
     },
     {
       "path": "advisors/russell-brunson/questions.json",
@@ -1700,8 +1700,8 @@
     },
     {
       "path": "runtime/.gitignore",
-      "sha256": "1c7b1420c6667210ced7af86c8f893206a572abb508bd1fac912bb90e3edd421",
-      "bytes": 319
+      "sha256": "e1df4b730ada67866a47607e15ba15fb0e402a296ac79e7b3acfcee675f8bef0",
+      "bytes": 87
     },
     {
       "path": "runtime/README.md",
