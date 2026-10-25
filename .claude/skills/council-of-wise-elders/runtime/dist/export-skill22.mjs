@@ -14557,7 +14557,15 @@ var SEAT_ROSTER = [
 function advisorProfileLabel(displayName) {
   return `AI perspective inspired by the published work of ${displayName}. Not the individual and not an endorsement.`;
 }
-var SESSION_MODES = ["full", "selected", "quick", "consult"];
+var SESSION_MODES = [
+  "full",
+  "selected",
+  "quick",
+  "consult",
+  "light",
+  "medium",
+  "heavy"
+];
 var SESSION_VISIBILITIES = ["private", "company"];
 var SESSION_STATES = [
   "DRAFT",
@@ -14714,6 +14722,9 @@ function isUtcTimestamp(value) {
   const d = new Date(ms);
   return d.toISOString().startsWith(value.slice(0, 19));
 }
+
+// src/contracts/modes.ts
+var MAX_ADVISOR_ROUND = 10;
 
 // src/contracts/schemas.ts
 var SCHEMA_VERSIONS = {
@@ -14878,6 +14889,20 @@ var sessionSpecSchema = external_exports.strictObject({
       message: "selected mode requires 2 to 8 seats"
     });
   }
+  if (spec.mode === "light" && spec.seat_ids.length !== 3) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["seat_ids"],
+      message: "light mode requires exactly three seats"
+    });
+  }
+  if ((spec.mode === "medium" || spec.mode === "heavy") && spec.seat_ids.length !== SEAT_IDS.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["seat_ids"],
+      message: `${spec.mode} mode requires all nine seats`
+    });
+  }
 });
 var conditionSchema = external_exports.strictObject({
   id: idSchema,
@@ -14943,7 +14968,7 @@ var cardBaseShape = {
 var advisorCardAuthorSchema = external_exports.strictObject({
   ...cardBaseShape,
   card_kind: external_exports.literal("advisor"),
-  round: external_exports.union([external_exports.literal(1), external_exports.literal(2)]),
+  round: external_exports.number().int().min(1).max(MAX_ADVISOR_ROUND),
   stance: external_exports.enum(STANCES),
   preferred_option_id: idSchema.nullable(),
   option_scores: external_exports.array(optionScoreSchema),
@@ -15219,7 +15244,7 @@ var councilEventSchema = external_exports.strictObject({
 });
 var councilSettingsSchema = external_exports.strictObject({
   schema_version: external_exports.literal("wise-elders.settings/v1"),
-  max_session_provider_requests: external_exports.number().int().min(1).max(50),
+  max_session_provider_requests: external_exports.number().int().min(1).max(100),
   max_output_repair_requests: external_exports.number().int().min(0),
   max_semantic_verification_requests: external_exports.number().int().min(0).max(2),
   max_transport_retries_total: external_exports.number().int().min(0),

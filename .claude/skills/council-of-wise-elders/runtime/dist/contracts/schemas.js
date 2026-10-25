@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import { AMENDMENT_DISPOSITIONS, AMENDMENT_MATERIALITIES, ATTRIBUTION_KINDS, AUTHORIZATION_KINDS, CARD_KINDS, CONDITION_KINDS, CONDITION_STATUSES, CONSTRAINT_RESULTS, CRITICAL_DOMAINS, CRITICAL_DOMAIN_STATUSES, EVIDENCE_STRENGTHS, EVENT_TYPES, EXECUTION_POLICIES, FALLBACK_POLICIES, GRANT_STATUSES, MODEL_SELECTION_SOURCES, OPERATION_STATUSES, OPTION_KINDS, RATIFICATION_STATUSES, RESOLUTION_STANCES, RISK_CLASSES, RUN_GRANT_AUTHORITY_MODES, RUN_PURPOSES, SEAT_IDS, SESSION_MODES, SESSION_STATES, SESSION_VISIBILITIES, STANCES, VALIDATION_STATUSES, VERDICT_LABELS, } from './enums';
 import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives';
+import { MAX_ADVISOR_ROUND } from './modes';
 /** Current canonical contract version for this package surface. */
 export const CONTRACT_PACKAGE_VERSION = 'wise-elders.core/1.0.0';
 /** Schema version stamps carried by individual contract payloads. */
@@ -229,6 +230,21 @@ export const sessionSpecSchema = z
             message: 'selected mode requires 2 to 8 seats',
         });
     }
+    if (spec.mode === 'light' && spec.seat_ids.length !== 3) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['seat_ids'],
+            message: 'light mode requires exactly three seats',
+        });
+    }
+    if ((spec.mode === 'medium' || spec.mode === 'heavy') &&
+        spec.seat_ids.length !== SEAT_IDS.length) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['seat_ids'],
+            message: `${spec.mode} mode requires all nine seats`,
+        });
+    }
 });
 // ---------------------------------------------------------------------------
 // Conditions and action proposals (Section 11.4)
@@ -301,7 +317,7 @@ const cardBaseShape = {
 export const advisorCardAuthorSchema = z.strictObject({
     ...cardBaseShape,
     card_kind: z.literal('advisor'),
-    round: z.union([z.literal(1), z.literal(2)]),
+    round: z.number().int().min(1).max(MAX_ADVISOR_ROUND),
     stance: z.enum(STANCES),
     preferred_option_id: idSchema.nullable(),
     option_scores: z.array(optionScoreSchema),
@@ -604,7 +620,7 @@ export const councilEventSchema = z.strictObject({
 /** Session budget and behavior settings (defaults from Section 15.6). */
 export const councilSettingsSchema = z.strictObject({
     schema_version: z.literal('wise-elders.settings/v1'),
-    max_session_provider_requests: z.number().int().min(1).max(50),
+    max_session_provider_requests: z.number().int().min(1).max(100),
     max_output_repair_requests: z.number().int().min(0),
     max_semantic_verification_requests: z.number().int().min(0).max(2),
     max_transport_retries_total: z.number().int().min(0),

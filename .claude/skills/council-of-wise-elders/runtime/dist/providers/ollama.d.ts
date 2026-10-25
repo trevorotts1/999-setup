@@ -32,6 +32,13 @@
 import { CompatibleHttpTransport, type CompatibleTransportBinding } from './compatible.js';
 /** The documented local Ollama compatible base URL, when configuration names none. */
 export declare const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
+/**
+ * The configured Ollama endpoint as the OpenAI-compatible surface:
+ * `/v1` is appended when the configuration does not already carry it
+ * (`http://127.0.0.1:11434` and `http://127.0.0.1:11434/` both become
+ * `.../v1`). Trailing slashes are dropped so no caller composes `//`.
+ */
+export declare function ollamaCompatibleBaseUrl(baseUrl?: string | null): string;
 export interface OllamaTransportBinding extends Omit<CompatibleTransportBinding, 'baseUrl'> {
     /** Configured local compatible base URL. Default: the local daemon surface. */
     baseUrl?: string;

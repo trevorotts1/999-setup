@@ -24,8 +24,9 @@
  * Authorization header only. No error text built here includes it.
  */
 import { SubprocessHostCallTransport } from '../cli/host-call-transport.js';
-import { RouteDiscoveryError, discoverConfiguredRoutes, resolveDiscoveredCredential, resolveRouteForDispatch, } from '../cli/route-discovery.js';
+import { RouteDiscoveryError, discoverConfiguredRoutes, resolveDiscoveredCredential, resolveRouteForDispatch, routeUsableWithModel, } from '../cli/route-discovery.js';
 import { CompatibleHttpTransport } from '../providers/compatible.js';
+import { createOllamaTransport } from '../providers/ollama.js';
 export const HARNESS_DEFAULTS = Object.freeze({
     'claude-nine': { route_id: 'claude-nine-configured', model: 'harness_default' },
     'claude-code': { route_id: 'claude-configured', model: 'sonnet' },
@@ -93,6 +94,8 @@ export function listRouteOptions(opts) {
         composable: route.composable,
         failure_code: route.failure?.code ?? null,
         default_for: harnesses.filter((h) => HARNESS_DEFAULTS[h].route_id === route.routeId),
+        usable_with_model: routeUsableWithModel(route),
+        model_candidates: [...(route.compatible?.modelCandidates ?? [])],
     }));
 }
 // ---------------------------------------------------------------------------
@@ -104,14 +107,20 @@ function clean(value) {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
 }
-function resolveRoute(routeId, opts) {
+function resolveRoute(routeId, opts, explicitModel = null) {
     try {
-        return resolveRouteForDispatch(routeId, { homeDir: opts.homeDir, env: opts.env }).route;
+        return resolveRouteForDispatch(routeId, { homeDir: opts.homeDir, env: opts.env }, explicitModel)
+            .route;
     }
     catch (error) {
         const code = error instanceof RouteDiscoveryError ? error.code : null;
         if (code === 'ROUTE_ID_UNKNOWN' || code === 'ROUTE_HOST_CONFIG_MISSING') {
             throw new RouteChoiceError('ROUTE_NOT_CONFIGURED', `Route ${routeId} is not configured on this host.`, 'Pick one of the routes from the routes listing, or configure this route (provider account, model and credential presence).');
+        }
+        if (code === 'ROUTE_MODEL_AMBIGUOUS') {
+            const route = discoverConfiguredRoutes({ homeDir: opts.homeDir, env: opts.env }).find((candidate) => candidate.routeId === routeId);
+            const candidates = route?.compatible?.modelCandidates ?? [];
+            throw new RouteChoiceError('ROUTE_NOT_COMPOSABLE', `Route ${routeId} allows ${candidates.length} models (${candidates.join(', ')}) and names no single default, so it needs one named.`, 'Pass the model to use (one of the candidate models listed above); the council never picks a model itself.');
         }
         throw new RouteChoiceError('ROUTE_NOT_COMPOSABLE', `Route ${routeId} is configured but cannot be used now${code ? ` (${code})` : ''}.`, 'Fix the named route blocker (executable, endpoint, model or credential presence) or pick a different route.');
     }
@@ -218,7 +227,7 @@ export async function resolveSessionRoute(req, opts) {
         throw new RouteChoiceError('ROUTE_CHOICE_REQUIRED', 'No route_id was given and the convening harness is not known, so no default route can be chosen.', 'Ask the client which model route to use (see the routes listing) and pass route_id, or pass the harness (claude-nine, claude-code or deepseek).');
     }
     const source = explicitRoute || explicitModel ? 'explicit' : 'client_default';
-    const route = resolveRoute(routeId, opts);
+    const route = resolveRoute(routeId, opts, explicitModel);
     // The default model for a route comes from the table row that names it.
     const defaultKind = Object.values(HARNESS_DEFAULTS).find((d) => d.route_id === route.routeId)?.model ?? null;
     let wireModel;
@@ -332,10 +341,10 @@ function selectionFromSnapshot(snapshot) {
 export function transportForSnapshot(snapshot, opts) {
     let route;
     try {
-        route = resolveRouteForDispatch(snapshot.routeId, {
-            homeDir: opts.homeDir,
-            env: opts.env,
-        }).route;
+        route = resolveRouteForDispatch(snapshot.routeId, { homeDir: opts.homeDir, env: opts.env }, 
+        // The snapshot's pinned model is the caller's explicit choice on a
+        // route whose only otherwise-blocker is ROUTE_MODEL_AMBIGUOUS.
+        snapshot.requestedModelOrAlias).route;
     }
     catch (error) {
         if (error instanceof RouteDiscoveryError)
@@ -355,11 +364,17 @@ export function transportForSnapshot(snapshot, opts) {
         });
     }
     if (route.compatible) {
-        return new CompatibleHttpTransport({
+        const binding = {
             selection: selectionFromSnapshot(snapshot),
             baseUrl: route.compatible.baseUrl,
             credentialResolver: async () => resolveDiscoveredCredential(route, opts.env ?? process.env),
-        });
+        };
+        // An Ollama route composes through the existing OpenAI-compatible
+        // Ollama profile: the configured /v1 surface, the local daemon with
+        // no credential, Ollama Cloud with its configured key reference.
+        return route.compatible.apiFamily === 'ollama_chat'
+            ? createOllamaTransport(binding)
+            : new CompatibleHttpTransport(binding);
     }
     return null;
 }

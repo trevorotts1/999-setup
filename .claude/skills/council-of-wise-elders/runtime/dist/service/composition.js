@@ -47,6 +47,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveStandaloneInstallation, standaloneEnvelope, standalonePrincipal, standaloneScope, } from '../cli/authorization.js';
 import { discoverConfiguredRoutes, } from '../cli/route-discovery.js';
+import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/schemas.js';
 import { SEAT_IDS } from '../contracts/enums.js';
 import { COUNCIL_SCHEMA_SQL, COUNCIL_TABLES_SECTION_16_2, } from '../persistence/index.js';
 import { parsePersistenceConfig } from '../persistence/config.js';
@@ -92,6 +93,21 @@ const CHAMBER_INDEX_CANDIDATES = [
 const CHAMBER_INDEX_ARTIFACT = 'runtime/public/chamber/index.html';
 const WORKER_ID = 'council-service-worker';
 const DEFAULT_CONVENE_DRAIN_TIMEOUT_MS = 25_000;
+/**
+ * Budget service ceilings for a convened session. The grant issued at
+ * convene is the authority: the four older modes carry 50/9/8 (exactly
+ * what they are documented and printed as), a light or medium session
+ * 50/50/50, a heavy session 100/100/100 (see service/driver.ts
+ * ceilingsForMode). The service settings must therefore admit those
+ * totals — this is the protocol's runaway guard, never a money ceiling
+ * (money and tokens stay null on every grant).
+ */
+export const CONVENING_SETTINGS = {
+    ...DEFAULT_COUNCIL_SETTINGS,
+    max_session_provider_requests: 100,
+    max_output_repair_requests: 100,
+    max_transport_retries_total: 100,
+};
 function defaultServiceDataDir() {
     const home = homedir();
     switch (platform()) {
@@ -549,6 +565,7 @@ function composeBackend(input) {
         routeBudget: routeBudgetResolver({ configPath: input.route.budgets.configPath }),
         loadSeatBriefing: elderKnowledge.loadSeatBriefing,
         workerId: WORKER_ID,
+        settings: CONVENING_SETTINGS,
         // A fenced settle is reported like any worker failure (declared below).
         onFencedSettle: (error, context) => recordWorkerError(error, context),
     });
@@ -617,6 +634,7 @@ function composeBackend(input) {
         principal: standalonePrincipal(installation),
         clock: input.clock,
         ids: input.ids,
+        dataDir: input.dataDir,
         resolveRoute: async (request) => {
             const resolved = await resolveSessionRoute(request, {
                 homeDir: input.route.routeHomeDir,

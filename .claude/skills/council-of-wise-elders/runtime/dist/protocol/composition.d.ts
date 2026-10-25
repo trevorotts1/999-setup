@@ -148,6 +148,23 @@ export declare class DeliberationService {
         route_snapshot: PinnedRouteSnapshot;
         /** Admission purpose the grant was approved under (default council_run). */
         purpose?: string;
+        /**
+         * Seats claimed per wave. Default 1 = one claim at a time, today's
+         * behaviour. Every claim of a wave is awaited together before the
+         * next wave is claimed.
+         */
+        parallel_limit?: number;
+        /**
+         * Route used to re-run seats that failed on a transport or rate-limit
+         * class failure and committed no card (Ollama routes only). The
+         * grant's route pin is a security invariant, so a fallback route
+         * needs its own approved grant: pass it as fallback_grant_id.
+         * Without one the fallback job is admitted under grant_id and the
+         * route pin refuses it, leaving today's failure path in place.
+         */
+        fallback_route_snapshot?: PinnedRouteSnapshot | null;
+        /** Approved grant pinned to fallback_route_snapshot, when there is one. */
+        fallback_grant_id?: string;
     }): Promise<RunSessionResult>;
 }
 /** Compose the production deliberation service over one store. */

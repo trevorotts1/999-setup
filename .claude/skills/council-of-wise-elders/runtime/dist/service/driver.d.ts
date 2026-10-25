@@ -24,7 +24,8 @@
 import type { TrustedPrincipal } from '../authorization/index.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import type { Clock, IdSource } from '../cli/host-ports.js';
-import { type DecisionBrief, type ModelPolicy, type ScopeFields, type SeatId, type SessionMode, type SessionVisibility } from '../contracts/index.js';
+import { type CouncilSize, type DecisionBrief, type ModelPolicy, type RunCeilings, type ScopeFields, type SeatId, type SessionMode, type SessionVisibility } from '../contracts/index.js';
+import { type OllamaPlan } from '../providers/parallel.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
 import type { DeliberationService, RunSessionResult } from '../protocol/composition.js';
 export type RouteChoiceErrorCode = 'ROUTE_CHOICE_REQUIRED' | 'ROUTE_NOT_CONFIGURED' | 'ROUTE_NOT_COMPOSABLE' | 'ROUTE_MODEL_LIST_UNAVAILABLE' | 'ROUTE_LATEST_FLASH_NOT_FOUND' | 'ROUTE_MODEL_NOT_OFFERED';
@@ -53,10 +54,20 @@ export interface ConveneInput {
     brief?: DecisionBrief;
     mode?: SessionMode;
     seat_ids?: SeatId[];
+    /** The client's Ollama plan; remembered in <dataDir>/provider-plan.json. */
+    ollama_plan?: OllamaPlan | null;
+    /** OpenRouter model to fall back to when the primary route is Ollama. */
+    fallback_model?: string | null;
     visibility?: SessionVisibility;
     route: RouteChoiceRequest;
     fresh_facts?: FreshFact[];
     requested_by: string;
+}
+/** Rounds a council size may run, as the client-facing summary prints them. */
+export interface ConveneRoundsPolicy {
+    min_rounds: number;
+    max_rounds: number;
+    stop_from_round: number | null;
 }
 export interface ConveneAccepted {
     session_id: string;
@@ -68,8 +79,20 @@ export interface ConveneAccepted {
     grant_id: string;
     session_path: string;
     events_path: string;
+    /** Real session mode (light/medium/heavy or one of the four older modes). */
+    mode: SessionMode;
+    /** Panel seats the run actually uses. */
+    seats: number;
+    /** null for the four older modes, whose round shape is fixed. */
+    rounds: ConveneRoundsPolicy | null;
+    /** The enforced provider-request cap for this session. */
+    request_cap: number;
+    /** Seats dispatched at once (1 for the older modes, today's behaviour). */
+    parallel_limit: number;
+    /** One plain line: the fallback route, or none and why. */
+    fallback: string;
 }
-export type DriverRefusalCode = 'COMPOSITION_NOT_READY' | 'CONVENE_INPUT_INVALID' | RouteChoiceErrorCode;
+export type DriverRefusalCode = 'COMPOSITION_NOT_READY' | 'CONVENE_INPUT_INVALID' | 'OLLAMA_PLAN_REQUIRED' | RouteChoiceErrorCode;
 export declare class DriverRefusal extends Error {
     readonly code: DriverRefusalCode;
     readonly recovery: string;
@@ -90,6 +113,8 @@ export interface CouncilDriverDeps {
     recordFreshFacts?: (sessionId: string, facts: FreshFact[]) => void;
     /** <dataDir>/convening-audit.jsonl */
     auditLogPath: string;
+    /** Durable data directory for the remembered Ollama plan. Defaults to dirname(auditLogPath). */
+    dataDir?: string;
     onSettled?: (sessionId: string, result: RunSessionResult | {
         status: 'error';
         code: string;
@@ -97,6 +122,9 @@ export interface CouncilDriverDeps {
     /** Pack version stamped on non-sample sessions. */
     sourcePackVersion?: string;
 }
+export declare function ceilingsForMode(mode: SessionMode): RunCeilings;
+/** The round shape a council size runs, for the client-facing summary. */
+export declare function roundsPolicyOf(mode: CouncilSize): ConveneRoundsPolicy;
 export declare function createCouncilDriver(deps: CouncilDriverDeps): {
     convene(input: ConveneInput): Promise<ConveneAccepted>;
     inFlight(): number;

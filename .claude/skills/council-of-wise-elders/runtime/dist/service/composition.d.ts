@@ -40,6 +40,7 @@
  * listener is started until the caller invokes the exported functions.
  */
 import type { ModelTransport } from '../cli/host-ports.js';
+import { type CouncilSettings } from '../contracts/schemas.js';
 import type { MaterialCatalog } from '../context/types.js';
 import type { StoredSession } from '../cli/host-ports.js';
 import { type AuthorizationEnvelope } from '../persistence/envelope.js';
@@ -54,6 +55,16 @@ import { createCouncilDriver } from './driver.js';
 import { CouncilFrontDoor } from './front-door.js';
 import type { AdmissionSink, CouncilConveningPort, ServiceIdentity, StartOutcome } from './types.js';
 type CouncilDriverHandle = ReturnType<typeof createCouncilDriver>;
+/**
+ * Budget service ceilings for a convened session. The grant issued at
+ * convene is the authority: the four older modes carry 50/9/8 (exactly
+ * what they are documented and printed as), a light or medium session
+ * 50/50/50, a heavy session 100/100/100 (see service/driver.ts
+ * ceilingsForMode). The service settings must therefore admit those
+ * totals — this is the protocol's runaway guard, never a money ceiling
+ * (money and tokens stay null on every grant).
+ */
+export declare const CONVENING_SETTINGS: CouncilSettings;
 export interface CouncilServiceCompositionOptions {
     /** Owner tenant served at the identity endpoint. */
     tenantId?: string;
