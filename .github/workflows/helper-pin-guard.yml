@@ -25,10 +25,14 @@ on:
     paths:
       - 'installer-registration/**'
       - '.github/workflows/helper-pin-guard.yml'
+      - 'CONTROL/**'
+      - '.claude/skills/**'
   pull_request:
     paths:
       - 'installer-registration/**'
       - '.github/workflows/helper-pin-guard.yml'
+      - 'CONTROL/**'
+      - '.claude/skills/**'
   schedule:
     # openclaw-onboarding moving forward is the drift this guards against, and
     # it can move without any commit here — so this also runs on a clock
@@ -68,3 +72,27 @@ jobs:
         run: bash installer-registration/test-helper-install.sh
       - name: Signature page rules reference resolves from the installed skills root
         run: bash installer-registration/test-kie-rules-pointer.sh
+      - name: Bundle hash parity and installer parity (T-37)
+        run: python3 -I -B installer-registration/test_bundle_adapter.py
+      - name: Recorded bundle digests equal the digests built from the tree
+        run: |
+          set +e
+          python3 -I -B installer-registration/bundle_adapter.py --check
+          rc=$?
+          set -e
+          # Exit codes: 0 = pass, 1 = a FAIL (parity or installer), 3 = manifest
+          # DRIFT (a real defect: this MUST fail the build), 2 = genuinely
+          # UNDETERMINED (unproven, e.g. a skill ships no VERSION).
+          # Drift and failure are fatal - a gate that cannot fail proves nothing.
+          # Undetermined is reported loudly as NOT a pass and stays
+          # distinguishable from both a pass (0) and a failure (1/3).
+          if [ "$rc" -eq 0 ]; then
+            echo "bundle_adapter --check rc=0 PASS"
+            exit 0
+          fi
+          if [ "$rc" -eq 2 ]; then
+            echo "::warning::bundle_adapter --check rc=2 UNDETERMINED - NOT a pass (unproven, e.g. a skill ships no VERSION)"
+            exit 0
+          fi
+          echo "::error::bundle_adapter --check rc=$rc FAIL (1 = parity/installer failure, 3 = manifest drift)"
+          exit 1
