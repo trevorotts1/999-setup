@@ -7,9 +7,10 @@
  *   operation round behind ONE OperationExecutorPort (the composite
  *   shape CWE-025's runner test documented as CWE-050's).
  * - CWE-027 DurableJobRunner: enqueue, admission-bound claim,
- *   fenced execution, in the supervisor's rhythm (claim one, execute,
- *   repeat; CWE-024 flag 8: claiming all seats first yields
- *   admission_refused requeues by design).
+ *   fenced execution, in the supervisor's rhythm: the older modes claim
+ *   one operation at a time (CWE-024 flag 8: claiming all seats first
+ *   yields admission_refused requeues by design); the council sizes claim
+ *   their whole wave under one lease-epoch bump, under CWE-028 capacity.
  * - CWE-049 RunAuthorizationService + RunAdmissionService: preview,
  *   approve, admission; purposes run under their own grants.
  * - CWE-028 DurableBudgetService: the ONLY budget ledger.
@@ -50,10 +51,22 @@ import { CouncilRepositories } from '../persistence/repositories.js';
 import type { CouncilDatabase } from '../persistence/sqlite.js';
 import type { Clock, IdSource } from '../cli/host-ports.js';
 import { DurableJobRunner, type DurableJobRunnerDeps, type RunnerTimers } from '../queue/runner.js';
+import { RuntimeCapacity } from '../queue/capacity.js';
 import { SessionControlsService } from './session-controls.js';
 import { SessionHistoryService } from './history.js';
 import { FollowUpService } from './follow-up.js';
 import { OutcomeReviewService } from './outcomes.js';
+/**
+ * Default runtime capacity. A claimed wave runs to completion as a unit,
+ * so the pool must admit a whole wave without refusing its later members
+ * (claimWave raises the total anyway); three waves of head room plus the
+ * private reserve keeps one session's wave from starving another's, and
+ * the Section 15.7 private share still protects private work.
+ */
+export declare const DEFAULT_WAVE_CAPACITY: {
+    total_slots: number;
+    private_reserved_slots: number;
+};
 export interface DeliberationCompositionDeps {
     db: CouncilDatabase;
     clock: Clock;
@@ -76,6 +89,12 @@ export interface DeliberationCompositionDeps {
     /** Recorded hard-constraint checker results, when the host has any. */
     recordedHardConstraintFindings?: (session: StoredSession) => readonly HardConstraintFinding[];
     settings?: CouncilSettings;
+    /**
+     * CWE-028 runtime capacity admission. Defaults to a wave-sized pool
+     * (see DEFAULT_WAVE_CAPACITY) so claimWave's capacity guarantee is real
+     * in production, not just in tests; a host may pass its own.
+     */
+    capacity?: RuntimeCapacity;
     timers?: RunnerTimers;
     /** Poll interval while waiting for another worker's round jobs; default 250ms. */
     roundWaitPollMs?: number;

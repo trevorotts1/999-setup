@@ -161,7 +161,7 @@
       "999_path": ".claude/skills/council-of-wise-elders",
       "source_path": "77-council-of-wise-elders",
       "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "999_version": "1.0.56",
+      "999_version": "1.0.57",
       "source_version": "v1.0.15",
       "drift": {
         "files_differing": 68,
@@ -170,8 +170,8 @@
         "example_only_in_999": "DISTRIBUTION-RECONCILIATION.json"
       },
       "action": "not overwritten; 999-side copy left as-is",
-      "files": 1124,
-      "sha256": "sha256:dce62a0d6aef0d5482b5dd48ddd2160d6541664c78c1b23f692009040ac7597b"
+      "files": 1125,
+      "sha256": "sha256:96934a8db89d13bcd6d4e90c35564c06f57955e1ba13c1f027d9d0809cb3db37"
     },
     {
       "id": "shared-utils-signature-launch",
