@@ -204,12 +204,31 @@ function Ensure-Jsonschema {
     Write-Blocker "jsonschema is still not importable after '$pipExe -m pip install -r $req'. The Black Friday Launcher cannot run without it. Install it into the python on PATH, then rerun setup."
 }
 
-# Bundled personal skills — the same list the macOS installer links. Source of
-# truth: CONTROL/bundled-skills.txt when running from a repo checkout;
-# standalone installs fall back to the hard-coded baseline. Junction links
+# Bundled personal skills — the list and the plan come from
+# installer-registration/bundle_adapter.py, the SAME implementation the macOS
+# installer calls, so the two install paths cannot disagree about what is
+# bundled, where a source lives or which target a skill takes. In a repo
+# checkout the adapter reads CONTROL/bundled-skills.txt; standalone installs
+# fall back to the hard-coded baseline below. Junction links
 # (New-Item -ItemType Junction) work without admin rights or Developer Mode,
-# unlike real symlinks on Windows.
+# unlike real symlinks on Windows: that is the ONE named platform difference
+# from macOS, which creates a symlink.
+function Get-BundleAdapter {
+    if ($RepoRoot) {
+        $candidate = Join-Path $RepoRoot 'installer-registration\bundle_adapter.py'
+        if ((Test-Path $candidate) -and (Get-Command python -ErrorAction SilentlyContinue)) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
 function Get-BundledSkills {
+    $adapter = Get-BundleAdapter
+    if ($adapter) {
+        $out = @(& python -I -B $adapter --root $RepoRoot --list-skills 2>$null)
+        if (($LASTEXITCODE -eq 0) -and ($out.Count -gt 0)) { return $out }
+    }
     $list = @()
     if ($RepoRoot -and (Test-Path (Join-Path $RepoRoot 'CONTROL\bundled-skills.txt'))) {
         Get-Content (Join-Path $RepoRoot 'CONTROL\bundled-skills.txt') | ForEach-Object {
@@ -223,6 +242,77 @@ function Get-BundledSkills {
     return $list
 }
 
+function Link-OneBundledSkill([string]$s, [string]$src, [string]$dst) {
+    try {
+        # Up-to-date check: a junction already pointing at the same source
+        # is left alone (idempotent re-run).
+        $dstItem = Get-Item $dst -ErrorAction SilentlyContinue
+        if ($dstItem) {
+            $isJunction = ($dstItem.LinkType -eq 'Junction')
+            $dstResolved = $null
+            if ($isJunction) {
+                $dstResolved = $dstItem.Target
+                if ($dstResolved) {
+                    if (-not [System.IO.Path]::IsPathRooted($dstResolved)) {
+                        $dstResolved = Join-Path (Split-Path $dst -Parent) $dstResolved
+                    }
+                    $dstResolved = (Resolve-Path -LiteralPath $dstResolved -ErrorAction SilentlyContinue).Path
+                }
+            } else {
+                $dstResolved = (Resolve-Path -LiteralPath $dst -ErrorAction SilentlyContinue).Path
+            }
+            if ($dstResolved -and ($dstResolved.TrimEnd('\') -ieq $src.TrimEnd('\'))) {
+                Write-Log "skill up to date: $s -> $dst"
+                return $true
+            }
+            if ($isJunction) {
+                # Re-point: remove the JUNCTION only (Remove-Item on a
+                # junction removes the link, never the target's contents).
+                Remove-Item -LiteralPath $dst -Force -ErrorAction Stop
+            } else {
+                # Real directory (possibly stale content): move it to an
+                # EXTERNAL timestamped backup (never inside any Claude
+                # config root), then VERIFY the backup exists before any
+                # replacement.
+                $ts = Get-Date -Format 'yyyyMMddTHHmmss'
+                $backupParent = Join-Path $env:USERPROFILE '.claude-skill-backups'
+                $backup = Join-Path $backupParent "$s.$ts"
+                if (-not (Test-Path $backupParent)) {
+                    New-Item -ItemType Directory -Path $backupParent -Force -ErrorAction Stop | Out-Null
+                }
+                Move-Item -LiteralPath $dst -Destination $backup -ErrorAction Stop
+                if (-not (Test-Path -LiteralPath $backup)) {
+                    throw "backup verification failed for $backup; leaving everything intact"
+                }
+                Write-Log "skill backed up: $s : $dst -> $backup"
+            }
+        }
+        New-Item -ItemType Junction -Path $dst -Target $src -ErrorAction Stop | Out-Null
+        if (-not (Test-Path (Join-Path $dst 'SKILL.md'))) {
+            throw "linked but SKILL.md missing at $dst"
+        }
+        # Never create a nested skills\<name>\<name>: the junction must
+        # resolve straight to the source, with no same-named child.
+        $linkedItem = Get-Item $dst -ErrorAction Stop
+        $linkedTarget = $linkedItem.Target
+        if ($linkedTarget -and (-not [System.IO.Path]::IsPathRooted($linkedTarget))) {
+            $linkedTarget = Join-Path (Split-Path $dst -Parent) $linkedTarget
+        }
+        $linkedResolved = (Resolve-Path -LiteralPath $linkedTarget -ErrorAction SilentlyContinue).Path
+        if (-not $linkedResolved -or ($linkedResolved.TrimEnd('\') -ine $src.TrimEnd('\'))) {
+            throw "post-link assertion failed (dest resolves to '$linkedResolved', expected '$src')"
+        }
+        if (Test-Path (Join-Path $dst $s)) {
+            throw "post-link assertion failed (nested '$s' subdirectory present at destination)"
+        }
+        Write-Log "skill linked: $s -> $dst"
+        return $true
+    } catch {
+        Write-Log "skill ERROR: $s : $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Link-BundledSkills([string]$Root) {
     if (-not $Root) { return }
     $skillsDir = Join-Path $Root 'skills'
@@ -231,6 +321,31 @@ function Link-BundledSkills([string]$Root) {
         catch { return }
     }
     $failures = 0
+    # One plan, produced by the same adapter the macOS installer calls: it
+    # decides the source, the target and whether a link is already current.
+    # Only the link mechanic below (junction here, symlink on macOS) differs.
+    $adapter = Get-BundleAdapter
+    if ($adapter) {
+        $plan = @(& python -I -B $adapter --root $RepoRoot --install-plan --claude-root $Root 2>$null)
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "skill ERROR: bundle adapter failed (exit $LASTEXITCODE); refusing to fall back to a second parser"
+            return 1
+        }
+        foreach ($line in $plan) {
+            if (-not $line) { continue }
+            $parts = $line -split "`t"
+            if ($parts.Count -lt 4) { continue }
+            $action = $parts[0]; $s = $parts[1]; $src = $parts[2]; $dst = $parts[3]
+            if ($action -eq 'missing') {
+                Write-Log "skill ERROR: $s : no source found (manifest skill absent from repo and $env:USERPROFILE\.claude\skills)"
+                $failures++
+                continue
+            }
+            if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
+        }
+        return $failures
+    }
+    # Standalone install with no repo checkout (no adapter to call).
     foreach ($s in (Get-BundledSkills)) {
         $src = $null
         if ($RepoRoot) {
@@ -247,73 +362,7 @@ function Link-BundledSkills([string]$Root) {
             continue
         }
         $dst = Join-Path $skillsDir $s
-        try {
-            # Up-to-date check: a junction already pointing at the same source
-            # is left alone (idempotent re-run).
-            $dstItem = Get-Item $dst -ErrorAction SilentlyContinue
-            if ($dstItem) {
-                $isJunction = ($dstItem.LinkType -eq 'Junction')
-                $dstResolved = $null
-                if ($isJunction) {
-                    $dstResolved = $dstItem.Target
-                    if ($dstResolved) {
-                        if (-not [System.IO.Path]::IsPathRooted($dstResolved)) {
-                            $dstResolved = Join-Path (Split-Path $dst -Parent) $dstResolved
-                        }
-                        $dstResolved = (Resolve-Path -LiteralPath $dstResolved -ErrorAction SilentlyContinue).Path
-                    }
-                } else {
-                    $dstResolved = (Resolve-Path -LiteralPath $dst -ErrorAction SilentlyContinue).Path
-                }
-                if ($dstResolved -and ($dstResolved.TrimEnd('\') -ieq $src.TrimEnd('\'))) {
-                    Write-Log "skill up to date: $s -> $dst"
-                    continue
-                }
-                if ($isJunction) {
-                    # Re-point: remove the JUNCTION only (Remove-Item on a
-                    # junction removes the link, never the target's contents).
-                    Remove-Item -LiteralPath $dst -Force -ErrorAction Stop
-                } else {
-                    # Real directory (possibly stale content): move it to an
-                    # EXTERNAL timestamped backup (never inside any Claude
-                    # config root), then VERIFY the backup exists before any
-                    # replacement.
-                    $ts = Get-Date -Format 'yyyyMMddTHHmmss'
-                    $backupParent = Join-Path $env:USERPROFILE '.claude-skill-backups'
-                    $backup = Join-Path $backupParent "$s.$ts"
-                    if (-not (Test-Path $backupParent)) {
-                        New-Item -ItemType Directory -Path $backupParent -Force -ErrorAction Stop | Out-Null
-                    }
-                    Move-Item -LiteralPath $dst -Destination $backup -ErrorAction Stop
-                    if (-not (Test-Path -LiteralPath $backup)) {
-                        throw "backup verification failed for $backup; leaving everything intact"
-                    }
-                    Write-Log "skill backed up: $s : $dst -> $backup"
-                }
-            }
-            New-Item -ItemType Junction -Path $dst -Target $src -ErrorAction Stop | Out-Null
-            if (-not (Test-Path (Join-Path $dst 'SKILL.md'))) {
-                throw "linked but SKILL.md missing at $dst"
-            }
-            # Never create a nested skills\<name>\<name>: the junction must
-            # resolve straight to the source, with no same-named child.
-            $linkedItem = Get-Item $dst -ErrorAction Stop
-            $linkedTarget = $linkedItem.Target
-            if ($linkedTarget -and (-not [System.IO.Path]::IsPathRooted($linkedTarget))) {
-                $linkedTarget = Join-Path (Split-Path $dst -Parent) $linkedTarget
-            }
-            $linkedResolved = (Resolve-Path -LiteralPath $linkedTarget -ErrorAction SilentlyContinue).Path
-            if (-not $linkedResolved -or ($linkedResolved.TrimEnd('\') -ine $src.TrimEnd('\'))) {
-                throw "post-link assertion failed (dest resolves to '$linkedResolved', expected '$src')"
-            }
-            if (Test-Path (Join-Path $dst $s)) {
-                throw "post-link assertion failed (nested '$s' subdirectory present at destination)"
-            }
-            Write-Log "skill linked: $s -> $dst"
-        } catch {
-            Write-Log "skill ERROR: $s : $($_.Exception.Message)"
-            $failures++
-        }
+        if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
     }
     return $failures
 }

@@ -315,11 +315,22 @@ ensure_gh() {
 # Never creates a config root it was not handed — callers decide which roots
 # are real.
 #
-# The skill list comes from CONTROL/bundled-skills.txt (one skill per line,
-# # and blank lines ignored) when running from a repo checkout; standalone
-# installs (no repo above the skill) fall back to the hard-coded baseline.
+# The skill list comes from installer-registration/bundle_adapter.py
+# (--list-skills), which is the one implementation the Windows installer calls
+# too, so the two install paths cannot disagree about what is bundled. In a
+# repo checkout the adapter reads CONTROL/bundled-skills.txt; standalone
+# installs (no repo above the skill) fall back to the hard-coded baseline below.
 bundled_skills() {
-  local manifest=""
+  local manifest="" adapter="" out=""
+  if [ -n "${REPO_ROOT:-}" ] \
+     && [ -f "$REPO_ROOT/installer-registration/bundle_adapter.py" ] \
+     && command -v python3 >/dev/null 2>&1; then
+    adapter="$REPO_ROOT/installer-registration/bundle_adapter.py"
+    if out="$(python3 -I -B "$adapter" --root "$REPO_ROOT" --list-skills 2>/dev/null)"; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+  fi
   [ -n "${REPO_ROOT:-}" ] && [ -f "$REPO_ROOT/CONTROL/bundled-skills.txt" ] \
     && manifest="$REPO_ROOT/CONTROL/bundled-skills.txt"
   if [ -n "$manifest" ]; then
@@ -396,9 +407,40 @@ link_one_skill() {
 
 link_skills_into_root() {
   local root="$1"
-  local s src dst failures=0
+  local s src dst action digest failures=0 adapter="" plan=""
   [ -n "$root" ] || return 0
   mkdir -p "$root/skills" 2>/dev/null || return 0
+  # One plan, produced by the same adapter the Windows installer calls: it
+  # decides the source, the target and whether a link is already current, so
+  # the two install paths cannot disagree. The OS-specific link call
+  # (link_one_skill, below) is the only thing that differs by platform.
+  if [ -n "${REPO_ROOT:-}" ] \
+     && [ -f "$REPO_ROOT/installer-registration/bundle_adapter.py" ] \
+     && command -v python3 >/dev/null 2>&1; then
+    adapter="$REPO_ROOT/installer-registration/bundle_adapter.py"
+    if plan="$(python3 -I -B "$adapter" --root "$REPO_ROOT" \
+                --install-plan --claude-root "$root" 2>&1)"; then
+      while IFS=$'\t' read -r action s src dst digest; do
+        [ -n "$s" ] || continue
+        case "$action" in
+          missing)
+            echo "skill ERROR: $s: no source found (manifest skill absent from repo and ~/.claude/skills)" >&2
+            failures=$((failures + 1)) ;;
+          up-to-date)
+            echo "skill up to date: $s -> $dst" ;;
+          *)
+            link_one_skill "$src" "$dst" "$s" || failures=$((failures + 1)) ;;
+        esac
+      done <<< "$plan"
+      return "$failures"
+    fi
+    # Never silently fall back to a second parser: that is the drift this
+    # adapter exists to remove. Fail loudly instead.
+    echo "skill ERROR: bundle adapter failed; refusing to fall back to a second parser" >&2
+    if [ -n "$plan" ]; then echo "$plan" >&2; fi
+    return 1
+  fi
+  # Standalone install with no repo checkout (no adapter to call).
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     src="$(resolve_skill_source "$s")"
