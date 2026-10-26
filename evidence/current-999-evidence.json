@@ -84,18 +84,13 @@
       "area": "distribution_bundle",
       "name": "Bundle/adaptation adapter module",
       "files": [
-        {"path": "installer-registration/bundle_adapter.py", "sha256": "ABSENT_ON_MAIN", "lines": 0}
+        {"path": "installer-registration/bundle_adapter.py", "sha256": "13490052988832f9f215b71b355991a38180fbf176bb2a04ea975b8910f39a01", "lines": 898}
       ],
       "measured": {
-        "absent_on_origin_main": true,
-        "absence_proof": "git cat-file -e 317bb24172b3d4327c1fabaeebc68e797c32730e:installer-registration/bundle_adapter.py fails; same-instrument control git cat-file -e 317bb24172b3d4327c1fabaeebc68e797c32730e:installer-registration/helper-deps.py succeeds.",
-        "present_only_on_branch": "pb/PBB-075/t37-999-adapter",
-        "branch_reachable_on_origin_now": false,
-        "branch_readback": "git ls-remote origin refs/heads/pb/PBB-075/t37-999-adapter returns no ref; control on the same instrument: git ls-remote origin returns 711 refs, 4 of them matching /PBB/i, so the lookup is alive and the absence is real.",
-        "commit_object_readback": "gh api repos/trevorotts1/999-setup/commits/47724690a66a9e39451a71958c0349df3d72aefb -> HTTP 422 'No commit found for SHA'; control on the same instrument: the same call for 5a773bb98bd8a2d16d748cc9383403d1756b9132 returns that SHA. git cat-file -t on the same object in a full clone also fails.",
-        "ancestor_of_main_exit": 1,
-        "branch_merge_base_with_main": "1d1545fc8412",
-        "branch_merge_base_readback": "resolves: git cat-file -t 1d1545fc8412 -> commit (1d1545fc84129d2995231347886c0a8822395935)."
+        "present_on_origin_main": true,
+        "presence_proof": "git cat-file -e 414397dea86bb2b2b7a2085172853a2412fe7ec9:installer-registration/bundle_adapter.py -> rc 0; the same instrument at base e8dc28ee8 (origin/main) -> rc 0; control on a missing path (update-skills.sh) in the same tree -> rc 128 'does not exist in <commit>'. At head the file measures 35,280 bytes / 898 lines / sha256 13490052…f39a01.",
+        "landed_by": "unit/PBB-328/T-37 d10da4c20 'hash parity and installer parity in one bundle adapter'; repair/PBB-398/T-37 e4a9867e9 'make the bundle CI gate able to fail, and stop the false claims'",
+        "historical_measurement_at_317bb241": "ABSENT there: git cat-file -e 317bb241…:installer-registration/bundle_adapter.py fails while the same instrument on helper-deps.py succeeds; the only then-reported implementation sat on pb/PBB-075/t37-999-adapter, which no longer resolves on origin — the values in reported_unverified stay readback-only. The then-claimed merge-base object 1d1545fc84129d2995231347886c0a8822395935 still resolves (git cat-file -t -> commit), but its role in the old merge-base claim is not asserted."
       },
       "reported_unverified": {
         "what": "figures this artifact can no longer reproduce from any reachable object on origin",
@@ -110,9 +105,9 @@
           "branch_file_lines": 502,
           "branch_file_sha256": "4cf84275b4a5a369e6d3a2e3673144803e7cdfbfab948983b1d204cdb53014a5"
         },
-        "not_listed_here": "branch_merge_base_with_main 1d1545fc8412: the commit object resolves (see measured.branch_merge_base_readback), but the claim that it is the merge base of pb/PBB-075/t37-999-adapter with main cannot be recomputed because that branch is gone. The object is kept under measured as a resolvable object; its role in the old merge-base claim is not asserted."
+        "not_listed_here": "branch_merge_base_with_main 1d1545fc8412: the commit object resolves (see measured.historical_measurement_at_317bb241), but the claim that it is the merge base of pb/PBB-075/t37-999-adapter with main cannot be recomputed because that branch is gone; its role in the old merge-base claim is not asserted."
       },
-      "capability": "ABSENT on main — proven. The only reported adapter implementation is unmerged, and its branch ref and commit object are no longer reachable on origin, so its 502-line size, its sha256 and its '46 commits behind current main' position cannot be recomputed by a reader; those three are reported values only (see reported_unverified) and support no claim here."
+      "capability": "PRESENT on main — proven at head 414397dea. The ABSENT finding this artifact recorded at 317bb241 was superseded when T-37 landed installer-registration/bundle_adapter.py (d10da4c20, e4a9867e9); the unreachable-branch values stay quarantined under reported_unverified."
     },
     {
       "id": "IF-03",
@@ -365,7 +360,7 @@
     {"claim": "no root update-skills.sh", "instrument": "ls -la update-skills.sh", "exit": 1, "observed": "No such file or directory", "control": "ls scripts/sync-nine-skills.sh -> exists, 5085 bytes"}
   ],
   "missing_capabilities": [
-    {"id": "GAP-01", "capability": "Current bundle/adaptation adapter on main", "status": "ABSENT", "evidence": "IF-02: installer-registration/bundle_adapter.py is ABSENT on 317bb241 (git cat-file -e fails; control on helper-deps.py in the same tree succeeds). The only reported implementation sits on pb/PBB-075/t37-999-adapter, which no longer resolves on origin (git ls-remote returns no ref; control: 711 refs listed) and whose commit object GitHub reports as nonexistent (HTTP 422; control on 5a773bb9 succeeds), so its line count and sha256 are recorded as reported values only and support nothing here."},
+    {"id": "GAP-01", "capability": "Current bundle/adaptation adapter on main", "status": "PRESENT", "evidence": "IF-02: installer-registration/bundle_adapter.py is PRESENT at head 414397dea (git cat-file -e rc 0; 35,280 bytes, 898 lines, sha256 13490052…f39a01; rc 0 at origin/main base e8dc28ee8; control on a missing path rc 128). Landed by unit/PBB-328/T-37 d10da4c20 and repair/PBB-398/T-37 e4a9867e9. The ABSENT finding recorded at 317bb241 is history; no longer a missing capability. Kept in the GAP register (status PRESENT, as GAP-02 is PRESENT UNWIRED) so GAP-01..GAP-14 keep their ids."},
     {"id": "GAP-02", "capability": "CAF skill provisioning and caf CLI build", "status": "PRESENT UNWIRED", "evidence": "IF-03: 158-file CAF skill v2.1.23 is in the tree but is not in CONTROL/bundled-skills.txt; both orchestrators match caf 0 times; no install doc mentions it; wire.sh is never invoked."},
     {"id": "GAP-03", "capability": "Complete bundled-skill registry", "status": "PARTIAL", "evidence": "IF-01: 15 registered, 24 on disk, 9 unregistered: conversational-ai-system, convert-and-flow-operator, email-engine, ghl-install-pages, kie, signature-funnel, signature-order-form, signature-product-selection, signature-upsell."},
     {"id": "GAP-04", "capability": "Bundle component registry in lockstep with the skill registry", "status": "DRIFT", "evidence": "CONTROL/bundled-components.json has 8 components (generatedAt 2026-10-01T18:52:12Z) while bundled-skills.txt has 15; the 7 missing are black-friday-launcher, council-of-wise-elders, drama-song-ad-factory, drama-studio, motion-video-plus, signature-downsell, signature-thank-you."},
