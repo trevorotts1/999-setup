@@ -1,0 +1,109 @@
+{
+  "entries": {
+    "N999-PR-331": {
+      "ack": {
+        "ancestor_of_main": "proven 2026-10-26T13:51:05Z",
+        "base": "1324aa7dd9fa2a490d3a868a1d384ae58d199277",
+        "candidate": "6827f2f23dc4bda6ab74ce895c2359000e9e2a97",
+        "checks": [
+          {
+            "name": "council-vendor",
+            "outcome": "PASS"
+          },
+          {
+            "name": "helper-pins",
+            "outcome": "PASS"
+          }
+        ],
+        "merge_commit": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+        "proof": {
+          "base": "1324aa7dd9fa2a490d3a868a1d384ae58d199277",
+          "candidate": "6827f2f23dc4bda6ab74ce895c2359000e9e2a97",
+          "checks": [
+            {
+              "name": "council-vendor",
+              "outcome": "PASS"
+            },
+            {
+              "name": "helper-pins",
+              "outcome": "PASS"
+            }
+          ],
+          "digest": "sha256:b59330e278636bda66c14cac8335fcd963ec4b4f2b6d4cfbe1bf8e0eb6a0fec6",
+          "incorporated": true,
+          "merge_commit": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+          "observed_at": "2026-10-26T13:51:05Z",
+          "remote_head": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+          "schema": "s75.incorporation-proof/v1",
+          "target": {
+            "branch": "main",
+            "remote": "origin",
+            "repository": "999-setup"
+          },
+          "unit": "N999-PR-331"
+        },
+        "proof_digest": "sha256:b59330e278636bda66c14cac8335fcd963ec4b4f2b6d4cfbe1bf8e0eb6a0fec6",
+        "proven_target": {
+          "branch": "main",
+          "remote": "origin",
+          "repository": "999-setup"
+        },
+        "repository": "999-setup",
+        "state": "ACKNOWLEDGED",
+        "unit": "N999-PR-331"
+      },
+      "base_commit": "1324aa7dd9fa2a490d3a868a1d384ae58d199277",
+      "head_commit": "6827f2f23dc4bda6ab74ce895c2359000e9e2a97",
+      "merge_commit": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+      "repository": "999-setup",
+      "required_checks": [
+        "council-vendor",
+        "helper-pins"
+      ],
+      "unit": "N999-PR-331",
+      "verdict": "PASS",
+      "verdict_source": "GitHub check runs on head 6827f2f23dc4bda6ab74ce895c2359000e9e2a97 (all success)"
+    }
+  },
+  "provenance": {
+    "acceptance_id": "S75-A37",
+    "ack_contract": "QueueStore.ack(): one write for the landing, a repeat with the same proof returns ALREADY_ACKNOWLEDGED and writes nothing.",
+    "entry_verdict_source": "GitHub check runs on the reviewed head 6827f2f23dc4bda6ab74ce895c2359000e9e2a97: helper-pins=success, council-vendor=success",
+    "machinery": {
+      "branch": "s75/S75-T37-r1",
+      "head_sha": "b1a63e4c9d4e3223eacc8672705644451953d5a9",
+      "modules": {
+        "CONTROL/correct_target.py": {
+          "blob": "46a4f6c798b032bb0d3fd9fe9e4a9ba0022e9421",
+          "sha256": "sha256:c49d7969c0cad4383d69d1d522cf71cf8e7648bb5d7ca646cb1c6d1a8bebe8dd"
+        },
+        "CONTROL/incorporation_proof.py": {
+          "blob": "4ca472e43abae5facf04ae6c8953a9258113fddd",
+          "sha256": "sha256:f699ea36a1e22c86d731efd93b115f08c7f630b87b92422e043d57eddab2d024"
+        },
+        "CONTROL/queue_ack.py": {
+          "blob": "bc5de44eb3061fdc25365a212c63052564d1dd71",
+          "sha256": "sha256:608622b5e124d62fb7ca9db0310c2f5cf516794c0ab072a654be263bd1665435"
+        }
+      }
+    },
+    "merge_journal": {
+      "identical": true,
+      "landing_digest": "sha256:36fc0ddce59dd11be960e9f14b6a35653c8d9e8eee8c992988fcf02e611aa503",
+      "path": "evidence/merge/999.json",
+      "sha256_after_first_reconcile": "sha256:d5e574c1d4b6fcd32459dd8190fe234bb7cd86415ee9e657c18af959c5dc9d26",
+      "sha256_after_second_reconcile": "sha256:d5e574c1d4b6fcd32459dd8190fe234bb7cd86415ee9e657c18af959c5dc9d26"
+    },
+    "observed_at": "2026-10-26T13:51:05Z",
+    "proof_digest": "sha256:b59330e278636bda66c14cac8335fcd963ec4b4f2b6d4cfbe1bf8e0eb6a0fec6",
+    "role": "CANDIDATE N999 integration evidence. Records a queue acknowledgement; it accepts nothing. S75-A37 stays UNVERIFIED.",
+    "target": {
+      "branch": "main",
+      "remote": "origin",
+      "repository": "999-setup"
+    },
+    "unit_id": "S75-T37"
+  },
+  "repository": "999-setup",
+  "schema": "s75.queue-ack/v1"
+}
