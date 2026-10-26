@@ -45,16 +45,17 @@ Log: `instrument.out` (`P1..P6`), `refcount.py`, `probe.py`.
 ```
 /Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/ledger.json
   (the project ledger at the loop-control ROOT — NOT under this build tree, whose control/ has no ledger.json.
-   units[] entry for T-44 = lines 1256-1283; every value below is that line, opened and read)
-  :1281   title   "Continuously integrate compatible 999 cohorts and named repairs"
-  :1278   repo    /Users/blackceomacmini/999-setup        :1279 repo_slug  trevorotts1/999-setup
-  :1280   status  merged      (the merge status. :1272 phase now reads REPAIR — set by the QC FAIL that returned this report)
-  :1273   pr      320
-  :1265   merge_commit 0e00cbc718bd8caf96cbf01234781ae3518d7b52
-  :1263   head    28117a6ddecdcfb68bfcfbdb6f87655b07d90173   (the lane branch head)
-  :1267   merge_proof carries the PRE-REPAIR unit head 1d8ea756182a5a2b37ada681a3c5ff163464cd37
-  :1262   digest  db83f09e243368c18fd041cdcd73ce13d48ab7d6a92228c25a3e70dd6cdd60fb  (landing digest; see §1.1)
-  :1271   owned_paths  []      <- EMPTY
+   units[] entry for T-44 = lines 1300-1327, re-read 2026-10-26 (the row moved from 1256-1283 when rows
+   above it were rewritten); every value below is that line, opened and read)
+  :1325   title   "Continuously integrate compatible 999 cohorts and named repairs"
+  :1322   repo    /Users/blackceomacmini/999-setup        :1323 repo_slug  trevorotts1/999-setup
+  :1324   status  merged      (the merge status. :1316 phase reads REPAIR as read 2026-10-26 — see §1.1)
+  :1317   pr      320
+  :1309   merge_commit 0e00cbc718bd8caf96cbf01234781ae3518d7b52
+  :1307   head    a4af55948b747be2e687d171d9c9c7772a4be220   (lane branch head as read 2026-10-26; live-mutable)
+  :1311   merge_proof carries the PRE-REPAIR unit head 1d8ea756182a5a2b37ada681a3c5ff163464cd37
+  :1306   digest  db83f09e243368c18fd041cdcd73ce13d48ab7d6a92228c25a3e70dd6cdd60fb  (landing digest; see §1.1)
+  :1315   owned_paths  []      <- EMPTY
 
 live-ledgers/build.json (tasks[], T-44):
   workflow_id W-14   repo_alias "999"   artifact "999-remote-merge-receipts"
@@ -80,17 +81,25 @@ this build tree's `control/` holds 24 entries and none is `ledger.json`; `contro
 `ledger.json` (build tree) and `state/ledger.json` are all absent. The data was right, the path was
 not. The ledger is the project ledger at the **loop-control root**:
 `/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/ledger.json`, T-44 at
-**lines 1256–1283**, per-line citations above.
+**lines 1300–1327** (re-read 2026-10-26; the row moved from 1256–1283 when rows above it were
+rewritten), per-line citations above.
 
-Two values moved since the landed read, and both are stated rather than smoothed:
+Two values are live-mutable bookkeeping, and both are stated as-of-a-read rather than smoothed:
 
-- **`phase`** — the row now reads `"phase": "REPAIR"` (`:1272`), not `MERGED`. It advanced to REPAIR
-  because of the QC FAIL on this very report. The merge status is carried by `"status": "merged"`
-  (`:1280`), and that is the field the earlier text meant by "phase MERGED".
-- **`head`** — the row's `head` is `28117a6dd` (`:1263`), the lane branch head. `1d8ea7561` appears
-  only inside `merge_proof` (`:1267`) as the **pre-repair** unit head that PR #320 merged.
+- **`phase`** — the row reads `"phase": "REPAIR"` (`:1316`) as read 2026-10-26, not `MERGED`. The merge
+  status is carried by `"status": "merged"` (`:1324`), and that is the field the earlier text meant by
+  "phase MERGED". `phase` moves with QC verdicts: the FAIL receipt at digest `db83f09e…` recorded it
+  reading `BUILT`, and it has since been returned to `REPAIR`. The earlier text's "phase now reads
+  REPAIR" was unstamped and read false at the judged revision — the drift the FAIL named.
+- **`head`** — the row's `head` is `a4af55948b747be2e687d171d9c9c7772a4be220` (`:1307`), the lane branch
+  head as read 2026-10-26. `1d8ea7561` appears only inside `merge_proof` (`:1311`) as the **pre-repair**
+  unit head that PR #320 merged. The earlier text cited `28117a6dd`, which was the branch head when it
+  was written and went stale when the citation-repair commit itself landed.
 
-**The digest is a landing key, not a branch-head key.** `ledger.json:1262` records
+`head` and `phase` are re-derivable at any later read by locating the row with `"id": "T-44"`; cite them
+as of a read time, never as fixed facts.
+
+**The digest is a landing key, not a branch-head key.** `ledger.json:1306` records
 `db83f09e…`, and the same value is the T-44 `digest` in `LEDGER-BINDINGS.json:267`
 (`base 317bb2417` / `head 1d8ea7561` / `merge_sha 0e00cbc71`) and `LANDING-KEYS.md:58`
 (`patch_id cb06b6b58`). It is computed from the **already-merged landing**, so a documentation
@@ -229,8 +238,8 @@ SHA256_MATCH: True
 > `TODO.md:711` — `Requirements: R-30, R-36. Checks: C-44, C-F15, C-F20.`
 
 > `live-ledgers/checks.json:936` (C-44 `scope`) — `Single shared target owner; compatible 999 cohorts and explicit distribution/hash order; required checks and named repair remote content proof.`  (`"status": "UNVERIFIED"`, `required_qc_alias: "opus-chain"`)
-> `live-ledgers/checks.json:1409` (C-F15 `scope`) — `Supervisor takeover/merge due/repair incorporation`
-> `live-ledgers/checks.json:1526` (C-F20 `scope`) — `Batch shared-file/reader-writer compatibility and four cleanup dispositions`
+> `live-ledgers/checks.json:1431` (C-F15 `scope`, re-anchored 2026-10-26 — the row moved from :1409) — `Supervisor takeover/merge due/repair incorporation`
+> `live-ledgers/checks.json:1548` (C-F20 `scope`, re-anchored 2026-10-26 — the row moved from :1526) — `Batch shared-file/reader-writer compatibility and four cleanup dispositions`
 
 > `ACCEPTANCE-MATRIX.md:67` — `| R-30 | 999 bundle, adaptation, provisioning, updates and hash parity | T-02 T-37 T-39 T-44 T-47 T-49 | C-02 C-37 C-39 C-44 C-47 C-49 |`
 > `ACCEPTANCE-MATRIX.md:79` — `| R-36 | Immediate compatible per-repository integration and named repair remote proof | T-43 T-44 T-45 | C-43 C-44 C-45 C-F15 C-F20 |`
@@ -250,8 +259,8 @@ SHA256_MATCH: True
 | required checks | **PENDING (needs a live remote run)** | `tools/cohort_integration.py:549-591` (`checks.surface_unproven`, `checks.missing`, `checks.not_success`, `checks.head_stale`) is code-proven, but proving a real head's check surface needs GET-only `gh api` reads against a live target/lease ref. No credentialed remote run was authorized or performed in this lane. |
 | named repair remote content proof | **PENDING (needs a live remote run)** | `:251-271` (`remote.repair_sha_mismatch`, `remote.repair_content_mismatch`, `:271 remote.repair_not_contained`), `:672 repair.content_mismatch`, `:677 repair.not_contained`. Same reason: remote tree/containment read-back, not run here. |
 | C-44 as a check | **PENDING (independent QC + live remote)** | `checks.json:936` `"status": "UNVERIFIED"`, `required_qc_alias: "opus-chain"`, `different_native_agent_after_repair: true`. Wiring evidence is supplied here; the check is not self-approved. |
-| C-F15 supervisor takeover / merge due / repair incorporation | **PENDING (fixture F-15 not run)** | `checks.json:1409`; F-15 is a takeover/merge-due trace over the loop, outside this lane's ownership. |
-| C-F20 batch shared-file/reader-writer compatibility + four cleanup dispositions | **PENDING (fixture F-20 not run)** | `checks.json:1526`; cleanup dispositions belong to T-46/T-47. |
+| C-F15 supervisor takeover / merge due / repair incorporation | **PENDING (fixture F-15 not run)** | `checks.json:1431`; F-15 is a takeover/merge-due trace over the loop, outside this lane's ownership. |
+| C-F20 batch shared-file/reader-writer compatibility + four cleanup dispositions | **PENDING (fixture F-20 not run)** | `checks.json:1548`; cleanup dispositions belong to T-46/T-47. |
 | R-30 999 bundle/adaptation/provisioning/updates/hash parity | **PASS (hash-order half) / PENDING (install half)** | `bundle_adapter.py --check` rc 2 **both before and after** wiring, for a **pre-existing** reason (`UNDETERMINED update-stamp drama-studio (no VERSION …)`); the summary line is identical (`5 passed, 0 failed, 1 undetermined, 0 manifest drift`), so the wiring changed no other verdict. In the committed repo the new check states `SKIP … no recorded order digest` (no counter); in the throwaway copy where `--write-digests` had run it states `PASS`, taking passed 5 → 6. Install/update halves were not exercised on a real host. |
 | R-36 per-repository integration + named repair remote proof | **PENDING (needs the remote run)** | Same remote reason as the "named repair" clause. |
 | note: unit is declared "not a code-integration unit" (`TODO.md:705`) | **recorded verbatim** | The wiring adds no new integration authority: the gate stays read-only (no write/merge/push path in `GhRemote`), and the adapter only records and re-checks an order receipt. |
