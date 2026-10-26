@@ -227,17 +227,23 @@ Suites run (targeted, GREEN):
 ## 7. Staleness — true ahead/behind
 
 ```
-measured against : e8dc28ee86045ebc65da4b0dac8f4e149e1c2009   (999-setup origin/main, re-fetched)
-rev-list --left-right --count origin/main...HEAD  ->  0   2     (behind 0, ahead 2)
-merge-base --is-ancestor origin/main HEAD         ->  rc 0
-ls-remote origin refs/heads/pb/PBB-665/t-44-wire  ->  be3bbacfc77e3aa3139215eebce771a8b18f865b
-local HEAD                                        ->  be3bbacfc77e3aa3139215eebce771a8b18f865b  (match)
+measured against : e8dc28ee86045ebc65da4b0dac8f4e149e1c2009   (999-setup origin/main, re-fetched
+                                                                after the report was pushed)
+branch commits   : c7d0bcc49  wiring (call site)
+                   be3bbacfc  CI step (helper-pin-guard, +1 step)
+                   e6af6f998  this report
+                   <tip>      this staleness readback
+rev-list --left-right --count origin/main...HEAD  at be3bbacfc -> 0   2   (behind 0, ahead 2)
+rev-list --left-right --count origin/main...HEAD  at e6af6f998 -> 0   3   (behind 0, ahead 3)
+rev-list --left-right --count origin/main...HEAD  at the readback commit -> 0   4  (behind 0)
+merge-base --is-ancestor origin/main HEAD        -> rc 0
+ls-remote origin refs/heads/pb/PBB-665/t-44-wire -> the tip; local HEAD agrees (read back, see receipt)
 ```
 
-`origin/main` did not move during this lane. Ancestry was checked directly, not taken from any list;
-the `3d713566` / PR #2588 note in the task belongs to the **openclaw-onboarding** repository
-(`origin/main` = `3d7135664326eeb7857252afcad5506c1381c3d5`, confirmed by `rev-parse`), not to
-999-setup, whose main is `e8dc28ee8` (PR #331).
+`origin/main` did not move during this lane (`0` behind at every readback). Ancestry was checked
+directly, not taken from any list; the `3d713566` / PR #2588 note in the task belongs to the
+**openclaw-onboarding** repository (`origin/main` = `3d7135664326eeb7857252afcad5506c1381c3d5`,
+confirmed by `rev-parse`), not to 999-setup, whose main is `e8dc28ee8` (PR #331).
 
 ## 8. Memory
 
