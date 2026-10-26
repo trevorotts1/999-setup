@@ -69,7 +69,7 @@
         {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979},
         {"path": ".claude/skills/nine-router-setup/scripts/setup-windows.ps1", "sha256": "a6dc1a72a33856b4533d8f663c6af47abde90c863cbd61d303ba5a3abd368815", "lines": 1119}
       ],
-      "symbols": ["setup-macos.sh bundled_skills() L321", "setup-macos.sh link_one_skill() L352", "setup-macos.sh link_skills_into_root() L397", "setup-windows.ps1 Get-BundledSkills L212", "setup-windows.ps1 Link-BundledSkills L226"],
+      "symbols": ["setup-macos.sh bundled_skills() L323", "setup-macos.sh link_one_skill() L363", "setup-macos.sh link_skills_into_root() L408", "setup-windows.ps1 Get-BundledSkills L226", "setup-windows.ps1 Link-BundledSkills L316"],
       "measured": {
         "registered_entries": 15,
         "skill_dirs_with_SKILL_md": 24,
@@ -143,12 +143,12 @@
       "files": [
         {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979}
       ],
-      "symbols": ["main() L1086", "OS gate L1131-1133", "probe_tool/probe_install L143-160", "write_nine_settings() L449", "set_operator_key() L508", "skills_only_mode() L947"],
+      "symbols": ["main() L1128", "OS gate L1173-1175", "probe_tool/probe_install L143-160", "write_nine_settings() L491", "set_operator_key() L550", "skills_only_mode() L989"],
       "measured": {
-        "host_gate": "Darwin AND arm64 both required: `uname -s` must be Darwin at L1132 and `uname -m` must be arm64 at L1133, both inside the cited range 1131-1133 (the range opened at 1131-1132 in the first draft of this artifact, which left the arm64 half of the claim outside its own citation); anything else exits BLOCKER",
+        "host_gate": "Darwin AND arm64 both required: `uname -s` must be Darwin at L1174 and `uname -m` must be arm64 at L1175, both inside the cited range 1173-1175 (re-anchored from 1131-1133 by the PBB-775 QC pass when setup-macos.sh drifted after the certified commit; the first draft's range opened at 1131-1132, which left the arm64 half of the claim outside its own citation); anything else exits BLOCKER",
         "numbered_stage_comments": 15,
         "link_targets": ["$CLAUDE_CONFIG_DIR or ~/.claude", "~/.claude-nine when it is a real settings root", "~/.codex and ~/.agents when ~/.codex exists"],
-        "dry_run": "only --skills-only supports --check; the full install has no dry-run (line 1119 fail text)",
+        "dry_run": "only --skills-only supports --check; the full install has no dry-run (line 1161 fail text)",
         "resume_state": "none — grep for resume/--resume returned 0 matches; recovery is idempotent re-run"
       },
       "capability": "PARTIAL — installs skills, router, launcher and state on macOS arm64 only; no resume point after a mid-run failure."
@@ -160,7 +160,7 @@
       "files": [
         {"path": ".claude/skills/nine-router-setup/scripts/setup-windows.ps1", "sha256": "a6dc1a72a33856b4533d8f663c6af47abde90c863cbd61d303ba5a3abd368815", "lines": 1119}
       ],
-      "symbols": ["param() L23", "OS gate L336-340", "Get-BundledSkills L212", "Link-BundledSkills L226", "DPAPI token L326"],
+      "symbols": ["param() L23", "OS gate L385-389", "Get-BundledSkills L226", "Link-BundledSkills L316", "DPAPI token L375"],
       "measured": {
         "host_gate": "Windows_NT only",
         "numbered_stage_comments": 15,
@@ -254,7 +254,7 @@
         {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979},
         {"path": ".claude/skills/nine-router-setup/tests/test-skills-only.sh", "sha256": "ea4b8020812849d1a4a01a789046c4afce6ff915f5f70c0198e306b5b0bcd9de", "lines": 373}
       ],
-      "symbols": ["so_link_escapes() L650", "so_tree_diff() L668", "so_sync() L729", "so_refresh_updater() L796", "skills_only_mode() L947", "main flags --skills-only/--check/--repair-links/--refresh-updater L1104-1108"],
+      "symbols": ["so_link_escapes() L692", "so_tree_diff() L710", "so_sync() L771", "so_refresh_updater() L838", "skills_only_mode() L989", "main flags --skills-only/--check/--repair-links/--refresh-updater L1146-1150"],
       "measured": {
         "modes": ["--check (read-only)", "--repair-links (opt-in)", "--refresh-updater (opt-in, nine-router-setup only)"],
         "preconditions": "box must already run 9Router (markers ~/.9router or ~/.local/bin/claude-nine or :20128 health)",
