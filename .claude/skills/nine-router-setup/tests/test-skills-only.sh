@@ -26,13 +26,15 @@ for t in node npm brew gh pip3 npx; do
   printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$t" "$MARK" > "$SHIMS/$t"; chmod +x "$SHIMS/$t"
 done
 
-# snap <dir>: every path (type, mode, size, mtime, content hash) under <dir>.
+# snap <dir>: every path (type, mode, size, mtime, symlink target) under <dir>,
+# plus ONE aggregate SHA-256 over the ordered per-file content hashes. Equal
+# snapshots still mean "not one byte, mode, mtime or path changed"; batching is
+# what makes it affordable - a settled fake HOME carries the whole 15-skill
+# bundle (~6.3k paths, 330 MB) and one stat+shasum spawn per path costs ~73 s
+# per snapshot (~4 min across this suite), which is what blew the 300 s limit.
 snap() { if [ -f "$1" ] && [ ! -L "$1" ]; then printf '%s F %s %s\n' "$1" "$(stat -f '%Lp %z %m' "$1")" "$(shasum -a 256 < "$1" | cut -d' ' -f1)"; return; fi
-  (cd "$1" && find . -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' p; do
-  if [ -L "$p" ]; then printf '%s L %s\n' "$p" "$(readlink "$p")"
-  elif [ -d "$p" ]; then printf '%s D %s\n' "$p" "$(stat -f '%Lp %m' "$p")"
-  else printf '%s F %s %s\n' "$p" "$(stat -f '%Lp %z %m' "$p")" "$(shasum -a 256 < "$p" | cut -d' ' -f1)"; fi
-done); }
+  (cd "$1" && find . -print0 | LC_ALL=C sort -z | xargs -0 stat -f '%N|%HT|%Lp|%z|%m|%Y'
+  printf 'CONTENT %s\n' "$(find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"); }
 
 # mkbox <home> — fake already-9Router box. Forbidden files hold a canary string.
 mkbox() {
@@ -133,9 +135,25 @@ okbox() { # okbox <home> — already-9Router markers only, no skills yet
   echo 'LAUNCHER-CANARY' > "$1/.local/bin/claude-nine"
 }
 
+# mkfake <dir> <skill...> — per-case source bundle whose manifest names exactly
+# the skill(s) under test (the section 7/13 pattern). The 6a-11 cases exercise
+# DESTINATION semantics (symlinks, mode drift), so a full 15-skill source only
+# adds a 30-50 s bundle scan per run; the full-bundle cases above keep the real
+# tree.
+mkfake() {
+  local d="$1" s; shift
+  mkdir -p "$d/.claude/skills/nine-router-setup" "$d/CONTROL"
+  ln -s "$BUNDLE/nine-router-setup/scripts" "$d/.claude/skills/nine-router-setup/scripts"
+  : > "$d/CONTROL/bundled-skills.txt"
+  for s in "$@"; do printf '%s\n' "$s" >> "$d/CONTROL/bundled-skills.txt"; cp -R "$BUNDLE/$s" "$d/.claude/skills/$s"; done
+}
+FE="$ROOT/fake-eli5"; mkfake "$FE" eli5
+FD="$ROOT/fake-drama"; mkfake "$FD" drama-studio
+
 # 6a. skill dir is a symlink to a STALE tree -> STALE + exit 3, target untouched
 H6="$ROOT/h6"; okbox "$H6"; mkdir -p "$ROOT/elsewhere/stale-eli5"; echo 'stale eli5' > "$ROOT/elsewhere/stale-eli5/SKILL.md"
 ln -s "$ROOT/elsewhere/stale-eli5" "$H6/.claude/skills/eli5"
+FAKE_SCRIPTS="$FE/.claude/skills/nine-router-setup/scripts"
 run "$H6" --skills-only
 case "$OUT" in *"STALE eli5"*) pass "stale symlink: reported STALE, not silent SKIP";; *) fail "stale symlink: not reported as STALE";; esac
 [ "$RC" -eq 3 ] && pass "stale symlink: apply exits 3 (content not delivered)" || fail "stale symlink: expected rc 3, got $RC"
@@ -147,7 +165,7 @@ run "$H6" --skills-only --check
 [ "$RC" -eq 3 ] && [ "$B6" = "$(snap "$H6")" ] && pass "stale symlink: check also exits 3, still read-only" || fail "stale symlink check: rc=$RC or wrote"
 
 # 6b. skill dir is a symlink to an IDENTICAL tree -> OK, exit 0
-H7="$ROOT/h7"; okbox "$H7"; cp -R "$BUNDLE/eli5" "$ROOT/elsewhere/eli5-same"
+H7="$ROOT/h7"; okbox "$H7"; cp -R "$FE/.claude/skills/eli5" "$ROOT/elsewhere/eli5-same"
 ln -s "$ROOT/elsewhere/eli5-same" "$H7/.claude/skills/eli5"
 run "$H7" --skills-only
 case "$OUT" in *"identical content"*) pass "identical symlink: reported as identical content";; *) fail "identical symlink: not recognized as identical";; esac
@@ -200,13 +218,14 @@ FAKE_SCRIPTS=""
 # Opt-in: the STALE SYMLINK ITSELF is unlinked and this bundle's tree is
 # materialised at the destination path; the old target directory is reported
 # and left completely untouched. Without the flag, case 6a's leave-alone stands.
+FAKE_SCRIPTS="$FE/.claude/skills/nine-router-setup/scripts"
 H11="$ROOT/h11"; okbox "$H11"; mkdir -p "$ROOT/elsewhere/stale-eli5b"
 printf 'stale eli5\n' > "$ROOT/elsewhere/stale-eli5b/SKILL.md"
 ln -s "$ROOT/elsewhere/stale-eli5b" "$H11/.claude/skills/eli5"
 TB="$(snap "$ROOT/elsewhere/stale-eli5b")"
 run "$H11" --skills-only --repair-links
 [ "$RC" -eq 0 ] && pass "repair-links: stale link repaired, exit 0 (delivered)" || fail "repair-links: rc=$RC"
-[ -d "$H11/.claude/skills/eli5" ] && [ ! -L "$H11/.claude/skills/eli5" ] && cmp -s "$BUNDLE/eli5/SKILL.md" "$H11/.claude/skills/eli5/SKILL.md" \
+[ -d "$H11/.claude/skills/eli5" ] && [ ! -L "$H11/.claude/skills/eli5" ] && cmp -s "$FE/.claude/skills/eli5/SKILL.md" "$H11/.claude/skills/eli5/SKILL.md" \
   && pass "repair-links: destination is a real directory carrying the bundled tree" || fail "repair-links: destination not materialised"
 [ "$TB" = "$(snap "$ROOT/elsewhere/stale-eli5b")" ] && pass "repair-links: old target left intact and untouched" || fail "repair-links: old target was touched"
 case "$OUT" in *"REPAIRED eli5"*"$ROOT/elsewhere/stale-eli5b"*"left untouched"*) pass "repair-links: old target path reported";; *) fail "repair-links: old target not reported";; esac
@@ -233,7 +252,8 @@ case "$OUT" in *"STALE (destination file is a symlink to different content)"*"el
 
 # --- 11. executable mode drift is reported and never silently ignored --------
 # The bundle ships +x scripts; a copy that lost the executable bit is drift.
-H13="$ROOT/h13"; okbox "$H13"; cp -R "$BUNDLE/drama-studio" "$H13/.claude/skills/drama-studio"
+FAKE_SCRIPTS="$FD/.claude/skills/nine-router-setup/scripts"
+H13="$ROOT/h13"; okbox "$H13"; cp -R "$FD/.claude/skills/drama-studio" "$H13/.claude/skills/drama-studio"
 chmod -x "$H13/.claude/skills/drama-studio/studio.py"
 run "$H13" --skills-only --check
 case "$OUT" in *"MODE DRIFT"*"drama-studio/studio.py"*) pass "mode drift: +x difference reported";; *) fail "mode drift: not reported";; esac
@@ -242,7 +262,7 @@ run "$H13" --skills-only
 [ -x "$H13/.claude/skills/drama-studio/studio.py" ] && pass "mode drift: apply refreshes the executable bit" || fail "mode drift: apply left the +x difference"
 
 # The same drift behind a symlinked tree: equivalence must NOT claim identical.
-H14="$ROOT/h14"; okbox "$H14"; cp -R "$BUNDLE/drama-studio" "$ROOT/elsewhere/drama-stale"
+H14="$ROOT/h14"; okbox "$H14"; cp -R "$FD/.claude/skills/drama-studio" "$ROOT/elsewhere/drama-stale"
 chmod -x "$ROOT/elsewhere/drama-stale/studio.py"
 ln -s "$ROOT/elsewhere/drama-stale" "$H14/.claude/skills/drama-studio"
 run "$H14" --skills-only
@@ -254,6 +274,7 @@ case "$OUT" in *"identical content"*) fail "mode drift: drifted tree falsely cla
 # nine-router-setup is excluded from the sync, but an installed copy that
 # differs from this bundle is UPDATER_STALE: exact path, human action (the full
 # install), counted in the RESULT line AND in the exit status (rc 5).
+FAKE_SCRIPTS=""
 F_U="$(fsnap "$H1")"
 run "$H1" --skills-only --check
 case "$OUT" in *"UPDATER_STALE"*"$H1/.claude/skills/nine-router-setup"*) pass "updater: stale installer reported with the exact path";; *) fail "updater: stale installer not reported";; esac
