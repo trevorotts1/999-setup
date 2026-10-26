@@ -8,6 +8,8 @@ deliberate: a mutated artefact MUST break the parity check, a record that
 disagrees with the tree MUST fail, and an installer that stops delegating MUST
 be named. A check that cannot fail proves nothing.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -398,6 +400,96 @@ class HostInvocationTests(FixtureCase):
                          "a broken installer must clear VERIFIED:\n"
                          + repr(broken["mac-live-install"]))
 
+
+class InstalledCopyTests(FixtureCase):
+    """T-44 install half: (b) tree_digest() over the INSTALLED copy.
+
+    The spec promises two computations; (a) is covered above. These tests make
+    (b) bite: a staged install passes, a tampered or foreign installed copy is
+    named, and an absent install is never reported as a pass.
+    """
+
+    def staged(self):
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        claude_root = self.tmp / "claude"
+        target = claude_root / "skills" / "spec-protocol"
+        target.parent.mkdir(parents=True)
+        os.symlink(str(root / SKILL), str(target))
+        return root, claude_root
+
+    def run_cli(self, argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(io.StringIO()):
+            rc = ba.main(argv)
+        return rc, out.getvalue()
+
+    def test_installed_copy_hashes_to_the_shipped_digest(self):
+        root, claude_root = self.staged()
+        bundle = ba.load_bundle(root)
+        rows, digests = ba.installed_copy_rows(bundle, claude_root)
+        self.assertEqual([status for status, _, _ in rows], ["PASS"],
+                         rows[0][2])
+        self.assertEqual(digests[0], ba.tree_digest(root / SKILL)[0],
+                         "the installed copy is digested like the shipped tree")
+        order = ba.installed_order_row(bundle, digests)
+        self.assertEqual(order[0], "PASS", order[2])
+
+    def test_negative_control_tampered_installed_copy_fails_by_name(self):
+        """A tampered installed copy MUST fail, naming the skill."""
+        root, claude_root = self.staged()
+        target = claude_root / "skills" / "spec-protocol"
+        target.unlink()
+        shutil.copytree(root / SKILL, target)
+        (target / "SKILL.md").write_text("# tampered on the host\n",
+                                         encoding="utf-8")
+        bundle = ba.load_bundle(root)
+        rows, digests = ba.installed_copy_rows(bundle, claude_root)
+        self.assertEqual(rows[0][0], "FAIL", rows[0][2])
+        self.assertEqual(rows[0][1], "spec-protocol")
+        self.assertIn("!= shipped", rows[0][2])
+        self.assertEqual(ba.installed_order_row(bundle, digests)[0], "FAIL",
+                         "the installed set must not match the recorded order")
+
+    def test_foreign_link_is_digested_by_content_and_named(self):
+        root, claude_root = self.staged()
+        other = self.tmp / "other-tree"
+        shutil.copytree(root / SKILL, other)
+        (other / "SKILL.md").write_text("# different bytes\n", encoding="utf-8")
+        target = claude_root / "skills" / "spec-protocol"
+        target.unlink()
+        os.symlink(str(other), str(target))
+        rows, _ = ba.installed_copy_rows(ba.load_bundle(root), claude_root)
+        self.assertEqual(rows[0][0], "FAIL", rows[0][2])
+        self.assertIn("via link ->", rows[0][2])
+
+    def test_absent_install_is_undetermined_never_a_pass(self):
+        root = make_bundle(Path(tempfile.mkdtemp(dir=self.tmp)))
+        rows, digests = ba.installed_copy_rows(ba.load_bundle(root),
+                                               self.tmp / "empty")
+        self.assertEqual(rows[0][0], "UNDETERMINED")
+        self.assertIsNone(digests[0])
+        rc, output = self.run_cli(["--root", str(root), "--check-install",
+                                   "--claude-root", str(self.tmp / "empty")])
+        self.assertEqual(rc, ba.RC_UNDETERMINED, output)
+        self.assertIn("UNDETERMINED install-copy", output)
+        self.assertNotIn("PASS install-copy", output)
+
+    def test_cli_exit_codes_green_then_red(self):
+        root, claude_root = self.staged()
+        rc, output = self.run_cli(["--root", str(root), "--check-install",
+                                   "--claude-root", str(claude_root)])
+        self.assertEqual(rc, ba.RC_PASS, output)
+        self.assertIn("PASS install-copy spec-protocol", output)
+        self.assertIn("PASS install-copy order", output)
+        target = claude_root / "skills" / "spec-protocol"
+        target.unlink()
+        shutil.copytree(root / SKILL, target)
+        (target / "notes.md").write_text("planted\n", encoding="utf-8")
+        rc, output = self.run_cli(["--root", str(root), "--check-install",
+                                   "--claude-root", str(claude_root)])
+        self.assertEqual(rc, ba.RC_FAIL, output)
+        self.assertIn("FAIL install-copy spec-protocol", output)
 
 class WorkflowTriggerTests(FixtureCase):
     """D2: CI must trigger on the inputs the digest check reads."""
