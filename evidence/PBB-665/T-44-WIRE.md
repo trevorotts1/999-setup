@@ -43,11 +43,18 @@ Log: `instrument.out` (`P1..P6`), `refcount.py`, `probe.py`.
 ## 1. The deliverable — established from the ledgers, not assumed from the unit id
 
 ```
-control/ledger.json  (units[], T-44):
-  title   "Continuously integrate compatible 999 cohorts and named repairs"
-  repo    /Users/blackceomacmini/999-setup        repo_slug  trevorotts1/999-setup
-  phase   MERGED   pr 320   merge_commit 0e00cbc718bd8caf96cbf01234781ae3518d7b52
-  head    1d8ea756182a5a2b37ada681a3c5ff163464cd37          owned_paths  []      <- EMPTY
+/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/ledger.json
+  (the project ledger at the loop-control ROOT — NOT under this build tree, whose control/ has no ledger.json.
+   units[] entry for T-44 = lines 1256-1283; every value below is that line, opened and read)
+  :1281   title   "Continuously integrate compatible 999 cohorts and named repairs"
+  :1278   repo    /Users/blackceomacmini/999-setup        :1279 repo_slug  trevorotts1/999-setup
+  :1280   status  merged      (the merge status. :1272 phase now reads REPAIR — set by the QC FAIL that returned this report)
+  :1273   pr      320
+  :1265   merge_commit 0e00cbc718bd8caf96cbf01234781ae3518d7b52
+  :1263   head    28117a6ddecdcfb68bfcfbdb6f87655b07d90173   (the lane branch head)
+  :1267   merge_proof carries the PRE-REPAIR unit head 1d8ea756182a5a2b37ada681a3c5ff163464cd37
+  :1262   digest  db83f09e243368c18fd041cdcd73ce13d48ab7d6a92228c25a3e70dd6cdd60fb  (landing digest; see §1.1)
+  :1271   owned_paths  []      <- EMPTY
 
 live-ledgers/build.json (tasks[], T-44):
   workflow_id W-14   repo_alias "999"   artifact "999-remote-merge-receipts"
@@ -65,6 +72,31 @@ tools/cohort_integration.py:2  """Cohort integration gate for the 999-setup repo
 tools/tests/test_cohort_integration.py                                    (suite)
 .github/workflows/cohort-integration-tests.yml                            (existing suite workflow)
 ```
+
+### 1.1 Citation repair — the ledger path, and what the digest tracks
+
+The earlier version of this section headed the block `control/ledger.json`. **No such file exists**:
+this build tree's `control/` holds 24 entries and none is `ledger.json`; `control/ledger.json`,
+`ledger.json` (build tree) and `state/ledger.json` are all absent. The data was right, the path was
+not. The ledger is the project ledger at the **loop-control root**:
+`/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/ledger.json`, T-44 at
+**lines 1256–1283**, per-line citations above.
+
+Two values moved since the landed read, and both are stated rather than smoothed:
+
+- **`phase`** — the row now reads `"phase": "REPAIR"` (`:1272`), not `MERGED`. It advanced to REPAIR
+  because of the QC FAIL on this very report. The merge status is carried by `"status": "merged"`
+  (`:1280`), and that is the field the earlier text meant by "phase MERGED".
+- **`head`** — the row's `head` is `28117a6dd` (`:1263`), the lane branch head. `1d8ea7561` appears
+  only inside `merge_proof` (`:1267`) as the **pre-repair** unit head that PR #320 merged.
+
+**The digest is a landing key, not a branch-head key.** `ledger.json:1262` records
+`db83f09e…`, and the same value is the T-44 `digest` in `LEDGER-BINDINGS.json:267`
+(`base 317bb2417` / `head 1d8ea7561` / `merge_sha 0e00cbc71`) and `LANDING-KEYS.md:58`
+(`patch_id cb06b6b58`). It is computed from the **already-merged landing**, so a documentation
+commit on this lane branch does **not** void it and it is **not** recomputable from the branch.
+What moves on a commit is the receipt's `head`/`digest` fields, which this lane sets to the branch
+head, and the report's own sha256. Both are restated in the receipt, not guessed.
 
 ## 2. Re-verified UNWIRED at `origin/main` `e8dc28ee8` (not manufactured)
 
@@ -203,7 +235,12 @@ SHA256_MATCH: True
 > `ACCEPTANCE-MATRIX.md:67` — `| R-30 | 999 bundle, adaptation, provisioning, updates and hash parity | T-02 T-37 T-39 T-44 T-47 T-49 | C-02 C-37 C-39 C-44 C-47 C-49 |`
 > `ACCEPTANCE-MATRIX.md:79` — `| R-36 | Immediate compatible per-repository integration and named repair remote proof | T-43 T-44 T-45 | C-43 C-44 C-45 C-F15 C-F20 |`
 
-> `CHECKLIST.md:46` — `- [x] T-44 Continuously integrate compatible 999 cohorts and named repairs qc: - merge: 0e00cbc718bd8caf96cbf01234781ae3518d7b52`
+> `/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/CHECKLIST.md:46` — the **loop-control root** checklist, a different file from this build tree's `CHECKLIST.md` (whose `:46` is a `Discoveries:` row and whose only T-44 mentions are `:152` and `:182`). Verbatim, including the unchecked box:
+>
+> `- [ ] T-44 Continuously integrate compatible 999 cohorts and named repairs qc: - merge: 0e00cbc718bd8caf96cbf01234781ae3518d7b52`
+>
+> The earlier version of this report quoted the same row as `- [x]`. The row is real and the merge
+> sha is right; **the checkbox was misquoted** — the file holds `[ ]`.
 
 | clause | verdict | evidence |
 |---|---|---|
