@@ -15,6 +15,7 @@ This module is now the single source for:
   * the content record            CONTROL/bundle-digests.json (--write-digests)
   * the update decision           plan_update()     (version AND content)
   * the self-check                --check
+  * the install check             --check-install   (hash parity of the installed copy)
 
 HASH PARITY. "The same artefact hashed two ways must agree, and a hash recorded
 in one place must equal the hash actually built." The record is
@@ -22,7 +23,11 @@ CONTROL/bundle-digests.json; the two computations are (a) tree_digest() over
 this checkout and (b) tree_digest() over the installed copy. Both go through
 canonical_bytes()/tree_manifest(), so a Windows CRLF checkout, a Mac LF
 checkout, a re-ordered directory listing or a stripped trailing space all hash
-to the same value. A changed byte does not.
+to the same value. A changed byte does not. Computation (b) is
+--check-install --claude-root <root>: it digests each installed skill (a link or
+a copied tree below <root>/skills/) and compares it with the shipped digest and
+the record, then re-derives the install-side distribution order through the same
+cohort-gate digest the plan records. It is read-only; it never installs.
 
 CANONICALISATION (recorded verbatim in the record file, so it cannot silently
 change meaning):
@@ -626,6 +631,97 @@ def distribution_order(bundle: Bundle):
 
 
 # --------------------------------------------------------------------------
+# Install half (T-44): (b) tree_digest() over the installed copy
+# --------------------------------------------------------------------------
+#
+# ponytail: this proves the skill-bundle install half (what --install-plan
+# links or copies below <claude-root>/skills/) in CHECK MODE. The live host
+# side effects of a full install (Node, 9Router, settings, launchers into a
+# real $HOME) stay a separately authorised scope - add their probe when such a
+# host run is authorised.
+
+_PATH_SKILLS = "skills"
+
+def _installed_target(claude_root, name):
+    return Path(claude_root) / _PATH_SKILLS / name
+
+def installed_copy_rows(bundle: Bundle, claude_root):
+    """The (b) half of hash parity: digest each skill's INSTALLED copy.
+
+    Rows are (status, name, detail) with status PASS | FAIL | UNDETERMINED.
+    The installed tree is digested with the SAME canonicalisation as the
+    shipped tree, so the comparison is like-for-like. An absent, unreadable or
+    unshipped installed copy is a stated status, never a pass.
+
+    Returns (rows, installed_digests) where installed_digests[i] is the digest
+    found for bundle.skills[i] (None when there is nothing to hash).
+    """
+    rows = []
+    installed_digests = []
+    for skill in bundle.skills:
+        target = _installed_target(claude_root, skill.name)
+        if not target.exists() and not target.is_symlink():
+            rows.append(("UNDETERMINED", skill.name,
+                         f"no installed copy at {target} (absent is not a pass)"))
+            installed_digests.append(None)
+            continue
+        via = f" (via link -> {os.readlink(target)})" if target.is_symlink() else ""
+        digest, entries, reason = tree_digest(target)
+        installed_digests.append(digest)
+        if digest is None:
+            rows.append(("UNDETERMINED", skill.name,
+                         f"installed copy at {target} cannot be hashed: {reason}"))
+        elif skill.digest is None:
+            rows.append(("UNDETERMINED", skill.name,
+                         f"installed {digest[:19]}... has nothing shipped to compare: "
+                         f"{skill.digest_reason}"))
+        elif digest != skill.digest:
+            rows.append(("FAIL", skill.name,
+                         f"installed copy {digest} != shipped {skill.digest}{via}"))
+        else:
+            note = ""
+            if skill.recorded_digest is not None and skill.recorded_digest != digest:
+                note = (f" (recorded {skill.recorded_digest} differs from the shipped "
+                        f"digest: hash parity on the checkout already fails)")
+            rows.append(("PASS", skill.name,
+                         f"installed copy digests to the shipped digest "
+                         f"{digest[:19]}...{via}{note}"))
+    return rows, installed_digests
+
+def installed_order_row(bundle: Bundle, installed_digests):
+    """The install-side distribution/hash order from the ONE order implementation.
+
+    The same cohort-gate digest over (name, content digest, position) is
+    re-derived from the INSTALLED copies and compared with the digest of what
+    this checkout distributes. An unproven identity is never hashed and never a
+    pass.
+    """
+    if any(digest is None for digest in installed_digests):
+        return ("UNDETERMINED", "order",
+                "not every installed copy has a digest; an unproven order is "
+                "never hashed")
+    _, shipped = distribution_order(bundle)
+    if shipped is None:
+        return ("UNDETERMINED", "order",
+                "this checkout has no distribution-order digest (a skill lacks a "
+                "content digest)")
+    candidates = [
+        {"task_id": skill.name, "head_sha": "",
+         "content_digest": digest, "distribution_order": index}
+        for index, (skill, digest) in enumerate(zip(bundle.skills, installed_digests))
+    ]
+    now = _cohort_order_digest(candidates)
+    if now != shipped:
+        return ("FAIL", "order",
+                f"installed-copy order digest {now} != the digest of what this "
+                f"checkout distributes {shipped}: the installed set is not the "
+                f"shipped set")
+    return ("PASS", "order",
+            f"installed-copy order digest {now[:19]}... equals the shipped "
+            f"distribution receipt (explicit distribution/hash order)")
+
+
+# --------------------------------------------------------------------------
 # Checks
 # --------------------------------------------------------------------------
 
@@ -913,6 +1009,7 @@ def main(argv=None) -> int:
     group.add_argument("--list-skills", action="store_true")
     group.add_argument("--install-plan", action="store_true")
     group.add_argument("--plan-update", action="store_true")
+    group.add_argument("--check-install", action="store_true")
     group.add_argument("--write-digests", action="store_true")
     group.add_argument("--digest", metavar="PATH",
                        help="print the canonical digest of one directory")
@@ -965,6 +1062,30 @@ def main(argv=None) -> int:
             installed[name] = version
         _print_decisions(plan_update(bundle, installed), args.json)
         return 0
+
+    if args.check_install:
+        if not args.claude_root:
+            print("--check-install needs --claude-root", file=sys.stderr)
+            return RC_UNDETERMINED
+        rows, installed_digests = installed_copy_rows(bundle, args.claude_root)
+        rows.append(installed_order_row(bundle, installed_digests))
+        counts = {"PASS": 0, "FAIL": 0, "UNDETERMINED": 0}
+        for status, name, detail in rows:
+            counts[status] += 1
+        if args.json:
+            print(json.dumps({"rows": [{"status": s, "name": n, "detail": d}
+                                       for s, n, d in rows],
+                              "summary": counts}, indent=2))
+        else:
+            for status, name, detail in rows:
+                print(f"{status} install-copy {name} {detail}")
+            print(f"SUMMARY: {counts['PASS']} passed, {counts['FAIL']} failed, "
+                  f"{counts['UNDETERMINED']} undetermined (undetermined are NOT passes)")
+        if counts["FAIL"]:
+            return RC_FAIL
+        if counts["UNDETERMINED"]:
+            return RC_UNDETERMINED
+        return RC_PASS
 
     if args.write_digests:
         path = write_digest_record(bundle, args.digests_path)
