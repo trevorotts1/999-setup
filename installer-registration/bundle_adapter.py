@@ -291,6 +291,23 @@ def read_digest_record(root: Path):
     return recorded
 
 
+def read_recorded_order_digest(root: Path):
+    """The recorded distribution-order digest, or None.
+
+    Absent is a stated absence, never the claim that the order is unchanged.
+    """
+    path = Path(root) / DIGESTS_PATH
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("schema") != SCHEMA_DIGESTS:
+        return None
+    block = data.get("distribution_order")
+    if isinstance(block, dict) and isinstance(block.get("order_digest"), str):
+        return block["order_digest"]
+    return None
+
 def read_skill_version(skill_dir: Path):
     """(version text, reason). Falls through VERSION -> skill-version.txt."""
     reasons = []
@@ -567,6 +584,46 @@ def install_plan(bundle: Bundle, claude_root, home=None):
 def format_plan(rows):
     return "".join("\t".join(row) + "\n" for row in rows)
 
+# --------------------------------------------------------------------------
+# Distribution order (T-44): one definition, owned by the cohort gate
+# --------------------------------------------------------------------------
+
+def _cohort_order_digest(candidates):
+    """Delegate the ordered-cohort digest to tools/cohort_integration.py.
+
+    T-44 owns "explicit distribution plus hash order": the ordered identity of
+    a cohort is its (name, content digest, position) tuple and the digest of
+    that tuple is the receipt. The integration gate is the ONE implementation
+    of that number, so the installer records what the gate reports instead of
+    keeping a second hash that can drift away from it.
+    """
+    tools = str(Path(__file__).resolve().parents[1] / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from cohort_integration import order_digest
+    return order_digest(candidates)
+
+def distribution_order(bundle: Bundle):
+    """(order, order digest) for this bundle's distribution.
+
+    The digest is None while any skill has no content digest: an unproven
+    identity is stated, never hashed.
+    """
+    order = [skill.name for skill in bundle.skills]
+    if not order:
+        return order, None
+    candidates = []
+    for index, skill in enumerate(bundle.skills):
+        if skill.digest is None:
+            return order, None
+        candidates.append({
+            "task_id": skill.name,
+            "head_sha": "",
+            "content_digest": skill.digest,
+            "distribution_order": index,
+        })
+    return order, _cohort_order_digest(candidates)
+
 
 # --------------------------------------------------------------------------
 # Checks
@@ -655,6 +712,7 @@ def verify_host_invocation(root: Path):
 
 def write_digest_record(bundle: Bundle, path=None) -> Path:
     path = Path(path) if path else Path(bundle.root) / DIGESTS_PATH
+    order, order_digest = distribution_order(bundle)
     payload = {
         "schema": SCHEMA_DIGESTS,
         "canonicalisation": CANONICALISATION,
@@ -668,6 +726,11 @@ def write_digest_record(bundle: Bundle, path=None) -> Path:
                 "files": skill.file_count,
             }
             for skill in bundle.skills
+        },
+        "distribution_order": {
+            "basis": REGISTRY_PATH,
+            "order": order,
+            "order_digest": order_digest,
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -782,6 +845,28 @@ def run_checks(bundle: Bundle):
         lines.append(f"{status} {name} {detail}")
 
     host_verified = sum(1 for s, _, _ in host_results if s == "VERIFIED")
+
+    # 8. distribution-order (T-44): the recorded receipt is the cohort gate's own
+    #    digest over (name, content digest, position). A reordered registry or a
+    #    changed skill content moves it. An absent record is a SKIP with no
+    #    counter - never the claim that the order is unchanged.
+    order_names, order_digest_now = distribution_order(bundle)
+    recorded_order_digest = read_recorded_order_digest(bundle.root)
+    if order_digest_now is None:
+        lines.append("SKIP distribution-order no order digest: not every skill has a "
+                     "content digest (an unproven identity is never hashed)")
+    elif recorded_order_digest is None:
+        lines.append(f"SKIP distribution-order no recorded order digest in "
+                     f"{DIGESTS_PATH} (nothing to compare; this is NOT the claim that "
+                     f"the order is unchanged)")
+    elif recorded_order_digest == order_digest_now:
+        passed(f"distribution-order {len(order_names)} skill(s) in {REGISTRY_PATH} "
+               f"order digest {order_digest_now[:19]}... equals the recorded receipt")
+    else:
+        failed(f"distribution-order recorded {recorded_order_digest} != computed "
+               f"{order_digest_now}: {REGISTRY_PATH} order or a skill's content moved "
+               f"since --write-digests")
+
     summary = (f"SUMMARY: {counters['passed']} passed, {counters['failed']} failed, "
                f"{counters['undetermined']} undetermined, {counters['drift']} manifest "
                f"drift, hosts: {host_verified} verified / "
@@ -883,7 +968,9 @@ def main(argv=None) -> int:
 
     if args.write_digests:
         path = write_digest_record(bundle, args.digests_path)
-        print(f"wrote {path} ({len(bundle.skills)} skill(s))")
+        _, order_digest_now = distribution_order(bundle)
+        print(f"wrote {path} ({len(bundle.skills)} skill(s)) "
+              f"distribution_order={order_digest_now or 'UNDETERMINED'}")
         return 0
 
     lines, rc = run_checks(bundle)
