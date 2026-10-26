@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-10-20T17:42:48Z",
+  "generatedAt": "2026-10-26T16:07:42Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -140,8 +140,8 @@
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
       "fileCount": 4,
-      "sizeBytes": 69008,
-      "treeSha256": "e1a6c7ad511928e79e9dacc7f38bc611b309b58849f1322d959041e8a8c12ce8",
+      "sizeBytes": 69549,
+      "treeSha256": "d37d06eb4ab22ad402972eb07515d1057536dbd54af3f57424c7f3ad0a9ad68b",
       "skillMdSha256": null,
       "files": [
         {
@@ -157,7 +157,7 @@
         {
           "path": "kie_prompt_gates.json",
           "sourcePath": "shared-utils/kie_prompt_gates.json",
-          "sha256": "c23bf91eb25f279864a4ac99c745d849aafd17e4a5cd8620351d883e0c7b1c10"
+          "sha256": "9a440da22241ab323498183d71e60aa052fd4066849f14e274b79097566ef37f"
         },
         {
           "path": "kie-prompt-enforcer-and-gates.test.py",
