@@ -96,3 +96,5 @@ jobs:
           fi
           echo "::error::bundle_adapter --check rc=$rc FAIL (1 = parity/installer failure, 3 = manifest drift)"
           exit 1
+      - name: Cohort integration gate suite - the order digest the bundle adapter records (T-44, explicit path)
+        run: python3 -I -B tools/tests/test_cohort_integration.py
