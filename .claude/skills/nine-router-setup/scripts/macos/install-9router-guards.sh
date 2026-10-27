@@ -99,9 +99,42 @@ fi
 CHUNKS="$ROOT/app/.next-cli-build/server/chunks"
 STREAM="$ROOT/app/.next-cli-build/server/app/api/usage/stream/route.js"  # usage-stream guard patches the route, not a chunk
 
-NODE=""; for c in /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 2>/dev/null || true)"; do
-  [ -n "$c" ] && [ -x "$c" ] && { NODE="$c"; break; }; done
-[ -n "$NODE" ] || { echo "no node binary resolvable" >&2; exit 2; }
+# Resolve node. On a Mac whose Node came from the 999-managed prefix (setup's
+# ~/.local/share/999/node/current), a narrow PATH — cron, launchd, a new terminal that never sourced
+# setup — leaves `node` unresolvable even though it is installed and working, which used to abort
+# with a bare "no node binary resolvable". Order: the 999-managed prefix first, then PATH, then the
+# known Homebrew and system locations. Total failure names every path tried so the cause is visible.
+# NINEROUTER_NODE_SYSTEM_DIRS is a test seam: it replaces the fixed Homebrew/system directory list.
+NODE=""; NODE_TRIED=()
+try_node_dir() {  # $1 = dir holding node; records it and sets NODE on a hit
+  [ -n "$1" ] || return 1
+  NODE_TRIED+=("$1/node")
+  [ -x "$1/node" ] && { NODE="$1/node"; return 0; }
+  return 1
+}
+# node-path (written by setup-macos.sh) is the dir it put on PATH; tolerate the binary itself being recorded.
+RECORDED_NODE="$(head -1 "$HOME/.local/share/999/node-path" 2>/dev/null || true)"
+[ -n "$RECORDED_NODE" ] && [ -f "$RECORDED_NODE" ] && RECORDED_NODE="$(dirname "$RECORDED_NODE")"
+for _d in "$RECORDED_NODE" "$HOME/.local/share/999/node/current/bin" \
+          "${NINE_ROUTER_NPM_PREFIX:-$HOME/.local/share/999/npm}/bin"; do
+  try_node_dir "$_d" && break
+done
+if [ -z "$NODE" ]; then
+  _p="$(command -v node 2>/dev/null || true)"
+  if [ -n "$_p" ]; then NODE_TRIED+=("$_p (PATH)"); [ -x "$_p" ] && NODE="$_p"
+  else NODE_TRIED+=("PATH (no node on it)"); fi
+fi
+if [ -z "$NODE" ]; then
+  for _d in ${NINEROUTER_NODE_SYSTEM_DIRS:-/opt/homebrew/bin /usr/local/bin /usr/bin /bin}; do
+    try_node_dir "$_d" && break
+  done
+fi
+if [ -z "$NODE" ]; then
+  echo "no node binary resolvable; tried:" >&2
+  for _d in "${NODE_TRIED[@]}"; do echo "  $_d" >&2; done
+  echo "install Node, or put it on PATH, then re-run" >&2
+  exit 2
+fi
 NPM="$(dirname "$NODE")/npm"; [ -x "$NPM" ] || NPM="$(command -v npm 2>/dev/null || true)"
 [ -z "${NINEROUTER_NPM:-}" ] || NPM="$NINEROUTER_NPM"   # test seam: point at a fake/scratch npm
 
