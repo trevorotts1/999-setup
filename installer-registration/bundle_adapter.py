@@ -15,6 +15,7 @@ This module is now the single source for:
   * the content record            CONTROL/bundle-digests.json (--write-digests)
   * the update decision           plan_update()     (version AND content)
   * the self-check                --check
+  * the install check             --check-install   (hash parity of the installed copy)
 
 HASH PARITY. "The same artefact hashed two ways must agree, and a hash recorded
 in one place must equal the hash actually built." The record is
@@ -22,7 +23,11 @@ CONTROL/bundle-digests.json; the two computations are (a) tree_digest() over
 this checkout and (b) tree_digest() over the installed copy. Both go through
 canonical_bytes()/tree_manifest(), so a Windows CRLF checkout, a Mac LF
 checkout, a re-ordered directory listing or a stripped trailing space all hash
-to the same value. A changed byte does not.
+to the same value. A changed byte does not. Computation (b) is
+--check-install --claude-root <root>: it digests each installed skill (a link or
+a copied tree below <root>/skills/) and compares it with the shipped digest and
+the record, then re-derives the install-side distribution order through the same
+cohort-gate digest the plan records. It is read-only; it never installs.
 
 CANONICALISATION (recorded verbatim in the record file, so it cannot silently
 change meaning):
@@ -290,6 +295,23 @@ def read_digest_record(root: Path):
             recorded[name] = value["digest"]
     return recorded
 
+
+def read_recorded_order_digest(root: Path):
+    """The recorded distribution-order digest, or None.
+
+    Absent is a stated absence, never the claim that the order is unchanged.
+    """
+    path = Path(root) / DIGESTS_PATH
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if data.get("schema") != SCHEMA_DIGESTS:
+        return None
+    block = data.get("distribution_order")
+    if isinstance(block, dict) and isinstance(block.get("order_digest"), str):
+        return block["order_digest"]
+    return None
 
 def read_skill_version(skill_dir: Path):
     """(version text, reason). Falls through VERSION -> skill-version.txt."""
@@ -567,6 +589,137 @@ def install_plan(bundle: Bundle, claude_root, home=None):
 def format_plan(rows):
     return "".join("\t".join(row) + "\n" for row in rows)
 
+# --------------------------------------------------------------------------
+# Distribution order (T-44): one definition, owned by the cohort gate
+# --------------------------------------------------------------------------
+
+def _cohort_order_digest(candidates):
+    """Delegate the ordered-cohort digest to tools/cohort_integration.py.
+
+    T-44 owns "explicit distribution plus hash order": the ordered identity of
+    a cohort is its (name, content digest, position) tuple and the digest of
+    that tuple is the receipt. The integration gate is the ONE implementation
+    of that number, so the installer records what the gate reports instead of
+    keeping a second hash that can drift away from it.
+    """
+    tools = str(Path(__file__).resolve().parents[1] / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from cohort_integration import order_digest
+    return order_digest(candidates)
+
+def distribution_order(bundle: Bundle):
+    """(order, order digest) for this bundle's distribution.
+
+    The digest is None while any skill has no content digest: an unproven
+    identity is stated, never hashed.
+    """
+    order = [skill.name for skill in bundle.skills]
+    if not order:
+        return order, None
+    candidates = []
+    for index, skill in enumerate(bundle.skills):
+        if skill.digest is None:
+            return order, None
+        candidates.append({
+            "task_id": skill.name,
+            "head_sha": "",
+            "content_digest": skill.digest,
+            "distribution_order": index,
+        })
+    return order, _cohort_order_digest(candidates)
+
+
+# --------------------------------------------------------------------------
+# Install half (T-44): (b) tree_digest() over the installed copy
+# --------------------------------------------------------------------------
+#
+# ponytail: this proves the skill-bundle install half (what --install-plan
+# links or copies below <claude-root>/skills/) in CHECK MODE. The live host
+# side effects of a full install (Node, 9Router, settings, launchers into a
+# real $HOME) stay a separately authorised scope - add their probe when such a
+# host run is authorised.
+
+_PATH_SKILLS = "skills"
+
+def _installed_target(claude_root, name):
+    return Path(claude_root) / _PATH_SKILLS / name
+
+def installed_copy_rows(bundle: Bundle, claude_root):
+    """The (b) half of hash parity: digest each skill's INSTALLED copy.
+
+    Rows are (status, name, detail) with status PASS | FAIL | UNDETERMINED.
+    The installed tree is digested with the SAME canonicalisation as the
+    shipped tree, so the comparison is like-for-like. An absent, unreadable or
+    unshipped installed copy is a stated status, never a pass.
+
+    Returns (rows, installed_digests) where installed_digests[i] is the digest
+    found for bundle.skills[i] (None when there is nothing to hash).
+    """
+    rows = []
+    installed_digests = []
+    for skill in bundle.skills:
+        target = _installed_target(claude_root, skill.name)
+        if not target.exists() and not target.is_symlink():
+            rows.append(("UNDETERMINED", skill.name,
+                         f"no installed copy at {target} (absent is not a pass)"))
+            installed_digests.append(None)
+            continue
+        via = f" (via link -> {os.readlink(target)})" if target.is_symlink() else ""
+        digest, entries, reason = tree_digest(target)
+        installed_digests.append(digest)
+        if digest is None:
+            rows.append(("UNDETERMINED", skill.name,
+                         f"installed copy at {target} cannot be hashed: {reason}"))
+        elif skill.digest is None:
+            rows.append(("UNDETERMINED", skill.name,
+                         f"installed {digest[:19]}... has nothing shipped to compare: "
+                         f"{skill.digest_reason}"))
+        elif digest != skill.digest:
+            rows.append(("FAIL", skill.name,
+                         f"installed copy {digest} != shipped {skill.digest}{via}"))
+        else:
+            note = ""
+            if skill.recorded_digest is not None and skill.recorded_digest != digest:
+                note = (f" (recorded {skill.recorded_digest} differs from the shipped "
+                        f"digest: hash parity on the checkout already fails)")
+            rows.append(("PASS", skill.name,
+                         f"installed copy digests to the shipped digest "
+                         f"{digest[:19]}...{via}{note}"))
+    return rows, installed_digests
+
+def installed_order_row(bundle: Bundle, installed_digests):
+    """The install-side distribution/hash order from the ONE order implementation.
+
+    The same cohort-gate digest over (name, content digest, position) is
+    re-derived from the INSTALLED copies and compared with the digest of what
+    this checkout distributes. An unproven identity is never hashed and never a
+    pass.
+    """
+    if any(digest is None for digest in installed_digests):
+        return ("UNDETERMINED", "order",
+                "not every installed copy has a digest; an unproven order is "
+                "never hashed")
+    _, shipped = distribution_order(bundle)
+    if shipped is None:
+        return ("UNDETERMINED", "order",
+                "this checkout has no distribution-order digest (a skill lacks a "
+                "content digest)")
+    candidates = [
+        {"task_id": skill.name, "head_sha": "",
+         "content_digest": digest, "distribution_order": index}
+        for index, (skill, digest) in enumerate(zip(bundle.skills, installed_digests))
+    ]
+    now = _cohort_order_digest(candidates)
+    if now != shipped:
+        return ("FAIL", "order",
+                f"installed-copy order digest {now} != the digest of what this "
+                f"checkout distributes {shipped}: the installed set is not the "
+                f"shipped set")
+    return ("PASS", "order",
+            f"installed-copy order digest {now[:19]}... equals the shipped "
+            f"distribution receipt (explicit distribution/hash order)")
+
 
 # --------------------------------------------------------------------------
 # Checks
@@ -655,6 +808,7 @@ def verify_host_invocation(root: Path):
 
 def write_digest_record(bundle: Bundle, path=None) -> Path:
     path = Path(path) if path else Path(bundle.root) / DIGESTS_PATH
+    order, order_digest = distribution_order(bundle)
     payload = {
         "schema": SCHEMA_DIGESTS,
         "canonicalisation": CANONICALISATION,
@@ -668,6 +822,11 @@ def write_digest_record(bundle: Bundle, path=None) -> Path:
                 "files": skill.file_count,
             }
             for skill in bundle.skills
+        },
+        "distribution_order": {
+            "basis": REGISTRY_PATH,
+            "order": order,
+            "order_digest": order_digest,
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -782,6 +941,28 @@ def run_checks(bundle: Bundle):
         lines.append(f"{status} {name} {detail}")
 
     host_verified = sum(1 for s, _, _ in host_results if s == "VERIFIED")
+
+    # 8. distribution-order (T-44): the recorded receipt is the cohort gate's own
+    #    digest over (name, content digest, position). A reordered registry or a
+    #    changed skill content moves it. An absent record is a SKIP with no
+    #    counter - never the claim that the order is unchanged.
+    order_names, order_digest_now = distribution_order(bundle)
+    recorded_order_digest = read_recorded_order_digest(bundle.root)
+    if order_digest_now is None:
+        lines.append("SKIP distribution-order no order digest: not every skill has a "
+                     "content digest (an unproven identity is never hashed)")
+    elif recorded_order_digest is None:
+        lines.append(f"SKIP distribution-order no recorded order digest in "
+                     f"{DIGESTS_PATH} (nothing to compare; this is NOT the claim that "
+                     f"the order is unchanged)")
+    elif recorded_order_digest == order_digest_now:
+        passed(f"distribution-order {len(order_names)} skill(s) in {REGISTRY_PATH} "
+               f"order digest {order_digest_now[:19]}... equals the recorded receipt")
+    else:
+        failed(f"distribution-order recorded {recorded_order_digest} != computed "
+               f"{order_digest_now}: {REGISTRY_PATH} order or a skill's content moved "
+               f"since --write-digests")
+
     summary = (f"SUMMARY: {counters['passed']} passed, {counters['failed']} failed, "
                f"{counters['undetermined']} undetermined, {counters['drift']} manifest "
                f"drift, hosts: {host_verified} verified / "
@@ -828,6 +1009,7 @@ def main(argv=None) -> int:
     group.add_argument("--list-skills", action="store_true")
     group.add_argument("--install-plan", action="store_true")
     group.add_argument("--plan-update", action="store_true")
+    group.add_argument("--check-install", action="store_true")
     group.add_argument("--write-digests", action="store_true")
     group.add_argument("--digest", metavar="PATH",
                        help="print the canonical digest of one directory")
@@ -881,9 +1063,35 @@ def main(argv=None) -> int:
         _print_decisions(plan_update(bundle, installed), args.json)
         return 0
 
+    if args.check_install:
+        if not args.claude_root:
+            print("--check-install needs --claude-root", file=sys.stderr)
+            return RC_UNDETERMINED
+        rows, installed_digests = installed_copy_rows(bundle, args.claude_root)
+        rows.append(installed_order_row(bundle, installed_digests))
+        counts = {"PASS": 0, "FAIL": 0, "UNDETERMINED": 0}
+        for status, name, detail in rows:
+            counts[status] += 1
+        if args.json:
+            print(json.dumps({"rows": [{"status": s, "name": n, "detail": d}
+                                       for s, n, d in rows],
+                              "summary": counts}, indent=2))
+        else:
+            for status, name, detail in rows:
+                print(f"{status} install-copy {name} {detail}")
+            print(f"SUMMARY: {counts['PASS']} passed, {counts['FAIL']} failed, "
+                  f"{counts['UNDETERMINED']} undetermined (undetermined are NOT passes)")
+        if counts["FAIL"]:
+            return RC_FAIL
+        if counts["UNDETERMINED"]:
+            return RC_UNDETERMINED
+        return RC_PASS
+
     if args.write_digests:
         path = write_digest_record(bundle, args.digests_path)
-        print(f"wrote {path} ({len(bundle.skills)} skill(s))")
+        _, order_digest_now = distribution_order(bundle)
+        print(f"wrote {path} ({len(bundle.skills)} skill(s)) "
+              f"distribution_order={order_digest_now or 'UNDETERMINED'}")
         return 0
 
     lines, rc = run_checks(bundle)
