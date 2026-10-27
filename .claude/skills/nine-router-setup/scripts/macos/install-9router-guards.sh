@@ -135,6 +135,10 @@ if [ -z "$NODE" ]; then
   echo "install Node, or put it on PATH, then re-run" >&2
   exit 2
 fi
+# Run one guard with the node resolved above APPENDED to PATH. Guards find node by absolute Homebrew path or by
+# PATH only, so under a narrow PATH they would otherwise fail with their own "no node binary resolvable".
+# Appended, not prepended: anything the guard already resolved (node, python3) still resolves the same way.
+run_guard() { PATH="$PATH:$(dirname "$NODE")" "$BIN_DIR/9router-$1-guard.sh" "$ROOT"; }
 NPM="$(dirname "$NODE")/npm"; [ -x "$NPM" ] || NPM="$(command -v npm 2>/dev/null || true)"
 [ -z "${NINEROUTER_NPM:-}" ] || NPM="$NINEROUTER_NPM"   # test seam: point at a fake/scratch npm
 
@@ -164,7 +168,7 @@ rollback_upgrade() {
     || { echo "[guards] ROLLBACK FAILED: package at $ROOT reports $(pkg_version), expected $UP_FROM; guards NOT re-applied" >&2; exit 4; }
   up_rb=1
   for g in "${SEL[@]}"; do
-    "$BIN_DIR/9router-$g-guard.sh" "$ROOT" >/dev/null 2>&1 || true
+    run_guard "$g" >/dev/null 2>&1 || true
   done
   if [ "$RESTART" = 1 ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
     launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
@@ -223,7 +227,7 @@ if [ "$CHECK" = 0 ]; then
   before="$(fingerprint)"
   for g in "${SEL[@]}"; do
     # Guards that take a root get it; the five older ones search the standard list (same order as above).
-    out="$("$BIN_DIR/9router-$g-guard.sh" "$ROOT" 2>&1)"; rc=$?
+    out="$(run_guard "$g" 2>&1)"; rc=$?
     echo "[guards] $g: rc=$rc"
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -5 | sed 's/^/    /'
   done
