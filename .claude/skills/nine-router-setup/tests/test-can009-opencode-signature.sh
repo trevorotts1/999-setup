@@ -26,7 +26,12 @@ JS
 # combo loop (0.5.104: reply local b->f, success return wrapped in a block); the non-stream translator tail lives in
 # its own chunk, as in the real bundle (8910 vs 8895).
 cat >"$C/7313.js" <<'JS'
-async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,comboStrategy:j,comboStickyLimit:k=1,autoSwitch:m=!0}){let o=b,p=null,r=null,s=null;for(let n=0;n<o.length;n++){let e=o[n];g.info("COMBO",`Trying model ${n+1}/${o.length}: ${e}`);try{let x=await c(a,e);if(x.ok){if(n!==o.length-1&&(x.headers?.get?.("content-type")||"").includes("application/json"))try{let a=await x.clone().json();if(!a)continue}catch{}return g.info("COMBO",`Model ${e} succeeded`),x}p="failed"}catch(a){p=a.message}}return new Response("all failed")}
+exports.modules={18910:(a,b,c)=>{c.d(b,{Pr:()=>q});async function q({body:a,models:b,handleSingleModel:c,log:g,comboName:i,comboStrategy:j,comboStickyLimit:k=1,autoSwitch:m=!0}){let o=b,p=null,r=null,s=null;for(let n=0;n<o.length;n++){let e=o[n];g.info("COMBO",`Trying model ${n+1}/${o.length}: ${e}`);try{let x=await c(a,e);if(x.ok){if(n!==o.length-1&&(x.headers?.get?.("content-type")||"").includes("application/json"))try{let a=await x.clone().json();if(!a)continue}catch{}return g.info("COMBO",`Model ${e} succeeded`),x}p="failed"}catch(a){p=a.message}}return new Response("all failed")}}};
+JS
+# The router's own model resolver, which the failover and ollama guards call (module 38775 export mA, verbatim from 0.5.104).
+# The guards refuse to patch a bundle without it: their provider check would otherwise swallow the error and never fire.
+cat >"$C/7315.js" <<'JS'
+exports.modules={38775:(a,b,c)=>{c.d(b,{d_:()=>j,mA:()=>i});var d=c(89718),e=c(40669),f=c(61892);let g={xmtp:"xiaomi-tokenplan","xiaomi-tokenplan":"xiaomi-tokenplan"},h=new Set(Object.keys(g));for(let a of f.default)for(let b of(h.add(a.id),a.alias&&h.add(a.alias),a.aliases||[]))h.add(b);async function i(a){let b,c=(b=(0,e.Xh)(a),b?.providerAlias&&g[b.providerAlias]?{...b,provider:g[b.providerAlias]}:b);if(!c.isAlias){if(!h.has(c.providerAlias)){let a=(await (0,d.Fh)({type:"openai-compatible"})).find(a=>a.prefix===c.providerAlias);if(a)return{provider:a.id,model:c.model}}return{provider:c.provider,model:c.model}}return await (0,d.Dj)(c.model)?{provider:null,model:c.model}:(0,e.js)(a,d.OM)}async function j(a){if(a.includes("/"))return null;let b=await (0,d.Dj)(a);return b&&b.models&&b.models.length>0?b.models:null}}};
 JS
 cat >"$C/7314.js" <<'JS'
 function fin(M,u,t,G,D,T,w){let O=(0,w.nZ)(u,t)?function(a,b,c,e=null){if(b===c)return a;return b===D.h.OLLAMA?(0,T._)(a):a}(M,u,t,G):M;return O}
@@ -49,12 +54,12 @@ for f in "$C"/7311.js "$C"/7312.js; do "$NODE" --check "$f" 2>/dev/null || bad "
 # 2. failover guard (toolargs part 2) on the 0.5.104 loop shape
 out="$("$PY" "$TA/failover-guard-apply.py" "$R" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && ok "failover guard exits 0 on the 0.5.104 loop shape" || { bad "failover rc=$rc: $(echo "$out" | head -2)"; }
-grep -q 'let e=o\[n\],__fgi=n;' "$C/7313.js" && grep -q 'succeeded`),__fgi<o.length-1&&__fgTools(a)&&await __fgOn(e)?await __fgRun(a,o,__fgi,x,c,g):x}' "$C/7313.js" && ok "failover hook uses the captured loop/reply locals (n, x)" || bad "failover body"
+grep -q 'let e=o\[n\],__fgi=n,__fgb=a,__fgc=c,__fgl=g;' "$C/7313.js" && grep -q 'succeeded`),__fgi<o.length-1&&__fgTools(__fgb)&&await __fgOn(e)?await __fgRun(__fgb,o,__fgi,x,__fgc,__fgl):x}' "$C/7313.js" && ok "failover hook uses the captured loop/reply locals (n, x) and the loop-head copies of body/handler/log" || bad "failover body"
 
 # 3. ollama overload guard (toolargs part 3: loop hook + non-stream Claude translator)
 out="$("$PY" "$TA/ollama-overload-guard-apply.py" "$R" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && ok "ollama overload guard exits 0 (loop hook + non-stream translator)" || { bad "ollama rc=$rc: $(echo "$out" | head -2)"; }
-grep -q ':__fgi<o.length-1&&await __ogOn(e)?await __ogRun(a,o,__fgi,x,c,g):x}' "$C/7313.js" && ok "ollama loop hook follows the failover hook with the captured reply local (x)" || bad "ollama loop body"
+grep -q ':__fgi<o.length-1&&await __ogOn(e)?await __ogRun(__fgb,o,__fgi,x,__fgc,__fgl):x}' "$C/7313.js" && ok "ollama loop hook follows the failover hook with the captured reply local (x)" || bad "ollama loop body"
 grep -q '/\*ollama-nonstream-claude-v1\*/return b===D.h.OLLAMA?(c===D.h.OPENAI?(0,T._)(a):__ogNs((0,T._)(a),D.h.OPENAI,c,e)):a}(M,u,t,G):M' "$C/7314.js" && grep -q 'function __ogNs(a,b,c,e=null)' "$C/7314.js" && ok "ollama non-stream part kept the captured module aliases (D, T)" || bad "ollama non-stream body"
 for f in "$C"/7313.js "$C"/7314.js; do "$NODE" --check "$f" 2>/dev/null || bad "node --check $f"; done; ok "node --check on the patched combo chunks"
 
