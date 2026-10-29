@@ -46,13 +46,17 @@ function makeLoader(root){
   req.o=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   req.n=(m)=>{ const g=m&&m.__esModule?()=>m.default:()=>m; req.d(g,{a:g}); return g; };
   req.t=(v)=>v; req.e=()=>Promise.resolve(); req.f={}; req.u=()=>''; req.p=''; req.g=globalThis;
+  // Webpack renumbers a module whenever its content hash moves (the translator was 88499 up to 0.5.109 and 82380 from 0.5.111),
+  // so a module whose id has drifted is found by the export names it declares. Exactly one module must match.
+  req.find=(...sigs)=>{ const hit=Object.keys(factories).filter(id=>{ const s=factories[id].toString(); return sigs.every(x=>s.includes(x)); });
+    if(hit.length!==1) throw new Error('module with exports '+sigs.join(',')+' matched '+hit.length+' times (need 1)'); return hit[0]; };
   return req;
 }
 
 const ROOT=process.argv[2]||path.join(os.homedir(),'.npm-global/lib/node_modules/9router');
 const BUILD=path.join(ROOT,'app/.next-cli-build');
 const req=makeLoader(BUILD);
-const CAPS=req(24), LEVELS=req(72239), PIPE=req(88499), FMT=req(14170).h, REG=req(26070), BASE=req(96179);
+const CAPS=req(24), LEVELS=req(72239), PIPE=req(req.find('Ws:()=>','Ai:()=>','Y8:()=>','GH:()=>')), FMT=req(14170).h, REG=req(26070), BASE=req(96179);
 if(!FMT||!FMT.OLLAMA){ console.error('FATAL: format enum not found'); process.exit(2); }
 
 // ---------------------------------------------------------------- harness ----
