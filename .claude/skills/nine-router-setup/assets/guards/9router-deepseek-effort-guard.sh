@@ -9,6 +9,15 @@
 # whose replacement text this guard carries verbatim. An `npm i -g 9router`
 # replaces the bundle and reverts it; this guard re-applies it, content-anchored.
 #
+# 0.5.109 fixed the defect upstream (read from the 0.5.109, 0.5.111 and 0.5.112 bundles; 0.5.104 still has it): the mapping became
+#   c="xhigh"===a||"max"===a?"max":("low"===a||"minimal"===a)&&e?.includes("low")?"low":"high"
+# where e is the model's own effort-level list (module 72239 k). minimal|low now reach DeepSeek as "low"
+# whenever the model lists "low" (every deepseek-v4.* pattern, incl. deepseek-v4.1-flash); a model whose list is
+# only none/high/max (plain deepseek-v4-flash) is sent "high" on purpose, and xhigh is sent as "max". The stock
+# bug this guard exists for (low promoted to high on a model that has a low tier) is gone, so on those bundles
+# the guard patches nothing and reports "not needed (fixed upstream)" (exit 0). Bundles older than 0.5.109
+# are patched exactly as before.
+#
 # Usage: 9router-deepseek-effort-guard.sh [--check] [--quiet] [9router_root]
 #   exit 0 applied/already · 2 tooling · 3 anchor not found (never a silent success) · 4 node --check failed
 set -uo pipefail
@@ -37,7 +46,7 @@ NODE=""; for c in /opt/homebrew/bin/node /usr/local/bin/node "$(command -v node 
 PY=""; for c in /opt/homebrew/bin/python3 /usr/bin/python3 "$(command -v python3 2>/dev/null || true)"; do [ -n "$c" ] && [ -x "$c" ] && { PY="$c"; break; }; done
 [ -n "$PY" ] || { echo "FAIL: no python3 binary resolvable"; exit 2; }
 "$PY" - "$CHUNKS" "$NODE" "$CHECK" "$QUIET" "$(date +%Y%m%d-%H%M%S)" <<'PY'
-import os, glob, shutil, subprocess, sys
+import os, glob, re, shutil, subprocess, sys
 chunks, node, check, quiet, stamp = sys.argv[1], sys.argv[2], sys.argv[3]=="1", sys.argv[4]=="1", sys.argv[5]
 say = (lambda *a: None) if quiet else print
 OLD = 'b.reasoning_effort="xhigh"===a||"max"===a?"max":"high"'
@@ -48,17 +57,21 @@ NEW = 'b.reasoning_effort="low"===a||"minimal"===a?"low":"max"===a||"ultra"===a?
 OLD91 = 'c="xhigh"===a||"max"===a?"max":"high";b.reasoning_effort="max"===c&&e&&!e.includes("max")?"high":c;'
 NEW91 = 'c="low"===a||"minimal"===a?"low":"max"===a||"ultra"===a?"max":"high";b.reasoning_effort="max"===c&&e&&!e.includes("max")?"high":c;'
 PAIRS = [(OLD, NEW), (OLD91, NEW91)]
-already, found = [], []
+# The 0.5.109+ stock form (identifiers differ per build, so they are matched, not spelled).
+UP = re.compile(r'[\w$]+="xhigh"===([\w$]+)\|\|"max"===\1\?"max":\("low"===\1\|\|"minimal"===\1\)&&[\w$]+\?\.includes\("low"\)\?"low":"high";')
+already, found, fixed = [], [], []
 for f in sorted(glob.glob(os.path.join(chunks, "*.js"))):
     t = open(f, encoding="utf-8", errors="surrogateescape").read()
     if any(n_ in t for _, n_ in PAIRS): already.append(f); continue
+    if UP.search(t): fixed.append(f); continue
     for o_, n_ in PAIRS:
         n = t.count(o_)
         if n == 1: found.append((f, o_, n_)); break
         elif n > 1: print(f"AMBIGUOUS: {os.path.basename(f)} anchor count={n}"); sys.exit(3)
-if not already and not found:
+if not already and not found and not fixed:
     print(f"FAIL: DeepSeek effort anchor not found in any chunk under {chunks} — bundle changed. NOT guarded."); sys.exit(3)
 for f in already: say(f"9router-deepseek-effort: already applied: {os.path.basename(f)}")
+for f in fixed: say(f"9router-deepseek-effort: not needed (fixed upstream): {os.path.basename(f)}")
 for f, o_, n_ in found:
     if check: say(f"WOULD PATCH: {os.path.basename(f)}"); continue
     bk = f"{f}.pre-deepseek-effort-{stamp}"; shutil.copy2(f, bk)
