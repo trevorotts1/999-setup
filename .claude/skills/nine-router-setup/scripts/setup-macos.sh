@@ -617,7 +617,7 @@ cron_privacy_check() {
 #                          with its exact path and reason and the full-install command
 #                          printed - instead of half-updating. Without the flag nothing
 #                          changes: the installed copy is only reported UPDATER_STALE
-#                          (exit 5).
+#                          (exit 5 under --check; APPLY delivered, so it exits 0).
 #
 # Unlike link_one_skill: NO backup dir, NO moving or deleting anything (the one
 # exception is unlinking a stale symlink itself under --repair-links, which never
@@ -650,9 +650,14 @@ cron_privacy_check() {
 #
 # Exit status: 0 delivered; 1 write error; 3 stale symlink(s) left alone;
 # 4 blocked (incomplete delivery, or a refused updater refresh); 5 updater
-# stale. When several apply, the
-# most severe wins (1, then 4, then 3, then 5); the RESULT line always carries
-# every count.
+# stale - CHECK mode only. When several apply, the most severe wins (1, then 4,
+# then 3, then 5); the RESULT line always carries every count.
+# Not failures (always reported, never silent): UPDATER_STALE in APPLY mode (the
+# skill content was delivered; the line + the RESULT "updater-stale" count say
+# the installer copy is old and the full install is the human action), and a
+# symlinked skill whose target carries every bundle entry intact and only keeps
+# extra old entries the bundle no longer ships (OK line + "extra kept" count; a
+# missing, changed or mode-drifted bundle entry is still STALE, exit 3).
 #
 # Equivalence is checked per entry and never claimed from regular-file byte
 # comparison alone: file sets (missing and extra entries count), regular files
@@ -675,7 +680,7 @@ so_print_paths() {
     "    other config: any settings.json (hooks, Agent Teams, auto-compact, ultracode override), operator.env" \
     "    state: Keychain token, ~/Library/Application Support/BlackCEO/999, ~/.local/share/999," \
     "      ~/Library/Logs/BlackCEO-999, API docs.md" \
-    "    skipped: nine-router-setup (the installer itself - reported UPDATER_STALE when the installed copy differs); source and destination are the same directory" \
+    "    skipped: nine-router-setup (the installer itself - reported UPDATER_STALE when the installed copy differs, and the run still exits 0 when the skill content landed); source and destination are the same directory" \
     "    --refresh-updater only: the installed nine-router-setup copy is refreshed in place from this bundle" \
     "      (per-file temp+rename writes - a file is always complete, old or new; the first error stops the" \
     "      refresh and the previous copy stays usable; nothing is deleted - extra old entries are kept and" \
@@ -683,7 +688,9 @@ so_print_paths() {
     "    blocked (counted separately, never reported as delivered): a bundled skill with no source in this" \
     "      bundle, or a destination that is a plain file where a skill directory is expected" \
     "    never overwritten: a symlinked skill or file stays untouched, but when its content differs" \
-    "      from this bundle it is reported STALE and the run exits 3 (content was NOT delivered there)" \
+    "      from this bundle (a bundle entry missing, changed or mode-drifted) it is reported STALE and the" \
+    "      run exits 3 (content was NOT delivered there); a target holding every bundle entry intact plus" \
+    "      only extra old entries is reported OK with the extras listed and counted, and does not fail" \
     "    --repair-links only: a STALE symlinked skill is replaced by this bundle's tree at the destination" \
     "      path (the link is unlinked; its old target directory is left untouched and reported)" \
     "    never: backups, ~/.claude-skill-backups, moving or deleting any file, installing Node/9Router/gh/Vercel"
@@ -712,11 +719,15 @@ so_tree_diff() { # so_tree_diff <src> <dst-dir> <detail:0|1> -> 0 when dst carri
   # count), regular files by content and size, symlinks by target (with a
   # destination symlink that would escape the tree flagged), executable mode
   # bits (drift reported, never silently ignored). Sets SO_TD_MODE to the
-  # mode-drift count; SO_TD_DIFF=1 when anything differs.
+  # mode-drift count; SO_TD_DIFF=1 when anything differs; SO_TD_CONTENT=1 when a
+  # BUNDLE entry is missing or differs (content not delivered there) and 0 when
+  # the tree carries every bundle entry intact; SO_TD_EXTRA counts the extra old
+  # entries the bundle no longer ships (they alone never mean "not delivered").
   local src="$1" dst="$2" detail="$3" rel sx dx s_tgt d_tgt
-  SO_TD_DIFF=0; SO_TD_MODE=0
+  SO_TD_DIFF=0; SO_TD_MODE=0; SO_TD_CONTENT=0; SO_TD_EXTRA=0
   if [ ! -d "$dst" ]; then
     if [ "$detail" = 1 ]; then printf '    DIFF: destination tree missing: %s\n' "$dst"; fi
+    SO_TD_CONTENT=1
     return 1
   fi
   while IFS= read -r rel; do
@@ -758,11 +769,12 @@ so_tree_diff() { # so_tree_diff <src> <dst-dir> <detail:0|1> -> 0 when dst carri
       fi
     fi
   done < <(cd "$src" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
+  SO_TD_CONTENT="$SO_TD_DIFF"
   while IFS= read -r rel; do
     rel="${rel#./}"
     if [ ! -e "$src/$rel" ] && [ ! -L "$src/$rel" ]; then
       if [ "$detail" = 1 ]; then printf '    DIFF %s/%s: extra entry at the destination, not in this bundle\n' "$dst" "$rel"; fi
-      SO_TD_DIFF=1
+      SO_TD_DIFF=1; SO_TD_EXTRA=$((SO_TD_EXTRA + 1))
     fi
   done < <(cd "$dst" && find . \( -type f -o -type l \) ! -name .DS_Store | LC_ALL=C sort)
   [ "$SO_TD_DIFF" -eq 0 ]
@@ -990,7 +1002,7 @@ skills_only_mode() { # skills_only_mode <check:0|1>
   local check="$1" markers="" roots="" r d s src src_real dst dst_real verb up old_target
   local repair="$REPAIR_LINKS"
   local refresh="${REFRESH_UPDATER:-0}"
-  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 t_blocked=0 t_mode=0 t_updater=0 skills_root="$SKILL_DIR/.."
+  local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 t_blocked=0 t_mode=0 t_updater=0 t_extra=0 skills_root="$SKILL_DIR/.."
 
   # 9Router detection - read-only: two stats and one local GET on /api/health.
   [ ! -d "$HOME/.9router" ] || markers="$markers ~/.9router"
@@ -1041,6 +1053,12 @@ $d
         dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
         if [ "$dst_real" = "$src_real" ]; then printf '  OK   %s: symlink already points at this clone\n' "$s"; t_same=$((t_same + 1))
         elif so_tree_diff "$src" "$dst_real" 1; then printf '  OK   %s: symlink to another root carrying identical content (%s)\n' "$s" "$dst_real"; t_same=$((t_same + 1))
+        elif [ "$SO_TD_CONTENT" -eq 0 ]; then
+          # Every bundle entry is there and identical; the tree only keeps old
+          # entries this bundle no longer ships (kept, never deleted - the same
+          # rule a real skill dir gets). Content WAS delivered: reported, not stale.
+          printf '  OK   %s: symlink to another root carrying this bundle'"'"'s full content (%s); %d extra old entry(ies) there are not in this bundle - kept, never deleted (listed above)\n' "$s" "$dst_real" "$SO_TD_EXTRA"
+          t_same=$((t_same + 1)); t_extra=$((t_extra + SO_TD_EXTRA))
         else
           t_mode=$((t_mode + SO_TD_MODE))
           if [ "$repair" = 1 ] && [ "$check" = 0 ]; then
@@ -1115,13 +1133,18 @@ $d
       t_updater=$((t_updater + 1))
     fi
   done < <(printf '%s' "$roots")
-  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d blocked; %d stale; %d mode drift; %d updater-stale; %d error(s)\n' \
+  printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d blocked; %d stale; %d mode drift; %d updater-stale; %d extra kept; %d error(s)\n' \
     "$([ "$check" = 1 ] && echo check || echo apply)" "$t_new" "$t_chg" \
-    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_blocked" "$t_stale" "$t_mode" "$t_updater" "$t_fail"
+    "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_blocked" "$t_stale" "$t_mode" "$t_updater" "$t_extra" "$t_fail"
   [ "$t_fail" -eq 0 ] || return 1
   [ "$t_blocked" -eq 0 ] || return 4
   [ "$t_stale" -eq 0 ] || return 3
-  [ "$t_updater" -eq 0 ] || return 5
+  # An out-of-date installer copy does not mean the skill content failed to land
+  # (--skills-only never touches it, by design). APPLY delivered everything, so it
+  # exits 0 and the UPDATER_STALE lines + the RESULT count carry the news; CHECK
+  # is the status query, so it still exits 5.
+  if [ "$t_updater" -ne 0 ] && [ "$check" = 1 ]; then return 5; fi
+  [ "$t_updater" -eq 0 ] || printf '[skills-only] NOTE: %d updater-stale - skill content was delivered; the installed nine-router-setup copy is out of date (human action: the FULL install, see UPDATER_STALE above); exit 0\n' "$t_updater"
   return 0
 }
 
