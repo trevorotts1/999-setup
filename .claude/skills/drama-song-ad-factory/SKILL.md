@@ -310,7 +310,7 @@ python3 scripts/core/intake_preflight/factory.py preflight --root "$STORAGE"
 |---|---:|---|
 | `ok` | 0 | accepted for this command |
 | `error` | 1 | failure with a reason code |
-| `waiting` | 2 | human answer needed (batched questions) |
+| `waiting` | 2 | human answer needed (one question per message) |
 | `parked` | 3 | blocked until a decision or state is repaired |
 | `rejected` | 4 | refused on policy, trust or authorization |
 

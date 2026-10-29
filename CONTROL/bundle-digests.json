@@ -24,7 +24,7 @@
       "version": "1.0.59"
     },
     "drama-song-ad-factory": {
-      "digest": "900a3f711f494aedb303d0bd6945a62944a13a5fe1861cf1384bd50bd193316b",
+      "digest": "46f3fc1679cc079bccaa1bb8059b4cda90e607fe747efa87324b4f9d04965d79",
       "files": 793,
       "version": "v2.9.103"
     },
@@ -59,8 +59,8 @@
       "version": "1.0.2"
     },
     "nine-router-setup": {
-      "digest": "0bf373f0a120d86cba186f44684eea6fb02a2b85ce344fe068d01c2370d87147",
-      "files": 73,
+      "digest": "74f3e9a1620eb20a0b9782370a4d65754eb18ae3f3daf5ef00ed03f4b35d9e1e",
+      "files": 74,
       "version": "1.29.0"
     },
     "signature-downsell": {

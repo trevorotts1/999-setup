@@ -114,7 +114,8 @@ __all__ = [
     "OPENING_KEYS", "OPPOSITE_READINGS",
     "opening_from_script", "build_opening_scene", "apply_opening",
     "validate_opening", "plan_opening", "infer_opposite_reading",
-    "MOTION_SCORE_LOW", "CLIP_LOW_MOTION", "MotionScoreError",
+    "MOTION_SCORE_LOW", "MOTION_SUBJECT_LOW", "MOTION_STRUCTURE_MIN",
+    "CLIP_LOW_MOTION", "CLIP_MOTION_UNMEASURABLE", "MotionScoreError",
     "gate_clip_motion",
 ]
 
@@ -126,7 +127,10 @@ __all__ = [
 # `import shot_planner.motion_score as ms` with the function object.
 from .motion_score import (  # noqa: E402,F401
     MOTION_SCORE_LOW,
+    MOTION_SUBJECT_LOW,
+    MOTION_STRUCTURE_MIN,
     CLIP_LOW_MOTION,
+    CLIP_MOTION_UNMEASURABLE,
     MotionScoreError,
     gate_clips as gate_clip_motion,
 )

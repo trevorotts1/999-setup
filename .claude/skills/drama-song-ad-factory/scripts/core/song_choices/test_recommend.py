@@ -164,10 +164,9 @@ def test_a_failed_version_is_neither_offered_nor_recommended():
         msg, run = _deliver(res, method=True, tmp=tmp)
         # Designed absence: a FAILED take with NO audio is not presented for
         # listening, so it never reaches the failure fork either -- the client
-        # message names no failed version at all. The fork wording
-        # ("did not pass all of my song checks") is only for a take the client
-        # can actually hear.
-        assert "Version 2 did not pass all of my song checks" not in msg
+        # message names no failed version at all, in ANY wording ("needs work",
+        # "did not pass all of my song checks", ...). Version 2 must not appear.
+        assert "Version 2" not in msg
         assert SC.FAILURE_FORK not in msg
         assert "I recommend version 1 because" in msg
         assert "recommend version 2" not in msg

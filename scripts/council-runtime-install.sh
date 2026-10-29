@@ -118,6 +118,10 @@ fi
 NODE_BIN="$(command -v node 2>/dev/null || true)"
 [ -n "$NODE_BIN" ] && "$NODE_BIN" --version >/dev/null 2>&1 \
   || die COUNCIL_NODE_MISSING "Node.js is not runnable on PATH; the council runtime cannot install or run" 4
+# WER-004 canonical probe target: resolve the REAL node behind any symlink or
+# shim, so the prerequisite probe tests the binary that will actually run the
+# build (where readlink -f is unavailable the PATH resolution stands).
+NODE_BIN="$(readlink -f "$NODE_BIN" 2>/dev/null || echo "$NODE_BIN")"
 NPM_BIN="$(command -v npm 2>/dev/null || true)"
 [ -n "$NPM_BIN" ] && "$NPM_BIN" --version >/dev/null 2>&1 \
   || die COUNCIL_NPM_MISSING "npm is not runnable on PATH; the council runtime dependencies cannot be installed" 4
