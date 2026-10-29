@@ -1,5 +1,5 @@
 #!/bin/bash
-# 9router-glm53-thinking-guard.sh  (v4, 2026-10-19)
+# 9router-glm53-thinking-guard.sh  (v5, 2026-10-29)
 # Keeps the GLM 5.3 / GLM 5.3 Flash reasoning-effort repairs applied to the
 # prebuilt 9Router Next bundle. RE-RUN AFTER EVERY `npm i -g 9router` — an
 # update replaces the bundle and silently reverts every edit below.
@@ -10,6 +10,7 @@
 # SIGNATURE wherever it lands under app/.next-cli-build (v4, CAN002: v1-v3 used
 # fixed anchor strings that broke on every minifier rename -- on 0.5.104 they
 # resolved 0 files for A-D and F and the run still printed "files patched: 0").
+# v5 (0.5.112): part D's call-site anchor takes the serializer's optional 7th argument (six arguments up to 0.5.111, seven in 0.5.112).
 # The minified locals the edit needs are captured from the code around the anchor.
 # FAIL CLOSED: a part that resolves in 0 files, or reads back short, exits 3.
 #
@@ -253,7 +254,9 @@ def part_C(t):
 # caps say thinkingCanDisable:false, `(none)` maps to the lowest valid level "low" on both routes
 # (C: reasoning.effort none/minimal -> low; D: think:"low") instead of "minimal"/nothing. Models that
 # can disable keep think:false. Behaviour carried over from the 2026-10-10 operator port of 0.5.99.
-D_TAIL_RX = R(r'\.params\.reasoning_effort=a\)\}\}\}\((?P<ser>[\w$]+),(?P<body>[\w$]+),(?P<intent>[\w$]+),(?P<caps>[\w$]+),(?P<lv>[\w$]+),(?P<disp>[\w$]+)\),(?P<ret>[\w$]+)\}')
+# 0.5.112 gave the serializer a 7th parameter (the clean model id, used by the claude adaptive-thinking branch only), so the
+# call has six arguments up to 0.5.111 and seven from 0.5.112; the optional tail accepts both.
+D_TAIL_RX = R(r'\.params\.reasoning_effort=a\)\}\}\}\((?P<ser>[\w$]+),(?P<body>[\w$]+),(?P<intent>[\w$]+),(?P<caps>[\w$]+),(?P<lv>[\w$]+),(?P<disp>[\w$]+)(?:,[\w$]+)?\),(?P<ret>[\w$]+)\}')
 D_HEAD_RX = R(r'function (?P<fn>[\w$]+)\((?P<wire>[\w$]+),(?P<model>[\w$]+),(?P<body>[\w$]+),(?P<prov>[\w$]+)=null,(?P<ovr>[\w$]+)\)\{if\(!(?P=body)\|\|"object"!=typeof (?P=body)\)return (?P=body);'
               r'let\{cleanModel:(?P<clean>[\w$]+),override:(?P<ov2>[\w$]+)\}=')
 D_LEVEL_RX = R(r'function ([\w$]+)\(a\)\{return"level"===a\.mode\?a\.level:"budget"===a\.mode\?')

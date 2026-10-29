@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Failover guard for 9Router combos (module 18910 export Pr, chunk 8910.js). Offline: drives the REAL
+// Failover guard for 9Router combos (the combo module's export Pr). Offline: drives the REAL
 // combo loop with fake single-model handlers. Client replies are built by the router's real
 // OPENAI_RESPONSES->CLAUDE translator, so the "broken" reply is byte-for-byte the shape Claude Code got
 // (tool_use with input {}). Exit 0 = all pass, 1 = a scenario failed, 2 = bundle not loadable.
@@ -8,8 +8,8 @@ const path=require('path');
 process.env.NINEROUTER_FG_KEEPALIVE_MS='50';
 const AUDIT=path.join(require('os').tmpdir(),'fg-regression-'+process.pid+'.log'); process.env.NINEROUTER_FG_LOG=AUDIT;
 const {req}=require(path.join(__dirname,'regression.cjs'));
-let Pr,P; try{ Pr=req(18910).Pr; P=req(88499); if(typeof Pr!=='function') throw 0; }
-catch(e){ console.error('FATAL: combo module 18910.Pr not loadable', e&&e.message); process.exit(2); }
+let Pr,P; try{ Pr=req.combo().Pr; P=req.translator(); if(typeof Pr!=='function') throw 0; }
+catch(e){ console.error('FATAL: combo module export Pr / translator module not loadable', e&&e.message); process.exit(2); }
 
 const TOOLS=[{name:'Bash',description:'run',input_schema:{type:'object',properties:{command:{type:'string'}},required:['command']}}];
 const ARGS='{"command":"echo hello"}';
@@ -24,7 +24,15 @@ const openaiSSE=args=>`data: ${JSON.stringify({choices:[{index:0,delta:{tool_cal
   (args?`data: ${JSON.stringify({choices:[{index:0,delta:{tool_calls:[{index:0,function:{arguments:args}}]}}]})}\n\n`:'')+
   `data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:'tool_calls'}]})}\n\ndata: [DONE]\n\n`;
 const claudeJSON=args=>JSON.stringify({type:'message',role:'assistant',content:[{type:'tool_use',id:'t1',name:'Bash',input:args?JSON.parse(args):{}}],stop_reason:'tool_use'});
-const sse=(t,ms=0)=>new Response(new ReadableStream({async start(c){ if(ms) await new Promise(r=>setTimeout(r,ms)); c.enqueue(new TextEncoder().encode(t)); c.close(); }}),{status:200,headers:{'Content-Type':'text/event-stream'}});
+// 0.5.109+ peeks every stream (waits for the first tool call / text, or a deadline) before the combo loop commits to it, so its first
+// bytes reach the client only once content exists and the Response it returns is a wrapper. Suites that compare against the stock
+// router therefore (1) start a delayed stream with its first content already in the first chunk, and (2) do not demand object identity.
+const PEEK=Pr.toString().includes('peek deadline');
+const isContent=e=>!!e&&((e.type==='content_block_start'&&!!e.content_block&&e.content_block.type==='tool_use')||(e.type==='content_block_delta'&&!!e.delta&&((e.delta.type==='text_delta'&&!!e.delta.text)||(e.delta.type==='input_json_delta'&&!!e.delta.partial_json))));
+function headTail(t){ const bl=t.split('\n\n'); for(let i=0;i<bl.length;i++){ const d=bl[i].split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join(''); let e; try{e=JSON.parse(d)}catch{continue}
+  if(isContent(e)) return [bl.slice(0,i+1).join('\n\n')+'\n\n',bl.slice(i+1).join('\n\n')]; } return [t,'']; }
+// ms>0: the first chunk (through the first content) goes out at once, the rest `ms` later.
+const sse=(t,ms=0)=>{ const [h,r]=ms?headTail(t):[t,'']; return new Response(new ReadableStream({async start(c){ const e=new TextEncoder(); c.enqueue(e.encode(h)); if(r){ await new Promise(x=>setTimeout(x,ms)); c.enqueue(e.encode(r)); } c.close(); }}),{status:200,headers:{'Content-Type':'text/event-stream'}}); };
 const json=t=>new Response(t,{status:200,headers:{'Content-Type':'application/json'}});
 const err=()=>new Response(JSON.stringify({error:{message:'upstream down'}}),{status:500,headers:{'Content-Type':'application/json'}});
 
@@ -63,14 +71,13 @@ let fail=0; const check=(name,ok,detail)=>{ if(!ok) fail++; console.log((ok?'  P
 
   for(const [label,first] of [['openrouter',OR],['claude',CL]]){
     // two chunks 300 ms apart: the first must reach the client before the second exists
-    let t0; const slow=()=>{ t0=Date.now(); const [h,...rest]=claudeSSE('').split('\n\n'); return new Response(new ReadableStream({async start(c){ const e=new TextEncoder();
-      c.enqueue(e.encode(h+'\n\n')); await new Promise(r=>setTimeout(r,300)); c.enqueue(e.encode(rest.join('\n\n'))); c.close(); }}),{status:200,headers:{'Content-Type':'text/event-stream'}}); };
+    let t0; const slow=()=>{ t0=Date.now(); return sse(claudeSSE(''),300); };
     const called=[]; let orig; const res=await Pr({body:withTools,models:[first,OC],log,comboName:'t',comboStrategy:'fallback',
       handleSingleModel:async(b,m)=>{called.push(m===first?'m0':'m1'); return m===first?(orig=slow()):sse(claudeSSE(ARGS));}});
     const rd=res.body.getReader(); const c1=await rd.read(); const firstAt=Date.now()-t0; let text=new TextDecoder().decode(c1.value);
     for(;;){ const c=await rd.read(); if(c.done) break; text+=new TextDecoder().decode(c.value); }
     const inp=inputs(text);
-    check(`(c) ${label} first member, empty args -> untouched, streams live`,res===orig&&called.join()==='m0'&&firstAt<150&&/message_start/.test(new TextDecoder().decode(c1.value))&&inp.length===1&&JSON.stringify(inp[0])==='{}','called='+called+' firstChunkMs='+firstAt+' sameResponse='+(res===orig)+' input='+JSON.stringify(inp));
+    check(`(c) ${label} first member, empty args -> untouched, streams live`,(PEEK||res===orig)&&called.join()==='m0'&&firstAt<150&&/message_start/.test(new TextDecoder().decode(c1.value))&&inp.length===1&&JSON.stringify(inp[0])==='{}','called='+called+' firstChunkMs='+firstAt+' sameResponse='+(res===orig)+' input='+JSON.stringify(inp));
   }
 
   r=await run(withTools,[()=>sse(claudeSSE('')),()=>sse(claudeSSE('')),()=>sse(claudeSSE(ARGS))],[OC,OR,NV]);
@@ -83,7 +90,7 @@ let fail=0; const check=(name,ok,detail)=>{ if(!ok) fail++; console.log((ok?'  P
   check('valid first reply passes through byte-identical, still SSE',r.text.replace(/^:.*\n\n/gm,'')===g&&r.called.join()==='m0'&&/event-stream/.test(r.res.headers.get('content-type')),'called='+r.called);
 
   const noTools={...withTools,tools:undefined}; let first; r=await run(noTools,[()=>(first=sse(claudeSSE(''))),()=>sse(claudeSSE(ARGS))]);
-  check('request without tools is untouched (same Response object)',r.res===first&&r.called.join()==='m0','called='+r.called);
+  check('request without tools is untouched'+(PEEK?'':' (same Response object)'),(PEEK||r.res===first)&&r.called.join()==='m0'&&r.inp.length===1&&JSON.stringify(r.inp[0])==='{}','called='+r.called);
 
   r=await run(withTools,[()=>sse(claudeSSE('')),()=>sse(claudeSSE(''))]);
   check('last model with empty args is returned as-is, no loop',r.called.join()==='m0,m1'&&r.inp.length===1&&JSON.stringify(r.inp[0])==='{}','called='+r.called+' input='+JSON.stringify(r.inp));
