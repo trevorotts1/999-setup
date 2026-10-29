@@ -151,14 +151,15 @@ step_nonce() {
 
 # FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
 # record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sf_cert
-# --model-receipt. The client's OWN strongest model writes the copy; Anthropic is hard-banned.
+# --model-receipt. The client's OWN strongest model writes the copy; no vendor rule (Trevor order 2026-10-29).
 step_model_receipt() {
   local rd="$1"
   "$PY" - "$rd" <<'PYEOF'
 import json, os, sys, datetime
 rd = sys.argv[1]
 # Client-chain resolver seam: reuse model_router.select(role="content") semantics against the
-# CLIENT's providers. Operator/orchestrator supplies the resolved id via env (never Anthropic).
+# CLIENT's providers. Operator/orchestrator supplies the resolved id via env. No vendor rule:
+# an Anthropic / Claude id the client configured is accepted.
 model = os.environ.get("SF_CONTENT_MODEL", "")
 provider = os.environ.get("SF_CONTENT_PROVIDER", "")
 tier = os.environ.get("SF_CONTENT_TIER", "content")
