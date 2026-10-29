@@ -226,7 +226,7 @@ if [ "$CHECK" = 0 ]; then
   done
   before="$(fingerprint)"
   for g in "${SEL[@]}"; do
-    # Guards that take a root get it; the five older ones search the standard list (same order as above).
+    # Guards that take a root get it; the four older ones (dupfix, codex-terminal, nextserver, cachecontrol) search the standard list (same order as above).
     out="$(run_guard "$g" 2>&1)"; rc=$?
     echo "[guards] $g: rc=$rc"
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -5 | sed 's/^/    /'
