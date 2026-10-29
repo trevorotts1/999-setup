@@ -10,18 +10,30 @@ process.env.NINEROUTER_FG_KEEPALIVE_MS='50';
 process.env.DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'og-data-'));   // never the live ~/.9router DB
 const AUDIT=path.join(os.tmpdir(),'og-regression-'+process.pid+'.log'); process.env.NINEROUTER_FG_LOG=AUDIT;
 const {req}=require(path.join(__dirname,'regression.cjs'));
-let Pr,S,NS,FMT; try{ Pr=req(18910).Pr; S=req(71857).i5; NS=req(5016).N; FMT=req(14170).h; if(typeof Pr!=='function'||typeof S!=='function'||typeof NS!=='function') throw 0; }
-catch(e){ console.error('FATAL: bundle modules 18910.Pr / 71857.i5 / 5016.N not loadable', e&&e.message); process.exit(2); }
+let Pr,S,NS,FMT; try{ Pr=req.combo().Pr; S=req(71857).i5; NS=req(5016).N; FMT=req(14170).h; if(typeof Pr!=='function'||typeof S!=='function'||typeof NS!=='function') throw 0; }
+catch(e){ console.error('FATAL: bundle modules combo.Pr / 71857.i5 / 5016.N not loadable', e&&e.message); process.exit(2); }
 
 const M='deepseek-v4.1-flash';
 const THINK={model:M,message:{role:'assistant',content:'',thinking:'Let me think.'}};
 const OK=[THINK,{model:M,message:{role:'assistant',content:'OK'}},{model:M,message:{role:'assistant',content:''},done:true,done_reason:'stop',prompt_eval_count:3,eval_count:2}];
-const OVERLOAD=[THINK,THINK,{error:'Internal Server Error (ref: overload)'}];
-const CUT=[THINK,THINK];                                                   // connection dropped, no error line
+const PART={model:M,message:{role:'assistant',content:'Let me ch'}};      // some of the answer arrived before the failure
+// 0.5.109+ treats a reply that never produced text or a tool call (thinking only) as an empty generation and walks to the next member
+// itself; only a reply that already carried content reaches the guard, so the main scenarios fail AFTER some text.
+const OVERLOAD=[THINK,PART,{error:'Internal Server Error (ref: overload)'}];
+const CUT=[THINK,PART];                                                    // connection dropped, no error line
+const OVERLOAD0=[THINK,THINK,{error:'Internal Server Error (ref: overload)'}];   // the 2026-09-23 incident bytes: thinking only
 const nd=lines=>new ReadableStream({start(c){const e=new TextEncoder();for(const l of lines)c.enqueue(e.encode(JSON.stringify(l)+'\n'));c.close();}});
 // What the router sends the client for this Ollama stream, in the client's wire format.
 const wire=async(lines,client='claude')=>new Response(nd(lines).pipeThrough(S('ollama',client,'ollama',null,null,M,null,{messages:[]}))).text();
-const sse=(t,ms=0)=>new Response(new ReadableStream({async start(c){ if(ms) await new Promise(r=>setTimeout(r,ms)); c.enqueue(new TextEncoder().encode(t)); c.close(); }}),{status:200,headers:{'Content-Type':'text/event-stream'}});
+// 0.5.109+ peeks every stream (waits for the first tool call / text, or a deadline) before the combo loop commits to it, so its first
+// bytes reach the client only once content exists and the Response it returns is a wrapper. Suites that compare against the stock
+// router therefore (1) start a delayed stream with its first content already in the first chunk, and (2) do not demand object identity.
+const PEEK=Pr.toString().includes('peek deadline');
+const isContent=e=>!!e&&((e.type==='content_block_start'&&!!e.content_block&&e.content_block.type==='tool_use')||(e.type==='content_block_delta'&&!!e.delta&&((e.delta.type==='text_delta'&&!!e.delta.text)||(e.delta.type==='input_json_delta'&&!!e.delta.partial_json))));
+function headTail(t){ const bl=t.split('\n\n'); for(let i=0;i<bl.length;i++){ const d=bl[i].split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join(''); let e; try{e=JSON.parse(d)}catch{continue}
+  if(isContent(e)) return [bl.slice(0,i+1).join('\n\n')+'\n\n',bl.slice(i+1).join('\n\n')]; } return [t,'']; }
+// ms>0: the first chunk (through the first content) goes out at once, the rest `ms` later.
+const sse=(t,ms=0)=>{ const [h,r]=ms?headTail(t):[t,'']; return new Response(new ReadableStream({async start(c){ const e=new TextEncoder(); c.enqueue(e.encode(h)); if(r){ await new Promise(x=>setTimeout(x,ms)); c.enqueue(e.encode(r)); } c.close(); }}),{status:200,headers:{'Content-Type':'text/event-stream'}}); };
 const json=(o,status=200)=>new Response(JSON.stringify(o),{status,headers:{'Content-Type':'application/json'}});
 const MSG={id:'m1',type:'message',role:'assistant',model:M,content:[{type:'text',text:'OK'}],stop_reason:'end_turn',usage:{input_tokens:3,output_tokens:1}};
 
@@ -36,7 +48,7 @@ const done=t=>/"type":"message_stop"/.test(t);
 let fail=0; const check=(name,ok,detail)=>{ if(!ok) fail++; console.log((ok?'  PASS  ':'  FAIL  ')+name.padEnd(70)+' '+detail); };
 
 (async()=>{
-  const W={ok:await wire(OK),over:await wire(OVERLOAD),cut:await wire(CUT)};
+  const W={ok:await wire(OK),over:await wire(OVERLOAD),cut:await wire(CUT),over0:await wire(OVERLOAD0)};
   // With ollama-stream-error-v1 the stream also ends in an `event: error`; either way it has no message_stop.
   check('reproduction: Ollama error line -> Claude stream with no message_stop',!done(W.over)&&/thinking_delta/.test(W.over),'bytes='+W.over.length+' errorEvent='+/event: error/.test(W.over));
 
@@ -45,6 +57,9 @@ let fail=0; const check=(name,ok,detail)=>{ if(!ok) fail++; console.log((ok?'  P
   { let f=''; try{ f=fs.readFileSync(AUDIT,'utf8'); fs.unlinkSync(AUDIT); }catch{}
     check('trigger + serving model written to the audit log',new RegExp(`ollama-overload-guard: ${OL.replace(/[()]/g,'\\$&')} answered 200 with (a stream that ended without finishing|an error event: .*Internal Server Error)`).test(f)&&f.includes('retry served by '+DS),JSON.stringify(f.trim().split('\n').map(l=>l.slice(25)))); }
 
+  r=await run([()=>sse(W.over0),()=>sse(W.ok)],[OL,DS]);
+  check('(1b) thinking-only reply then error (the incident bytes) -> next member serves',r.called.join()==='m0,m1'&&r.clean===W.ok,'called='+r.called+' message_stop='+done(r.text));
+
   r=await run([()=>sse(W.cut),()=>sse(W.ok)],[OL,DS]);
   check('(2) ollama stream cut with no error line -> next member serves',r.called.join()==='m0,m1'&&r.clean===W.ok,'called='+r.called);
 
@@ -52,10 +67,10 @@ let fail=0; const check=(name,ok,detail)=>{ if(!ok) fail++; console.log((ok?'  P
   check('(3) valid ollama stream passes through byte-identical, still SSE',r.clean===W.ok&&r.called.join()==='m0'&&/event-stream/.test(r.res.headers.get('content-type')),'called='+r.called);
 
   r=await run([()=>json({error:'x'},500),()=>sse(W.over)],[OR,OL]);
-  check('(4) last member (ollama) truncated -> returned as-is, no loop',r.called.join()==='m0,m1'&&r.res===r.orig[1]&&r.text===W.over,'called='+r.called+' sameResponse='+(r.res===r.orig[1]));
+  check('(4) last member (ollama) truncated -> returned as-is, no loop',r.called.join()==='m0,m1'&&(PEEK||r.res===r.orig[1])&&r.text===W.over,'called='+r.called+' sameResponse='+(r.res===r.orig[1]));
 
   r=await run([()=>sse(W.over),()=>sse(W.ok)],[OR,OL]);
-  check('(5) non-ollama member truncated -> untouched (same Response object)',r.called.join()==='m0'&&r.res===r.orig[0],'called='+r.called);
+  check('(5) non-ollama member truncated -> untouched'+(PEEK?'':' (same Response object)'),r.called.join()==='m0'&&(PEEK||r.res===r.orig[0])&&r.text===W.over,'called='+r.called);
 
   r=await run([()=>sse(W.over),()=>sse(W.over),()=>sse(W.ok)],[OL,OL2,DS]);
   check('(6) ollama bad -> second ollama bad -> third member serves',r.called.join()==='m0,m1,m2'&&r.clean===W.ok,'called='+r.called);

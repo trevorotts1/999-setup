@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Tool-call argument survival through 9Router's OPENAI_RESPONSES -> OPENAI stream translator
-// (module 4845 export v, chunk 8499). Offline: drives the REAL module with synthetic upstream
+// (module 4845 export v). Offline: drives the REAL module with synthetic upstream
 // event sequences covering every place a Responses-API stream can carry function arguments.
 // Exit 0 = all pass, 1 = a scenario lost arguments, 2 = bundle not loadable.
 'use strict';
@@ -22,6 +22,12 @@ function req(id){id=String(id); if(cache[id])return cache[id].exports; const f=f
 req.d=(e,d)=>{for(const k in d)Object.defineProperty(e,k,{enumerable:true,configurable:true,get:d[k]})};
 req.r=e=>Object.defineProperty(e,'__esModule',{value:true});req.o=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 req.n=m=>{const g=m&&m.__esModule?()=>m.default:()=>m;req.d(g,{a:g});return g};req.g=globalThis;
+// Webpack renumbers a module whenever its content hash moves (the translator was 88499 up to 0.5.109 and 82380 from 0.5.111; the combo
+// module 18910 up to 0.5.104, 25308 from 0.5.109), so such a module is found by the export names it declares. Exactly one must match.
+req.find=(...sigs)=>{const hit=Object.keys(factories).filter(id=>{const s=factories[id].toString();return sigs.every(x=>s.includes(x));});
+  if(hit.length!==1) throw new Error('module with exports '+sigs.join(',')+' matched '+hit.length+' times (need 1)'); return hit[0];};
+req.translator=()=>req(req.find('Ws:()=>','Ai:()=>','Y8:()=>','GH:()=>'));
+req.combo=()=>req(req.find('Pr:()=>','Vu:()=>','t8:()=>','vt:()=>'));
 if(require.main!==module){ module.exports={req}; return; }
 let T; try{ T=req(4845).v; if(typeof T!=='function') throw 0; }catch(e){ console.error('FATAL: translator 4845.v not found', e && e.stack ? e.stack.split('\n').slice(0,4).join(' | ') : e); process.exit(2); }
 const ARGS='{"command":"echo hello"}';
@@ -49,7 +55,7 @@ function run(evts){ const st={}; const out=[];
       if(tc.id||(tc.function&&tc.function.name)) calls[i]=calls[i]||{name:tc.function&&tc.function.name,args:''};
       if(calls[i]&&tc.function&&tc.function.arguments) calls[i].args+=tc.function.arguments; } }
   return {calls:Object.values(calls),finish}; }
-const P=req(88499);
+const P=req.translator();
 // End to end: upstream Responses events -> the router's real pipeline -> Claude wire (what Claude Code gets).
 function runClaude(evts){ const st=P.Ws('openai-responses'); const out=[];
   for(const e of [...evts,null]){ const r=P.Y8('openai-responses','claude',e,st); if(r) out.push(...(Array.isArray(r)?r:[r])); }
