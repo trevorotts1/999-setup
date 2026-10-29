@@ -4,7 +4,7 @@
   "manifest_version": "1.1.0",
   "skill": "49-signature-funnel",
   "funnel_type": "signature_funnel",
-  "description": "The deterministic phase spine for the Signature Funnel. Each P-phase names its produces_artifact, its thin _chk_sf_* preflight wrapper (DEFERS unless funnel_type == signature_funnel), and its fail-closed gate. The orchestrator run_signature_funnel.py runs this spine IN ORDER with no skips (front-door nonce required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 66 (model policy) then Skill 74 (kie_live_adapter.py, the one approved KIE transport; results recorded by scripts/kie74_receipt.py); ALL GHL media + build delegate to Skill 6 (ghl_media.py / ghl_rest_canvas.py). CLIENT runtime uses the client's OWN providers, never Anthropic.",
+  "description": "The deterministic phase spine for the Signature Funnel. Each P-phase names its produces_artifact, its thin _chk_sf_* preflight wrapper (DEFERS unless funnel_type == signature_funnel), and its fail-closed gate. The orchestrator run_signature_funnel.py runs this spine IN ORDER with no skips (front-door nonce required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 66 (model policy) then Skill 74 (kie_live_adapter.py, the one approved KIE transport; results recorded by scripts/kie74_receipt.py); ALL GHL media + build delegate to Skill 6 (ghl_media.py / ghl_rest_canvas.py). CLIENT runtime uses the client's OWN providers; there is no vendor rule on model ids (an Anthropic / Claude model the client configured is fine).",
   "front_door": {
     "entry": "signature-funnel-entry.sh",
     "guards": [
@@ -583,11 +583,6 @@
     },
     "AF-FUN-MODEL-TIER": {
       "trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e",
-      "enforced_by": "P9-CERTIFY",
-      "py_symbol": "prove_sf_cert.evaluate_model_receipt"
-    },
-    "AF-FUN-MODEL-NOANTHROPIC": {
-      "trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e",
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_cert.evaluate_model_receipt"
     },

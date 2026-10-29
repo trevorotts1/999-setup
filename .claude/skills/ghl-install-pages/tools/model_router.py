@@ -65,10 +65,12 @@ EFFORT (OPT-IN, plan §4.4)
 BANNED
 ------
   MiniMax M2   — PURGED. Never appears in any rung, table, or recommendation.
-  Anthropic    — Hard-blocked by both `assert_no_anthropic` (internal, build-time)
-                 AND `assert_model_sovereignty` (shared-utils, per-slug at select-time).
-                 The block applies to resolved slugs too: a client configuration
-                 naming an Anthropic model is rejected, not routed.
+  No vendor rule — there is NO rule against Anthropic / Claude models (Trevor
+                 order 2026-10-29). `assert_no_anthropic` stays importable but
+                 never rejects, and a `assert_model_sovereignty` FORBIDDEN
+                 verdict naming an Anthropic-family id is ignored (that also
+                 neutralises an older installed copy of shared-utils). A client
+                 that configured a Claude model is routed to it like any other.
   S24 excluded models — Luna, Terra, Qwen, Muse Wonder / Muse Wonder Full, and
                  free endpoints are a POLICY REJECTION (ExcludedModelPolicyError):
                  never called, never routed, never proposed as a fallback.
@@ -107,7 +109,10 @@ except Exception:  # noqa: BLE001 — graceful; internal _looks_anthropic guard 
 # Constants
 # ---------------------------------------------------------------------------
 
-# A model/provider string containing any of these is an Anthropic id — HARD-banned.
+# A model/provider string containing any of these is an Anthropic-family id. This is a
+# DETECTOR only: no rule bans the vendor (Trevor order 2026-10-29), so nothing here
+# rejects a slug — the only use left is to recognise a vendor-specific FORBIDDEN
+# verdict and ignore it.
 _ANTHROPIC_MARKERS = ("anthropic", "claude", "opus", "sonnet", "haiku")
 
 OLLAMA_CLOUD_BASE_URL = "https://ollama.com"   # MEMORY: ollama-cloud baseUrl trap
@@ -157,8 +162,10 @@ _VALID_ROLES = frozenset(["content", "html", "reasoning", "execution", "qc"])
 
 
 class AnthropicModelError(RuntimeError):
-    """Raised when any ladder entry resolves to an Anthropic/Claude model.
-    Hard client-box policy violation — must never be caught and silenced."""
+    """Legacy type, kept importable so manifests, fixtures and callers stay stable.
+    It is no longer raised for a model's VENDOR: there is no rule against Anthropic /
+    Claude models (Trevor order 2026-10-29). It still marks a hard policy verdict for
+    a non-vendor S24 rejection that shared-utils reports as FORBIDDEN."""
 
 
 class OllamaCloudConfigError(RuntimeError):
@@ -362,15 +369,19 @@ def resolve_effort(
 
 
 def _sovereignty_check(slug: str) -> None:
-    """Delegate to assert_model_sovereignty (shared-utils) for HARD Anthropic ban.
-    Only raises AnthropicModelError on FORBIDDEN verdict. All other failure codes
-    (NOT_IN_INVENTORY, MODALITY_MISMATCH) are ignored — those are dispatch-time
-    concerns, not ladder-selection concerns. Never blocks a build on an import error."""
+    """Delegate to assert_model_sovereignty (shared-utils) for hard policy verdicts.
+    Only a FORBIDDEN verdict raises, and a FORBIDDEN verdict for an Anthropic-family
+    slug is IGNORED: there is no rule against Anthropic / Claude models (Trevor order
+    2026-10-29), so a client that configured one is routed to it. Ignoring it here also
+    neutralises an OLDER installed copy of shared-utils that still forbids the vendor.
+    All other failure codes (NOT_IN_INVENTORY, MODALITY_MISMATCH) are ignored — those
+    are dispatch-time concerns, not ladder-selection concerns. Never blocks a build on
+    an import error."""
     if _ams is None:
-        return  # shared-utils unavailable; internal _looks_anthropic guard already fired
+        return  # shared-utils unavailable: nothing to delegate to
     try:
         v = _ams(slug, inventory=None)
-        if v.get("code") == "FORBIDDEN":
+        if v.get("code") == "FORBIDDEN" and not _looks_anthropic(slug):
             raise AnthropicModelError(
                 f"assert_model_sovereignty BLOCKED {slug!r}: {v.get('reason')}"
             )
@@ -452,8 +463,10 @@ def build_ladder(env: Optional[dict] = None, *, role: str = "execution") -> list
 
     Returns a list of rung dicts. Raises ClientModelNotConfiguredError when the
     client has configured neither a choice nor a configured default for the
-    role (the ask-the-client stop), and AnthropicModelError if any resolved
-    slug is Anthropic (build-time guard)."""
+    role (the ask-the-client stop). It never raises for a model's vendor: an
+    Anthropic / Claude id the client configured is carried like any other
+    (Trevor order 2026-10-29). `assert_no_anthropic` is still called for
+    compatibility and is a no-op."""
     env = env if env is not None else os.environ
     canonical = _ROLE_ALIASES.get(role, role)
     if canonical not in _VALID_ROLES:
@@ -478,17 +491,13 @@ def assert_no_excluded_models(ladder: list) -> None:
 
 
 def assert_no_anthropic(ladder: list) -> None:
-    """HARD GUARD: raise AnthropicModelError if any rung resolves to an Anthropic
-    model or provider. Never silently fall to Anthropic on a client box."""
-    for rung in ladder:
-        if _looks_anthropic(rung.get("provider", "")):
-            raise AnthropicModelError(f"rung {rung.get('rung')} provider is Anthropic")
-        for m in rung.get("models", []):
-            if _looks_anthropic(m.get("slug", ""), m.get("family", "")):
-                raise AnthropicModelError(
-                    f"rung {rung.get('rung')} model {m.get('slug')!r} is Anthropic "
-                    f"— banned on a client box"
-                )
+    """NO-OP, kept for callers, manifests and fixtures. There is no rule against
+    Anthropic / Claude models (Trevor order 2026-10-29): a rung may name an Anthropic
+    model or provider and it is routed like any other. The name is legacy.
+
+    Deliberately does not raise for any rung. Still exported and still called by
+    build_ladder / select / the selftest so nothing has to change around it."""
+    return None
 
 
 def assert_ollama_cloud_ready(rung: dict, env: Optional[dict] = None) -> None:
@@ -743,13 +752,12 @@ def _selftest() -> int:
         except Exception as exc:
             errors.append(f"build_ladder failed for role={role!r}: {exc}")
             continue
+        # assert_no_anthropic is a no-op: prove it ACCEPTS rather than rejects.
         try:
             assert_no_anthropic(ladder)
         except AnthropicModelError as exc:
-            errors.append(f"role={role!r}: Anthropic leaked into ladder: {exc}")
+            errors.append(f"role={role!r}: assert_no_anthropic must not reject: {exc}")
         blob = json.dumps(ladder).lower()
-        if any(m in blob for m in _ANTHROPIC_MARKERS):
-            errors.append(f"role={role!r}: Anthropic marker in ladder JSON")
         if "minimax-m2" in blob or "minimax_m2" in blob:
             errors.append(f"role={role!r}: BANNED MiniMax M2 found in ladder JSON")
         # The router prescribes nothing: the only slug is the client's default.
@@ -819,18 +827,21 @@ def _selftest() -> int:
     if not build_ladder(TEST_ENV, role="qc")[0].get("vision"):
         errors.append("qc rung-1 must be vision (a role requirement)")
 
-    # ── 5. A configured Anthropic model is rejected, not routed ──────────
+    # ── 5. A configured Anthropic model is ROUTED, not rejected ──────────
+    # (no vendor rule: Trevor order 2026-10-29)
     try:
-        build_ladder({"MODEL_ROUTER_DEFAULT": "anthropic/claude-x"}, role="content")
-        errors.append(
-            "configured Anthropic default must raise AnthropicModelError"
-        )
-    except AnthropicModelError:
-        pass
+        _anth = build_ladder({"MODEL_ROUTER_DEFAULT": "anthropic/claude-x"},
+                             role="content")
     except Exception as exc:  # noqa: BLE001
         errors.append(
-            f"configured Anthropic default raised wrong exception: {exc!r}"
+            f"configured Anthropic default must be routed, raised: {exc!r}"
         )
+    else:
+        _slugs = [m["slug"] for r in _anth for m in r["models"]]
+        if _slugs != ["anthropic/claude-x"]:
+            errors.append(
+                f"configured Anthropic default must be carried as-is, got {_slugs}"
+            )
 
     # ── 6. Ollama Cloud invariants on resolved :cloud rungs ────────────────
     for role in _VALID_ROLES:
@@ -891,14 +902,35 @@ def _selftest() -> int:
             f"got {out_q['chosen']}"
         )
 
-    # ── 11. Anthropic injection is caught by assert_no_anthropic ───────────
-    bad = build_ladder(TEST_ENV, role="execution")
-    bad[0]["models"][0]["slug"] = "BANNED-claude-sentinel-must-be-rejected"
+    # ── 11. No vendor rule: an Anthropic-family id is ACCEPTED, not rejected ──
+    # Trevor order 2026-10-29 removed the rule against Anthropic / Claude models.
+    ok = build_ladder(TEST_ENV, role="execution")
+    ok[0]["models"][0]["slug"] = "anthropic/claude-sonnet-4"
     try:
-        assert_no_anthropic(bad)
-        errors.append("assert_no_anthropic failed to catch an injected Anthropic slug")
-    except AnthropicModelError:
-        pass
+        assert_no_anthropic(ok)
+    except AnthropicModelError as exc:
+        errors.append(f"assert_no_anthropic must accept an Anthropic slug: {exc}")
+    # a client that configured a Claude model gets a ladder naming it
+    anth_env = dict(TEST_ENV)
+    anth_env["MODEL_ROUTER_DEFAULT"] = "openrouter/anthropic/claude-haiku-4.5"
+    try:
+        anth = build_ladder(anth_env, role="content")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"an Anthropic default must build a ladder, got: {exc}")
+    else:
+        got = [m["slug"] for r in anth for m in r["models"]]
+        if got != ["openrouter/anthropic/claude-haiku-4.5"]:
+            errors.append(f"Anthropic default must be carried as-is, got {got}")
+    # a stale vendor FORBIDDEN verdict from an older shared-utils is ignored
+    global _ams
+    _saved_ams, _ams = _ams, (
+        lambda slug, **kw: {"code": "FORBIDDEN", "reason": "anthropic blocked"})
+    try:
+        _sovereignty_check("anthropic/claude-sonnet-4")
+    except AnthropicModelError as exc:
+        errors.append(f"a stale Anthropic FORBIDDEN verdict must be ignored: {exc}")
+    finally:
+        _ams = _saved_ams
 
     # ── 12. Aliases resolve identically ────────────────────────────────────
     if build_ladder(TEST_ENV, role="code") != build_ladder(TEST_ENV, role="html"):
