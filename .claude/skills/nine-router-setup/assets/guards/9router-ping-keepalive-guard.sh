@@ -19,20 +19,29 @@
 # marker /*ping-keepalive-v1*/. No backup copy is made (operator order); the patched
 # text is node --check'ed before the file is replaced.
 #
-# Modes: (none)=apply, --quiet=apply silently, --check=report only (exit 1 if missing)
+# Usage: 9router-ping-keepalive-guard.sh [--check] [--quiet] [9router_root]
+#   (none)=apply, --quiet=apply silently, --check=report only (exit 1 if missing)
+#   9router_root = the 9Router package dir (install-9router-guards.sh passes it). When given it is THE install: the fixed
+#   prefixes below are never consulted, so a scratch copy can not patch the live one and an install under any prefix
+#   (e.g. ~/.local/lib/node_modules/9router) is found. With no root the fixed prefixes are searched.
 # Exit: 0 = patch present, 1 = missing/could not apply.
 set -uo pipefail
-MODE="${1:-}"
+MODE=""; ROOT=""
+for a in "$@"; do case "$a" in --check|--quiet) MODE="$a" ;; *) ROOT="$a" ;; esac; done
 say() { [ "$MODE" = "--quiet" ] || echo "$@" >&2; }
 
 NODE=""
 for p in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do [ -x "$p" ] && { NODE="$p"; break; }; done
 [ -z "$NODE" ] && NODE="$(command -v node 2>/dev/null || true)"
 CHUNKS=""
-for d in "$HOME/.npm-global/lib/node_modules/9router" /opt/homebrew/lib/node_modules/9router /usr/local/lib/node_modules/9router /usr/lib/node_modules/9router "$HOME/.local/share/999/npm/lib/node_modules/9router"; do
-  [ -d "$d/app/.next-cli-build/server/chunks" ] && { CHUNKS="$d/app/.next-cli-build/server/chunks"; break; }
-done
-[ -z "$CHUNKS" ] && { say "9router-ping: no 9router chunks dir found - NOT guarded."; exit 1; }
+if [ -n "$ROOT" ]; then
+  [ -d "$ROOT/app/.next-cli-build/server/chunks" ] && CHUNKS="$ROOT/app/.next-cli-build/server/chunks"
+else
+  for d in "$HOME/.npm-global/lib/node_modules/9router" /opt/homebrew/lib/node_modules/9router /usr/local/lib/node_modules/9router /usr/lib/node_modules/9router "$HOME/.local/share/999/npm/lib/node_modules/9router" "$HOME/.local/lib/node_modules/9router"; do
+    [ -d "$d/app/.next-cli-build/server/chunks" ] && { CHUNKS="$d/app/.next-cli-build/server/chunks"; break; }
+  done
+fi
+[ -z "$CHUNKS" ] && { say "9router-ping: no 9router chunks dir found${ROOT:+ at $ROOT} - NOT guarded."; exit 1; }
 PY="$(command -v python3 2>/dev/null || echo /usr/bin/python3)"
 export PING_MODE="$MODE" PING_NODE="$NODE"
 
