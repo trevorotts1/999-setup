@@ -65,11 +65,9 @@ run() { # run <home> <args...>  (stdout+stderr, rc in $RC)
 H1="$ROOT/h1"; mkbox "$H1"; B1="$(snap "$H1")"
 run "$H1" --skills-only --check
 A1="$(snap "$H1")"
-# MODIFIED assertion (spec: UPDATER_STALE is "counted in the RESULT line and in
-# the exit status"): mkbox installs an OLD nine-router-setup copy ('OLD
-# INSTALLER') that differs from the bundle, so this run now exits 5
-# (updater-stale) instead of 0. The write-check parts of the assertion are
-# unchanged. See also the updater case in section 13.
+# mkbox installs an OLD nine-router-setup copy ('OLD INSTALLER') that differs
+# from the bundle: CHECK is the status query, so it exits 5 (updater-stale).
+# APPLY delivers the content and exits 0 on the same box (sections 2, 3, 12).
 if [ "$RC" -eq 5 ] && [ "$B1" = "$A1" ] && [ ! -e "$H1/.claude-skill-backups" ]; then
   pass "check mode: exit 5 (updater-stale), whole fake HOME byte/mtime identical before vs after"
 else fail "check mode changed something or failed (rc=$RC)"; fi
@@ -92,11 +90,10 @@ echo '{"canary":true}' > "$H1/.claude-nine/settings.json"; touch -r "$H1/.claude
 F_BEFORE="$(fsnap "$H1")"
 run "$H1" --skills-only
 F_AFTER="$(fsnap "$H1")"
-# MODIFIED assertion (spec: UPDATER_STALE counts in the exit status): the
-# fixture's old nine-router-setup copy makes this run exit 5 (updater-stale);
-# the forbidden-path byte-identity check is unchanged.
-if [ "$RC" -eq 5 ] && [ "$F_BEFORE" = "$F_AFTER" ] && [ -n "$F_BEFORE" ]; then
-  pass "apply: exit 5 (updater-stale); 9Router, claude-nine launcher, settings, state and nine-router-setup byte-identical"
+# The fixture's old nine-router-setup copy is UPDATER_STALE, but APPLY delivered
+# every skill, so the step does not fail (exit 0); the installer stays untouched.
+if [ "$RC" -eq 0 ] && [ "$F_BEFORE" = "$F_AFTER" ] && [ -n "$F_BEFORE" ]; then
+  pass "apply: exit 0 (content delivered, updater-stale only reported); 9Router, claude-nine launcher, settings, state and nine-router-setup byte-identical"
 else fail "apply: forbidden path changed or failed (rc=$RC)"; fi
 if cmp -s "$SCRIPT/../../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md" 2>/dev/null \
    || cmp -s "$(dirname "$SCRIPT")/../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md"; then
@@ -108,9 +105,8 @@ cmp -s "$BUNDLE/bro/SKILL.md" "$ROOT/elsewhere/bro/SKILL.md" && [ -L "$H1/.claud
 
 # --- 3. idempotent: second APPLY changes nothing ------------------------------
 B3="$(snap "$H1")"; run "$H1" --skills-only; A3="$(snap "$H1")"
-# MODIFIED assertion (spec: UPDATER_STALE counts in the exit status): same
-# fixture updater as above, so rc is 5, not 0; the no-op check is unchanged.
-[ "$RC" -eq 5 ] && [ "$B3" = "$A3" ] && pass "idempotent: second apply is a no-op (exit 5, updater-stale)" || fail "idempotent: second apply changed files (rc=$RC)"
+# Same fixture updater as above (stale, reported, not a failure): rc 0.
+[ "$RC" -eq 0 ] && [ "$B3" = "$A3" ] && pass "idempotent: second apply is a no-op (exit 0, updater-stale reported)" || fail "idempotent: second apply changed files (rc=$RC)"
 case "$OUT" in *"0 new + 0 changed"*) pass "idempotent: reports 0 new + 0 changed";; *) fail "idempotent: summary not zero";; esac
 
 # --- 4. a box that does NOT run 9Router: apply refuses, check reports NO -------
@@ -181,6 +177,51 @@ case "$OUT" in *"STALE (destination file is a symlink to different content)"*"el
 [ "$(cat "$ROOT/elsewhere/file-target/SKILL.md")" = "different content" ] && [ -L "$H8/.claude/skills/eli5/SKILL.md" ] \
   && pass "stale file symlink: target and link left untouched" || fail "stale file symlink: touched the foreign target"
 [ ! -e "$MARK" ] && pass "symlink cases: install path never reached" || fail "symlink cases reached the install path"
+
+# 6d. skill dir is a symlink to a tree holding EVERY bundle entry intact plus
+#     only extra old entries the bundle no longer ships -> content was delivered:
+#     OK (extras listed and counted), exit 0, target untouched. (Fleet case: a
+#     second root's link into the first root, whose real dir keeps old files.)
+H21="$ROOT/h21"; okbox "$H21"; cp -R "$FE/.claude/skills/eli5" "$ROOT/elsewhere/eli5-extra"
+printf 'old file the bundle dropped\n' > "$ROOT/elsewhere/eli5-extra/OLD-DROPPED.md"
+ln -s "$ROOT/elsewhere/eli5-extra" "$H21/.claude/skills/eli5"
+FAKE_SCRIPTS="$FE/.claude/skills/nine-router-setup/scripts"
+T21="$(snap "$ROOT/elsewhere/eli5-extra")"
+run "$H21" --skills-only
+[ "$RC" -eq 0 ] && pass "extras-only symlink: exit 0 (every bundle entry delivered)" || fail "extras-only symlink: expected rc 0, got $RC"
+case "$OUT" in *"OLD-DROPPED.md: extra entry at the destination, not in this bundle"*) pass "extras-only symlink: the extra entry is listed";; *) fail "extras-only symlink: extra entry not listed";; esac
+case "$OUT" in *"OK   eli5"*"full content"*"1 extra old entry(ies)"*"kept, never deleted"*) pass "extras-only symlink: reported OK with the extra count";; *) fail "extras-only symlink: OK line missing";; esac
+case "$OUT" in *"STALE eli5"*) fail "extras-only symlink: wrongly reported STALE";; *) pass "extras-only symlink: not reported STALE";; esac
+case "$OUT" in *"0 stale"*"1 extra kept"*) pass "extras-only symlink: RESULT line counts 0 stale, 1 extra kept";; *) fail "extras-only symlink: RESULT line wrong";; esac
+[ "$T21" = "$(snap "$ROOT/elsewhere/eli5-extra")" ] && [ -L "$H21/.claude/skills/eli5" ] && [ -f "$ROOT/elsewhere/eli5-extra/OLD-DROPPED.md" ] \
+  && pass "extras-only symlink: link, target and the extra file untouched" || fail "extras-only symlink: touched the foreign target"
+run "$H21" --skills-only --check
+[ "$RC" -eq 0 ] && pass "extras-only symlink: check also exits 0" || fail "extras-only symlink check: rc=$RC"
+
+# 6d2. the real fleet shape in ONE run: ~/.claude/skills/eli5 is a real dir that
+#      keeps an old extra file (refreshed in place first), ~/.claude-nine/skills/eli5
+#      links to it. The link's tree carries the bundle after root 1 landed.
+H23="$ROOT/h23"; okbox "$H23"; mkdir -p "$H23/.claude-nine/skills" "$H23/.claude/skills/eli5"
+echo 'stale eli5' > "$H23/.claude/skills/eli5/SKILL.md"; echo old > "$H23/.claude/skills/eli5/OLD-DROPPED.md"
+ln -s "$H23/.claude/skills/eli5" "$H23/.claude-nine/skills/eli5"
+run "$H23" --skills-only
+[ "$RC" -eq 0 ] && pass "two roots: refreshed real dir + link into it with old extras exits 0" || fail "two roots: expected rc 0, got $RC"
+cmp -s "$FE/.claude/skills/eli5/SKILL.md" "$H23/.claude/skills/eli5/SKILL.md" && [ -f "$H23/.claude/skills/eli5/OLD-DROPPED.md" ] \
+  && pass "two roots: content delivered, old extra kept (never deleted)" || fail "two roots: content not delivered or extra deleted"
+case "$OUT" in *"1 extra kept"*) pass "two roots: extra counted in the RESULT line";; *) fail "two roots: extra not counted";; esac
+
+# 6e. extras do not excuse a real gap: the same tree with a bundle file CHANGED,
+#     or MISSING, is still STALE and exits 3 (content not delivered).
+for _k in changed missing; do
+  Hk="$ROOT/h22-$_k"; okbox "$Hk"; cp -R "$FE/.claude/skills/eli5" "$ROOT/elsewhere/eli5-$_k"
+  printf 'old file the bundle dropped\n' > "$ROOT/elsewhere/eli5-$_k/OLD-DROPPED.md"
+  if [ "$_k" = changed ]; then echo 'tampered' >> "$ROOT/elsewhere/eli5-$_k/SKILL.md"; else rm -f "$ROOT/elsewhere/eli5-$_k/SKILL.md"; fi
+  ln -s "$ROOT/elsewhere/eli5-$_k" "$Hk/.claude/skills/eli5"
+  run "$Hk" --skills-only
+  [ "$RC" -eq 3 ] && pass "extras + $_k bundle file: still exit 3" || fail "extras + $_k bundle file: expected rc 3, got $RC"
+  case "$OUT" in *"STALE eli5"*) pass "extras + $_k bundle file: reported STALE";; *) fail "extras + $_k bundle file: not reported STALE";; esac
+done
+unset _k Hk
 
 # --- 7. blocked outcomes: incomplete delivery is never reported complete ------
 # A bundled skill that cannot land as a skill directory at its destination is
@@ -273,14 +314,30 @@ case "$OUT" in *"identical content"*) fail "mode drift: drifted tree falsely cla
 # --- 12. the installed updater is reported, never silently excluded ----------
 # nine-router-setup is excluded from the sync, but an installed copy that
 # differs from this bundle is UPDATER_STALE: exact path, human action (the full
-# install), counted in the RESULT line AND in the exit status (rc 5).
+# install) and counted in the RESULT line. CHECK (the status query) also
+# carries it in the exit status (rc 5); APPLY delivered the content, so it
+# exits 0 - the stale installer is reported, never a failed delivery.
 FAKE_SCRIPTS=""
 F_U="$(fsnap "$H1")"
 run "$H1" --skills-only --check
 case "$OUT" in *"UPDATER_STALE"*"$H1/.claude/skills/nine-router-setup"*) pass "updater: stale installer reported with the exact path";; *) fail "updater: stale installer not reported";; esac
 case "$OUT" in *"run the FULL install"*) pass "updater: human action (the full install) reported";; *) fail "updater: human action missing";; esac
 case "$OUT" in *"updater-stale"*) pass "updater: counted in the RESULT line";; *) fail "updater: not counted in RESULT";; esac
-[ "$RC" -eq 5 ] && [ "$F_U" = "$(fsnap "$H1")" ] && pass "updater: counted in the exit status (rc 5), installer untouched" || fail "updater: rc=$RC or installer touched"
+[ "$RC" -eq 5 ] && [ "$F_U" = "$(fsnap "$H1")" ] && pass "updater: check mode carries it in the exit status (rc 5), installer untouched" || fail "updater: rc=$RC or installer touched"
+run "$H1" --skills-only
+case "$OUT" in *"UPDATER_STALE"*"$H1/.claude/skills/nine-router-setup"*) pass "updater apply: still reported with the exact path";; *) fail "updater apply: stale installer not reported";; esac
+case "$OUT" in *"1 updater-stale"*) pass "updater apply: counted in the RESULT line";; *) fail "updater apply: not counted in RESULT";; esac
+case "$OUT" in *"NOTE: 1 updater-stale - skill content was delivered"*) pass "updater apply: NOTE says the content was delivered";; *) fail "updater apply: NOTE missing";; esac
+[ "$RC" -eq 0 ] && [ "$F_U" = "$(fsnap "$H1")" ] && pass "updater apply: exit 0 (content delivered, only the installer copy is old), installer untouched" || fail "updater apply: rc=$RC or installer touched"
+
+# 12b. a stale installer must not hide a REAL failure: content not delivered
+#      through a stale symlink still exits 3, with the updater also reported.
+FAKE_SCRIPTS="$FE/.claude/skills/nine-router-setup/scripts"
+H20="$ROOT/h20"; okbox "$H20"; mkdir -p "$H20/.claude/skills/nine-router-setup"; echo 'OLD INSTALLER' > "$H20/.claude/skills/nine-router-setup/SKILL.md"
+ln -s "$ROOT/elsewhere/stale-eli5" "$H20/.claude/skills/eli5"
+run "$H20" --skills-only
+[ "$RC" -eq 3 ] && pass "updater + stale symlink: exit 3 (the real failure still fails)" || fail "updater + stale symlink: expected rc 3, got $RC"
+case "$OUT" in *"STALE eli5"*"UPDATER_STALE"*|*"UPDATER_STALE"*"STALE eli5"*) pass "updater + stale symlink: both reported";; *) fail "updater + stale symlink: one of them not reported";; esac
 
 # --- 13. --refresh-updater: opt-in self-refresh of the installed installer ----
 # The --skills-only path never touches nine-router-setup unless the operator
@@ -310,12 +367,12 @@ upbox() { # upbox <home> — already-9Router box with a STALE installed updater 
   printf 'OLD TEST v1\n'   > "$1/.claude/skills/nine-router-setup/tests/test-skills-only.sh"
 }
 
-# 13a. updater behind + NO flag -> unchanged and UPDATER_STALE (exit 5);
-#      with the flag in CHECK mode -> WOULD REFRESH, still strictly read-only.
+# 13a. updater behind + NO flag -> unchanged and UPDATER_STALE (exit 0, content
+#      delivered); with the flag in CHECK mode -> WOULD REFRESH, strictly read-only.
 H15="$ROOT/h15"; upbox "$H15"; B15="$(snap "$H15")"
 run "$H15" --skills-only
 case "$OUT" in *"UPDATER_STALE"*"$H15/.claude/skills/nine-router-setup"*) pass "updater behind: reported UPDATER_STALE with the exact path (no flag)";; *) fail "updater behind: not reported";; esac
-[ "$RC" -eq 5 ] && [ "$B15" = "$(snap "$H15")" ] && pass "updater behind: without the flag nothing is written (exit 5)" || fail "updater behind: rc=$RC or something was written"
+[ "$RC" -eq 0 ] && [ "$B15" = "$(snap "$H15")" ] && pass "updater behind: without the flag nothing is written (exit 0, reported)" || fail "updater behind: rc=$RC or something was written"
 run "$H15" --skills-only --check --refresh-updater
 case "$OUT" in *"WOULD REFRESH nine-router-setup"*"$H15/.claude/skills/nine-router-setup"*) pass "refresh-updater check: reports WOULD REFRESH with the exact path";; *) fail "refresh-updater check: not reported";; esac
 [ "$B15" = "$(snap "$H15")" ] && pass "refresh-updater check: still strictly read-only" || fail "refresh-updater check: wrote something"
