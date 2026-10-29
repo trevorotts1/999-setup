@@ -1023,13 +1023,14 @@ def _selftest() -> int:
     assert _match_option("sales page please", opts) == "sales", "option match substring"
     assert _match_option("something else", opts) is None, "option match no-hit"
 
-    # 8. No Anthropic anywhere in answers or scaffolds
+    # 8. No PURGED model token in the scaffolds. No vendor is excluded: there is no
+    #    rule against Anthropic / Claude models (Trevor order 2026-10-29).
     for bt in KNOWN_BUILD_TYPES:
         scaffold = _scaffold_structure(bt, {})
         scaffold_str = json.dumps(scaffold).lower()
-        for marker in ("anthropic", "claude", "opus", "sonnet", "haiku"):
+        for marker in ("minimax-m2", "minimax_m2"):
             if marker in scaffold_str:
-                failures.append(f"scaffold({bt}) contains Anthropic marker '{marker}'")
+                failures.append(f"scaffold({bt}) contains purged model '{marker}'")
 
     # 9. U055: required field empty -> re-ask with field-specific message.
     _reask_log: list[tuple[str, str]] = []

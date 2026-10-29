@@ -221,7 +221,8 @@ Thank-You gets one celebratory hero or a "WELCOME" gallery-typography treatment.
 
 ## 7. Client-provider rule (binding)
 On a client box the skill uses the **client's OWN configured providers and keys** — never the
-operator's, never Anthropic model ids. The skill tiers the client's own model chain (strongest → copy +
+operator's. There is NO vendor rule on model ids (Trevor order 2026-10-29): an Anthropic / Claude
+model the client configured is used like any other. The skill tiers the client's own model chain (strongest → copy +
 QC verify; mid → image prompts / HTML / JSON; cheapest → catalog / poll). This skill is
 provider-neutral by construction; the provers are deterministic and use no model at runtime.
 

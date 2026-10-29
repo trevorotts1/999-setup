@@ -236,8 +236,10 @@ def probe_cert() -> Set[str]:
     got |= _codes(cert.verify(c, nonce))                                    # CERT-PHASE-FAIL
     got |= _codes(cert.verify(cert._valid_cert(nonce), "the-wrong-nonce"))  # CERT-SIGNATURE
     got |= _codes(cert.evaluate_model_receipt(None))                        # MODEL-TIER
+    # No vendor rule (Trevor order 2026-10-29): an Anthropic execution-tier receipt now
+    # yields NO code, so there is nothing to collect for it here.
     got |= _codes(cert.evaluate_model_receipt(
-        {"role": "content", "model": "claude-opus-4", "provider": "anthropic", "tier": "content"}))  # NOANTHROPIC
+        {"role": "content", "model": "claude-opus-4", "provider": "anthropic", "tier": "content"}))
     return got
 
 
