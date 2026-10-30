@@ -4,8 +4,8 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "b0d78fabd001c166436272105252ca5c586a8430",
-    "canonical_aggregate_sha256": "88f257197ac57463a08d2e7dd6581752b56b3ef5755a5f97319c532347b3489d",
+    "source_commit": "8c00611190ea4db8a2f00d7e51cc4146977aac97",
+    "canonical_aggregate_sha256": "553df4dcf780f09402c08c64c4743aadb8ab5348d6b6f66f986cb59d2513a34e",
     "canonical_file_count": 857,
     "skill_version": "1.0.74"
   },
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "25d255868bba7461b77db595d8cdc5bcaed810ac4260882370d7d6212fd41414",
-      "archive_bytes": 82659565,
+      "archive_sha256": "14caf7aabaa2254368bc78a72c12a893762c2f02a6a08a77f28277579629fe3d",
+      "archive_bytes": 82659510,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,14 +120,14 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "25d255868bba7461b77db595d8cdc5bcaed810ac4260882370d7d6212fd41414",
-    "bytes": 82659565
+    "sha256": "14caf7aabaa2254368bc78a72c12a893762c2f02a6a08a77f28277579629fe3d",
+    "bytes": 82659510
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "1338115c751ad8a2823b37350d5cfdfb7f01b2ae91465ff23e2f5c8537acc638",
+    "distribution_aggregate_sha256": "e8724dd8b53692bd194d055342dbd56cf8946d7bd4bf09070374b152127399c7",
     "distribution_file_count": 858,
-    "contract_aggregate_sha256": "88f257197ac57463a08d2e7dd6581752b56b3ef5755a5f97319c532347b3489d",
+    "contract_aggregate_sha256": "553df4dcf780f09402c08c64c4743aadb8ab5348d6b6f66f986cb59d2513a34e",
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -543,7 +543,7 @@
       },
       {
         "path": "assets/report/ASSET-PROVENANCE.json",
-        "sha256": "cd1918dd4f2928a43eec14ee6b133bd3a310b97cefbeaee92fd79c8d8cca7fe0"
+        "sha256": "695e64d6dbad94368779315e3fe5b1f7eb3c14460ce4f50aabfdba3e24a9a2c6"
       },
       {
         "path": "assets/report/council-page-frame-a4.png",
@@ -5084,7 +5084,7 @@
     "assets/icons/README.md": "da64aa789bd5cd240b6e529018c0b87187eb02db1e33d392a7f3edfb4cdc4aff",
     "assets/portrait-manifest.json": "56277727394e993fd08ad2372ea9838b519ccd90fbd3383fe1ed158598f29dbc",
     "assets/portraits/README.md": "dbf8e3b1342af96f25eaba5e4927cdd4877ee871a97955c7dc0b4741d4356991",
-    "assets/report/ASSET-PROVENANCE.json": "cd1918dd4f2928a43eec14ee6b133bd3a310b97cefbeaee92fd79c8d8cca7fe0",
+    "assets/report/ASSET-PROVENANCE.json": "695e64d6dbad94368779315e3fe5b1f7eb3c14460ce4f50aabfdba3e24a9a2c6",
     "assets/report/council-page-frame-a4.png": "54e9363c8752edf0bc2184a97ea90ca89a2317301717bcb9a9da1cb3a4fd335f",
     "assets/report/council-section-divider-wide.png": "531386524dee12d82c5172e6995a3ef3159836ee2bdcde32bafc99755e30e0bb",
     "assets/seats/cover.png": "700a4263f9cf06fee50b6f1c9cacd5a0c7165aaadd52d8d9b6215b3a6f205197",
