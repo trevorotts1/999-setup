@@ -6,7 +6,7 @@
  * excerpt, or a real biographical claim; the fixtures exist to exercise
  * validator boundaries, never to stand in for source material.
  */
-import type { PackInput } from './packs';
+import type { PackInput } from './packs.js';
 /** A valid minimal substantive pack: Simon Sinek, Start with Why. */
 export declare function validSinekPack(): PackInput;
 /** Oprah pack whose one quotation is spoken by a guest, not by Oprah (T004). */

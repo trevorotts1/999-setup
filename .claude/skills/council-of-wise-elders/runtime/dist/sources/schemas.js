@@ -15,7 +15,7 @@
  *   only a full source record in this shape can ground a claim.
  */
 import { z } from 'zod';
-import { idSchema, seatIdSchema, sha256Schema } from '../contracts/schemas';
+import { idSchema, seatIdSchema, sha256Schema } from '../contracts/schemas.js';
 /** Claim-level locator (Section 8.3): page, timestamp, or section. */
 export const sourceLocatorSchema = z.strictObject({
     kind: z.enum(['page', 'timestamp', 'section']),

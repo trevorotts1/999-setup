@@ -14724,6 +14724,7 @@ function isUtcTimestamp(value) {
 }
 
 // src/contracts/modes.ts
+var MODE_SEATS = SEAT_IDS.length;
 var MAX_ADVISOR_ROUND = 10;
 
 // src/contracts/schemas.ts
@@ -14889,11 +14890,11 @@ var sessionSpecSchema = external_exports.strictObject({
       message: "selected mode requires 2 to 8 seats"
     });
   }
-  if (spec.mode === "light" && spec.seat_ids.length !== 3) {
+  if (spec.mode === "light" && spec.seat_ids.length !== SEAT_IDS.length) {
     ctx.addIssue({
       code: "custom",
       path: ["seat_ids"],
-      message: "light mode requires exactly three seats"
+      message: "light mode requires all nine seats"
     });
   }
   if ((spec.mode === "medium" || spec.mode === "heavy") && spec.seat_ids.length !== SEAT_IDS.length) {

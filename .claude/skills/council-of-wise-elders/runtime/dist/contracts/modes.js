@@ -10,28 +10,39 @@
  * the isolated opening; every later pass challenges the open cruxes from
  * the previous round's cards.
  */
+import { SEAT_IDS } from './enums.js';
 export const COUNCIL_SIZES = ['light', 'medium', 'heavy'];
+/**
+ * Every council size seats the FULL roster. Mode never selects a smaller
+ * panel (Trevor decision 2026-10-25: "all of the modes should be all of the
+ * agents... all council members are used"). Mode controls ROUNDS and
+ * CONCURRENCY only.
+ */
+export const MODE_SEATS = SEAT_IDS.length;
 export const MODE_ROUND_POLICY = {
     light: {
-        seats: 3,
+        seats: MODE_SEATS,
         min_rounds: 2,
         max_rounds: 2,
         stop_from_round: null,
         max_provider_requests: 50,
+        max_concurrent_calls: 3,
     },
     medium: {
-        seats: 9,
+        seats: MODE_SEATS,
         min_rounds: 1,
         max_rounds: 4,
         stop_from_round: 1,
         max_provider_requests: 50,
+        max_concurrent_calls: MODE_SEATS,
     },
     heavy: {
-        seats: 9,
+        seats: MODE_SEATS,
         min_rounds: 3,
         max_rounds: 10,
         stop_from_round: 3,
         max_provider_requests: 100,
+        max_concurrent_calls: MODE_SEATS,
     },
 };
 /** Seats that must share the same top option for the consensus stop rule. */

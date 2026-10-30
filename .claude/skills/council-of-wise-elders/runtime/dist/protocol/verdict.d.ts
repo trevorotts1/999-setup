@@ -117,6 +117,17 @@ export interface PublicationValidationInput {
     require_final_cards?: boolean;
 }
 /**
+ * CTR-133: the publication boundary refuses a scored verdict built on a known
+ * unresolved exploration candidate. The observed defect exported
+ * GO_WITH_CONDITIONS recommending `option-explore` at score 7.4; that must be
+ * impossible to publish again, including from an old brief or a stale engine.
+ *
+ * Genuine indecision stays distinct and publishable: a placeholder option with
+ * a null score and a null recommendation under WAIT or INSUFFICIENT_EVIDENCE is
+ * an honest "nothing can be scored yet", not a forged GO.
+ */
+export declare function assessExplorationExport(verdict: ScoredVerdict, brief: DecisionBrief): string[];
+/**
  * Validate a verdict for publication against its exact revision hash.
  * This is the Section 14.6 final validation: schema, arithmetic,
  * constraint, citation, attribution, and action-policy checks run

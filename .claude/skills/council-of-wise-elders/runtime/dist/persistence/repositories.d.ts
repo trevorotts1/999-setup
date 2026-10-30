@@ -47,6 +47,16 @@ import { EventJournal, type JournalEvent } from './journal.js';
 import { ProjectionOutbox, type OutboxIntent, type OutboxIntentInput } from './outbox.js';
 import type { CouncilDatabase } from './sqlite.js';
 import type { CouncilPersistenceConfig } from './config.js';
+/** One event a composed service appends through the repository journal. */
+export interface RepositoryEventInput {
+    event_id: string;
+    type: CouncilEventType;
+    payload: Record<string, unknown>;
+    created_at: string;
+    from_state?: string | null;
+    to_state?: string | null;
+    actor_subject?: string;
+}
 export declare const DELETION_TOMBSTONE_SOURCE = "council-persistence";
 export declare const DELETION_TOMBSTONE_OPERATION = "session_deleted";
 /**
@@ -122,6 +132,13 @@ export declare class CouncilRepositories {
     /** True when an explicit deletion tombstone exists for this session. */
     isDeleted(tenantId: string, sessionId: string): boolean;
     private assertNotDeleted;
+    /**
+     * Append one committed event through the canonical journal in its own
+     * transaction. The composed services (report export journaling) use
+     * this instead of reaching into the journal's transaction handle; the
+     * vocabulary, sequence allocation and hash chain are the journal's.
+     */
+    appendEvent(envelope: AuthorizationEnvelope, sessionId: string, input: RepositoryEventInput): JournalEvent;
     private sessionRow;
     /**
      * Create a session, its first brief revision, and its session_created

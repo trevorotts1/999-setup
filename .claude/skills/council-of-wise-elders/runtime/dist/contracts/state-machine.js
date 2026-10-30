@@ -13,8 +13,8 @@
  * COMPLETED is immutable: no outgoing transitions. Archive is a separate
  * visibility flag on the record, never a state.
  */
-import { ContractError } from './errors';
-import { TERMINAL_STATES, } from './enums';
+import { ContractError } from './errors.js';
+import { TERMINAL_STATES, } from './enums.js';
 /** Forward processing transitions shared by scored modes, per mode. */
 const MODE_PATHS = {
     full: {

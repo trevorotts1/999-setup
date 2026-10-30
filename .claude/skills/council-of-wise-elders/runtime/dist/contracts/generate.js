@@ -12,8 +12,8 @@
  * committed file byte for byte; a mismatch fails the suite.
  */
 import { z } from 'zod';
-import { actionProposalSchema, advisorCardAuthorSchema, advisorCardSchema, amendmentSchema, approvalRecordSchema, cardAuthorSchema, cardSchema, conditionSchema, consultCardAuthorSchema, consultCardSchema, councilEventSchema, councilSettingsSchema, criticalDomainRequirementSchema, decisionBriefSchema, diagnosticRetentionPolicySchema, draftResolutionSchema, endpointContractSchema, jobCheckpointSchema, operationReceiptSchema, ratificationCardAuthorSchema, ratificationCardSchema, runGrantSchema, runPreviewSchema, sessionSpecSchema, sessionStateRecordSchema, verdictSchema, CONTRACT_PACKAGE_VERSION, } from './schemas';
-import { canonicalStringify } from './canonical-json';
+import { actionProposalSchema, advisorCardAuthorSchema, advisorCardSchema, amendmentSchema, approvalRecordSchema, cardAuthorSchema, cardSchema, conditionSchema, consultCardAuthorSchema, consultCardSchema, councilEventSchema, councilSettingsSchema, criticalDomainRequirementSchema, decisionBriefSchema, diagnosticRetentionPolicySchema, draftResolutionSchema, endpointContractSchema, jobCheckpointSchema, operationReceiptSchema, ratificationCardAuthorSchema, ratificationCardSchema, runGrantSchema, runPreviewSchema, sessionSpecSchema, sessionStateRecordSchema, verdictSchema, CONTRACT_PACKAGE_VERSION, } from './schemas.js';
+import { canonicalStringify } from './canonical-json.js';
 export const JSON_SCHEMA_ARTIFACT_PATH = '../../../schemas/json-schemas.json';
 const SCHEMA_REGISTRY = {
     SessionSpec: sessionSpecSchema,

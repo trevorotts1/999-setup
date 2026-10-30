@@ -17,9 +17,9 @@
  *   rejected, because those exist only inside the host stamp.
  */
 import { z } from 'zod';
-import { AMENDMENT_DISPOSITIONS, AMENDMENT_MATERIALITIES, ATTRIBUTION_KINDS, AUTHORIZATION_KINDS, CARD_KINDS, CONDITION_KINDS, CONDITION_STATUSES, CONSTRAINT_RESULTS, CRITICAL_DOMAINS, CRITICAL_DOMAIN_STATUSES, EVIDENCE_STRENGTHS, EVENT_TYPES, EXECUTION_POLICIES, FALLBACK_POLICIES, GRANT_STATUSES, MODEL_SELECTION_SOURCES, OPERATION_STATUSES, OPTION_KINDS, RATIFICATION_STATUSES, RESOLUTION_STANCES, RISK_CLASSES, RUN_GRANT_AUTHORITY_MODES, RUN_PURPOSES, SEAT_IDS, SESSION_MODES, SESSION_STATES, SESSION_VISIBILITIES, STANCES, VALIDATION_STATUSES, VERDICT_LABELS, } from './enums';
-import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives';
-import { MAX_ADVISOR_ROUND } from './modes';
+import { AMENDMENT_DISPOSITIONS, AMENDMENT_MATERIALITIES, ATTRIBUTION_KINDS, AUTHORIZATION_KINDS, CARD_KINDS, CONDITION_KINDS, CONDITION_STATUSES, CONSTRAINT_RESULTS, CRITICAL_DOMAINS, CRITICAL_DOMAIN_STATUSES, EVIDENCE_STRENGTHS, EVENT_TYPES, EXECUTION_POLICIES, FALLBACK_POLICIES, GRANT_STATUSES, MODEL_SELECTION_SOURCES, OPERATION_STATUSES, OPTION_KINDS, RATIFICATION_STATUSES, RESOLUTION_STANCES, RISK_CLASSES, RUN_GRANT_AUTHORITY_MODES, RUN_PURPOSES, SEAT_IDS, SESSION_MODES, SESSION_STATES, SESSION_VISIBILITIES, STANCES, VALIDATION_STATUSES, VERDICT_LABELS, } from './enums.js';
+import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives.js';
+import { MAX_ADVISOR_ROUND } from './modes.js';
 /** Current canonical contract version for this package surface. */
 export const CONTRACT_PACKAGE_VERSION = 'wise-elders.core/1.0.0';
 /** Schema version stamps carried by individual contract payloads. */
@@ -230,11 +230,11 @@ export const sessionSpecSchema = z
             message: 'selected mode requires 2 to 8 seats',
         });
     }
-    if (spec.mode === 'light' && spec.seat_ids.length !== 3) {
+    if (spec.mode === 'light' && spec.seat_ids.length !== SEAT_IDS.length) {
         ctx.addIssue({
             code: 'custom',
             path: ['seat_ids'],
-            message: 'light mode requires exactly three seats',
+            message: 'light mode requires all nine seats',
         });
     }
     if ((spec.mode === 'medium' || spec.mode === 'heavy') &&

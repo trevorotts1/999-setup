@@ -13,7 +13,7 @@
  * COMPLETED is immutable: no outgoing transitions. Archive is a separate
  * visibility flag on the record, never a state.
  */
-import { type SessionMode, type SessionState } from './enums';
+import { type SessionMode, type SessionState } from './enums.js';
 export type TransitionActor = 'owner' | 'system' | 'worker' | 'chair';
 export declare function allowedTransitions(mode: SessionMode, from: SessionState): SessionState[];
 export declare function canTransition(mode: SessionMode, from: SessionState, to: SessionState, resumePhase?: SessionState | null): boolean;

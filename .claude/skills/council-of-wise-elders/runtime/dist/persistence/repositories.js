@@ -109,6 +109,24 @@ export class CouncilRepositories {
             throw sessionDeleted(sessionId);
         }
     }
+    /**
+     * Append one committed event through the canonical journal in its own
+     * transaction. The composed services (report export journaling) use
+     * this instead of reaching into the journal's transaction handle; the
+     * vocabulary, sequence allocation and hash chain are the journal's.
+     */
+    appendEvent(envelope, sessionId, input) {
+        this.assertNotDeleted(envelope, sessionId);
+        return this.db.write((handle) => this.journal.append(handle, envelope, sessionId, {
+            event_id: input.event_id,
+            type: input.type,
+            from_state: input.from_state ?? null,
+            to_state: input.to_state ?? null,
+            actor_subject: input.actor_subject ?? envelope.actor_subject,
+            payload: input.payload,
+            created_at: input.created_at,
+        }));
+    }
     // -------------------------------------------------------------- sessions
     sessionRow(handle, envelope, sessionId) {
         const row = handle

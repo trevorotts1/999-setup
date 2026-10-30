@@ -17,9 +17,9 @@
  * host-supplied (the trusted clock stamps audits; validators never
  * invent a time).
  */
-import type { PackQualification, WorkCoverage } from './coverage';
-import { type PackInput, type PackValidation, type PackValidationOptions } from './packs';
-import type { Diagnostic } from './schemas';
+import type { PackQualification, WorkCoverage } from './coverage.js';
+import { type PackInput, type PackValidation, type PackValidationOptions } from './packs.js';
+import type { Diagnostic } from './schemas.js';
 export declare const VALIDATOR_VERSION = "wise-elders.source-validator/v1";
 export interface PackAudit {
     validator_version: string;

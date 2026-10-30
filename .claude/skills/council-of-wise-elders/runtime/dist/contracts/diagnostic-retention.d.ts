@@ -16,7 +16,7 @@
  * - hidden reasoning, access tokens, cookies, authentication headers, and
  *   private keys are NEVER captured, in any mode, diagnostic included.
  */
-import { DEFAULT_DIAGNOSTIC_RETENTION_POLICY, DIAGNOSTIC_LIMITS, type DiagnosticRetentionPolicy } from './schemas';
+import { DEFAULT_DIAGNOSTIC_RETENTION_POLICY, DIAGNOSTIC_LIMITS, type DiagnosticRetentionPolicy } from './schemas.js';
 export { DEFAULT_DIAGNOSTIC_RETENTION_POLICY, DIAGNOSTIC_LIMITS };
 export type { DiagnosticRetentionPolicy };
 /** Data classes that must never be persisted or displayed, in any mode. */

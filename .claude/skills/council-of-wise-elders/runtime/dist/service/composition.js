@@ -46,6 +46,7 @@ import { homedir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveStandaloneInstallation, standaloneEnvelope, standalonePrincipal, standaloneScope, } from '../cli/authorization.js';
+import { openclawRoot } from '../cli/paths.js';
 import { discoverConfiguredRoutes, routeUsableWithModel, } from '../cli/route-discovery.js';
 import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/schemas.js';
 import { SEAT_IDS } from '../contracts/enums.js';
@@ -55,6 +56,7 @@ import { envelopeFromScope } from '../persistence/envelope.js';
 import { ensureInstallationProfile } from '../persistence/profile.js';
 import { CouncilRepositories } from '../persistence/repositories.js';
 import { CouncilDatabase } from '../persistence/sqlite.js';
+import { composeCouncilReportDownload, createHostPdfRenderer, createRepositoryExportJournal, discoverInstallationCapabilities, loadReportCoverDataUri, } from '../reports/index.js';
 import { composeDeliberationService, } from '../protocol/composition.js';
 import { DurableOperationProducer } from '../queue/producer.js';
 import { startCouncilWorkers, stopCouncilWorkers, } from '../queue/workers.js';
@@ -661,6 +663,31 @@ function composeBackend(input) {
                 repositories.addEvidenceRecord(ownerEnvelope, sessionId, freshFactEvidenceRecord(fact, input.ids.newId()));
             }
         },
+        // CTR-134: the ONE preparatory request goes through the SAME configured
+        // adapter the sitting uses, pinned to the caller's resolved route/model.
+        // `singleAttempt` means one dispatch: no retry, no fallback, no cascade.
+        prepareInference: async (resolved, request, context) => {
+            const transport = transportForSnapshot(resolved.snapshot, {
+                ...transportOptions,
+                singleAttempt: true,
+            });
+            if (!transport) {
+                throw new Error(`No configured model adapter for route ${resolved.snapshot.routeId}; preparation is refused rather than routed elsewhere.`);
+            }
+            const response = await transport.generate({
+                purpose: 'consult',
+                session_id: context.session_id,
+                // A transport routing field, not a vote: no card is created and no
+                // seat records a position for a preparation request.
+                seat_id: SEAT_IDS[0],
+                round: null,
+                route_id: resolved.snapshot.routeId,
+                model_policy: resolved.model_policy,
+                system: request.system,
+                input: { preparation: true, request: request.user },
+            });
+            return { text: response.text };
+        },
         auditLogPath: join(input.dataDir, 'convening-audit.jsonl'),
         onSettled: (sessionId, settled) => {
             const missing = settled.status === 'incomplete' ? [...new Set(settled.missing.map((m) => m.seat_id))] : [];
@@ -802,6 +829,63 @@ export function composeCouncilService(options = {}) {
     let doorRef = null;
     const origin = () => doorRef?.getOrigin() ?? null;
     const readEnvelope = standaloneEnvelope(installation, 'read');
+    // Saved-session PDF download (CTR-136): the saved record is the only
+    // input. The export journal is the canonical council_events journal,
+    // and the renderer is whatever PDF capability this host already has —
+    // no new package dependency and no provider call.
+    // CTR-147: one snapshot per installation per day. Re-rendering the
+    // same export request must produce the same bytes even if the catalog
+    // changed on disk mid-flight, so an inventory read is memoised for the
+    // day it is labelled with. A new day reads again and says so.
+    const capabilitySnapshots = new Map();
+    const reportDownload = composeCouncilReportDownload({
+        readSession: (sessionId) => backend.repositories.getSession(readEnvelope, sessionId),
+        listCards: (sessionId) => backend.repositories.listCards(readEnvelope, sessionId),
+        readVerdict: (sessionId) => backend.repositories.getVerdict(readEnvelope, sessionId),
+        isSessionDeleted: (scope, sessionId) => backend.repositories.isDeleted(scope.tenant_id, sessionId),
+        journal: createRepositoryExportJournal({
+            envelope: readEnvelope,
+            appendEvent: (envelope, sessionId, input) => backend.repositories.appendEvent(envelope, sessionId, input),
+            listEvents: (envelope, sessionId, afterSequence) => backend.repositories.journal.list(envelope, sessionId, afterSequence),
+        }),
+        principal: standalonePrincipal(installation),
+        pdf: createHostPdfRenderer(),
+        nowUtc,
+        // CTR-147: the reader section lists this installation's own skills
+        // and operational departments. The root is resolved by the same
+        // trusted rule the CLI and wire.sh use (OPENCLAW_ROOT /
+        // WISE_ELDERS_OPENCLAW_ROOT, a container /data/.openclaw, or the
+        // box's own ~/.openclaw), never a hardcoded operator path. A session
+        // bound to any other installation gets no snapshot at all, so this
+        // box's inventory can never ride into another installation's report.
+        capabilitySnapshot: ({ installationId, capturedAt }) => {
+            if (installationId === null ||
+                installationId === '' ||
+                installationId !== installation.installation_id) {
+                return null;
+            }
+            const capturedDate = capturedAt.slice(0, 10);
+            const cacheKey = `${installation.installation_id}\u0000${capturedDate}`;
+            const cached = capabilitySnapshots.get(cacheKey);
+            if (cached !== undefined)
+                return cached;
+            try {
+                const snapshot = discoverInstallationCapabilities({
+                    openclaw_root: openclawRoot(),
+                    installation_id: installation.installation_id,
+                    captured_at: capturedDate,
+                });
+                capabilitySnapshots.set(cacheKey, snapshot);
+                return snapshot;
+            }
+            catch {
+                return null;
+            }
+        },
+        // The exact Council hero, compressed to a display derivative and
+        // embedded as a data URI. The 6.3 MB original is never embedded.
+        coverImageDataUri: () => loadReportCoverDataUri(),
+    });
     const door = new CouncilFrontDoor({
         identity,
         host: options.host,
@@ -829,6 +913,7 @@ export function composeCouncilService(options = {}) {
             failures: backend.deliberation.runner.listSessionFailures(readEnvelope, record.session_id),
             events: backend.journal.list(readEnvelope, record.session_id, 0),
         })),
+        reportDownload,
         convening: backend.conveningPort,
         readiness: {
             nowUtc,

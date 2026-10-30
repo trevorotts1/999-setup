@@ -6,7 +6,7 @@
  * excerpt, or a real biographical claim; the fixtures exist to exercise
  * validator boundaries, never to stand in for source material.
  */
-import { sha256Hex } from '../contracts/sha256';
+import { sha256Hex } from '../contracts/sha256.js';
 function fixtureRecord(overrides) {
     return {
         publisher_or_host: 'Fixture Publisher',
