@@ -435,8 +435,8 @@ export class DeliberationService {
                 (job.state === 'queued' || job.state === 'leased' || job.state === 'running'));
             const cards = this.repositories.listCards(envelope, sessionId);
             const missing = session.spec.seat_ids.filter((seatId) => !cards.some((c) => c.card_kind === 'advisor' && c.round === round && c.seat_id === seatId));
-            // A nine-seat council keeps every seat: full mode and the council
-            // sizes (medium/heavy are all nine; light keeps its fixed three).
+            // Every council size keeps the full roster (Trevor, 2026-10-25):
+            // mode changes rounds and concurrency, never the panel.
             const keepsAllSeats = session.spec.mode === 'full' || isCouncilSize(session.spec.mode);
             if (!unfinished && !(keepsAllSeats && missing.length > 0))
                 return null;

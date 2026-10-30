@@ -94,4 +94,10 @@ export declare function transportForSnapshot(snapshot: PinnedRouteSnapshot, opts
     homeDir?: string;
     env?: NodeJS.ProcessEnv;
     spawnImpl?: typeof spawn;
+    /**
+     * CTR-134: one-shot preparation. The same configured adapter, but it may
+     * make exactly one attempt and never retries, so the preparatory request
+     * can never spend a second provider request or fall through to a retry.
+     */
+    singleAttempt?: boolean;
 }): ModelTransport | null;

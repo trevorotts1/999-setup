@@ -13,7 +13,7 @@
  * The hash fixtures pin canonical serialization: the same logical value in
  * different key orders must hash identically in every consumer (T148).
  */
-import { SEAT_IDS } from './enums';
+import { SEAT_IDS } from './enums.js';
 export const GOLDEN_WEIGHTS = [2, 3, 2, 3, 3, 2, 3, 2, 2];
 export const GOLDEN_TOTAL_WEIGHT = 22;
 function entries(scores) {

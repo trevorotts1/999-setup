@@ -15,9 +15,9 @@
  * independent semantic review (Section 8.4), outside this deterministic
  * check.
  */
-import type { SeatId } from '../contracts/enums';
-import type { VerifiedQuoteCandidate } from '../contracts/schemas';
-import { type Diagnostic, type EvidenceUnit, type SourceRecord } from './schemas';
+import type { SeatId } from '../contracts/enums.js';
+import type { VerifiedQuoteCandidate } from '../contracts/schemas.js';
+import { type Diagnostic, type EvidenceUnit, type SourceRecord } from './schemas.js';
 /** The five-tuple a quotation claim must prove (Section 8.4). */
 export interface QuoteTuple {
     quoted_text: string;

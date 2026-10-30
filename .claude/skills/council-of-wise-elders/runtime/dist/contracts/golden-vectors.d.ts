@@ -13,7 +13,7 @@
  * The hash fixtures pin canonical serialization: the same logical value in
  * different key orders must hash identically in every consumer (T148).
  */
-import type { SeatScoreEntry } from './scoring';
+import type { SeatScoreEntry } from './scoring.js';
 export declare const GOLDEN_WEIGHTS: readonly number[];
 export declare const GOLDEN_TOTAL_WEIGHT = 22;
 export declare const GOLDEN_SCORES: {
