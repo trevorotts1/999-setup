@@ -7,6 +7,7 @@
 # and assert_model_sovereignty are all independently verified.
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -49,11 +50,12 @@ class TestBuildAllRoles:
         assert mr.build_ladder(DEFAULT_ENV, role=role)
 
     @pytest.mark.parametrize("role", ALL_ROLES)
-    def test_no_anthropic_in_ladder(self, role):
-        for slug in _all_slugs(mr.build_ladder(DEFAULT_ENV, role=role)):
-            low = slug.lower()
-            assert "claude" not in low
-            assert "anthropic" not in low
+    def test_ladder_prescribes_no_model_of_its_own(self, role):
+        # No vendor rule (Trevor order 2026-10-29): what the ladder carries is
+        # exactly the client's configured default, never a model we picked.
+        assert _all_slugs(mr.build_ladder(DEFAULT_ENV, role=role)) == [
+            "client-default:cloud"
+        ]
 
     @pytest.mark.parametrize("role", ALL_ROLES)
     def test_rung_shape_complete(self, role):
@@ -273,7 +275,9 @@ class TestModelSovereignty:
                   env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
         assert "client-default:cloud" in seen
 
-    def test_sovereignty_blocks_anthropic(self, monkeypatch):
+    def test_sovereignty_ignores_an_anthropic_forbidden_verdict(self, monkeypatch):
+        # No vendor rule (Trevor order 2026-10-29): a stale FORBIDDEN verdict that
+        # names an Anthropic-family slug must NOT block the dispatch.
         def blocker(slug, **kw):
             if "claude" in slug.lower():
                 return {"code": "FORBIDDEN", "reason": "Anthropic blocked"}
@@ -281,10 +285,11 @@ class TestModelSovereignty:
 
         self._patch_sovereignty(monkeypatch, blocker)
         ladder = mr.build_ladder(DEFAULT_ENV, role="content")
-        ladder[0]["models"][0]["slug"] = "BANNED-claude-sentinel"
-        with pytest.raises(mr.AnthropicModelError):
-            mr.select(mr.make_stub_executor(), role="content",
-                      env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
+        # keep the rung structurally valid (ollama-cloud needs the :cloud suffix)
+        ladder[0]["models"][0]["slug"] = "anthropic/claude-haiku-4.5:cloud"
+        out = mr.select(mr.make_stub_executor(), role="content",
+                        env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
+        assert out["chosen"]["model"] == "anthropic/claude-haiku-4.5:cloud"
 
     def test_sovereignty_blocks_free_literal(self, monkeypatch):
         def blocker(slug, **kw):
@@ -309,17 +314,46 @@ class TestModelSovereignty:
 # ── Anthropic guard ─────────────────────────────────────────────────────────
 
 
-class TestAnthropicGuard:
+class TestNoVendorRule:
+    """No rule against Anthropic / Claude models (Trevor order 2026-10-29)."""
 
-    def test_injected_anthropic_slug_rejected(self):
+    def test_anthropic_slug_is_accepted(self):
         ladder = mr.build_ladder(DEFAULT_ENV, role="execution")
-        ladder[0]["models"][0]["slug"] = "BANNED-claude-sentinel"
-        with pytest.raises(mr.AnthropicModelError):
-            mr.assert_no_anthropic(ladder)
+        ladder[0]["models"][0]["slug"] = "anthropic/claude-sonnet-4"
+        assert mr.assert_no_anthropic(ladder) is None
 
-    def test_configured_anthropic_default_rejected(self):
-        with pytest.raises(mr.AnthropicModelError):
-            mr.build_ladder({"MODEL_ROUTER_DEFAULT": "anthropic/claude-x"}, role="content")
+    def test_configured_anthropic_default_is_routed(self):
+        ladder = mr.build_ladder(
+            {"MODEL_ROUTER_DEFAULT": "openrouter/anthropic/claude-haiku-4.5"},
+            role="content")
+        assert [m["slug"] for r in ladder for m in r["models"]] == [
+            "openrouter/anthropic/claude-haiku-4.5"
+        ]
+        out = mr.select(mr.make_stub_executor(), role="content",
+                        env={"MODEL_ROUTER_DEFAULT":
+                             "openrouter/anthropic/claude-haiku-4.5"},
+                        ladder=ladder, sleep=_no_sleep)
+        assert out["chosen"]["model"] == "openrouter/anthropic/claude-haiku-4.5"
+
+    def test_planted_config_survives_byte_identical(self, tmp_path):
+        """A client config carrying an Anthropic fallback must survive the router
+        untouched: the router never writes the config, so it is byte-identical."""
+        cfg = tmp_path / "openclaw.json"
+        planted = json.dumps({
+            "agents": {"defaults": {"model": {
+                "primary": "ollama-cloud/glm-5.3-flash:cloud",
+                "fallbacks": ["openrouter/anthropic/claude-haiku-4.5"],
+            }}},
+        }, indent=2)
+        cfg.write_text(planted, encoding="utf-8")
+        before = hashlib.sha256(cfg.read_bytes()).hexdigest()
+        env = {"MODEL_ROUTER_DEFAULT": "ollama-cloud/glm-5.3-flash:cloud"}
+        for role in ALL_ROLES:
+            mr.build_ladder(env, role=role)
+        mr.select(mr.make_stub_executor(), role="content", env=env,
+                  sleep=_no_sleep)
+        assert hashlib.sha256(cfg.read_bytes()).hexdigest() == before
+        assert "openrouter/anthropic/claude-haiku-4.5" in cfg.read_text()
 
 
 # ── Ollama Cloud invariants ─────────────────────────────────────────────────

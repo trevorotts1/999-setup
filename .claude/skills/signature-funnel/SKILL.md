@@ -1,6 +1,6 @@
 ---
 name: signature-funnel
-description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
+description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers; there is no vendor rule on model ids (Trevor order 2026-10-29).
 version: v2.1.22
 ---
 
@@ -26,7 +26,7 @@ REST call.
 - `intake/sf-intake-questions.json` — the Q1–Q17 intake spec + the runtime brief contract.
 - `structure/funnel_structure.json` — the SACRED 12-section contract the copy prover loads.
 - `prompts/funnel-copy-prompts.md` — the BAKED, provider-agnostic copy + image prompts (client models
-  at runtime, never Anthropic).
+  at runtime; no vendor rule — an Anthropic one the client configured is fine).
 - `scripts/prove_sf_intake.py`, `prove_sf_copy.py`, `prove_sf_prompt_floor.py`, `prove_sf_no_pitch.py`,
   `prove_sf_cert.py` — the five fail-closed deterministic provers (stdlib only; exit 0/2/3).
 - `scripts/kie74_receipt.py` — turns a Skill 74 result into run evidence and defines what the bypass scan allow-lists.
@@ -151,7 +151,7 @@ No price, model id, endpoint or rate figure is written in this skill (rules 2, 3
 ## Client-provider rule (binding)
 
 On a client box the skill uses the **client's own configured providers and keys** — never the
-operator's, never Anthropic model ids. The BAKED prompts are provider-agnostic; the runtime tiers the
+operator's. There is NO vendor rule on model ids (Trevor order 2026-10-29). The BAKED prompts are provider-agnostic; the runtime tiers the
 client's own chain (strongest → copy + QC verify; mid → image prompts / HTML / JSON; cheapest →
 catalog / poll). The provers are deterministic and use no model at runtime, so this skill is
 provider-neutral by construction.

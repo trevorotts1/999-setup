@@ -2,7 +2,7 @@
 
 > These prompts are **baked into the skill** so the pipeline needs no Airtable/n8n/cloud prompt store at
 > runtime. They are **provider-agnostic**: the runtime picks the **client's OWN strongest configured
-> model** for authoring (never Anthropic, never the operator's keys — see MASTERDOC §7). Every prompt
+> model** for authoring (never the operator's keys — see MASTERDOC §7; no vendor rule, an Anthropic model is fine). Every prompt
 > instructs the writer to emit JSON that conforms to the copy/prompt ledger shape the fail-closed
 > provers enforce (`prove_sf_copy.py`, `prove_sf_prompt_floor.py`). The SACRED bands here are copied
 > from MASTERDOC and are non-negotiable — a violation is a hard AF-FUN-* autofail, not a suggestion.

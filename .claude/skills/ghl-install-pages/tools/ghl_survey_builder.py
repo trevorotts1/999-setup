@@ -3774,14 +3774,12 @@ def _selftest() -> int:
         elif "NOT A2P" not in tc.get("note", ""):
             errors.append("T & C capture_fields note must contain 'NOT A2P'")
 
-        # 5. No banned model tokens in ladders
+        # 5. No PURGED model token in ladders. No vendor is banned (no rule against
+        #    Anthropic / Claude models — Trevor order 2026-10-29).
         ladders_json = json.dumps(
             THINK_LADDER + EXECUTE_LADDER + QC_LADDER
         ).lower()
-        for banned in (
-            "minimax-m2", "minimax_m2",
-            "anthropic", "claude", "opus", "sonnet", "haiku",
-        ):
+        for banned in ("minimax-m2", "minimax_m2"):
             if banned in ladders_json:
                 errors.append(
                     f"BANNED model token found in ladders: {banned!r}"

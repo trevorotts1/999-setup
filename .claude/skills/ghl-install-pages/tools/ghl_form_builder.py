@@ -2931,9 +2931,10 @@ def _selftest() -> int:
         if "add contact tag" not in blob:
             errors.append("click list missing tag-attachment handoff")
 
-    # 6. no banned model tokens anywhere in the ladders
+    # 6. no PURGED model token anywhere in the ladders. No vendor is banned:
+    #    there is no rule against Anthropic / Claude models (Trevor order 2026-10-29).
     lad = json.dumps(THINK_LADDER + EXECUTE_LADDER + QC_LADDER).lower()
-    for banned in ("minimax-m2", "minimax_m2", "anthropic", "claude", "opus", "sonnet", "haiku"):
+    for banned in ("minimax-m2", "minimax_m2"):
         if banned in lad:
             errors.append(f"BANNED model token in ladders: {banned}")
 

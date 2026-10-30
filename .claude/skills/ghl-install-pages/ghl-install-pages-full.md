@@ -1589,7 +1589,8 @@ STEP 2: Go back to the code editor
 STEP 3: Fix the code
 - Send the code + error description to your best available client thinking
   model (Ollama Cloud first: `ollama/deepseek-v4.1-flash:cloud`; or
-  `openrouter/deepseek/deepseek-v4.1-flash` if you have OpenRouter) — never Anthropic
+  `openrouter/deepseek/deepseek-v4.1-flash` if you have OpenRouter) — no vendor rule: any model
+  the client configured, including a Claude one, is fine
 - Ask: "This HTML code was pasted into a Go High Level code block element
   but isn't rendering correctly. [Describe the specific issue].
   Fix the code to work within GHL's code block constraints."

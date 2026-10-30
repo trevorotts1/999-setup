@@ -25,31 +25,63 @@ def __prune(pattern_prefix):
     # keep only the newest backup of this kind (Trevor: backups must not pile up)
     for o in sorted(glob.glob(pattern_prefix+'*'),key=os.path.getmtime)[:-1]: os.remove(o)
 
-MOD='let k=new TextEncoder,l="translate",m="passthrough";'
-# Module scope of the stream converter (e = formats, k = its TextEncoder).
+import re
+ID=r'[A-Za-z_$][\w$]*'
+# The converter's locals are renamed on every 9Router build (0.5.95: cleanup P->Q; 0.5.109: provider p->s, state C->G, encoder k->n,
+# log q->t ...). So nothing is spelled: the anchors are shapes, and every name the edits need is read out of the converter's own
+# header, its translate-state initialiser and its flush. On 0.5.104 the result is byte-for-byte what the literal anchors wrote.
+HEAD_RX=re.compile(r'let (?P<enc>'+ID+r')=new TextEncoder,(?P<tr>'+ID+r')="translate",'+ID+r'="passthrough";function '+ID+r'\(a=\{\}\)\{'
+                   r'let\{mode:(?P<mode>'+ID+r')=(?P=tr),targetFormat:(?P<tf>'+ID+r'),sourceFormat:(?P<sf>'+ID+r'),provider:(?P<prov>'+ID+r')=null,'
+                   r'reqLogger:(?P<log>'+ID+r')=null,[^}]*?model:(?P<model>'+ID+r')=null,[^}]*?\}=a,')
+FLUSH_HEAD_RX=re.compile(r'flush\((?P<fa>'+ID+r')\)\{let '+ID+r'=Object\.entries\(')
+LINE_RX=re.compile(r'let (?P<p>'+ID+r')=\(0,(?P<h>'+ID+r')\.tV\)\((?P<n>'+ID+r'),(?P<c>'+ID+r')\);if\(!(?P=p)\)continue;')
+LEFT_RX=re.compile(r'let (?P<b>'+ID+r')=\(0,(?P<h>'+ID+r')\.tV\)\((?P<z>'+ID+r')\.trim\(\),(?P<c>'+ID+r')\),(?P<f>'+ID+r')=(?P=b)\?\.done&&(?P=c)!==(?P<e>'+ID+r')\.h\.OLLAMA;')
+END_RX=re.compile(r'(?P<cl>'+ID+r')\(\)\}catch\((?P<ex>'+ID+r')\)\{console\.log\("Error in flush:",(?P=ex)\),(?P=cl)\(\)\}')
+def __names(s):
+    """Converter identifiers, or None when the header / flush shape is unknown."""
+    hs=list(HEAD_RX.finditer(s))
+    if len(hs)!=1: return None
+    d=hs[0].groupdict()
+    st=re.search(r'(?P<st>'+ID+r')='+re.escape(d['mode'])+r'==='+re.escape(d['tr'])+r'\?\{\.\.\.\(0,'+ID+r'\.Ws\)\('+re.escape(d['sf'])+r'\),provider:'+re.escape(d['prov'])+r',',s[hs[0].end():])
+    fl=list(FLUSH_HEAD_RX.finditer(s,hs[0].end()))
+    if not st or len(fl)!=1: return None
+    d.update(st=st['st'],fa=fl[0]['fa'],start=hs[0].start(),mod_end=s.index('"passthrough";',hs[0].start())+len('"passthrough";'))
+    return d
+def __locate_conv():
+    fs=[os.path.join(CHUNKS,f) for f in sorted(os.listdir(CHUNKS)) if f.endswith('.js')]
+    txt={f:open(f,errors='ignore').read() for f in fs}
+    hit=[f for f in fs if MARK in txt[f]]
+    if hit: return hit[0]
+    hit=[f for f in fs if HEAD_RX.search(txt[f])]
+    if len(hit)!=1: print(f'target code found in {len(hit)} chunk files (need 1) - bundle changed, not patching'); sys.exit(2)
+    return hit[0]
+F=__locate_conv(); s=open(F).read()
+if MARK in s: print('already patched:',F); sys.exit(0)
+N=__names(s)
+if N is None: print('ANCHOR 0 (stream converter header / translate state / flush) not recognised - bundle changed, not patching'); sys.exit(2)
+lines=list(LINE_RX.finditer(s)); lefts=list(LEFT_RX.finditer(s)); ends=list(END_RX.finditer(s))
+for i,(label,ms) in enumerate((('upstream line parse',lines),('flush leftover line',lefts),('flush end',ends)),2):
+    if len(ms)!=1: print(f'{MARK} ANCHOR {i} ({label}) matched {len(ms)} times (need 1) - bundle changed, not patching'); sys.exit(2)
+E_,L_=lefts[0],lines[0]
+if E_['c']!=N['tf'] or L_['c']!=N['tf']: print(f'{MARK} ANCHOR 3 parses with a different format variable than the converter header - bundle changed, not patching'); sys.exit(2)
+ENC,FMT=N['enc'],E_['e']
+if {ENC,FMT}&set('aoqsfpt'): print(f'{MARK} the helpers use the parameter names a,o,s,f,q,p,t, which would shadow the encoder/format locals ({ENC}, {FMT}) - bundle changed, not patching'); sys.exit(2)
+# Module scope of the stream converter (FMT = formats, ENC = its TextEncoder).
 #  __oeSeen: records, on the converter's translate state, that an Ollama line carried done:true or an error.
 #  __oeEnd:  at flush, if an Ollama stream never sent done:true, writes one error event in the client's format.
-HELPERS=MARK+r'''function __oeSeen(s,p,f){return s&&p&&"object"==typeof p&&f===e.h.OLLAMA&&(p.done&&(s.__oeDone=!0),p.error&&!s.__oeErr&&(s.__oeErr=String(p.error?.message||p.error).slice(0,500))),p}function __oeEnd(a,o,s,f,q,p,t){if(!s||f!==e.h.OLLAMA||s.__oeDone)return;let m=`${p||"ollama"}/${t||"model"}: `+(s.__oeErr?"Ollama stream error: "+s.__oeErr:"Ollama stream ended before the reply finished (no done:true)"),x;if(o===e.h.CLAUDE)x=`event: error\ndata: ${JSON.stringify({type:"error",error:{type:"api_error",message:m}})}\n\n`;else if(o===e.h.OPENAI)x=`data: ${JSON.stringify({error:{message:m,type:"server_error",code:"upstream_stream_error"}})}\n\n`;else if(o===e.h.OPENAI_RESPONSES)x=`event: response.failed\ndata: ${JSON.stringify({type:"response.failed",response:{id:"resp_"+Date.now(),object:"response",status:"failed",error:{code:"server_error",message:m}}})}\n\n`;else return;q?.appendConvertedChunk?.(x),a.enqueue(k.encode(x))}'''
-E=[(MOD,MOD+HELPERS),
+HELPERS=MARK+(r"""function __oeSeen(s,p,f){return s&&p&&"object"==typeof p&&f===@E@.h.OLLAMA&&(p.done&&(s.__oeDone=!0),p.error&&!s.__oeErr&&(s.__oeErr=String(p.error?.message||p.error).slice(0,500))),p}function __oeEnd(a,o,s,f,q,p,t){if(!s||f!==@E@.h.OLLAMA||s.__oeDone)return;let m=`${p||"ollama"}/${t||"model"}: `+(s.__oeErr?"Ollama stream error: "+s.__oeErr:"Ollama stream ended before the reply finished (no done:true)"),x;if(o===@E@.h.CLAUDE)x=`event: error\ndata: ${JSON.stringify({type:"error",error:{type:"api_error",message:m}})}\n\n`;else if(o===@E@.h.OPENAI)x=`data: ${JSON.stringify({error:{message:m,type:"server_error",code:"upstream_stream_error"}})}\n\n`;else if(o===@E@.h.OPENAI_RESPONSES)x=`event: response.failed\ndata: ${JSON.stringify({type:"response.failed",response:{id:"resp_"+Date.now(),object:"response",status:"failed",error:{code:"server_error",message:m}}})}\n\n`;else return;q?.appendConvertedChunk?.(x),a.enqueue(@K@.encode(x))}""").replace('@E@',FMT).replace('@K@',ENC)
+# (start,end,replacement) edits, applied back to front so earlier offsets stay valid.
+ST=N['st']
+EDITS=[(N['mod_end'],N['mod_end'],HELPERS),
  # every parsed upstream line, in transform and the leftover line in flush
- ('let p=(0,h.tV)(n,c);if(!p)continue;','let p=__oeSeen(C,(0,h.tV)(n,c),c);if(!p)continue;'),
- ('let b=(0,h.tV)(z.trim(),c),f=b?.done&&c!==e.h.OLLAMA;','let b=__oeSeen(C,(0,h.tV)(z.trim(),c),c),f=b?.done&&c!==e.h.OLLAMA;'),
- # end of the translate-mode flush, after the translator's own flush output
- ('P()}catch(a){console.log("Error in flush:",a),P()}','__oeEnd(a,o,C,c,q,p,t);P()}catch(a){console.log("Error in flush:",a),P()}')]
-# Suffix-only anchor so it works whether or not the ollama-done guard already inserted its [DONE] before the cleanup call.
-# 0.5.95 renamed the cleanup fn P->Q: use whichever spelling the located file has.
-E_Q=('Q()}catch(a){console.log("Error in flush:",a),Q()}','__oeEnd(a,o,C,c,q,p,t);Q()}catch(a){console.log("Error in flush:",a),Q()}')
-
-F=__locate(MARK,E[1][0]); s=open(F).read()
-if s.count(E[3][0])!=1 and s.count(E_Q[0])==1: E[3]=E_Q
-if MARK in s: print('already patched:',F); sys.exit(0)
-for i,(old,new) in enumerate(E,1):
-    n=s.count(old)
-    if n!=1: print(f'{MARK} ANCHOR {i} matched {n} times (need 1) - bundle changed, not patching'); sys.exit(2)
-if CHECK: print(f'all {len(E)} anchors unique; --check only, nothing written'); sys.exit(0)
+ (L_.start(),L_.end(),f"let {L_['p']}=__oeSeen({ST},(0,{L_['h']}.tV)({L_['n']},{L_['c']}),{L_['c']});if(!{L_['p']})continue;"),
+ (E_.start(),E_.end(),f"let {E_['b']}=__oeSeen({ST},(0,{E_['h']}.tV)({E_['z']}.trim(),{E_['c']}),{E_['c']}),{E_['f']}={E_['b']}?.done&&{E_['c']}!=={FMT}.h.OLLAMA;"),
+ # end of the translate-mode flush, after the translator's own flush output (whichever name the cleanup call has)
+ (ends[0].start(),ends[0].start(),f"__oeEnd({N['fa']},{N['sf']},{ST},{N['tf']},{N['log']},{N['prov']},{N['model']});")]
+if CHECK: print(f'all {len(EDITS)} anchors unique; --check only, nothing written'); sys.exit(0)
 bak=F+'.bak-pre-ollamaerror-'+time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())
 shutil.copy2(F,bak)
-for old,new in E: s=s.replace(old,new,1)
+for a_,b_,new in sorted(EDITS,key=lambda e:-e[0]): s=s[:a_]+new+s[b_:]
 open(F,'w').write(s)
 r=subprocess.run([NODE,'--check',F],capture_output=True,text=True)
 if r.returncode!=0:

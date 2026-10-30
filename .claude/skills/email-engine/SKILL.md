@@ -174,7 +174,8 @@ posture, and the human approval step are stated identically on both sides:
 ## Client-provider rule (binding)
 
 On a client box this skill uses the **client's own configured providers and keys** — never the
-operator's, never Anthropic / `claude-*` model ids. The deterministic gates
+operator's. There is NO vendor rule on model ids (Trevor order 2026-10-29): an
+Anthropic / Claude model the client configured is used like any other. The deterministic gates
 (`prove-email.py`, `email_matcher.py`, `run_email_engine.py`) are model-free Python that run
 identically everywhere; the authoring/QC LLM tiers named for the client path are the client's
 own provider chain. This skill is provider-neutral by construction.

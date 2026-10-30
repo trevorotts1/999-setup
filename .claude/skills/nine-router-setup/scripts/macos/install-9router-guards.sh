@@ -226,7 +226,7 @@ if [ "$CHECK" = 0 ]; then
   done
   before="$(fingerprint)"
   for g in "${SEL[@]}"; do
-    # Guards that take a root get it; the five older ones search the standard list (same order as above).
+    # Guards that take a root get it; the four older ones (dupfix, codex-terminal, nextserver, cachecontrol) search the standard list (same order as above).
     out="$(run_guard "$g" 2>&1)"; rc=$?
     echo "[guards] $g: rc=$rc"
     [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -5 | sed 's/^/    /'
@@ -251,7 +251,8 @@ T = {  # guard -> [(label, marker, scope, min)]
  "nextserver": [("scoped kill", "__r9OwnNextServerPids", "cli", 2)],
  "cachecontrol": [("cache_control passthrough", "preserveCacheControl:!0/*cc-guard*/", "chunks", 1)],
  "glm53-thinking": [("GLM 5.3 behaviour", None, "regression", 1)],
- "deepseek-effort": [("DeepSeek effort tiers", '"low"===a||"minimal"===a?"low":"max"===a||"ultra"===a?"max":"high"', "chunks", 1)],
+ # Patched form, or the 0.5.109+ stock form (the guard reports "not needed (fixed upstream)" and writes nothing): either proves the tier mapping.
+ "deepseek-effort": [("DeepSeek effort tiers", r're:"low"===a\|\|"minimal"===a\?"low":"max"===a\|\|"ultra"===a\?"max":"high"|(?P<up>[\w$]+="xhigh"===([\w$]+)\|\|"max"===\2\?"max":\("low"===\2\|\|"minimal"===\2\)&&[\w$]+\?\.includes\("low"\)\?"low":"high";)', "chunks", 1)],
  "deepseek-openai-route": [("DeepSeek OpenAI route", "/*deepseek-openai-route-v1*/", "chunks", 1)],
  "ollama-done": [("Ollama [DONE] capture", 'let __done="data: [DONE]', "chunks", 1)],
  # the aggregator's `usage:{...e}` local is renamed between builds; the guard locates it by content signature, so the proof does too.
@@ -279,10 +280,13 @@ bad = 0
 for g in sel:
     for label, marker, scope, mn in T[g]:
         if marker is None: continue
-        n = len(re.findall(marker[3:], text(scope))) if marker.startswith("re:") else text(scope).count(marker)
+        ms = list(re.finditer(marker[3:], text(scope))) if marker.startswith("re:") else []
+        n = len(ms) if marker.startswith("re:") else text(scope).count(marker)
         ok = n >= mn
         bad += not ok
-        print(f"[guards] {'OK  ' if ok else 'MISSING'} {g}: {label} ({n} hit, need {mn})")
+        # a row whose only hits are the upstream's own fixed form needs no patch: say so instead of implying the guard wrote it
+        note = " - not needed (fixed upstream)" if ok and ms and all(m.groupdict().get("up") for m in ms) else ""
+        print(f"[guards] {'OK  ' if ok else 'MISSING'} {g}: {label} ({n} hit, need {mn}){note}")
 sys.exit(1 if bad else 0)
 PY
 rc=$?

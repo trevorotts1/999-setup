@@ -1052,8 +1052,9 @@ def dispatch_one(
     # Without a non-None executor the branch hits its early-return guard
     # (_skip_reason="no_executor") and the proposed-structure path never runs
     # for UNSURE / HANDS_OFF users.  make_stub_executor() is offline and
-    # deterministic — model sovereignty is preserved (no Anthropic model is ever
-    # selected; assert_model_sovereignty runs on every slug inside select()).
+    # deterministic — the client's own model is what gets selected; there is no
+    # vendor rule (Trevor order 2026-10-29), and assert_model_sovereignty never
+    # rejects a slug for being Anthropic inside select().
     _intake_executor = (
         _model_router.make_stub_executor()  # type: ignore[union-attr]
         if _MODEL_ROUTER_AVAILABLE else None
