@@ -13,7 +13,7 @@
  *   builder in later units; the constants and label bands live here);
  * - a tie within 0.25 points is a near tie, not false precision.
  */
-import type { VerdictLabel } from './enums';
+import type { VerdictLabel } from './enums.js';
 export interface SeatScoreEntry {
     seat_id: string;
     /** Frozen relevance weight, 1..3 (Section 12.1). */

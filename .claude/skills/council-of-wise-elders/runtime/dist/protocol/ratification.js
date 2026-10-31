@@ -450,7 +450,7 @@ export class RatificationRoundExecutor {
         const cruxes = extractCruxes(round1Cards, session.brief, session.spec.seat_ids);
         const ownRound2 = round2Cards.find((c) => c.seat_id === seatId) ?? null;
         const briefView = payloadBriefView(context);
-        const system = cardRequestSystem(RATIFICATION_ROUND_SYSTEM, 'ratification', null, ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : []);
+        const system = cardRequestSystem(RATIFICATION_ROUND_SYSTEM, 'ratification', null, ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [], 3);
         let response;
         try {
             response = await transport.generate({
@@ -477,7 +477,7 @@ export class RatificationRoundExecutor {
                     // each seat sees the draft, the relevant challenges, and the
                     // frozen evidence).
                     relevant_cruxes: assignedCruxesFor(cruxes, seatId),
-                    output_contract: cardOutputContract('ratification', null),
+                    output_contract: cardOutputContract('ratification', null, 3),
                 },
             });
         }
@@ -595,6 +595,7 @@ export class RatificationRoundExecutor {
             snapshot,
             seatId,
             operation: 'round_3_ratification',
+            round: 3,
             systemText: RATIFICATION_ROUND_SYSTEM,
         }));
         if (assembled.status === 'context_too_small')

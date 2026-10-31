@@ -24,6 +24,7 @@
  * in tests, and any host mutation.
  */
 import { type BrowserOpenResult } from '../bridges/browser-open.js';
+import type { CouncilReportDownloadPort } from '../reports/report-download.js';
 import type { ConveneInput } from './driver.js';
 import { type CouncilEventStreamAdapter, type CouncilSessionReader } from './events.js';
 import { type ReadinessOptions, type ServiceReadinessDeps } from './readiness.js';
@@ -57,11 +58,25 @@ export interface FrontDoorOptions {
      */
     sessionReader?: CouncilSessionReader;
     /**
+     * Saved-session PDF download (composition root supplies it over the
+     * canonical repositories, the export journal and the host renderer).
+     * Unbound answers 501; the door never fabricates a report document.
+     */
+    reportDownload?: CouncilReportDownloadPort;
+    /**
      * Route listing and convening (composition root supplies it over the
      * composed driver). Unbound answers 501; the door never convenes itself.
      */
     convening?: CouncilConveningPort;
     readiness?: FrontDoorReadinessDeps;
+    /**
+     * Override the packaged chamber asset directory (absolute path). Unset
+     * keeps the packaged `public/chamber` roots. Tests use this to simulate
+     * a missing-assets build in an isolated temp dir instead of renaming
+     * the shared `public/chamber` path, which races sibling tests running
+     * in the same `npm test` process.
+     */
+    chamberAssetDir?: string;
 }
 /** Exact loopback set plus the 127/8 block; nothing else is a local front door. */
 export declare function isLoopbackHost(host: string): boolean;
@@ -118,6 +133,14 @@ export declare class CouncilFrontDoor {
      * honest read), and a browser/harness disconnect detaches at once.
      */
     private serveEventStream;
+    /**
+     * The service-provided report address for one session record. Only a
+     * COMPLETED, non-blocked session that carries a verdict gets one, and
+     * only when the download port and a bound origin exist. A caller never
+     * has to build the address itself, and an unfinished sitting never
+     * advertises a report it cannot serve.
+     */
+    private reportUrlFor;
     /**
      * Serve one packaged chamber asset. Returns false for anything outside the
      * fixed file set (so the caller falls through to the unchanged catch-all).

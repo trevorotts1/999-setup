@@ -1,19 +1,14 @@
-/**
- * Council sizes (W77S-MODES): light / medium / heavy.
- *
- * One source of truth for the per-mode round policy, the consensus stop
- * rule constants and the advisor-card round ceiling. The four older modes
- * (full, selected, quick, consult) are unchanged and keep their own
- * behaviour in every consumer; nothing here reinterprets them.
- *
- * A ROUND is one pass in which every panel seat answers once. Round 1 is
- * the isolated opening; every later pass challenges the open cruxes from
- * the previous round's cards.
- */
 export declare const COUNCIL_SIZES: readonly ["light", "medium", "heavy"];
 export type CouncilSize = (typeof COUNCIL_SIZES)[number];
+/**
+ * Every council size seats the FULL roster. Mode never selects a smaller
+ * panel (Trevor decision 2026-10-25: "all of the modes should be all of the
+ * agents... all council members are used"). Mode controls ROUNDS and
+ * CONCURRENCY only.
+ */
+export declare const MODE_SEATS: 9;
 export interface ModeRoundPolicy {
-    /** Panel seats: light 3, medium 9, heavy 9. */
+    /** Panel seats: the full roster in every mode. */
     seats: number;
     /** Rounds that always run before any stop rule may fire. */
     min_rounds: number;
@@ -23,6 +18,8 @@ export interface ModeRoundPolicy {
     stop_from_round: number | null;
     /** Provider-request cap for the session (the only enforced limit). */
     max_provider_requests: number;
+    /** Provider calls dispatched at once (wave width) — the one concurrency knob. */
+    max_concurrent_calls: number;
 }
 export declare const MODE_ROUND_POLICY: Readonly<Record<CouncilSize, ModeRoundPolicy>>;
 /** Seats that must share the same top option for the consensus stop rule. */

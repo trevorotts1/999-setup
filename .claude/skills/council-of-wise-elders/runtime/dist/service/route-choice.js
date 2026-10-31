@@ -361,6 +361,7 @@ export function transportForSnapshot(snapshot, opts) {
                 : route.harness.configDir,
             model: snapshot.requestedModelOrAlias,
             spawnImpl: opts.spawnImpl,
+            ...(opts.singleAttempt ? { maxAttempts: 1 } : {}),
         });
     }
     if (route.compatible) {
@@ -368,6 +369,9 @@ export function transportForSnapshot(snapshot, opts) {
             selection: selectionFromSnapshot(snapshot),
             baseUrl: route.compatible.baseUrl,
             credentialResolver: async () => resolveDiscoveredCredential(route, opts.env ?? process.env),
+            // One attempt only: the engine retry mode performs a single dispatch
+            // and reports a transient failure instead of re-sending.
+            ...(opts.singleAttempt ? { retryMode: 'none' } : {}),
         };
         // An Ollama route composes through the existing OpenAI-compatible
         // Ollama profile: the configured /v1 surface, the local daemon with

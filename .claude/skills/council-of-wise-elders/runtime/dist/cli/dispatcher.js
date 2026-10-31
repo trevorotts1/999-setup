@@ -25,7 +25,7 @@ import { CouncilError, featureNotReady, invalidInput, isCouncilError, usageError
 import { buildSampleSession, DeterministicFixtureTransport } from './fixture-transport.js';
 import { createLocalHost, localScope } from './local-host.js';
 import { createStandaloneRunAuthorization, handleAuthorizationCommand, mirrorSession, } from './authorization.js';
-import { runConvene, runRoutes } from './convene.js';
+import { chamberUrlFor, durablePublicOrigin, runConvene, runRoutes } from './convene.js';
 import { exportVerdictReport } from './report-export.js';
 import { resolveDataDir } from './paths.js';
 const defaultIo = {
@@ -291,19 +291,30 @@ const USAGE = [
     '  replay SESSION [--json]             Committed event history (read only, no provider calls)',
     '  export SESSION --format md|json|pdf [--out FILE]',
     '  routes [--origin URL] [--json]      Model routes and harness defaults from the council service',
-    '  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID]',
+    '  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID] [--no-open]',
     '          [--harness H] [--ollama-plan 20|100] [--fallback-model ID] [--fresh-facts FILE] [--origin URL]',
     '                                      Convene a council on the running service (starts it now)',
     '                                      --mode defaults to medium; the four older modes (full, selected,',
     '                                      quick, consult) still convene exactly as before; --seat-ids names',
-    '                                      the light panel (3 seats), otherwise the brief picks them;',
+    '                                      the panel (every mode seats all nine by default);',
     '                                      --ollama-plan is asked once and remembered; --fallback-model is',
-    '                                      the OpenRouter model used when an Ollama route fails',
+    '                                      the OpenRouter model used when an Ollama route fails;',
+    '                                      --no-open skips the desktop chamber pop (headless boxes open nothing anyway)',
     '',
     'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
 ].join('\n');
+/**
+ * The durable chamber URL for an existing session, resolved from what the
+ * box already recorded. Reads never probe, never open a browser and never
+ * start a new request.
+ */
+function durableChamberUrl(env, sessionId) {
+    const origin = durablePublicOrigin(env);
+    return origin === null ? null : chamberUrlFor(origin, sessionId);
+}
 export async function runCli(argv, io = defaultIo, deps = {}) {
     const json = argv.includes('--json');
+    const env = deps.env ?? process.env;
     try {
         const { positionals, flags } = parseArgs(argv);
         const [command, sub, third] = positionals;
@@ -327,11 +338,11 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
         };
         const dataDirFor = () => {
             refuseWithoutRoot();
-            return resolveDataDir({ override: dataDir ?? null, skillRoot });
+            return resolveDataDir({ override: dataDir ?? null, skillRoot, env });
         };
         const hostFor = () => {
             refuseWithoutRoot();
-            return makeHost({ dataDir, skillRoot });
+            return makeHost({ dataDir, skillRoot, env });
         };
         const engineFor = (host) => new CouncilEngine(host);
         if (command === undefined) {
@@ -636,12 +647,16 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                 const engine = engineFor(host);
                 const session = await engine.getSession(sessionId);
                 const budget = host.budget.snapshot(sessionId);
+                // A read, not a new request: the durable chamber URL rides the
+                // result when the box has one, with no probe and no question.
+                const chamber = durableChamberUrl(env, sessionId);
                 printResult(io, json, [
                     `Session ${sessionId}${session.sample ? ' (SAMPLE)' : ''}`,
                     `  mode: ${session.spec.mode}`,
                     `  state: ${session.state.state} (version ${session.state.state_version})`,
                     `  brief revision: ${session.state.brief_revision}`,
                     `  provider requests consumed: ${budget.consumed.provider_requests} of ${budget.ceilings.max_provider_requests}`,
+                    ...(chamber === null ? [] : [`  chamber_url: ${chamber}`]),
                 ].join('\n'), {
                     ok: true,
                     session_id: sessionId,
@@ -651,6 +666,7 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                     brief_revision: session.state.brief_revision,
                     sample: session.sample,
                     budget,
+                    ...(chamber === null ? {} : { chamber_url: chamber }),
                 });
                 return 0;
             }
@@ -682,10 +698,12 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                         exitCode: 3,
                     });
                 }
+                const chamber = durableChamberUrl(env, sessionId);
                 printResult(io, json, verdictHuman(verdict, session.sample), {
                     ok: true,
                     sample: session.sample,
                     verdict,
+                    ...(chamber === null ? {} : { chamber_url: chamber }),
                 });
                 return 0;
             }
@@ -732,14 +750,20 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                     exportedAt: host.clock.nowUtc(),
                 });
                 const outPath = flagString(flags, 'out');
+                if (!outPath && format === 'pdf') {
+                    // Binary deliverable: never print PDF bytes as text.
+                    throw usageError('export --format pdf requires --out FILE so the real PDF bytes are written to a file.');
+                }
                 if (outPath) {
-                    writeFileSync(outPath, artifact.bytes, 'utf8');
+                    // base64 only for the binary PDF artifact; text formats stay utf8.
+                    writeFileSync(outPath, artifact.encoding === 'base64' ? Buffer.from(artifact.bytes, 'base64') : artifact.bytes);
                     printResult(io, json, `Exported ${format} report for ${sessionId} to ${outPath} (deliverable ${artifact.deliverable_id}, sha256 ${artifact.sha256}).`, {
                         ok: true,
                         written: outPath,
                         format,
                         deliverable_id: artifact.deliverable_id,
                         sha256: artifact.sha256,
+                        encoding: artifact.encoding,
                         verdict_content_sha256: artifact.verdict_content_sha256,
                     });
                 }
@@ -752,6 +776,7 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                         sha256: artifact.sha256,
                         verdict_content_sha256: artifact.verdict_content_sha256,
                         content: artifact.bytes,
+                        content_encoding: artifact.encoding,
                     });
                 }
                 else {

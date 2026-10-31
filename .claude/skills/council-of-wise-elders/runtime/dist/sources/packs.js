@@ -11,15 +11,15 @@
  * it reports coverage honestly: a pack whose foundation is not
  * substantiated is labeled, not silently passed and not fabricated.
  */
-import { SEAT_IDS, SEAT_ROSTER, advisorProfileLabel, } from '../contracts/enums';
+import { SEAT_IDS, SEAT_ROSTER, advisorProfileLabel, } from '../contracts/enums.js';
 const SEAT_ID_SET = new Set(SEAT_IDS);
 /** Type guard the contracts package does not export; defined locally. */
 export function isSeatId(value) {
     return SEAT_ID_SET.has(value);
 }
-import { computePackQualification, } from './coverage';
-import { errorDiagnostic, evidenceUnitSchema, hasErrors, sourceRecordSchema, warningDiagnostic, } from './schemas';
-import { normalizeTitle } from './text';
+import { computePackQualification, } from './coverage.js';
+import { errorDiagnostic, evidenceUnitSchema, hasErrors, sourceRecordSchema, warningDiagnostic, } from './schemas.js';
+import { normalizeTitle } from './text.js';
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

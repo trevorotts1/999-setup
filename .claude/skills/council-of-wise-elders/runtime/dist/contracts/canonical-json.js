@@ -16,8 +16,8 @@
  * Hashes are computed over exactly these normalized bytes: the bytes accepted
  * and stored, never a UI reserialization.
  */
-import { ContractError } from './errors';
-import { sha256Hex } from './sha256';
+import { ContractError } from './errors.js';
+import { sha256Hex } from './sha256.js';
 function isPlainObject(value) {
     if (typeof value !== 'object' || value === null)
         return false;

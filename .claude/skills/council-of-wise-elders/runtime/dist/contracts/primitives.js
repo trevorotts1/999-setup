@@ -13,7 +13,7 @@
  * a random source: hosts inject values through the Clock and IdSource seams
  * below, and the core only validates what it is given.
  */
-import { ContractError } from './errors';
+import { ContractError } from './errors.js';
 /** Opaque identifier: letters, digits, hyphen, underscore, dot, colon. */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 export const MAX_ID_LENGTH = 128;
