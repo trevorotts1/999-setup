@@ -646,7 +646,7 @@ export class CouncilEngine {
                 .map((c) => c && typeof c.crux_id === 'string' ? c.crux_id : null)
                 .filter((v) => v !== null)
             : null;
-        const outputContract = cardOutputContract(purpose, challengeIds);
+        const outputContract = cardOutputContract(purpose, challengeIds, purpose === 'consult' ? null : round);
         const systemWithContract = `${system}\n${outputContract.instruction}`;
         const requestInput = {
             brief: session.brief,
@@ -686,7 +686,7 @@ export class CouncilEngine {
                     route_id: session.spec.model_policy.route_id,
                     model_policy: session.spec.model_policy,
                     system: repairs > 0
-                        ? `${systemWithContract}\n${cardRepairInstruction(purpose, challengeIds, lastIssues)}`
+                        ? `${systemWithContract}\n${cardRepairInstruction(purpose, challengeIds, lastIssues, purpose === 'consult' ? null : round)}`
                         : systemWithContract,
                     input: requestInput,
                 };

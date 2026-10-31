@@ -194,7 +194,7 @@ export class OpeningRoundExecutor {
         const pack = this.deps.loadSeatBriefing
             ? await this.deps.loadSeatBriefing(seatId, session)
             : null;
-        const system = cardRequestSystem(OPENING_ROUND_SYSTEM, 'advisor', [], ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : []);
+        const system = cardRequestSystem(OPENING_ROUND_SYSTEM, 'advisor', [], ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [], 1);
         let response;
         try {
             response = await transport.generate({
@@ -220,7 +220,7 @@ export class OpeningRoundExecutor {
                     input_manifest_sha256: plan.input_manifest_sha256,
                     pack_version: plan.pack_version,
                     // The exact card schema; Round 1 issues no challenges.
-                    output_contract: cardOutputContract('advisor', []),
+                    output_contract: cardOutputContract('advisor', [], 1),
                 },
             });
         }
@@ -382,7 +382,7 @@ export class OpeningRoundExecutor {
         }
         const route = {
             ...limits,
-            system_rules_bytes: cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor'),
+            system_rules_bytes: cardSystemBytes(OPENING_ROUND_SYSTEM, 'advisor', 1),
         };
         const seatBudgets = {};
         for (const other of SEAT_IDS) {

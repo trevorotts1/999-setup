@@ -180,6 +180,8 @@ export function createLocalHost(options = {}) {
     const dataDir = resolveDataDir({
         override: options.dataDir ?? null,
         skillRoot: options.skillRoot ?? null,
+        env: options.env,
+        homeDir: options.homeDir,
     });
     const store = new LocalSqliteStore(dataDir);
     const registry = new MapTransportRegistry();

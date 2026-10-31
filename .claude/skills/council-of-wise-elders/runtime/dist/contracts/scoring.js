@@ -13,7 +13,7 @@
  *   builder in later units; the constants and label bands live here);
  * - a tie within 0.25 points is a near tie, not false precision.
  */
-import { ContractError } from './errors';
+import { ContractError } from './errors.js';
 export function computeOptionScore(entries, totalActiveWeight) {
     if (!Number.isFinite(totalActiveWeight) || totalActiveWeight <= 0) {
         throw new ContractError('SCHEMA_VALIDATION', 'totalActiveWeight must be a positive finite number', 'weights');

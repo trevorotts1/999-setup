@@ -10,7 +10,7 @@ export { CRITICAL_DOMAIN_POLICY_VERSION, EMPTY_ANSWERS, INTAKE_SCHEMA_VERSION, I
 export { INTAKE_QUESTIONS, currentQuestion, isFlowReadyToFreeze, isQuestionAnswered, missingMaterialQuestions, questionById, } from './questions.js';
 export { CRITICAL_DOMAIN_REVIEWERS, classifyIntakeDomains, deriveSignals, } from './classify.js';
 export { modelPolicyFromSnapshot, pinRouteSnapshot, resolveRouteSnapshot, routeSnapshotDrift, } from './routes.js';
-export { assessPanel, quickModePolicyRecord, recommendLightPanel, recommendQuickPanel, validatePanel, } from './panel.js';
+export { assessPanel, quickModePolicyRecord, recommendQuickPanel, validatePanel, } from './panel.js';
 export { briefContentHash, composeBrief, evidenceManifestHash } from './brief.js';
 export { FileIntakeWorkingStore, MemoryIntakeWorkingStore, RepositoryIntakeBriefStore, } from './stores.js';
 export { IntakeService, } from './service.js';

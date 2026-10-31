@@ -16,8 +16,8 @@
  * names used here. Drift between this reading and CWE-011's emitted
  * packages is reconciled at the integration review, per the build plan.
  */
-import { isSeatId, validateAdvisorPack } from './packs';
-import { errorDiagnostic, hasErrors } from './schemas';
+import { isSeatId, validateAdvisorPack } from './packs.js';
+import { errorDiagnostic, hasErrors } from './schemas.js';
 export function validateExportPackage(pkg, options = {}) {
     const diagnostics = [];
     if (!isSeatId(pkg.seat_id)) {

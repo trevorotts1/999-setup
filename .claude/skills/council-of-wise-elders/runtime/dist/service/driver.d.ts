@@ -24,6 +24,7 @@
 import type { TrustedPrincipal } from '../authorization/index.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import type { Clock, IdSource } from '../cli/host-ports.js';
+import { type ProposalInferenceRequest } from '../brief/proposal-stage.js';
 import { type CouncilSize, type DecisionBrief, type ModelPolicy, type RunCeilings, type ScopeFields, type SeatId, type SessionMode, type SessionVisibility } from '../contracts/index.js';
 import { type OllamaPlan } from '../providers/parallel.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
@@ -40,6 +41,26 @@ export interface ResolvedSessionRoute {
     model_label: string;
     selection_source: 'explicit' | 'client_default';
     harness: string | null;
+}
+/**
+ * CTR-134: the configured runtime model request adapter, bound to the exact
+ * route/model the caller's convene resolved. The service composition supplies
+ * this from `transportForSnapshot(snapshot)` — the SAME adapter the sitting
+ * uses — in its one-shot form (one attempt, no retry, no fallback).
+ */
+export type PreparationInference = (route: ResolvedSessionRoute, request: ProposalInferenceRequest, context: {
+    session_id: string;
+}) => Promise<{
+    text: string;
+}>;
+/** Bounded preparation accounting shown with the accepted sitting. */
+export interface PreparationRecord {
+    state: 'prepared';
+    request_budget: 1;
+    request_count: 1;
+    route_id: string;
+    model_label: string;
+    alternatives_are_proposals: true;
 }
 /** A web finding gathered by the convening agent (sources/elder-knowledge.ts). */
 export interface FreshFact {
@@ -69,6 +90,17 @@ export interface ConveneRoundsPolicy {
     max_rounds: number;
     stop_from_round: number | null;
 }
+/**
+ * Why and how the sitting's mode was chosen (W77S AUTO-MODE-1062). The
+ * client sees this with the session: `mode` is the mode the run uses,
+ * `source` says who picked it — the client explicitly, or the automatic
+ * classification of the question — and `reason` says why.
+ */
+export interface ModeSelection {
+    mode: SessionMode;
+    source: 'client' | 'auto';
+    reason: string;
+}
 export interface ConveneAccepted {
     session_id: string;
     state: string;
@@ -81,6 +113,8 @@ export interface ConveneAccepted {
     events_path: string;
     /** Real session mode (light/medium/heavy or one of the four older modes). */
     mode: SessionMode;
+    /** The mode, its source (client|auto) and the reason it was chosen. */
+    mode_selection: ModeSelection;
     /** Panel seats the run actually uses. */
     seats: number;
     /** null for the four older modes, whose round shape is fixed. */
@@ -91,8 +125,15 @@ export interface ConveneAccepted {
     parallel_limit: number;
     /** One plain line: the fallback route, or none and why. */
     fallback: string;
+    /**
+     * Present only when the brief carried no substantive alternative and ONE
+     * preparatory request proposed them. The alternatives are labelled
+     * proposals, never client facts, and the sitting's cap already accounts
+     * for the request.
+     */
+    preparation?: PreparationRecord;
 }
-export type DriverRefusalCode = 'COMPOSITION_NOT_READY' | 'CONVENE_INPUT_INVALID' | 'OLLAMA_PLAN_REQUIRED' | RouteChoiceErrorCode;
+export type DriverRefusalCode = 'COMPOSITION_NOT_READY' | 'CONVENE_INPUT_INVALID' | 'COUNCIL_PREPARATION_REQUIRED' | 'OLLAMA_PLAN_REQUIRED' | RouteChoiceErrorCode;
 export declare class DriverRefusal extends Error {
     readonly code: DriverRefusalCode;
     readonly recovery: string;
@@ -121,10 +162,26 @@ export interface CouncilDriverDeps {
     }) => void;
     /** Pack version stamped on non-sample sessions. */
     sourcePackVersion?: string;
+    /**
+     * CTR-134: the configured adapter used for the ONE preparatory request.
+     * Absent means an exploratory brief is refused as input-needed instead of
+     * being scored on an invented option.
+     */
+    prepareInference?: PreparationInference;
 }
 export declare function ceilingsForMode(mode: SessionMode): RunCeilings;
 /** The round shape a council size runs, for the client-facing summary. */
 export declare function roundsPolicyOf(mode: CouncilSize): ConveneRoundsPolicy;
+/**
+ * Resolve the sitting's mode through the ONE selector (flow/mode-select.ts).
+ *
+ * An explicit client mode always wins verbatim — all seven SESSION_MODES,
+ * including the four older ones, whose round shape stays fixed. With no
+ * explicit mode the question's complexity decides (light / medium / heavy).
+ * A question with no text at all cannot be classified, so the old default
+ * holds: medium, with a reason that says so rather than inventing a score.
+ */
+export declare function resolveModeSelection(explicit: SessionMode | undefined, question: string): ModeSelection;
 export declare function createCouncilDriver(deps: CouncilDriverDeps): {
     convene(input: ConveneInput): Promise<ConveneAccepted>;
     inFlight(): number;

@@ -6,9 +6,12 @@
  * the host store's event journal (operation_completed with payload
  * kind 'report_export', the frozen-vocabulary convention CWE-038
  * established), and registered as deliverables bound to the exact
- * verdict revision and content hash. PDF stays registered not ready:
- * the service refuses it with EXPORT_FORMAT_NOT_READY naming the
- * missing Playwright/Chromium renderer (CWE-044); no PDF is faked.
+ * verdict revision and content hash. PDF is rendered from the same
+ * print HTML by the host renderer capability (`createHostPdfRenderer`):
+ * on a host with no renderer the service refuses with
+ * EXPORT_FORMAT_NOT_READY naming the missing piece; a renderer that
+ * fails is EXPORT_RENDER_FAILED. No PDF is faked and HTML is never
+ * written with a .pdf name.
  *
  * The deliverable registry here is process-scoped (the standalone CLI
  * is one export per process); the journal record in the store is the
@@ -57,5 +60,7 @@ export declare function exportVerdictReport(args: {
     filename: string;
     sha256: string;
     bytes: string;
+    /** utf8 for text formats, base64 for the binary PDF artifact. */
+    encoding: 'utf8' | 'base64';
     verdict_content_sha256: string;
 }>;

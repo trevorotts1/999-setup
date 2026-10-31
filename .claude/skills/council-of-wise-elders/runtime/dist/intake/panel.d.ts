@@ -92,9 +92,3 @@ export declare function assessPanel(args: {
  * A recommendation only: the client selects or accepts the panel.
  */
 export declare function recommendQuickPanel(draft: IntakeDraft): SeatId[];
-/**
- * Recommend a light panel by decision relevance (W77S-MODES): the same
- * flag-driven best-fit pattern as recommendQuickPanel, stopped at three
- * seats. A recommendation only: the client selects or accepts the panel.
- */
-export declare function recommendLightPanel(draft: IntakeDraft): SeatId[];

@@ -228,7 +228,7 @@ export class SubprocessHostCallTransport {
             ...iso.args,
         ];
         const sleep = this.options.sleepImpl ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-        const maxAttempts = RETRY_BACKOFF_MS.length + 1;
+        const maxAttempts = Math.max(1, this.options.maxAttempts ?? RETRY_BACKOFF_MS.length + 1);
         for (let attempt = 1;; attempt += 1) {
             try {
                 return await this.runOnce(spawnImpl, args, env, cwd, request, iso.streaming);

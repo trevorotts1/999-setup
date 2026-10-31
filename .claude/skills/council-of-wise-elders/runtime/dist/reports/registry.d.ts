@@ -5,13 +5,14 @@
  * The format registry is the single list of deliverables an export may
  * produce. Markdown, the canonical record JSON, and print HTML are
  * rendered deterministically by this unit from the validated verdict
- * revision. PDF is a REGISTERED deliverable whose renderer is the
- * approved Playwright/Chromium capability named in Section 24.3; that
- * renderer is not present in this runtime's dependency bill (the
- * package depends on zod only), so the PDF deliverable is registered
- * as not ready and names the missing piece. Rendered-PDF production
- * and visual QA belong to CWE-044. A PDF is never faked with renamed
- * bytes.
+ * revision. PDF is a REGISTERED deliverable rendered from the same
+ * print HTML by the host renderer capability named in Section 24.3
+ * (`pdf-renderer.ts`: headless Chrome/Chromium, the Playwright browser
+ * cache, or the CUPS filter — whatever the host already has; no new
+ * package dependency). The registry reports PDF ready only when the
+ * host renderer is actually present; on a host without one it stays
+ * not ready and names the missing piece. A PDF is never faked with
+ * renamed bytes and HTML is never served as a PDF.
  *
  * The deliverable registry records real register, read, delete, and
  * redaction-produced artifacts (B15): every successful export registers
@@ -31,8 +32,17 @@ export interface ReportFormatDescriptor {
     /** Set only when status is 'not_ready': the missing piece, named. */
     missing_piece: string | null;
 }
-export declare const PDF_MISSING_PIECE = "the approved Playwright/Chromium PDF renderer (directive Section 24.3) is not present in the runtime dependency bill (package dependencies: zod only); rendered PDF production and visual QA are owned by CWE-044";
+export declare const PDF_MISSING_PIECE = "no headless Chrome/Chromium or CUPS PDF filter (cupsfilter) is installed or discoverable on this host; install one, or set CHROME_PATH to a Chrome/Chromium binary, then retry the export";
 export declare const REPORT_FORMAT_REGISTRY: Readonly<Record<ReportFormat, ReportFormatDescriptor>>;
+/**
+ * The registry as the host sees it: PDF flips to ready only when the
+ * host renderer capability is actually present. Every other descriptor
+ * is static.
+ */
+export declare function reportFormatRegistry(args?: {
+    pdf_available: boolean;
+    pdf_detail?: string;
+}): Readonly<Record<ReportFormat, ReportFormatDescriptor>>;
 export declare function isReportFormat(value: string): value is ReportFormat;
 /** Safe download filename (Section 24.4): built from IDs only, never caller paths. */
 export declare function reportFilename(args: {
@@ -55,7 +65,10 @@ export interface ReportDeliverable {
     format: ReportFormat;
     filename: string;
     media_type: string;
+    /** Exact bytes in the encoding below; base64 for binary formats (PDF). */
     bytes: string;
+    /** How `bytes` is carried: utf8 text (default) or base64 binary. */
+    encoding?: 'utf8' | 'base64';
     sha256: string;
     verdict_revision: number;
     verdict_content_sha256: string;

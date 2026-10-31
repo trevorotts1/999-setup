@@ -24,7 +24,14 @@ export interface CliDeps {
     createHost?: (options: {
         dataDir?: string;
         skillRoot?: string;
+        env?: NodeJS.ProcessEnv;
     }) => LocalHost;
+    /**
+     * The environment the session-read commands resolve durable values
+     * from (data directory, the service's own public origin). Default
+     * process.env; tests inject it so no real box state is read.
+     */
+    env?: NodeJS.ProcessEnv;
 }
 /**
  * The skill folder that contains this runtime (state must stay outside it).

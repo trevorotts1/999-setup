@@ -24,7 +24,36 @@ export interface ConveneOpts {
     probeTimeoutMs?: number;
     env?: NodeJS.ProcessEnv;
     io: CliIo;
+    /**
+     * Test seam: the desktop opener. Tests inject a recorder so no browser
+     * is ever launched. The default is fire-and-forget and never blocks.
+     */
+    openUrl?: (url: string) => void;
+    /** Test seam: whether a desktop (GUI) session exists. */
+    guiPresent?: () => boolean;
 }
+/**
+ * A public origin is one plain https origin: no path, query, fragment,
+ * credentials or loopback spelling. Null when the input does not qualify.
+ */
+export declare function validPublicOrigin(raw: string | undefined | null): string | null;
+/**
+ * The box's own service record. WISE_ELDERS_SERVICE_JSON is what the
+ * supported `blackceo-council` shim exports; the fallback is the same
+ * file chamber-visual.sh reads. Null unless the environment actually
+ * names a box layout: a bare test environment must never read (or write)
+ * the real operator box's record.
+ */
+export declare function serviceJsonPath(env: NodeJS.ProcessEnv): string | null;
+/**
+ * The durable chamber origin: the env value the box already carries, then
+ * the service's own persisted public_origin (written only after a verified
+ * probe). Reads use this WITHOUT any network call, so an existing-session
+ * read stays an honest read: no probe, no new request, no question.
+ */
+export declare function durablePublicOrigin(env: NodeJS.ProcessEnv): string | null;
+/** The per-session Roast Room address, identical to chamber-visual.sh's. */
+export declare function chamberUrlFor(origin: string, sessionId: string): string;
 export declare function conveneCandidates(env: NodeJS.ProcessEnv): string[];
 export declare function probePublicCandidate(raw: string | undefined, fetchImpl: typeof fetch, timeoutMs?: number): Promise<string | null>;
 export declare function runRoutes(args: string[], opts: ConveneOpts): Promise<number>;

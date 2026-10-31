@@ -14,9 +14,9 @@
  * beyond a book blurb. This module applies the same gate to every
  * required work so no seat is held to a weaker standard.
  */
-import { SEAT_ROSTER } from '../contracts/enums';
-import { sourceVersionOf, } from './schemas';
-import { normalizeTitle, sameSpeaker } from './text';
+import { SEAT_ROSTER } from '../contracts/enums.js';
+import { sourceVersionOf, } from './schemas.js';
+import { normalizeTitle, sameSpeaker } from './text.js';
 export const MIN_TRACEABLE_CONCEPTS = 3;
 export const MIN_APPLICATION_CASES = 1;
 /**
