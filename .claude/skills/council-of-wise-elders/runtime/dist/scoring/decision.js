@@ -40,6 +40,7 @@
  *   returned instead of a rounding decision (T044).
  */
 import { computeOptionScore, ContractError, GO_COVERAGE_THRESHOLD, isNearTie, labelForScore, NEAR_TIE_BAND, SEAT_IDS, CRITICAL_DOMAINS, } from '../contracts/index.js';
+import { isUnresolvedExplorationOption } from '../brief/exploration.js';
 const EXPOSURE_RANK = { low: 0, medium: 1, high: 2 };
 function assertKnownSeat(seatId, path) {
     if (!SEAT_IDS.includes(seatId)) {
@@ -194,6 +195,14 @@ export function analyzeDecision(input) {
             .map((f) => f.constraint_id);
         const eligibilityReasons = hardFailures.map((id) => `hard constraint ${id} confirmed FAIL; option is disqualified (Section 12.3)`);
         let eligible = hardFailures.length === 0;
+        // CTR-133: an unresolved exploration candidate is not a decision option.
+        // It is never eligible, so it can never lead, be recommended, or carry a
+        // band label. Genuine indecision (WAIT / INSUFFICIENT_EVIDENCE with a null
+        // recommendation) remains a distinct, honest outcome.
+        if (isUnresolvedExplorationOption(option)) {
+            eligible = false;
+            eligibilityReasons.push('unresolved exploration candidate: no real alternative was stated, so it cannot be scored or recommended (CTR-133)');
+        }
         // Professional review failure is a hard failure of the option, not
         // a score adjustment (Section 12.7).
         const professionalOutcomes = (input.professional_reviews ?? []).filter((r) => r.option_id === null || r.option_id === option.id);

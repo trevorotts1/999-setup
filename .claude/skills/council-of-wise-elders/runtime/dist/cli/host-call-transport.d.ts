@@ -75,6 +75,13 @@ export interface HostCallTransportOptions {
     spawnImpl?: typeof spawn;
     /** Injectable retry sleep for tests; production waits for real time. */
     sleepImpl?: (ms: number) => Promise<void>;
+    /**
+     * Attempts this transport may make for one operation. Default keeps the
+     * historical 3 (one call plus at most two transient retries). A one-shot
+     * preparation request passes 1: it never retries, so it can never spend
+     * more than the single provider request its budget records.
+     */
+    maxAttempts?: number;
 }
 export declare class SubprocessHostCallTransport implements ModelTransport {
     private readonly options;

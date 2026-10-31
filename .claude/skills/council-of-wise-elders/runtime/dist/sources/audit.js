@@ -17,8 +17,8 @@
  * host-supplied (the trusted clock stamps audits; validators never
  * invent a time).
  */
-import { canonicalHash } from '../contracts/canonical-json';
-import { validateAdvisorPack } from './packs';
+import { canonicalHash } from '../contracts/canonical-json.js';
+import { validateAdvisorPack } from './packs.js';
 export const VALIDATOR_VERSION = 'wise-elders.source-validator/v1';
 /** The exact content the pack hash binds: claims, not file bytes. */
 function packContent(pack) {

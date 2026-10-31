@@ -147,7 +147,7 @@ export function assembleSeatContext(args) {
             ? 'ratification'
             : args.operation === 'consult'
                 ? 'consult'
-                : 'advisor'),
+                : 'advisor', args.round ?? null),
     };
     const seatBudgets = {};
     for (const other of SEAT_IDS) {
@@ -592,7 +592,7 @@ export class ChallengeRoundExecutor {
         const ownOpening = previousCards.find((c) => c.seat_id === seatId) ?? null;
         const briefView = payloadBriefView(context);
         const challengeIds = assigned.map((crux) => crux.crux_id);
-        const system = cardRequestSystem(CHALLENGE_ROUND_SYSTEM, 'advisor', challengeIds, ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : []);
+        const system = cardRequestSystem(CHALLENGE_ROUND_SYSTEM, 'advisor', challengeIds, ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [], round);
         let response;
         try {
             response = await transport.generate({
@@ -629,7 +629,7 @@ export class ChallengeRoundExecutor {
                     challenge_note: assigned.length === 0
                         ? `No targeted challenge is assigned to your seat. Confirm or update your previous position against the evidence; a fresh round ${round} card is still required.`
                         : null,
-                    output_contract: cardOutputContract('advisor', challengeIds),
+                    output_contract: cardOutputContract('advisor', challengeIds, round),
                 },
             });
         }
@@ -780,6 +780,7 @@ export class ChallengeRoundExecutor {
             snapshot,
             seatId,
             operation: 'round_2_response',
+            round,
             systemText: CHALLENGE_ROUND_SYSTEM,
         }));
         if (assembled.status === 'context_too_small')

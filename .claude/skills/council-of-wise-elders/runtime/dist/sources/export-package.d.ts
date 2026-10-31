@@ -16,9 +16,9 @@
  * names used here. Drift between this reading and CWE-011's emitted
  * packages is reconciled at the integration review, per the build plan.
  */
-import type { PackQualification, WorkCoverage } from './coverage';
-import { type PackValidationOptions } from './packs';
-import { type Diagnostic } from './schemas';
+import type { PackQualification, WorkCoverage } from './coverage.js';
+import { type PackValidationOptions } from './packs.js';
+import { type Diagnostic } from './schemas.js';
 export interface Skill22ExportPackage {
     seat_id: string;
     pack_version: string;

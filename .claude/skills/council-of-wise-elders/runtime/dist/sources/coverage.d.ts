@@ -14,8 +14,8 @@
  * beyond a book blurb. This module applies the same gate to every
  * required work so no seat is held to a weaker standard.
  */
-import { type SeatId } from '../contracts/enums';
-import { type EvidenceUnit, type SourceRecord } from './schemas';
+import { type SeatId } from '../contracts/enums.js';
+import { type EvidenceUnit, type SourceRecord } from './schemas.js';
 export declare const MIN_TRACEABLE_CONCEPTS = 3;
 export declare const MIN_APPLICATION_CASES = 1;
 export type RequiredWorkKind = 'book' | 'first_person_teaching' | 'documented_material';

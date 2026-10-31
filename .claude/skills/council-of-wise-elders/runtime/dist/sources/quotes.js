@@ -15,8 +15,8 @@
  * independent semantic review (Section 8.4), outside this deterministic
  * check.
  */
-import { errorDiagnostic, sourceVersionOf, } from './schemas';
-import { locatorMatches, normalizeQuotedText, sameSpeaker } from './text';
+import { errorDiagnostic, sourceVersionOf, } from './schemas.js';
+import { locatorMatches, normalizeQuotedText, sameSpeaker } from './text.js';
 function rejected(diagnostics) {
     return { status: 'rejected', diagnostics };
 }

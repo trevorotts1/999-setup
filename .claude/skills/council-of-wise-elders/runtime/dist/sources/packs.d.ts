@@ -11,11 +11,11 @@
  * it reports coverage honestly: a pack whose foundation is not
  * substantiated is labeled, not silently passed and not fabricated.
  */
-import { type SeatId } from '../contracts/enums';
+import { type SeatId } from '../contracts/enums.js';
 /** Type guard the contracts package does not export; defined locally. */
 export declare function isSeatId(value: string): value is SeatId;
-import { type PackQualification, type WorkCoverage } from './coverage';
-import { type Diagnostic, type EvidenceUnit, type SourceRecord } from './schemas';
+import { type PackQualification, type WorkCoverage } from './coverage.js';
+import { type Diagnostic, type EvidenceUnit, type SourceRecord } from './schemas.js';
 /** Pack-level claim surface the validator audits (parsed JSON files). */
 export interface PackInput {
     /** Seat folder name the pack was loaded from. */

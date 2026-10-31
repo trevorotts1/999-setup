@@ -17,7 +17,7 @@
  *   rejected, because those exist only inside the host stamp.
  */
 import { z } from 'zod';
-import type { ValidationResult } from './errors';
+import type { ValidationResult } from './errors.js';
 /** Current canonical contract version for this package surface. */
 export declare const CONTRACT_PACKAGE_VERSION = "wise-elders.core/1.0.0";
 /** Schema version stamps carried by individual contract payloads. */

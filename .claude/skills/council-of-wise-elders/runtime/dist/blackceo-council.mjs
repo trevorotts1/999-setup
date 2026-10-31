@@ -8,16 +8,16 @@ var __export = (target, all) => {
 // src/cli/dispatcher.ts
 import {
   closeSync,
-  existsSync as existsSync6,
+  existsSync as existsSync9,
   openSync,
-  readFileSync as readFileSync7,
+  readFileSync as readFileSync12,
   readSync,
-  writeFileSync as writeFileSync3,
+  writeFileSync as writeFileSync4,
   writeSync
 } from "node:fs";
 import { createRequire as createRequire3 } from "node:module";
-import { dirname as dirname3, join as join9, resolve as resolve5 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { dirname as dirname4, join as join12, resolve as resolve5 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/contracts/errors.ts
 var ContractError = class extends Error {
@@ -216,6 +216,33 @@ var EVENT_TYPES = [
 
 // src/contracts/modes.ts
 var COUNCIL_SIZES = ["light", "medium", "heavy"];
+var MODE_SEATS = SEAT_IDS.length;
+var MODE_ROUND_POLICY = {
+  light: {
+    seats: MODE_SEATS,
+    min_rounds: 2,
+    max_rounds: 2,
+    stop_from_round: null,
+    max_provider_requests: 50,
+    max_concurrent_calls: 3
+  },
+  medium: {
+    seats: MODE_SEATS,
+    min_rounds: 1,
+    max_rounds: 4,
+    stop_from_round: 1,
+    max_provider_requests: 50,
+    max_concurrent_calls: MODE_SEATS
+  },
+  heavy: {
+    seats: MODE_SEATS,
+    min_rounds: 3,
+    max_rounds: 10,
+    stop_from_round: 3,
+    max_provider_requests: 100,
+    max_concurrent_calls: MODE_SEATS
+  }
+};
 var MAX_ADVISOR_ROUND = 10;
 function isCouncilSize(mode) {
   return COUNCIL_SIZES.includes(mode);
@@ -2046,8 +2073,8 @@ function emoji() {
 }
 var ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
 var ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
-var mac = (delimiter2) => {
-  const escapedDelim = escapeRegex(delimiter2 ?? ":");
+var mac = (delimiter3) => {
+  const escapedDelim = escapeRegex(delimiter3 ?? ":");
   return new RegExp(`^(?:[0-9A-F]{2}${escapedDelim}){5}[0-9A-F]{2}$|^(?:[0-9a-f]{2}${escapedDelim}){5}[0-9a-f]{2}$`);
 };
 var cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
@@ -15110,11 +15137,11 @@ var sessionSpecSchema = external_exports.strictObject({
       message: "selected mode requires 2 to 8 seats"
     });
   }
-  if (spec.mode === "light" && spec.seat_ids.length !== 3) {
+  if (spec.mode === "light" && spec.seat_ids.length !== SEAT_IDS.length) {
     ctx.addIssue({
       code: "custom",
       path: ["seat_ids"],
-      message: "light mode requires exactly three seats"
+      message: "light mode requires all nine seats"
     });
   }
   if ((spec.mode === "medium" || spec.mode === "heavy") && spec.seat_ids.length !== SEAT_IDS.length) {
@@ -16027,15 +16054,24 @@ var invokedDirectly = typeof process !== "undefined" && Array.isArray(process.ar
 if (invokedDirectly) {
   void (async () => {
     const { writeFile, mkdir } = await import("node:fs/promises");
-    const { dirname: dirname4, join: join10 } = await import("node:path");
-    const { fileURLToPath: fileURLToPath3 } = await import("node:url");
-    const here = dirname4(fileURLToPath3(import.meta.url));
-    const target = join10(here, JSON_SCHEMA_ARTIFACT_PATH);
-    await mkdir(dirname4(target), { recursive: true });
+    const { dirname: dirname5, join: join13 } = await import("node:path");
+    const { fileURLToPath: fileURLToPath4 } = await import("node:url");
+    const here = dirname5(fileURLToPath4(import.meta.url));
+    const target = join13(here, JSON_SCHEMA_ARTIFACT_PATH);
+    await mkdir(dirname5(target), { recursive: true });
     await writeFile(target, generateJsonSchemaArtifact(), "utf8");
     process.stdout.write(`wrote ${target}
 `);
   })();
+}
+
+// src/brief/exploration.ts
+var EXPLORATION_OPTION_ID = "option-explore";
+var EXPLORATION_OPTION_LABEL = "Explore the question with the Council; no option has been chosen yet.";
+function isUnresolvedExplorationOption(option) {
+  if (option.id === EXPLORATION_OPTION_ID) return true;
+  const label = option.label.trim().toLowerCase().replace(/\s+/g, " ");
+  return label === EXPLORATION_OPTION_LABEL.toLowerCase() || label.startsWith("explore the question with the council") && label.includes("no option has been chosen");
 }
 
 // src/scoring/decision.ts
@@ -16188,6 +16224,12 @@ function analyzeDecision(input) {
       (id) => `hard constraint ${id} confirmed FAIL; option is disqualified (Section 12.3)`
     );
     let eligible = hardFailures.length === 0;
+    if (isUnresolvedExplorationOption(option)) {
+      eligible = false;
+      eligibilityReasons.push(
+        "unresolved exploration candidate: no real alternative was stated, so it cannot be scored or recommended (CTR-133)"
+      );
+    }
     const professionalOutcomes = (input.professional_reviews ?? []).filter(
       (r) => r.option_id === null || r.option_id === option.id
     );
@@ -16372,6 +16414,7 @@ function analyzeDecision(input) {
 
 // src/cli/card-contract.ts
 var DUE_AT_EXAMPLE = "2026-11-15T17:00:00Z";
+var JAKES_LENS_IDS = SEAT_ROSTER.find((s) => s.seat_id === "td-jakes")?.lenses ?? [];
 function requiredCardFields(purpose) {
   const schema = cardAuthorJsonSchema(purpose);
   if (!Array.isArray(schema.required)) return [];
@@ -16379,19 +16422,45 @@ function requiredCardFields(purpose) {
     (field) => typeof field === "string"
   );
 }
+function optionScoreFields(purpose) {
+  const schema = cardAuthorJsonSchema(purpose);
+  return Object.keys(schema.properties?.option_scores?.items?.properties ?? {});
+}
 var EVIDENCE_ID_RULE = "Evidence reference arrays (evidence_ids, option_scores[].evidence_ids, framework_applications[].case_evidence_ids) may hold only evidence_id values copied from the evidence manifest in the supplied input. The brief's own fact, assumption, unknown, and constraint IDs (for example fact-1, asm-1, unk-1, con-1) are NOT evidence IDs and fail validation if used there. When the evidence manifest is empty or no entry fits, those arrays must be [].";
-var LENSES_RULE = 'lenses_used: omit this field entirely unless seat_id is "td-jakes". Any other seat that includes lenses_used fails validation.';
-function cardContractLines(purpose, challengeIds) {
+var LENSES_RULE = `lenses_used: omit this field entirely unless seat_id is "td-jakes". Any other seat that includes lenses_used fails validation. For "td-jakes" it may hold only these exact IDs, copied verbatim: ${JAKES_LENS_IDS.join(", ")}. Any other lens name fails validation, and the seat is still ONE seat and ONE vote.`;
+function roundRule(round) {
+  return `The object's "round" field must be the number ${round}, a JSON number, because this call is round ${round}. Any other round value fails validation.`;
+}
+var PLAIN_LANGUAGE_RULE = [
+  "Write the reader-facing fields in plain language for a busy non-specialist, using only the fields the schema already defines:",
+  "conditions[].description is the ACTION: one concrete instruction a person could start, in ordinary words, with no internal jargon, shorthand, or ID;",
+  "critical_unknowns[] is the INFORMATION NEEDED: each entry names one fact the client must supply, phrased as a plain question or as what is missing;",
+  "decisive_arguments[] opens with the plain SUMMARY of your reasoning in one short sentence a non-expert could repeat, then the detail that supports it;",
+  "change_my_mind is the one piece of evidence that would change your position, in plain words.",
+  "Never invent a deadline, metric, result, owner, or approval: if it is not in the supplied input, record it as an unknown or leave it null."
+].join(" ");
+function closedObjectRule(purpose) {
+  const fields = optionScoreFields(purpose);
+  const base = "Every JSON object in the card is closed: it accepts only the keys the supplied JSON Schema names, and any extra key fails validation.";
+  if (fields.length === 0) {
+    return `${base} Do not add explanatory note fields anywhere in the object.`;
+  }
+  return `${base} Each option_scores entry accepts exactly ${fields.join(", ")}; put any commentary in "rationale" and never add a note or explanation key to an entry.`;
+}
+function cardContractLines(purpose, challengeIds, round = null) {
   const fields = requiredCardFields(purpose);
   const lines = [
     "Return exactly one JSON object and nothing else: no prose, no markdown, no code fences.",
     `The object's "card_kind" field must be exactly "${purpose}" and the object must conform to the supplied JSON Schema. No other card_kind value is valid for this call.`,
+    ...round === null ? [] : [roundRule(round)],
     `Include every required field, with a value for each: ${fields.join(", ")}. A card missing any of these fields fails validation; a partial card is not accepted.`,
     "Copy schema_version, session_id, brief_revision, seat_id, input_manifest_sha256, and pack_version exactly from the supplied input; do not invent or alter them.",
     "Every ID string in the card must be an opaque ID: letters, digits, and the characters . _ : - only, with no spaces. Copy IDs exactly from the supplied input where one is supplied. Never put a person's name, a framework name, a title, or a sentence in an ID field.",
-    EVIDENCE_ID_RULE
+    EVIDENCE_ID_RULE,
+    closedObjectRule(purpose)
   ];
   if (purpose === "advisor") {
+    lines.push(PLAIN_LANGUAGE_RULE);
     lines.push(LENSES_RULE);
     if (challengeIds !== null && challengeIds.length > 0) {
       lines.push(
@@ -16408,30 +16477,40 @@ function cardContractLines(purpose, challengeIds) {
   }
   return lines;
 }
-function cardContractInstruction(purpose, challengeIds) {
-  return cardContractLines(purpose, challengeIds).join("\n");
+function cardContractInstruction(purpose, challengeIds, round = null) {
+  return cardContractLines(purpose, challengeIds, round).join("\n");
 }
 var NOT_JSON_ISSUE = "response was not valid JSON: ";
 function closedSetHints(issues) {
   if (!issues.some((issue2) => issue2.includes("JAKES_LENS_UNKNOWN"))) return [];
-  const lenses = SEAT_ROSTER.find((s) => s.seat_id === "td-jakes")?.lenses ?? [];
-  return [`lenses_used may contain only these values: ${lenses.join(", ")}.`];
+  return [`lenses_used may contain only these values: ${JAKES_LENS_IDS.join(", ")}.`];
 }
-function cardRepairInstruction(purpose, challengeIds, issues) {
+function cardRepairInstruction(purpose, challengeIds, issues, round = null) {
   const notJson = issues[0]?.startsWith(NOT_JSON_ISSUE) ? issues[0].slice(NOT_JSON_ISSUE.length) : null;
   return [
     notJson !== null ? `Your previous reply was not valid JSON: ${notJson}. Reply with exactly one JSON object and nothing else.` : `Your previous output failed validation: ${issues.join("; ")}.`,
     ...closedSetHints(issues),
     "The contract for this call, restated in full:",
-    ...cardContractLines(purpose, challengeIds),
+    ...cardContractLines(purpose, challengeIds, round),
     "Return the complete corrected card only: one JSON object with every required field present, and nothing else (no prose, no markdown, no code fences, no partial card)."
   ].join("\n");
 }
-function cardOutputContract(purpose, challengeIds) {
+function restrictLensesToApprovedSet(schema) {
+  if (typeof schema !== "object" || schema === null) return schema;
+  const properties = schema.properties;
+  if (typeof properties !== "object" || properties === null) return schema;
+  const field = properties.lenses_used;
+  if (typeof field !== "object" || field === null) return schema;
+  const items = field.items;
+  if (typeof items !== "object" || items === null) return schema;
+  items.enum = [...JAKES_LENS_IDS];
+  return schema;
+}
+function cardOutputContract(purpose, challengeIds, round = null) {
   return {
     card_kind: purpose,
-    instruction: cardContractInstruction(purpose, challengeIds),
-    json_schema: cardAuthorJsonSchema(purpose)
+    instruction: cardContractInstruction(purpose, challengeIds, round),
+    json_schema: restrictLensesToApprovedSet(cardAuthorJsonSchema(purpose))
   };
 }
 var REPAIR_ISSUES_RESERVE = "x".repeat(2048);
@@ -17401,7 +17480,11 @@ var CouncilEngine = class {
     const challengeIds = purpose === "advisor" ? (Array.isArray(assignedChallenges) ? assignedChallenges : []).map(
       (c) => c && typeof c.crux_id === "string" ? c.crux_id : null
     ).filter((v) => v !== null) : null;
-    const outputContract = cardOutputContract(purpose, challengeIds);
+    const outputContract = cardOutputContract(
+      purpose,
+      challengeIds,
+      purpose === "consult" ? null : round
+    );
     const systemWithContract = `${system}
 ${outputContract.instruction}`;
     const requestInput = {
@@ -17442,7 +17525,7 @@ ${outputContract.instruction}`;
           route_id: session.spec.model_policy.route_id,
           model_policy: session.spec.model_policy,
           system: repairs > 0 ? `${systemWithContract}
-${cardRepairInstruction(purpose, challengeIds, lastIssues)}` : systemWithContract,
+${cardRepairInstruction(purpose, challengeIds, lastIssues, purpose === "consult" ? null : round)}` : systemWithContract,
           input: requestInput
         };
         let response;
@@ -20456,6 +20539,26 @@ var CouncilRepositories = class {
     if (this.isDeleted(envelope.tenant_id, sessionId)) {
       throw sessionDeleted(sessionId);
     }
+  }
+  /**
+   * Append one committed event through the canonical journal in its own
+   * transaction. The composed services (report export journaling) use
+   * this instead of reaching into the journal's transaction handle; the
+   * vocabulary, sequence allocation and hash chain are the journal's.
+   */
+  appendEvent(envelope, sessionId, input) {
+    this.assertNotDeleted(envelope, sessionId);
+    return this.db.write(
+      (handle) => this.journal.append(handle, envelope, sessionId, {
+        event_id: input.event_id,
+        type: input.type,
+        from_state: input.from_state ?? null,
+        to_state: input.to_state ?? null,
+        actor_subject: input.actor_subject ?? envelope.actor_subject,
+        payload: input.payload,
+        created_at: input.created_at
+      })
+    );
   }
   // -------------------------------------------------------------- sessions
   sessionRow(handle, envelope, sessionId) {
@@ -25243,7 +25346,7 @@ var SubprocessHostCallTransport = class {
       ...iso.args
     ];
     const sleep = this.options.sleepImpl ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-    const maxAttempts = RETRY_BACKOFF_MS.length + 1;
+    const maxAttempts = Math.max(1, this.options.maxAttempts ?? RETRY_BACKOFF_MS.length + 1);
     for (let attempt = 1; ; attempt += 1) {
       try {
         return await this.runOnce(spawnImpl, args, env, cwd, request, iso.streaming);
@@ -25424,12 +25527,45 @@ import { createRequire as createRequire2 } from "node:module";
 import { join as join4 } from "node:path";
 
 // src/cli/paths.ts
-import { existsSync as existsSync2, mkdirSync as mkdirSync3, realpathSync } from "node:fs";
+import { existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, realpathSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { basename, dirname, join as join3, resolve, sep } from "node:path";
 var DATA_DIR_ENV = "BLACKCEO_COUNCIL_DATA_DIR";
-function defaultDataDir(env = process.env) {
-  const home = homedir();
+var SERVICE_DATA_DIR_ENV = "COUNCIL_SERVICE_DATA_DIR";
+var RUNTIME_PREFIX_ENV = "COUNCIL_RUNTIME_PREFIX";
+var OPENCLAW_ROOT_ENV = "WISE_ELDERS_OPENCLAW_ROOT";
+function homeDirFor(env = process.env, homeDir) {
+  return homeDir || env.HOME || homedir();
+}
+function openclawRoot(env = process.env, homeDir) {
+  const explicit = env.OPENCLAW_ROOT || env[OPENCLAW_ROOT_ENV];
+  if (explicit && explicit.trim().length > 0) return resolve(explicit);
+  const home = homeDirFor(env, homeDir);
+  if (existsSync2("/data/.openclaw") && !existsSync2(join3(home, ".openclaw"))) return "/data/.openclaw";
+  return join3(home, ".openclaw");
+}
+function councilRuntimePrefix(env = process.env, homeDir) {
+  const explicit = env[RUNTIME_PREFIX_ENV];
+  if (explicit && explicit.trim().length > 0) return resolve(explicit);
+  return join3(openclawRoot(env, homeDir), "council-runtime");
+}
+function serviceDataDirHint(env = process.env, homeDir) {
+  const explicit = env[SERVICE_DATA_DIR_ENV];
+  if (explicit && explicit.trim().length > 0) return resolve(explicit);
+  try {
+    const active = JSON.parse(
+      readFileSync3(join3(councilRuntimePrefix(env, homeDir), "active.json"), "utf8")
+    );
+    if (typeof active.dataDir === "string" && active.dataDir.trim().length > 0) {
+      return resolve(active.dataDir);
+    }
+  } catch {
+  }
+  const wired = join3(openclawRoot(env, homeDir), "council-data");
+  return existsSync2(wired) ? wired : null;
+}
+function defaultDataDir(env = process.env, homeDir) {
+  const home = homeDirFor(env, homeDir);
   switch (platform()) {
     case "darwin":
       return join3(home, "Library", "Application Support", "BlackCEO", "WiseElders");
@@ -25462,7 +25598,7 @@ function canonicalPath(path) {
 }
 function resolveDataDir(options) {
   const env = options.env ?? process.env;
-  const chosen = options.override ?? env[DATA_DIR_ENV] ?? defaultDataDir(env);
+  const chosen = options.override ?? env[DATA_DIR_ENV] ?? serviceDataDirHint(env, options.homeDir) ?? defaultDataDir(env, options.homeDir);
   const absolute = resolve(chosen);
   if (options.skillRoot) {
     const root = canonicalPath(resolve(options.skillRoot));
@@ -25698,7 +25834,7 @@ var LocalSqliteStore = class {
 
 // src/cli/installed-seat-pack.ts
 import { createHash } from "node:crypto";
-import { readFileSync as readFileSync3, realpathSync as realpathSync2, statSync } from "node:fs";
+import { readFileSync as readFileSync4, realpathSync as realpathSync2, statSync } from "node:fs";
 import { join as join5, resolve as resolve2, sep as sep2 } from "node:path";
 
 // src/sources/schemas.ts
@@ -26451,10 +26587,10 @@ function parseObject(text, rel) {
 function string4(value) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
-function manifestHashes(skillRoot) {
+function manifestHashes(skillRoot2) {
   let manifestText;
   try {
-    manifestText = readFileSync3(join5(skillRoot, "manifest.json"), "utf8");
+    manifestText = readFileSync4(join5(skillRoot2, "manifest.json"), "utf8");
   } catch {
     error51("Installed Council source manifest is missing.");
   }
@@ -26471,10 +26607,10 @@ function manifestHashes(skillRoot) {
   }
   return hashes;
 }
-function checkedFile(skillRoot, advisorRoot, relativePath, hashes) {
+function checkedFile(skillRoot2, advisorRoot, relativePath, hashes) {
   const expected = hashes.get(relativePath);
   if (!expected) error51(`Advisor asset is absent from installed manifest: ${relativePath}`);
-  const full = resolve2(skillRoot, relativePath);
+  const full = resolve2(skillRoot2, relativePath);
   let real;
   try {
     real = realpathSync2(full);
@@ -26485,7 +26621,7 @@ function checkedFile(skillRoot, advisorRoot, relativePath, hashes) {
     if (cause instanceof CouncilError) throw cause;
     error51(`Advisor asset is missing or inaccessible: ${relativePath}`);
   }
-  const bytes = readFileSync3(real);
+  const bytes = readFileSync4(real);
   const digest = createHash("sha256").update(bytes).digest("hex");
   if (digest !== expected) error51(`Advisor asset checksum disagrees with the installed manifest: ${relativePath}`);
   return bytes.toString("utf8");
@@ -26532,12 +26668,12 @@ function sharedStructuredContext(document) {
   }
   return JSON.stringify({ items: entries2, omitted_for_context_budget: eligible.length - entries2.length });
 }
-function loadInstalledSeatPack(skillRoot, seatId) {
+function loadInstalledSeatPack(skillRoot2, seatId) {
   if (!approvedSeats.has(seatId)) error51(`Unsupported Council advisor seat: ${seatId}`);
   let skillReal;
   let advisorsReal;
   try {
-    skillReal = realpathSync2(skillRoot);
+    skillReal = realpathSync2(skillRoot2);
     advisorsReal = realpathSync2(join5(skillReal, "advisors"));
   } catch {
     error51("Council skill/advisors directory is missing from the installed runtime.");
@@ -26608,7 +26744,7 @@ function loadInstalledSeatPack(skillRoot, seatId) {
 }
 
 // src/cli/route-discovery.ts
-import { existsSync as existsSync4, readFileSync as readFileSync5, realpathSync as realpathSync3, statSync as statSync3 } from "node:fs";
+import { existsSync as existsSync4, readFileSync as readFileSync6, realpathSync as realpathSync3, statSync as statSync3 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import {
   basename as basename3,
@@ -26628,17 +26764,17 @@ function ollamaCompatibleBaseUrl(baseUrl) {
 
 // src/bridges/installed-cli.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync3, readFileSync as readFileSync4, statSync as statSync2 } from "node:fs";
+import { existsSync as existsSync3, readFileSync as readFileSync5, statSync as statSync2 } from "node:fs";
 import { homedir as homedir2, platform as platform2 } from "node:os";
 import { basename as basename2, isAbsolute, join as join6, resolve as resolve3 } from "node:path";
-var RUNTIME_PREFIX_ENV = "COUNCIL_RUNTIME_PREFIX";
+var RUNTIME_PREFIX_ENV2 = "COUNCIL_RUNTIME_PREFIX";
 var ACTIVE_RECEIPT_SCHEMA = "wise-elders.council-runtime-active/v1";
 var RELEASE_RECEIPT_SCHEMA = "wise-elders.council-runtime-release/v1";
 var ARTIFACT_RECEIPT_SCHEMA = "wise-elders.council-runtime-artifact/v1";
 var INSTALLED_CLI_RELATIVE = "dist/blackceo-council.mjs";
 var INSTALLER_SCRIPT_RELATIVE = join6("scripts", "install-runtime.mjs");
 function defaultRuntimePrefix(env = process.env, home = homedir2()) {
-  const fromEnv = env[RUNTIME_PREFIX_ENV];
+  const fromEnv = env[RUNTIME_PREFIX_ENV2];
   if (fromEnv && fromEnv.trim().length > 0) return resolve3(fromEnv);
   if (platform2() === "win32") {
     return join6(env.LOCALAPPDATA || home, "blackceo", "council-runtime");
@@ -26650,7 +26786,7 @@ function isRecord2(value) {
 }
 function readJson(path) {
   try {
-    const parsed = JSON.parse(readFileSync4(path, "utf8"));
+    const parsed = JSON.parse(readFileSync5(path, "utf8"));
     return isRecord2(parsed) ? parsed : null;
   } catch {
     return null;
@@ -26671,20 +26807,20 @@ function isFile(path) {
   }
 }
 function sha256File(path) {
-  return createHash2("sha256").update(readFileSync4(path)).digest("hex");
+  return createHash2("sha256").update(readFileSync5(path)).digest("hex");
 }
-function recoveryFor(prefix, skillRoot) {
-  const installer = skillRoot ? join6(skillRoot, INSTALLER_SCRIPT_RELATIVE) : join6("<skill-folder>", INSTALLER_SCRIPT_RELATIVE);
+function recoveryFor(prefix, skillRoot2) {
+  const installer = skillRoot2 ? join6(skillRoot2, INSTALLER_SCRIPT_RELATIVE) : join6("<skill-folder>", INSTALLER_SCRIPT_RELATIVE);
   return `Install or repair the runtime, then retry this command. Run exactly:
   node ${JSON.stringify(installer)} --prefix ${JSON.stringify(prefix)}
-Set ${RUNTIME_PREFIX_ENV} only to an absolute path. Do not point it at a checkout dist folder.`;
+Set ${RUNTIME_PREFIX_ENV2} only to an absolute path. Do not point it at a checkout dist folder.`;
 }
-function failure(code, message, prefix, checked, skillRoot) {
+function failure(code, message, prefix, checked, skillRoot2) {
   return {
     ok: false,
     code,
     message,
-    recovery: recoveryFor(prefix, skillRoot),
+    recovery: recoveryFor(prefix, skillRoot2),
     checked: [...checked]
   };
 }
@@ -26696,7 +26832,7 @@ function resolveInstalledCli(options = {}) {
   const home = options.homeDir ?? homedir2();
   const checked = [];
   let prefix;
-  const explicitPrefix = options.prefix ?? env[RUNTIME_PREFIX_ENV];
+  const explicitPrefix = options.prefix ?? env[RUNTIME_PREFIX_ENV2];
   if (explicitPrefix !== void 0 && explicitPrefix !== null && String(explicitPrefix).length > 0) {
     if (!isAbsolute(String(explicitPrefix))) {
       const attempted = String(explicitPrefix);
@@ -27230,7 +27366,7 @@ function formatOf(path) {
 function parseEnvFile(path) {
   let text;
   try {
-    text = readFileSync5(path, "utf8");
+    text = readFileSync6(path, "utf8");
   } catch {
     return null;
   }
@@ -27432,7 +27568,7 @@ function resolveHostContext(options = {}) {
       [...checked, configPath]
     );
   }
-  const config2 = configExists ? parseConfigText(readFileSync5(configPath, "utf8"), configFormat, configPath) : null;
+  const config2 = configExists ? parseConfigText(readFileSync6(configPath, "utf8"), configFormat, configPath) : null;
   if (configExists) checked.push(configPath);
   const selectedAgentId = (options.agentId && options.agentId.trim().length > 0 ? options.agentId.trim() : null) ?? (typeof env.OPENCLAW_AGENT_ID === "string" && env.OPENCLAW_AGENT_ID.trim().length > 0 ? env.OPENCLAW_AGENT_ID.trim() : "main");
   const configuredWorkspace = configWorkspace(config2, selectedAgentId);
@@ -27869,7 +28005,7 @@ function resolveDiscoveredCredential(route, env = process.env) {
   if (!compatible) return null;
   let config2 = null;
   try {
-    const text = readFileSync5(compatible.configPath, "utf8");
+    const text = readFileSync6(compatible.configPath, "utf8");
     config2 = parseConfigText(text, compatible.configFormat, compatible.configPath);
   } catch {
     config2 = null;
@@ -28030,7 +28166,9 @@ function sessionIdFromOperationKey(operationKey) {
 function createLocalHost(options = {}) {
   const dataDir = resolveDataDir({
     override: options.dataDir ?? null,
-    skillRoot: options.skillRoot ?? null
+    skillRoot: options.skillRoot ?? null,
+    env: options.env,
+    homeDir: options.homeDir
   });
   const store = new LocalSqliteStore(dataDir);
   const registry2 = new MapTransportRegistry();
@@ -28241,8 +28379,20 @@ function localScope(dataDir) {
 }
 
 // src/cli/convene.ts
-import { existsSync as existsSync5, readFileSync as readFileSync6, renameSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { spawn as spawn2, spawnSync } from "node:child_process";
+import { existsSync as existsSync5, readFileSync as readFileSync7, renameSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join8 } from "node:path";
+
+// src/bridges/browser-open.ts
+function browserOpenCommand(url2, platform3 = process.platform) {
+  if (platform3 === "darwin") return { command: "open", args: [url2] };
+  if (platform3 === "win32") {
+    return { command: "cmd", args: ["/c", "start", "", url2] };
+  }
+  return { command: "xdg-open", args: [url2] };
+}
+
+// src/cli/convene.ts
 var CHOOSABLE_HARNESSES = ["claude-nine", "claude-code", "deepseek"];
 var DEFAULT_SERVICE_ORIGIN = "http://127.0.0.1:8787";
 var REQUEST_TIMEOUT_MS = 6e4;
@@ -28255,7 +28405,7 @@ function detectHarness(env) {
   if (env.CLAUDECODE === "1") return "claude-code";
   return "unknown";
 }
-var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["sample", "json"]);
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["sample", "json", "no-open"]);
 var ROUTES_FLAGS = /* @__PURE__ */ new Set(["origin", "json", "data-dir"]);
 var CONVENE_FLAGS = /* @__PURE__ */ new Set([
   "sample",
@@ -28271,7 +28421,8 @@ var CONVENE_FLAGS = /* @__PURE__ */ new Set([
   "origin",
   "public-origin",
   "json",
-  "data-dir"
+  "data-dir",
+  "no-open"
 ]);
 function parse3(args, allowed, command) {
   const flags = /* @__PURE__ */ new Map();
@@ -28305,19 +28456,34 @@ function resolveOrigin(p, env) {
   }
   return url2.origin;
 }
-function resolvePublicOrigin(p, env) {
-  const raw = str(p, "public-origin") ?? env.WISE_ELDERS_PUBLIC_ORIGIN;
-  if (raw === void 0 || raw === "") return null;
+function validPublicOrigin(raw) {
+  if (typeof raw !== "string" || raw.length === 0) return null;
   let url2;
   try {
     url2 = new URL(raw);
   } catch {
-    throw invalidInput(`The public origin "${raw}" is not a valid URL.`);
+    return null;
   }
   if (url2.protocol !== "https:" || url2.pathname !== "/" || url2.search || url2.hash || url2.username || url2.password) {
-    throw invalidInput(`The public origin "${raw}" must be an https origin with no path, query or login, like https://name.example.com.`);
+    return null;
   }
   return url2.origin;
+}
+function resolvePublicOrigin(p, env) {
+  const raw = str(p, "public-origin") ?? env.WISE_ELDERS_PUBLIC_ORIGIN;
+  if (raw === void 0 || raw === "") return null;
+  let isUrl = true;
+  try {
+    new URL(raw);
+  } catch {
+    isUrl = false;
+  }
+  if (!isUrl) throw invalidInput(`The public origin "${raw}" is not a valid URL.`);
+  const origin = validPublicOrigin(raw);
+  if (origin === null) {
+    throw invalidInput(`The public origin "${raw}" must be an https origin with no path, query or login, like https://name.example.com.`);
+  }
+  return origin;
 }
 var PROBE_TIMEOUT_MS = 5e3;
 function parseCandidate(raw) {
@@ -28346,7 +28512,7 @@ function councilOriginFor(raw) {
 function envFileValue(path, key) {
   try {
     let value;
-    for (const line of readFileSync6(path, "utf8").split(/\r?\n/)) {
+    for (const line of readFileSync7(path, "utf8").split(/\r?\n/)) {
       const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
       if (m && m[1] === key) value = m[2].trim().replace(/^(["'])(.*)\1$/, "$2");
     }
@@ -28355,6 +28521,30 @@ function envFileValue(path, key) {
     return void 0;
   }
 }
+function serviceJsonPath(env) {
+  const explicit = env.WISE_ELDERS_SERVICE_JSON;
+  if (explicit && explicit.trim().length > 0) return explicit;
+  if (env.WISE_ELDERS_OPENCLAW_ROOT || env.OPENCLAW_ROOT || env.HOME) {
+    return join8(openclawRoot(env), "council-runtime", "service.json");
+  }
+  return null;
+}
+function serviceJsonPublicOrigin(env) {
+  const path = serviceJsonPath(env);
+  if (path === null) return null;
+  try {
+    const parsed = JSON.parse(readFileSync7(path, "utf8"));
+    return validPublicOrigin(typeof parsed.public_origin === "string" ? parsed.public_origin : null);
+  } catch {
+    return null;
+  }
+}
+function durablePublicOrigin(env) {
+  return validPublicOrigin(env.COUNCIL_PUBLIC_URL) ?? validPublicOrigin(env.WISE_ELDERS_PUBLIC_ORIGIN) ?? serviceJsonPublicOrigin(env);
+}
+function chamberUrlFor(origin, sessionId) {
+  return `${origin}/chamber/#session=${encodeURIComponent(sessionId)}`;
+}
 function conveneCandidates(env) {
   const home = env.HOME;
   const app = env.CC_APP_DIR || (home ? join8(home, "projects", "command-center") : void 0);
@@ -28362,7 +28552,7 @@ function conveneCandidates(env) {
   let stateUrl;
   try {
     if (oc) {
-      const st = JSON.parse(readFileSync6(join8(oc, "workspace", ".workforce-build-state.json"), "utf8"));
+      const st = JSON.parse(readFileSync7(join8(oc, "workspace", ".workforce-build-state.json"), "utf8"));
       if (typeof st.commandCenterUrl === "string") stateUrl = st.commandCenterUrl;
     }
   } catch {
@@ -28412,7 +28602,7 @@ async function probePublicCandidate(raw, fetchImpl, timeoutMs = PROBE_TIMEOUT_MS
 function persistPublicOrigin(path, origin) {
   if (!path) return;
   try {
-    const o = JSON.parse(readFileSync6(path, "utf8"));
+    const o = JSON.parse(readFileSync7(path, "utf8"));
     if (o.public_origin === origin) return;
     o.public_origin = origin;
     const tmp = `${path}.tmp.${process.pid}`;
@@ -28421,6 +28611,35 @@ function persistPublicOrigin(path, origin) {
     renameSync(tmp, path);
   } catch {
   }
+}
+function defaultGuiPresent() {
+  if (process.env.NODE_TEST_CONTEXT) return false;
+  if (process.platform !== "darwin") return false;
+  try {
+    const result = spawnSync("launchctl", ["managername"], { encoding: "utf8" });
+    return String(result.stdout ?? "").trim() === "Aqua";
+  } catch {
+    return false;
+  }
+}
+function defaultOpenUrl(url2) {
+  try {
+    const { command, args } = browserOpenCommand(url2);
+    const child = spawn2(command, args, { detached: true, stdio: "ignore" });
+    child.on("error", () => {
+    });
+    child.unref();
+  } catch {
+  }
+}
+function desktopEnabled(env, opts) {
+  const forced = env.COUNCIL_CHAMBER_OPEN;
+  if (forced === "0" || forced === "no" || forced === "false") return false;
+  if (forced === "1" || forced === "yes" || forced === "true") return true;
+  const gui = env.COUNCIL_CHAMBER_GUI;
+  if (gui === "0" || gui === "no" || gui === "absent") return false;
+  if (gui === "1" || gui === "yes" || gui === "present") return true;
+  return (opts.guiPresent ?? defaultGuiPresent)();
 }
 function serviceError(code, message, recovery) {
   return new CouncilError(code, message, {
@@ -28543,7 +28762,7 @@ async function runRoutes(args, opts) {
 function readFreshFacts(path) {
   let facts;
   try {
-    facts = JSON.parse(readFileSync6(path, "utf8"));
+    facts = JSON.parse(readFileSync7(path, "utf8"));
   } catch (err) {
     throw invalidInput(`Could not read --fresh-facts file: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -28571,7 +28790,7 @@ async function runConvene(args, opts) {
       throw usageError(`--harness must be one of ${CHOOSABLE_HARNESSES.join(", ")}.`);
     }
     const origin = resolveOrigin(p, env);
-    let publicOrigin = resolvePublicOrigin(p, env);
+    let publicOrigin = resolvePublicOrigin(p, env) ?? durablePublicOrigin(env);
     const probe = publicOrigin === null ? Promise.all(
       conveneCandidates(env).map((c) => probePublicCandidate(c, opts.fetchImpl ?? fetch, opts.probeTimeoutMs))
     ).then((r) => r.find((o) => o !== null) ?? null) : null;
@@ -28579,7 +28798,7 @@ async function runConvene(args, opts) {
     if (sample) body.sample = true;
     if (briefPath !== null) {
       try {
-        body.brief = JSON.parse(readFileSync6(briefPath, "utf8"));
+        body.brief = JSON.parse(readFileSync7(briefPath, "utf8"));
       } catch (err) {
         throw invalidInput(`Could not read --brief file: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -28607,14 +28826,24 @@ async function runConvene(args, opts) {
     const factsPath = str(p, "fresh-facts");
     if (factsPath !== null) body.fresh_facts = readFreshFacts(factsPath);
     const res = await callService(origin, "/api/council/convene", { method: "POST", body }, opts.fetchImpl ?? fetch);
-    if (probe !== null) {
-      publicOrigin = await probe;
-      if (publicOrigin !== null) persistPublicOrigin(env.WISE_ELDERS_SERVICE_JSON, publicOrigin);
+    if (res.state === "COMPLETED" || res.state === "CANCELLED" || res.state === "FAILED") {
+      throw serviceError(
+        "CONVENE_NOT_NEW",
+        `The service answered this new council request with session ${String(res.session_id)} already ${String(res.state)}, so no new sitting was created.`,
+        "Convene again; a new request must create a new session, never return a finished one."
+      );
+    }
+    if (probe !== null) publicOrigin = await probe;
+    if (publicOrigin !== null) {
+      persistPublicOrigin(env.WISE_ELDERS_SERVICE_JSON ?? serviceJsonPath(env) ?? void 0, publicOrigin);
     }
     const sessionId = String(res.session_id);
     const sessionUrl = `${origin}${typeof res.session_path === "string" ? res.session_path : `/council/${sessionId}`}`;
     const eventsUrl = `${origin}${typeof res.events_path === "string" ? res.events_path : `/api/council/sessions/${sessionId}/events`}`;
-    const chamberUrl = publicOrigin === null ? null : `${publicOrigin}/chamber/#session=${sessionId}`;
+    const chamberUrl = publicOrigin === null ? null : chamberUrlFor(publicOrigin, sessionId);
+    if (chamberUrl !== null && !p.flags.has("no-open") && desktopEnabled(env, opts)) {
+      (opts.openUrl ?? defaultOpenUrl)(chamberUrl);
+    }
     if (json2) {
       const extra = chamberUrl === null ? {} : { chamber_url: chamberUrl };
       opts.io.out(`${JSON.stringify({ ...res, session_url: sessionUrl, events_url: eventsUrl, ...extra }, null, 2)}
@@ -28674,7 +28903,630 @@ function sessionDeleted2(message) {
   return new ReportExportError("EXPORT_SESSION_DELETED", message);
 }
 
+// src/reports/capability-snapshot.ts
+import { existsSync as existsSync6, readFileSync as readFileSync8, readdirSync, statSync as statSync4 } from "node:fs";
+import { join as join9 } from "node:path";
+var CAPABILITY_SNAPSHOT_SCHEMA = "wise-elders.capability-snapshot/v1";
+var CAPABILITY_SNAPSHOT_LIMITS = {
+  max_items: 120,
+  max_name: 90,
+  max_description: 320,
+  max_id: 140,
+  max_reference_ids: 24,
+  max_limitations: 24,
+  max_limitation_text: 400,
+  max_matched_steps: 6
+};
+var CapabilitySnapshotError = class extends Error {
+  code;
+  constructor(code, message) {
+    super(message);
+    this.name = "CapabilitySnapshotError";
+    this.code = code;
+  }
+};
+var CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+var TRAILING_FUNCTION_WORDS = /\s+(?:and|or|but|nor|to|of|for|with|from|by|in|on|at|as|the|a|an|is|are|was|were|be|been)$/i;
+function cleanText(value, max) {
+  const collapsed = value.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return collapsed;
+  const budget = Math.max(1, max - 1);
+  const sliced = collapsed.slice(0, budget);
+  const boundary = Math.max(
+    sliced.lastIndexOf(" "),
+    sliced.lastIndexOf(","),
+    sliced.lastIndexOf(";")
+  );
+  let cut = boundary >= Math.floor(budget * 0.6) ? sliced.slice(0, boundary) : sliced;
+  cut = cut.replace(/[\s,;]+$/, "");
+  let previous = "";
+  while (previous !== cut) {
+    previous = cut;
+    cut = cut.replace(TRAILING_FUNCTION_WORDS, "");
+  }
+  cut = cut.replace(/[\s,;]+$/, "");
+  const trimmedFallback = sliced.trimEnd();
+  if (trimmedFallback === "") return "\u2026";
+  const marked = cut === "" ? trimmedFallback : cut;
+  return marked.endsWith("\u2026") ? marked : `${marked}\u2026`;
+}
+function nonEmptyString(value, field) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      `capability snapshot ${field} must be a non-empty string`
+    );
+  }
+  return value;
+}
+var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function validateCapabilitySnapshot(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      "capability snapshot must be an object"
+    );
+  }
+  const record2 = value;
+  const allowed = /* @__PURE__ */ new Set([
+    "schema_version",
+    "installation_id",
+    "captured_at",
+    "basis",
+    "items",
+    "limitations"
+  ]);
+  for (const key of Object.keys(record2)) {
+    if (!allowed.has(key)) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot carries an unknown field: ${key}`
+      );
+    }
+  }
+  if (record2.schema_version !== CAPABILITY_SNAPSHOT_SCHEMA) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      `capability snapshot schema_version must be ${CAPABILITY_SNAPSHOT_SCHEMA}`
+    );
+  }
+  const installationId = cleanText(
+    nonEmptyString(record2.installation_id, "installation_id"),
+    200
+  );
+  const capturedAt = nonEmptyString(record2.captured_at, "captured_at");
+  if (!DATE_RE.test(capturedAt)) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      "capability snapshot captured_at must be YYYY-MM-DD"
+    );
+  }
+  if (record2.basis !== "at_sitting" && record2.basis !== "at_export") {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      "capability snapshot basis must be at_sitting or at_export"
+    );
+  }
+  if (!Array.isArray(record2.items)) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      "capability snapshot items must be an array"
+    );
+  }
+  if (record2.items.length > CAPABILITY_SNAPSHOT_LIMITS.max_items) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_TOO_LARGE",
+      `capability snapshot carries ${record2.items.length} items; the report limit is ${CAPABILITY_SNAPSHOT_LIMITS.max_items}`
+    );
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const items = record2.items.map((raw, index) => {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}] must be an object`
+      );
+    }
+    const item = raw;
+    const itemAllowed = /* @__PURE__ */ new Set([
+      "capability_id",
+      "kind",
+      "name",
+      "description",
+      "availability",
+      "source",
+      "recorded_reference_ids"
+    ]);
+    for (const key of Object.keys(item)) {
+      if (!itemAllowed.has(key)) {
+        throw new CapabilitySnapshotError(
+          "CAPABILITY_SNAPSHOT_INVALID",
+          `capability snapshot items[${index}] carries an unknown field: ${key}`
+        );
+      }
+    }
+    const capabilityId = cleanText(
+      nonEmptyString(item.capability_id, `items[${index}].capability_id`),
+      CAPABILITY_SNAPSHOT_LIMITS.max_id
+    );
+    if (!/^(skill|department):[a-z0-9][a-z0-9._-]*$/.test(capabilityId)) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}].capability_id must be skill:<slug> or department:<slug>`
+      );
+    }
+    if (seen.has(capabilityId)) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot repeats capability_id ${capabilityId}`
+      );
+    }
+    seen.add(capabilityId);
+    if (item.kind !== "skill" && item.kind !== "department") {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}].kind must be skill or department`
+      );
+    }
+    if (capabilityId.split(":")[0] !== item.kind) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}] kind does not match its capability_id`
+      );
+    }
+    const name = cleanText(
+      nonEmptyString(item.name, `items[${index}].name`),
+      CAPABILITY_SNAPSHOT_LIMITS.max_name
+    );
+    let description = null;
+    if (item.description !== null && item.description !== void 0) {
+      if (typeof item.description !== "string") {
+        throw new CapabilitySnapshotError(
+          "CAPABILITY_SNAPSHOT_INVALID",
+          `capability snapshot items[${index}].description must be a string or null`
+        );
+      }
+      const cleaned = cleanText(
+        item.description,
+        CAPABILITY_SNAPSHOT_LIMITS.max_description
+      );
+      description = cleaned === "" ? null : cleaned;
+    }
+    if (item.availability !== "available_now" && item.availability !== "available_at_sitting") {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}].availability is not recognised`
+      );
+    }
+    const sources = [
+      "openclaw.skills",
+      "openclaw.departments",
+      "claude.skills"
+    ];
+    if (!sources.includes(item.source)) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}].source is not recognised`
+      );
+    }
+    const refsRaw = item.recorded_reference_ids;
+    if (!Array.isArray(refsRaw)) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_INVALID",
+        `capability snapshot items[${index}].recorded_reference_ids must be an array`
+      );
+    }
+    if (refsRaw.length > CAPABILITY_SNAPSHOT_LIMITS.max_reference_ids) {
+      throw new CapabilitySnapshotError(
+        "CAPABILITY_SNAPSHOT_TOO_LARGE",
+        `capability snapshot items[${index}] carries too many recorded references`
+      );
+    }
+    const recordedReferenceIds = refsRaw.map(
+      (ref, refIndex) => cleanText(
+        nonEmptyString(ref, `items[${index}].recorded_reference_ids[${refIndex}]`),
+        CAPABILITY_SNAPSHOT_LIMITS.max_id
+      )
+    );
+    return {
+      capability_id: capabilityId,
+      kind: item.kind,
+      name,
+      description,
+      availability: item.availability,
+      source: item.source,
+      recorded_reference_ids: recordedReferenceIds
+    };
+  });
+  const limitationsRaw = record2.limitations;
+  if (!Array.isArray(limitationsRaw)) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_INVALID",
+      "capability snapshot limitations must be an array"
+    );
+  }
+  if (limitationsRaw.length > CAPABILITY_SNAPSHOT_LIMITS.max_limitations) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_TOO_LARGE",
+      "capability snapshot carries too many limitation notes"
+    );
+  }
+  const limitations = limitationsRaw.map(
+    (text, index) => cleanText(
+      nonEmptyString(text, `limitations[${index}]`),
+      CAPABILITY_SNAPSHOT_LIMITS.max_limitation_text
+    )
+  );
+  return {
+    schema_version: CAPABILITY_SNAPSHOT_SCHEMA,
+    installation_id: installationId,
+    captured_at: capturedAt,
+    basis: record2.basis === "at_sitting" ? "at_sitting" : "at_export",
+    items,
+    limitations
+  };
+}
+function assertSnapshotInstallation(snapshot, installationId) {
+  if (installationId === null || installationId === void 0 || installationId === "") {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_MISMATCH",
+      "a capability snapshot was supplied without the report installation binding"
+    );
+  }
+  if (snapshot.installation_id !== installationId) {
+    throw new CapabilitySnapshotError(
+      "CAPABILITY_SNAPSHOT_MISMATCH",
+      "the capability snapshot belongs to a different installation than this council session; it will not be attached to the report"
+    );
+  }
+}
+function isDirectory3(path) {
+  try {
+    return statSync4(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+function isFile3(path) {
+  try {
+    return statSync4(path).isFile();
+  } catch {
+    return false;
+  }
+}
+function sortedEntries(dir) {
+  try {
+    return readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+}
+function frontmatter(text) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!match) return {};
+  const out = {};
+  let key = null;
+  for (const line of match[1].split(/\r?\n/)) {
+    if (key !== null && /^\s+\S/.test(line)) {
+      out[key] = `${out[key]} ${line.trim()}`;
+      continue;
+    }
+    const pair = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+    if (!pair) {
+      key = null;
+      continue;
+    }
+    key = pair[1];
+    out[key] = pair[2].trim();
+  }
+  for (const [name, value] of Object.entries(out)) {
+    out[name] = value.replace(/^(["'])(.*)\1$/, "$2").trim();
+  }
+  return out;
+}
+var TEMPLATE_NAME_RE = /^(?:_|\.)|(^|[-_.])(template|templates|example|examples|sample)([-_.]|$)/i;
+function slugify2(value) {
+  const slug = value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-");
+  return slug === "" ? "unnamed" : slug;
+}
+function skillSlug(folder) {
+  return slugify2(folder.replace(/^\d+[-_]/, ""));
+}
+var ACRONYMS = /* @__PURE__ */ new Set([
+  "ai",
+  "api",
+  "ceo",
+  "cfo",
+  "cmo",
+  "coo",
+  "crm",
+  "cto",
+  "ghl",
+  "hr",
+  "kpi",
+  "llm",
+  "pr",
+  "qa",
+  "qc",
+  "seo",
+  "sop",
+  "ui",
+  "ux",
+  "vsl"
+]);
+function humanizeDepartment(folder) {
+  return folder.replace(/^dept-/, "").split(/[-_]+/).filter(Boolean).map(
+    (word) => ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : `${word.charAt(0).toUpperCase()}${word.slice(1)}`
+  ).join(" ");
+}
+function readSkillEntry(skillsRoot, folder, source, availability) {
+  if (TEMPLATE_NAME_RE.test(folder)) return null;
+  const dir = join9(skillsRoot, folder);
+  if (!isDirectory3(dir)) return null;
+  const skillFile = join9(dir, "SKILL.md");
+  if (!isFile3(skillFile)) return null;
+  let head = "";
+  try {
+    head = readFileSync8(skillFile, "utf8").slice(0, 12e3);
+  } catch {
+    return null;
+  }
+  const meta3 = frontmatter(head);
+  const slug = skillSlug(folder) || folder.toLowerCase();
+  const name = cleanText(
+    meta3.name && meta3.name.trim().length > 0 ? meta3.name : slug || folder,
+    CAPABILITY_SNAPSHOT_LIMITS.max_name
+  );
+  const rawDescription = meta3.description ?? "";
+  const description = rawDescription.trim() === "" ? null : cleanText(rawDescription, CAPABILITY_SNAPSHOT_LIMITS.max_description);
+  return {
+    capability_id: `skill:${slug}`,
+    kind: "skill",
+    name: name || slug,
+    description,
+    availability,
+    source,
+    recorded_reference_ids: []
+  };
+}
+function readDepartmentEntry(agentsRoot, folder, availability) {
+  if (!folder.startsWith("dept-")) return null;
+  if (TEMPLATE_NAME_RE.test(folder.slice("dept-".length))) return null;
+  const dir = join9(agentsRoot, folder);
+  if (!isDirectory3(dir)) return null;
+  const operational = isFile3(join9(dir, "models.json")) || isDirectory3(join9(dir, "agent"));
+  if (!operational) return null;
+  const slug = slugify2(folder);
+  return {
+    capability_id: `department:${slug}`,
+    kind: "department",
+    name: humanizeDepartment(slug),
+    description: null,
+    availability,
+    source: "openclaw.departments",
+    recorded_reference_ids: []
+  };
+}
+function discoverInstallationCapabilities(options) {
+  const availability = options.availability ?? "available_now";
+  const limit = Math.max(
+    1,
+    Math.min(options.max_items ?? CAPABILITY_SNAPSHOT_LIMITS.max_items, CAPABILITY_SNAPSHOT_LIMITS.max_items)
+  );
+  const items = [];
+  const limitations = [
+    "Read from this installation's own skill and department folders. Skill instructions, prompts, private memory, credentials, databases, and configuration values were not read."
+  ];
+  const skillsRoot = join9(options.openclaw_root, "skills");
+  if (isDirectory3(skillsRoot)) {
+    for (const folder of sortedEntries(skillsRoot)) {
+      const entry = readSkillEntry(skillsRoot, folder, "openclaw.skills", availability);
+      if (entry) items.push(entry);
+    }
+  } else {
+    limitations.push(
+      "No OpenClaw skills folder was found on this installation, so no skills are listed."
+    );
+  }
+  const agentsRoot = join9(options.openclaw_root, "agents");
+  if (isDirectory3(agentsRoot)) {
+    for (const folder of sortedEntries(agentsRoot)) {
+      const entry = readDepartmentEntry(agentsRoot, folder, availability);
+      if (entry) items.push(entry);
+    }
+  } else {
+    limitations.push(
+      "No OpenClaw agents folder was found on this installation, so no departments are listed."
+    );
+  }
+  const claudeRoot = options.claude_skills_root;
+  if (claudeRoot && isDirectory3(claudeRoot)) {
+    for (const folder of sortedEntries(claudeRoot)) {
+      const entry = readSkillEntry(claudeRoot, folder, "claude.skills", availability);
+      if (entry) items.push(entry);
+    }
+  }
+  const byId = /* @__PURE__ */ new Map();
+  for (const entry of items) {
+    if (!byId.has(entry.capability_id)) byId.set(entry.capability_id, entry);
+  }
+  const ordered = [...byId.values()].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "department" ? -1 : 1;
+    const byName = a.name.localeCompare(b.name);
+    return byName !== 0 ? byName : a.capability_id.localeCompare(b.capability_id);
+  });
+  const kept = ordered.slice(0, limit);
+  if (ordered.length > kept.length) {
+    limitations.push(
+      `${ordered.length - kept.length} further installed item(s) were left out to keep the report readable.`
+    );
+  }
+  limitations.push(
+    "Descriptions are the skill's own frontmatter description, shortened to 320 characters when longer. Departments are listed by their configured folder name because this installation records no separate department description."
+  );
+  return {
+    schema_version: CAPABILITY_SNAPSHOT_SCHEMA,
+    installation_id: options.installation_id,
+    captured_at: options.captured_at,
+    basis: "at_export",
+    items: kept,
+    limitations
+  };
+}
+var MIN_NAMED_CAPABILITY_CHARS = 8;
+function referenceCandidates(proposal) {
+  return [
+    proposal.department_id,
+    proposal.sop_id,
+    proposal.persona_id,
+    proposal.assigned_agent_id
+  ].filter((value) => typeof value === "string" && value.length > 0);
+}
+function referencesEntry(proposal, entry) {
+  const bareId = entry.capability_id.split(":")[1];
+  const entryNameSlug = entry.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const hits = [];
+  for (const ref of referenceCandidates(proposal)) {
+    const normalized = ref.trim().toLowerCase();
+    if (normalized === entry.capability_id.toLowerCase() || normalized === bareId || normalized === entryNameSlug || normalized === `dept-${entryNameSlug}`) {
+      hits.push(ref);
+    }
+  }
+  return hits;
+}
+function containsExactPhrase(haystack, needle) {
+  const phrase = needle.trim().toLowerCase();
+  if (phrase.length < MIN_NAMED_CAPABILITY_CHARS) return false;
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(haystack);
+}
+function namedEntryInStep(proposal, entry) {
+  const stepText = `${proposal.title} ${proposal.description}`;
+  const bareId = entry.capability_id.split(":")[1];
+  const candidates = [entry.name, bareId, entry.capability_id].filter((value) => typeof value === "string" && value.trim() !== "");
+  for (const candidate of candidates) {
+    if (containsExactPhrase(stepText, candidate)) return candidate;
+  }
+  return null;
+}
+function matchCapabilitiesToPlan(snapshot, proposals) {
+  if (proposals.length === 0) return [];
+  const matches = [];
+  for (const entry of snapshot.items) {
+    const matchedActions = [];
+    const evidence = /* @__PURE__ */ new Set();
+    for (const proposal of proposals) {
+      const refs = referencesEntry(proposal, entry);
+      const named = namedEntryInStep(proposal, entry);
+      if (refs.length === 0 && named === null) continue;
+      const basis2 = refs.length > 0 ? "recorded_reference" : "named_in_step";
+      const actionEvidence = refs.map(
+        (ref) => `${proposal.action_id}: recorded reference ${ref}`
+      );
+      if (named !== null) {
+        actionEvidence.push(`${proposal.action_id}: step names "${named}"`);
+      }
+      for (const line of actionEvidence) evidence.add(line);
+      matchedActions.push({
+        action_id: proposal.action_id,
+        action_title: proposal.title,
+        basis: basis2,
+        evidence: actionEvidence
+      });
+    }
+    if (matchedActions.length === 0) continue;
+    const recorded = matchedActions.filter((action) => action.basis === "recorded_reference").map((action) => action.action_id);
+    const namedOnly = matchedActions.filter((action) => action.basis === "named_in_step").map((action) => action.action_id);
+    const basis = recorded.length > 0 && namedOnly.length > 0 ? "mixed" : recorded.length > 0 ? "recorded_reference" : "named_in_step";
+    matches.push({
+      ...entry,
+      matched_action_ids: matchedActions.map((action) => action.action_id),
+      matched_action_titles: matchedActions.map((action) => action.action_title),
+      match_basis: basis,
+      // Every literal is kept; a per-step prefix maps each line to its step.
+      match_evidence: [...evidence].sort(),
+      matched_actions: matchedActions,
+      recorded_reference_action_ids: recorded,
+      named_in_step_action_ids: namedOnly,
+      shared_terms: []
+    });
+  }
+  const basisRank = {
+    recorded_reference: 0,
+    mixed: 1,
+    named_in_step: 2
+  };
+  matches.sort((a, b) => {
+    if (a.match_basis !== b.match_basis) {
+      return basisRank[a.match_basis] - basisRank[b.match_basis];
+    }
+    if (a.matched_action_ids.length !== b.matched_action_ids.length) {
+      return b.matched_action_ids.length - a.matched_action_ids.length;
+    }
+    if (a.kind !== b.kind) return a.kind === "department" ? -1 : 1;
+    const byName = a.name.localeCompare(b.name);
+    return byName !== 0 ? byName : a.capability_id.localeCompare(b.capability_id);
+  });
+  return matches;
+}
+
 // src/reports/model.ts
+var COUNCIL_COVER_IMAGE_REFERENCE = "assets/seats/cover.png";
+var REPORT_MIN_FONT_PT = 14;
+var COVER_IMAGE_DATA_URI_MAX_CHARS = 9e5;
+var COVER_IMAGE_DATA_URI_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+var VERDICT_LABEL_TEXT = {
+  GO: "Go",
+  GO_WITH_CONDITIONS: "Go, with conditions",
+  RESHAPE: "Reshape the plan",
+  DONT_DO_IT: "Do not do it",
+  WAIT: "Wait",
+  INSUFFICIENT_EVIDENCE: "Not enough evidence yet"
+};
+var STANCE_TEXT = {
+  support: "supports it",
+  conditional: "supports it with conditions",
+  oppose: "opposes it",
+  abstain: "abstained"
+};
+var RESOLUTION_STANCE_TEXT = {
+  support: "supported the final resolution",
+  conditional_support: "supported the final resolution with conditions",
+  oppose: "opposed the final resolution",
+  abstain: "abstained on the final resolution"
+};
+var EVIDENCE_STRENGTH_TEXT = {
+  low: "limited",
+  medium: "moderate",
+  high: "strong"
+};
+var RISK_TEXT = {
+  low: "Low risk",
+  medium: "Medium risk",
+  high: "High risk",
+  critical: "Critical risk"
+};
+var CONDITION_STATUS_TEXT = {
+  open: "still open",
+  satisfied: "already met",
+  waived_by_owner: "waived by the owner",
+  unresolved: "still unresolved"
+};
+var RATIFICATION_TEXT = {
+  not_required: "Ratification was not required for this sitting.",
+  pending: "Ratification was still pending when this report was made.",
+  ratified: "The council ratified the final resolution.",
+  not_run_by_quick_mode_policy: "This sitting size does not run a ratification round.",
+  material_change_unratified: "The resolution changed materially after ratification.",
+  rejected: "The council rejected the final resolution."
+};
+var HOW_TO_USE_REPORT = [
+  "Start with the summary, then read the plan. The detail below it is there when you want to check the reasoning.",
+  "Each advisor is an AI perspective inspired by a published body of work. It is not the person named and it is not an endorsement.",
+  "The council recommendation is advice. Every action still needs its own approval before anyone acts on it.",
+  "If the facts change, convene the council again with the new facts. This report stays as the record of this sitting.",
+  "After you act, come back to the review items: they say what to measure and when to look again."
+];
 var DEFAULT_ROUTE_DISPLAY = "Selected route used; underlying model identity not independently exposed.";
 var SIMULATION_LABEL = "Simulated advisory perspectives. Every advisor voice in this report is an AI perspective inspired by the published work of the named person. It is not the individual and not an endorsement.";
 var AUTHORIZATION_NOTICE = "Authorization boundary: this report records an advisory council verdict only. It is not an action-plan approval and not an execution authorization. Any action proposal listed here requires its own separate approvals before anything is executed; a council verdict is never an execution credential.";
@@ -28729,7 +29581,11 @@ var REDACTION_PROTECTED_KEYS = /* @__PURE__ */ new Set([
   "sha256",
   "resolution_sha256",
   "input_manifest_sha256",
-  "draft_resolution_sha256"
+  "draft_resolution_sha256",
+  // CTR-146 identity fields: redaction never rewrites an installation
+  // binding or a capability id.
+  "installation_id",
+  "capability_id"
 ]);
 function redactValue(value, replacements) {
   if (typeof value === "string") {
@@ -28763,7 +29619,7 @@ function scoredModel(input, verdict) {
   const { brief, final_cards, context } = input;
   const abstentions = abstentionsByOption(final_cards);
   const optionLabel = new Map(brief.options.map((o) => [o.id, o]));
-  const advisorCards = final_cards.filter((c) => c.card_kind === "advisor" && c.round === 2).sort((a, b) => SEAT_IDS.indexOf(a.seat_id) - SEAT_IDS.indexOf(b.seat_id));
+  const advisorCards = latestAdvisorCards(final_cards);
   const ratificationBySeat = new Map(
     final_cards.filter((c) => c.card_kind === "ratification").map((c) => [c.seat_id, c])
   );
@@ -28793,7 +29649,10 @@ function scoredModel(input, verdict) {
       display_score: summary.display_score,
       coverage: summary.coverage,
       spread: summary.spread,
-      abstained_seat_ids: abstentions.get(summary.option_id) ?? []
+      abstained_seat_ids: abstentions.get(summary.option_id) ?? [],
+      abstained_seat_names: (abstentions.get(summary.option_id) ?? []).map(
+        (seatId) => seatDisplayName2(seatId)
+      )
     })),
     main_reasons: [...verdict.main_reasons],
     strongest_dissent: verdict.strongest_dissent,
@@ -28842,8 +29701,12 @@ function scoredModel(input, verdict) {
       display_name: seatDisplayName2(card.seat_id),
       label: seatLabel(card.seat_id),
       qualification: context.seat_qualifications[card.seat_id] ?? null,
+      round: card.round,
+      lane: context.seat_descriptors?.[card.seat_id]?.lane ?? null,
+      owned_question: context.seat_descriptors?.[card.seat_id]?.owned_question ?? null,
       stance: card.stance,
       preferred_option_id: card.preferred_option_id,
+      preferred_option_label: card.preferred_option_id !== null ? optionLabel.get(card.preferred_option_id)?.label ?? null : null,
       decisive_arguments: [...card.decisive_arguments],
       strongest_objection: card.strongest_objection,
       change_my_mind: card.change_my_mind,
@@ -28917,12 +29780,1079 @@ function consultModel(input, verdict) {
     }
   };
 }
+function latestAdvisorCards(cards) {
+  const latest = /* @__PURE__ */ new Map();
+  for (const card of cards) {
+    if (card.card_kind !== "advisor") continue;
+    const current = latest.get(card.seat_id);
+    if (current === void 0 || card.round > current.round) {
+      latest.set(card.seat_id, card);
+    }
+  }
+  return SEAT_IDS.map((seatId) => latest.get(seatId)).filter(
+    (card) => card !== void 0
+  );
+}
+function advisorRounds(cards) {
+  const byRound = /* @__PURE__ */ new Map();
+  for (const card of cards) {
+    if (card.card_kind !== "advisor") continue;
+    const seats = byRound.get(card.round) ?? /* @__PURE__ */ new Map();
+    if (!seats.has(card.seat_id)) seats.set(card.seat_id, card);
+    byRound.set(card.round, seats);
+  }
+  return [...byRound.entries()].sort((a, b) => a[0] - b[0]).map(([round, seats]) => ({
+    round,
+    cards: SEAT_IDS.map((seatId) => seats.get(seatId)).filter(
+      (card) => card !== void 0
+    )
+  }));
+}
+function optionText(optionId, brief) {
+  if (optionId === null) return null;
+  const option = brief.options.find((entry) => entry.id === optionId);
+  return option?.label ?? optionId;
+}
+function verdictText(label) {
+  if (label === null) return null;
+  return VERDICT_LABEL_TEXT[label] ?? label;
+}
+function stanceText(stance) {
+  return STANCE_TEXT[stance] ?? stance;
+}
+function resolutionStanceText(stance) {
+  if (stance === null) return null;
+  return RESOLUTION_STANCE_TEXT[stance] ?? stance;
+}
+function evidenceStrengthText(strength) {
+  if (strength === null) return null;
+  return EVIDENCE_STRENGTH_TEXT[strength] ?? strength;
+}
+function riskText(risk) {
+  return RISK_TEXT[risk] ?? risk;
+}
+function conditionStatusText(status) {
+  return CONDITION_STATUS_TEXT[status] ?? status;
+}
+function ratificationText(status) {
+  if (status === null) return null;
+  return RATIFICATION_TEXT[status] ?? status;
+}
+function moneyText(limit) {
+  if (limit === null) return null;
+  return `${(limit.amount_minor / 100).toFixed(2)} ${limit.currency}`;
+}
+function roundPolicyFor(mode) {
+  if (mode !== "light" && mode !== "medium" && mode !== "heavy") return null;
+  const policy = MODE_ROUND_POLICY[mode];
+  const rounds = policy.min_rounds === policy.max_rounds ? `${policy.min_rounds} rounds` : `${policy.min_rounds} to ${policy.max_rounds} rounds`;
+  return {
+    seats: policy.seats,
+    min_rounds: policy.min_rounds,
+    max_rounds: policy.max_rounds,
+    stop_from_round: policy.stop_from_round,
+    text: `${rounds}, all ${policy.seats} advisors in each round.`
+  };
+}
+var CONDITION_KIND_TEXT = {
+  evidence_required: "Evidence needed",
+  external_action: "External action",
+  prerequisite: "Prerequisite",
+  safeguard: "Safeguard"
+};
+function normalizeStatement(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function dedupeStatements(items) {
+  const seen = /* @__PURE__ */ new Set();
+  const kept = [];
+  let removed = 0;
+  for (const raw of items) {
+    const text = raw.trim();
+    if (text === "") continue;
+    const key = normalizeStatement(text);
+    if (key === "") continue;
+    if (seen.has(key)) {
+      removed += 1;
+      continue;
+    }
+    seen.add(key);
+    kept.push(text);
+  }
+  return { kept, removed };
+}
+var UNKNOWN_PREFIX_FRAMES = [
+  /^unknown\s*[:,-]\s*/i,
+  /^the\s+/i
+];
+var UNKNOWN_SUFFIX_FRAMES = [
+  /\s*,?\s*(?:which|that)?\s*(?:is|are)\s+(?:still\s+)?(?:unknown|not\s+stated|not\s+recorded|unclear)\s*\.?$/i,
+  /\s*[:,-]\s*$/
+];
+function unknownCore(text) {
+  let out = text.trim().replace(/\s+/g, " ");
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const frame of UNKNOWN_PREFIX_FRAMES) {
+      const next = out.replace(frame, "");
+      if (next !== out) {
+        out = next;
+        changed = true;
+      }
+    }
+    for (const frame of UNKNOWN_SUFFIX_FRAMES) {
+      const next = out.replace(frame, "");
+      if (next !== out) {
+        out = next;
+        changed = true;
+      }
+    }
+    out = out.trim();
+  }
+  return out;
+}
+function dedupeUnknownStatements(items) {
+  const seen = /* @__PURE__ */ new Set();
+  const kept = [];
+  let removed = 0;
+  for (const raw of items) {
+    const text = raw.trim();
+    if (text === "") continue;
+    const key = normalizeStatement(unknownCore(text));
+    if (key === "") continue;
+    if (seen.has(key)) {
+      removed += 1;
+      continue;
+    }
+    seen.add(key);
+    kept.push(text);
+  }
+  return { kept, removed };
+}
+var UNKNOWN_CONTENT_STOPWORDS = /* @__PURE__ */ new Set([
+  "about",
+  "after",
+  "again",
+  "against",
+  "also",
+  "and",
+  "any",
+  "are",
+  "because",
+  "been",
+  "before",
+  "being",
+  "between",
+  "both",
+  "but",
+  "can",
+  "could",
+  "does",
+  "doing",
+  "each",
+  "for",
+  "from",
+  "further",
+  "have",
+  "having",
+  "into",
+  "its",
+  "itself",
+  "more",
+  "most",
+  "must",
+  "not",
+  "now",
+  "off",
+  "once",
+  "only",
+  "other",
+  "our",
+  "out",
+  "over",
+  "own",
+  "same",
+  "should",
+  "some",
+  "such",
+  "than",
+  "that",
+  "the",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "through",
+  "too",
+  "under",
+  "until",
+  "very",
+  "was",
+  "were",
+  "what",
+  "when",
+  "where",
+  "which",
+  "while",
+  "who",
+  "whom",
+  "why",
+  "will",
+  "with",
+  "would",
+  "you",
+  "your"
+]);
+function unknownContentWords(text) {
+  return normalizeStatement(unknownCore(text)).split(" ").filter((word) => word.length > 3 && !UNKNOWN_CONTENT_STOPWORDS.has(word));
+}
+function canonicalUnknowns(briefUnknowns, verdictUnknowns) {
+  const brief = dedupeUnknownStatements(briefUnknowns);
+  const council = dedupeUnknownStatements(verdictUnknowns);
+  if (brief.kept.length === 0) {
+    return {
+      information_needed: council.kept,
+      source: council.kept.length > 0 ? "verdict" : "none",
+      verdict_only_additions: [],
+      council_restatements: council.kept,
+      council_restatements_removed: council.removed,
+      council_recorded_count: verdictUnknowns.filter((text) => text.trim() !== "").length
+    };
+  }
+  const briefWords = new Set(
+    brief.kept.flatMap((statement) => unknownContentWords(statement))
+  );
+  const additions = [];
+  for (const statement of council.kept) {
+    const words = unknownContentWords(statement);
+    if (words.every((word) => !briefWords.has(word))) additions.push(statement);
+  }
+  return {
+    information_needed: [...brief.kept, ...additions],
+    source: "brief",
+    verdict_only_additions: additions,
+    council_restatements: council.kept,
+    council_restatements_removed: council.removed,
+    council_recorded_count: verdictUnknowns.filter((text) => text.trim() !== "").length
+  };
+}
+function openConditions(finalCards) {
+  const out = [];
+  for (const card of latestAdvisorCards(finalCards)) {
+    for (const condition of card.conditions) {
+      if (condition.status !== "open" && condition.status !== "unresolved") continue;
+      out.push({
+        condition_id: condition.id,
+        advisor: seatDisplayName2(card.seat_id),
+        text: condition.description,
+        kind: condition.kind,
+        kind_text: CONDITION_KIND_TEXT[condition.kind] ?? condition.kind,
+        blocking: condition.blocking,
+        status: condition.status,
+        status_text: conditionStatusText(condition.status)
+      });
+    }
+  }
+  return out;
+}
+var READY_ELIGIBLE_VERDICTS = /* @__PURE__ */ new Set([
+  "GO",
+  "GO_WITH_CONDITIONS"
+]);
+var RATIFICATION_BLOCKS_READINESS = /* @__PURE__ */ new Set([
+  "pending",
+  "rejected",
+  "material_change_unratified"
+]);
+function readinessBlock(finalCards, verdict) {
+  if (verdict.result_kind !== "scored") {
+    return {
+      status: "not_applicable",
+      headline: "A consultation records advice only, so there is no plan readiness to report.",
+      status_reasons: ["This record is a consultation, not a scored decision with a plan."],
+      blockers: [],
+      safeguards: [],
+      blocker_count: 0,
+      safeguard_count: 0,
+      blocker_shown: 0,
+      safeguard_shown: 0,
+      hard_constraint_findings: [],
+      hard_constraint_count: 0,
+      hard_constraint_fail_count: 0,
+      hard_constraint_unknown_count: 0,
+      ratification: { status: null, status_text: null, blocks_readiness: false },
+      note: "Readiness does not apply to a consultation."
+    };
+  }
+  const open = openConditions(finalCards);
+  const blockers = open.filter((condition) => condition.blocking);
+  const safeguards = open.filter((condition) => !condition.blocking);
+  const labelText = verdictText(verdict.label) ?? verdict.label;
+  const eligible = READY_ELIGIBLE_VERDICTS.has(verdict.label);
+  const recommendedId = verdict.recommended_option_id;
+  const hardFindings = (recommendedId === null ? [] : verdict.hard_constraint_findings).filter(
+    (finding) => finding.option_id === recommendedId && (finding.result === "fail" || finding.result === "unknown")
+  ).map((finding) => ({
+    constraint_id: finding.constraint_id,
+    option_id: finding.option_id,
+    result: finding.result,
+    result_text: finding.result === "fail" ? "Failed the check" : "The saved evidence could not resolve this check",
+    checker: finding.checker,
+    evidence_ids: [...finding.evidence_ids]
+  }));
+  const hardFailCount = hardFindings.filter(
+    (finding) => finding.result === "fail"
+  ).length;
+  const hardUnknownCount = hardFindings.filter(
+    (finding) => finding.result === "unknown"
+  ).length;
+  const ratificationStatus = verdict.ratification_status;
+  const ratificationBlocks = RATIFICATION_BLOCKS_READINESS.has(ratificationStatus);
+  const ratification = {
+    status: ratificationStatus,
+    status_text: ratificationText(ratificationStatus),
+    blocks_readiness: ratificationBlocks
+  };
+  const statusReasons = [];
+  if (!eligible) {
+    statusReasons.push(
+      `The council verdict was ${labelText}, which is never reported as ready to act.`
+    );
+  }
+  if (blockers.length > 0) {
+    statusReasons.push(
+      `${blockers.length} open blocking condition(s) still stand.`
+    );
+  }
+  if (hardFindings.length > 0) {
+    statusReasons.push(
+      `${hardFailCount} hard constraint check(s) failed and ${hardUnknownCount} could not be resolved for the recommended option.`
+    );
+  }
+  if (ratificationBlocks) {
+    statusReasons.push(
+      ratificationText(ratificationStatus) ?? `Ratification status ${ratificationStatus} blocks readiness.`
+    );
+  }
+  const notReady = !eligible || blockers.length > 0 || hardFindings.length > 0 || ratificationBlocks;
+  const status = !eligible ? "not_ready" : notReady ? "blocked" : safeguards.length > 0 ? "ready_with_conditions" : "ready";
+  const headline = status === "not_ready" ? `Not ready to act: the council verdict was ${labelText}.` : status === "blocked" ? `Not ready yet: ${statusReasons.join(" ")}` : status === "ready_with_conditions" ? `Ready with conditions: the verdict was ${labelText}, ${safeguards.length} recorded safeguard(s) still apply, and no blocker, unresolved hard constraint or ratification issue is recorded.` : `Ready: the verdict was ${labelText} and no open blocker, unresolved hard constraint for the recommended option, or ratification issue is recorded.`;
+  if (status === "ready" || status === "ready_with_conditions") {
+    statusReasons.unshift(
+      `The verdict was ${labelText} and no open blocker, unresolved hard constraint for the recommended option, or ratification issue is recorded.`
+    );
+  }
+  return {
+    status,
+    headline,
+    status_reasons: statusReasons,
+    blockers,
+    safeguards,
+    // Totals and shown lists are identical because nothing is cut. The
+    // separate fields stay explicit for any future display subset.
+    blocker_count: blockers.length,
+    safeguard_count: safeguards.length,
+    blocker_shown: blockers.length,
+    safeguard_shown: safeguards.length,
+    hard_constraint_findings: hardFindings,
+    hard_constraint_count: hardFindings.length,
+    hard_constraint_fail_count: hardFailCount,
+    hard_constraint_unknown_count: hardUnknownCount,
+    ratification,
+    note: "Readiness is separate from the decision. A verdict is advice; a blocker is a recorded condition that is not met yet, and a hard constraint check is the council's own pass/fail test."
+  };
+}
+function assertCoverImageDataUri(value) {
+  const candidate = value?.trim() ?? "";
+  if (candidate === "") return null;
+  if (!COVER_IMAGE_DATA_URI_RE.test(candidate)) {
+    throw new ReportExportError(
+      "EXPORT_REQUEST_INVALID",
+      "cover_image_data_uri must be a base64 data URI for a png, jpeg, or webp image; asset wiring owns producing it"
+    );
+  }
+  if (candidate.length > COVER_IMAGE_DATA_URI_MAX_CHARS) {
+    throw new ReportExportError(
+      "EXPORT_REQUEST_INVALID",
+      `cover_image_data_uri is ${candidate.length} characters; the report limit is ${COVER_IMAGE_DATA_URI_MAX_CHARS}. Supply a compressed derivative of ${COUNCIL_COVER_IMAGE_REFERENCE}.`
+    );
+  }
+  return candidate;
+}
+function reportStyleBlock() {
+  return {
+    schema_version: "wise-elders.report-style/v1",
+    min_font_pt: REPORT_MIN_FONT_PT,
+    cover_image_reference: COUNCIL_COVER_IMAGE_REFERENCE
+  };
+}
+function capabilitySnapshotOf2(context) {
+  if (!context.capability_snapshot) return null;
+  try {
+    const snapshot = validateCapabilitySnapshot(context.capability_snapshot);
+    assertSnapshotInstallation(snapshot, context.installation_id);
+    return snapshot;
+  } catch (error52) {
+    throw new ReportExportError(
+      "EXPORT_REQUEST_INVALID",
+      error52 instanceof Error ? error52.message : "the capability snapshot is not valid"
+    );
+  }
+}
+function summaryBlock(args) {
+  const { verdict } = args;
+  if (verdict.result_kind === "consult") {
+    return {
+      verdict_label: null,
+      verdict_label_text: null,
+      recommendation_option_id: null,
+      recommendation_text: null,
+      in_short: verdict.consult_card.answer,
+      reasons: [],
+      biggest_concern: null,
+      ratification_text: null,
+      confidence: {
+        evidence_strength: null,
+        evidence_strength_text: null,
+        notes: []
+      },
+      what_would_change_the_answer: [],
+      what_would_change_the_answer_count: 0,
+      what_would_change_the_answer_shown: 0,
+      what_would_change_the_answer_removed: 0,
+      information_needed: [],
+      information_needed_count: 0,
+      information_needed_shown: 0,
+      information_needed_source: "none",
+      information_needed_note: null,
+      // Present on the consult branch too: the shared reader contract reads
+      // these fields on every summary, so an absent key must not be read as
+      // an empty array by a renderer that calls `.length`.
+      verdict_only_additions: [],
+      council_unknowns: [],
+      council_unknowns_count: 0,
+      council_unknowns_shown: 0,
+      council_unknowns_removed: 0
+    };
+  }
+  const label = verdict.label;
+  const labelText = verdictText(label);
+  const recommendationText = args.recommendationLabel ?? "No option was recommended.";
+  const inShort = args.recommendationLabel !== null ? `The verdict was ${labelText ?? label}. The council recommends ${args.recommendationLabel}.` : `The verdict was ${labelText ?? label}. The council did not recommend an option.`;
+  const uncertainty = [];
+  const strength = evidenceStrengthText(verdict.evidence_strength);
+  if (strength !== null) {
+    uncertainty.push(`The council rated its evidence as ${strength}.`);
+  }
+  const lowCoverage = args.scoreTable.filter((row) => row.coverage !== null && row.coverage < 1).sort((a, b) => (a.coverage ?? 0) - (b.coverage ?? 0))[0];
+  if (lowCoverage !== void 0) {
+    uncertainty.push(
+      `Coverage was ${((lowCoverage.coverage ?? 0) * 100).toFixed(2)}% on ${lowCoverage.option_label}.`
+    );
+  } else if (args.scoreTable.length > 0) {
+    uncertainty.push("Every participating seat scored every option.");
+  }
+  const abstainers = /* @__PURE__ */ new Set();
+  for (const row of args.scoreTable) {
+    for (const seatId of row.abstained_seat_ids) abstainers.add(seatIdDisplayName(seatId));
+  }
+  if (abstainers.size > 0) {
+    uncertainty.push(`${[...abstainers].join(", ")} abstained on at least one option.`);
+  }
+  const unknownConstraints = args.hardConstraints.filter(
+    (finding) => finding.result === "unknown"
+  ).length;
+  if (unknownConstraints > 0) {
+    uncertainty.push(
+      `${unknownConstraints} hard constraint check(s) could not be resolved from the saved evidence.`
+    );
+  }
+  const changeMyMind = dedupeStatements(
+    args.seats.map((seat) => seat.change_my_mind)
+  ).kept;
+  const info = canonicalUnknowns(args.briefUnknowns, args.criticalUnknowns);
+  const informationNeeded = info.information_needed;
+  let informationNeededNote = null;
+  if (info.source === "brief") {
+    const briefCount = args.briefUnknowns.filter((text) => text.trim() !== "").length;
+    const additionText = info.verdict_only_additions.length > 0 ? `, plus ${info.verdict_only_additions.length} council fact(s) the brief did not record` : "";
+    informationNeededNote = `The brief recorded ${briefCount} unknown(s); the council restated them ${info.council_recorded_count} times, leaving ${info.council_restatements.length} unique council statement(s). The brief's unknowns are the information needed${additionText}.`;
+  } else if (info.source === "verdict") {
+    informationNeededNote = `The brief recorded no unknown; the council's ${informationNeeded.length} critical unknown(s) are the information needed.`;
+  }
+  return {
+    verdict_label: label,
+    verdict_label_text: labelText,
+    recommendation_option_id: verdict.recommended_option_id,
+    recommendation_text: recommendationText,
+    in_short: inShort,
+    reasons: dedupeStatements(args.mainReasons).kept,
+    biggest_concern: args.strongestDissent,
+    ratification_text: ratificationText(verdict.ratification_status),
+    confidence: {
+      evidence_strength: verdict.evidence_strength,
+      evidence_strength_text: evidenceStrengthText(verdict.evidence_strength),
+      notes: uncertainty
+    },
+    what_would_change_the_answer: changeMyMind,
+    // CTR-156: count is the number of RECORDED non-empty seat statements
+    // BEFORE frame de-duplication; shown is the de-duplicated list; removed
+    // is the difference. All three are printed from these fields, so a count
+    // can never be read as larger than the rows without the collapse being
+    // stated. No statement is dropped beyond an exact frame-normalised repeat.
+    what_would_change_the_answer_count: args.seats.filter(
+      (seat) => seat.change_my_mind.trim() !== ""
+    ).length,
+    what_would_change_the_answer_shown: changeMyMind.length,
+    what_would_change_the_answer_removed: args.seats.filter((seat) => seat.change_my_mind.trim() !== "").length - changeMyMind.length,
+    information_needed: informationNeeded,
+    information_needed_count: informationNeeded.length,
+    information_needed_shown: informationNeeded.length,
+    information_needed_source: info.source,
+    information_needed_note: informationNeededNote,
+    verdict_only_additions: info.verdict_only_additions,
+    council_unknowns: info.council_restatements,
+    // CTR-156 semantics, printed explicitly: `count` is the recorded total
+    // BEFORE frame de-duplication (10 on the saved sitting); `shown` is the
+    // distinct rows (8); `removed` is the collapsed repeats (2). A reader
+    // shows `shown` rows and states `removed`, never prints `count` as if it
+    // were the row count.
+    council_unknowns_count: info.council_recorded_count,
+    council_unknowns_shown: info.council_restatements.length,
+    council_unknowns_removed: info.council_restatements_removed
+  };
+}
+function seatIdDisplayName(seatId) {
+  return SEAT_IDS.includes(seatId) ? seatDisplayName2(seatId) : seatId;
+}
+function appliesToAllOptions(brief, optionIds) {
+  const options = new Set(brief.options.map((option) => option.id));
+  if (options.size === 0) return false;
+  const seen = /* @__PURE__ */ new Set();
+  for (const optionId of optionIds) {
+    if (!options.has(optionId) || seen.has(optionId)) return false;
+    seen.add(optionId);
+  }
+  return seen.size === options.size;
+}
+function questionBlock(brief, verdict) {
+  const briefUnknowns = brief.unknowns.map((fact) => fact.statement);
+  const councilUnknowns = verdict.result_kind === "scored" ? verdict.critical_unknowns : [];
+  const unknowns = dedupeUnknownStatements([
+    ...briefUnknowns,
+    ...councilUnknowns
+  ]);
+  const recordedTotal = briefUnknowns.filter((text) => text.trim() !== "").length + councilUnknowns.filter((text) => text.trim() !== "").length;
+  return {
+    question: brief.question,
+    facts: brief.facts.map((fact) => ({
+      statement: fact.statement,
+      evidence_ids: [...fact.evidence_ids]
+    })),
+    assumptions: brief.assumptions.map((fact) => fact.statement),
+    unknowns: unknowns.kept,
+    unknowns_count: recordedTotal,
+    unknowns_shown: unknowns.kept.length,
+    unknowns_note: unknowns.removed > 0 ? `${unknowns.removed} repeated unknown statement(s) were shown once.` : null,
+    constraints: brief.constraints.map((constraint) => ({
+      description: constraint.description,
+      hard: constraint.hard,
+      applies_to_option_labels: constraint.applies_to_option_ids.map(
+        (optionId) => optionText(optionId, brief) ?? optionId
+      ),
+      applies_to_all_options: appliesToAllOptions(
+        brief,
+        constraint.applies_to_option_ids
+      )
+    })),
+    options: brief.options.map((option) => ({
+      option_id: option.id,
+      option_label: option.label,
+      option_kind: option.kind
+    }))
+  };
+}
+function advisorContributions(cards, brief, context) {
+  return latestAdvisorCards(cards).map((card) => {
+    const descriptor = context.seat_descriptors?.[card.seat_id];
+    return {
+      seat_id: card.seat_id,
+      display_name: seatDisplayName2(card.seat_id),
+      label: seatLabel(card.seat_id),
+      lane: descriptor?.lane ?? null,
+      owned_question: descriptor?.owned_question ?? null,
+      qualification: context.seat_qualifications[card.seat_id] ?? null,
+      round: card.round,
+      stance: card.stance,
+      stance_text: stanceText(card.stance),
+      preferred_option_id: card.preferred_option_id,
+      preferred_option_label: optionText(card.preferred_option_id, brief),
+      what_they_argued: [...card.decisive_arguments],
+      strongest_objection: card.strongest_objection,
+      what_would_change_their_mind: card.change_my_mind,
+      minority_position: card.minority_position,
+      confidence_text: evidenceStrengthText(card.evidence_strength),
+      conditions: card.conditions.map((condition) => ({
+        id: condition.id,
+        description: condition.description,
+        kind: condition.kind,
+        blocking: condition.blocking,
+        status_text: conditionStatusText(condition.status)
+      })),
+      resolution_stance_text: resolutionStanceText(
+        cards.find(
+          (entry) => entry.card_kind === "ratification" && entry.seat_id === card.seat_id
+        )?.resolution_stance ?? null
+      )
+    };
+  });
+}
+function debateBlock(cards, brief, context) {
+  const rounds = advisorRounds(cards);
+  const policy = roundPolicyFor(context.session_mode);
+  const highest = rounds.length > 0 ? rounds[rounds.length - 1].round : null;
+  const notes = [];
+  if (rounds.length === 0) {
+    notes.push("No advisor cards are saved in this record, so the debate cannot be reconstructed.");
+  } else if (rounds.length === 1) {
+    notes.push(
+      `Only one round of advisor cards is saved in this record (round ${rounds[0].round}), so a before-and-after comparison is not possible.`
+    );
+  } else {
+    notes.push(`${rounds.length} rounds of advisor cards are saved in this record.`);
+  }
+  const modeSelection = context.mode_selection ?? null;
+  if (modeSelection !== null) {
+    notes.push(
+      `Sitting size: ${modeSelection.mode} (${modeSelection.source === "client" ? "chosen by the client" : "chosen automatically"}). Recorded reason: ${modeSelection.reason}`
+    );
+  } else if (policy !== null) {
+    notes.push(
+      `Sitting size: ${context.session_mode}. ${policy.text} The saved record does not state why this size was chosen.`
+    );
+  } else if (context.session_mode !== null) {
+    notes.push(
+      `Sitting size recorded as ${context.session_mode}. The saved record does not state why this size was chosen.`
+    );
+  } else {
+    notes.push("The saved record does not state the sitting size.");
+  }
+  if (policy !== null && highest !== null) {
+    notes.push(
+      highest >= policy.max_rounds ? `The saved cards reach the ${policy.max_rounds}-round ceiling for this size.` : `The saved cards stop before the ${policy.max_rounds}-round ceiling for this size.`
+    );
+  }
+  notes.push(
+    "The saved record contains no chair note explaining a stop decision; only the cards above are recorded."
+  );
+  const changes = [];
+  for (let index = 1; index < rounds.length; index += 1) {
+    const previous = new Map(rounds[index - 1].cards.map((card) => [card.seat_id, card]));
+    for (const card of rounds[index].cards) {
+      const before = previous.get(card.seat_id);
+      if (before === void 0) continue;
+      const changedOption = before.preferred_option_id !== card.preferred_option_id;
+      const changedStance = before.stance !== card.stance;
+      if (!changedOption && !changedStance) continue;
+      changes.push({
+        round: rounds[index].round,
+        seat_id: card.seat_id,
+        display_name: seatDisplayName2(card.seat_id),
+        from_option_label: optionText(before.preferred_option_id, brief),
+        to_option_label: optionText(card.preferred_option_id, brief),
+        from_stance_text: stanceText(before.stance),
+        to_stance_text: stanceText(card.stance),
+        changed_option: changedOption,
+        changed_stance: changedStance
+      });
+    }
+  }
+  const latest = latestAdvisorCards(cards);
+  const byOption = /* @__PURE__ */ new Map();
+  const abstained = [];
+  for (const card of latest) {
+    if (card.stance === "abstain") abstained.push(seatDisplayName2(card.seat_id));
+    const key = card.preferred_option_id ?? "";
+    const list = byOption.get(key) ?? [];
+    list.push(seatDisplayName2(card.seat_id));
+    byOption.set(key, list);
+  }
+  const positions = [...byOption.entries()].sort((a, b) => {
+    if (a[0] === "") return 1;
+    if (b[0] === "") return -1;
+    return a[0].localeCompare(b[0]);
+  }).map(([optionId, names]) => ({
+    option_id: optionId === "" ? null : optionId,
+    option_label: optionId === "" ? "No stated preference" : optionText(optionId, brief),
+    seat_names: names
+  }));
+  if (rounds.length > 0) {
+    if (positions.filter((entry) => entry.option_id !== null).length > 1) {
+      notes.push("The council split on which option to prefer; the groups are listed below.");
+    } else {
+      notes.push(
+        "The council did not split on which option to prefer; the disagreement is in the reasoning and objections each advisor recorded."
+      );
+    }
+  }
+  const roundSupport = rounds.map((entry, index) => {
+    const counts = {
+      support: 0,
+      conditional: 0,
+      oppose: 0,
+      abstain: 0
+    };
+    for (const card of entry.cards) counts[card.stance] += 1;
+    const previous = index > 0 ? rounds[index - 1] : null;
+    const identicalToPrevious = previous !== null && previous.cards.length === entry.cards.length && entry.cards.every((card) => {
+      const before = previous.cards.find((candidate) => candidate.seat_id === card.seat_id);
+      return before !== void 0 && before.stance === card.stance && before.preferred_option_id === card.preferred_option_id;
+    });
+    return {
+      round: entry.round,
+      support: counts.support,
+      conditional: counts.conditional,
+      oppose: counts.oppose,
+      abstain: counts.abstain,
+      identical_to_previous: identicalToPrevious
+    };
+  });
+  return {
+    rounds_saved: rounds.length,
+    highest_round: highest,
+    mode: context.session_mode,
+    mode_selection: modeSelection,
+    round_policy: policy,
+    rounds: rounds.map((entry) => ({
+      round: entry.round,
+      seats: entry.cards.map((card) => ({
+        seat_id: card.seat_id,
+        display_name: seatDisplayName2(card.seat_id),
+        stance: card.stance,
+        stance_text: stanceText(card.stance),
+        preferred_option_id: card.preferred_option_id,
+        preferred_option_label: optionText(card.preferred_option_id, brief)
+      }))
+    })),
+    round_support: roundSupport,
+    condensed_note: rounds.length > 1 && changes.length === 0 ? "No advisor changed position between the saved rounds, so the earlier rounds repeat the same positions. Read the final positions below; the earlier rounds add no new stance." : null,
+    changes,
+    positions,
+    abstained_names: abstained,
+    notes
+  };
+}
+function orderedActions(proposals) {
+  const originalIndex = new Map(proposals.map((proposal, index) => [proposal.action_id, index]));
+  const known = new Set(proposals.map((proposal) => proposal.action_id));
+  const missing = /* @__PURE__ */ new Set();
+  const dependencies = /* @__PURE__ */ new Map();
+  const dependents = /* @__PURE__ */ new Map();
+  for (const proposal of proposals) {
+    const deps = proposal.depends_on_action_ids.filter((actionId) => {
+      if (!known.has(actionId)) {
+        missing.add(actionId);
+        return false;
+      }
+      return true;
+    });
+    dependencies.set(proposal.action_id, deps);
+    for (const dep of deps) {
+      const list = dependents.get(dep) ?? [];
+      list.push(proposal.action_id);
+      dependents.set(dep, list);
+    }
+  }
+  const indegree = new Map(
+    proposals.map((proposal) => [
+      proposal.action_id,
+      (dependencies.get(proposal.action_id) ?? []).length
+    ])
+  );
+  const byOriginal = (a, b) => (originalIndex.get(a) ?? 0) - (originalIndex.get(b) ?? 0);
+  const ready = proposals.map((proposal) => proposal.action_id).filter((actionId) => (indegree.get(actionId) ?? 0) === 0).sort(byOriginal);
+  const orderedIds = [];
+  while (ready.length > 0) {
+    const actionId = ready.shift();
+    orderedIds.push(actionId);
+    const next = [...dependents.get(actionId) ?? []].sort(byOriginal);
+    for (const dependent of next) {
+      const remaining = (indegree.get(dependent) ?? 0) - 1;
+      indegree.set(dependent, remaining);
+      if (remaining === 0) {
+        ready.push(dependent);
+        ready.sort(byOriginal);
+      }
+    }
+  }
+  const ordered_by_dependencies = orderedIds.length === proposals.length;
+  if (!ordered_by_dependencies) {
+    for (const proposal of proposals) {
+      if (!orderedIds.includes(proposal.action_id)) orderedIds.push(proposal.action_id);
+    }
+  }
+  const byId = new Map(proposals.map((proposal) => [proposal.action_id, proposal]));
+  return {
+    actions: orderedIds.map((actionId) => byId.get(actionId)).filter((proposal) => proposal !== void 0),
+    ordered_by_dependencies,
+    missing_dependency_ids: [...missing].sort()
+  };
+}
+function planBlock(verdict, brief, helpfulToolsByAction = /* @__PURE__ */ new Map()) {
+  if (verdict.result_kind !== "scored") {
+    return {
+      steps: [],
+      step_count: 0,
+      ordering: "recorded_order",
+      prerequisites: [],
+      cheapest_test: null,
+      cheapest_test_status: "not_recorded",
+      cheapest_test_note: "A consultation records no action plan and no test.",
+      stop_if: [],
+      stop_if_status: "not_recorded",
+      review_criteria: [],
+      review_criteria_status: "not_recorded",
+      dependency_note: "A consultation records no action steps.",
+      start_with_step_numbers: [],
+      start_here_step_number: null,
+      parallel_eligible_step_numbers: [],
+      parallel_eligible_note: null,
+      shared_why: null,
+      shared_why_applies_to_step_numbers: [],
+      done_when_recorded_count: 0,
+      done_when_not_recorded_count: 0
+    };
+  }
+  const ordered = orderedActions(verdict.action_proposals);
+  const stepNumber = new Map(
+    ordered.actions.map((proposal, index) => [proposal.action_id, index + 1])
+  );
+  const stopIf = dedupeStatements(verdict.stop_criteria).kept;
+  const reviewCriteria = dedupeStatements(verdict.review_criteria).kept;
+  const rationales = ordered.actions.map((proposal) => proposal.rationale.trim()).filter((text) => text !== "");
+  const sharedWhy = rationales.length > 1 && rationales.every((text) => text === rationales[0]) ? rationales[0] : null;
+  const startWith = ordered.actions.map((proposal, index) => ({ proposal, index })).filter(
+    ({ proposal }) => proposal.depends_on_action_ids.filter((actionId) => stepNumber.has(actionId)).length === 0
+  ).map(({ index }) => index + 1);
+  const startHere = startWith.length > 0 ? startWith[0] : null;
+  const parallelEligible = [...startWith];
+  const parallelNote = parallelEligible.length > 1 ? `Steps ${parallelEligible.join(", ")} record no dependency on another saved step, so they can run in parallel. The order below is still the recorded order.` : null;
+  const steps = ordered.actions.map((proposal, index) => {
+    const deps = proposal.depends_on_action_ids.map((actionId) => stepNumber.get(actionId)).filter((step) => step !== void 0);
+    const doneWhen = dedupeStatements(proposal.acceptance_criteria).kept;
+    return {
+      step_number: index + 1,
+      action_id: proposal.action_id,
+      title: proposal.title,
+      what_to_do: proposal.description,
+      why: proposal.rationale,
+      depends_on_step_numbers: deps,
+      depends_on_missing_action_ids: proposal.depends_on_action_ids.filter(
+        (actionId) => !stepNumber.has(actionId)
+      ),
+      done_when: doneWhen,
+      // CTR-151: an empty list is an honest gap, not a blank label. The
+      // reader gets a sentence saying the record did not state a finish
+      // line; no criterion, metric, or deadline is invented here.
+      done_when_status: doneWhen.length > 0 ? "recorded" : "not_recorded",
+      done_when_note: doneWhen.length > 0 ? null : "The saved record did not state how to know this step is finished. Decide your own finish line before starting.",
+      // A renderer always has a concise sentence, never an empty label.
+      done_when_display: doneWhen.length > 0 ? doneWhen.join("; ") : "Not recorded. Decide your own finish line before starting.",
+      why_is_shared: sharedWhy !== null,
+      risk_class: proposal.risk_class,
+      risk_text: riskText(proposal.risk_class),
+      due_date: proposal.due_at === null ? null : proposal.due_at.slice(0, 10),
+      budget_text: moneyText(proposal.budget_limit),
+      recorded_department_id: proposal.department_id,
+      recorded_sop_id: proposal.sop_id,
+      recorded_persona_id: proposal.persona_id,
+      recorded_agent_id: proposal.assigned_agent_id,
+      needs_separate_approval: proposal.execution_authorization_required,
+      approval_text: proposal.execution_authorization_required ? "This step needs its own approval before anyone acts on it." : null,
+      helpful_tool_names: [...helpfulToolsByAction.get(proposal.action_id) ?? []]
+    };
+  });
+  const doneWhenNotRecorded = steps.filter(
+    (step) => step.done_when_status === "not_recorded"
+  ).length;
+  return {
+    steps,
+    step_count: steps.length,
+    ordering: ordered.ordered_by_dependencies ? "recorded_dependencies" : "recorded_order",
+    start_with_step_numbers: startWith,
+    start_here_step_number: startHere,
+    parallel_eligible_step_numbers: parallelEligible,
+    parallel_eligible_note: parallelNote,
+    shared_why: sharedWhy,
+    shared_why_applies_to_step_numbers: sharedWhy === null ? [] : steps.map((step) => step.step_number),
+    done_when_recorded_count: steps.length - doneWhenNotRecorded,
+    done_when_not_recorded_count: doneWhenNotRecorded,
+    prerequisites: dedupeStatements(verdict.prerequisites).kept,
+    cheapest_test: verdict.cheapest_informative_test,
+    cheapest_test_status: verdict.cheapest_informative_test !== null && verdict.cheapest_informative_test.trim() !== "" ? "recorded" : "not_recorded",
+    cheapest_test_note: verdict.cheapest_informative_test !== null && verdict.cheapest_informative_test.trim() !== "" ? null : "The saved record did not name a cheapest useful test. Pick the smallest test that would settle the biggest unknown before spending more.",
+    stop_if: stopIf,
+    stop_if_status: stopIf.length > 0 ? "recorded" : "not_recorded",
+    review_criteria: reviewCriteria,
+    review_criteria_status: reviewCriteria.length > 0 ? "recorded" : "not_recorded",
+    dependency_note: ordered.ordered_by_dependencies ? null : "The recorded dependencies contain a cycle, so the steps are listed in their recorded order.",
+    brief_options: brief.options.map((option) => ({
+      option_id: option.id,
+      option_label: option.label
+    }))
+  };
+}
+function toolsBlock(verdict, context) {
+  const snapshot = capabilitySnapshotOf2(context);
+  if (snapshot === null) {
+    return {
+      status: "not_recorded",
+      snapshot_date: null,
+      basis: null,
+      basis_text: null,
+      items: [],
+      items_total: 0,
+      items_shown: 0,
+      note: "This report does not list installed skills or departments because no verified inventory was recorded for this saved report.",
+      limitations: []
+    };
+  }
+  const basisText = snapshot.basis === "at_sitting" ? `Recorded at the sitting on ${snapshot.captured_at}.` : `Checked on this installation on ${snapshot.captured_at}.`;
+  const proposals = verdict.result_kind === "scored" ? verdict.action_proposals.map((proposal) => ({
+    action_id: proposal.action_id,
+    title: proposal.title,
+    description: proposal.description,
+    department_id: proposal.department_id,
+    sop_id: proposal.sop_id,
+    persona_id: proposal.persona_id,
+    assigned_agent_id: proposal.assigned_agent_id
+  })) : [];
+  const allItems = matchCapabilitiesToPlan(snapshot, proposals);
+  const items = allItems.slice(0, CAPABILITY_SNAPSHOT_LIMITS.max_matched_steps);
+  const base = {
+    snapshot_date: snapshot.captured_at,
+    basis: snapshot.basis,
+    basis_text: basisText,
+    items_total: allItems.length,
+    items_shown: items.length,
+    limitations: [...snapshot.limitations]
+  };
+  if (proposals.length === 0) {
+    return {
+      ...base,
+      status: "no_plan",
+      items: [],
+      note: "This sitting recorded no action steps, so no installed tool is linked to a step."
+    };
+  }
+  if (items.length === 0) {
+    return {
+      ...base,
+      status: "no_match",
+      items: [],
+      note: "No installed skill or department on this installation is recorded in, or named by, any step of this plan. Nothing is suggested rather than guessing from shared words. Ask your OpenClaw agent if you want to look for one."
+    };
+  }
+  return {
+    ...base,
+    status: "matched",
+    items,
+    note: "These helpers are already installed on this box because the plan records them or a step names them exactly. Installed is not the same as operational, and a match is a suggestion, not a promise that the tool can run a step for you; confirm with your OpenClaw agent before relying on it."
+  };
+}
+function buildReaderProjection(input) {
+  const { verdict, brief, final_cards } = input;
+  const context = input.context ?? {
+    report_date: "",
+    session_mode: null,
+    route_display: "",
+    seat_qualifications: {},
+    installation_id: null,
+    capability_snapshot: null
+  };
+  const optionLabel = new Map(brief.options.map((option) => [option.id, option]));
+  const abstentions = abstentionsByOption(final_cards);
+  const summarySeats = latestAdvisorCards(final_cards).map((card) => ({
+    display_name: seatDisplayName2(card.seat_id),
+    stance: card.stance,
+    change_my_mind: card.change_my_mind
+  }));
+  const readerSummary = summaryBlock({
+    verdict,
+    brief,
+    seats: summarySeats,
+    recommendationLabel: verdict.result_kind === "scored" && verdict.recommended_option_id !== null ? optionLabel.get(verdict.recommended_option_id)?.label ?? null : null,
+    mainReasons: verdict.result_kind === "scored" ? verdict.main_reasons : [],
+    strongestDissent: verdict.result_kind === "scored" ? verdict.strongest_dissent : null,
+    briefUnknowns: brief.unknowns.map((fact) => fact.statement),
+    criticalUnknowns: verdict.result_kind === "scored" ? verdict.critical_unknowns : [],
+    scoreTable: verdict.result_kind === "scored" ? verdict.option_scores.map((row) => ({
+      option_label: optionLabel.get(row.option_id)?.label ?? row.option_id,
+      coverage: row.coverage,
+      abstained_seat_ids: abstentions.get(row.option_id) ?? []
+    })) : [],
+    hardConstraints: verdict.result_kind === "scored" ? verdict.hard_constraint_findings.map((finding) => ({ result: finding.result })) : []
+  });
+  const tools = toolsBlock(verdict, context);
+  const readiness = readinessBlock(final_cards, verdict);
+  const scoredVerdict = verdict.result_kind === "scored" ? verdict : null;
+  const recommendationLabel = scoredVerdict !== null && scoredVerdict.recommended_option_id !== null ? optionLabel.get(scoredVerdict.recommended_option_id)?.label ?? null : null;
+  const decisionHeadline = scoredVerdict === null ? "A consultation records advice, not a scored decision." : recommendationLabel !== null ? `The council verdict was ${verdictText(scoredVerdict.label) ?? scoredVerdict.label}. It recommends ${recommendationLabel}.` : `The council verdict was ${verdictText(scoredVerdict.label) ?? scoredVerdict.label}. It did not recommend an option.`;
+  const toolItems = Array.isArray(tools.items) ? tools.items : [];
+  const helpfulToolsByAction = /* @__PURE__ */ new Map();
+  for (const item of toolItems) {
+    const label = `${item.name} (${item.kind})`;
+    for (const actionId of item.matched_action_ids) {
+      const list = helpfulToolsByAction.get(actionId) ?? [];
+      list.push(label);
+      helpfulToolsByAction.set(actionId, list);
+    }
+  }
+  return {
+    reader_projection_version: 1,
+    summary: readerSummary,
+    // CTR-151/CTR-156: the decision and the readiness are separate facts,
+    // stated once each, so a screen and the PDF cannot tell the reader two
+    // different stories.
+    decision_vs_readiness: {
+      decision: {
+        verdict_label: scoredVerdict?.label ?? null,
+        verdict_label_text: scoredVerdict ? verdictText(scoredVerdict.label) : null,
+        recommendation_option_id: scoredVerdict?.recommended_option_id ?? null,
+        recommendation_text: recommendationLabel,
+        headline: decisionHeadline
+      },
+      readiness,
+      distinction_note: "The decision is the council advice. Readiness is whether the recorded conditions, the recommended option hard-constraint checks, and ratification let you act now. They can disagree: a GO can still be blocked, and only GO or GO_WITH_CONDITIONS is ever eligible to be called ready."
+    },
+    plan: planBlock(verdict, brief, helpfulToolsByAction),
+    your_tools: tools,
+    // The order the reader should meet this material in. Detail comes last.
+    reader_order: [
+      "summary",
+      "decision_vs_readiness",
+      "plan",
+      "question_and_context",
+      "advisor_contributions",
+      "debate",
+      "your_tools",
+      "how_to_use",
+      "provenance"
+    ]
+  };
+}
 function buildReportModel(input) {
   const { verdict, brief, final_cards, context } = input;
   const packVersions = [
     ...new Set(final_cards.map((card) => card.pack_version))
   ].sort();
   const base = verdict.result_kind === "scored" ? scoredModel(input, verdict) : consultModel(input, verdict);
+  const projection = buildReaderProjection({ verdict, brief, final_cards, context });
   const model = {
     schema_version: "wise-elders.report/v1",
     artifact_kind: "council_decision_report",
@@ -28935,6 +30865,7 @@ function buildReportModel(input) {
     redacted: input.redaction !== null,
     redaction_profile_id: input.redaction?.profile_id ?? null,
     session_id: verdict.session_id,
+    installation_id: context.installation_id ?? null,
     decision_title: brief.question,
     report_date: context.report_date,
     display_timezone: brief.display_timezone,
@@ -28958,6 +30889,17 @@ function buildReportModel(input) {
       unknowns: brief.unknowns.map((fact) => fact.statement)
     },
     ...base,
+    // CTR-146 reader-facing projections. Additive: every field above is
+    // unchanged, so record-JSON consumers keep their exact contract.
+    report_style: reportStyleBlock(),
+    // CTR-156: summary, decision_vs_readiness, plan, your_tools and
+    // reader_order all come from the ONE reader projection that the chamber
+    // also consumes. No format re-derives them.
+    ...projection,
+    question_and_context: questionBlock(brief, verdict),
+    advisor_contributions: advisorContributions(final_cards, brief, context),
+    debate: debateBlock(final_cards, brief, context),
+    how_to_use: [...HOW_TO_USE_REPORT],
     provenance: {
       evidence_manifest: brief.evidence_manifest.map((entry) => ({
         evidence_id: entry.evidence_id,
@@ -28992,6 +30934,50 @@ function assertRedactionComplete(artifacts, redaction) {
   }
 }
 
+// src/reports/asset-embed.ts
+import { readFileSync as readFileSync9 } from "node:fs";
+var REPORT_ASSET_ROOTS = [
+  new URL("../../public/report/", import.meta.url),
+  new URL("../public/report/", import.meta.url)
+];
+var CHAMBER_PORTRAIT_ROOTS = [
+  new URL("../../public/chamber/portraits/", import.meta.url),
+  new URL("../public/chamber/portraits/", import.meta.url)
+];
+var dataUriCache = /* @__PURE__ */ new Map();
+function toDataUri(url2, mime) {
+  try {
+    return `data:${mime};base64,${readFileSync9(url2).toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+var REPORT_SEAT_PORTRAITS = [
+  { seat_id: "simon-sinek", display_name: "Simon Sinek", file_name: "simon-sinek.webp" },
+  { seat_id: "td-jakes", display_name: "T. D. Jakes", file_name: "td-jakes.webp" },
+  { seat_id: "oprah-winfrey", display_name: "Oprah Winfrey", file_name: "oprah-winfrey.webp" },
+  { seat_id: "tiffany-aliche", display_name: "Tiffany Aliche", file_name: "tiffany-aliche.webp" },
+  { seat_id: "russell-brunson", display_name: "Russell Brunson", file_name: "russell-brunson.webp" },
+  { seat_id: "michelle-obama", display_name: "Michelle Obama", file_name: "michelle-obama.webp" },
+  { seat_id: "brene-brown", display_name: "Bren\xE9 Brown", file_name: "brene-brown.webp" },
+  { seat_id: "dennis-kimbro", display_name: "Dr. Dennis Kimbro", file_name: "dennis-kimbro.webp" },
+  { seat_id: "les-brown", display_name: "Les Brown", file_name: "les-brown.webp" }
+];
+function loadReportPortraitDataUri(seatId) {
+  const seat = REPORT_SEAT_PORTRAITS.find((entry) => entry.seat_id === seatId);
+  if (seat === void 0) return null;
+  const key = `portrait:${seat.seat_id}`;
+  const cached3 = dataUriCache.get(key);
+  if (cached3 !== void 0) return cached3;
+  let uri = null;
+  for (const root of CHAMBER_PORTRAIT_ROOTS) {
+    uri = toDataUri(new URL(seat.file_name, root), "image/webp");
+    if (uri !== null) break;
+  }
+  dataUriCache.set(key, uri);
+  return uri;
+}
+
 // src/reports/registry.ts
 var REPORT_FORMATS = [
   "record_json",
@@ -28999,7 +30985,7 @@ var REPORT_FORMATS = [
   "print_html",
   "pdf"
 ];
-var PDF_MISSING_PIECE = "the approved Playwright/Chromium PDF renderer (directive Section 24.3) is not present in the runtime dependency bill (package dependencies: zod only); rendered PDF production and visual QA are owned by CWE-044";
+var PDF_MISSING_PIECE = "no headless Chrome/Chromium or CUPS PDF filter (cupsfilter) is installed or discoverable on this host; install one, or set CHROME_PATH to a Chrome/Chromium binary, then retry the export";
 var REPORT_FORMAT_REGISTRY = {
   record_json: {
     format: "record_json",
@@ -29030,6 +31016,22 @@ var REPORT_FORMAT_REGISTRY = {
     missing_piece: PDF_MISSING_PIECE
   }
 };
+function reportFormatRegistry(args = { pdf_available: false }) {
+  if (!args.pdf_available) {
+    return {
+      ...REPORT_FORMAT_REGISTRY,
+      pdf: {
+        ...REPORT_FORMAT_REGISTRY.pdf,
+        status: "not_ready",
+        missing_piece: args.pdf_detail ?? PDF_MISSING_PIECE
+      }
+    };
+  }
+  return {
+    ...REPORT_FORMAT_REGISTRY,
+    pdf: { ...REPORT_FORMAT_REGISTRY.pdf, status: "ready", missing_piece: null }
+  };
+}
 function isReportFormat(value) {
   return REPORT_FORMATS.includes(value);
 }
@@ -29076,6 +31078,10 @@ function asStringOrNull(value) {
 function asNumberOrNull(value) {
   return typeof value === "number" ? value : null;
 }
+function isConsultModel(model) {
+  const consult = model.consult;
+  return consult !== null && consult !== void 0;
+}
 function formatScore(score) {
   if (score === null) return "not scored";
   return String(Number(score.toFixed(4)));
@@ -29095,28 +31101,30 @@ function formatPlainNumber(value) {
 function qualificationText(value) {
   return typeof value === "string" ? value : "not recorded";
 }
+function qualificationSentence(value) {
+  const raw = qualificationText(value);
+  if (raw === "bibliographic_only") {
+    return "bibliographic_only \u2014 built from published bibliographic sources; it is not a verified practitioner record";
+  }
+  if (raw === "not recorded") return "not recorded";
+  return raw;
+}
 function mdList(items) {
   return items.map((item) => `- ${asString2(item)}`);
 }
 function renderMarkdown(model) {
   const verdict = asRecord2(model.verdict_block);
   const brief = asRecord2(model.brief);
+  const summary = asRecord2(model.summary ?? {});
+  const context = asRecord2(model.question_and_context ?? {});
+  const debate = asRecord2(model.debate ?? {});
+  const plan = asRecord2(model.plan ?? {});
+  const tools = asRecord2(model.your_tools ?? {});
   const lines = [];
-  lines.push(`# Council of Wise Elders: Decision Report`);
+  lines.push("# Council of Wise Elders: Decision Report");
   lines.push("");
   lines.push(`Decision: ${asString2(model.decision_title)}`);
   lines.push(`Date: ${asString2(model.report_date)}`);
-  lines.push(`Session: ${asString2(model.session_id)}`);
-  lines.push(`Mode: ${asStringOrNull(model.session_mode) ?? "not recorded"}`);
-  lines.push(`Route: ${asString2(model.route_display)}`);
-  lines.push(`Report revision: ${asString2(model.report_revision_id)}`);
-  lines.push(`Verdict revision: ${String(verdict.revision)}`);
-  lines.push(`Verdict content SHA-256: ${asString2(verdict.content_sha256)}`);
-  lines.push(`Brief SHA-256: ${asString2(verdict.brief_sha256)}`);
-  lines.push(`Protocol version: ${asString2(model.protocol_version)}`);
-  lines.push(
-    `Source pack versions: ${asArray(model.source_pack_versions).map(asString2).join(", ") || "none recorded"}`
-  );
   if (model.redacted === true) {
     lines.push(`Redacted report: yes (profile ${asString2(model.redaction_profile_id)})`);
   }
@@ -29134,7 +31142,15 @@ function renderMarkdown(model) {
   lines.push("");
   const consult = model.consult;
   if (consult) {
-    lines.push("## Consultation");
+    lines.push("## In short");
+    lines.push("");
+    lines.push(asString2(summary.in_short));
+    lines.push("");
+    lines.push("## The question");
+    lines.push("");
+    lines.push(asString2(context.question) || asString2(model.decision_title));
+    lines.push("");
+    lines.push("## The consultation answer");
     lines.push("");
     lines.push(`${asString2(consult.display_name)}: ${asString2(consult.label)}`);
     lines.push("");
@@ -29148,27 +31164,79 @@ function renderMarkdown(model) {
     lines.push("");
     lines.push(`Next step: ${asString2(consult.next_step)}`);
     lines.push("");
+    pushHowToUseMd(lines, model);
+    pushToolsMd(lines, model);
     pushWebTodayMd(lines, model);
     pushProvenanceMd(lines, model);
+    pushReportRecordMd(lines, model);
     return `${lines.join("\n")}
 `;
   }
-  lines.push("## Executive decision");
+  lines.push("## In short");
+  lines.push("");
+  lines.push(asString2(summary.in_short));
   lines.push("");
   lines.push(`Verdict: ${asString2(verdict.label)}`);
   const recommended = asStringOrNull(verdict.recommended_option_id);
   lines.push(
     `Recommendation: ${recommended === null ? "none" : `${recommended} (${asString2(verdict.recommended_option_label)})`}`
   );
-  lines.push("");
-  lines.push("Prerequisites:");
-  const prerequisites = asArray(model.prerequisites);
-  lines.push(...prerequisites.length > 0 ? mdList(prerequisites) : ["- none"]);
+  if (asStringOrNull(summary.ratification_text) !== null) {
+    lines.push(asString2(summary.ratification_text));
+  }
   lines.push("");
   lines.push("Why:");
-  lines.push(...mdList(asArray(model.main_reasons)));
+  const reasons = asArray(summary.reasons);
+  lines.push(...reasons.length > 0 ? mdList(reasons) : ["- none recorded"]);
   lines.push("");
-  lines.push("## Alternatives and scores");
+  lines.push(
+    `Biggest concern: ${asStringOrNull(summary.biggest_concern) ?? "none recorded"}`
+  );
+  lines.push("");
+  pushReadinessMd(lines, model);
+  pushInformationMd(lines, model);
+  lines.push("## The question");
+  lines.push("");
+  lines.push(`Question: ${asString2(context.question) || asString2(model.decision_title)}`);
+  lines.push("");
+  lines.push("Facts recorded in the brief:");
+  const facts = asArray(context.facts);
+  if (facts.length === 0) lines.push("- none recorded");
+  for (const factValue of facts) {
+    const fact = asRecord2(factValue);
+    const evidence = asArray(fact.evidence_ids).map(asString2);
+    lines.push(
+      `- ${asString2(fact.statement)}${evidence.length > 0 ? ` (evidence: ${evidence.join(", ")})` : ""}`
+    );
+  }
+  lines.push("");
+  lines.push("Assumptions:");
+  const assumptions = asArray(context.assumptions);
+  lines.push(...assumptions.length > 0 ? mdList(assumptions) : ["- none recorded"]);
+  lines.push("");
+  lines.push("Unknowns:");
+  const unknowns = asArray(context.unknowns);
+  lines.push(...unknowns.length > 0 ? mdList(unknowns) : ["- none recorded"]);
+  const unknownsNote = asStringOrNull(context.unknowns_note);
+  if (unknownsNote !== null) {
+    const recorded = asNumberOrNull(context.unknowns_count) ?? unknowns.length;
+    const shown = asNumberOrNull(context.unknowns_shown) ?? unknowns.length;
+    lines.push(`- ${recorded} recorded; ${shown} distinct shown. ${unknownsNote}`);
+  }
+  lines.push("");
+  const constraints = asArray(context.constraints);
+  if (constraints.length > 0) {
+    lines.push("Constraints:");
+    for (const constraintValue of constraints) {
+      const constraint = asRecord2(constraintValue);
+      const applies = asArray(constraint.applies_to_option_labels).map(asString2);
+      lines.push(
+        `- ${asString2(constraint.description)} (${constraint.hard === true ? "hard constraint" : "guideline"}${applies.length > 0 ? `; applies to: ${applies.join(", ")}` : ""})`
+      );
+    }
+    lines.push("");
+  }
+  lines.push("## Options and scores");
   lines.push("");
   lines.push(
     "| Option | Weighted sum | Denominator | Score | Display score | Coverage | Spread | Abstentions |"
@@ -29182,14 +31250,349 @@ function renderMarkdown(model) {
     );
   }
   lines.push("");
-  lines.push("## Main arguments and strongest dissent");
+  lines.push("## What each advisor said");
   lines.push("");
-  lines.push("Main arguments:");
-  lines.push(...mdList(asArray(model.main_reasons)));
+  pushParticipatingSeatsMd(lines, model);
+  pushAdvisorContributionsMd(lines, model);
+  lines.push("## How the debate went");
   lines.push("");
-  lines.push(`Strongest dissent: ${asStringOrNull(model.strongest_dissent) ?? "none recorded"}`);
+  lines.push(
+    `Rounds of advisor cards saved: ${String(asNumberOrNull(debate.rounds_saved) ?? 0)}`
+  );
+  for (const note of asArray(debate.notes)) lines.push(`- ${asString2(note)}`);
   lines.push("");
-  lines.push("## Constraints, assumptions, and unknowns");
+  const roundEntries = asArray(debate.rounds);
+  for (const roundValue of roundEntries) {
+    const round = asRecord2(roundValue);
+    lines.push(`Round ${String(asNumberOrNull(round.round) ?? "?")}:`);
+    for (const seatValue of asArray(round.seats)) {
+      const seat = asRecord2(seatValue);
+      lines.push(
+        `- ${asString2(seat.display_name)} ${asString2(seat.stance_text)}${asStringOrNull(seat.preferred_option_label) === null ? "" : `; preferred ${asString2(seat.preferred_option_label)}`}.`
+      );
+    }
+    lines.push("");
+  }
+  const changes = asArray(debate.changes);
+  if (changes.length > 0) {
+    lines.push("Changed between rounds:");
+    for (const changeValue of changes) {
+      const change = asRecord2(changeValue);
+      lines.push(
+        `- Round ${String(asNumberOrNull(change.round) ?? "?")}: ${asString2(change.display_name)} moved from ${asString2(change.from_stance_text)} to ${asString2(change.to_stance_text)}${asStringOrNull(change.from_option_label) === asStringOrNull(change.to_option_label) ? "" : `; preferred option ${asStringOrNull(change.from_option_label) ?? "none"} to ${asStringOrNull(change.to_option_label) ?? "none"}`}.`
+      );
+    }
+    lines.push("");
+  }
+  const positions = asArray(debate.positions);
+  if (positions.length > 0) {
+    lines.push("Where they stood on the preferred option:");
+    for (const positionValue of positions) {
+      const position = asRecord2(positionValue);
+      lines.push(
+        `- ${asString2(position.option_label)}: ${asArray(position.seat_names).map(asString2).join(", ")}`
+      );
+    }
+    lines.push("");
+  }
+  lines.push("## Your plan");
+  lines.push("");
+  const steps = asArray(plan.steps);
+  const startNumber = asNumberOrNull(plan.start_here_step_number);
+  if (startNumber !== null) {
+    const startStep = steps.map((value) => asRecord2(value)).find((step) => asNumberOrNull(step.step_number) === startNumber);
+    if (startStep !== void 0) {
+      lines.push(
+        `Start here: Step ${startNumber} \u2014 ${asString2(startStep.title)}`
+      );
+      lines.push("");
+    }
+  }
+  const parallelNote = asStringOrNull(plan.parallel_eligible_note);
+  if (parallelNote !== null) {
+    lines.push(parallelNote);
+    lines.push("");
+  }
+  const dependencyNote = asStringOrNull(plan.dependency_note);
+  if (dependencyNote !== null) {
+    lines.push(dependencyNote);
+    lines.push("");
+  }
+  if (steps.length === 0) lines.push("- No action steps were recorded for this sitting.");
+  for (const stepValue of steps) {
+    const step = asRecord2(stepValue);
+    lines.push(`### Step ${String(asNumberOrNull(step.step_number) ?? "?")}: ${asString2(step.title)}`);
+    lines.push("");
+    lines.push(asString2(step.what_to_do));
+    lines.push("");
+    lines.push(`Why: ${asString2(step.why)}`);
+    const deps = asArray(step.depends_on_step_numbers).map((value) => String(value));
+    const missingDeps = asArray(step.depends_on_missing_action_ids).map(asString2);
+    lines.push(
+      `Depends on: ${deps.length > 0 ? `step ${deps.join(", step ")}` : "nothing earlier in this plan"}${missingDeps.length > 0 ? `; a recorded dependency is not in this plan: ${missingDeps.join(", ")}` : ""}`
+    );
+    lines.push("Done when:");
+    const doneWhen = asArray(step.done_when);
+    if (doneWhen.length > 0) {
+      lines.push(...mdList(doneWhen));
+    } else {
+      lines.push(
+        `- ${asStringOrNull(step.done_when_note) ?? asStringOrNull(step.done_when_display) ?? "Not recorded. Decide your own finish line before starting."}`
+      );
+    }
+    lines.push(
+      `Risk: ${asString2(step.risk_text)}${asStringOrNull(step.due_date) === null ? "" : `; due ${asString2(step.due_date)}`}${asStringOrNull(step.budget_text) === null ? "" : `; budget ${asString2(step.budget_text)}`}`
+    );
+    const stepTools = asArray(step.helpful_tool_names).map(asString2);
+    if (stepTools.length > 0) {
+      lines.push(
+        `Installed help that fits this step: ${stepTools.join(", ")} (optional; confirm with your OpenClaw agent before relying on it).`
+      );
+    }
+    lines.push("Needs separate approval before anyone acts on it.");
+    lines.push("");
+  }
+  const prerequisites = asArray(plan.prerequisites);
+  if (prerequisites.length > 0) {
+    lines.push("Before you start:");
+    lines.push(...mdList(prerequisites));
+    lines.push("");
+  }
+  lines.push("## How you\u2019ll know it worked");
+  lines.push("");
+  lines.push(
+    `Cheapest informative test: ${asStringOrNull(plan.cheapest_test) ?? "none recorded"}`
+  );
+  lines.push("");
+  lines.push("Stop if:");
+  const stop = asArray(plan.stop_if);
+  lines.push(...stop.length > 0 ? mdList(stop) : ["- none recorded"]);
+  lines.push("");
+  lines.push("Look again at:");
+  const review = asArray(plan.review_criteria);
+  lines.push(...review.length > 0 ? mdList(review) : ["- none recorded"]);
+  lines.push("");
+  pushHowToUseMd(lines, model);
+  pushToolsMd(lines, model);
+  pushConditionsMd(lines, model);
+  pushAmendmentsMd(lines, model);
+  pushWebTodayMd(lines, model);
+  pushProvenanceMd(lines, model);
+  pushReportRecordMd(lines, model);
+  return `${lines.join("\n")}
+`;
+}
+function pushParticipatingSeatsMd(lines, model) {
+  for (const seatValue of asArray(model.participating_seats)) {
+    const seat = asRecord2(seatValue);
+    lines.push(
+      `Participating seat: ${asString2(seat.display_name)} (${asString2(seat.seat_id)}), source qualification: ${qualificationText(seat.qualification)}`
+    );
+  }
+  lines.push("");
+}
+function pushAdvisorContributionsMd(lines, model) {
+  for (const seatValue of asArray(model.advisor_contributions)) {
+    const seat = asRecord2(seatValue);
+    lines.push(`### ${asString2(seat.display_name)}`);
+    lines.push("");
+    lines.push(asString2(seat.label));
+    if (asStringOrNull(seat.lane) !== null) lines.push(`Focus: ${asString2(seat.lane)}`);
+    if (asStringOrNull(seat.owned_question) !== null) {
+      lines.push(`The question this seat exists to answer: ${asString2(seat.owned_question)}`);
+    }
+    lines.push(`Last saved round: ${String(asNumberOrNull(seat.round) ?? "not recorded")}`);
+    lines.push(`Source qualification: ${qualificationSentence(seat.qualification)}`);
+    lines.push(`Position: ${asString2(seat.stance_text)}`);
+    lines.push(`Preferred option: ${asStringOrNull(seat.preferred_option_label) ?? "none stated"}`);
+    lines.push("What they argued:");
+    lines.push(...mdList(asArray(seat.what_they_argued)));
+    lines.push(`Strongest objection: ${asString2(seat.strongest_objection)}`);
+    lines.push(`What would change their mind: ${asString2(seat.what_would_change_their_mind)}`);
+    if (asStringOrNull(seat.minority_position) !== null) {
+      lines.push(`Minority position: ${asString2(seat.minority_position)}`);
+    }
+    const conditions = asArray(seat.conditions);
+    if (conditions.length > 0) {
+      lines.push("Conditions:");
+      for (const conditionValue of conditions) {
+        const condition = asRecord2(conditionValue);
+        lines.push(
+          `- ${asString2(condition.id)}: ${asString2(condition.description)} (${asString2(condition.kind)}, ${asString2(condition.status_text)}${condition.blocking === true ? ", blocking" : ""})`
+        );
+      }
+    }
+    if (asStringOrNull(seat.resolution_stance_text) !== null) {
+      lines.push(`Resolution: ${asString2(seat.resolution_stance_text)}`);
+    }
+    lines.push("");
+  }
+  if (asArray(model.advisor_contributions).length === 0) {
+    for (const seatValue of asArray(model.seats)) {
+      const seat = asRecord2(seatValue);
+      lines.push(`### ${asString2(seat.display_name)}`);
+      lines.push("");
+      lines.push(asString2(seat.label));
+      lines.push(`Source qualification: ${qualificationText(seat.qualification)}`);
+      lines.push(`Stance: ${asString2(seat.stance)}`);
+      lines.push(`Preferred option: ${asStringOrNull(seat.preferred_option_id) ?? "none"}`);
+      lines.push("Decisive arguments:");
+      lines.push(...mdList(asArray(seat.decisive_arguments)));
+      lines.push(`Strongest objection: ${asString2(seat.strongest_objection)}`);
+      lines.push(`What would change my mind: ${asString2(seat.change_my_mind)}`);
+      lines.push("");
+    }
+  }
+}
+function pushReadinessMd(lines, model) {
+  const dvr = asRecord2(model.decision_vs_readiness ?? {});
+  const readiness = asRecord2(dvr.readiness ?? {});
+  const status = asString2(readiness.status);
+  if (status === "") return;
+  lines.push(`Can you act on this yet? ${readinessStatusText(status)}`);
+  const headline = asStringOrNull(readiness.headline);
+  if (headline !== null) lines.push(headline);
+  const reasons = asArray(readiness.status_reasons);
+  if (reasons.length > 0) {
+    lines.push("Why:");
+    lines.push(...mdList(reasons));
+  }
+  const describeCondition = (value) => {
+    const row = asRecord2(value);
+    const advisor = asStringOrNull(row.advisor);
+    return `${asString2(row.text)}${advisor === null ? "" : ` \u2014 recorded by ${advisor}`}`;
+  };
+  const blockers = asArray(readiness.blockers);
+  if (blockers.length > 0) {
+    lines.push(`Open blocking conditions (${blockers.length}):`);
+    lines.push(...mdList(blockers.map(describeCondition)));
+  }
+  const safeguards = asArray(readiness.safeguards);
+  if (safeguards.length > 0) {
+    lines.push(`Recorded safeguards (${safeguards.length}):`);
+    lines.push(...mdList(safeguards.map(describeCondition)));
+  }
+  const hardFindings = asArray(readiness.hard_constraint_findings);
+  if (hardFindings.length > 0) {
+    lines.push(
+      `Hard-constraint findings on the recommended option (${hardFindings.length}):`
+    );
+    lines.push(
+      ...mdList(
+        hardFindings.map((value) => {
+          const row = asRecord2(value);
+          return `${asString2(row.constraint_id)}: ${asString2(row.result_text)}`;
+        })
+      )
+    );
+  }
+  const ratification = asRecord2(readiness.ratification ?? {});
+  const ratStatus = asStringOrNull(ratification.status);
+  if (ratStatus !== null) {
+    lines.push(
+      `Ratification: ${asStringOrNull(ratification.status_text) ?? ratStatus} ${ratification.blocks_readiness === true ? "(blocks readiness)" : "(does not block readiness)"}`
+    );
+  }
+  const note = asStringOrNull(readiness.note);
+  if (note !== null) lines.push(note);
+  lines.push("");
+}
+function pushInformationMd(lines, model) {
+  const summary = asRecord2(model.summary ?? {});
+  const needed = asArray(summary.information_needed);
+  const note = asStringOrNull(summary.information_needed_note);
+  if (needed.length > 0 || note !== null) {
+    lines.push("Information needed:");
+    lines.push(...needed.length > 0 ? mdList(needed) : ["- none recorded"]);
+    if (note !== null) lines.push(note);
+    lines.push("");
+  }
+  const council = asArray(summary.council_unknowns);
+  const recorded = asNumberOrNull(summary.council_unknowns_count) ?? council.length;
+  const removed = asNumberOrNull(summary.council_unknowns_removed) ?? 0;
+  if (council.length > 0 || recorded > 0) {
+    lines.push("The council's unknown record:");
+    const countLine = recorded > council.length ? `${recorded} recorded council statement(s); ${removed} repeat(s) collapsed after removing the "Unknown:" framing; ${council.length} distinct shown.` : `${council.length} distinct council statement(s).`;
+    lines.push(countLine);
+    if (council.length > 0) lines.push(...mdList(council));
+    lines.push("");
+  }
+}
+function pushHowToUseMd(lines, model) {
+  lines.push("## How to use this report");
+  lines.push("");
+  const how = asArray(model.how_to_use);
+  lines.push(...how.length > 0 ? mdList(how) : ["- none recorded"]);
+  lines.push("");
+}
+function capabilityBasisLines(item) {
+  const actions = asArray(item.matched_actions);
+  if (actions.length > 0) {
+    return actions.map((value) => {
+      const action = asRecord2(value);
+      const basis = action.basis === "recorded_reference" ? "this step records the department or role" : "this step names the capability exactly";
+      const evidence2 = asArray(action.evidence).map(asString2).join("; ");
+      return `${asString2(action.action_title)} (${asString2(action.action_id)}): ${basis}${evidence2 === "" ? "" : ` \u2014 exact record: ${evidence2}`}`;
+    });
+  }
+  const evidence = asArray(item.match_evidence).map(asString2);
+  return evidence.length > 0 ? [`Exact record: ${evidence.join("; ")}`] : [];
+}
+function pushToolsMd(lines, model) {
+  const tools = asRecord2(model.your_tools ?? {});
+  lines.push("## Skills and departments on your OpenClaw");
+  lines.push("");
+  if (asStringOrNull(tools.basis_text) !== null) {
+    lines.push(asString2(tools.basis_text));
+    lines.push("");
+  }
+  const itemsTotal = asNumberOrNull(tools.items_total);
+  const itemsShown = asNumberOrNull(tools.items_shown) ?? asArray(tools.items).length;
+  if (itemsTotal !== null && itemsTotal > itemsShown) {
+    lines.push(
+      `${itemsTotal} exact-matched installed item(s) were found; ${itemsShown} are listed here and ${itemsTotal - itemsShown} further item(s) are not shown.`
+    );
+    lines.push("");
+  }
+  for (const itemValue of asArray(tools.items)) {
+    const item = asRecord2(itemValue);
+    lines.push(
+      `### ${asString2(item.name)} (${asString2(item.kind)})`
+    );
+    lines.push("");
+    lines.push(
+      item.availability === "available_at_sitting" ? "Available when this council sat." : "Available now on this installation."
+    );
+    if (asStringOrNull(item.description) !== null) {
+      lines.push(asString2(item.description));
+    }
+    const titles = asArray(item.matched_action_titles).map(asString2);
+    if (titles.length > 0) {
+      lines.push(`Where it fits: ${titles.join("; ")}`);
+    }
+    lines.push("Why it is linked:");
+    const basisLines = capabilityBasisLines(item);
+    if (basisLines.length === 0) {
+      lines.push("- no exact match evidence recorded");
+    } else {
+      lines.push(...basisLines.map((line) => `- ${line}`));
+    }
+    lines.push(
+      "A match is an exact record or an exact name, never shared wording, and never a promise that the tool can run this step."
+    );
+    lines.push("");
+  }
+  lines.push(asString2(tools.note));
+  const limitations = asArray(tools.limitations);
+  if (limitations.length > 0) {
+    lines.push("");
+    lines.push("How this list was read:");
+    lines.push(...mdList(limitations));
+  }
+  lines.push("");
+}
+function pushConditionsMd(lines, model) {
+  lines.push("## Conditions");
   lines.push("");
   lines.push("Hard constraints:");
   const findings = asArray(model.hard_constraints);
@@ -29201,14 +31604,8 @@ function renderMarkdown(model) {
     );
   }
   lines.push("");
-  lines.push("Assumptions:");
-  const assumptions = asArray(brief.assumptions);
-  lines.push(...assumptions.length > 0 ? mdList(assumptions) : ["- none recorded"]);
-  lines.push("");
-  lines.push("Unknowns:");
-  const unknowns = [...asArray(brief.unknowns), ...asArray(model.critical_unknowns)];
-  lines.push(...unknowns.length > 0 ? mdList(unknowns) : ["- none recorded"]);
-  lines.push("");
+}
+function pushAmendmentsMd(lines, model) {
   lines.push("## Amendments and ratification");
   lines.push("");
   const amendments = asRecord2(model.amendments);
@@ -29233,94 +31630,27 @@ function renderMarkdown(model) {
   const support = ratification.resolution_support;
   if (support) {
     lines.push(
-      `Resolution support (weighted counts, not a probability): support ${formatPlainNumber(asNumberOrNull(support.support))}, conditional support ${formatPlainNumber(asNumberOrNull(support.conditional_support))}, opposition ${formatPlainNumber(asNumberOrNull(support.opposition))}, abstention ${formatPlainNumber(asNumberOrNull(support.abstention))}, bound to resolution ${asString2(support.resolution_sha256)}.`
+      `Resolution support (weighted counts, not a probability): support ${formatPlainNumber(asNumberOrNull(support.support))}, conditional support ${formatPlainNumber(asNumberOrNull(support.conditional_support))}, opposition ${formatPlainNumber(asNumberOrNull(support.opposition))}, abstention ${formatPlainNumber(asNumberOrNull(support.abstention))}.`
     );
   }
   lines.push("");
-  lines.push("## Action proposals and authorization boundaries");
+}
+function pushReportRecordMd(lines, model) {
+  const verdict = asRecord2(model.verdict_block);
+  lines.push("## For your records");
   lines.push("");
-  const proposals = asArray(model.action_proposals);
-  if (proposals.length === 0) lines.push("- none");
-  for (const proposalValue of proposals) {
-    const proposal = asRecord2(proposalValue);
-    lines.push(`### ${asString2(proposal.action_id)}: ${asString2(proposal.title)}`);
-    lines.push("");
-    lines.push(asString2(proposal.description));
-    lines.push("");
-    lines.push(`Rationale: ${asString2(proposal.rationale)}`);
-    lines.push("Acceptance criteria:");
-    lines.push(...mdList(asArray(proposal.acceptance_criteria)));
-    const depends = asArray(proposal.depends_on_action_ids).map(asString2);
-    lines.push(`Depends on: ${depends.length > 0 ? depends.join(", ") : "none"}`);
-    lines.push(`Risk class: ${asString2(proposal.risk_class)}`);
-    lines.push(
-      "Execution authorization: separate execution authorization is required before this proposal may be acted on."
-    );
-    lines.push("");
-  }
-  lines.push(`> ${asString2(model.authorization_notice)}`);
-  lines.push("");
-  lines.push("## Test, stop conditions, and review criteria");
-  lines.push("");
+  lines.push(`Session: ${asString2(model.session_id)}`);
+  lines.push(`Mode: ${asStringOrNull(model.session_mode) ?? "not recorded"}`);
+  lines.push(`Route: ${asString2(model.route_display)}`);
+  lines.push(`Report revision: ${asString2(model.report_revision_id)}`);
+  lines.push(`Verdict revision: ${String(verdict.revision)}`);
+  lines.push(`Verdict content SHA-256: ${asString2(verdict.content_sha256)}`);
+  lines.push(`Brief SHA-256: ${asString2(verdict.brief_sha256)}`);
+  lines.push(`Protocol version: ${asString2(model.protocol_version)}`);
   lines.push(
-    `Cheapest informative test: ${asStringOrNull(model.cheapest_informative_test) ?? "none recorded"}`
+    `Source pack versions: ${asArray(model.source_pack_versions).map(asString2).join(", ") || "none recorded"}`
   );
   lines.push("");
-  lines.push("Stop conditions:");
-  const stop = asArray(model.stop_criteria);
-  lines.push(...stop.length > 0 ? mdList(stop) : ["- none recorded"]);
-  lines.push("");
-  lines.push("Outcome review criteria:");
-  const review = asArray(model.review_criteria);
-  lines.push(...review.length > 0 ? mdList(review) : ["- none recorded"]);
-  lines.push("");
-  pushSeatsMd(lines, model);
-  pushWebTodayMd(lines, model);
-  pushProvenanceMd(lines, model);
-  return `${lines.join("\n")}
-`;
-}
-function pushSeatsMd(lines, model) {
-  lines.push("## Advisor detail");
-  lines.push("");
-  for (const seatValue of asArray(model.participating_seats)) {
-    const seat = asRecord2(seatValue);
-    lines.push(
-      `Participating seat: ${asString2(seat.display_name)} (${asString2(seat.seat_id)}), source qualification: ${qualificationText(seat.qualification)}`
-    );
-  }
-  lines.push("");
-  for (const seatValue of asArray(model.seats)) {
-    const seat = asRecord2(seatValue);
-    lines.push(`### ${asString2(seat.display_name)}`);
-    lines.push("");
-    lines.push(asString2(seat.label));
-    lines.push("");
-    lines.push(`Source qualification: ${qualificationText(seat.qualification)}`);
-    lines.push(`Stance: ${asString2(seat.stance)}`);
-    lines.push(`Preferred option: ${asStringOrNull(seat.preferred_option_id) ?? "none"}`);
-    const abstained = asArray(seat.abstained_option_ids).map(asString2);
-    if (abstained.length > 0) {
-      lines.push(`Abstained on: ${abstained.join(", ")}`);
-    }
-    lines.push("Decisive arguments:");
-    lines.push(...mdList(asArray(seat.decisive_arguments)));
-    lines.push(`Strongest objection: ${asString2(seat.strongest_objection)}`);
-    lines.push(`What would change my mind: ${asString2(seat.change_my_mind)}`);
-    const conditions = asArray(seat.conditions);
-    if (conditions.length > 0) {
-      lines.push("Conditions:");
-      for (const conditionValue of conditions) {
-        const condition = asRecord2(conditionValue);
-        lines.push(
-          `- ${asString2(condition.id)}: ${asString2(condition.description)} (${asString2(condition.kind)}, ${asString2(condition.status)}${condition.blocking === true ? ", blocking" : ""})`
-        );
-      }
-    }
-    const stance = asStringOrNull(seat.resolution_stance);
-    if (stance !== null) lines.push(`Resolution stance: ${stance}`);
-    lines.push("");
-  }
 }
 function webTodayFacts(model) {
   return asArray(model.web_today).map(asRecord2);
@@ -29359,103 +31689,959 @@ function pushProvenanceMd(lines, model) {
   lines.push("");
   lines.push(asString2(provenance.note));
   lines.push("");
-  lines.push("| Evidence | Kind | Locator | SHA-256 |");
-  lines.push("| --- | --- | --- | --- |");
-  for (const entryValue of asArray(provenance.evidence_manifest)) {
+  lines.push("Reference list (locator, kind, evidence id):");
+  const entries2 = asArray(provenance.evidence_manifest);
+  if (entries2.length === 0) lines.push("- none recorded");
+  for (const entryValue of entries2) {
     const entry = asRecord2(entryValue);
     lines.push(
-      `| ${asString2(entry.evidence_id)} | ${asString2(entry.source_kind)} | ${asString2(entry.locator)} | ${asString2(entry.sha256)} |`
+      `- ${asString2(entry.locator)} (${asString2(entry.source_kind)}; ${asString2(entry.evidence_id)})`
     );
   }
   lines.push("");
 }
-var PRINT_CSS = [
-  '@page { size: A4; margin: 20mm 18mm 20mm 18mm; @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #444; } }',
-  'body { font-family: Georgia, "Times New Roman", serif; font-size: 12.5pt; line-height: 1.45; color: #111; }',
-  "h1 { font-size: 20pt; } h2 { font-size: 15pt; page-break-after: avoid; } h3 { font-size: 13pt; page-break-after: avoid; }",
-  "table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #666; padding: 4px 6px; text-align: left; vertical-align: top; }",
-  "thead { display: table-header-group; } tr { page-break-inside: avoid; }",
-  ".label { border: 1px solid #666; padding: 8px 10px; } .meta { color: #333; }"
-].join("\n");
-function hList(items) {
-  return `<ul>${items.map((item) => `<li>${escapeHtml(asString2(item))}</li>`).join("")}</ul>`;
+var PRINT_CSS = `
+:root {
+  --paper: #FFFFFF;
+  --paper-band: #FBF6E9;
+  --paper-deep: #F4EBD5;
+  --ink: #1C1C1C;
+  --ink-secondary: #3A3934;
+  --navy: #16233D;
+  --navy-deep: #101B30;
+  --gold-rule: #B08A3E;
+  --gold-text: #7A5C1F;
+  --gold-light: #D8B76A;
+  --cream-on-navy: #F7F1E1;
+  --rule-hairline: #C9BFA8;
 }
-function renderPrintHtml(model) {
-  const verdict = asRecord2(model.verdict_block);
-  const brief = asRecord2(model.brief);
-  const out = [];
-  out.push("<!DOCTYPE html>");
-  out.push('<html lang="en">');
-  out.push("<head>");
-  out.push('<meta charset="utf-8">');
-  out.push(`<title>Council report ${escapeHtml(asString2(model.session_id))} revision ${escapeHtml(String(verdict.revision))}</title>`);
-  out.push(`<style>${PRINT_CSS}</style>`);
-  out.push("</head>");
-  out.push("<body>");
-  out.push("<h1>Council of Wise Elders: Decision Report</h1>");
-  out.push(`<p class="meta">Decision: ${escapeHtml(asString2(model.decision_title))}<br>`);
-  out.push(`Date: ${escapeHtml(asString2(model.report_date))}<br>`);
-  out.push(`Session: ${escapeHtml(asString2(model.session_id))}<br>`);
-  out.push(`Mode: ${escapeHtml(asStringOrNull(model.session_mode) ?? "not recorded")}<br>`);
-  out.push(`Route: ${escapeHtml(asString2(model.route_display))}<br>`);
-  out.push(`Report revision: ${escapeHtml(asString2(model.report_revision_id))}<br>`);
-  out.push(`Verdict revision: ${escapeHtml(String(verdict.revision))}<br>`);
-  out.push(`Verdict content SHA-256: ${escapeHtml(asString2(verdict.content_sha256))}<br>`);
-  out.push(`Brief SHA-256: ${escapeHtml(asString2(verdict.brief_sha256))}<br>`);
-  out.push(`Protocol version: ${escapeHtml(asString2(model.protocol_version))}</p>`);
-  if (model.redacted === true) {
-    out.push(`<p class="meta">Redacted report: yes (profile ${escapeHtml(asString2(model.redaction_profile_id))})</p>`);
+* { box-sizing: border-box; }
+html {
+  font-size: 15pt;
+  background-color: var(--paper);
+}
+body {
+  margin: 0;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 15pt;
+  line-height: 1.55;
+  text-align: left;
+  hyphens: manual;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+p, li, dt, dd, blockquote, figcaption, td, th, dl, ul, ol,
+footer, figcaption, caption, address, label, summary,
+code, pre, kbd, samp, small, sub, sup, .note, .basis,
+.qualification, .seat-label, .page-note, .meta, .cover-meta,
+.label-box, .summary-card, .option-block, .advisor-card,
+.tool-card, .plan-step, .round-block, .record, .report-footer {
+  font-size: 15pt;
+}
+small, sub, sup, .note, .basis, .qualification, .seat-label,
+.meta, .cover-meta, .page-note, .record dt, .record dd {
+  font-size: 14pt;
+  line-height: 1.45;
+}
+h1 { font-size: 27pt; line-height: 1.15; margin: 0 0 4mm 0; color: var(--navy); overflow-wrap: anywhere; }
+h2 {
+  font-size: 22pt;
+  line-height: 1.25;
+  color: var(--navy);
+  border-bottom: 1pt solid var(--gold-rule);
+  padding-bottom: 2mm;
+  margin: 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h3 { font-size: 17pt; line-height: 1.3; color: var(--navy); margin: 5mm 0 2mm 0; break-after: avoid; page-break-after: avoid; }
+ul, ol { margin: 0 0 3mm 0; padding-left: 7mm; break-inside: auto; }
+li { margin: 0 0 1.5mm 0; }
+p { margin: 0 0 3mm 0; orphans: 3; widows: 3; }
+.section-head {
+  margin: 9mm 0 3mm 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.section-head h2 { margin: 0; }
+.section-lead { margin: 2mm 0 0 0; color: var(--ink-secondary); font-size: 15pt; }
+.part-banner {
+  margin: 0 0 6mm 0;
+  padding: 4mm 5mm;
+  background: var(--navy);
+  color: var(--cream-on-navy);
+  border-left: 5mm solid var(--gold-rule);
+  font-size: 16pt;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.part-banner .part-kicker { color: var(--gold-light); }
+.part-banner.part-start { break-before: page; page-break-before: always; }
+.sec-n { display: inline-block; min-width: 9mm; color: var(--gold-text); }
+.eyebrow {
+  margin: 0 0 2mm 0;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 14pt;
+  color: var(--gold-text);
+}
+.verdict-label { color: var(--gold-text); font-weight: bold; }
+.report-cover {
+  page-break-after: always;
+  break-after: page;
+  box-sizing: border-box;
+  /* CTR-154: the cover box is a CONSERVATIVE 255 mm, not a measured
+     printable height. A4 body height after the 17 mm top and 22 mm bottom
+     running-page margins is 297 - 17 - 22 = 258 mm; 255 mm sits inside that
+     with 3 mm spare so the cover cannot overflow onto a second page. The old
+     min-height of 297 mm let the cover overflow. No pixel measurement is
+     claimed. */
+  width: 210mm;
+  height: 255mm;
+  overflow: visible;
+  padding: 0 0 4mm 0;
+  margin: 0;
+  background: var(--paper);
+}
+.report-cover-band {
+  background: var(--navy);
+  border-bottom: 5pt solid var(--gold-rule);
+  padding: 6mm 12mm 5mm 12mm;
+}
+.cover-kicker {
+  margin: 0 0 3mm 0;
+  color: var(--gold-light);
+  font-size: 14pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.cover-redaction {
+  margin: 0 auto;
+  max-width: 158mm;
+  border: 1pt solid var(--gold-light);
+  padding: 5mm 6mm;
+  color: var(--cream-on-navy);
+  text-align: center;
+}
+.cover-redaction p { margin: 0; font-size: 15pt; }
+.cover-portraits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3mm 6mm;
+  max-width: 158mm;
+  margin: 0 auto;
+}
+.cover-portraits-single {
+  grid-template-columns: 1fr;
+  max-width: 42mm;
+}
+.seat-portrait {
+  margin: 0;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.seat-portrait img,
+.seat-portrait-fallback {
+  display: block;
+  width: 16mm;
+  height: 16mm;
+  margin: 0 auto 1mm auto;
+  border-radius: 50%;
+  border: 1.5pt solid var(--gold-light);
+  background: var(--navy-deep);
+  object-fit: cover;
+  object-position: center top;
+}
+.seat-portrait-fallback {
+  color: var(--cream-on-navy);
+  font-size: 14pt;
+  line-height: 16mm;
+  text-align: center;
+}
+.seat-portrait span {
+  display: block;
+  color: var(--cream-on-navy);
+  font-size: 14pt;
+  line-height: 1.2;
+}
+.cover-body { padding: 6mm 20mm 0 20mm; }
+.cover-body h1 { font-size: 24pt; }
+.cover-meta { margin: 0 0 2mm 0; color: var(--ink-secondary); }
+.cover-verdict {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3mm;
+  margin: 3mm 0;
+}
+.cover-verdict p {
+  margin: 0;
+  border-top: 3pt solid var(--gold-rule);
+  background: var(--paper-band);
+  padding: 2.5mm 3mm;
+  font-size: 15pt;
+}
+.cover-verdict span {
+  display: block;
+  color: var(--gold-text);
+  font-size: 14pt;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cover-readfirst {
+  margin: 2.5mm 0 3mm 0;
+  padding: 2.5mm 4mm 2.5mm 11mm;
+  border: 1pt solid var(--rule-hairline);
+  background: var(--paper-band);
+  font-size: 14pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.cover-readfirst li { margin: 0 0 1mm 0; }
+.cover-legal { margin: 2mm 0 0 0; }
+.label-box {
+  border: 1pt solid var(--rule-hairline);
+  border-left: 4mm solid var(--gold-rule);
+  background: var(--paper-band);
+  padding: 4mm 5mm;
+  margin: 4mm 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.label-box p:last-child { margin-bottom: 0; }
+.summary-card {
+  border: 1pt solid var(--gold-rule);
+  border-left: 4mm solid var(--gold-rule);
+  background: var(--paper-band);
+  padding: 5mm 6mm;
+  margin: 0 0 5mm 0;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.glance {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5mm 4mm;
+  margin: 0 0 4mm 0;
+}
+.glance div {
+  border-top: 2.5pt solid var(--gold-rule);
+  padding: 2mm 0 0 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.summary-card .glance dt {
+  margin: 0;
+  color: var(--gold-text);
+  font-size: 14pt;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.summary-card .glance dd { margin: 1mm 0 0 0; font-size: 15pt; overflow-wrap: anywhere; }
+.read-map {
+  border: 1pt solid var(--rule-hairline);
+  background: var(--paper-band);
+  padding: 4mm 5mm;
+  margin: 0 0 5mm 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.read-map-title { margin: 0 0 2mm 0; color: var(--navy); font-weight: bold; }
+.read-map ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2mm 6mm;
+}
+.read-map li { display: flex; gap: 2.5mm; align-items: flex-start; margin: 0; font-size: 14pt; }
+.read-map svg { width: 5mm; height: 5mm; flex: 0 0 5mm; margin-top: 1mm; color: var(--gold-text); }
+.read-map a { color: var(--navy); text-decoration: none; border-bottom: 0.6pt solid var(--gold-rule); }
+.summary-card dt { font-weight: bold; color: var(--navy); margin-top: 3mm; font-size: 15pt; }
+.summary-card dt:first-child { margin-top: 0; }
+.summary-card dd { margin: 0; overflow-wrap: anywhere; font-size: 15pt; }
+.in-short { font-size: 17pt; line-height: 1.45; color: var(--navy); margin: 0 0 4mm 0; }
+.verdict-line { font-size: 17pt; font-weight: bold; color: var(--navy); margin: 0 0 2mm 0; }
+.recommendation-line { font-size: 17pt; margin: 0 0 3mm 0; }
+/* CTR-156: readiness is a separate card after the decision lines. It stays
+   splittable when long; every declared size is at least 14pt. */
+.readiness-card {
+  border: 1pt solid var(--gold-rule);
+  border-left: 4mm solid var(--gold-rule);
+  background: var(--paper-band);
+  padding: 4mm 5mm;
+  margin: 0 0 4mm 0;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.readiness-status { font-size: 16pt; font-weight: bold; color: var(--navy); margin: 0 0 2mm 0; }
+.start-here {
+  font-size: 16pt;
+  margin: 3mm 0;
+  padding: 2.5mm 3mm;
+  background: var(--paper-band);
+  border-top: 2.5pt solid var(--gold-rule);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.match-basis { margin: 0 0 2mm 0; }
+.advisor-summary { margin: 0 0 3mm 0; }
+.option-block, .advisor-card, .tool-card, .plan-step, .round-block {
+  border: 1pt solid var(--rule-hairline);
+  border-top: 4pt solid var(--navy);
+  background: var(--paper);
+  padding: 4mm 5mm;
+  margin: 0 0 4mm 0;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.option-block h3, .advisor-card h3, .tool-card h3, .plan-step h3 { margin-top: 0; }
+.advisor-card { border-top-color: var(--gold-rule); }
+.plan-step { border-top-color: var(--navy-deep); }
+.plan-overview {
+  margin: 0 0 5mm 0;
+  padding: 4mm 5mm 4mm 10mm;
+  border: 1pt solid var(--rule-hairline);
+  background: var(--paper-band);
+}
+.plan-overview li { margin: 0 0 1.5mm 0; }
+.plan-overview strong { color: var(--navy); }
+.step-number {
+  display: inline-block;
+  background: var(--navy);
+  color: var(--cream-on-navy);
+  font-weight: bold;
+  font-size: 16pt;
+  padding: 1mm 3mm;
+  margin: 0 0 2mm 0;
+}
+.plan-step ol { padding-left: 7mm; }
+.fact-list, .condition-list { margin: 0 0 3mm 0; padding-left: 7mm; }
+.qualification, .seat-label { color: var(--ink-secondary); font-style: italic; }
+.basis, .note { color: var(--ink-secondary); }
+.record dt { font-weight: bold; color: var(--navy); margin-top: 3mm; }
+.record dd { margin: 0; overflow-wrap: anywhere; }
+footer.report-footer {
+  margin-top: 8mm;
+  padding: 4mm 0 0 0;
+  border-top: 1pt solid var(--gold-rule);
+  break-inside: avoid;
+  page-break-inside: avoid;
+  color: var(--ink-secondary);
+}
+@page {
+  size: A4;
+  margin: 17mm 20mm 22mm 20mm;
+  @bottom-center {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    font-size: 14pt;
+    color: #3A3934;
   }
-  if (model.sample === true) {
-    out.push('<p class="meta">Sample session: SAMPLE</p>');
-  }
-  out.push(`<p class="label">${escapeHtml(asString2(model.simulation_label))}</p>`);
-  out.push(`<p class="label">${escapeHtml(asString2(model.authorization_notice))}</p>`);
-  if (model.sample === true) {
-    out.push(`<p class="label">${escapeHtml(asString2(model.sample_notice))}</p>`);
-  }
-  const consult = model.consult;
-  if (consult) {
-    out.push("<h2>Consultation</h2>");
-    out.push(`<p>${escapeHtml(asString2(consult.display_name))}: ${escapeHtml(asString2(consult.label))}</p>`);
-    out.push(`<p>${escapeHtml(asString2(consult.answer))}</p>`);
-    out.push("<h3>Assumptions</h3>");
-    out.push(hList(asArray(consult.assumptions)));
-    out.push("<h3>Limits</h3>");
-    out.push(hList(asArray(consult.limits)));
-    out.push(`<p>Next step: ${escapeHtml(asString2(consult.next_step))}</p>`);
-    pushWebTodayHtml(out, model);
-    pushProvenanceHtml(out, model);
-    out.push("</body>");
-    out.push("</html>");
-    return `${out.join("\n")}
+}
+@page :first { margin: 0; }
 `;
+function hList(items) {
+  const seen = /* @__PURE__ */ new Set();
+  const rendered = [];
+  for (const item of items) {
+    const text = asString2(item);
+    if (seen.has(text)) continue;
+    seen.add(text);
+    rendered.push(`<li>${escapeHtml(text)}</li>`);
   }
-  out.push("<h2>Executive decision</h2>");
-  out.push(`<p>Verdict: ${escapeHtml(asString2(verdict.label))}<br>`);
-  const recommended = asStringOrNull(verdict.recommended_option_id);
+  return `<ul>${rendered.join("")}</ul>`;
+}
+function sectionSlug(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function pushSection(out, counter, title, lead) {
+  counter.n += 1;
+  const slug = sectionSlug(title);
+  out.push('<div class="section-head">');
   out.push(
-    `Recommendation: ${escapeHtml(recommended === null ? "none" : `${recommended} (${asString2(verdict.recommended_option_label)})`)}</p>`
+    `<h2 class="sec" id="section-${slug}" data-section="${escapeHtml(slug)}"><span class="sec-n">${counter.n}.</span> ${escapeHtml(title)}</h2>`
   );
-  out.push("<h3>Prerequisites</h3>");
-  const prerequisites = asArray(model.prerequisites);
-  out.push(prerequisites.length > 0 ? hList(prerequisites) : "<ul><li>none</li></ul>");
-  out.push("<h3>Why</h3>");
-  out.push(hList(asArray(model.main_reasons)));
-  out.push("<h2>Alternatives and scores</h2>");
-  out.push("<table><thead><tr><th>Option</th><th>Weighted sum</th><th>Denominator</th><th>Score</th><th>Display score</th><th>Coverage</th><th>Spread</th><th>Abstentions</th></tr></thead><tbody>");
-  for (const rowValue of asArray(model.score_table)) {
-    const row = asRecord2(rowValue);
-    const abstained = asArray(row.abstained_seat_ids).map(asString2).join(", ") || "none";
+  if (lead !== void 0 && lead !== "") {
+    out.push(`<p class="section-lead">${escapeHtml(lead)}</p>`);
+  }
+  out.push("</div>");
+}
+function pushPartBanner(out, part, label, startsPage) {
+  out.push(
+    `<div class="part-banner${startsPage ? " part-start" : ""}"><span class="part-kicker">${escapeHtml(part)}</span> \u2014 ${escapeHtml(label)}</div>`
+  );
+}
+function readMapIcon(kind) {
+  const paths = {
+    answer: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16.5 9"/>',
+    plan: '<path d="M8 6h11M8 12h11M8 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
+    reasoning: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 20c.8-3 3-4.5 5.5-4.5S12.7 17 13.5 20M10.5 20c.8-3 3-4.5 5.5-4.5S20.2 17 21 20"/>',
+    record: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5M10 12h6M10 16h6"/>'
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind]}</svg>`;
+}
+function pushReadMap(out, fullRecord) {
+  out.push('<nav class="read-map" aria-label="What is inside">');
+  out.push('<p class="read-map-title">What is inside</p>');
+  out.push("<ol>");
+  out.push(
+    `<li>${readMapIcon("answer")}<span><a href="#section-in-short">The answer</a> \u2014 verdict, why, confidence</span></li>`
+  );
+  if (fullRecord) {
     out.push(
-      `<tr><td>${escapeHtml(asString2(row.option_id))} (${escapeHtml(asString2(row.option_label))})</td><td>${escapeHtml(formatPlainNumber(asNumberOrNull(row.weighted_sum)))}</td><td>${escapeHtml(formatPlainNumber(asNumberOrNull(row.denominator)))}</td><td>${escapeHtml(formatScore(asNumberOrNull(row.score)))}</td><td>${escapeHtml(formatDisplayScore(asNumberOrNull(row.display_score)))}</td><td>${escapeHtml(formatCoverage(asNumberOrNull(row.coverage)))}</td><td>${escapeHtml(formatPlainNumber(asNumberOrNull(row.spread)))}</td><td>${escapeHtml(abstained)}</td></tr>`
+      `<li>${readMapIcon("plan")}<span><a href="#section-your-plan">Your plan</a> \u2014 numbered steps and approvals</span></li>`
+    );
+    out.push(
+      `<li>${readMapIcon("reasoning")}<span><a href="#section-what-each-advisor-said">The reasoning</a> \u2014 each advisor and the debate</span></li>`
+    );
+  } else {
+    out.push(
+      `<li>${readMapIcon("plan")}<span><a href="#section-the-consultation-answer">The consultation answer</a> \u2014 recorded next step and limits</span></li>`
+    );
+    out.push(
+      `<li>${readMapIcon("reasoning")}<span><a href="#section-skills-and-departments-on-your-openclaw">Installed help</a> \u2014 optional skills on this box</span></li>`
     );
   }
-  out.push("</tbody></table>");
-  out.push("<h2>Main arguments and strongest dissent</h2>");
-  out.push(hList(asArray(model.main_reasons)));
-  out.push(`<p>Strongest dissent: ${escapeHtml(asStringOrNull(model.strongest_dissent) ?? "none recorded")}</p>`);
-  out.push("<h2>Constraints, assumptions, and unknowns</h2>");
+  out.push(
+    `<li>${readMapIcon("record")}<span><a href="#section-for-your-records">The record</a> \u2014 sources, hashes, versions</span></li>`
+  );
+  out.push("</ol>");
+  out.push("</nav>");
+}
+function readinessStatusText(status) {
+  switch (status) {
+    case "ready":
+      return "Ready to act";
+    case "ready_with_conditions":
+      return "Ready with conditions";
+    case "blocked":
+      return "Not ready yet";
+    case "not_ready":
+      return "Not ready to act";
+    case "not_applicable":
+      return "No plan readiness for a consultation";
+    default:
+      return status === "" ? "Readiness not recorded" : status;
+  }
+}
+function pushReadinessHtml(out, model) {
+  const dvr = asRecord2(model.decision_vs_readiness ?? {});
+  const readiness = asRecord2(dvr.readiness ?? {});
+  const status = asString2(readiness.status);
+  if (status === "") return;
+  out.push('<div class="readiness-card" data-section="readiness">');
+  out.push(
+    `<p class="readiness-status"><strong>Can you act on this yet?</strong> ${escapeHtml(readinessStatusText(status))}</p>`
+  );
+  const headline = asStringOrNull(readiness.headline);
+  if (headline !== null) out.push(`<p>${escapeHtml(headline)}</p>`);
+  const reasons = asArray(readiness.status_reasons);
+  if (reasons.length > 0) {
+    out.push("<p><strong>Why:</strong></p>");
+    out.push(hList(reasons));
+  }
+  const describeCondition = (value) => {
+    const row = asRecord2(value);
+    const advisor = asStringOrNull(row.advisor);
+    return `${asString2(row.text)}${advisor === null ? "" : ` \u2014 recorded by ${advisor}`}`;
+  };
+  const blockers = asArray(readiness.blockers);
+  if (blockers.length > 0) {
+    out.push(`<p><strong>Open blocking conditions (${blockers.length}):</strong></p>`);
+    out.push(hList(blockers.map(describeCondition)));
+  }
+  const safeguards = asArray(readiness.safeguards);
+  if (safeguards.length > 0) {
+    out.push(`<p><strong>Recorded safeguards (${safeguards.length}):</strong></p>`);
+    out.push(hList(safeguards.map(describeCondition)));
+  }
+  const hardFindings = asArray(readiness.hard_constraint_findings);
+  if (hardFindings.length > 0) {
+    out.push(
+      `<p><strong>Hard-constraint findings on the recommended option (${hardFindings.length}):</strong></p>`
+    );
+    out.push(
+      hList(
+        hardFindings.map((value) => {
+          const row = asRecord2(value);
+          return `${asString2(row.constraint_id)}: ${asString2(row.result_text)}`;
+        })
+      )
+    );
+  }
+  const ratification = asRecord2(readiness.ratification ?? {});
+  const ratStatus = asStringOrNull(ratification.status);
+  if (ratStatus !== null) {
+    out.push(
+      `<p><strong>Ratification:</strong> ${escapeHtml(asStringOrNull(ratification.status_text) ?? ratStatus)} ${ratification.blocks_readiness === true ? "(blocks readiness)" : "(does not block readiness)"}</p>`
+    );
+  }
+  const note = asStringOrNull(readiness.note);
+  if (note !== null) out.push(`<p class="note">${escapeHtml(note)}</p>`);
+  out.push("</div>");
+}
+function pushInformationHtml(out, model) {
+  const summary = asRecord2(model.summary ?? {});
+  const needed = asArray(summary.information_needed);
+  const note = asStringOrNull(summary.information_needed_note);
+  if (needed.length > 0 || note !== null) {
+    out.push("<dt>Information needed</dt>");
+    out.push(`<dd>${needed.length > 0 ? hList(needed) : "<p>none recorded</p>"}`);
+    if (note !== null) out.push(`<p class="note">${escapeHtml(note)}</p>`);
+    out.push("</dd>");
+  }
+  const council = asArray(summary.council_unknowns);
+  const recorded = asNumberOrNull(summary.council_unknowns_count) ?? council.length;
+  const removed = asNumberOrNull(summary.council_unknowns_removed) ?? 0;
+  if (council.length > 0 || recorded > 0) {
+    out.push("<dt>The council's unknown record</dt>");
+    const countLine = recorded > council.length ? `${recorded} recorded council statement(s); ${removed} repeat(s) collapsed after removing the "Unknown:" framing; ${council.length} distinct shown.` : `${council.length} distinct council statement(s).`;
+    out.push(
+      `<dd><p>${escapeHtml(countLine)}</p>${council.length > 0 ? hList(council) : ""}</dd>`
+    );
+  }
+}
+function pushSummaryHtml(out, model, fullRecord) {
+  const summary = asRecord2(model.summary ?? {});
+  const verdict = asRecord2(model.verdict_block);
+  const plan = asRecord2(model.plan ?? {});
+  const confidence = asRecord2(summary.confidence ?? {});
+  const consult = isConsultModel(model) ? model.consult : null;
+  out.push('<div class="summary-card" data-section="summary">');
+  if (consult) {
+    out.push(`<p class="in-short">${escapeHtml(asString2(summary.in_short))}</p>`);
+    out.push('<dl class="glance">');
+    out.push(
+      `<div><dt>Answered by</dt><dd>${escapeHtml(asString2(consult.display_name))} (${escapeHtml(asString2(consult.label))})</dd></div>`
+    );
+    out.push(
+      `<div><dt>Next step recorded</dt><dd>${escapeHtml(asString2(consult.next_step))}</dd></div>`
+    );
+    out.push("</dl>");
+    out.push("</div>");
+    pushReadMap(out, fullRecord);
+    return;
+  }
+  out.push(`<p class="in-short">${escapeHtml(asString2(summary.in_short))}</p>`);
+  out.push('<dl class="glance">');
+  out.push(
+    `<div><dt>Verdict</dt><dd>${escapeHtml(asString2(verdict.label))}${asStringOrNull(summary.verdict_label_text) === null ? "" : ` \u2014 ${escapeHtml(asString2(summary.verdict_label_text))}`}</dd></div>`
+  );
+  out.push(
+    `<div><dt>Recommended</dt><dd>${escapeHtml(asStringOrNull(verdict.recommended_option_label) ?? "none recorded")}</dd></div>`
+  );
+  out.push(
+    `<div><dt>Confidence</dt><dd>${escapeHtml(asStringOrNull(confidence.evidence_strength_text) ?? "not recorded")}</dd></div>`
+  );
+  out.push(
+    `<div><dt>Plan</dt><dd>${escapeHtml(String(asArray(plan.steps).length))} recorded step(s)</dd></div>`
+  );
+  out.push("</dl>");
+  out.push(
+    `<p class="verdict-line"><span class="verdict-label">Verdict:</span> ${escapeHtml(asString2(verdict.label))}${asStringOrNull(summary.verdict_label_text) === null ? "" : ` \u2014 ${escapeHtml(asString2(summary.verdict_label_text))}`}</p>`
+  );
+  const recommended = asStringOrNull(verdict.recommended_option_id);
+  out.push(
+    `<p class="recommendation-line">Recommendation: ${escapeHtml(
+      recommended === null ? "none" : `${recommended} (${asString2(verdict.recommended_option_label)})`
+    )}</p>`
+  );
+  if (asStringOrNull(summary.ratification_text) !== null) {
+    out.push(`<p>${escapeHtml(asString2(summary.ratification_text))}</p>`);
+  }
+  pushReadinessHtml(out, model);
+  out.push("<dl>");
+  const reasons = asArray(summary.reasons);
+  if (reasons.length > 0) {
+    out.push("<dt>Why the council said this</dt>");
+    out.push(`<dd>${hList(reasons)}</dd>`);
+  }
+  out.push(
+    `<dt>Biggest concern</dt><dd>${escapeHtml(asStringOrNull(summary.biggest_concern) ?? "none recorded")}</dd>`
+  );
+  const confidenceNotes = asArray(confidence.notes);
+  if (confidenceNotes.length > 0) {
+    out.push("<dt>How confident this is</dt>");
+    out.push(`<dd>${hList(confidenceNotes)}</dd>`);
+  }
+  const change = asArray(summary.what_would_change_the_answer);
+  if (change.length > 0) {
+    const recorded = asNumberOrNull(summary.what_would_change_the_answer_count) ?? change.length;
+    const removed = asNumberOrNull(summary.what_would_change_the_answer_removed) ?? 0;
+    const countLine = recorded > change.length ? `<p>${escapeHtml(String(recorded))} recorded seat statement(s); ${escapeHtml(String(removed))} exact repeat(s) collapsed; ${escapeHtml(String(change.length))} distinct shown.</p>` : "";
+    out.push("<dt>What would change the answer</dt>");
+    out.push(`<dd>${countLine}${hList(change)}</dd>`);
+  }
+  pushInformationHtml(out, model);
+  out.push("</dl>");
+  out.push("</div>");
+  pushReadMap(out, fullRecord);
+}
+function pushQuestionHtml(out, model) {
+  const context = asRecord2(model.question_and_context ?? {});
+  out.push(`<p><strong>Your question:</strong> ${escapeHtml(asString2(context.question) || asString2(model.decision_title))}</p>`);
+  if (asArray(context.options).length > 0) {
+    out.push("<h3>The options you considered</h3>");
+    out.push("<ul>");
+    for (const optionValue of asArray(context.options)) {
+      const option = asRecord2(optionValue);
+      out.push(
+        `<li>${escapeHtml(asString2(option.option_label))} <span class="basis">(option ${escapeHtml(asString2(option.option_id))})</span></li>`
+      );
+    }
+    out.push("</ul>");
+  }
+  out.push("<h3>The facts the council worked from</h3>");
+  const facts = asArray(context.facts);
+  if (facts.length === 0) out.push("<ul><li>none recorded</li></ul>");
+  else {
+    out.push("<ul>");
+    for (const factValue of facts) {
+      const fact = asRecord2(factValue);
+      out.push(`<li>${escapeHtml(asString2(fact.statement))}</li>`);
+    }
+    out.push("</ul>");
+  }
+  out.push("<h3>Assumptions</h3>");
+  const assumptions = asArray(context.assumptions);
+  out.push(assumptions.length > 0 ? hList(assumptions) : "<ul><li>none recorded</li></ul>");
+  out.push("<h3>Unknowns</h3>");
+  const unknowns = asArray(context.unknowns);
+  out.push(unknowns.length > 0 ? hList(unknowns) : "<ul><li>none recorded</li></ul>");
+  const unknownsNote = asStringOrNull(context.unknowns_note);
+  if (unknownsNote !== null) {
+    const recorded = asNumberOrNull(context.unknowns_count) ?? unknowns.length;
+    const shown = asNumberOrNull(context.unknowns_shown) ?? unknowns.length;
+    out.push(
+      `<p class="note">${escapeHtml(String(recorded))} recorded; ${escapeHtml(String(shown))} distinct shown. ${escapeHtml(unknownsNote)}</p>`
+    );
+  }
+  const constraints = asArray(context.constraints);
+  if (constraints.length > 0) {
+    out.push("<h3>Constraints</h3>");
+    out.push("<ul>");
+    for (const constraintValue of constraints) {
+      const constraint = asRecord2(constraintValue);
+      const applies = asArray(constraint.applies_to_option_labels).map(asString2);
+      out.push(
+        `<li>${escapeHtml(asString2(constraint.description))} <span class="basis">(${constraint.hard === true ? "hard constraint" : "guideline"}${applies.length > 0 ? `; applies to ${escapeHtml(applies.join(", "))}` : ""})</span></li>`
+      );
+    }
+    out.push("</ul>");
+  }
+}
+function pushOptionsHtml(out, model) {
+  const rows = asArray(model.score_table);
+  if (rows.length === 0) {
+    out.push("<p>No scored options are recorded for this sitting.</p>");
+    return;
+  }
+  for (const rowValue of rows) {
+    const row = asRecord2(rowValue);
+    const abstainedNames = asArray(row.abstained_seat_names).map(asString2);
+    const abstainedIds = asArray(row.abstained_seat_ids).map(asString2);
+    const abstainedLabel = abstainedNames.length > 0 ? abstainedNames.join(", ") : abstainedIds.map((seat) => seat.replace(/-/g, " ")).join(", ");
+    out.push('<div class="option-block">');
+    out.push(
+      `<h3>${escapeHtml(asString2(row.option_label))} <span class="basis">(option ${escapeHtml(asString2(row.option_id))})</span></h3>`
+    );
+    out.push(
+      `<p>Score: ${escapeHtml(formatDisplayScore(asNumberOrNull(row.display_score)))} out of 10. Weighted total ${escapeHtml(formatPlainNumber(asNumberOrNull(row.weighted_sum)))} over ${escapeHtml(formatPlainNumber(asNumberOrNull(row.denominator)))}; coverage ${escapeHtml(formatCoverage(asNumberOrNull(row.coverage)))}; spread ${escapeHtml(formatPlainNumber(asNumberOrNull(row.spread)))}.</p>`
+    );
+    out.push(
+      `<p>${abstainedIds.length === 0 ? "Every participating seat scored this option." : `Abstained: ${escapeHtml(abstainedLabel)}.`}</p>`
+    );
+    out.push("</div>");
+  }
+}
+function pushAdvisorHtml(out, model) {
+  const contributions = asArray(model.advisor_contributions);
+  if (contributions.length === 0) {
+    out.push("<p>No advisor detail is saved for this sitting.</p>");
+    return;
+  }
+  out.push(`<h3>${contributions.length} seats at a glance</h3>`);
+  out.push('<ul class="advisor-summary">');
+  for (const seatValue of contributions) {
+    const seat = asRecord2(seatValue);
+    out.push(
+      `<li><strong>${escapeHtml(asString2(seat.display_name))}</strong>: ${escapeHtml(asString2(seat.stance_text))}; preferred ${escapeHtml(asStringOrNull(seat.preferred_option_label) ?? "none stated")}.</li>`
+    );
+  }
+  out.push("</ul>");
+  out.push(
+    '<p class="note">Each box below reproduces the saved advisor-card fields as recorded. Nothing here is a rewritten summary; unusual or technical wording stays as the seat wrote it.</p>'
+  );
+  for (const seatValue of contributions) {
+    const seat = asRecord2(seatValue);
+    out.push('<div class="advisor-card">');
+    out.push(`<h3>${escapeHtml(asString2(seat.display_name))}</h3>`);
+    if (asStringOrNull(seat.lane) !== null) {
+      out.push(`<p class="basis">Focus: ${escapeHtml(asString2(seat.lane))}</p>`);
+    }
+    if (asStringOrNull(seat.owned_question) !== null) {
+      out.push(
+        `<p>${escapeHtml(asString2(seat.owned_question))}</p>`
+      );
+    }
+    out.push(
+      `<p class="basis">Last saved round: ${escapeHtml(String(asNumberOrNull(seat.round) ?? "not recorded"))}</p>`
+    );
+    out.push(
+      `<p><strong>Position:</strong> ${escapeHtml(asString2(seat.stance_text))}. <strong>Preferred option:</strong> ${escapeHtml(asStringOrNull(seat.preferred_option_label) ?? "none stated")}.</p>`
+    );
+    out.push("<p><strong>What they argued:</strong></p>");
+    out.push(hList(asArray(seat.what_they_argued)));
+    out.push(
+      `<p><strong>Their strongest objection:</strong> ${escapeHtml(asString2(seat.strongest_objection))}</p>`
+    );
+    out.push(
+      `<p><strong>What would change their mind:</strong> ${escapeHtml(asString2(seat.what_would_change_their_mind))}</p>`
+    );
+    if (asStringOrNull(seat.minority_position) !== null) {
+      out.push(
+        `<p><strong>Minority position:</strong> ${escapeHtml(asString2(seat.minority_position))}</p>`
+      );
+    }
+    const conditions = asArray(seat.conditions);
+    if (conditions.length > 0) {
+      out.push("<p><strong>Conditions they set:</strong></p>");
+      out.push('<ul class="condition-list">');
+      for (const conditionValue of conditions) {
+        const condition = asRecord2(conditionValue);
+        out.push(
+          `<li>${escapeHtml(asString2(condition.id))}: ${escapeHtml(asString2(condition.description))} <span class="basis">(${escapeHtml(asString2(condition.kind))}, ${escapeHtml(asString2(condition.status_text))}${condition.blocking === true ? ", blocking" : ""})</span></li>`
+        );
+      }
+      out.push("</ul>");
+    }
+    if (asStringOrNull(seat.resolution_stance_text) !== null) {
+      out.push(
+        `<p><strong>On the final resolution:</strong> ${escapeHtml(asString2(seat.resolution_stance_text))}</p>`
+      );
+    }
+    out.push(
+      `<p class="seat-label">${escapeHtml(asString2(seat.label))}</p>`
+    );
+    out.push(
+      `<p class="qualification">Source qualification: ${escapeHtml(qualificationSentence(seat.qualification))}</p>`
+    );
+    out.push("</div>");
+  }
+}
+function pushDebateHtml(out, model) {
+  const debate = asRecord2(model.debate ?? {});
+  out.push(
+    `<p><strong>Rounds of advisor cards saved:</strong> ${String(asNumberOrNull(debate.rounds_saved) ?? 0)}</p>`
+  );
+  out.push("<ul>");
+  for (const note of asArray(debate.notes)) {
+    out.push(`<li>${escapeHtml(asString2(note))}</li>`);
+  }
+  out.push("</ul>");
+  const condensedNote = asStringOrNull(debate.condensed_note);
+  if (condensedNote !== null) {
+    out.push(`<p class="note">${escapeHtml(condensedNote)}</p>`);
+  }
+  const roundSupport = asArray(debate.round_support);
+  if (roundSupport.length > 0) {
+    out.push("<h3>How each saved round split</h3>");
+    out.push("<ul>");
+    for (const supportValue of roundSupport) {
+      const row = asRecord2(supportValue);
+      out.push(
+        `<li>Round ${escapeHtml(String(asNumberOrNull(row.round) ?? "?"))}: ${escapeHtml(String(asNumberOrNull(row.support) ?? 0))} support, ${escapeHtml(String(asNumberOrNull(row.conditional) ?? 0))} conditional, ${escapeHtml(String(asNumberOrNull(row.oppose) ?? 0))} oppose, ${escapeHtml(String(asNumberOrNull(row.abstain) ?? 0))} abstain${row.identical_to_previous === true ? "; identical to the previous saved round" : ""}.</li>`
+      );
+    }
+    out.push("</ul>");
+  }
+  for (const roundValue of asArray(debate.rounds)) {
+    const round = asRecord2(roundValue);
+    out.push('<div class="round-block">');
+    out.push(`<h3>Round ${escapeHtml(String(asNumberOrNull(round.round) ?? "?"))}</h3>`);
+    out.push("<ul>");
+    for (const seatValue of asArray(round.seats)) {
+      const seat = asRecord2(seatValue);
+      out.push(
+        `<li>${escapeHtml(asString2(seat.display_name))} ${escapeHtml(asString2(seat.stance_text))}${asStringOrNull(seat.preferred_option_label) === null ? "" : `; preferred ${escapeHtml(asString2(seat.preferred_option_label))}`}.</li>`
+      );
+    }
+    out.push("</ul>");
+    out.push("</div>");
+  }
+  const changes = asArray(debate.changes);
+  if (changes.length > 0) {
+    out.push("<h3>What changed between rounds</h3>");
+    out.push("<ul>");
+    for (const changeValue of changes) {
+      const change = asRecord2(changeValue);
+      const optionChanged = asStringOrNull(change.from_option_label) !== asStringOrNull(change.to_option_label);
+      out.push(
+        `<li>Round ${escapeHtml(String(asNumberOrNull(change.round) ?? "?"))}: ${escapeHtml(asString2(change.display_name))} moved from ${escapeHtml(asString2(change.from_stance_text))} to ${escapeHtml(asString2(change.to_stance_text))}${optionChanged ? `; preferred option ${escapeHtml(asStringOrNull(change.from_option_label) ?? "none")} to ${escapeHtml(asStringOrNull(change.to_option_label) ?? "none")}` : ""}.</li>`
+      );
+    }
+    out.push("</ul>");
+  }
+  const positions = asArray(debate.positions);
+  if (positions.length > 0) {
+    out.push("<h3>Where they stood on the preferred option</h3>");
+    out.push("<ul>");
+    for (const positionValue of positions) {
+      const position = asRecord2(positionValue);
+      out.push(
+        `<li>${escapeHtml(asString2(position.option_label))}: ${escapeHtml(asArray(position.seat_names).map(asString2).join(", "))}</li>`
+      );
+    }
+    out.push("</ul>");
+  }
+}
+function pushPlanHtml(out, model) {
+  const plan = asRecord2(model.plan ?? {});
+  const steps = asArray(plan.steps);
+  const prerequisites = asArray(plan.prerequisites);
+  if (steps.length > 1) {
+    out.push('<ol class="plan-overview">');
+    for (const stepValue of steps) {
+      const step = asRecord2(stepValue);
+      out.push(
+        `<li><strong>Step ${escapeHtml(String(asNumberOrNull(step.step_number) ?? "?"))}:</strong> ${escapeHtml(asString2(step.title))}</li>`
+      );
+    }
+    out.push("</ol>");
+  }
+  const startNumber = asNumberOrNull(plan.start_here_step_number);
+  if (startNumber !== null) {
+    const startStep = steps.map((value) => asRecord2(value)).find((step) => asNumberOrNull(step.step_number) === startNumber);
+    if (startStep !== void 0) {
+      out.push(
+        `<p class="start-here"><strong>Start here:</strong> Step ${escapeHtml(String(startNumber))} \u2014 ${escapeHtml(asString2(startStep.title))}</p>`
+      );
+    }
+  }
+  const parallelNote = asStringOrNull(plan.parallel_eligible_note);
+  if (parallelNote !== null) {
+    out.push(`<p class="note">${escapeHtml(parallelNote)}</p>`);
+  }
+  const dependencyNote = asStringOrNull(plan.dependency_note);
+  if (dependencyNote !== null) {
+    out.push(`<p class="note">${escapeHtml(dependencyNote)}</p>`);
+  }
+  if (prerequisites.length > 0) {
+    out.push("<h3>Before you start</h3>");
+    out.push(hList(prerequisites));
+  }
+  if (steps.length === 0) {
+    out.push("<p>No action steps were recorded for this sitting.</p>");
+  }
+  for (const stepValue of steps) {
+    const step = asRecord2(stepValue);
+    out.push('<div class="plan-step">');
+    out.push(
+      `<p class="step-number">Step ${escapeHtml(String(asNumberOrNull(step.step_number) ?? "?"))}</p>`
+    );
+    out.push(`<h3>${escapeHtml(asString2(step.title))}</h3>`);
+    out.push(`<p>${escapeHtml(asString2(step.what_to_do))}</p>`);
+    out.push(`<p><strong>Why:</strong> ${escapeHtml(asString2(step.why))}</p>`);
+    const deps = asArray(step.depends_on_step_numbers).map((value) => String(value));
+    const missingDeps = asArray(step.depends_on_missing_action_ids).map(asString2);
+    const dependencyText = `${deps.length > 0 ? `step ${deps.join(", step ")}` : "nothing earlier in this plan"}${missingDeps.length > 0 ? `; a recorded dependency is not in this plan: ${missingDeps.join(", ")}` : ""}`;
+    out.push(`<p><strong>Depends on:</strong> ${escapeHtml(dependencyText)}</p>`);
+    out.push("<p><strong>Done when:</strong></p>");
+    const doneWhen = asArray(step.done_when);
+    out.push(
+      doneWhen.length > 0 ? hList(doneWhen) : `<p class="note">${escapeHtml(asStringOrNull(step.done_when_note) ?? "No completion check is recorded for this step.")}</p>`
+    );
+    const extra = [];
+    if (asStringOrNull(step.due_date) !== null) extra.push(`due ${asString2(step.due_date)}`);
+    if (asStringOrNull(step.budget_text) !== null) extra.push(`budget ${asString2(step.budget_text)}`);
+    out.push(
+      `<p><strong>Risk:</strong> ${escapeHtml(asString2(step.risk_text))}${extra.length > 0 ? `; ${escapeHtml(extra.join("; "))}` : ""}</p>`
+    );
+    const stepTools = asArray(step.helpful_tool_names).map(asString2);
+    if (stepTools.length > 0) {
+      out.push(
+        `<p><strong>Installed help that fits this step:</strong> ${escapeHtml(stepTools.join(", "))} <span class="basis">(optional; confirm with your OpenClaw agent before relying on it)</span></p>`
+      );
+    }
+    out.push(
+      '<p class="label-box">This step needs its own approval before anyone acts on it. A council recommendation is not an execution authorization.</p>'
+    );
+    out.push("</div>");
+  }
+}
+function pushReviewHtml(out, model) {
+  const plan = asRecord2(model.plan ?? {});
+  out.push(
+    `<p><strong>Cheapest useful test:</strong> ${escapeHtml(asStringOrNull(plan.cheapest_test) ?? "none recorded")}</p>`
+  );
+  out.push("<p><strong>Stop if:</strong></p>");
+  const stop = asArray(plan.stop_if);
+  out.push(stop.length > 0 ? hList(stop) : "<ul><li>none recorded</li></ul>");
+  out.push("<p><strong>Look again at:</strong></p>");
+  const review = asArray(plan.review_criteria);
+  out.push(review.length > 0 ? hList(review) : "<ul><li>none recorded</li></ul>");
+}
+function pushHowToUseHtml(out, model) {
+  const how = asArray(model.how_to_use);
+  out.push(how.length > 0 ? hList(how) : "<ul><li>none recorded</li></ul>");
+}
+function pushToolsHtml(out, model) {
+  const tools = asRecord2(model.your_tools ?? {});
+  if (asStringOrNull(tools.basis_text) !== null) {
+    out.push(`<p class="basis">${escapeHtml(asString2(tools.basis_text))}</p>`);
+  }
+  const itemsTotal = asNumberOrNull(tools.items_total);
+  const itemsShown = asNumberOrNull(tools.items_shown) ?? asArray(tools.items).length;
+  if (itemsTotal !== null && itemsTotal > itemsShown) {
+    out.push(
+      `<p class="note">${escapeHtml(String(itemsTotal))} exact-matched installed item(s) were found; ${escapeHtml(String(itemsShown))} are listed here and ${escapeHtml(String(itemsTotal - itemsShown))} further item(s) are not shown.</p>`
+    );
+  }
+  for (const itemValue of asArray(tools.items)) {
+    const item = asRecord2(itemValue);
+    out.push('<div class="tool-card">');
+    out.push(
+      `<h3>${escapeHtml(asString2(item.name))} <span class="basis">(${escapeHtml(asString2(item.kind))})</span></h3>`
+    );
+    out.push(
+      `<p>${item.availability === "available_at_sitting" ? "Available when this council sat." : "Available now on this installation."}</p>`
+    );
+    if (asStringOrNull(item.description) !== null) {
+      out.push(`<p>${escapeHtml(asString2(item.description))}</p>`);
+    }
+    const titles = asArray(item.matched_action_titles).map(asString2);
+    if (titles.length > 0) {
+      out.push(`<p><strong>Where it fits:</strong> ${escapeHtml(titles.join("; "))}</p>`);
+    }
+    out.push("<p><strong>Why it is linked:</strong></p>");
+    const basisLines = capabilityBasisLines(item);
+    out.push(
+      basisLines.length === 0 ? '<p class="note">No exact match evidence is recorded for this row.</p>' : `<ul class="match-basis">${basisLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`
+    );
+    out.push(
+      '<p class="note">A match is an exact record or an exact name, never shared wording, and never a promise that the tool can run this step.</p>'
+    );
+    out.push("</div>");
+  }
+  out.push(`<p class="note">${escapeHtml(asString2(tools.note))}</p>`);
+  const limitations = asArray(tools.limitations);
+  if (limitations.length > 0) {
+    out.push("<h3>How this list was read</h3>");
+    out.push(hList(limitations));
+  }
+}
+function pushConditionsHtml(out, model) {
   out.push("<h3>Hard constraints</h3>");
   const findings = asArray(model.hard_constraints);
   if (findings.length === 0) out.push("<ul><li>none recorded</li></ul>");
@@ -29469,116 +32655,271 @@ function renderPrintHtml(model) {
     }
     out.push("</ul>");
   }
-  out.push("<h3>Assumptions</h3>");
-  const assumptions = asArray(brief.assumptions);
-  out.push(assumptions.length > 0 ? hList(assumptions) : "<ul><li>none recorded</li></ul>");
-  out.push("<h3>Unknowns</h3>");
-  const unknowns = [...asArray(brief.unknowns), ...asArray(model.critical_unknowns)];
-  out.push(unknowns.length > 0 ? hList(unknowns) : "<ul><li>none recorded</li></ul>");
-  out.push("<h2>Amendments and ratification</h2>");
+}
+function pushAmendmentsHtml(out, model) {
   const amendments = asRecord2(model.amendments);
   const describeAmendment = (value) => {
     const amendment = asRecord2(value);
     return `${asString2(amendment.amendment_id)} by ${asString2(amendment.proposing_seat_id)}: ${asString2(amendment.statement)} (${asString2(amendment.materiality)}, ${asString2(amendment.disposition)})`;
   };
   const accepted = asArray(amendments.accepted);
-  out.push("<h3>Accepted amendments</h3>");
-  out.push(accepted.length > 0 ? `<ul>${accepted.map((a) => `<li>${escapeHtml(describeAmendment(a))}</li>`).join("")}</ul>` : "<ul><li>none</li></ul>");
   const rejected = asArray(amendments.rejected);
-  out.push("<h3>Rejected amendments</h3>");
-  out.push(rejected.length > 0 ? `<ul>${rejected.map((a) => `<li>${escapeHtml(describeAmendment(a))}</li>`).join("")}</ul>` : "<ul><li>none</li></ul>");
+  if (accepted.length === 0 && rejected.length === 0) {
+    out.push("<p>No amendments were recorded for this sitting.</p>");
+  } else {
+    out.push("<h3>Accepted amendments</h3>");
+    out.push(accepted.length > 0 ? `<ul>${accepted.map((a) => `<li>${escapeHtml(describeAmendment(a))}</li>`).join("")}</ul>` : "<ul><li>none</li></ul>");
+    out.push("<h3>Rejected amendments</h3>");
+    out.push(rejected.length > 0 ? `<ul>${rejected.map((a) => `<li>${escapeHtml(describeAmendment(a))}</li>`).join("")}</ul>` : "<ul><li>none</li></ul>");
+  }
   const ratification = asRecord2(model.ratification);
-  out.push(`<p>Ratification status: ${escapeHtml(asStringOrNull(ratification.status) ?? "not applicable")}</p>`);
+  out.push(
+    `<p><strong>Ratification:</strong> ${escapeHtml(asStringOrNull(ratification.status) ?? "not applicable")}</p>`
+  );
   const support = ratification.resolution_support;
   if (support) {
     out.push(
-      `<p>Resolution support (weighted counts, not a probability): support ${escapeHtml(formatPlainNumber(asNumberOrNull(support.support)))}, conditional support ${escapeHtml(formatPlainNumber(asNumberOrNull(support.conditional_support)))}, opposition ${escapeHtml(formatPlainNumber(asNumberOrNull(support.opposition)))}, abstention ${escapeHtml(formatPlainNumber(asNumberOrNull(support.abstention)))}, bound to resolution ${escapeHtml(asString2(support.resolution_sha256))}.</p>`
+      `<p>Resolution support (weighted counts, not a probability): support ${escapeHtml(formatPlainNumber(asNumberOrNull(support.support)))}, conditional support ${escapeHtml(formatPlainNumber(asNumberOrNull(support.conditional_support)))}, opposition ${escapeHtml(formatPlainNumber(asNumberOrNull(support.opposition)))}, abstention ${escapeHtml(formatPlainNumber(asNumberOrNull(support.abstention)))}.</p>`
     );
   }
-  out.push("<h2>Action proposals and authorization boundaries</h2>");
-  const proposals = asArray(model.action_proposals);
-  if (proposals.length === 0) out.push("<ul><li>none</li></ul>");
-  for (const proposalValue of proposals) {
-    const proposal = asRecord2(proposalValue);
-    out.push(`<h3>${escapeHtml(asString2(proposal.action_id))}: ${escapeHtml(asString2(proposal.title))}</h3>`);
-    out.push(`<p>${escapeHtml(asString2(proposal.description))}</p>`);
-    out.push(`<p>Rationale: ${escapeHtml(asString2(proposal.rationale))}</p>`);
-    out.push("<p>Acceptance criteria:</p>");
-    out.push(hList(asArray(proposal.acceptance_criteria)));
-    const depends = asArray(proposal.depends_on_action_ids).map(asString2);
-    out.push(`<p>Depends on: ${escapeHtml(depends.length > 0 ? depends.join(", ") : "none")}<br>`);
-    out.push(`Risk class: ${escapeHtml(asString2(proposal.risk_class))}<br>`);
-    out.push("Execution authorization: separate execution authorization is required before this proposal may be acted on.</p>");
+}
+function pushProvenanceHtml(out, model) {
+  const provenance = asRecord2(model.provenance);
+  out.push("<h3>Reference list</h3>");
+  out.push(`<p>${escapeHtml(asString2(provenance.note))}</p>`);
+  const entries2 = asArray(provenance.evidence_manifest);
+  if (entries2.length === 0) out.push("<ul><li>none recorded</li></ul>");
+  else {
+    out.push("<ul>");
+    for (const entryValue of entries2) {
+      const entry = asRecord2(entryValue);
+      out.push(
+        `<li>${escapeHtml(asString2(entry.locator))} <span class="basis">(${escapeHtml(asString2(entry.source_kind))}; ${escapeHtml(asString2(entry.evidence_id))})</span></li>`
+      );
+    }
+    out.push("</ul>");
   }
-  out.push(`<p class="label">${escapeHtml(asString2(model.authorization_notice))}</p>`);
-  out.push("<h2>Test, stop conditions, and review criteria</h2>");
-  out.push(`<p>Cheapest informative test: ${escapeHtml(asStringOrNull(model.cheapest_informative_test) ?? "none recorded")}</p>`);
-  out.push("<h3>Stop conditions</h3>");
-  const stop = asArray(model.stop_criteria);
-  out.push(stop.length > 0 ? hList(stop) : "<ul><li>none recorded</li></ul>");
-  out.push("<h3>Outcome review criteria</h3>");
-  const review = asArray(model.review_criteria);
-  out.push(review.length > 0 ? hList(review) : "<ul><li>none recorded</li></ul>");
-  out.push("<h2>Advisor detail</h2>");
-  for (const seatValue of asArray(model.participating_seats)) {
-    const seat = asRecord2(seatValue);
+}
+function pushReportRecordHtml(out, model) {
+  const verdict = asRecord2(model.verdict_block);
+  out.push('<dl class="record">');
+  const row = (term, value) => {
+    out.push(`<dt>${escapeHtml(term)}</dt><dd>${escapeHtml(value)}</dd>`);
+  };
+  row("Decision", asString2(model.decision_title));
+  row("Date", asString2(model.report_date));
+  row("Session", asString2(model.session_id));
+  row("Mode", asStringOrNull(model.session_mode) ?? "not recorded");
+  row("Recorded route / model", asString2(model.route_display));
+  row("Report revision", asString2(model.report_revision_id));
+  row("Verdict revision", String(verdict.revision));
+  row("Verdict content SHA-256", asString2(verdict.content_sha256));
+  row("Brief SHA-256", asString2(verdict.brief_sha256));
+  row("Protocol version", asString2(model.protocol_version));
+  row("Source pack versions", asArray(model.source_pack_versions).map(asString2).join(", ") || "none recorded");
+  row("Redacted", model.redacted === true ? `yes (profile ${asString2(model.redaction_profile_id)})` : "no");
+  row("Sample session", model.sample === true ? "SAMPLE" : "no");
+  out.push("</dl>");
+}
+function initials(name) {
+  return name.split(/\s+/).filter((part) => part.length > 0).map((part) => part[0] ?? "").join("").slice(0, 2).toUpperCase();
+}
+function pushCoverSeatFigure(out, seatId, displayName) {
+  const seat = REPORT_SEAT_PORTRAITS.find((entry) => entry.seat_id === seatId);
+  const uri = seat === void 0 ? null : loadReportPortraitDataUri(seat.seat_id);
+  out.push('<figure class="seat-portrait">');
+  if (uri !== null) {
+    out.push(`<img src="${escapeHtml(uri)}" alt="${escapeHtml(displayName)}">`);
+  } else {
     out.push(
-      `<p>Participating seat: ${escapeHtml(asString2(seat.display_name))} (${escapeHtml(asString2(seat.seat_id))}), source qualification: ${escapeHtml(qualificationText(seat.qualification))}</p>`
+      `<div class="seat-portrait-fallback" aria-hidden="true">${escapeHtml(initials(displayName))}</div>`
     );
   }
-  for (const seatValue of asArray(model.seats)) {
-    const seat = asRecord2(seatValue);
-    out.push(`<h3>${escapeHtml(asString2(seat.display_name))}</h3>`);
-    out.push(`<p>${escapeHtml(asString2(seat.label))}</p>`);
-    out.push(`<p>Source qualification: ${escapeHtml(qualificationText(seat.qualification))}<br>`);
-    out.push(`Stance: ${escapeHtml(asString2(seat.stance))}<br>`);
-    out.push(`Preferred option: ${escapeHtml(asStringOrNull(seat.preferred_option_id) ?? "none")}</p>`);
-    const abstained = asArray(seat.abstained_option_ids).map(asString2);
-    if (abstained.length > 0) {
-      out.push(`<p>Abstained on: ${escapeHtml(abstained.join(", "))}</p>`);
+  out.push(`<span>${escapeHtml(displayName)}</span>`);
+  out.push("</figure>");
+}
+function pushCoverHtml(out, model) {
+  const summary = asRecord2(model.summary ?? {});
+  const verdict = asRecord2(model.verdict_block);
+  const consult = isConsultModel(model) ? model.consult : null;
+  const redacted = model.redacted === true;
+  out.push('<div class="report-cover" data-section="cover">');
+  out.push('<div class="report-cover-band">');
+  out.push('<p class="cover-kicker">Council of Wise Elders</p>');
+  if (redacted) {
+    out.push('<div class="cover-redaction" role="note">');
+    out.push("<p>Redacted report: portraits and seat names are not printed.</p>");
+    out.push("</div>");
+  } else if (consult !== null) {
+    const recordedName = asString2(consult.display_name);
+    const rosterSeat = REPORT_SEAT_PORTRAITS.find(
+      (entry) => entry.seat_id === asString2(consult.seat_id)
+    );
+    out.push(
+      '<div class="cover-portraits cover-portraits-single" aria-label="The Council seat that answered">'
+    );
+    pushCoverSeatFigure(
+      out,
+      asString2(consult.seat_id),
+      recordedName !== "" ? recordedName : rosterSeat?.display_name ?? "Recorded seat"
+    );
+    out.push("</div>");
+  } else {
+    out.push('<div class="cover-portraits" aria-label="The nine Council seats">');
+    for (const seat of REPORT_SEAT_PORTRAITS) {
+      pushCoverSeatFigure(out, seat.seat_id, seat.display_name);
     }
-    out.push("<p>Decisive arguments:</p>");
-    out.push(hList(asArray(seat.decisive_arguments)));
-    out.push(`<p>Strongest objection: ${escapeHtml(asString2(seat.strongest_objection))}<br>`);
-    out.push(`What would change my mind: ${escapeHtml(asString2(seat.change_my_mind))}</p>`);
-    const conditions = asArray(seat.conditions);
-    if (conditions.length > 0) {
-      out.push("<p>Conditions:</p><ul>");
-      for (const conditionValue of conditions) {
-        const condition = asRecord2(conditionValue);
-        out.push(
-          `<li>${escapeHtml(asString2(condition.id))}: ${escapeHtml(asString2(condition.description))} (${escapeHtml(asString2(condition.kind))}, ${escapeHtml(asString2(condition.status))}${condition.blocking === true ? ", blocking" : ""})</li>`
-        );
-      }
-      out.push("</ul>");
-    }
-    const stance = asStringOrNull(seat.resolution_stance);
-    if (stance !== null) out.push(`<p>Resolution stance: ${escapeHtml(stance)}</p>`);
+    out.push("</div>");
   }
+  out.push("</div>");
+  out.push('<div class="cover-body">');
+  out.push('<p class="eyebrow">Decision report</p>');
+  out.push(`<h1>${escapeHtml(asString2(model.decision_title))}</h1>`);
+  out.push(
+    `<p class="cover-meta">${escapeHtml(asString2(model.report_date))} \xB7 prepared from your saved council sitting.</p>`
+  );
+  if (model.redacted === true) {
+    out.push(
+      `<p class="cover-meta">Redacted report: yes (profile ${escapeHtml(asString2(model.redaction_profile_id))})</p>`
+    );
+  }
+  if (model.sample === true) {
+    out.push('<p class="cover-meta">Sample session: SAMPLE</p>');
+  }
+  if (consult === null) {
+    out.push('<div class="cover-verdict">');
+    out.push(
+      `<p><span>Verdict</span>${escapeHtml(asString2(verdict.label))}${asStringOrNull(summary.verdict_label_text) === null ? "" : ` \u2014 ${escapeHtml(asString2(summary.verdict_label_text))}`}</p>`
+    );
+    out.push(
+      `<p><span>Recommended</span>${escapeHtml(asStringOrNull(verdict.recommended_option_label) ?? "none recorded")}</p>`
+    );
+    out.push("</div>");
+  }
+  out.push('<ol class="cover-readfirst">');
+  if (consult !== null) {
+    out.push(
+      "<li><strong>Start here:</strong> the named answer and its recorded limits.</li>"
+    );
+    out.push(
+      "<li><strong>Then read:</strong> the assumptions, the limits, and the recorded next step.</li>"
+    );
+    out.push(
+      "<li><strong>The record:</strong> the saved sources and versions behind this answer.</li>"
+    );
+  } else {
+    out.push(
+      "<li><strong>Start here:</strong> the answer, why, and what would change it.</li>"
+    );
+    out.push(
+      "<li><strong>Then act:</strong> your numbered plan. Every step needs its own approval.</li>"
+    );
+    out.push(
+      "<li><strong>Check the reasoning:</strong> each advisor, the debate, and the sources.</li>"
+    );
+  }
+  out.push("</ol>");
+  out.push('<div class="cover-legal">');
+  out.push('<div class="label-box">');
+  out.push(`<p>${escapeHtml(asString2(model.simulation_label))}</p>`);
+  out.push(`<p>${escapeHtml(asString2(model.authorization_notice))}</p>`);
+  if (model.sample === true) {
+    out.push(`<p>${escapeHtml(asString2(model.sample_notice))}</p>`);
+  }
+  out.push("</div>");
+  out.push("</div>");
+  out.push("</div>");
+  out.push("</div>");
+}
+function renderPrintHtml(model, _options = {}) {
+  const verdict = asRecord2(model.verdict_block);
+  const out = [];
+  out.push("<!DOCTYPE html>");
+  out.push('<html lang="en">');
+  out.push("<head>");
+  out.push('<meta charset="utf-8">');
+  out.push('<meta name="viewport" content="width=device-width, initial-scale=1">');
+  out.push(`<title>Council report ${escapeHtml(asString2(model.session_id))} revision ${escapeHtml(String(verdict.revision))}</title>`);
+  out.push(`<style>${PRINT_CSS}</style>`);
+  out.push("</head>");
+  out.push("<body>");
+  pushCoverHtml(out, model);
+  const counter = { n: 0 };
+  const consult = isConsultModel(model) ? model.consult : null;
+  pushPartBanner(out, "Part 1", "Decision and plan", false);
+  pushSection(out, counter, "In short", "The answer, why, and what would change it.");
+  pushSummaryHtml(out, model, consult === null);
+  if (consult) {
+    pushSection(out, counter, "The question", "What the council was asked and what it knew.");
+    pushQuestionHtml(out, model);
+    pushSection(out, counter, "The consultation answer", "The named answer and its recorded limits.");
+    out.push(`<p>${escapeHtml(asString2(consult.display_name))}: ${escapeHtml(asString2(consult.label))}</p>`);
+    out.push(`<p>${escapeHtml(asString2(consult.answer))}</p>`);
+    out.push("<h3>Assumptions</h3>");
+    out.push(hList(asArray(consult.assumptions)));
+    out.push("<h3>Limits</h3>");
+    out.push(hList(asArray(consult.limits)));
+    out.push(`<p>Next step: ${escapeHtml(asString2(consult.next_step))}</p>`);
+    pushSection(out, counter, "How to use this report", "Advice is not permission; re-convene when the facts change.");
+    pushHowToUseHtml(out, model);
+    pushSection(out, counter, "Skills and departments on your OpenClaw", "Optional helpers already installed on this box; a match is a suggestion only.");
+    pushToolsHtml(out, model);
+    pushSection(out, counter, "Where this came from", "The saved evidence, kept separate from the advice.");
+    pushWebTodayHtml(out, model);
+    pushProvenanceHtml(out, model);
+    pushSection(out, counter, "For your records", "Identifiers and hashes for this exact saved report.");
+    pushReportRecordHtml(out, model);
+    out.push('<footer class="report-footer">');
+    out.push(`<p class="note">${escapeHtml(asString2(model.simulation_label))}</p>`);
+    out.push(`<p class="note">${escapeHtml(asString2(model.authorization_notice))}</p>`);
+    out.push("</footer>");
+    out.push("</body>");
+    out.push("</html>");
+    return `${out.join("\n")}
+`;
+  }
+  pushSection(out, counter, "The question", "What the council was asked and what it knew.");
+  pushQuestionHtml(out, model);
+  pushSection(out, counter, "Your plan", "Do these in order. Each step needs its own approval before anyone acts.");
+  pushPlanHtml(out, model);
+  pushSection(out, counter, "How you will know it worked", "The cheapest test, the stop conditions, and when to look again.");
+  pushReviewHtml(out, model);
+  pushSection(out, counter, "How to use this report", "Advice is not permission; re-convene when the facts change.");
+  pushHowToUseHtml(out, model);
+  pushSection(out, counter, "Skills and departments on your OpenClaw", "Optional helpers already installed on this box; a match is a suggestion only.");
+  pushToolsHtml(out, model);
+  pushPartBanner(out, "Part 2", "The full council record", true);
+  pushSection(out, counter, "Options the council weighed", "Every scored option and how the seats split.");
+  pushOptionsHtml(out, model);
+  pushSection(out, counter, "What each advisor said", "The saved reasoning from every seat. Read the names first; each box is one advisor card.");
+  pushAdvisorHtml(out, model);
+  pushSection(out, counter, "How the debate went", "The rounds that actually happened, and what changed between them.");
+  pushDebateHtml(out, model);
+  pushSection(out, counter, "Conditions and amendments", "Hard-constraint findings and recorded amendments.");
+  pushConditionsHtml(out, model);
+  pushAmendmentsHtml(out, model);
+  pushSection(out, counter, "Where this came from", "The saved evidence, kept separate from the advice.");
   pushWebTodayHtml(out, model);
   pushProvenanceHtml(out, model);
+  pushSection(out, counter, "For your records", "Identifiers and hashes for this exact saved report.");
+  pushReportRecordHtml(out, model);
+  out.push('<footer class="report-footer">');
+  out.push(
+    `<p class="note">${escapeHtml(asString2(model.simulation_label))}</p>`
+  );
+  out.push(
+    `<p class="note">${escapeHtml(asString2(model.authorization_notice))}</p>`
+  );
+  out.push("</footer>");
   out.push("</body>");
   out.push("</html>");
   return `${out.join("\n")}
 `;
 }
-function pushProvenanceHtml(out, model) {
-  const provenance = asRecord2(model.provenance);
-  out.push("<h2>Source and provenance appendix</h2>");
-  out.push(`<p>${escapeHtml(asString2(provenance.note))}</p>`);
-  out.push("<table><thead><tr><th>Evidence</th><th>Kind</th><th>Locator</th><th>SHA-256</th></tr></thead><tbody>");
-  for (const entryValue of asArray(provenance.evidence_manifest)) {
-    const entry = asRecord2(entryValue);
-    out.push(
-      `<tr><td>${escapeHtml(asString2(entry.evidence_id))}</td><td>${escapeHtml(asString2(entry.source_kind))}</td><td>${escapeHtml(asString2(entry.locator))}</td><td>${escapeHtml(asString2(entry.sha256))}</td></tr>`
-    );
-  }
-  out.push("</tbody></table>");
-}
 function renderRecordJson(model, siblings) {
   const record2 = {
     ...model,
-    sibling_artifacts: [
+    sibling_artifacts: siblings.some((sibling) => sibling.format === "pdf") ? [...siblings] : [
       ...siblings,
       {
         format: "pdf",
@@ -29670,6 +33011,36 @@ function scoringCardsOf2(cards) {
   const lastRound = advisors.reduce((latest, card) => Math.max(latest, card.round), 0);
   return advisors.filter((card) => card.round === lastRound);
 }
+var RECOMMENDATION_LABELS = /* @__PURE__ */ new Set([
+  "GO",
+  "GO_WITH_CONDITIONS",
+  "RESHAPE",
+  "DONT_DO_IT"
+]);
+function assessExplorationExport(verdict, brief) {
+  const placeholders = brief.options.filter(isUnresolvedExplorationOption);
+  if (placeholders.length === 0) return [];
+  const ids = new Set(placeholders.map((option) => option.id));
+  const problems = [];
+  for (const summary of verdict.option_scores) {
+    if (ids.has(summary.option_id) && summary.score !== null) {
+      problems.push(
+        `option ${summary.option_id} is an unresolved exploration candidate and received score ${summary.score}; a placeholder is never a scored alternative`
+      );
+    }
+  }
+  if (verdict.recommended_option_id !== null && ids.has(verdict.recommended_option_id)) {
+    problems.push(
+      `recommended option ${verdict.recommended_option_id} is an unresolved exploration candidate; no recommendation may be exported from it`
+    );
+  }
+  if (RECOMMENDATION_LABELS.has(verdict.label)) {
+    problems.push(
+      `label ${verdict.label} asserts a recommendation while the brief carries only an unresolved exploration candidate`
+    );
+  }
+  return problems;
+}
 function validateVerdictForPublication(input) {
   const { verdict, brief } = input;
   const checks = [];
@@ -29712,6 +33083,12 @@ function validateVerdictForPublication(input) {
       checks
     };
   }
+  const explorationProblems = assessExplorationExport(verdict, brief);
+  push(
+    "exploration_not_scored",
+    explorationProblems.length === 0 ? "pass" : "fail",
+    explorationProblems.length === 0 ? "no unresolved exploration candidate was scored or recommended" : explorationProblems.join("; ")
+  );
   const internalProblems = [];
   for (const summary of verdict.option_scores) {
     const expectedDisplay = summary.score === null ? null : Math.round(summary.score * 10) / 10;
@@ -29947,6 +33324,269 @@ function validateVerdictForPublication(input) {
   };
 }
 
+// src/reports/pdf-renderer.ts
+import { spawn as spawn3 } from "node:child_process";
+import { createHash as createHash3 } from "node:crypto";
+import {
+  existsSync as existsSync7,
+  mkdtempSync,
+  readFileSync as readFileSync10,
+  readdirSync as readdirSync2,
+  rmSync,
+  statSync as statSync5,
+  writeFileSync as writeFileSync3
+} from "node:fs";
+import { homedir as homedir4, tmpdir as tmpdir2 } from "node:os";
+import { delimiter as delimiter2, join as join10 } from "node:path";
+var PDF_RENDERER_MISSING_PIECE = "no headless Chrome/Chromium or CUPS PDF filter (cupsfilter) is installed or discoverable on this host; install one, or set CHROME_PATH to a Chrome/Chromium binary, then retry the export";
+var MIN_PDF_BYTES = 1e3;
+function whichSync(command, env) {
+  const pathVar = env.PATH ?? "";
+  for (const dir of pathVar.split(delimiter2)) {
+    if (dir === "") continue;
+    const candidate = join10(dir, command);
+    try {
+      if (statSync5(candidate).isFile()) return candidate;
+    } catch {
+    }
+  }
+  return null;
+}
+function playwrightCandidates(env) {
+  const home = env.HOME ?? homedir4();
+  const roots = [
+    join10(home, "Library", "Caches", "ms-playwright"),
+    join10(home, ".cache", "ms-playwright")
+  ];
+  const found = [];
+  for (const root of roots) {
+    if (!existsSync7(root)) continue;
+    let names;
+    try {
+      names = readdirSync2(root).sort();
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.startsWith("chromium")) continue;
+      const dir = join10(root, name);
+      found.push(
+        join10(dir, "chrome-mac", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"),
+        join10(dir, "chrome-mac-arm64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"),
+        join10(dir, "chrome-mac-x64", "Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"),
+        join10(dir, "chrome-linux", "chrome"),
+        join10(dir, "chrome-linux64", "chrome"),
+        join10(dir, "chrome-linux", "headless_shell"),
+        join10(dir, "chrome-headless-shell-mac-arm64", "chrome-headless-shell"),
+        join10(dir, "chrome-headless-shell-mac-x64", "chrome-headless-shell"),
+        join10(dir, "chrome-headless-shell-linux64", "chrome-headless-shell")
+      );
+    }
+  }
+  return found;
+}
+function probePdfCapability(env = process.env) {
+  if (env.COUNCIL_PDF_DISABLED === "1") {
+    return {
+      available: false,
+      method: null,
+      executable: null,
+      detail: "PDF rendering is switched off on this host (COUNCIL_PDF_DISABLED=1)"
+    };
+  }
+  try {
+    const chromeCandidates = [
+      env.CHROME_PATH,
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      join10(env.HOME ?? homedir4(), "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"),
+      ...playwrightCandidates(env),
+      whichSync("google-chrome", env),
+      whichSync("google-chrome-stable", env),
+      whichSync("chromium", env),
+      whichSync("chromium-browser", env),
+      whichSync("chrome-headless-shell", env),
+      whichSync("chromium-headless-shell", env)
+    ];
+    for (const candidate of chromeCandidates) {
+      if (candidate && existsSync7(candidate)) {
+        return {
+          available: true,
+          method: "chrome-headless",
+          executable: candidate,
+          detail: `headless Chrome renderer at ${candidate}`
+        };
+      }
+    }
+    const cups = whichSync("cupsfilter", env);
+    if (cups) {
+      return {
+        available: true,
+        method: "cupsfilter",
+        executable: cups,
+        detail: `CUPS PDF filter at ${cups}`
+      };
+    }
+    return {
+      available: false,
+      method: null,
+      executable: null,
+      detail: PDF_RENDERER_MISSING_PIECE
+    };
+  } catch {
+    return {
+      available: false,
+      method: null,
+      executable: null,
+      detail: PDF_RENDERER_MISSING_PIECE
+    };
+  }
+}
+function runProcess(command, args, timeoutMs) {
+  return new Promise((resolve6, reject) => {
+    let settled = false;
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+    const child = spawn3(command, [...args], { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout = [];
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(
+        () => reject(
+          new ReportExportError(
+            "EXPORT_RENDER_FAILED",
+            `the PDF renderer did not finish within ${timeoutMs} ms; no PDF was produced`
+          )
+        )
+      );
+    }, timeoutMs);
+    timer.unref?.();
+    child.stdout?.on("data", (chunk) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk) => {
+      if (stderr.length < 4096) stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error52) => {
+      clearTimeout(timer);
+      finish(
+        () => reject(
+          new ReportExportError(
+            "EXPORT_RENDER_FAILED",
+            `the PDF renderer could not start: ${error52.message}`
+          )
+        )
+      );
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      finish(() => resolve6({ status: code, stdout: Buffer.concat(stdout), stderr }));
+    });
+  });
+}
+function validatePdfBytes(bytes) {
+  if (bytes.length < MIN_PDF_BYTES) {
+    throw new ReportExportError(
+      "EXPORT_RENDER_FAILED",
+      `the renderer produced ${bytes.length} bytes, which is not a complete PDF`
+    );
+  }
+  const head = Buffer.from(bytes.subarray(0, 5)).toString("latin1");
+  if (head !== "%PDF-") {
+    throw new ReportExportError(
+      "EXPORT_RENDER_FAILED",
+      "the renderer output does not start with the %PDF- header; it is not a PDF and will not be served as one"
+    );
+  }
+  const tail = Buffer.from(bytes.subarray(Math.max(0, bytes.length - 2048))).toString("latin1");
+  if (!tail.includes("%%EOF")) {
+    throw new ReportExportError(
+      "EXPORT_RENDER_FAILED",
+      "the renderer output has no %%EOF trailer; it is a truncated PDF and will not be served"
+    );
+  }
+}
+function pinVolatilePdfMetadata(bytes) {
+  const text = Buffer.from(bytes).toString("latin1");
+  const zeroDigits = (match, prefix, value, suffix) => `${prefix}${value.replace(/[0-9]/g, "0")}${suffix}`;
+  const pinned = text.replace(/(\/CreationDate\s*\()([^)]*)(\))/g, zeroDigits).replace(/(\/ModDate\s*\()([^)]*)(\))/g, zeroDigits).replace(
+    /(\/ID\s*\[\s*<)([0-9A-Fa-f]+)(>\s*<)([0-9A-Fa-f]+)(>)/g,
+    (_match, open, first, between, second, close) => `${open}${"0".repeat(first.length)}${between}${"0".repeat(second.length)}${close}`
+  );
+  return Buffer.from(pinned, "latin1");
+}
+function sha256OfBytes(bytes) {
+  return createHash3("sha256").update(bytes).digest("hex");
+}
+function createHostPdfRenderer(env = process.env) {
+  return {
+    probe() {
+      return probePdfCapability(env);
+    },
+    async render(html, options = {}) {
+      const capability = probePdfCapability(env);
+      if (!capability.available || capability.executable === null || capability.method === null) {
+        throw new ReportExportError(
+          "EXPORT_FORMAT_NOT_READY",
+          `The pdf deliverable is registered but not ready on this host: ${capability.detail}.`,
+          { missing_piece: capability.detail }
+        );
+      }
+      const timeoutMs = options.timeout_ms ?? 6e4;
+      const workDir = mkdtempSync(join10(tmpdir2(), "council-report-pdf-"));
+      const htmlPath = join10(workDir, "report.html");
+      const outPath = join10(workDir, "report.pdf");
+      try {
+        writeFileSync3(htmlPath, html, { encoding: "utf8", mode: 384 });
+        let raw;
+        if (capability.method === "chrome-headless") {
+          const outcome = await runProcess(
+            capability.executable,
+            [
+              "--headless",
+              "--disable-gpu",
+              "--disable-extensions",
+              "--disable-background-networking",
+              "--no-first-run",
+              "--no-default-browser-check",
+              "--no-pdf-header-footer",
+              `--user-data-dir=${join10(workDir, "profile")}`,
+              `--print-to-pdf=${outPath}`,
+              htmlPath
+            ],
+            timeoutMs
+          );
+          if (outcome.status !== 0 || !existsSync7(outPath)) {
+            throw new ReportExportError(
+              "EXPORT_RENDER_FAILED",
+              `the headless Chrome renderer exited ${String(outcome.status)} without a PDF${outcome.stderr ? `: ${outcome.stderr.trim().split("\n")[0]}` : ""}`
+            );
+          }
+          raw = readFileSync10(outPath);
+        } else {
+          const outcome = await runProcess(
+            capability.executable,
+            ["-m", "application/pdf", htmlPath],
+            timeoutMs
+          );
+          if (outcome.status !== 0 || outcome.stdout.length === 0) {
+            throw new ReportExportError(
+              "EXPORT_RENDER_FAILED",
+              `the CUPS PDF filter exited ${String(outcome.status)} without PDF bytes`
+            );
+          }
+          raw = outcome.stdout;
+        }
+        validatePdfBytes(raw);
+        return pinVolatilePdfMetadata(raw);
+      } finally {
+        rmSync(workDir, { recursive: true, force: true });
+      }
+    }
+  };
+}
+
 // src/reports/service.ts
 function checkExportAccess(principal, target) {
   const decision = checkSessionRead(principal, target);
@@ -29975,10 +33615,12 @@ var ReportExportService = class {
   journal;
   registry;
   liveness;
+  pdf;
   constructor(deps) {
     this.journal = deps.journal;
     this.registry = deps.registry;
     this.liveness = deps.liveness;
+    this.pdf = deps.pdf;
   }
   async exportReport(request) {
     const states = [];
@@ -29999,8 +33641,9 @@ var ReportExportService = class {
       request.session_id
     );
     states.push("authorized");
+    const formats = reportFormatRegistry(this.pdfReadiness());
     for (const format of requestedFormats) {
-      const descriptor = REPORT_FORMAT_REGISTRY[format];
+      const descriptor = formats[format];
       if (descriptor.status === "not_ready") {
         throw new ReportExportError(
           "EXPORT_FORMAT_NOT_READY",
@@ -30054,8 +33697,15 @@ var ReportExportService = class {
       sample: request.context.sample === true,
       session_mode: request.context.session_mode ?? null,
       route_display: request.context.route_display ?? DEFAULT_ROUTE_DISPLAY,
-      seat_qualifications: request.context.seat_qualifications ?? {}
+      seat_qualifications: request.context.seat_qualifications ?? {},
+      installation_id: request.context.installation_id ?? null,
+      mode_selection: request.context.mode_selection ?? null,
+      seat_descriptors: request.context.seat_descriptors ?? {},
+      capability_snapshot: request.context.capability_snapshot ?? null
     };
+    const coverImageDataUri = assertCoverImageDataUri(
+      request.context.cover_image_data_uri ?? null
+    );
     const redaction = request.redaction ?? null;
     const model = buildReportModel({
       verdict,
@@ -30067,7 +33717,14 @@ var ReportExportService = class {
     const report_revision_id = String(model.report_revision_id);
     const redacted = redaction !== null;
     const markdown = renderMarkdown(model);
-    const printHtml = renderPrintHtml(model);
+    const printHtml = renderPrintHtml(model, {
+      cover_image_data_uri: redaction === null ? coverImageDataUri : null,
+      // CTR-147: the frame and divider are generated decoration, but a
+      // redacted export embeds no image bytes at all, so they are
+      // explicitly disabled rather than left to the packaged default.
+      frame_image_data_uri: redaction === null ? void 0 : null,
+      divider_image_data_uri: redaction === null ? void 0 : null
+    });
     const siblings = [
       {
         format: "markdown",
@@ -30094,17 +33751,44 @@ var ReportExportService = class {
         missing_piece: null
       }
     ];
-    const bytesByFormat = /* @__PURE__ */ new Map();
-    bytesByFormat.set("markdown", markdown);
-    bytesByFormat.set("print_html", printHtml);
+    const rendered = /* @__PURE__ */ new Map();
+    rendered.set("markdown", { bytes: markdown, encoding: "utf8", redaction_text: markdown });
+    rendered.set("print_html", { bytes: printHtml, encoding: "utf8", redaction_text: printHtml });
+    if (requestedFormats.includes("pdf")) {
+      const pdf = await this.renderPdf(printHtml);
+      const pdfSha256 = sha256OfBytes(pdf);
+      rendered.set("pdf", {
+        bytes: pdf.toString("base64"),
+        encoding: "base64",
+        // The PDF's own content is the print document it was made from.
+        redaction_text: printHtml
+      });
+      siblings.push({
+        format: "pdf",
+        filename: reportFilename({
+          session_id: request.session_id,
+          verdict_revision: verdict.verdict_revision,
+          format: "pdf",
+          redacted
+        }),
+        sha256: pdfSha256,
+        status: "ready",
+        missing_piece: null
+      });
+    }
     if (requestedFormats.includes("record_json")) {
-      bytesByFormat.set("record_json", renderRecordJson(model, siblings));
+      const recordJson = renderRecordJson(model, siblings);
+      rendered.set("record_json", {
+        bytes: recordJson,
+        encoding: "utf8",
+        redaction_text: recordJson
+      });
     }
     states.push("rendered");
     const artifacts = [];
     for (const format of requestedFormats) {
-      const bytes = bytesByFormat.get(format);
-      if (bytes === void 0) continue;
+      const entry = rendered.get(format);
+      if (entry === void 0) continue;
       artifacts.push({
         deliverable_id: exportEventId(request.request_id, format),
         format,
@@ -30115,15 +33799,19 @@ var ReportExportService = class {
           redacted
         }),
         media_type: REPORT_FORMAT_REGISTRY[format].media_type,
-        sha256: sha256OfText(bytes),
-        bytes,
+        sha256: entry.encoding === "base64" ? sha256OfBytes(Buffer.from(entry.bytes, "base64")) : sha256OfText(entry.bytes),
+        bytes: entry.bytes,
+        encoding: entry.encoding,
         redacted,
         replayed: false
       });
     }
     if (redaction !== null) {
       assertRedactionComplete(
-        artifacts.map((a) => ({ filename: a.filename, bytes: a.bytes })),
+        artifacts.map((a) => ({
+          filename: a.filename,
+          bytes: rendered.get(a.format)?.redaction_text ?? a.bytes
+        })),
         redaction
       );
     }
@@ -30169,6 +33857,7 @@ var ReportExportService = class {
         filename: artifact.filename,
         media_type: artifact.media_type,
         bytes: artifact.bytes,
+        encoding: artifact.encoding,
         sha256: artifact.sha256,
         verdict_revision: verdict.verdict_revision,
         verdict_content_sha256: verdict.content_sha256,
@@ -30219,6 +33908,7 @@ var ReportExportService = class {
       media_type: deliverable.media_type,
       sha256: deliverable.sha256,
       bytes: deliverable.bytes,
+      encoding: deliverable.encoding ?? "utf8",
       verdict_revision: deliverable.verdict_revision,
       verdict_content_sha256: deliverable.verdict_content_sha256
     };
@@ -30240,6 +33930,26 @@ var ReportExportService = class {
       throw new AuthorizationError(decision.code, decision.message);
     }
     return this.registry.delete(args.deliverable_id);
+  }
+  /** Render the print document to real PDF bytes through the host. */
+  async renderPdf(printHtml) {
+    if (!this.pdf) {
+      throw new ReportExportError(
+        "EXPORT_FORMAT_NOT_READY",
+        `The pdf deliverable is registered but not ready: ${PDF_MISSING_PIECE}.`,
+        { missing_piece: PDF_MISSING_PIECE }
+      );
+    }
+    return this.pdf.render(printHtml);
+  }
+  /** Host renderer readiness; a missing port is a missing renderer. */
+  pdfReadiness() {
+    if (!this.pdf) return { pdf_available: false, pdf_detail: PDF_MISSING_PIECE };
+    const capability = this.pdf.probe();
+    return {
+      pdf_available: capability.available,
+      pdf_detail: capability.detail
+    };
   }
   resolveFormats(formats) {
     const list = formats === "all" ? [...REPORT_FORMATS] : [...formats];
@@ -30266,6 +33976,53 @@ var ReportExportService = class {
     }
   }
 };
+
+// src/reports/seat-descriptors.ts
+import { existsSync as existsSync8, readFileSync as readFileSync11 } from "node:fs";
+import { dirname as dirname3, join as join11 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var MAX_TEXT = 320;
+function clean(value) {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  return text === "" ? null : text.slice(0, MAX_TEXT);
+}
+function skillRoot() {
+  let dir = dirname3(fileURLToPath2(import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (existsSync8(join11(dir, "SKILL.md")) && existsSync8(join11(dir, "advisors")) && existsSync8(join11(dir, "manifest.json"))) {
+      return dir;
+    }
+    const parent = dirname3(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+var cached2 = null;
+function loadSeatDescriptors() {
+  if (cached2 !== null) return cached2;
+  const out = {};
+  const root = skillRoot();
+  if (root === null) {
+    cached2 = out;
+    return out;
+  }
+  for (const seatId of SEAT_IDS) {
+    try {
+      const raw = readFileSync11(join11(root, "advisors", seatId, "profile.json"), "utf8");
+      const parsed = JSON.parse(raw);
+      out[seatId] = {
+        seat_id: seatId,
+        lane: clean(parsed.role),
+        owned_question: clean(parsed.owned_question)
+      };
+    } catch {
+    }
+  }
+  cached2 = out;
+  return out;
+}
 
 // src/cli/report-export.ts
 function createStoreExportJournal(store, scope) {
@@ -30321,7 +34078,10 @@ function createStoreExportJournal(store, scope) {
 function composeLocalReportExportService(store, scope) {
   return new ReportExportService({
     journal: createStoreExportJournal(store, scope),
-    registry: new InMemoryDeliverableRegistry()
+    registry: new InMemoryDeliverableRegistry(),
+    // Host renderer capability: ready where the host has one, an honest
+    // EXPORT_FORMAT_NOT_READY naming the missing piece where it does not.
+    pdf: createHostPdfRenderer()
   });
 }
 var FORMAT_MAP = {
@@ -30355,7 +34115,17 @@ async function exportVerdictReport(args) {
         report_date: args.exportedAt.slice(0, 10),
         // F-047-1 (CWE-048): the stored session's sample flag rides into
         // the export so sample exports carry the SAMPLE badge.
-        sample: args.session.sample
+        sample: args.session.sample,
+        // CTR-146: the reader-facing sections. The capability snapshot is
+        // read from this box's own OpenClaw folders (names/descriptions
+        // only); it is bound to this session's installation by the model.
+        installation_id: args.session.scope.installation_id,
+        seat_descriptors: loadSeatDescriptors(),
+        capability_snapshot: discoverInstallationCapabilities({
+          openclaw_root: openclawRoot(),
+          installation_id: args.session.scope.installation_id,
+          captured_at: args.exportedAt.slice(0, 10)
+        })
       },
       exported_at: args.exportedAt
     });
@@ -30366,6 +34136,7 @@ async function exportVerdictReport(args) {
       filename: artifact.filename,
       sha256: artifact.sha256,
       bytes: artifact.bytes,
+      encoding: artifact.encoding,
       verdict_content_sha256: result.verdict_content_sha256
     };
   } catch (error52) {
@@ -30392,22 +34163,22 @@ var defaultIo = {
   err: (text) => process.stderr.write(text)
 };
 function isSkillFolder(dir) {
-  return existsSync6(join9(dir, "SKILL.md")) && existsSync6(join9(dir, "advisors")) && existsSync6(join9(dir, "manifest.json"));
+  return existsSync9(join12(dir, "SKILL.md")) && existsSync9(join12(dir, "advisors")) && existsSync9(join12(dir, "manifest.json"));
 }
 function skillRootForAssets() {
   try {
     const record2 = JSON.parse(
-      readFileSync7(new URL("../../install-record.json", import.meta.url), "utf8")
+      readFileSync12(new URL("../../install-record.json", import.meta.url), "utf8")
     );
     if (typeof record2.skill_dir === "string" && record2.skill_dir.length > 0) {
       return resolve5(record2.skill_dir);
     }
   } catch {
   }
-  let dir = dirname3(fileURLToPath2(import.meta.url));
+  let dir = dirname4(fileURLToPath3(import.meta.url));
   for (let depth = 0; depth < 8; depth += 1) {
     if (isSkillFolder(dir)) return dir;
-    const parent = dirname3(dir);
+    const parent = dirname4(dir);
     if (parent === dir) break;
     dir = parent;
   }
@@ -30563,26 +34334,32 @@ var USAGE = [
   "  replay SESSION [--json]             Committed event history (read only, no provider calls)",
   "  export SESSION --format md|json|pdf [--out FILE]",
   "  routes [--origin URL] [--json]      Model routes and harness defaults from the council service",
-  "  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID]",
+  "  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID] [--no-open]",
   "          [--harness H] [--ollama-plan 20|100] [--fallback-model ID] [--fresh-facts FILE] [--origin URL]",
   "                                      Convene a council on the running service (starts it now)",
   "                                      --mode defaults to medium; the four older modes (full, selected,",
   "                                      quick, consult) still convene exactly as before; --seat-ids names",
-  "                                      the light panel (3 seats), otherwise the brief picks them;",
+  "                                      the panel (every mode seats all nine by default);",
   "                                      --ollama-plan is asked once and remembered; --fallback-model is",
-  "                                      the OpenRouter model used when an Ollama route fails",
+  "                                      the OpenRouter model used when an Ollama route fails;",
+  "                                      --no-open skips the desktop chamber pop (headless boxes open nothing anyway)",
   "",
   "Global flags: --json, --data-dir DIR (default: per-user council data directory)"
 ].join("\n");
+function durableChamberUrl(env, sessionId) {
+  const origin = durablePublicOrigin(env);
+  return origin === null ? null : chamberUrlFor(origin, sessionId);
+}
 async function runCli(argv, io = defaultIo, deps = {}) {
   const json2 = argv.includes("--json");
+  const env = deps.env ?? process.env;
   try {
     const { positionals, flags } = parseArgs(argv);
     const [command, sub, third] = positionals;
     const dataDir = flagString2(flags, "data-dir") ?? void 0;
     const resolvedRoot = skillRootForAssets();
-    const skillRoot = resolvedRoot ?? void 0;
-    const makeHost = deps.createHost ?? ((opts) => createLocalHost({ ...opts, skillRoot }));
+    const skillRoot2 = resolvedRoot ?? void 0;
+    const makeHost = deps.createHost ?? ((opts) => createLocalHost({ ...opts, skillRoot: skillRoot2 }));
     const refuseWithoutRoot = () => {
       if (resolvedRoot === null) {
         throw invalidInput(
@@ -30592,11 +34369,11 @@ async function runCli(argv, io = defaultIo, deps = {}) {
     };
     const dataDirFor = () => {
       refuseWithoutRoot();
-      return resolveDataDir({ override: dataDir ?? null, skillRoot });
+      return resolveDataDir({ override: dataDir ?? null, skillRoot: skillRoot2, env });
     };
     const hostFor = () => {
       refuseWithoutRoot();
-      return makeHost({ dataDir, skillRoot });
+      return makeHost({ dataDir, skillRoot: skillRoot2, env });
     };
     const engineFor = (host) => new CouncilEngine(host);
     if (command === void 0) {
@@ -30658,7 +34435,7 @@ async function runCli(argv, io = defaultIo, deps = {}) {
           ok: true,
           detail: "run record service composed (CWE-049, composed by CWE-050): session starts resolve their run records through the store"
         });
-        const executableReady = resolvedRoot !== null && existsSync6(join9(resolvedRoot, "runtime", "dist", "blackceo-council.mjs"));
+        const executableReady = resolvedRoot !== null && existsSync9(join12(resolvedRoot, "runtime", "dist", "blackceo-council.mjs"));
         const readinessBlockers = [
           ...!executableReady ? ["compiled Council CLI is missing; install and build the runtime"] : [],
           ...routes.length === 0 ? ["no usable configured model route; inspect the models command"] : [],
@@ -30777,8 +34554,8 @@ async function runCli(argv, io = defaultIo, deps = {}) {
         let spec;
         let brief;
         try {
-          spec = JSON.parse(readFileSync7(specPath, "utf8"));
-          brief = JSON.parse(readFileSync7(briefPath, "utf8"));
+          spec = JSON.parse(readFileSync12(specPath, "utf8"));
+          brief = JSON.parse(readFileSync12(briefPath, "utf8"));
         } catch (err) {
           throw invalidInput(
             `Could not read session input files: ${err instanceof Error ? err.message : String(err)}`
@@ -30818,7 +34595,7 @@ async function runCli(argv, io = defaultIo, deps = {}) {
         const sample = buildSampleSession();
         const { host } = createLocalHost({
           dataDir,
-          skillRoot,
+          skillRoot: skillRoot2,
           transports: [
             {
               routeId: sample.spec.model_policy.route_id,
@@ -30894,6 +34671,7 @@ async function runCli(argv, io = defaultIo, deps = {}) {
         const engine = engineFor(host);
         const session = await engine.getSession(sessionId);
         const budget = host.budget.snapshot(sessionId);
+        const chamber = durableChamberUrl(env, sessionId);
         printResult(
           io,
           json2,
@@ -30902,7 +34680,8 @@ async function runCli(argv, io = defaultIo, deps = {}) {
             `  mode: ${session.spec.mode}`,
             `  state: ${session.state.state} (version ${session.state.state_version})`,
             `  brief revision: ${session.state.brief_revision}`,
-            `  provider requests consumed: ${budget.consumed.provider_requests} of ${budget.ceilings.max_provider_requests}`
+            `  provider requests consumed: ${budget.consumed.provider_requests} of ${budget.ceilings.max_provider_requests}`,
+            ...chamber === null ? [] : [`  chamber_url: ${chamber}`]
           ].join("\n"),
           {
             ok: true,
@@ -30912,7 +34691,8 @@ async function runCli(argv, io = defaultIo, deps = {}) {
             state_version: session.state.state_version,
             brief_revision: session.state.brief_revision,
             sample: session.sample,
-            budget
+            budget,
+            ...chamber === null ? {} : { chamber_url: chamber }
           }
         );
         return 0;
@@ -30950,10 +34730,12 @@ async function runCli(argv, io = defaultIo, deps = {}) {
             }
           );
         }
+        const chamber = durableChamberUrl(env, sessionId);
         printResult(io, json2, verdictHuman(verdict, session.sample), {
           ok: true,
           sample: session.sample,
-          verdict
+          verdict,
+          ...chamber === null ? {} : { chamber_url: chamber }
         });
         return 0;
       }
@@ -31004,8 +34786,16 @@ async function runCli(argv, io = defaultIo, deps = {}) {
           exportedAt: host.clock.nowUtc()
         });
         const outPath = flagString2(flags, "out");
+        if (!outPath && format === "pdf") {
+          throw usageError(
+            "export --format pdf requires --out FILE so the real PDF bytes are written to a file."
+          );
+        }
         if (outPath) {
-          writeFileSync3(outPath, artifact.bytes, "utf8");
+          writeFileSync4(
+            outPath,
+            artifact.encoding === "base64" ? Buffer.from(artifact.bytes, "base64") : artifact.bytes
+          );
           printResult(
             io,
             json2,
@@ -31016,6 +34806,7 @@ async function runCli(argv, io = defaultIo, deps = {}) {
               format,
               deliverable_id: artifact.deliverable_id,
               sha256: artifact.sha256,
+              encoding: artifact.encoding,
               verdict_content_sha256: artifact.verdict_content_sha256
             }
           );
@@ -31027,7 +34818,8 @@ async function runCli(argv, io = defaultIo, deps = {}) {
             filename: artifact.filename,
             sha256: artifact.sha256,
             verdict_content_sha256: artifact.verdict_content_sha256,
-            content: artifact.bytes
+            content: artifact.bytes,
+            content_encoding: artifact.encoding
           });
         } else {
           io.out(artifact.bytes);

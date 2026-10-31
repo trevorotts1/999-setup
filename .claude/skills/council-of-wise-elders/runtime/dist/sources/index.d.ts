@@ -6,12 +6,12 @@
  * validator with its immutable audit output, the seat registry checks,
  * and the Skill 22 export package validator.
  */
-export * from './schemas';
-export * from './text';
-export * from './quotes';
-export * from './coverage';
-export * from './packs';
-export * from './audit';
-export * from './export-package';
-export * from './export-v2';
-export * from './skill22-exporter';
+export * from './schemas.js';
+export * from './text.js';
+export * from './quotes.js';
+export * from './coverage.js';
+export * from './packs.js';
+export * from './audit.js';
+export * from './export-package.js';
+export * from './export-v2.js';
+export * from './skill22-exporter.js';

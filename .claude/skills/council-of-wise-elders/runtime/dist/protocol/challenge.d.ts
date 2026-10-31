@@ -150,6 +150,8 @@ export declare function assembleSeatContext(args: {
     snapshot: PinnedRouteSnapshot;
     seatId: SeatId;
     operation: 'round_2_response' | 'round_3_ratification' | 'consult';
+    /** The round this assembly feeds, when the caller knows it. */
+    round?: number | null;
     systemText: string;
 }): ContextAssemblyResult;
 export type SeatContextResult = {

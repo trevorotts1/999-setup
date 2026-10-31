@@ -16,6 +16,15 @@
  *      and called by export name) and the delivery carries the artifact
  *      link in the reply beside the chamber link.
  *
+ * W77S auto-mode: before deliberation, the sitting's mode (light /
+ * medium / heavy) is resolved through the ONE selector,
+ * `selectMode(question, explicitMode)`. An explicit client mode always
+ * wins verbatim; with no client mode the question's complexity decides.
+ * The chosen mode, its source (`client` / `auto`) and the reason travel
+ * with the sitting on the returned session record and the convene
+ * result. What a mode DOES (rounds, concurrency, request caps) is
+ * contracts/modes.ts and is not reinterpreted here.
+ *
  * Doors: the OpenClaw door runs the OpenClaw adapter; the
  * claude-nine / Claude Code (999) door runs its adapter. `doorForEnv`
  * selects by harness marker, and every adapter feeds the SAME
@@ -23,6 +32,8 @@
  * across doors.
  */
 import { assembleBrief, } from '../brief/permitted-brief.js';
+import { isCouncilSize } from '../contracts/modes.js';
+import { selectMode } from './mode-select.js';
 import { SessionCloseService, SOFT_CLOSE_QUESTION, } from '../protocol/session-close.js';
 import { assembleRenderRecord, renderArtifactWithExtras, } from '../reports/artifact-renderer.js';
 export { SOFT_CLOSE_QUESTION };
@@ -46,6 +57,21 @@ export function doorForEnv(env) {
     return 'openclaw';
 }
 /**
+ * Resolve the sitting's mode through the ONE selector. The client's
+ * explicit mode wins verbatim; with none, the question's complexity
+ * decides. An explicit value that is not a council size is a client
+ * error, refused by name — never silently replaced by an auto pick,
+ * because that would override the client's choice.
+ */
+function resolveMode(input) {
+    const explicit = input.mode ?? null;
+    if (explicit !== null && !isCouncilSize(explicit)) {
+        throw new Error(`INVALID_MODE: ${JSON.stringify(explicit)} is not a council size; ` +
+            'expected one of light, medium, heavy.');
+    }
+    return selectMode(input.decision, explicit ?? undefined);
+}
+/**
  * Run the wired convene flow once: brief-builder first (permitted
  * context, through the door's adapter), deliberation and verdict, then
  * the session-close protocol manages the sitting and finalize renders
@@ -60,8 +86,11 @@ export async function conveneFlow(input, deps) {
         decision: input.decision,
         ...(input.options === undefined ? {} : { options: input.options }),
     });
+    // Mode next, still before deliberation: it decides the rounds the
+    // sitting runs. Pure question-text work — it reads no client context.
+    const modeSelection = resolveMode(input);
     // 2-3. deliberation, then verdict.
-    const settled = await deps.deliberate({ permittedBrief });
+    const settled = await deps.deliberate({ permittedBrief, mode: modeSelection });
     // 4-5. session-close manages the sitting; finalize renders the
     // artifact through the W74-B entry point (`renderArtifact`, called by
     // export name), bound to this session's runtime rows and render
@@ -95,6 +124,8 @@ export async function conveneFlow(input, deps) {
         permittedBrief,
         sessionId: settled.sessionId,
         chamberUrl: settled.chamberUrl,
+        modeSelection,
+        session: { ...settled.session, mode_selection: modeSelection },
         sitting: {
             status: (nowIso) => close.status(settled.sessionId, nowIso),
             tick: (nowIso) => close.tick(settled.sessionId, nowIso),
