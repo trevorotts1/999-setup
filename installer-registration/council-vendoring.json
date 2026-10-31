@@ -4,8 +4,8 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "8c00611190ea4db8a2f00d7e51cc4146977aac97",
-    "canonical_aggregate_sha256": "553df4dcf780f09402c08c64c4743aadb8ab5348d6b6f66f986cb59d2513a34e",
+    "source_commit": "6e489441117de76d9942a2d2716050dc14b2505c",
+    "canonical_aggregate_sha256": "2ec9d8494856b16b44432164647618dcc09b71ca2c42e3cabb9f4969ded62383",
     "canonical_file_count": 857,
     "skill_version": "1.0.74"
   },
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "14caf7aabaa2254368bc78a72c12a893762c2f02a6a08a77f28277579629fe3d",
-      "archive_bytes": 82659510,
+      "archive_sha256": "2d9b0b308f7947f6e6bcf00fc450262a38b8fa8f6fd64c29abf91b8481619d33",
+      "archive_bytes": 82660161,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,14 +120,14 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "14caf7aabaa2254368bc78a72c12a893762c2f02a6a08a77f28277579629fe3d",
-    "bytes": 82659510
+    "sha256": "2d9b0b308f7947f6e6bcf00fc450262a38b8fa8f6fd64c29abf91b8481619d33",
+    "bytes": 82660161
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "e8724dd8b53692bd194d055342dbd56cf8946d7bd4bf09070374b152127399c7",
+    "distribution_aggregate_sha256": "b63d0a720077cbbd34ae76875dd0515d1e052cd661a5d7b6da879c293ae6ecbe",
     "distribution_file_count": 858,
-    "contract_aggregate_sha256": "553df4dcf780f09402c08c64c4743aadb8ab5348d6b6f66f986cb59d2513a34e",
+    "contract_aggregate_sha256": "2ec9d8494856b16b44432164647618dcc09b71ca2c42e3cabb9f4969ded62383",
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -2735,7 +2735,7 @@
       },
       {
         "path": "runtime/tests/cli-composition.test.ts",
-        "sha256": "ac95db9d74cc6bc2fc357f581d35b91111ca4820196966b1b5226ddb85a2b50b"
+        "sha256": "8b8c05af807a7543f8f4e7314ef44f6ede0132ba1c6540747dfc8a05ef86e80a"
       },
       {
         "path": "runtime/tests/cli-convene-link-probe.test.ts",
@@ -2763,7 +2763,7 @@
       },
       {
         "path": "runtime/tests/cli.test.ts",
-        "sha256": "25cd74ca6e900ced0934af5ef5fe1174da1e2da45e7d9262b107c9136546e6c5"
+        "sha256": "d89cb5fdebb0977f683a6072292467d85d73a16c703baa63c78fd594345a1519"
       },
       {
         "path": "runtime/tests/composition.test.ts",
@@ -5632,14 +5632,14 @@
     "runtime/tests/chamber-verdict-keypoints.test.ts": "2c62dd6fb2b6bf7abd13454911d9e1867ed79b22cbe744e2d8e5090f9b40f17d",
     "runtime/tests/cli-authorization.test.ts": "a68200b3558149edbd756bd34742e6cc7cb95e9b8726a4a3f6566de22d88ed10",
     "runtime/tests/cli-chamber-handoff.test.ts": "db53376af07ed44255bed21766a8fa50c3042acfccdcd1edeecb389f8d66dace",
-    "runtime/tests/cli-composition.test.ts": "ac95db9d74cc6bc2fc357f581d35b91111ca4820196966b1b5226ddb85a2b50b",
+    "runtime/tests/cli-composition.test.ts": "8b8c05af807a7543f8f4e7314ef44f6ede0132ba1c6540747dfc8a05ef86e80a",
     "runtime/tests/cli-convene-link-probe.test.ts": "f42621056a1ce388650a003f5b538f52db0ffd9ac4335c47d927bf183e0b17f6",
     "runtime/tests/cli-convene-public-origin.test.ts": "43a83fa78bc109d0c66499ab43f800473e352544faf03fcbdf7bf30ffd10132b",
     "runtime/tests/cli-convene.test.ts": "bc009716c649ee02554e1a792d09ab5399effd8ea880a21456808ce388a29108",
     "runtime/tests/cli-doctor-readiness.test.ts": "5bc24decb9bdcdc807de818f3caa9e07897273c0db598c34c8b675c8d0e0c6c8",
     "runtime/tests/cli-route-composition.test.ts": "56fbda06a54a80f2bd56d707f0cd03796e304f049e835fac17fa3af2fb91d431",
     "runtime/tests/cli-session-authority.test.ts": "fc102616fbb567d7edbde00c4b44b112b61fd585b3d034d76f238089f6109490",
-    "runtime/tests/cli.test.ts": "25cd74ca6e900ced0934af5ef5fe1174da1e2da45e7d9262b107c9136546e6c5",
+    "runtime/tests/cli.test.ts": "d89cb5fdebb0977f683a6072292467d85d73a16c703baa63c78fd594345a1519",
     "runtime/tests/composition.test.ts": "33ebb5e29cfaddfbe9b1014f80bdfa1275b9d785b23681b7e1f824622f864d9b",
     "runtime/tests/context-integration.test.ts": "cf12aea799d596717b992d674ba8ca242053a48c59108799d6dc0d6065263637",
     "runtime/tests/context.test.ts": "0aba20b1a1bf59c6f2846db2bb22e3341e326eca8c6d3f4845483f9d16c32164",

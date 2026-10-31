@@ -2,10 +2,10 @@
   "skill": "council-of-wise-elders",
   "skill_version": "1.0.74",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "8c00611190ea4db8a2f00d7e51cc4146977aac97",
-  "canonical_aggregate_sha256": "553df4dcf780f09402c08c64c4743aadb8ab5348d6b6f66f986cb59d2513a34e",
+  "source_commit": "6e489441117de76d9942a2d2716050dc14b2505c",
+  "canonical_aggregate_sha256": "2ec9d8494856b16b44432164647618dcc09b71ca2c42e3cabb9f4969ded62383",
   "file_count": 858,
-  "aggregate_sha256": "e8724dd8b53692bd194d055342dbd56cf8946d7bd4bf09070374b152127399c7",
+  "aggregate_sha256": "b63d0a720077cbbd34ae76875dd0515d1e052cd661a5d7b6da879c293ae6ecbe",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "8feff676cf203ff65f78c52c64970b8f44a346ffe2b9e0c509f3ef4cee1fa3fc",
+      "sha256": "5269d688226e0ab9e1e83d78a85e125bc147d2e2c12d45ff92d492db44412496",
       "bytes": 6276
     },
     {
@@ -3280,8 +3280,8 @@
     },
     {
       "path": "runtime/tests/cli-composition.test.ts",
-      "sha256": "ac95db9d74cc6bc2fc357f581d35b91111ca4820196966b1b5226ddb85a2b50b",
-      "bytes": 6120
+      "sha256": "8b8c05af807a7543f8f4e7314ef44f6ede0132ba1c6540747dfc8a05ef86e80a",
+      "bytes": 6739
     },
     {
       "path": "runtime/tests/cli-convene-link-probe.test.ts",
@@ -3315,8 +3315,8 @@
     },
     {
       "path": "runtime/tests/cli.test.ts",
-      "sha256": "25cd74ca6e900ced0934af5ef5fe1174da1e2da45e7d9262b107c9136546e6c5",
-      "bytes": 8169
+      "sha256": "d89cb5fdebb0977f683a6072292467d85d73a16c703baa63c78fd594345a1519",
+      "bytes": 9015
     },
     {
       "path": "runtime/tests/composition.test.ts",
