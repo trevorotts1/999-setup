@@ -11,6 +11,8 @@ This module is now the single source for:
 
   * the bundled-skill list        --list-skills     (both installers call it)
   * the ordered install plan      --install-plan    (both installers call it)
+  * the preservation rule         install_plan()    (decide() decides; an
+    installation that is not the shipped bytes is never replaced)
   * the canonical content digest  tree_digest()     (hash parity)
   * the content record            CONTROL/bundle-digests.json (--write-digests)
   * the update decision           plan_update()     (version AND content)
@@ -79,6 +81,13 @@ DIGESTS_PATH = "CONTROL/bundle-digests.json"
 INSTALLER_MAC = ".claude/skills/nine-router-setup/scripts/setup-macos.sh"
 INSTALLER_WIN = ".claude/skills/nine-router-setup/scripts/setup-windows.ps1"
 INSTALLER_DELEGATION = ("bundle_adapter.py", "--install-plan")
+
+# Tokens both consumers must still carry so the plan's preservation actions are
+# obeyed. A plan row nothing honours is not a fix: the old consumers linked any
+# action they did not recognise, which is how a `preserve` row could still
+# replace a real installation.
+INSTALLER_CONTRACT_TOKENS = ("up-to-date", "relink", "preserve",
+                             "unknown plan action")
 
 # The standalone fallback both installers carry when there is no repo checkout.
 # Here so installer_parity_problems() can prove the two scripts still agree.
@@ -554,10 +563,83 @@ def resolve_source(skill: SkillInfo, home: Path):
     return None
 
 
-def install_plan(bundle: Bundle, claude_root, home=None):
-    """Ordered plan rows: (action, name, source, target, digest).
+def _is_link(target: Path) -> bool:
+    """True for a symlink, and for a Windows junction where the runtime says so.
 
-    action is one of link | up-to-date | relink | backup-and-link | missing.
+    Python before 3.12 does not report a junction as a link. That case falls
+    through to the real-directory rule, which preserves it: a destination is
+    never replaced on a guess about what it is.
+    """
+    if target.is_symlink():
+        return True
+    is_junction = getattr(target, "is_junction", None)
+    if is_junction is None:
+        return False
+    try:
+        return bool(is_junction())
+    except OSError:
+        return False
+
+
+def _existing_row(skill: SkillInfo, target: Path):
+    """(action, reason) when the destination exists but is not the shipped source.
+
+    decide() is the ONE update authority, so the plan cannot contradict it; on
+    top of the stamp this compares BYTES. Anything that is not the shipped tree
+    is preserved, because a real directory can hold destination-only
+    compatibility files (the tracked 999-only core files included) that a link
+    cannot, and no backup is minted without explicit consent.
+    """
+    linked = _is_link(target)
+    if linked and not target.exists():
+        return "relink", "stale link: its target is gone; only the link is repointed"
+    if skill.digest is None:
+        return "preserve", ("the shipped tree has no digest (%s); refusing to "
+                            "touch an existing installation"
+                            % (skill.digest_reason or "no tree"))
+    try:
+        installed_digest, _entries, digest_reason = tree_digest(target)
+    except BundleError as exc:
+        installed_digest, digest_reason = None, str(exc)
+    if installed_digest == skill.digest:
+        return "up-to-date", "the destination already carries the shipped bytes"
+    if installed_digest is None:
+        return "preserve", ("the installed tree cannot be hashed (%s); refusing "
+                            "to overwrite" % digest_reason)
+    installed_raw, version_reason = read_skill_version(target)
+    if installed_raw is None:
+        return "preserve", ("the installed state is unreadable (%s); refusing to "
+                            "overwrite" % version_reason)
+    verdict = decide(skill, installed_raw)
+    if verdict.action != "update":
+        return "preserve", (verdict.reason +
+                            "; the installed bytes differ from the shipped tree")
+    if linked:
+        return "relink", (verdict.reason + "; only the link is repointed, its old "
+                          "target is left untouched")
+    return "preserve", (verdict.reason + "; a real directory is never replaced by "
+                        "a link (no backup is minted without explicit consent)")
+
+
+def install_plan(bundle: Bundle, claude_root, home=None):
+    """Ordered plan rows: (action, name, source, target, digest, reason).
+
+    action is one of:
+
+      link         nothing at the destination: a fresh install creates the link
+      up-to-date   the destination already carries the shipped bytes
+      relink       a link (symlink or junction) is repointed; its target is untouched
+      preserve     an existing installation is kept as it is: newer stamp,
+                   unreadable stamp, or bytes that are not the shipped tree.
+                   NOTHING is written and no backup is minted
+      missing      the bundle has no source for a registered skill
+
+    PRESERVATION. decide() is the update authority and this plan consumes it, so
+    the bytes an installer links can never contradict what the update path says
+    about the installation already present. A destination that is not the
+    shipped tree - a newer install, a customised same-version install, or a tree
+    carrying destination-only compatibility files - is preserved. Consumers must
+    honour `preserve` and must refuse an action they do not know.
     """
     home = Path(home) if home else Path.home()
     root = Path(claude_root)
@@ -566,23 +648,21 @@ def install_plan(bundle: Bundle, claude_root, home=None):
         source = resolve_source(skill, home)
         target = root / "skills" / skill.name
         if source is None:
-            action = "missing"
-        elif target.is_symlink() or target.exists():
+            action, reason = "missing", "no source in the bundle or under the home root"
+        elif not (target.is_symlink() or target.exists()):
+            action, reason = "link", "fresh install: nothing at the destination"
+        else:
             try:
                 resolved = target.resolve()
             except OSError:
                 resolved = None
             if resolved is not None and resolved == Path(source).resolve():
-                action = "up-to-date"
-            elif target.is_symlink():
-                action = "relink"
+                action, reason = "up-to-date", "the destination points at the source"
             else:
-                action = "backup-and-link"
-        else:
-            action = "link"
+                action, reason = _existing_row(skill, target)
         rows.append((action, skill.name,
                      str(source) if source is not None else "",
-                     str(target), skill.digest or ""))
+                     str(target), skill.digest or "", reason))
     return rows
 
 
@@ -726,7 +806,7 @@ def installed_order_row(bundle: Bundle, installed_digests):
 # --------------------------------------------------------------------------
 
 def installer_parity_problems(root: Path):
-    """Named divergences, empty when both installers delegate to this adapter."""
+    """Named divergences, empty when both installers delegate and honour the plan."""
     problems = []
     root = Path(root)
     present = [rel for rel in (INSTALLER_MAC, INSTALLER_WIN) if (root / rel).exists()]
@@ -744,10 +824,10 @@ def installer_parity_problems(root: Path):
         except OSError as exc:
             problems.append(f"cannot read {rel}: {exc}")
             continue
-        for token in INSTALLER_DELEGATION:
+        for token in INSTALLER_DELEGATION + INSTALLER_CONTRACT_TOKENS:
             if token not in text:
                 problems.append(
-                    f"{rel} no longer calls the bundle adapter "
+                    f"{rel} no longer calls the bundle adapter or honours its plan "
                     f"(missing {token!r}); the two install paths can drift")
     return problems
 
@@ -1049,8 +1129,8 @@ def main(argv=None) -> int:
         rows = install_plan(bundle, args.claude_root, args.home)
         if args.json:
             print(json.dumps([dict(zip(("action", "skill", "source", "target",
-                                        "digest"), row)) for row in rows],
-                             indent=2))
+                                        "digest", "reason"), row))
+                              for row in rows], indent=2))
         else:
             sys.stdout.write(format_plan(rows))
         return 0

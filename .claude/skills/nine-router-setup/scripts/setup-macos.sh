@@ -306,10 +306,16 @@ ensure_gh() {
 # Link the bundled skills into one Claude config root. Idempotent: re-runs
 # converge to exactly one current link per manifest skill — an existing link
 # to the SAME source is left alone ("up to date"), a stale link is removed
-# (the link only, never its target) and recreated, and an existing REAL
-# directory is moved to an EXTERNAL timestamped backup
+# (the link only, never its target) and recreated.
+#
+# PRESERVATION (P15/XR-1): the adapter's plan decides, and its decide() is the
+# authority. `preserve` means an installation that is newer, unreadable, or not
+# the shipped bytes is left EXACTLY as it is - never replaced, and no backup
+# minted. Only the standalone fallback below (no repo checkout, so no adapter to
+# ask) still applies link_one_skill's own real-directory rule, which moves a
+# real directory to an EXTERNAL timestamped backup
 # ($HOME/.claude-skill-backups/<skill>.<timestamp>, never inside any Claude
-# config root) that is verified to exist BEFORE the fresh link is created.
+# config root) verified to exist BEFORE the link is created.
 # Missing sources fail per-skill with a clear error; other skills continue
 # and the function returns the failure count (nonzero = at least one failed).
 # Never creates a config root it was not handed — callers decide which roots
@@ -420,7 +426,7 @@ link_skills_into_root() {
     adapter="$REPO_ROOT/installer-registration/bundle_adapter.py"
     if plan="$(python3 -I -B "$adapter" --root "$REPO_ROOT" \
                 --install-plan --claude-root "$root" 2>&1)"; then
-      while IFS=$'\t' read -r action s src dst digest; do
+      while IFS=$'\t' read -r action s src dst digest reason; do
         [ -n "$s" ] || continue
         case "$action" in
           missing)
@@ -428,8 +434,19 @@ link_skills_into_root() {
             failures=$((failures + 1)) ;;
           up-to-date)
             echo "skill up to date: $s -> $dst" ;;
-          *)
+          link|relink)
             link_one_skill "$src" "$dst" "$s" || failures=$((failures + 1)) ;;
+          preserve)
+            # decide() refused or held this installation: a newer stamp, an
+            # unreadable stamp, or bytes that are not the shipped tree (the
+            # destination-only compatibility files live there). Nothing is
+            # written and no backup is minted; the operator decides.
+            echo "skill preserved: $s: $dst left unchanged (${reason:-no reason given})" ;;
+          *)
+            # An action this consumer does not know is NEVER a link: linking on an
+            # unknown action is how a plan row silently replaced a real install.
+            echo "skill ERROR: $s: unknown plan action '$action' for $dst - refusing to touch it" >&2
+            failures=$((failures + 1)) ;;
         esac
       done <<< "$plan"
       return "$failures"
