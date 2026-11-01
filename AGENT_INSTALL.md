@@ -73,12 +73,21 @@ Windows and macOS each have one orchestrator. There is no shared fallback path.
   orchestrator itself installs the Command Line Tools later, because spec-protocol runs on
   their `git` and `python3`). If `xcode-select -p`
   succeeds and functional Git exists, clone. Otherwise download the public `main` archive
-  with built-in `curl` and `tar`:
+  with built-in `curl` and `tar`. `NINE_SETUP_REF` selects the tree: unset means the
+  moving `main` branch (the active channel; no approved release exists yet); a tag name
+  fetches that tag and **refuses** if it cannot be resolved, never falling back to `main`:
   ```bash
-  curl -fsSL https://github.com/trevorotts1/999-setup/archive/refs/heads/main.tar.gz -o "$HOME/999-setup.tar.gz"
+  REF="${NINE_SETUP_REF:-}"
+  if [ -n "$REF" ]; then
+    URL="https://github.com/trevorotts1/999-setup/archive/refs/tags/${REF}.tar.gz"
+    curl -fsSL "$URL" -o "$HOME/999-setup.tar.gz" || { echo "NINE_SETUP_REF_UNRESOLVED: $REF" >&2; exit 1; }
+  else
+    curl -fsSL https://github.com/trevorotts1/999-setup/archive/refs/heads/main.tar.gz -o "$HOME/999-setup.tar.gz"
+  fi
   tar -xzf "$HOME/999-setup.tar.gz" -C "<resolved Documents>"
   ```
-  and continue from the extracted `999-setup-main` directory as the repository root.
+  and continue from the extracted `999-setup-main` (or `999-setup-<tag>`) directory as the
+  repository root.
 
 If the repository is already present, REFRESH it before proceeding: a git clone →
 `git pull --ff-only`; an extracted archive → re-download and re-extract the current
