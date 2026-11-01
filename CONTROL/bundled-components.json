@@ -1,12 +1,16 @@
 {
   "schema": "bundled-components@1",
-  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (nine-router-setup, spec-protocol, kaizen, eli5, bro, blackceo-signature-page, hook-skill, kiss)",
-  "generatedAt": "2026-10-01T18:52:12.000Z",
+  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (15; reconciled from the shipped tree)",
+  "generatedAt": "2026-11-01T00:00:00.000Z",
   "channel": {
     "default": "github-releases",
     "base": "https://github.com/trevorotts1/999-setup/releases",
     "operatorControlledOnly": true,
-    "note": "GitHub Releases in trevorotts1/999-setup is the default channel. Active components are the bundled skills registry (CONTROL/bundled-skills.txt); repo-tree skill entries must stay in lockstep with bundled-skills.txt. A new component is added only by a signed release-manifest build."
+    "implemented": false,
+    "releases": 0,
+    "activeChannel": "github-main",
+    "pinEnv": "NINE_SETUP_REF",
+    "note": "GitHub Releases is the intended channel but is not implemented: zero releases exist, and every install path reads the moving main branch (AGENT_INSTALL.md section 4, .claude/skills/nine-router-setup/references/platform-macos.md 'Repository acquisition'). NINE_SETUP_REF selects a tag; an unresolvable tag is a hard failure and never falls back to main. Whether an approved release reaches clients automatically or only on operator choice is an owner decision not yet made."
   },
   "runtimePins": {
     "vercel": {
@@ -86,6 +90,69 @@
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/kiss",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "motion-video-plus": [
+      {
+        "version": "1.0.2",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/motion-video-plus",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "drama-song-ad-factory": [
+      {
+        "version": "v2.9.103",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/drama-song-ad-factory",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "drama-studio": [
+      {
+        "version": "2.7.48",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/drama-studio",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "council-of-wise-elders": [
+      {
+        "version": "1.0.74",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/council-of-wise-elders",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-downsell": [
+      {
+        "version": "0.1.1",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-downsell",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-thank-you": [
+      {
+        "version": "0.3.1",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-thank-you",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "black-friday-launcher": [
+      {
+        "version": "0.2.9",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/black-friday-launcher",
         "license": "MIT (repo license)"
       }
     ]
