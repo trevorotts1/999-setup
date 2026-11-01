@@ -84,9 +84,17 @@ Do **not** install a permanent LaunchDaemon/LaunchAgent by default. `claude-nine
 ## Repository acquisition
 
 - If `xcode-select -p` succeeds and functional Git exists, clone.
-- Otherwise download the public `main` tarball with `curl` + `tar`:
+- Otherwise download a tarball with `curl` + `tar`. `NINE_SETUP_REF` unset means the
+  moving `main` branch (the active channel; no approved release exists yet); a tag name
+  fetches that tag and **refuses** if it cannot be resolved, never falling back to `main`:
   ```bash
-  curl -fsSL https://github.com/trevorotts1/999-setup/archive/refs/heads/main.tar.gz -o "$HOME/999-setup.tar.gz"
+  REF="${NINE_SETUP_REF:-}"
+  if [ -n "$REF" ]; then
+    URL="https://github.com/trevorotts1/999-setup/archive/refs/tags/${REF}.tar.gz"
+    curl -fsSL "$URL" -o "$HOME/999-setup.tar.gz" || { echo "NINE_SETUP_REF_UNRESOLVED: $REF" >&2; exit 1; }
+  else
+    curl -fsSL https://github.com/trevorotts1/999-setup/archive/refs/heads/main.tar.gz -o "$HOME/999-setup.tar.gz"
+  fi
   tar -xzf "$HOME/999-setup.tar.gz" -C "<resolved Documents>"
   ```
   Never force Homebrew/Xcode merely for repository acquisition.

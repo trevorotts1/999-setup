@@ -353,16 +353,21 @@ resolve_skill_source() {
   fi
 }
 
-# link_one_skill <src> <dst> <name> — converge ONE skill to a link at <dst>
-# pointing at physical <src>. Order of operations is load-bearing:
-#   up-to-date check -> backup real dir EXTERNALLY -> VERIFY backup ->
-#   replace. An existing destination is never deleted before its backup is
-#   proven to exist. A symlink is removed as a link only (never rm -rf, never
-#   its target). Prints one status line per skill; returns 1 on failure.
+# link_one_skill <src> <dst> <name> [authorized] — converge ONE skill to a link
+# at <dst> pointing at physical <src>. The 4th argument is "1" ONLY when the
+# adapter's plan authorised touching this destination; the standalone fallback
+# omits it. Order of operations is load-bearing:
+#   up-to-date check -> inspect the destination -> (adapter-authorised pointer
+#   unlink only) -> link. A REAL installation is never moved, backed up or
+#   replaced here: an unexpected occupied real destination is refused on the
+#   adapter path and preserved by the fallback. A symlink/junction is a pointer,
+#   so re-pointing one never alters its target. A destination whose lookup
+#   fails (for example a non-searchable parent directory) is NEVER treated as
+#   absent. Prints one status line per skill; returns 1 on failure.
 # Sourced by the fixture tests and called directly with fixture paths.
 link_one_skill() {
-  local src="$1" dst="$2" name="$3"
-  local dst_real ts backup
+  local src="$1" dst="$2" name="$3" authorized="${4:-0}"
+  local dst_real parent
   [ -n "$src" ] && [ -n "$dst" ] && [ -n "$name" ] || {
     echo "skill ERROR: $name: internal missing src/dst/name" >&2; return 1; }
   dst_real="$(cd -P "$dst" 2>/dev/null && pwd -P)" || dst_real=""
@@ -370,22 +375,36 @@ link_one_skill() {
     echo "skill up to date: $name -> $dst"
     return 0
   fi
-  if [ -e "$dst" ] || [ -L "$dst" ]; then
-    if [ -L "$dst" ]; then
-      rm -f "$dst" || { echo "skill ERROR: $name: could not remove stale link at $dst" >&2; return 1; }
-    else
-      ts="$(date +%Y%m%dT%H%M%S)"
-      backup="$HOME/.claude-skill-backups/$name.$ts"
-      mkdir -p "$HOME/.claude-skill-backups" || { echo "skill ERROR: $name: could not create backup parent $HOME/.claude-skill-backups" >&2; return 1; }
-      mv "$dst" "$backup" || { echo "skill ERROR: $name: could not move $dst to $backup" >&2; return 1; }
-      if [ ! -d "$backup" ]; then
-        echo "skill ERROR: $name: backup verification failed for $backup; leaving everything intact" >&2
-        return 1
-      fi
-      echo "skill backed up: $name: $dst -> $backup"
+  if [ -L "$dst" ]; then
+    if [ "$authorized" != "1" ]; then
+      # No adapter decision: an existing link IS the active installation.
+      echo "skill preserved (no adapter): $name -> $dst (existing link left untouched)"
+      return 0
+    fi
+    rm -f "$dst" || { echo "skill ERROR: $name: could not remove stale link at $dst" >&2; return 1; }
+  elif [ -d "$dst" ]; then
+    if [ "$authorized" = "1" ]; then
+      echo "skill ERROR: $name: unexpected occupied destination $dst - refusing to replace a real installation" >&2
+      return 1
+    fi
+    echo "skill preserved (no adapter): $name -> $dst (existing installation left untouched)"
+    return 0
+  elif [ -e "$dst" ]; then
+    if [ "$authorized" = "1" ]; then
+      echo "skill ERROR: $name: unexpected occupied destination $dst - refusing to replace an existing entry" >&2
+      return 1
+    fi
+    echo "skill preserved (no adapter): $name -> $dst (existing entry left untouched)"
+    return 0
+  else
+    # None of -L/-d/-e matched: absence ONLY when the parent directory can
+    # actually be searched. A denied lookup is an error, never absence.
+    parent="$(dirname "$dst")"
+    if ! mkdir -p "$parent" 2>/dev/null || [ ! -x "$parent" ]; then
+      echo "skill ERROR: $name: cannot inspect $dst (lookup failed) - refusing to treat it as absent" >&2
+      return 1
     fi
   fi
-  mkdir -p "$(dirname "$dst")" 2>/dev/null || true
   if ! ln -sfn "$src" "$dst"; then
     echo "skill ERROR: $name: link creation failed for $dst -> $src" >&2
     return 1
@@ -428,8 +447,41 @@ link_skills_into_root() {
             failures=$((failures + 1)) ;;
           up-to-date)
             echo "skill up to date: $s -> $dst" ;;
+          link|relink)
+            # The adapter inspected the destination and authorised this change:
+            # a fresh path, a dangling link, or a provably older linked
+            # installation. Only a pointer may be unlinked; never its target.
+            link_one_skill "$src" "$dst" "$s" 1 || failures=$((failures + 1)) ;;
+          backup-and-link)
+            # The adapter emits this ONLY for an EMPTY real destination (nothing
+            # to lose): drop that empty directory NONRECURSIVELY, verify the
+            # removal, and only then link. Nothing is moved to
+            # ~/.claude-skill-backups and no installation is replaced.
+            if [ -L "$dst" ]; then
+              echo "skill ERROR: $s: plan says backup-and-link but $dst is a link - left untouched" >&2
+              failures=$((failures + 1))
+            elif [ -e "$dst" ]; then
+              if [ -d "$dst" ] && rmdir "$dst" 2>/dev/null; then
+                link_one_skill "$src" "$dst" "$s" 1 || failures=$((failures + 1))
+              else
+                echo "skill ERROR: $s: plan says backup-and-link but $dst is not an empty directory - left untouched" >&2
+                failures=$((failures + 1))
+              fi
+            else
+              # Absent, or a lookup we cannot complete. The linker makes that
+              # call explicitly and refuses to treat a failed lookup as absent.
+              link_one_skill "$src" "$dst" "$s" 1 || failures=$((failures + 1))
+            fi ;;
+          preserve-newer|preserve-custom|preserve-unreadable)
+            # The adapter consulted the SAME preservation decision as decide():
+            # an existing real installation that is not provably this bundle at
+            # a lower version is left EXACTLY as it is - no link, no backup, no
+            # destination-only compatibility file moved.
+            echo "skill preserved ($action): $s -> $dst (existing installation left untouched)" ;;
           *)
-            link_one_skill "$src" "$dst" "$s" || failures=$((failures + 1)) ;;
+            # Fail closed: an action this consumer does not know never links.
+            echo "skill ERROR: $s: unknown plan action '$action' - refusing to touch $dst" >&2
+            failures=$((failures + 1)) ;;
         esac
       done <<< "$plan"
       return "$failures"
@@ -440,7 +492,10 @@ link_skills_into_root() {
     if [ -n "$plan" ]; then echo "$plan" >&2; fi
     return 1
   fi
-  # Standalone install with no repo checkout (no adapter to call).
+  # Standalone install with no repo checkout (no adapter to call). With no
+  # adapter decision an existing real installation or link to another
+  # installation is PRESERVED: this fallback never moves, backs up or replaces
+  # one. Only a proven absent destination is linked; a denied lookup errors.
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     src="$(resolve_skill_source "$s")"

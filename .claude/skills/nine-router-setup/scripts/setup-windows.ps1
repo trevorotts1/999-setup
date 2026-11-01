@@ -242,12 +242,39 @@ function Get-BundledSkills {
     return $list
 }
 
-function Link-OneBundledSkill([string]$s, [string]$src, [string]$dst) {
+function Link-OneBundledSkill([string]$s, [string]$src, [string]$dst, [switch]$Authorized) {
     try {
-        # Up-to-date check: a junction already pointing at the same source
-        # is left alone (idempotent re-run).
-        $dstItem = Get-Item $dst -ErrorAction SilentlyContinue
-        if ($dstItem) {
+        # Inspect the destination explicitly. A failed lookup (for example a
+        # denied directory) is NEVER treated as absence; only a proven missing
+        # path is. A dangling reparse point still occupies the name.
+        $dstItem = $null
+        $dstPresent = $false
+        try {
+            $dstItem = Get-Item -LiteralPath $dst -Force -ErrorAction Stop
+            $dstPresent = $true
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            try {
+                $null = [System.IO.File]::GetAttributes($dst)
+                $dstPresent = $true
+            } catch [System.IO.FileNotFoundException] {
+                $dstPresent = $false
+            } catch [System.IO.DirectoryNotFoundException] {
+                $dstPresent = $false
+            } catch {
+                throw "cannot inspect $dst (lookup failed): $($_.Exception.Message); refusing to treat it as absent"
+            }
+        } catch {
+            throw "cannot inspect $dst (lookup failed): $($_.Exception.Message); refusing to treat it as absent"
+        }
+        if ($dstPresent -and -not $dstItem) {
+            # A reparse point Get-Item could not follow: a pointer. Only the
+            # adapter's plan may replace it; the fallback preserves it.
+            if (-not $Authorized) {
+                Write-Log "skill preserved (no adapter): $s -> $dst (existing link left untouched)"
+                return $true
+            }
+            Remove-Item -LiteralPath $dst -Force -ErrorAction Stop
+        } elseif ($dstItem) {
             $isJunction = ($dstItem.LinkType -eq 'Junction')
             $dstResolved = $null
             if ($isJunction) {
@@ -266,25 +293,22 @@ function Link-OneBundledSkill([string]$s, [string]$src, [string]$dst) {
                 return $true
             }
             if ($isJunction) {
-                # Re-point: remove the JUNCTION only (Remove-Item on a
-                # junction removes the link, never the target's contents).
+                # A junction is a pointer: removing it never alters the old
+                # target. Only the adapter's plan may re-point it.
+                if (-not $Authorized) {
+                    Write-Log "skill preserved (no adapter): $s -> $dst (existing junction left untouched)"
+                    return $true
+                }
                 Remove-Item -LiteralPath $dst -Force -ErrorAction Stop
             } else {
-                # Real directory (possibly stale content): move it to an
-                # EXTERNAL timestamped backup (never inside any Claude
-                # config root), then VERIFY the backup exists before any
-                # replacement.
-                $ts = Get-Date -Format 'yyyyMMddTHHmmss'
-                $backupParent = Join-Path $env:USERPROFILE '.claude-skill-backups'
-                $backup = Join-Path $backupParent "$s.$ts"
-                if (-not (Test-Path $backupParent)) {
-                    New-Item -ItemType Directory -Path $backupParent -Force -ErrorAction Stop | Out-Null
+                # A REAL directory is an installation. It is never moved to a
+                # backup or replaced here: the adapter path refuses an
+                # unexpected occupied destination, the fallback preserves it.
+                if ($Authorized) {
+                    throw "unexpected occupied destination $dst - refusing to replace a real installation"
                 }
-                Move-Item -LiteralPath $dst -Destination $backup -ErrorAction Stop
-                if (-not (Test-Path -LiteralPath $backup)) {
-                    throw "backup verification failed for $backup; leaving everything intact"
-                }
-                Write-Log "skill backed up: $s : $dst -> $backup"
+                Write-Log "skill preserved (no adapter): $s -> $dst (existing installation left untouched)"
+                return $true
             }
         }
         New-Item -ItemType Junction -Path $dst -Target $src -ErrorAction Stop | Out-Null
@@ -331,6 +355,11 @@ function Link-BundledSkills([string]$Root) {
             Write-Log "skill ERROR: bundle adapter failed (exit $LASTEXITCODE); refusing to fall back to a second parser"
             return 1
         }
+        # Actions that may touch the destination. Everything else - the
+        # preserve-* labels AND any label this consumer does not know - is a
+        # no-op: an existing real installation is never junction-replaced, and
+        # nothing is ever moved to .claude-skill-backups on a guess.
+        $replaceActions = @('link', 'relink')
         foreach ($line in $plan) {
             if (-not $line) { continue }
             $parts = $line -split "`t"
@@ -341,11 +370,64 @@ function Link-BundledSkills([string]$Root) {
                 $failures++
                 continue
             }
-            if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
+            if ($action -eq 'up-to-date') {
+                Write-Log "skill up to date: $s -> $dst"
+                continue
+            }
+            if ($replaceActions -contains $action) {
+                if (-not (Link-OneBundledSkill $s $src $dst -Authorized)) { $failures++ }
+                continue
+            }
+            if ($action -eq 'backup-and-link') {
+                # The adapter emits this ONLY for an EMPTY real destination
+                # (nothing to lose): inspect it, remove the empty directory
+                # NONRECURSIVELY, verify the removal, then junction it.
+                # Nothing is ever moved to .claude-skill-backups.
+                $isEmpty = $false
+                try {
+                    $existing = Get-Item -LiteralPath $dst -Force -ErrorAction Stop
+                    if ($existing.PSIsContainer -and (-not $existing.LinkType)) {
+                        $children = @(Get-ChildItem -LiteralPath $dst -Force -ErrorAction Stop)
+                        $isEmpty = ($children.Count -eq 0)
+                    }
+                } catch {
+                    Write-Log "skill ERROR: $s : cannot inspect $dst ($($_.Exception.Message)) - left untouched"
+                    $failures++
+                    continue
+                }
+                if ($isEmpty) {
+                    $removed = $false
+                    try { Remove-Item -LiteralPath $dst -Force -ErrorAction Stop; $removed = $true }
+                    catch { Write-Log "skill ERROR: $s : could not remove the empty directory $dst" }
+                    if ($removed) {
+                        if (-not (Link-OneBundledSkill $s $src $dst -Authorized)) { $failures++ }
+                    } else {
+                        $failures++
+                    }
+                } else {
+                    Write-Log "skill ERROR: $s : plan says backup-and-link but $dst is not an empty directory - left untouched"
+                    $failures++
+                }
+                continue
+            }
+            if ($action -like 'preserve-*') {
+                # The adapter consulted the SAME preservation decision as the
+                # update path: an existing real installation that is not
+                # provably this bundle at a lower version is left EXACTLY as it
+                # is - no junction, no backup, no destination-only file moved.
+                Write-Log "skill preserved ($action): $s -> $dst (existing installation left untouched)"
+                continue
+            }
+            # Fail closed: an action this consumer does not know never links.
+            Write-Log "skill ERROR: $s : unknown plan action '$action' - refusing to touch $dst"
+            $failures++
         }
         return $failures
     }
-    # Standalone install with no repo checkout (no adapter to call).
+    # Standalone install with no repo checkout (no adapter to call). With no
+    # adapter decision an existing real installation or junction to another
+    # installation is PRESERVED: this fallback never moves, backs up or
+    # replaces one. Only a proven absent destination is linked.
     foreach ($s in (Get-BundledSkills)) {
         $src = $null
         if ($RepoRoot) {
