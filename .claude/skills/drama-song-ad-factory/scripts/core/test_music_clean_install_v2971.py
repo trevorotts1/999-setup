@@ -250,7 +250,9 @@ def _skill74_cb_ok(req):
 
 # ══════════════════════════════════════════════════════════════ bug 4 ══
 def test_sync_submit_hands_save_its_envelope():
-    """A sync createTask writes sync-info.json and save is handed --info."""
+    """A sync createTask retains its envelope under the save dir as a dotfile
+    and save is handed --info pointing at it (F11: the old tmp/sync-info.json
+    died with the temp dir, so a save hold could never resume)."""
     tmp = tempfile.mkdtemp(prefix="v2971-sync-")
     try:
         calls = []
@@ -289,11 +291,15 @@ def test_sync_submit_hands_save_its_envelope():
             stage="word-timings")
         save_argv = [c for c in calls if len(c) > 1 and c[1] == "save"]
         check("4: the sync job dispatched ok", env.get("outcome") == "ok", str(env))
-        # dispatch removes its own temp dir in `finally`, so the file is gone by
-        # now; the receipt is the ARGV it actually built.
-        check("4: save was called with --info pointing at sync-info.json",
-              bool(save_argv) and "--info" in save_argv[0]
-              and save_argv[0][save_argv[0].index("--info") + 1].endswith("sync-info.json"),
+        # The durable dotfile outlives the dispatch temp dir (F11 save-hold
+        # resume reads it via the supported --info path); the receipt is the
+        # ARGV it actually built.
+        _info = (save_argv[0][save_argv[0].index("--info") + 1]
+                 if bool(save_argv) and "--info" in save_argv[0] else "")
+        check("4: save was called with --info pointing at the retained sync envelope",
+              bool(_info) and os.path.basename(_info).startswith(".kie-sync-info-")
+              and _info.endswith(".json")
+              and os.path.dirname(_info) == os.path.join(tmp, "out"),
               str(save_argv))
         check("4: the saved word-timing file reaches the envelope",
               "/tmp/w_0.json" in (env.get("evidence", {}).get("saved_paths") or []),
