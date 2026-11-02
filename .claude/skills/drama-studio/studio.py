@@ -129,29 +129,26 @@ def pair_body(code):
             "os": sys.platform, "tools": which_tools()}
 
 
-def call_pair(url, code):
+def _post_json(url, payload):
     req = urllib.request.Request(
-        url.rstrip("/") + "/api/studio/pair",
-        data=json.dumps(pair_body(code)).encode("utf-8"),
+        url.rstrip("/"),
+        data=json.dumps(payload).encode("utf-8"),
         method="POST",
         headers={"content-type": "application/json", "User-Agent": STUDIO_USER_AGENT},
     )
     with urllib.request.urlopen(req, timeout=NETWORK_BUDGET_S) as resp:
         return json.loads(resp.read().decode("utf-8") or "{}")
+
+
+def call_pair(url, code):
+    return _post_json(url.rstrip("/") + "/api/studio/pair", pair_body(code))
 
 
 def call_enroll(url, secret, label=None):
     body = {"enrollment_secret": secret}
     if label:
         body["label"] = label
-    req = urllib.request.Request(
-        url.rstrip("/") + "/api/studio/enroll",
-        data=json.dumps(body).encode("utf-8"),
-        method="POST",
-        headers={"content-type": "application/json", "User-Agent": STUDIO_USER_AGENT},
-    )
-    with urllib.request.urlopen(req, timeout=NETWORK_BUDGET_S) as resp:
-        return json.loads(resp.read().decode("utf-8") or "{}")
+    return _post_json(url.rstrip("/") + "/api/studio/enroll", body)
 
 
 def _store_receipt(out, url):
