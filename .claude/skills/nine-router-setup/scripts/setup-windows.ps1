@@ -322,8 +322,9 @@ function Link-BundledSkills([string]$Root) {
     }
     $failures = 0
     # One plan, produced by the same adapter the macOS installer calls: it
-    # decides the source, the target and whether a link is already current.
-    # Only the link mechanic below (junction here, symlink on macOS) differs.
+    # decides the source, the target, whether a link is already current and
+    # whether an existing installation must be PRESERVED. Only the link
+    # mechanic below (junction here, symlink on macOS) differs.
     $adapter = Get-BundleAdapter
     if ($adapter) {
         $plan = @(& python -I -B $adapter --root $RepoRoot --install-plan --claude-root $Root 2>$null)
@@ -336,12 +337,32 @@ function Link-BundledSkills([string]$Root) {
             $parts = $line -split "`t"
             if ($parts.Count -lt 4) { continue }
             $action = $parts[0]; $s = $parts[1]; $src = $parts[2]; $dst = $parts[3]
-            if ($action -eq 'missing') {
-                Write-Log "skill ERROR: $s : no source found (manifest skill absent from repo and $env:USERPROFILE\.claude\skills)"
-                $failures++
-                continue
+            $reason = ''
+            if ($parts.Count -gt 5) { $reason = $parts[5] }
+            switch ($action) {
+                'missing' {
+                    Write-Log "skill ERROR: $s : no source found (manifest skill absent from repo and $env:USERPROFILE\.claude\skills)"
+                    $failures++
+                }
+                'up-to-date' { Write-Log "skill up to date: $s -> $dst" }
+                { $_ -in @('link', 'relink') } {
+                    if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
+                }
+                'preserve' {
+                    # decide() refused or held this installation: a newer stamp,
+                    # an unreadable stamp, or bytes that are not the shipped tree
+                    # (the destination-only compatibility files live there).
+                    # Nothing is written and no backup is minted.
+                    Write-Log "skill preserved: $s : $dst left unchanged ($reason)"
+                }
+                default {
+                    # An action this consumer does not know is NEVER a link:
+                    # linking on an unknown action is how a plan row silently
+                    # replaced a real installation.
+                    Write-Log "skill ERROR: $s : unknown plan action '$action' for $dst - refusing to touch it"
+                    $failures++
+                }
             }
-            if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
         }
         return $failures
     }

@@ -254,7 +254,8 @@ class InstallPlanTests(FixtureCase):
         target.unlink()
         target.mkdir()
         self.assertEqual(
-            ba.install_plan(bundle, claude_root, home)[0][0], "backup-and-link")
+            ba.install_plan(bundle, claude_root, home)[0][0], "preserve",
+            "an existing destination directory is never replaced")
         shutil.rmtree(root / SKILL)
         self.assertEqual(
             ba.install_plan(ba.load_bundle(root), claude_root, home)[0][0],
