@@ -122,7 +122,7 @@
     ],
     "council-of-wise-elders": [
       {
-        "version": "1.0.75",
+        "version": "1.0.76",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/council-of-wise-elders",
