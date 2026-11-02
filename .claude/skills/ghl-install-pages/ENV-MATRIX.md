@@ -83,6 +83,18 @@ unchanged by the lane model). Lane table: SKILL.md "Adaptive browser lanes".
    runs a real FAB-QC pass. Running the SAME `run` command with a real
    builder/verifier against a designated GHL test location is OPERATOR-RUN
    and OWED — this build never fabricates that live receipt.
+6. **Durable state lives only under `durable_root()`-derived roots
+   (S06-05).** Run state resolves via `ghl_run_state.default_state_root()`
+   (`<durable_root()>/skill6-runs`, `GHL_RUN_STATE_ROOT` override first);
+   the per-page ledger resolves via `ghl_builder.ledger_root()`
+   (`<durable_root()>/skill6-ledgers`, `GHL_LEDGER_ROOT` override first).
+   `/tmp` is a labelled ephemeral fallback only (bare checkout, no durable
+   root), never a silent home for durable state: on a VPS `/tmp` is tmpfs
+   and dies on recreate. Pre-S06-05 state under the old roots stays
+   resumable via repair-in-place read fallbacks (SK6002), never a silent
+   move. Provisioning shape is verified, per box, by
+   `tools/ghl_vps_provision_check.py` against the provisioning contract
+   below.
 
 ## Fifth-seam note (host services)
 
@@ -109,5 +121,178 @@ depends on them.
   `durable_root()` implements the three-step binding, `is_vps()` is always
   False, `supervisor()` returns "none".
 - **This document** — the single place the matrix + the adaptation contract
-  live inside the skill, so a future contributor does not have to re-derive
-  it.
+  live inside the skill (previously only in the external spec file), so a
+  future contributor does not have to re-derive it.
+
+## B-U15 — ENV-MATRIX live proof: the ASSUMED VPS mount row + first-hour ground truth + stale-env preflight
+
+Builds on the `envmatrix` unit above (which SHIPPED the matrix + Python
+mirror + bash-3.2 fix). This unit is the live-proof layer for the matrix's
+one remaining `[ASSUMED, spec-carried]` row plus two contract items that were
+prose-only before now:
+
+- **Item 1 (VPS mount row) — mechanism shipped, live round trip owed.**
+  `tools/ghl_vps_mount_proof.py`: `classify_mount()` (parse the mount table,
+  distinguish an ephemeral `overlay`/`aufs`/`tmpfs` container layer from a
+  real bind/volume mount — injectable reader, hermetic), `write_marker()` /
+  `verify_marker()` (the actual proof-by-survival: stamp a run-id-tagged
+  marker into the path, read it back after whatever happened in between),
+  `build_receipt()` / `write_receipt()` (the single
+  `routing/vps-mount-receipt.json` artifact recording the mount type — never
+  upgraded to a PASS on a `post=None` partial). `scripts/vps-mount-proof.sh`
+  is the live orchestration wrapper (`--live --path ... --run-id ...
+  --compose-file ...`: marker → `docker compose up -d --force-recreate` →
+  marker verify → receipt) — mirrors `run-selector-drift-probe.sh`'s
+  offline-default / `--live`-is-operator-run shape exactly, and REFUSES
+  (exit 3) rather than fabricate a pass when no real `docker` binary or
+  compose file is reachable. **Owed**: the actual live run on a real VPS
+  (spec §9.4 step 10).
+- **Item 2 (first-hour ground truth) — schema + comparator + OFFLINE/FIXTURE
+  emitter shipped, live runs owed.** `tools/ghl_env_matrix_ground_truth.py`:
+  the ground-truth receipt schema plus `compare_ground_truth()` /
+  `assert_ground_truth_parity()` (see adaptation contract item 5 above for
+  the full field list and checks) PLUS `run_fixture_ground_truth()` / the
+  `run` CLI subcommand, which actually drives `v2_dispatcher.dispatch_one()`
+  through a deterministic fixture build and writes a receipt in the exact
+  shape the comparator consumes (proven wired end-to-end: `tests/test_b_u15_env_matrix_live_proof.py::TestGroundTruthEmitter::test_emitted_receipt_feeds_compare_and_passes`
+  emits a fixture Mac receipt + a fixture VPS receipt and confirms
+  `compare_ground_truth()` reports real parity). **Owed**: running this same
+  `run` command, unmodified, end-to-end on one real Mac and one real VPS
+  (real builder/verifier against a designated GHL test location swapped in
+  for the fixtures) to produce the two LIVE receipts this compares.
+- **Item 3 (stale-env preflight) — fully shipped, no live leg.**
+  `browser_manager.py::stale_env_preflight()` / `browser_manager.sh
+  ::bm_stale_env_preflight()` (wired into `bm_ensure()` — see the "Docker
+  env-file / workdir" row above). Every input is injectable, so "fires on a
+  seeded stale `.env`, silent otherwise" (this unit's BINARY acceptance (d))
+  is fully hermetic — no live leg outstanding for this item.
+
+All three mechanisms are covered by
+`tests/test_b_u15_env_matrix_live_proof.py` (hermetic, no network, no Docker,
+no live browser) plus the pre-existing `tests/test_env_matrix.py` (still
+green, unmodified acceptance).
+
+## VPS provisioning contract (S06-05)
+
+The contract a VPS/container box is provisioned to, and the shape
+`tools/ghl_vps_provision_check.py` verifies. Names, paths, modes, and
+identities only: no credential value is ever written in this contract, in
+a receipt, or in a repair string.
+
+### The permission split (Q1, decided by S06-04's landed code)
+
+* The shared resolver (`tools/ghl_secret_resolver.py`) owns the READ-TIME
+  refusal: a `*_FILE` target that is missing, unreadable, empty, or
+  carries any group/other permission bit (`mode & 0o077`) fails loud at
+  resolution time, naming the variable, the path, and the mode only.
+* The provisioning verifier (`tools/ghl_vps_provision_check.py`) owns the
+  PROVISIONING verdicts the resolver does not make: existence, owner UID
+  vs the service/process UID, the runs-as-root check, directory modes,
+  mount classification, and the storage label. Every repair it names
+  NARROWS access (`chmod 600` / `chmod 700` / `chown` to the service UID);
+  no repair ever widens a mode to compensate for an ownership mismatch.
+
+### Secret-file layout (outside the repo, per fleet type)
+
+The three `*_FILE` variables are `GHL_REFRESH_TOKEN_FILE`,
+`GHL_LOCATION_PIT_FILE`, and `GHL_LOCATION_ID_FILE` (the location-ID file
+is held to the same mode refusal as the two secret files). The canonical
+env stores are the resolver's `ENV_STORES`
+(`~/.openclaw/secrets/.env`, `~/clawd/secrets/.env`,
+`~/.openclaw/workspace/.env`); the first store is also the Tier-2
+self-heal's live read/write target, so its persistence and permissions
+matter like any secret file's. Secret files are mode 0600, their
+directories mode 0700, owned by the identity the service runs as.
+
+| Fleet type | Layout |
+|---|---|
+| fleet-mac | No container. Stores at `~/.openclaw/secrets/.env` (0600, dir 0700, owned by the operator user the service runs as). `*_FILE` optional; when used, targets live under `~/.openclaw/secrets/` with the same modes. Durable root: `~/.openclaw`. |
+| fleet-hostinger | One client per VPS, OpenClaw inside Docker. Host project dir (`/docker/<project>/`) holds the compose file and host `.env`; secret files live in a host directory mounted READ-ONLY into the container (the Docker-secrets shape, e.g. under `/run/secrets`, or a dedicated mount on the persistent volume), named by the three `*_FILE` variables. The container service runs as the non-root `node` user, which owns the files (0600) and directories (0700). Durable root: `/data/.openclaw` (the volume), never the container layer. |
+| fleet-contabo | Trevor's one server sliced into per-client Docker containers; each container is a complete, separate OpenClaw installation for ONE client. Each container gets its OWN host-side secrets directory and its OWN read-only mount, exactly as fleet-hostinger; nothing is shared between containers. Durable root: whatever `durable_root()` resolves inside that container (`/data/.openclaw` when the slice mounts it, else the container's `~/.openclaw`, the only path that survives a recreate there). |
+
+Provisioning route (Q4): provisioning is performed by the OPERATOR, via
+the existing trusted secret manager or a host-authenticated SSH/Tailscale
+session (the packet's own words). S06-05 ships the contract and the
+verifier, not a provisioning executor: no Skill-6 code writes secret
+values to a box.
+
+### Mount contract (the persistence path set)
+
+Five paths must classify as persistent via
+`ghl_vps_mount_proof.classify_mount()` (never overlay/aufs/tmpfs), and the
+per-box proof artifact is the path-set receipt
+(`routing/vps-mount-pathset-receipt.json`, written by
+`ghl_vps_mount_proof.py pre-pathset` / `post-pathset`; the single-path
+`routing/vps-mount-receipt.json` for `~/.agent-browser` is unchanged):
+
+* agent-browser state: `$HOME/.agent-browser`
+* evidence base: `cc_board.resolve_evidence_base()` (per fleet type:
+  `/data/clawd/skill6-fix` on a /data-backed box, `$HOME/.openclaw/clawd/skill6-fix`
+  on Contabo, `$HOME/clawd/skill6-fix` on a Mac)
+* run-state root: `ghl_run_state.default_state_root()`
+* Playwright data dir: `<durable_root()>/playwright-data/ghl-install-pages`
+* secrets dir: the directory holding the stores and `*_FILE` targets
+
+Per-path honesty is the single-path rule, per path: a path with no
+post-recreate verification is PRE-ONLY. The live recreate round trip
+stays operator-gated (OPERATOR-LIVE-CHECKLIST.md item 4); this contract
+does not close it.
+
+### Client namespacing and the isolation boundary (Q2, step 4 and step 8)
+
+The isolation boundary is the per-client Docker container (Trevor's
+fleet definitions): one client per container, and LOCKDIR/lease state is
+per-box inside that container. S06-05-created state is ADDITIONALLY
+namespaced by client (location) identity under the durable root, so it
+stays separated even if two clients ever share a box view:
+provisioning receipts at
+`<durable_root()>/skill6-provisioning/<client>/provisioning-receipt.json`.
+Per-location breaker count/marker files
+(`agent-browser-<location>.count` / `.BLOCKED` under `PARK_DIR`) are
+per-location: one location's opens never touch another location's counter
+or marker. Recorded shared-by-design behaviour, NOT a defect: a breaker
+TRIP also writes the box-level PARK marker (`workforce-build.parked`),
+so one location's trip parks the whole box (every location's next
+breaker check refuses) until an operator un-parks it; and the gateway
+pool ceiling (`AB_MAX_SESSIONS`) is a box-wide singleton, so its
+close-oldest can close another location's session on a genuinely shared
+box. In the fleet model the shared-box cases do not arise because the
+container is the client boundary.
+
+`~/.agent-browser` engine descriptors and `$LOCKDIR` leases/locks are
+session state, not durable state: leases expire by TTL and locks release
+on teardown; neither is expected to survive a restart (the crash/restart
+harness proves PARK state persists while leases/locks do not).
+
+### Storage label (Q5)
+
+Default for every fleet type: **permission-protected plaintext**. The
+stores and secret files are plaintext files whose protection is
+filesystem permissions (0600/0700, owner-only) plus the mount contract
+above. The label changes per box only when an operator names an encrypted
+disk/backup policy for that box (`GHL_VPS_STORAGE_LABEL` or the
+verifier's `--storage-label`); the verifier emits the label on every
+receipt so the box's posture is never implied.
+
+### Assisted-login remote session (Q3)
+
+OUT OF SCOPE for S06-05, recorded as an open owner decision: the prep
+takes no position and no recommendation exists, so no assisted-login
+remote session (screen-share style operator login help) is built,
+specified, or implied by this contract. The auth story on a VPS box is
+the token-seed ladder (Tier 1 token-only, gated Tier 2, fail-loud
+Tier 3) and nothing else.
+
+### Capability coordination (step 9 hand-off)
+
+The `environmentCapabilities` record (container detection, cgroup limits,
+persistent storage root) already ships in `tools/capability_probe.py`
+(S06-02); S06-05 does not modify it. The provisioning verifier supplies
+the mount-classified storage verification the probe does not: its
+receipt is the provisioning-side companion to the probe's
+`environment-capabilities.json`. Documented probe semantics (SKILL.md):
+a credential provisioned solely via a `*_FILE` variable reads as
+not-present in the probe BY DESIGN; the verifier's per-variable rows are
+the check that covers that blind spot. S06-04's own Q5/Q6 dispositions
+(KIE store order divergence; probe parity follow-up owned by S06-02)
+are not re-opened here.
