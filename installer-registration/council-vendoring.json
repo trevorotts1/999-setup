@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "79b8d65ad41d0c5fb1fe384e9e4e43d2e5ffd8e8",
-    "canonical_aggregate_sha256": "5b9fb57f2b7073010c1ad35d88b55de776a949091665f9ea69cbd86d00bb18f9",
+    "source_commit": "7ca6a622cf7f1750c19c0372316be4ad2d7b4a0b",
+    "canonical_aggregate_sha256": "62f7a8e12e6e18aa0d7e2d03a89ae18e2e3103b9e1825b4da2af2ff4841046bc",
     "canonical_file_count": 864,
-    "skill_version": "1.0.77"
+    "skill_version": "1.0.78"
   },
   "intentional_distribution_differences": [
     {
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "001032b8d5674014e29efe9b31a728a0e5a07a66875687dd7e5501ec782ddc75",
-      "archive_bytes": 82692521,
+      "archive_sha256": "45e30ad3f7e04914e5c1106428015e67b18806091fbc501985efa3f2f63605cc",
+      "archive_bytes": 82696112,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,18 +120,18 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "001032b8d5674014e29efe9b31a728a0e5a07a66875687dd7e5501ec782ddc75",
-    "bytes": 82692521
+    "sha256": "45e30ad3f7e04914e5c1106428015e67b18806091fbc501985efa3f2f63605cc",
+    "bytes": 82696112
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "bb65fd5c3f9240edf6926a2e8e70309d4e49852a856203b0789e2316fe21fae8",
+    "distribution_aggregate_sha256": "41f8964f89bc5508bdec2cdba0da5fc4511a83b7e4d7301d5c5ed12ed550478a",
     "distribution_file_count": 865,
-    "contract_aggregate_sha256": "5b9fb57f2b7073010c1ad35d88b55de776a949091665f9ea69cbd86d00bb18f9",
+    "contract_aggregate_sha256": "62f7a8e12e6e18aa0d7e2d03a89ae18e2e3103b9e1825b4da2af2ff4841046bc",
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "19205eda36fc8ee88b688ccef4dca588d3e491d4d3cd7ae25f860f6e1395e4e2"
+        "sha256": "10cd929e70877092da848be33580b612fa5e91b098f403beaf91ac2159476c5b"
       },
       {
         "path": "CORE_UPDATES.md",
@@ -159,7 +159,7 @@
       },
       {
         "path": "SKILL.md",
-        "sha256": "8ba678759265a2b391c54d707f15b0c13fd126d26aad6cb5e3d2f48d6e9351b0"
+        "sha256": "a2ab83eeeec81cf74beb723af2fbc40b439716d609ca950266b05c580096893a"
       },
       {
         "path": "advisors/brene-brown/briefing.md",
@@ -1467,7 +1467,7 @@
       },
       {
         "path": "extensions/council-before-dispatch/test/core.test.mjs",
-        "sha256": "7fbb279a65b18ae7f56df893e6b22fe89a778e27bbacf6fb1c1ce9bdc6151cfe"
+        "sha256": "9aa5dacc3ec65e272bf30b9ded66c03eb4e4f995ffcbc8d6588f1a3e1d7a1a25"
       },
       {
         "path": "extensions/council-before-dispatch/test/ctr133-exploration.test.mjs",
@@ -1947,7 +1947,7 @@
       },
       {
         "path": "runtime/src/cli/dispatcher.ts",
-        "sha256": "383ff7959127123d35376f1c8c13658235f89478498da50e9864e58f2afa29d9"
+        "sha256": "37ca784cb27433843bfdd4edba5e7257fed4dd5a13e52f8386dff675dace4a87"
       },
       {
         "path": "runtime/src/cli/engine.ts",
@@ -3527,7 +3527,7 @@
       },
       {
         "path": "scripts/tests/verify-council-box.test.sh",
-        "sha256": "e3c91c090746e36ac2a1ebcdb3ba463ab0a4306ea3ba819f7be3fea79369c6c1"
+        "sha256": "6db9f0bf2caf6084f7c51b86e6b61993bf43bbd706ddbcc25d0b552cc24ab497"
       },
       {
         "path": "scripts/tests/wire-connector.test.sh",
@@ -3563,11 +3563,11 @@
       },
       {
         "path": "skill-version.txt",
-        "sha256": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1"
+        "sha256": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced"
       },
       {
         "path": "tests/CRITICAL-CONTRACT-council-front-door.test.mjs",
-        "sha256": "8c87dbc0dd6957069bce5973c4d37703de1817471ae69a397eb1c26c575a19d5"
+        "sha256": "1167d7003a2e8f11a055a6c7fabb49804500234f5219ba0c07bf2594d50c2d39"
       },
       {
         "path": "tests/fixtures/README.md",
@@ -3579,7 +3579,7 @@
       },
       {
         "path": "version",
-        "sha256": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1"
+        "sha256": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced"
       },
       {
         "path": "wire.sh",
@@ -3637,7 +3637,7 @@
       },
       {
         "path": "runtime/dist/blackceo-council.mjs",
-        "sha256": "90ad7a8aac614bf42b5ea8bc8057863b2090d709b85f8746ceba4eff449b6398"
+        "sha256": "08106351d02238f6b605edd4e0b2a7108590538d73da20a237fee93005ca747a"
       },
       {
         "path": "runtime/dist/bridges/browser-open.d.ts",
@@ -3797,7 +3797,7 @@
       },
       {
         "path": "runtime/dist/cli/dispatcher.js",
-        "sha256": "3895852e0e2393c697da5d9a2c4c94e5d6ab29b6a07c1b48dc061e4feb1fdf50"
+        "sha256": "c7d7d95178c2bc8834f33c5f6cdbdaac8129b8700d16373b07c0b9e1e676168b"
       },
       {
         "path": "runtime/dist/cli/engine.d.ts",
@@ -4105,7 +4105,7 @@
       },
       {
         "path": "runtime/dist/export-skill22.mjs",
-        "sha256": "159b3c4741cb539b5b5ecddd2df3a4c1bfef6798ecb07a04d07e18579ebd106c"
+        "sha256": "b576ef2c6af8b240f9c1dac8ab838db526b1d22517bc02fd19f15a1c152eda77"
       },
       {
         "path": "runtime/dist/flow/convene-flow.d.ts",
@@ -5009,14 +5009,14 @@
     ]
   },
   "canonical_files": {
-    "CHANGELOG.md": "19205eda36fc8ee88b688ccef4dca588d3e491d4d3cd7ae25f860f6e1395e4e2",
+    "CHANGELOG.md": "10cd929e70877092da848be33580b612fa5e91b098f403beaf91ac2159476c5b",
     "CORE_UPDATES.md": "f91ac3056710d73458f739f2a7e0b4bb91d43b6999d188d21ee04fd5f761f9c7",
     "EXAMPLES.md": "4d8245365d28943b2ff2385d7079770e39a0f827ef52c6e87ad8e2ae622a7646",
     "INSTALL.md": "aac2fcf7f76c015e8e671e954953ed68a9bc2f7902497e8ea577ebf7edd8fd22",
     "INSTRUCTIONS.md": "a69e0ecd2ca59734ade20312248256705db0e4e10dbba89b82632770dcd8e1ad",
     "PREREQS.json": "cadfefaeef39d1b5a5f4f8562e4f19df7048dcabc874f754629f9c73eaa22871",
     "QC.md": "07cfe25db8920eee0b2548051f61ad9ef32149479b4bce5a5a6b998e325c8e9b",
-    "SKILL.md": "8ba678759265a2b391c54d707f15b0c13fd126d26aad6cb5e3d2f48d6e9351b0",
+    "SKILL.md": "a2ab83eeeec81cf74beb723af2fbc40b439716d609ca950266b05c580096893a",
     "advisors/brene-brown/briefing.md": "88f8c1a048e2d02b331ba594972b9bc259d50aeeb213646ea189a11506daf1ba",
     "advisors/brene-brown/communication.md": "1334fd2a595046005b03e47b0ee32dd8cb1edf35b90c3c2d43e5837c3cd218fd",
     "advisors/brene-brown/coverage.json": "acb622349e7f7fcd7985d7cc47df04457658863401e97e5db4dc241021f2d981",
@@ -5343,7 +5343,7 @@
     "extensions/council-before-dispatch/package.json": "dfaed8848cbb687897cbfeeb99bdb5304ac12d14926a83e8d6e85f9528d677d1",
     "extensions/council-before-dispatch/provision.mjs": "ecaae9bf2d4f4d1b069f89bd1593b6db39f81425cde8a5e08276629d769ec961",
     "extensions/council-before-dispatch/test/binding-predicate.test.mjs": "9da419cc73774222c6956b9f68602ceb8aca36f324bdea38cf5605fb20585083",
-    "extensions/council-before-dispatch/test/core.test.mjs": "7fbb279a65b18ae7f56df893e6b22fe89a778e27bbacf6fb1c1ce9bdc6151cfe",
+    "extensions/council-before-dispatch/test/core.test.mjs": "9aa5dacc3ec65e272bf30b9ded66c03eb4e4f995ffcbc8d6588f1a3e1d7a1a25",
     "extensions/council-before-dispatch/test/ctr133-exploration.test.mjs": "5759c28d57de5ebcf4060e27ff8ea33f35d6c6dfc8b32a03d8bbf64df5309b41",
     "extensions/council-before-dispatch/test/ctr215-narrow-binding.test.mjs": "0a53dc7d4dec5ecd50069831b10b46d660c95cdb72e9cee860bebbc38038afa8",
     "launchd/ai.blackceo.council-access-autoprovision.plist.template": "42d949036eaf5a3ba5e36682bfa3ea34352862c85a5e26963ddbfd6c50bdb104",
@@ -5463,7 +5463,7 @@
     "runtime/src/cli/card-contract.ts": "e9365bea146210818fbe5b8d2bfc1a2b19137b518d16f10373a5b7294ec6d6fa",
     "runtime/src/cli/card-text.ts": "e10573d6c87bcbe6d2d6f43c6913ffe76b68d9aa09ece3f9deb3e7650ee88f1e",
     "runtime/src/cli/convene.ts": "3a3a771ce12a14d4efee9be9348249da697dba144a11400d7ef8a761c4120732",
-    "runtime/src/cli/dispatcher.ts": "383ff7959127123d35376f1c8c13658235f89478498da50e9864e58f2afa29d9",
+    "runtime/src/cli/dispatcher.ts": "37ca784cb27433843bfdd4edba5e7257fed4dd5a13e52f8386dff675dace4a87",
     "runtime/src/cli/engine.ts": "fa09bc5fccc686ce3b653fcc231e69f510fbbee4ace4ebc8fda95824be84b7f8",
     "runtime/src/cli/errors.ts": "7a067db8d1321c24d4d87137ecb1567e1ea653bdcb1bdb7bb0d8c3aae50a9831",
     "runtime/src/cli/executable-resolver.ts": "ee6ec38f66b20abb60a774a0a673dca6021534e34b3466c6b6737f5039903633",
@@ -5858,7 +5858,7 @@
     "scripts/tests/render-counsel-artifact.test.mjs": "f325885267aeb121b9e23ccc8f35d117c593dbde75afca29e0f04036878e4564",
     "scripts/tests/selected-tree-gate.test.mjs": "0423a00452caf0197d887431ab9fc6c9763d93912e7ff63ae205f5a1d1db7c6c",
     "scripts/tests/verify-cohort-parity.test.mjs": "6ff1bda8e69312ef07bf146e9bed09c62aeb0a5117115fdfbcac6f2d2b85b030",
-    "scripts/tests/verify-council-box.test.sh": "e3c91c090746e36ac2a1ebcdb3ba463ab0a4306ea3ba819f7be3fea79369c6c1",
+    "scripts/tests/verify-council-box.test.sh": "6db9f0bf2caf6084f7c51b86e6b61993bf43bbd706ddbcc25d0b552cc24ab497",
     "scripts/tests/wire-connector.test.sh": "ad711a553d47cc8ce0a27b5e6e95b1b41878cace7869f6185606951df768837b",
     "scripts/tests/wire-public-probe.test.sh": "09e03bca1a2e1e5b19a7d5494f5df0416a29047edf1caf35dc2bc86480cb3678",
     "scripts/tests/wire-sim.test.sh": "eb2e167f922a58c1902a4836ea218f1efc457a7f772448524dba0531503c11a3",
@@ -5867,17 +5867,17 @@
     "scripts/verify-cohort-parity.mjs": "6aebc56ba1065335f3175edb8cba2eff43915413a05c59ff07397f4682b0a5fc",
     "scripts/verify-council-box.sh": "4b5ec7d379e7ad954d6e7d0c586ab9c14240923882fab2515ea8629abfb9bdc4",
     "scripts/verify-council-plugin.mjs": "ef68224e02a9de84d280c3c62cc9ca3c746149e27d2b515321dc7ca3b2bfed95",
-    "skill-version.txt": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1",
-    "tests/CRITICAL-CONTRACT-council-front-door.test.mjs": "8c87dbc0dd6957069bce5973c4d37703de1817471ae69a397eb1c26c575a19d5",
+    "skill-version.txt": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced",
+    "tests/CRITICAL-CONTRACT-council-front-door.test.mjs": "1167d7003a2e8f11a055a6c7fabb49804500234f5219ba0c07bf2594d50c2d39",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
-    "version": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1",
+    "version": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced",
     "wire.sh": "9ba3be95e228bc0dd69d4c6ae231be64a703467d3ce851db142c4919c57a0549"
   },
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
-    "sha256": "90ad7a8aac614bf42b5ea8bc8057863b2090d709b85f8746ceba4eff449b6398",
-    "bytes": 1321358
+    "sha256": "08106351d02238f6b605edd4e0b2a7108590538d73da20a237fee93005ca747a",
+    "bytes": 1329358
   },
   "verification": {
     "canonical_manifest_recomputed": true,

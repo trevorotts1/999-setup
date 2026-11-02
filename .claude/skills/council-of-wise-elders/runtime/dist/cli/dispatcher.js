@@ -686,6 +686,13 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                 if (!verdict) {
                     throw new CouncilError('COUNCIL_VERDICT_NOT_READY', `Session ${sessionId} has no validated verdict to export.`, { retryable: false, exitCode: 3 });
                 }
+                const outPath = flagString(flags, 'out');
+                if (!outPath && format === 'pdf') {
+                    // Binary deliverable: never print PDF bytes as text. This contract
+                    // check runs BEFORE the renderer: a bare `--format pdf` is a usage
+                    // error on every host, never a host-dependent render failure.
+                    throw usageError('export --format pdf requires --out FILE so the real PDF bytes are written to a file.');
+                }
                 // CWE-050 composition (B15 portable half): exports run through
                 // CWE-038's validated ReportExportService: publication
                 // validation, journaling, and deliverable registration on the
@@ -699,11 +706,6 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                     requestId: host.ids.newId(),
                     exportedAt: host.clock.nowUtc(),
                 });
-                const outPath = flagString(flags, 'out');
-                if (!outPath && format === 'pdf') {
-                    // Binary deliverable: never print PDF bytes as text.
-                    throw usageError('export --format pdf requires --out FILE so the real PDF bytes are written to a file.');
-                }
                 if (outPath) {
                     // base64 only for the binary PDF artifact; text formats stay utf8.
                     writeFileSync(outPath, artifact.encoding === 'base64' ? Buffer.from(artifact.bytes, 'base64') : artifact.bytes);
