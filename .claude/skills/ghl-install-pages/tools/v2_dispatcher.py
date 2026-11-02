@@ -1193,17 +1193,6 @@ def dispatch_one(
             return DispatchResult(task_id, STATE_WAITING, rec["reason"],
                                   evidence_root=evidence_root, record_path=rp)
 
-    # 999 harness (ADAPTER.md): an injected live builder (page/funnel) talks to the live GHL
-    # account, so it is refused until the four adapter seams pass. Auto-resolved form/survey
-    # builders gate themselves at their own live executors; dry runs are never refused.
-    if builder is not None and live and not task.get("dry_run"):
-        _seams_msg = skill_runner.seams_refusal()
-        if _seams_msg:
-            rec = {"task_id": task_id, "state": STATE_FAILED, "reason": _seams_msg}
-            rp = _rec_write(rec)
-            return DispatchResult(task_id, STATE_FAILED, _seams_msg,
-                                  evidence_root=evidence_root, record_path=rp)
-
     # ── DISPATCH ENTRY — Wiring-Map Steps 1 & 3 ──────────────────────────────
     #
     # Step 1 (Intake): run intake_interview BEFORE step0 and the builder so its

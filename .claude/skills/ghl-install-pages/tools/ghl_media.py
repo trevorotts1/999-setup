@@ -797,6 +797,16 @@ def _multipart_encode(fields: dict[str, str], file_field: str, file_path: str) -
     return body, f"multipart/form-data; boundary={boundary}"
 
 
+def _require_live_seams() -> None:
+    """Refuse (ADAPTER-SEAMS-NOT-PORTED) until the four adapter seams pass.
+    A missing skill_runner.py raises ImportError: fail closed, never caught."""
+    _sr_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _sr_root not in sys.path:
+        sys.path.insert(0, _sr_root)
+    import skill_runner
+    skill_runner.require_adapter_seams()
+
+
 def upload_media(
     png_path: str,
     location_id: str,
@@ -867,6 +877,8 @@ def upload_media(
 
     body, content_type = _multipart_encode(fields, "file", png_path)
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH
+    if opener is None:
+        _require_live_seams()  # real transport only; an injected opener is the test seam
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
@@ -1089,6 +1101,8 @@ def create_media_folder(
 
     body = json.dumps(payload).encode("utf-8")
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_FOLDER_PATH
+    if opener is None:
+        _require_live_seams()  # real transport only; an injected opener is the test seam
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)

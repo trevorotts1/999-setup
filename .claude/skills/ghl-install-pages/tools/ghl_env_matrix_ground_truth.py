@@ -269,10 +269,7 @@ def run_fixture_ground_truth(
     _builder = builder if builder is not None else _default_fixture_builder()
     _verifier = verifier if verifier is not None else _default_fixture_verifier()
 
-    # The default fixture builder never touches GHL, so it is not a live build
-    # (999 seams gate, ADAPTER.md); a caller-injected real builder stays live.
-    result = disp.dispatch_one(_task, evidence_root, builder=_builder, verifier=_verifier,
-                               live=builder is not None)
+    result = disp.dispatch_one(_task, evidence_root, builder=_builder, verifier=_verifier)
 
     receipts_total = 0
     if os.path.isdir(evidence_root):

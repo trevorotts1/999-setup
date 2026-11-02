@@ -315,28 +315,118 @@ def test_every_live_build_names_its_session_before_the_browser():
                      "ghl_community_builder", "ghl_course_builder"}, found
 
 
-def test_dispatch_one_refuses_injected_live_builder(sr, tmp_path):
-    import v2_dispatcher as d
-    cap = tmp_path / "cap.json"
-    cap.write_text("{}", encoding="utf-8")
-    called = []
+# ── The real CLI entry of every browser builder is refused (repair 3) ───────
+# In-process main(): the exact CLI path minus the interpreter boundary. The real
+# gate stays closed (empty receipt dir, seams_refusal NOT patched); only the
+# browser launch is a sentinel. The control opens the gate and must reach it.
 
-    def builder(task, ev, **k):
-        called.append(1)
-        return {}
+_CLI_ARGV = ["--no-dry-run", "--location-id", "loc123"]
 
-    def run(dry):
-        task = {"id": "g", "brand": "b", "brief": "b", "location_id": "L0", "pages": []}
-        if dry:
-            task["dry_run"] = True
-        return d.dispatch_one(task, str(tmp_path / ("ev-dry" if dry else "ev")), builder=builder,
-                              verifier=lambda *a, **k: {"ok": True}, telemetry_glob=[],
-                              live=True, capability_path=str(cap))
 
-    res = run(False)
-    assert res.state == d.STATE_FAILED and res.reason.startswith("ADAPTER-SEAMS-NOT-PORTED")
-    assert not called
-    # control: a dry run is not refused and reaches the builder
-    res = run(True)
-    assert not (res.reason or "").startswith("ADAPTER-SEAMS-NOT-PORTED")
-    assert called
+@pytest.mark.parametrize("which", ["form", "pipeline", "community", "course"])
+def test_cli_main_live_run_refused_before_launch(sr, monkeypatch, tmp_path, capsys, which):
+    import importlib
+    import ghl_form_builder as fb
+    mod = importlib.import_module(_LIVE_CASES[which][0])
+    reached = []
+
+    def _launched(*a, **k):
+        reached.append(1)
+        raise RuntimeError("LAUNCH-REACHED")
+    monkeypatch.setattr(fb.browser_manager, "headless_guard", _launched)
+    monkeypatch.setattr(fb.browser_manager, "browser_session", _launched)
+    extra = []
+    if which == "course":
+        plan = tmp_path / "plan.json"
+        plan.write_text(json.dumps({"modules": [{"title": "M1", "lessons": [{"title": "L1", "body": "x"}]}]}))
+        extra = ["--plan-json", str(plan)]
+
+    def run(tag):
+        argv = _CLI_ARGV + ["--evidence-root", str(tmp_path / ("ev-" + tag)),
+                            "--state-root", str(tmp_path / ("st-" + tag))] + extra
+        mod.main(argv)
+        cap = capsys.readouterr()
+        return cap.out + cap.err
+
+    out = run("closed")
+    assert "ADAPTER-SEAMS-NOT-PORTED" in out and not reached, out
+    # control: gate open -> the same CLI call reaches the launch sentinel
+    monkeypatch.setattr(sr, "seams_refusal", lambda *a, **k: "")
+    out = run("open")
+    assert reached and "LAUNCH-REACHED" in out, out
+
+
+# ── REST write executors: media library + bulk workflow enroll (repair 3) ────
+
+class _Net(Exception):
+    pass
+
+
+def _tiny_png(path):
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    return str(path)
+
+
+def test_media_live_upload_refused(sr, monkeypatch, tmp_path):
+    import urllib.request
+    import ghl_media
+    reached = []
+
+    def _urlopen(*a, **k):
+        reached.append(1)
+        raise _Net("NETWORK-REACHED")
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    png = _tiny_png(tmp_path / "a.png")
+    calls = (lambda **kw: ghl_media.upload_media(png, "L0", "n", "pit", **kw),
+             lambda **kw: ghl_media.create_media_folder("f", "L0", "pit", **kw))
+    for call in calls:
+        with pytest.raises(sr.AdapterSeamsNotPorted, match="ADAPTER-SEAMS-NOT-PORTED"):
+            call(opener=None)
+        assert not reached
+        # an injected opener is the test seam: not gated, so it is called
+        seen = []
+
+        def _fake(req, timeout, seen=seen):
+            seen.append(1)
+            raise _Net("fake transport")
+        with pytest.raises(Exception):
+            call(opener=_fake)
+        assert seen and not reached
+    # control: gate open -> the real transport is reached
+    monkeypatch.setattr(sr, "seams_refusal", lambda *a, **k: "")
+    for call in calls:
+        reached.clear()
+        with pytest.raises(Exception):
+            call(opener=None)
+        assert reached
+
+
+def test_bulk_enroll_live_write_refused(sr, monkeypatch):
+    import requests
+    import ghl_bulk_workflow_enroll as be
+    reached = []
+
+    def _net(*a, **k):
+        reached.append(1)
+        raise _Net("NETWORK-REACHED")
+    for verb in ("post", "delete", "get"):
+        monkeypatch.setattr(requests, verb, _net)
+    client = be.GhlHttpClient(token="x")
+    writes = (lambda: client.enroll_contact_in_workflow("c1", "w1"),
+              lambda: client.delete_contact("c1"))
+    for w in writes:
+        with pytest.raises(sr.AdapterSeamsNotPorted, match="ADAPTER-SEAMS-NOT-PORTED"):
+            w()
+    assert not reached
+    # dry-run reads are never refused, even with the gate closed
+    with pytest.raises(_Net):
+        client.search_contacts("L0", "tag")
+    with pytest.raises(_Net):
+        client.get_contact("c1")
+    # control: gate open -> both writes reach the network
+    monkeypatch.setattr(sr, "seams_refusal", lambda *a, **k: "")
+    for w in writes:
+        reached.clear()
+        with pytest.raises(_Net):
+            w()
+        assert reached

@@ -76,12 +76,15 @@ The four seams are checked by `skill_runner.adapter_seams_status()`:
 **A live GHL write is refused with `ADAPTER-SEAMS-NOT-PORTED` until all four
 seams pass and a seams receipt for the current adapter files exists.** The
 refusal sits at the live executors. Every browser `_live_build` (form,
-pipeline, community, course) is refused at `ghl_form_builder._canonical_session`,
-the first call each makes, before any browser launch.
-`ghl_survey_builder.build_survey` is refused after its dry-run return.
-`v2_dispatcher.dispatch_one` refuses an injected live builder (page/funnel)
-before intake and records state FAILED with the refusal as the reason; the
-ground-truth emitter's offline fixture builder is passed `live=False`. Dry
+pipeline, community, course, including their CLI `main()` entries) is refused at
+`ghl_form_builder._canonical_session`, the first call each makes, before any
+browser launch. `ghl_survey_builder.build_survey` is refused after its dry-run
+return. `ghl_media.upload_media` and `ghl_media.create_media_folder` are refused
+on the real transport (no injected opener). The write methods of
+`ghl_bulk_workflow_enroll.GhlHttpClient` (enroll and delete) are refused; its
+reads are not. Page, funnel, website and ecosystem writes are agent-executed
+plan steps or injected ops with no Python executor here, so they are not gated
+in Python (plans are never refused). Dry
 runs, plans and verification are never refused. Record the receipt with
 `python3 skill_runner.py seams --record`; it is written only when all four
 pass, into `<durable root>/skill6-seams/`, and any edit to an adapter file
