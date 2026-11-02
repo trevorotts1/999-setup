@@ -17,7 +17,6 @@ import {
 } from "node:fs";
 import { createRequire as createRequire3 } from "node:module";
 import { dirname as dirname4, join as join12, resolve as resolve5 } from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // src/contracts/errors.ts
 var ContractError = class extends Error {
@@ -25530,6 +25529,7 @@ import { join as join4 } from "node:path";
 import { existsSync as existsSync2, mkdirSync as mkdirSync3, readFileSync as readFileSync3, realpathSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { basename, dirname, join as join3, resolve, sep } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 var DATA_DIR_ENV = "BLACKCEO_COUNCIL_DATA_DIR";
 var SERVICE_DATA_DIR_ENV = "COUNCIL_SERVICE_DATA_DIR";
 var RUNTIME_PREFIX_ENV = "COUNCIL_RUNTIME_PREFIX";
@@ -25548,6 +25548,33 @@ function councilRuntimePrefix(env = process.env, homeDir) {
   const explicit = env[RUNTIME_PREFIX_ENV];
   if (explicit && explicit.trim().length > 0) return resolve(explicit);
   return join3(openclawRoot(env, homeDir), "council-runtime");
+}
+function isSkillFolder(dir) {
+  return existsSync2(join3(dir, "SKILL.md")) && existsSync2(join3(dir, "advisors")) && existsSync2(join3(dir, "manifest.json"));
+}
+function recordedSkillDir(dir) {
+  const recordPath = join3(dir, "install-record.json");
+  if (!existsSync2(recordPath)) return null;
+  try {
+    const record2 = JSON.parse(readFileSync3(recordPath, "utf8"));
+    if (typeof record2.skill_dir !== "string" || record2.skill_dir.length === 0) return null;
+    const candidate = resolve(record2.skill_dir);
+    return existsSync2(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+function skillFolderForAssets(moduleUrl = import.meta.url) {
+  let dir = dirname(fileURLToPath2(moduleUrl));
+  for (let depth = 0; depth < 8; depth += 1) {
+    const recorded = recordedSkillDir(dir);
+    if (recorded) return recorded;
+    if (isSkillFolder(dir)) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
 }
 function serviceDataDirHint(env = process.env, homeDir) {
   const explicit = env[SERVICE_DATA_DIR_ENV];
@@ -33980,7 +34007,7 @@ var ReportExportService = class {
 // src/reports/seat-descriptors.ts
 import { existsSync as existsSync8, readFileSync as readFileSync11 } from "node:fs";
 import { dirname as dirname3, join as join11 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 var MAX_TEXT = 320;
 function clean(value) {
   if (typeof value !== "string") return null;
@@ -33988,7 +34015,7 @@ function clean(value) {
   return text === "" ? null : text.slice(0, MAX_TEXT);
 }
 function skillRoot() {
-  let dir = dirname3(fileURLToPath2(import.meta.url));
+  let dir = dirname3(fileURLToPath3(import.meta.url));
   for (let depth = 0; depth < 8; depth += 1) {
     if (existsSync8(join11(dir, "SKILL.md")) && existsSync8(join11(dir, "advisors")) && existsSync8(join11(dir, "manifest.json"))) {
       return dir;
@@ -34162,27 +34189,8 @@ var defaultIo = {
   out: (text) => process.stdout.write(text),
   err: (text) => process.stderr.write(text)
 };
-function isSkillFolder(dir) {
-  return existsSync9(join12(dir, "SKILL.md")) && existsSync9(join12(dir, "advisors")) && existsSync9(join12(dir, "manifest.json"));
-}
 function skillRootForAssets() {
-  try {
-    const record2 = JSON.parse(
-      readFileSync12(new URL("../../install-record.json", import.meta.url), "utf8")
-    );
-    if (typeof record2.skill_dir === "string" && record2.skill_dir.length > 0) {
-      return resolve5(record2.skill_dir);
-    }
-  } catch {
-  }
-  let dir = dirname4(fileURLToPath3(import.meta.url));
-  for (let depth = 0; depth < 8; depth += 1) {
-    if (isSkillFolder(dir)) return dir;
-    const parent = dirname4(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
+  return skillFolderForAssets();
 }
 function parseArgs(argv) {
   const positionals = [];

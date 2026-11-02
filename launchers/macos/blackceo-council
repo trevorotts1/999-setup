@@ -27,6 +27,19 @@ if [ -z "$PROFILE_ROOT" ]; then
   fi
 fi
 
+# The 999 front door writes the box's service record beside this launcher.
+# Only the four known keys are accepted; this file is never sourced as code.
+_ENV_FILE="$SELF_DIR/blackceo-council.env"
+if [ -f "$_ENV_FILE" ]; then
+  while IFS='=' read -r _k _v; do
+    case "$_k" in
+      WISE_ELDERS_SERVICE_ORIGIN|WISE_ELDERS_SERVICE_JSON|WISE_ELDERS_PUBLIC_ORIGIN|WISE_ELDERS_OPENCLAW_ROOT)
+        export "$_k=$_v" ;;
+    esac
+  done < "$_ENV_FILE"
+fi
+unset _ENV_FILE _k _v
+
 ENTRY="$PROFILE_ROOT/runtime/current/run-council.mjs"
 if [ ! -f "$ENTRY" ]; then
   echo "blackceo-council: the council runtime is not installed (no $ENTRY)." >&2
