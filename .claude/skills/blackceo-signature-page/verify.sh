@@ -139,11 +139,14 @@ fi
 
 front_ver="$(awk 'BEGIN{x=0} /^---$/{x++; next} x==1 && /^version:/{sub(/^version:[[:space:]]*/,""); print; exit}' "$ROOT/SKILL.md" | tr -d '"\r')"
 file_ver="$(tr -d 'vV\r[:space:]' < "$ROOT/skill-version.txt")"
+pkg_ver="$(tr -d 'vV\r[:space:]' < "$ROOT/VERSION")"
 front_ver="${front_ver#v}"
-if [ "$front_ver" = "$file_ver" ] && [ -n "$front_ver" ]; then
-  echo "[PASS] version lockstep $front_ver"
+# Three-stamp lockstep (finding 43): VERSION counts too, and this block runs
+# on every path — run_tests.py is NOT RUN in a lone-directory install.
+if [ "$front_ver" = "$file_ver" ] && [ "$file_ver" = "$pkg_ver" ] && [ -n "$front_ver" ]; then
+  echo "[PASS] version lockstep $front_ver (SKILL.md, skill-version.txt, VERSION)"
 else
-  echo "[FAIL] SKILL.md version '$front_ver' != skill-version.txt '$file_ver'" >&2
+  echo "[FAIL] version stamps disagree: SKILL.md '$front_ver' skill-version.txt '$file_ver' VERSION '$pkg_ver'" >&2
   fail=1
 fi
 
@@ -219,11 +222,32 @@ else
 fi
 
 if [ "$fail" -eq 0 ]; then
-  if python3 "$ROOT/tests/run_tests.py" >/dev/null 2>&1; then
-    echo "[PASS] tests/run_tests.py"
+  # The repository suite resolves fixtures from the repository root (this
+  # skill's parent directory). A lone-directory install cannot run it at all,
+  # so it is reported as NOT RUN with the exact command that does run it —
+  # never skipped silently and never counted as a pass. What an installation
+  # CAN prove is its own runtime, which the preflight below checks offline.
+  if [ -f "$ROOT/../scripts/check-skill71-parity.py" ]; then
+    if python3 "$ROOT/tests/run_tests.py" >/dev/null 2>&1; then
+      echo "[PASS] tests/run_tests.py"
+    else
+      echo "[FAIL] tests/run_tests.py" >&2
+      fail=1
+    fi
   else
-    echo "[FAIL] tests/run_tests.py" >&2
-    fail=1
+    echo "[NOT RUN] tests/run_tests.py — repository-only suite (needs a repo checkout)"
+    echo "          canonical command: cd ~/openclaw-onboarding/71-blackceo-signature-page && python3 -m pytest -q tests"
+    if [ -f "$ROOT/scripts/preflight_installed.py" ]; then
+      if python3 "$ROOT/scripts/preflight_installed.py"; then
+        echo "[PASS] installed-runtime preflight"
+      else
+        echo "[FAIL] installed-runtime preflight" >&2
+        fail=1
+      fi
+    else
+      echo "[FAIL] installed-runtime preflight: scripts/preflight_installed.py is not in this installation" >&2
+      fail=1
+    fi
   fi
 fi
 
