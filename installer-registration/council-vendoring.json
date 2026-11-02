@@ -4,8 +4,8 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "6333d68a25ed6657ef9fa4602329484b6bad5173",
-    "canonical_aggregate_sha256": "fc647b8105e607c4f54df955e10bd0de08df209b4d16b27395e25e63cd32bb67",
+    "source_commit": "79b8d65ad41d0c5fb1fe384e9e4e43d2e5ffd8e8",
+    "canonical_aggregate_sha256": "5b9fb57f2b7073010c1ad35d88b55de776a949091665f9ea69cbd86d00bb18f9",
     "canonical_file_count": 864,
     "skill_version": "1.0.77"
   },
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "a2809c99f8374c77fe78113e9bf41dbb38fcc266879f30aded45c9e11792b07b",
-      "archive_bytes": 82692557,
+      "archive_sha256": "001032b8d5674014e29efe9b31a728a0e5a07a66875687dd7e5501ec782ddc75",
+      "archive_bytes": 82692521,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,14 +120,14 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "a2809c99f8374c77fe78113e9bf41dbb38fcc266879f30aded45c9e11792b07b",
-    "bytes": 82692557
+    "sha256": "001032b8d5674014e29efe9b31a728a0e5a07a66875687dd7e5501ec782ddc75",
+    "bytes": 82692521
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "04c98b279d948f239eba3206ea0f048605683bc1534aa79b2aaac0368a794af3",
+    "distribution_aggregate_sha256": "bb65fd5c3f9240edf6926a2e8e70309d4e49852a856203b0789e2316fe21fae8",
     "distribution_file_count": 865,
-    "contract_aggregate_sha256": "fc647b8105e607c4f54df955e10bd0de08df209b4d16b27395e25e63cd32bb67",
+    "contract_aggregate_sha256": "5b9fb57f2b7073010c1ad35d88b55de776a949091665f9ea69cbd86d00bb18f9",
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -3563,7 +3563,7 @@
       },
       {
         "path": "skill-version.txt",
-        "sha256": "ed0a366b4ef36d40c055672a8b83679e99246fec71a706b4ae4cb7958feace3f"
+        "sha256": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1"
       },
       {
         "path": "tests/CRITICAL-CONTRACT-council-front-door.test.mjs",
@@ -5867,7 +5867,7 @@
     "scripts/verify-cohort-parity.mjs": "6aebc56ba1065335f3175edb8cba2eff43915413a05c59ff07397f4682b0a5fc",
     "scripts/verify-council-box.sh": "4b5ec7d379e7ad954d6e7d0c586ab9c14240923882fab2515ea8629abfb9bdc4",
     "scripts/verify-council-plugin.mjs": "ef68224e02a9de84d280c3c62cc9ca3c746149e27d2b515321dc7ca3b2bfed95",
-    "skill-version.txt": "ed0a366b4ef36d40c055672a8b83679e99246fec71a706b4ae4cb7958feace3f",
+    "skill-version.txt": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1",
     "tests/CRITICAL-CONTRACT-council-front-door.test.mjs": "8c87dbc0dd6957069bce5973c4d37703de1817471ae69a397eb1c26c575a19d5",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
