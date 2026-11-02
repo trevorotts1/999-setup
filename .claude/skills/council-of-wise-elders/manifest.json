@@ -2,10 +2,10 @@
   "skill": "council-of-wise-elders",
   "skill_version": "1.0.76",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "f51dd860f7e23a5301cf0066a3724eac75c565b8",
-  "canonical_aggregate_sha256": "b1c1052fb9aba4c4062f4537638f43959500b003e803f631e7f9ba5ff9a3b9c2",
+  "source_commit": "60a48c764faa8b4c0bf7d9935c9acd55c3c8b7ad",
+  "canonical_aggregate_sha256": "911c89a729b5d885011fcb7994ff665d72ca9dd3a5416d96925fb0bf0e0da3bb",
   "file_count": 864,
-  "aggregate_sha256": "645ccadabcd9601b25f0decdc0895e50bee73c63ab7bfe75f75be29d5ae8deaa",
+  "aggregate_sha256": "e2f0977c4eb09615ef894a2e3b8a972430283af1386fb6de56fbe08a93582c7a",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "84d8ad1e247e4fa9f15d6e2c0f8c77b09875181e601cc9832e34c7548c085483",
+      "sha256": "37536d379454c72ed197f34c4b40d0f993eea021370487c1c76fd45ec71b5d15",
       "bytes": 6276
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "4c7f6c5287283e4dcbc2fef87a782306f2e182de22c066418ff44e191b04e2a3",
+      "sha256": "9f795983aa7e8486d05150f8063c4cf8b4b58fc7a0a9ba68bb719ce1ebd05bdb",
       "bytes": 22202
     },
     {
