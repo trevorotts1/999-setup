@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "e78fe2b3dab2d7b3233a9ae19d9a0057eb359cdf",
-    "canonical_aggregate_sha256": "0b379e33d2a67b46f180edb38b48c50cb6a8be58d1a3fd287aef4bf6a1aeb433",
-    "canonical_file_count": 861,
-    "skill_version": "1.0.75"
+    "source_commit": "f51dd860f7e23a5301cf0066a3724eac75c565b8",
+    "canonical_aggregate_sha256": "b1c1052fb9aba4c4062f4537638f43959500b003e803f631e7f9ba5ff9a3b9c2",
+    "canonical_file_count": 863,
+    "skill_version": "1.0.76"
   },
   "intentional_distribution_differences": [
     {
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "e1835eebae7d2b8c4e4e89ded1af73bfe0f3985769839973fe0b66f4c365a80c",
-      "archive_bytes": 82685448,
+      "archive_sha256": "2d0faa82c76d16ca9430d64663f955d1de4a26a25da31810705801e0380499e6",
+      "archive_bytes": 82689673,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,14 +120,14 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "e1835eebae7d2b8c4e4e89ded1af73bfe0f3985769839973fe0b66f4c365a80c",
-    "bytes": 82685448
+    "sha256": "2d0faa82c76d16ca9430d64663f955d1de4a26a25da31810705801e0380499e6",
+    "bytes": 82689673
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "ce54ed6b93522d0edf2157804259abe0c46dabc2eb3586e4debe7d8a72e9955c",
-    "distribution_file_count": 862,
-    "contract_aggregate_sha256": "0b379e33d2a67b46f180edb38b48c50cb6a8be58d1a3fd287aef4bf6a1aeb433",
+    "distribution_aggregate_sha256": "645ccadabcd9601b25f0decdc0895e50bee73c63ab7bfe75f75be29d5ae8deaa",
+    "distribution_file_count": 864,
+    "contract_aggregate_sha256": "b1c1052fb9aba4c4062f4537638f43959500b003e803f631e7f9ba5ff9a3b9c2",
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -1438,24 +1438,32 @@
         "sha256": "9b9872a24629f1fd42f006066e80487a990a3595e521cde5dd16f093b917f010"
       },
       {
+        "path": "extensions/council-before-dispatch/lib/binding-predicate.mjs",
+        "sha256": "0f36a8118f7b5c3e4fd3424406b393be79c671e27e00cbc1d4f8f3412e88fe82"
+      },
+      {
         "path": "extensions/council-before-dispatch/lib/core.mjs",
         "sha256": "1edcad275363421dab6a9654490a1b23ef820a15a7703555d1d4a3b745cc4b06"
       },
       {
         "path": "extensions/council-before-dispatch/lib/entry-validate.mjs",
-        "sha256": "cc38f44271d1927b49a3ac39db00c5299a59d09fb1fa4c678a4880ec3f1d7137"
+        "sha256": "5e5429d534b8fc4dfe1ef09d056006dfacfc3bfb21502ae7358d5b5cb9df242a"
       },
       {
         "path": "extensions/council-before-dispatch/openclaw.plugin.json",
-        "sha256": "20339cc53df4c7c3716310bce2c513221496976668d55d06e46eeac64614e080"
+        "sha256": "dceb95d6162c5228a53495f89d4a6b1cad698bdcdf9a51f020c0148eb40936e3"
       },
       {
         "path": "extensions/council-before-dispatch/package.json",
-        "sha256": "7ddde22393b83451347d5926fc82049a00dd711ec294900088ebcf8a598cc44f"
+        "sha256": "8f45ad47117a28f92380d9895e1d7a351764b0ced51cb39db28f17255531aa1d"
       },
       {
         "path": "extensions/council-before-dispatch/provision.mjs",
-        "sha256": "d3331bd0311158f15c0d6458e7b837a49e52eaef6627b7797797ab0d45c7e1bf"
+        "sha256": "3b800e0a2281ea8c0f7c39683c4097a4e5af7948f363203e06365e0bc9013047"
+      },
+      {
+        "path": "extensions/council-before-dispatch/test/binding-predicate.test.mjs",
+        "sha256": "9da419cc73774222c6956b9f68602ceb8aca36f324bdea38cf5605fb20585083"
       },
       {
         "path": "extensions/council-before-dispatch/test/core.test.mjs",
@@ -3231,7 +3239,7 @@
       },
       {
         "path": "scripts/install-council-plugin.mjs",
-        "sha256": "4a08dbae675c262e26e78e072af05c87ed3f1a0c492861135451a95a96bb1c67"
+        "sha256": "89bbbddecc3c1a38c243493745b78279a7da2e4872cc9d2382dd3f21fae72e26"
       },
       {
         "path": "scripts/install-front-door.sh",
@@ -3547,11 +3555,11 @@
       },
       {
         "path": "scripts/verify-council-plugin.mjs",
-        "sha256": "d697208ff8f4df5c9d02e3bd1a257f91105f8413b702daeb18200a574e28fa14"
+        "sha256": "ef68224e02a9de84d280c3c62cc9ca3c746149e27d2b515321dc7ca3b2bfed95"
       },
       {
         "path": "skill-version.txt",
-        "sha256": "2312f6c6fa96c498fbffc768d2351a6a3fceae51aa3ff14c84e7ab21246504cb"
+        "sha256": "ee316f92c3e7a43cb562fcff2598a71c2b016a9759f2315979bdcd7ba7827d52"
       },
       {
         "path": "tests/CRITICAL-CONTRACT-council-front-door.test.mjs",
@@ -3567,7 +3575,7 @@
       },
       {
         "path": "version",
-        "sha256": "2312f6c6fa96c498fbffc768d2351a6a3fceae51aa3ff14c84e7ab21246504cb"
+        "sha256": "ee316f92c3e7a43cb562fcff2598a71c2b016a9759f2315979bdcd7ba7827d52"
       },
       {
         "path": "wire.sh",
@@ -5324,11 +5332,13 @@
     "extensions/council-before-dispatch/index.js": "5fc41fa24d0f0a2f1de47e31f0e80aed548274b8da2f0b2fc62c8c3a189686bf",
     "extensions/council-before-dispatch/index.ts": "5fc41fa24d0f0a2f1de47e31f0e80aed548274b8da2f0b2fc62c8c3a189686bf",
     "extensions/council-before-dispatch/install/plugins-entry.example.json": "9b9872a24629f1fd42f006066e80487a990a3595e521cde5dd16f093b917f010",
+    "extensions/council-before-dispatch/lib/binding-predicate.mjs": "0f36a8118f7b5c3e4fd3424406b393be79c671e27e00cbc1d4f8f3412e88fe82",
     "extensions/council-before-dispatch/lib/core.mjs": "1edcad275363421dab6a9654490a1b23ef820a15a7703555d1d4a3b745cc4b06",
-    "extensions/council-before-dispatch/lib/entry-validate.mjs": "cc38f44271d1927b49a3ac39db00c5299a59d09fb1fa4c678a4880ec3f1d7137",
-    "extensions/council-before-dispatch/openclaw.plugin.json": "20339cc53df4c7c3716310bce2c513221496976668d55d06e46eeac64614e080",
-    "extensions/council-before-dispatch/package.json": "7ddde22393b83451347d5926fc82049a00dd711ec294900088ebcf8a598cc44f",
-    "extensions/council-before-dispatch/provision.mjs": "d3331bd0311158f15c0d6458e7b837a49e52eaef6627b7797797ab0d45c7e1bf",
+    "extensions/council-before-dispatch/lib/entry-validate.mjs": "5e5429d534b8fc4dfe1ef09d056006dfacfc3bfb21502ae7358d5b5cb9df242a",
+    "extensions/council-before-dispatch/openclaw.plugin.json": "dceb95d6162c5228a53495f89d4a6b1cad698bdcdf9a51f020c0148eb40936e3",
+    "extensions/council-before-dispatch/package.json": "8f45ad47117a28f92380d9895e1d7a351764b0ced51cb39db28f17255531aa1d",
+    "extensions/council-before-dispatch/provision.mjs": "3b800e0a2281ea8c0f7c39683c4097a4e5af7948f363203e06365e0bc9013047",
+    "extensions/council-before-dispatch/test/binding-predicate.test.mjs": "9da419cc73774222c6956b9f68602ceb8aca36f324bdea38cf5605fb20585083",
     "extensions/council-before-dispatch/test/core.test.mjs": "7fbb279a65b18ae7f56df893e6b22fe89a778e27bbacf6fb1c1ce9bdc6151cfe",
     "extensions/council-before-dispatch/test/ctr133-exploration.test.mjs": "5759c28d57de5ebcf4060e27ff8ea33f35d6c6dfc8b32a03d8bbf64df5309b41",
     "launchd/ai.blackceo.council-access-autoprovision.plist.template": "42d949036eaf5a3ba5e36682bfa3ea34352862c85a5e26963ddbfd6c50bdb104",
@@ -5772,7 +5782,7 @@
     "scripts/fixtures/skill22-registry/seed.json": "434eb5fd6f9f15fd1addb317d134b52aaf2382c262d78d8ac2e5484c9b2daff1",
     "scripts/ghl-client-emails.py": "def1845b87011916e6a12b347028e2dfeed7c55b71da9465fefc34c88d7b3bde",
     "scripts/install-council-access-job.sh": "67b1a383fc3b58549f26643b7adca9452a9a785675f5e2999ee607752bce74d6",
-    "scripts/install-council-plugin.mjs": "4a08dbae675c262e26e78e072af05c87ed3f1a0c492861135451a95a96bb1c67",
+    "scripts/install-council-plugin.mjs": "89bbbddecc3c1a38c243493745b78279a7da2e4872cc9d2382dd3f21fae72e26",
     "scripts/install-front-door.sh": "d53d1d5f2ed89e015f5b809dd7c21bc9a24281933cbca2b3880626b9d434260a",
     "scripts/install-runtime.mjs": "aea56952d02df30b007b228726e4ae9375caa7ee99c12211874c2249dcb289a3",
     "scripts/inventory-live-personas.mjs": "402a286cc2f4e0fbedf7e364f60e9392685bb0a3c8368362c99a2a3f95663a05",
@@ -5851,12 +5861,12 @@
     "scripts/verify-bundles.mjs": "9e04ec282d9a905528c9eeb9ea06269ae15f4fc2d437c1bba7d61a2f551d9543",
     "scripts/verify-cohort-parity.mjs": "6aebc56ba1065335f3175edb8cba2eff43915413a05c59ff07397f4682b0a5fc",
     "scripts/verify-council-box.sh": "4b5ec7d379e7ad954d6e7d0c586ab9c14240923882fab2515ea8629abfb9bdc4",
-    "scripts/verify-council-plugin.mjs": "d697208ff8f4df5c9d02e3bd1a257f91105f8413b702daeb18200a574e28fa14",
-    "skill-version.txt": "2312f6c6fa96c498fbffc768d2351a6a3fceae51aa3ff14c84e7ab21246504cb",
+    "scripts/verify-council-plugin.mjs": "ef68224e02a9de84d280c3c62cc9ca3c746149e27d2b515321dc7ca3b2bfed95",
+    "skill-version.txt": "ee316f92c3e7a43cb562fcff2598a71c2b016a9759f2315979bdcd7ba7827d52",
     "tests/CRITICAL-CONTRACT-council-front-door.test.mjs": "8c87dbc0dd6957069bce5973c4d37703de1817471ae69a397eb1c26c575a19d5",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
-    "version": "2312f6c6fa96c498fbffc768d2351a6a3fceae51aa3ff14c84e7ab21246504cb",
+    "version": "ee316f92c3e7a43cb562fcff2598a71c2b016a9759f2315979bdcd7ba7827d52",
     "wire.sh": "9ba3be95e228bc0dd69d4c6ae231be64a703467d3ce851db142c4919c57a0549"
   },
   "runtime_entry": {
