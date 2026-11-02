@@ -14,8 +14,8 @@
 #   4. CLI through the installed executable: doctor, the full Section
 #      25.3 command inventory, clean --json output, the golden sample
 #      (A 6.0, B 7.6, C 6.6), council state in the data profile only.
-#   5. Update path against a stale real directory: external backup,
-#      converged link, idempotent runtime reinstall.
+#   5. Update path (P15/XR-1): a stale real directory is preserved in
+#      place with no backup minted, then an idempotent runtime reinstall.
 #   6. Custom config root and paths with spaces.
 #   7. Offline install: warm cache succeeds (including a spaced cache
 #      path), cold cache refuses with COUNCIL_NPM_OFFLINE_CACHE_MISS and
@@ -205,15 +205,22 @@ COUNCIL doctor --data-dir "$VENDORED/state" > "$BASE/guard.log" 2>&1; RC=$?
 [ ! -e "$VENDORED/state" ] && pass "the refused data directory was never created" \
   || fail "the refused data directory was created inside the skill folder"
 
-echo "== 5. update path: stale real directory, external backup, idempotence =="
+echo "== 5. update path: stale real directory is preserved (P15/XR-1) =="
 H2="$BASE/home2"; mkdir -p "$H2/.claude/skills/$SKILL_NAME"
 printf 'STALE\n' > "$H2/.claude/skills/$SKILL_NAME/SKILL.md"
-link_root "$H2" "$H2/.claude"
-[ -L "$H2/.claude/skills/$SKILL_NAME" ] && pass "stale directory converged to the link" \
-  || fail "stale directory was not converged"
-BK="$(ls -d "$H2/.claude-skill-backups/$SKILL_NAME."* 2>/dev/null | head -1)"
-[ -n "$BK" ] && grep -q 'STALE' "$BK/SKILL.md" && pass "stale tree preserved in the external backup" \
-  || fail "external backup missing or content lost"
+link_root "$H2" "$H2/.claude"; RC=$?
+# P15/XR-1 preservation: the adapter emits `preserve` for a real directory
+# that is not the shipped bytes, and the consumer honours it — nothing is
+# written and no backup is minted without explicit consent. The old
+# converged-link + external-backup expectation belongs to the pre-XR1
+# standalone fallback and contradicts the preservation contract.
+[ "$RC" = 0 ] && pass "linker exits 0 while reporting preservation" \
+  || fail "linker exited $RC (want 0 with preservation)"
+[ ! -L "$H2/.claude/skills/$SKILL_NAME" ] && grep -q 'STALE' "$H2/.claude/skills/$SKILL_NAME/SKILL.md" \
+  && pass "stale directory preserved in place (not converged)" \
+  || fail "stale directory was converged or altered"
+[ ! -e "$H2/.claude-skill-backups" ] && pass "no backup minted without consent" \
+  || fail "a backup was minted without consent"
 HOME="$H2" bash "$INSTALL_SH" > "$BASE/install2.log" 2>&1; RC=$?
 [ "$RC" = 0 ] && pass "runtime install on the updated root exits 0" \
   || { fail "runtime install on the updated root exited $RC"; tail -3 "$BASE/install2.log"; }
