@@ -26,6 +26,23 @@ for t in node npm brew gh pip3 npx; do
   printf '#!/bin/sh\necho "%s $*" >> "%s"\nexit 1\n' "$t" "$MARK" > "$SHIMS/$t"; chmod +x "$SHIMS/$t"
 done
 
+# CON-12: --skills-only APPLY provisions jsonschema (ensure_jsonschema) when python3
+# cannot import it. The fake HOME hides any user-site install, so the fixture puts a
+# python3 that imports jsonschema WITHOUT the user site first on PATH; otherwise
+# every APPLY reaches pip (rc 1 on a fake bundle, ~/Library written on the real one).
+# Real HOME is never read: system-wide install first, else a throwaway venv in $ROOT.
+PYJS=""
+for c in "$(command -v python3 2>/dev/null)" /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
+  [ -n "$c" ] && [ -x "$c" ] && HOME="$ROOT" PYTHONNOUSERSITE=1 "$c" -B -c 'import jsonschema' >/dev/null 2>&1 && { PYJS="$c"; break; }
+done
+if [ -z "$PYJS" ] && python3 -m venv "$ROOT/pyjs" >/dev/null 2>&1 \
+   && HOME="$ROOT/pyhome" PIP_NO_CACHE_DIR=1 "$ROOT/pyjs/bin/python3" -m pip install -q --disable-pip-version-check \
+        -r "$BUNDLE/black-friday-launcher/requirements.txt" >/dev/null 2>&1; then
+  PYJS="$ROOT/pyjs/bin/python3"
+fi
+[ -n "$PYJS" ] || { echo "PRECONDITION: no python3 that imports jsonschema (needed by --skills-only since CON-12); pip into a venv also failed"; exit 2; }
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$PYJS" > "$SHIMS/python3"; chmod +x "$SHIMS/python3"
+
 # snap <dir>: every path (type, mode, size, mtime, symlink target) under <dir>,
 # plus ONE aggregate SHA-256 over the ordered per-file content hashes. Equal
 # snapshots still mean "not one byte, mode, mtime or path changed"; batching is
@@ -95,6 +112,7 @@ F_AFTER="$(fsnap "$H1")"
 if [ "$RC" -eq 0 ] && [ "$F_BEFORE" = "$F_AFTER" ] && [ -n "$F_BEFORE" ]; then
   pass "apply: exit 0 (content delivered, updater-stale only reported); 9Router, claude-nine launcher, settings, state and nine-router-setup byte-identical"
 else fail "apply: forbidden path changed or failed (rc=$RC)"; fi
+case "$OUT" in *"jsonschema: OK (already importable"*) pass "apply: jsonschema reported present (fixture python3 in use, no pip)";; *) fail "apply: jsonschema line missing or pip reached";; esac
 if cmp -s "$SCRIPT/../../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md" 2>/dev/null \
    || cmp -s "$(dirname "$SCRIPT")/../../eli5/SKILL.md" "$H1/.claude/skills/eli5/SKILL.md"; then
   pass "apply: eli5 refreshed to the clone's content"
