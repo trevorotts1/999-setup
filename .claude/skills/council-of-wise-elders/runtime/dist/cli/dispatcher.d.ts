@@ -52,22 +52,8 @@ export interface CliDeps {
  */
 export declare function skillRootFromModule(): string;
 /**
- * The ACTUAL skill folder. Two mechanisms, in order:
- *
- * 1. The install record, read from `../../install-record.json` beside
- *    the running module. Neither installed layout has a SKILL.md,
- *    advisors/ or manifest.json above it, so the record is the
- *    install's own statement of which folder it was built from. Two
- *    installers write it, one per layout:
- *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
- *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
- *      writes <prefix>/releases/install-record.json;
- *    - the 999-setup vendoring's scripts/council-runtime-install.sh
- *      (that repo only, not this tree) installs
- *      <prefix>/runtime/dist/council-entry.mjs and writes
- *      <prefix>/install-record.json.
- * 2. A layout-independent walk to the nearest ancestor carrying the
- *    skill signature (SKILL.md beside advisors/ and manifest.json).
+ * The ACTUAL skill folder (see paths.ts skillFolderForAssets): the install
+ * record's skill_dir when one is installed, else a positive-signature walk.
  *
  * null when neither applies: the guard then has no root, and every
  * command that must keep state out of the skill tree refuses rather
