@@ -24,45 +24,35 @@ A launch run dir holds `launch.json` (the approved launch record),
 `approval.json` (the plan-approval record), and `launch-request.json`
 (`mode`, client/worker identity refs, copy profile, write target, any
 scoped approvals). The legacy path refuses a launch-mode run dir rather
-than running it through the old pipeline. The entry script is not a
-pinned enforcement file; no pinned file changed for launch mode, so the
-hash-pin still verifies the untouched legacy core.
+than running it through the old pipeline.
+
+The entry script is not itself a pinned enforcement file, but the launch
+chain it calls is. `PINNED_FILES` in `signature-funnel-entry.sh` holds the
+dispatch, route, page and Agnes modules beside the legacy provers and
+structure: `scripts/dispatch_launch.py`,
+`scripts/compile_launch_route.py`, `scripts/page_set.py`,
+`scripts/page_swarm.py`, `scripts/validate_launch_plan.py`,
+`scripts/agnes_dispatch.py`, `scripts/agnes_gates.py`,
+`scripts/agnes_orchestrator.py` and `scripts/agnes_response.py`. The
+hash-pin therefore covers the files that choose launch routes, pages and
+dispatch as well as the legacy core, and moving any of them requires
+`bash signature-funnel-entry.sh --write-pin` to mint the new
+`scripts/SF-PROVER-PIN.sha256`.
 
 ## Launch-mode toolchain (`scripts/`)
 
 | Script | Job |
 |---|---|
-| `launch_intake.py` | Guided interview state machine (doc 03): durable session, per-field provenance ledger, deterministic recommendation rules, plan assembly, plain-language summary, pause/resume. Its own bank is `intake/launch-questions.json`; the client-facing conversation in every harness reads the shared bank (`shared-utils/client_intake/question-bank.json`) through `shared-utils/signature_launch/experience/guided_experience.py` and `render_question.py`, so the opening A/B/C choice, the one-question-at-a-time flow, the coaching on "I don't know", the computed length estimate and the plan review are the same everywhere. |
+| `launch_intake.py` | Guided interview state machine (doc 03): durable session, per-field provenance ledger, deterministic recommendation rules, plan assembly, plain-language summary, pause/resume. Question bank: `intake/launch-questions.json`. |
 | `validate_launch_plan.py` | Domain-law plan validator plus `assert_plan_build_approved`, the plan-approval gate (hash binding, client identity, no worker self-approval, revocation/expiry, separate approval types). |
 | `compile_launch_route.py` | Deterministic route compiler/validator/resolver. One source produces `route-graph.json`, a readable route table, and machine test cases. Graph hash = SHA-256 of the emitted file bytes. |
 | `dispatch_launch.py` | Turns an approved plan into specialist page requests (idempotent dispatch keys), optionally executing them through consumer adapters (`launch-adapters.example.json`). Emission is not execution: the manifest says `emitted_not_executed` until a consumer really answers with a valid result. |
 | `page_set.py` | The pages of a funnel, for any shape (single offer, multiple options, **folded levels**, free entry, legacy 3/5/7). One ordered entry per page from `structure/page_types.json`: signature landing page, signature sales page, order page, order form / checkout, upsell 1 and 2, downsell 1 and 2, thank-you. Each carries its page identity (role + page kind + role instance), its client-facing label, the skill and wrapper that build it, and the design files it must end with (desktop and mobile wireframes and mockups, review PDFs, overview boards). Which landing pages the funnel gets is the client's intake choice; when they did not choose, the recommended set is used and listed as **to confirm**. Dispatch hands that set to the landing bridge (`--landing-pages {landing_pages}`), which refuses a config that builds a different set, so a funnel planned with two landing pages is never delivered with one. Also reads and checks the shared image inputs file (`--image-inputs`) every wrapper takes, and proves a run folder holds every deliverable: a free stub run is reported as images only, render pending, never as complete. |
+| `launch_plan.py` | The FULL launch plan beside the pages: turns the assembled launch record plus the intake answer ledger into one document in the shared launch-plan contract (`shared-utils/signature_launch_contract/launch-plan.schema.json`) — `pages`, `email_sequences` (Skill 50), `text_sets`, `automations` (Skill 44), `conversation_ai{requested,mode}`, `launch_calendar` and `a2p_ready`, every unit with its `waits_for`. Families and templates follow spec §3.3; every email, text and automation is `draft_only`, `build_rail` is the U-GHL-PROBE answer (Skill 44 engine), failed payment appears only with payment plans, the AI reply workflow only when the bot was requested, and texts only for an email + text launch, within the cap of 5 promotional sets. A missing launch date, doors time, timezone or AI mode blocks the plan by name — no deadline, price or bot job is invented. `launch_intake.assemble_plan` attaches it to the session (`launch_plan`, `launch_plan_missing`) and the client summary names the emails, texts, automations and AI choice; `launch_intake.py --launch-plan [--out plan.json]` prints or writes it for the dispatcher. |
 | `page_swarm.py` | Builds the pages side by side. Every page runs side by side, the landing lane (sales page and opt-in page) with the rest, `--parallel auto` workers at a time (the Skill 71 runner profile: Mac 6, Hostinger 8, Contabo 4; `--parallel 1` is one page at a time, same results). Paid image starts take tokens from the shared KIE limiter (20 per 10 seconds, retries included) and a per-launch spend ledger (`spend-ledger.json`) stops new paid work at the image cap. One page failing never stops the others; results come back in page order. No page waits for another: the look they share is the one image inputs file, and `visual-bible.json` is only the record of what the landing run drew, written when the swarm ends. |
 | `checkout_wrapper.py` | The design-only adapter for the `checkout` role: Skill 71's shared image service builds the order form page's desktop and mobile wireframes and mockups on the five-section checkout role spec (never the native form, which stays Skill 06's). Staged inputs: the approved checkout manuscript, the run's measured design system as `{work_dir}/design-prose-checkout.json` (required: `--design-prose`, a JSON object with `notes`, `traits`, `rules_md` and `rules_json` keys as `build_production_request.py` reads it; without it the default image-model prompt band refuses every checkout section below the 16000-char floor and the wrapper exits 2), brand file, brand owner, image cap and design style. Stub provider by default. |
 | `collect_launch_receipts.py` | Aggregates page results into a launch checkpoint: request echo required, self-review never counts as independent review, weakest proof class reported. |
 | `legacy_adapter.py` | Migrates a legacy LOCKED brief into a launch-mode draft (status `collecting`, no plan approval — the legacy lock is not one), with a mapping report that names every unmapped field (notably the second downsell, which has no launch counterpart). Legacy files are never edited. |
-
-## What the client actually experiences
-
-The client is an entrepreneur, not an engineer. The conversation is built for that reader and lives in
-`shared-utils/signature_launch/experience/`:
-
-- **Introduction, then one choice.** `guided_experience.opening()` says what is about to happen, promises plain
-  language and no technical detail, and asks *"What is the best way for me to help you with your launch?"* with
-  A (recommend a plan for me), B (guide me through each decision) and C (I already have a plan). The preference can
-  change at any time.
-- **One question at a time**, each with a one-line reason and at most three choices, plus **I'm not sure, help me**.
-  The help option names the three ways out: show an example, help me answer, recommend using what is already known.
-- **"I don't know" is a help request.** It is never stored as an answer and the interview never skips past it.
-- **Length is computed, progress covers what applies.** `estimate_line()` and `progress_line()` count the questions
-  that actually apply to this run; a changed estimate says why it changed.
-- **Offers are built one at a time.** One offer in the client's own words, read back, then a plain question about
-  whether a second would help. No table to fill in, no automatic upsell.
-- **The ending is a plan review, not a pitch.** `plan_review()` shows what the client told us, what we understand and
-  recommend and why, what will be built and the outcome it is meant to produce, and the remaining assumptions,
-  limits and costs. It recommends; it never approves, and it promises no sales figures.
-- **Approval is separate and explicit.** A recommendation is a proposal, never permission to spend; paid pictures
-  carry their own approval.
 
 ## Every page gets its designs
 
