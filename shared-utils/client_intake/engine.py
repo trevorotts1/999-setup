@@ -14,7 +14,8 @@ atomically, so any harness can stop and resume from the file. stdlib only; palet
 logo files only.
 
 CLI:  engine.py FILE next | record ID VALUE | help ID [--logo F --site URL --palette N --mood "..."] |
-      check | finalize | report | show      (FILE is created on first use; --mode launch|legacy|bf)
+      check | finalize | report | show      (FILE is created on first use;
+      --mode launch|legacy|bf|page, --page-kind sales|opt_in for a page run)
 """
 from __future__ import annotations
 
@@ -33,9 +34,52 @@ BANK_PATH = Path(__file__).with_name("question-bank.json")
 STATUSES = ("provided", "suggested", "default_to_confirm", "unknown")
 HELP_WORDS = {"help", "help me", "not sure", "not sure yet", "im not sure", "i am not sure", "i dont know", "idk",
               "unsure", "i have no idea", "no idea", "dont know", "im not sure, help me", "im not sure help me", "no clue"}
+# a short reply built from one of these phrases is a help request, never an answer
+HELP_PHRASES = re.compile(r"\b(?:not sure|no idea|no clue|don'?t know|dont know|idk|unsure|help me|need help)\b")
+_MAX_HELP_WORDS = 6  # longer replies are real answers that merely mention a phrase
 SENTINEL = "CLIENT_MUST_SUPPLY"  # the Skill 71 brand-file marker for "not supplied yet"
 ROLE_ORDER = ("primary", "secondary", "accent", "background", "text")
+# The eight launch-operation areas, at the ids the shared intake contract fixes. A bank
+# question may name its own "topic"; this map is the fallback so the ids always reach the
+# client surface and the ledger. Every one of these questions is conditional (never legacy).
+LAUNCH_TOPICS = {
+    "timing": "launch_calendar",
+    "channels": "channels",
+    "conversation_ai": "conversation_ai",
+    "access_delivery": "access_delivery",
+    "payment_plans": "payment_plans",
+    "sender_name": "sender_name",
+    "reply_email": "reply_to_email",
+    "texting_readiness": "a2p_ready",
+}
+_TOPIC_BY_QUESTION = {v: k for k, v in LAUNCH_TOPICS.items()}
+# The three assistance preferences the client may pick and change at any time.
+ASSISTANCE_MODES = {"choose_for_me": "A", "help": "B", "know": "C"}
+# interview_mode answers resolve from the bank's long-form A/B/C wording, a bare
+# A/B/C letter, or the older short phrases (kept as synonyms). None = the text names
+# no recognizable preference — free text or a help phrase — never a silent default.
+_MODE_LETTERS = {"a": "choose_for_me", "b": "help", "c": "know"}
+_MODE_PHRASES = (("recommend a plan", "choose_for_me"),
+                 ("guide me through", "help"),
+                 ("already have a plan", "know"),
+                 ("know what i want", "know"),
+                 ("help me choose", "help"),
+                 ("set it up for me", "choose_for_me"),
+                 ("choose a setup for me", "choose_for_me"))
 _BANK = None
+
+
+def _mode_from_answer(raw):
+    """interview_mode answer -> know/help/choose_for_me, or None when the text names
+    no recognizable preference (a help request or free text, handled by the caller)."""
+    n = _norm(raw)
+    letter = re.match(r"^\(?([abc])\)?[.:\s]*$", n)
+    if letter:
+        return _MODE_LETTERS[letter.group(1)]
+    for phrase, mode in _MODE_PHRASES:
+        if phrase in n:
+            return mode
+    return None
 
 
 def load_bank(path=None):
@@ -55,8 +99,10 @@ def question(qid, bank=None):
 
 
 # ---------------------------------------------------------------- the answers file
-def new_doc(mode="launch", harness=None, run_id=None):
+def new_doc(mode="launch", harness=None, run_id=None, page_kind=None):
     doc = {"schema": "client-intake-answers/v1", "meta": {"mode": mode, "phase": "pre_build"}, "answers": {}, "to_confirm": []}
+    if mode == "page" and page_kind:
+        doc["meta"]["page_kind"] = page_kind
     if harness:
         doc["harness"] = harness
     if run_id:
@@ -66,7 +112,11 @@ def new_doc(mode="launch", harness=None, run_id=None):
 
 def load(path, mode="launch"):
     p = Path(path)
-    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else new_doc(mode)
+    if not p.is_file():
+        return new_doc(mode)
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    derive_payment_plans(doc)  # a flag saved by an older run is still derived, never asked
+    return doc
 
 
 def save(doc, path):
@@ -176,9 +226,64 @@ def roles(doc):
            "text": r["text"] or ph.readable_text_for((r["background"] or ["#FFFFFF"])[0])}
     if r["secondary"]:
         out["secondary"] = r["secondary"]
-    sts = [get(doc, f"brand_{k}")["status"] for k in ROLE_ORDER if get(doc, f"brand_{k}")]
-    status = "default_to_confirm" if "default_to_confirm" in sts else "provided"
-    return {"roles": out, "status": status, "warnings": ph.check_palette(out)}
+    # a derived piece (the contrast-rule text colour) is documented like derived fonts,
+    # never a proposal: it must not relabel the client's accepted palette
+    sts = [ent["status"] for ent in (get(doc, f"brand_{k}") for k in ROLE_ORDER)
+           if ent and ent.get("source") != "contrast rule"]
+    status = ("default_to_confirm" if "default_to_confirm" in sts
+              else "suggested" if "suggested" in sts else "provided")
+    return {"roles": out, "status": status, "confirmed": status == "provided", "warnings": ph.check_palette(out)}
+
+
+# ---------------------------------------------------------------- profiles and derived fields
+def profile(doc, bank=None):
+    """The ask list the doc's mode declares, or None. Mode page is Skill 71's page-only
+    profile: its questions are the ask list, and nothing outside it is ever put to the client."""
+    b = bank if isinstance(bank, dict) else load_bank()
+    profiles = b.get("profiles") or {}
+    if not profiles and b is not load_bank():  # a partial bank still obeys the canonical ask list
+        profiles = load_bank().get("profiles") or {}
+    return profiles.get((doc.get("meta") or {}).get("mode"))
+
+
+_BILLING_PAYMENT_PLANS = {"one_time": False, "recurring": True, "installment": True}
+# the bank's own answer text, which apply_default records verbatim
+_BILLING_TEXT = {"all at once": "one_time", "monthly": "recurring", "in parts or trial first": "installment"}
+
+
+def _billing_key(value):
+    """one_time / recurring / installment from the stored key or the bank's answer text.
+    Anything else - including a malformed hand-edited value - maps to None, never a crash."""
+    if not isinstance(value, str):
+        return None
+    return value if value in _BILLING_PAYMENT_PLANS else _BILLING_TEXT.get(_norm(value))
+
+
+def derive_payment_plans(doc):
+    """The payment-plan flag comes from the billing answer. It is derived, never asked,
+    and it inherits the billing answer's own state: a defaulted billing answer may not
+    produce a confirmed payment-plan flag."""
+    if (doc.get("meta") or {}).get("mode") == "legacy":
+        return get(doc, "payment_plans")
+    have = get(doc, "payment_plans")
+    if have is not None and have["status"] != "unknown" and have.get("source") != "derived-billing":
+        return have  # an answer recorded outside the derivation wins
+    b = get(doc, "billing")
+    key = _billing_key(b["value"]) if b is not None else None
+    if b is None or b["status"] == "unknown" or key is None:
+        return have
+    return _set(doc, "payment_plans", _BILLING_PAYMENT_PLANS[key], b["status"], "derived-billing",
+                f"Derived from your billing answer ({b['value']}); this is never asked.")
+
+
+def page_kind(doc):
+    return (doc.get("meta") or {}).get("page_kind")
+
+
+def is_opt_in(doc):
+    """The recorded page kind governs the length rule - including when --page-kind was
+    stamped on a doc whose mode is not page. Enforcement never depends on two flags."""
+    return page_kind(doc) == "opt_in"
 
 
 # ---------------------------------------------------------------- conditions
@@ -216,84 +321,133 @@ def cond_met(doc, cond):
 
 def applicable(doc, bank=None):
     autofill_roles(doc)
-    return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q.get("condition"))]
+    derive_payment_plans(doc)
+    prof = profile(doc, bank)
+    allowed = set(prof["questions"]) if prof else None
+    return [q for q in (bank or load_bank())["questions"]
+            if cond_met(doc, q["condition"]) and (allowed is None or q["id"] in allowed)]
+
+
+def topics(doc, bank=None):
+    """The eight launch-operation areas keyed by their contract ids (timing, channels,
+    conversation_ai, access_delivery, payment_plans, sender_name, reply_email,
+    texting_readiness). Conditional: an area that does not apply to this run is marked so,
+    never asked."""
+    out = {}
+    for topic, qid in LAUNCH_TOPICS.items():
+        entry = get(doc, qid)
+        out[topic] = {"question_id": qid,
+                      "applicable": any(q["id"] == qid for q in applicable(doc, bank)),
+                      "state": ("answered" if entry and entry["status"] != "unknown"
+                                else "help_open" if entry else "unasked")}
+    return out
+
+
+def assistance_mode(doc):
+    """A (recommend a plan for me), B (guide me through each decision) or C (I already
+    have a plan). Read fresh on every call, so the client may change it mid-flow."""
+    e = get(doc, "interview_mode")
+    v = e["value"] if e is not None and e["status"] != "unknown" else None
+    if v is not None and v not in ASSISTANCE_MODES:
+        v = _mode_from_answer(v)   # long-form A/B/C wording or an older synonym
+    return ASSISTANCE_MODES.get(v, "B")
 
 
 # ---------------------------------------------------------------- asking
-def _help_of(q):
-    """The nested help object. Skill 83's picture questions carry `help` as a plain sentence, so a
-    string is read as its explanation: same question, same coaching, no second shape to maintain."""
-    h = q.get("help")
-    if isinstance(h, dict):
-        return h
-    return {"explain": str(h)} if isinstance(h, str) and h.strip() else {}
-
-
 def hydrate(doc, q):
-    """The question exactly as a client should see it (text filled in, dynamic choices resolved)."""
+    """The question exactly as a client should see it (text filled in, dynamic choices resolved).
+    Nested help.examples, default.value and every per-option explanation survive untouched."""
     q = json.loads(json.dumps(q))
-    q.setdefault("condition", "always")
-    q["help"] = _help_of(q)
+    q.setdefault("topic", _TOPIC_BY_QUESTION.get(q["id"]))
     if q.get("dynamic") == "colors":
         role = q["id"].split("_", 1)[1]
         pool = _colors(doc) if role == "primary" else _remaining(doc)
         q["text"] = q["text"].replace("{colors}", "(" + ", ".join(pool) + ")")
         q["choices"] = (pool + (["None"] if role == "accent" else []))[:3]
-    if q["id"] == "design_style":
-        q["help"]["examples"] = (q["help"].get("examples") or []) + _style_links()
-    if q["id"] == "packages":
-        said = offer_summary(doc)
-        if said and needs_another_offer(doc):
-            q["text"] = (said + " Would a second package help your buyers, for example a smaller one? "
-                         "If one package is enough, tell me and I will use it as it is.")
-            q["why"] = ("Buyers only need a choice page when there is a real choice. I never add a package "
-                        "you did not name, and I never add an upgrade you did not ask for.")
-        elif said:
-            q["text"] = said + " Is that right?"
+    if q["id"] == "design_style" and isinstance(q.get("help"), dict) and isinstance(q["help"].get("examples"), list):
+        q["help"]["examples"] = q["help"]["examples"] + _style_links()
+    if q["id"] == "copy_profile" and is_opt_in(doc):
+        q["choices"] = [c for c in q["choices"] if _norm(c) != "standard"]  # opt-in is long-form only
     return q
 
 
 def _style_links():
-    """Visual examples for the design style. The same code runs in the onboarding layout
-    (skills at the repository root) and in a 999 package (skills under .claude/skills)."""
-    roots = []
-    for base in Path(__file__).resolve().parents:
-        roots += [base, base / ".claude" / "skills", base / "skills"]
-    for base in roots:
-        f = base / "71-blackceo-signature-page" / "references" / "design-styles.json"
+    """The design-style visual examples, wherever this distribution installs Skill 71.
+    One line per style, never silently dropped: a style with no example image says so, so
+    the client is not told a picture exists when it does not."""
+    names = ("71-blackceo-signature-page", "blackceo-signature-page")  # repo tree vs skills tree
+    bases = [p / n for p in Path(__file__).resolve().parents for n in names]
+    home = Path.home()
+    for root in (home / ".openclaw" / "skills", home / ".claude" / "skills",
+                 home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")):
+        bases += [root / n for n in names]
+    for base in bases:
+        f = base / "references" / "design-styles.json"
         if f.is_file():
             try:
-                return [f"{s['id']} {s['name']} example: {s['example']['url']}" for s in json.loads(f.read_text())["styles"] if s["example"].get("url")]
-            except (OSError, ValueError, KeyError):
+                styles = json.loads(f.read_text())["styles"]
+            except (OSError, ValueError, KeyError, TypeError):
                 return []
+            return _style_lines(styles)
     return []
 
 
-def _askable(doc, q, include_suggested=False):
-    """Still to ask: unanswered, or answered only with "I don't know". A never-default
-    question is NEVER skipped after a help request: skipping it would move the flow past a
-    fact the build cannot proceed without, and check() would have to name it later anyway.
+def _style_lines(styles):
+    """One honest line per style. A malformed entry is skipped, never crashes the ask
+    (a nameless entry has nothing to disclose); a missing or non-string URL is "none"."""
+    out = []
+    for s in styles if isinstance(styles, list) else []:
+        if not isinstance(s, dict):
+            continue
+        ex = s.get("example")
+        url = ex.get("url") if isinstance(ex, dict) else None
+        name = f"{s.get('id', '?')} {s.get('name', '')}".strip()
+        out.append(f"{name} example: {url}" if isinstance(url, str) and url
+                   else f"{name} example: none available yet - this style has no example image")
+    return out
 
-    `include_suggested` also asks a question whose answer is only a suggestion. The renderer
-    uses it, because a suggestion is not the client's answer until they confirm it; the
-    engine's own flow keeps treating a suggestion as given, as check() already does."""
+
+def _askable(doc, q):
     e = get(doc, q["id"])
     if e is None:
         return True
-    if include_suggested and e["status"] == "suggested":
-        return True
-    return e["status"] == "unknown"
+    if e["status"] != "unknown":
+        return False
+    return not (q["never_default"] and e.get("unknown_count", 0) >= 2)  # keep moving; check() names the blocker
 
 
-def next_question(doc, bank=None, include_suggested=False):
-    todo = [q for q in applicable(doc, bank) if _askable(doc, q, include_suggested)]
+def next_question(doc, bank=None):
+    """The ONE next applicable question. Mode A (choose_for_me) and C (know) propose the
+    safe defaults and ask only what is missing; mode B (help) walks every applicable
+    question. One question at a time — never the raw bank."""
+    mode = assistance_mode(doc)
+    if mode in ("A", "C"):
+        _default_the_rest(doc, bank)  # a proposal, every one flagged "to confirm"
+    todo = [q for q in applicable(doc, bank) if _askable(doc, q)]
     if not todo:
         return None
-    todo.sort(key=lambda q: not str(q.get("condition") or "always").startswith("needs_role"))  # color-role follow-ups come right after the colors
+    todo.sort(key=lambda q: not q["condition"].startswith("needs_role"))  # color-role follow-ups come right after the colors
     total = len(applicable(doc, bank))
+    b = bank or load_bank()
     h = hydrate(doc, todo[0])
-    h["help_label"] = (bank or load_bank())["help_label"]
-    h["progress"] = {"answered": total - len(todo), "of": total}
+    h["help_label"] = b["help_label"]
+    done = total - len(todo)
+    h["progress"] = {"answered": done, "of": total,
+                     "percent": (round(100 * done / total) if total else 100)}
+    meta = doc.setdefault("meta", {})
+    was = meta.get("estimate_of")
+    note = (f"about {total} short questions now, depending on what we already know "
+            f"(was {was}; your answers opened or closed follow-up questions)"
+            if was is not None and was != total else None)
+    template = b.get("question_estimate_template")
+    meta["estimate_of"] = total
+    h["estimate"] = {"questions": total, "note": note,
+                     "text": (template.replace("{n}", str(total)) if template
+                              else f"about {total} short questions, depending on what we already know")}
+    h["assistance_mode"] = mode
+    h["coaching"] = b.get("coaching")
+    if was is None:
+        h["introduction"] = b.get("introduction")  # flow opening, once
     return h
 
 
@@ -311,13 +465,19 @@ def next_batch(doc, limit=4, bank=None):
 
 # ---------------------------------------------------------------- recording
 def wants_help(q, value):
-    """True when the client says they do not know. 'Help me choose' is a real choice only for interview_mode."""
+    """True when the client says they do not know. A help request opens coaching and is
+    never recorded as a substantive answer. 'Help me choose' is a real choice only for interview_mode."""
     if not isinstance(value, str):
         return False
+    if value.strip() in ("?", "??", "???"):
+        return True
     n = _norm(value).replace("'", "")
-    if q["id"] == "interview_mode" and (_pick(value, q["choices"]) or _interview_mode_value(value) != "help"):
-        return False
-    return n in HELP_WORDS or n.startswith("help me") or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"])
+    if q["id"] == "interview_mode" and (_pick(value, q["choices"])
+                                        or _mode_from_answer(value)):
+        return False   # a real preference (bank wording, A/B/C letter or older synonym)
+    return (n in HELP_WORDS or n.startswith("help me")
+            or (len(n.split()) <= _MAX_HELP_WORDS and HELP_PHRASES.search(n) is not None)
+            or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"]))
 
 
 def _money(text):
@@ -347,38 +507,6 @@ def _need(msg):
     return {"ok": False, "message": msg}
 
 
-# The three assistance preferences. A is "recommend a plan for me", B is "guide me
-# through each decision", C is "I already have a plan". The stored values are the ones
-# Skill 49's launch intake reads (know / help / choose_for_me); the client sees letters.
-_MODE_BY_LETTER = {"a": "choose_for_me", "b": "help", "c": "know"}
-_MODE_BY_WORDS = {"i know what i want": "know", "help me choose": "help",
-                  "set it up for me to review": "choose_for_me",
-                  "choose a setup for me to review": "choose_for_me",
-                  "recommend a plan for me": "choose_for_me",
-                  "guide me through each decision": "help",
-                  "i already have a plan": "know"}
-
-
-def _interview_mode_value(raw):
-    """The stored mode from A/B/C, the old three phrases, or a full label. Never a guess:
-    unrecognised text is a help request, so the client is coached instead of skipped."""
-    low = _norm(raw).replace("'", "")
-    if not low:
-        return "help"
-    head = re.match(r"^\(?([abc])\b", low)
-    if head:
-        return _MODE_BY_LETTER[head.group(1)]
-    if low in _MODE_BY_WORDS:
-        return _MODE_BY_WORDS[low]
-    for words, mode in _MODE_BY_WORDS.items():
-        if words in low:
-            return mode
-    for letter, mode in _MODE_BY_LETTER.items():
-        if re.search(r"\b" + letter + r"\b", low):
-            return mode
-    return "help"
-
-
 def _normalize(doc, q, raw):
     """(value, status, note) or a _need() dict. Free text always wins over the listed choices."""
     qid, t, ch = q["id"], q["answer_type"], q["choices"]
@@ -386,7 +514,11 @@ def _normalize(doc, q, raw):
     low = _norm(text) if isinstance(text, str) else ""
     pick = _pick(text, ch) if isinstance(text, str) else None
     if qid == "interview_mode":
-        return (_interview_mode_value(pick or text), "provided", None)
+        raw_choice = pick or text
+        mode = ({"i know what i want": "know", "help me choose": "help",
+                 "set it up for me to review": "choose_for_me"}.get(_norm(raw_choice))
+                or _mode_from_answer(raw_choice) or "help")
+        return (mode, "provided", None)
     if qid == "design_style":
         m = re.match(r"^\(?([abc])\b", low) or re.search(r"\b(block|circle|hybrid)\b", low)
         if not m:
@@ -492,16 +624,23 @@ def _normalize(doc, q, raw):
             return _need("I only recommend from products you have told me about. Tell me what you could offer and I will shape it for you to review.")
         return str(text), "provided", None
     if qid == "image_provider":
-        n = {"My connected service": "connected", "Recommend one": "kie", "No images needed": "none"}.get(pick or "")
-        n = n or (low if low in ("kie", "agnes", "none", "connected") else None)
-        return ((n, "suggested" if pick == "Recommend one" else "provided", None) if n else _need("Which image service: your connected one, one I recommend, or none?"))
+        n = {"My connected service": "connected", "Recommend one": "kie"}.get(pick or "")
+        n = n or (low if low in ("kie", "agnes", "connected") else None)
+        if not n:  # every page needs its canonical renders; "none" is not an answer
+            return _need("Which image service should make your pictures: your connected one, or one I recommend? Every page needs its generated pictures, so there is no none.")
+        return n, ("suggested" if pick == "Recommend one" else "provided"), None
     if qid == "image_cap":
-        if low in ("no pictures", "none", "0"):
-            return 0, "provided", None
         m = re.search(r"\d+", low)
-        return (int(m.group(0)), "provided", None) if m else _need("A number please, like 12.")
+        if not m or int(m.group(0)) <= 0:  # "no pictures" and 0 are the removed no-images path
+            return _need("Every page needs its canonical set of generated pictures, so the number must be at least 1. A number like 12 is fine.")
+        return int(m.group(0)), "provided", None
     if qid == "copy_profile":
-        return (("long_form" if "long" in low else "standard"), "provided", None) if (pick or "standard" in low or "long" in low) else _need("Standard or long-form?")
+        if not (pick or "standard" in low or "long" in low):
+            return _need("Standard or long-form?")
+        value = "long_form" if "long" in low else "standard"
+        if value == "standard" and is_opt_in(doc):
+            return _need("An opt-in landing page is long-form only. Say long-form, or change the page kind to a sales page.")
+        return value, "provided", None
     if qid == "location":
         return ("existing" if "existing" in low or low.startswith("yes") else "new" if "new" in low else None, "provided", None) if (low.startswith("yes") or "new" in low or "existing" in low) else _need("Your existing account or a new one?")
     if qid == "entitlement":
@@ -520,7 +659,6 @@ def _normalize(doc, q, raw):
         return {"community_url": url.group(0).rstrip(".,;"), "bonus": bonus, "founder_text_confirmed": True}, "provided", None
     if t == "packages":
         rows = text if isinstance(text, list) else [ln for ln in str(text).splitlines() if ln.strip()]
-        existing = list(val(doc, "packages") or [])  # offers already given are kept
         pk = []
         for row in rows:
             if isinstance(row, dict):
@@ -528,28 +666,14 @@ def _normalize(doc, q, raw):
                 continue
             sym = re.findall(r"[\$€£]\s*\d[\d,]*(?:\.\d+)?", row)
             m = _money(sym[-1]) if sym else _money(row.split("|")[-1]) if "|" in row else None
-            if "|" in row:  # the older pipe form: name | what they get | price
-                parts = [x.strip() for x in row.split("|")]
-                name, inc = parts[0], [i.strip() for r in parts[1:-1] for i in re.split(r";", r) if i.strip()]
-            else:  # a plain sentence: "Premium, 12 lessons and 4 live calls, $497"
-                parts = [x.strip() for x in re.split(r",|\s-\s|;", row.strip(" -*\u2022")) if x.strip()]
-                parts = [x for x in parts if not re.fullmatch(r"[\$€£]?\s*[\d,.]+(\s*(usd|eur|gbp))?", x, re.I)]
-                name = parts[0] if parts else ""
-                inc = parts[1:]
-            name = re.split(r"\s*(?:\||:|\(|\$|€|£)\s*", name, maxsplit=1)[0].strip(" ,.")
+            name = re.split(r"\s*(?:\||:|\s-\s|\(|\$|€|£)\s*", row.strip(" -*\u2022"), maxsplit=1)[0].strip()
+            rest = [x.strip() for x in re.split(r"\|", row)[1:] if x.strip() and not re.fullmatch(r"[\$€£]?\s*[\d,.]+(\s*(usd|eur|gbp))?", x.strip(), re.I)]
+            inc = [i.strip() for r in rest for i in re.split(r";", r) if i.strip()]
             if name and m:
                 pk.append({"display_name": name, "deliverables": inc, "price": m})
-        if not pk or any(not (p.get("display_name") and isinstance(p.get("price"), dict)) for p in pk):
-            return _need("Tell me one offer in your own words: what it is called, what the buyer gets, "
-                         "and the price. For example: Premium, 12 lessons and 4 live calls, $497.")
-        for o in pk:  # a new name is added; the same name is a correction, replaced in place
-            slot = next((i for i, e in enumerate(existing)
-                         if _norm(e.get("display_name")) == _norm(o.get("display_name"))), None)
-            if slot is None:
-                existing.append(o)
-            else:
-                existing[slot] = o
-        return existing, "provided", None
+        if len(pk) < 2 or any(not (p.get("display_name") and isinstance(p.get("price"), dict)) for p in pk):
+            return _need("I need at least two, each with a name and a price, one per line. For example: Premium | 12 lessons; 4 live calls | $497")
+        return pk, "provided", None
     if t == "list":
         items = text if isinstance(text, list) else [s.strip(" -*•") for s in re.split(r"\n|;|,(?=\s)", text) if s.strip(" -*•")]
         return (items, "provided", None) if items else _need("Please give me at least one.")
@@ -558,42 +682,6 @@ def _normalize(doc, q, raw):
     if not text or (isinstance(text, str) and not text.strip()):
         return _need("Please give me an answer, or say 'help'.")
     return text, "provided", None
-
-
-def offer_summary(doc):
-    """The client's offer read back in their own plain words. Nothing is added to it."""
-    v = view(doc)
-    pk = v.get("packages") or []
-    if pk:
-        parts = []
-        for o in pk:
-            price = o.get("price") or {}
-            amount = price.get("amount_minor")
-            money = (f"{price.get('currency', 'USD')} {amount / 100:,.0f}" if isinstance(amount, int)
-                     and amount % 100 == 0 else f"{price.get('currency', 'USD')} {amount / 100:,.2f}"
-                     if isinstance(amount, int) else "")
-            gets = "; ".join(o.get("deliverables") or [])
-            parts.append(f"{o.get('display_name')}" + (f", {gets}" if gets else "") + (f", {money}" if money else ""))
-        return "Here is what I understood: " + " and ".join(parts) + "."
-    name = v.get("offer_name") or v.get("offer_description")
-    if not name:
-        return None
-    price = v.get("price")
-    if isinstance(price, dict) and isinstance(price.get("amount_minor"), int):
-        amount = price["amount_minor"] / 100
-        shown = f"{price.get('currency', 'USD')} {amount:,.0f}" if price["amount_minor"] % 100 == 0 \
-            else f"{price.get('currency', 'USD')} {amount:,.2f}"
-        return f"Here is what I understood: {name}, at {shown}."
-    return f"Here is what I understood: {name}."
-
-
-def needs_another_offer(doc):
-    """True while the funnel shape needs a second package and only one is named. The client
-    is asked whether another one would help, never handed a three-column form."""
-    shape = val(doc, "funnel_shape")
-    if shape != "multiple_options":
-        return False
-    return len(view(doc).get("packages") or []) < 2
 
 
 def record(doc, qid, value, *, source="client", status=None, note=None):
@@ -617,6 +705,7 @@ def record(doc, qid, value, *, source="client", status=None, note=None):
     if st == "unknown":
         e["unknown_count"] = e.get("unknown_count", 0) + 1
     autofill_roles(doc)
+    derive_payment_plans(doc)  # billing answered: the payment-plan flag follows, never asked
     _sync_to_confirm(doc)
     return {"ok": True, "id": qid, "entry": e, "warnings": (roles(doc) or {}).get("warnings", []) if qid.startswith("brand_") else []}
 
@@ -710,6 +799,8 @@ def apply_default(doc, qid):
         v = {"mode": "wordmark", "text": val(doc, "business_name")}
     elif qid == "fonts":
         v = {"mode": "derive", "suggested": ph.fonts_suggestions()[0]}
+    elif qid == "copy_profile" and is_opt_in(doc):
+        v = "long_form"  # an opt-in landing page has one valid length; the default cannot weaken it
     elif qid == "brand_primary" or v in ("first_color", "next_color"):
         pool = _colors(doc) if qid == "brand_primary" else _remaining(doc)
         v = (pool or [None])[0]
@@ -721,24 +812,6 @@ def apply_default(doc, qid):
     autofill_roles(doc)
     _sync_to_confirm(doc)
     return e
-
-
-def coach_options(q):
-    """The three ways out every question offers when the client does not know. Named in
-    plain words, so the client is helped rather than told to try again."""
-    out = [{"id": "example", "label": "Show me an example",
-            "detail": (q["help"]["examples"][0] if q["help"]["examples"]
-                       else "I will show you what a good answer looks like.")},
-           {"id": "explain", "label": "Help me answer",
-            "detail": q["help"]["explain"]}]
-    if q["default"] is not None and not q["never_default"]:
-        out.append({"id": "recommend", "label": "Recommend using what is known",
-                    "detail": f"I would suggest: {_say(q['id'], q['default']['value'])}."})
-    else:
-        out.append({"id": "recommend", "label": "Recommend using what is known",
-                    "detail": "I can suggest the parts I already know and leave only what must come "
-                              "from you, which I will name in plain words."})
-    return out
 
 
 def resolve_unknown(doc, qid, *, logo=None, website=None, palette=None, mood=None, fetch=None):
@@ -754,12 +827,11 @@ def resolve_unknown(doc, qid, *, logo=None, website=None, palette=None, mood=Non
     e["unknown_count"] = n + 1
     h = q["help"]
     payload = {"id": qid, "explain": h["explain"], "examples": h["examples"], "why": q["why"], "attempt": n + 1}
-    if q["never_default"] and n > 0:
-        payload.update(action="blocked", message=f"I still cannot guess this one, because {q['why'][0].lower() + q['why'][1:]} {h['explain']} Take your time; the build waits for this answer and I will list it as the thing I need.")
+    if q["never_default"]:
+        payload.update(action="blocked", message=f"I cannot guess this one, because {q['why'][0].lower() + q['why'][1:]} {h['explain']} Take your time; the build waits for this answer and I will list it as the thing I need.")
         return payload
     if n == 0:
-        payload.update(action="help", message=h["explain"],
-                       coaching=coach_options(q))
+        payload.update(action="help", message=h["explain"])
         if h["kind"] == "palette":
             seed = (_colors(doc) or [None])[0]
             payload.update(options=[{"id": "logo", "label": "Read the colors from my logo (send the file)"},
@@ -834,20 +906,31 @@ def check(doc, bank=None):
             (blocking if q["never_default"] else unanswered).append(row)
         elif q["never_default"] and e["status"] in ("suggested", "default_to_confirm"):
             blocking.append({"id": q["id"], "question": q["text"], "why": "This is a suggestion until you approve it."})
+    if is_opt_in(doc):
+        e = get(doc, "copy_profile")
+        if e is not None and e["status"] != "unknown" and e["value"] == "standard":
+            blocking.append({"id": "copy_profile", "question": question("copy_profile")["text"],
+                             "why": "An opt-in landing page is long-form only; record long-form, or change the page kind to a sales page."})
     _sync_to_confirm(doc)
     r = roles(doc)
     return {"ready": not blocking and not unanswered, "blocking": blocking, "unanswered": unanswered,
             "to_confirm": doc["to_confirm"], "warnings": r["warnings"] if r else []}
 
 
-def finalize(doc, bank=None):
-    """'Use sensible defaults for the rest': defaults every defaultable question still open, never the
-    never-default ones. Everything defaulted is listed in to_confirm."""
+def _default_the_rest(doc, bank=None):
+    """Apply every safe default still open, never the never-default ones. Each one is a
+    proposal flagged 'to confirm', listed with a one-line way to change it."""
     for _ in range(4):  # defaults can unlock follow-up questions (roles); settle them
         for q in applicable(doc, bank):
             e = get(doc, q["id"])
             if (e is None or e["status"] == "unknown") and not q["never_default"] and q["required"] != "optional" and q["default"] is not None:
                 apply_default(doc, q["id"])
+
+
+def finalize(doc, bank=None):
+    """'Use sensible defaults for the rest': defaults every defaultable question still open, never the
+    never-default ones. Everything defaulted is listed in to_confirm."""
+    _default_the_rest(doc, bank)
     return check(doc, bank)
 
 
@@ -890,39 +973,29 @@ def _offer_text(x):
 
 _STATE = {"provided": "provided", "suggested": "recommended_unapproved", "default_to_confirm": "recommended_unapproved", "unknown": "unknown"}
 
-
 # ---------------------------------------------------------------- launch answers, typed
-# The eight launch-operation answers a Signature Launch (Skill 49) or a Black Friday
-# launch (Skill 83) must carry end to end. Raw client text is NEVER forwarded as-is: a
-# string is not a boolean, and "No, not yet" must never read as a truthy carrier approval.
-# Each adapter below returns a typed value or None (kept unknown), plus the provenance of
-# the answer it came from. The question ids are the shared bank's topic ids; the ledger
-# keys are the names Skill 49 and Skill 83 already read.
+# The eight launch answers a Signature Launch (Skill 49) must carry end to end. Raw
+# client text is NEVER forwarded as-is: a string is not a boolean, and "No, not yet"
+# must never read as a truthy A2P approval. Each adapter below returns a typed value
+# or None (kept unknown), plus the provenance of the answer it came from.
 LAUNCH_LEDGER_KEYS = (
-    ("timing", ("launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone")),
+    ("launch_calendar", ("launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone")),
     ("channels", ("launch.channels",)),
     ("conversation_ai", ("launch.conversation_ai",)),
     ("access_delivery", ("launch.access_delivery",)),
     ("payment_plans", ("launch.payment_plans",)),
     ("sender_name", ("launch.sender_name",)),
-    ("reply_email", ("launch.reply_to_email",)),
-    ("texting_readiness", ("launch.a2p_ready",)),
+    ("reply_to_email", ("launch.reply_to_email",)),
+    ("a2p_ready", ("launch.a2p_ready",)),
 )
-
-# Older answers files and the onboarding bank spell three of the eight topics differently.
-LAUNCH_TOPIC_ALIASES = {"timing": ("timing", "launch_calendar"),
-                        "reply_email": ("reply_email", "reply_to_email"),
-                        "texting_readiness": ("texting_readiness", "a2p_ready", "texting")}
 
 _TRUE_WORDS = {"conversation_ai": ("yes, add the bot",),
                "access_delivery": ("yes, send access after purchase",),
                "payment_plans": ("payment plans offered",),
-               "texting_readiness": ("yes, it is approved",),
                "a2p_ready": ("yes, it is approved",)}
 _FALSE_WORDS = {"conversation_ai": ("no, not this launch",),
                 "access_delivery": ("no, nothing to deliver",),
                 "payment_plans": ("paid in full",),
-                "texting_readiness": ("no, not yet",),
                 "a2p_ready": ("no, not yet",)}
 
 _TZ_ALIASES = (
@@ -938,15 +1011,6 @@ _TZ_ALIASES = (
 )
 _MONTHS = {m: i for i, m in enumerate(
     ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
-
-
-def topic_entry(doc, topic):
-    """The answers-file entry for a launch topic, following its older spellings."""
-    for qid in LAUNCH_TOPIC_ALIASES.get(topic, (topic,)):
-        e = get(doc, qid)
-        if e is not None:
-            return qid, e
-    return topic, None
 
 
 def _typed_bool(qid, value):
@@ -1064,9 +1128,9 @@ def parse_launch_calendar(text):
         for piece in re.split(r",", clause):
             low = piece.lower()
             key = None
-            if re.search(r"doors?\s+open", low) or re.search(r"\b(starts?|begins?|from)\b", low):
+            if re.search(r"doors?\s+open", low):
                 key = "doors_open_at"
-            elif re.search(r"doors?\s+close", low) or re.search(r"\b(ends?|until|through|closes?)\b", low):
+            elif re.search(r"doors?\s+close", low):
                 key = "doors_close_at"
             elif re.search(r"\blaunch(?:es|ing)?\b", low) and not re.search(r"launch\s+(?:e-?mail)", low):
                 key = "launch_at"
@@ -1089,19 +1153,18 @@ def parse_launch_calendar(text):
 
 
 def launch_answers(doc):
-    """The eight launch-operation answers as typed ledger entries, keyed by the names
-    Skill 49 and Skill 83 already read.
+    """The eight launch answers as typed ledger entries, keyed by the launch ledger names.
 
     Each entry is {value, state, source_ref, provenance}; state is the launch intake
     field state (provided / recommended_unapproved / unknown) so a default or a
-    suggestion can never be read as an approval. Nothing is returned in legacy mode:
-    those launches have no email, text or automation plan."""
+    suggestion can never be read as an approval."""
     if doc.get("meta", {}).get("mode") == "legacy":
         return {}
+    derive_payment_plans(doc)  # the flag is read from billing, never from a question
     out = {}
 
-    def put(qid, key, value, entry=None):
-        e = entry if entry is not None else get(doc, qid)
+    def put(qid, key, value):
+        e = get(doc, qid)
         if e is None:
             return
         state = _STATE[e["status"]]
@@ -1112,28 +1175,34 @@ def launch_answers(doc):
                     "provenance": {"question_id": qid, "raw": e.get("value"),
                                    "answer_status": e["status"], "answer_source": e.get("source", "")}}
 
-    timing_qid, timing = topic_entry(doc, "timing")
-    if timing is None:  # a Black Friday run names the same facts as promo_dates
-        e = get(doc, "promo_dates")
-        if e is not None:
-            timing_qid, timing = "promo_dates", e
-    if timing is not None:
-        typed = parse_launch_calendar(timing.get("value"))
-        cal_state = _STATE[timing["status"]]
-        for key in LAUNCH_LEDGER_KEYS[0][1]:
-            put(timing_qid, key, typed[key.split(".", 1)[1]], entry=timing)
+    cal = get(doc, "launch_calendar")
+    if cal is not None:
+        typed = parse_launch_calendar(cal.get("value"))
+        cal_state = _STATE[cal["status"]]
+        for key in ("launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone"):
+            put("launch_calendar", key, typed[key.split(".", 1)[1]])
             if cal_state != "provided" and key in out:  # a defaulted calendar is a proposal, not a fact
                 out[key]["state"] = cal_state
-    ch_qid, ch = topic_entry(doc, "channels")
-    put(ch_qid, "launch.channels", _typed_channels((ch or {}).get("value")), entry=ch)
-    for topic in ("conversation_ai", "access_delivery", "payment_plans", "texting_readiness"):
-        qid, e = topic_entry(doc, topic)
-        key = dict(LAUNCH_LEDGER_KEYS)[topic][0]
-        put(qid, key, _typed_bool(qid, (e or {}).get("value")), entry=e)
-    for topic, key in (("sender_name", "launch.sender_name"), ("reply_email", "launch.reply_to_email")):
-        qid, e = topic_entry(doc, topic)
-        raw = (e or {}).get("value")
-        put(qid, key, str(raw).strip() if isinstance(raw, str) and raw.strip() else None, entry=e)
+    put("channels", "launch.channels", _typed_channels((get(doc, "channels") or {}).get("value")))
+    for qid, key in (("conversation_ai", "launch.conversation_ai"),
+                     ("access_delivery", "launch.access_delivery"),
+                     ("payment_plans", "launch.payment_plans"),
+                     ("a2p_ready", "launch.a2p_ready")):
+        put(qid, key, _typed_bool(qid, (get(doc, qid) or {}).get("value")))
+    for qid, key in (("sender_name", "launch.sender_name"), ("reply_to_email", "launch.reply_to_email")):
+        e = get(doc, qid)
+        if e is not None:
+            raw = e.get("value")
+            put(qid, key, str(raw).strip() if isinstance(raw, str) and raw.strip() else None)
+    # The full launch plan refuses without a usable access destination, so the
+    # intake has to be able to produce one. Anything that is not an http(s)
+    # address is recorded as unknown rather than passed through.
+    e = get(doc, "access_url")
+    if e is not None:
+        raw = e.get("value")
+        url = raw.strip() if isinstance(raw, str) else ""
+        put("access_url", "launch.access_url",
+            url if url.startswith(("http://", "https://")) else None)
     return out
 
 
@@ -1209,6 +1278,12 @@ def main(argv=None):
     doc = load(path, _flag(a, "--mode") or "launch")
     if _flag(a, "--mode"):
         doc["meta"]["mode"] = _flag(a, "--mode")
+    pk = _flag(a, "--page-kind")
+    if pk:
+        if pk not in ("sales", "opt_in"):
+            print("--page-kind must be sales or opt_in", file=sys.stderr)
+            return 2
+        doc["meta"]["page_kind"] = pk
     if _flag(a, "--harness"):
         doc["harness"] = _flag(a, "--harness")
     if cmd == "next":

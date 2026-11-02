@@ -22,9 +22,11 @@ import engine  # noqa: E402
 
 BANK = json.loads((INTAKE / "question-bank.json").read_text(encoding="utf-8"))
 
-TOPICS = ("timing", "channels", "conversation_ai", "access_delivery",
-          "payment_plans", "sender_name", "reply_email", "texting_readiness")
-SEASONAL = ("promo_dates", "promo_offer", "promo_limits", "promo_audience", "promo_followup")
+# The shared bank (synced verbatim from onboarding) keys each launch topic to a question id;
+# engine.LAUNCH_TOPICS is that contract. payment_plans is derived from billing, never asked.
+TOPICS = tuple(t for t in engine.LAUNCH_TOPICS if t != "payment_plans")
+QID = engine.LAUNCH_TOPICS
+SEASONAL = ("bf_promotion", "bf_limitations", "bf_buyers", "bf_followup")
 # Words that must never reach the client: schema and id vocabulary, not plain English.
 TECHNICAL = re.compile(r"\b(schema|tenant_id|location_id|route_graph|sha256|hash|a2p|10dlc|provider id|"
                        r"json|api|webhook|endpoint)\b", re.I)
@@ -37,7 +39,7 @@ def q(qid):
 class BankShape(unittest.TestCase):
     def test_the_eight_launch_topics_exist_and_are_conditional(self):
         for topic in TOPICS:
-            question = q(topic)
+            question = q(QID[topic])
             self.assertNotEqual(question["condition"], "always", topic)
             self.assertIn("legacy", question["condition"], topic)  # a legacy launch is never asked
 
@@ -85,16 +87,20 @@ class Opening(unittest.TestCase):
 class HelpIsNotAnAnswer(unittest.TestCase):
     def test_i_dont_know_opens_coaching_and_is_not_recorded_as_an_answer(self):
         doc = engine.new_doc("launch")
-        out = engine.record(doc, "timing", "I don't know")
+        out = engine.record(doc, "channels", "I don't know")
         self.assertEqual(out["action"], "help")
-        self.assertEqual([c["id"] for c in out["coaching"]], ["example", "explain", "recommend"])
-        self.assertEqual(doc["answers"]["timing"]["status"], "unknown")
+        self.assertTrue(out["explain"])
+        self.assertEqual(doc["answers"]["channels"]["status"], "unknown")
+        # a question with no safe default is blocked with its own explanation, never guessed
+        out = engine.record(doc, "launch_calendar", "I don't know")
+        self.assertEqual(out["action"], "blocked")
+        self.assertEqual(doc["answers"]["launch_calendar"]["status"], "unknown")
 
     def test_a_required_question_is_never_skipped_after_help(self):
         doc = engine.new_doc("launch")
-        engine.record(doc, "timing", "not sure")
-        engine.record(doc, "timing", "not sure")
-        self.assertIn("timing", [x["id"] for x in engine.check(doc)["blocking"]])
+        engine.record(doc, "launch_calendar", "not sure")
+        engine.record(doc, "launch_calendar", "not sure")
+        self.assertIn("launch_calendar", [x["id"] for x in engine.check(doc)["blocking"]])
 
     def test_a_second_help_on_a_defaultable_question_uses_a_flagged_default(self):
         doc = engine.new_doc("launch")
@@ -107,38 +113,55 @@ class HelpIsNotAnAnswer(unittest.TestCase):
 class LaunchAnswersAreTyped(unittest.TestCase):
     def test_text_is_never_read_as_a_yes(self):
         doc = engine.new_doc("launch")
-        engine.record(doc, "texting_readiness", "No, not yet")
+        engine.record(doc, "a2p_ready", "No, not yet")
         self.assertIs(engine.launch_answers(doc)["launch.a2p_ready"]["value"], False)
 
     def test_the_eight_topics_reach_the_ledger_with_provenance(self):
         doc = engine.new_doc("launch")
-        engine.record(doc, "timing", "Doors open 14 Nov 2026 9:00 a.m. New York, launch at noon")
+        engine.record(doc, "launch_calendar", "Doors open 14 Nov 2026 9:00 a.m. New York, launch at noon")
         engine.record(doc, "channels", "Email and text")
         engine.record(doc, "sender_name", "Elevation Coaching")
-        engine.record(doc, "reply_email", "hello@elevationcoaching.com")
+        engine.record(doc, "reply_to_email", "hello@elevationcoaching.com")
         ledger = engine.launch_answers(doc)
         self.assertEqual(ledger["launch.channels"]["value"], ["email", "text"])
         self.assertEqual(ledger["launch.sender_name"]["value"], "Elevation Coaching")
         self.assertTrue(ledger["launch.doors_open_at"]["value"].startswith("2026-11-14T09"))
-        self.assertEqual(ledger["launch.reply_to_email"]["provenance"]["question_id"], "reply_email")
+        self.assertTrue(ledger["launch.launch_at"]["value"].startswith("2026-11-14T12"))
+        self.assertEqual(ledger["launch.reply_to_email"]["provenance"]["question_id"], "reply_to_email")
 
     def test_legacy_mode_carries_no_launch_answers(self):
         self.assertEqual(engine.launch_answers(engine.new_doc("legacy")), {})
 
 
-class OffersOneAtATime(unittest.TestCase):
-    def test_a_second_offer_is_added_and_a_repeat_is_a_correction(self):
+class OffersNeedARealChoice(unittest.TestCase):
+    def test_one_line_is_not_a_package_choice(self):
+        # the shared engine asks for at least two named, priced packages; one offer goes in `price`
         doc = engine.new_doc("launch")
-        engine.record(doc, "packages", "Premium, 12 lessons, $497")
-        engine.record(doc, "packages", "Starter, 6 lessons, $297")
-        self.assertEqual(len(engine.view(doc)["packages"]), 2)
-        engine.record(doc, "packages", "Starter, 6 lessons and 2 calls, $247")
-        self.assertEqual(len(engine.view(doc)["packages"]), 2)
-        self.assertTrue(engine.offer_summary(doc).startswith("Here is what I understood:"))
+        out = engine.record(doc, "packages", "Premium, 12 lessons, $497")
+        self.assertFalse(out["ok"])
+        self.assertIn("at least two", out["message"])
 
-    def test_one_offer_is_a_complete_answer(self):
-        doc = engine.new_doc("launch")
-        self.assertTrue(engine.record(doc, "packages", "Premium, 12 lessons, $497")["ok"])
+
+class NoPicturesIsNotAChoice(unittest.TestCase):
+    """IMG-23: Skills 71 and 83 cannot ship a page without its generated pictures, so the
+    intake never offers 'No pictures' and rejects it with the same words onboarding uses."""
+
+    CAP = ("Every page needs its canonical set of generated pictures, so the number must be at "
+           "least 1. A number like 12 is fine.")
+    PROVIDER = ("Which image service should make your pictures: your connected one, or one I "
+                "recommend? Every page needs its generated pictures, so there is no none.")
+
+    def test_the_bank_offers_no_none_choice(self):
+        for qid in ("image_cap", "image_provider"):
+            self.assertFalse([c for c in q(qid)["choices"] if re.search(r"\bno (pictures|images)\b", c, re.I)], qid)
+
+    def test_no_pictures_is_rejected_with_the_onboarding_message(self):
+        for qid, said, msg in (("image_cap", "No pictures", self.CAP), ("image_cap", "0", self.CAP),
+                               ("image_provider", "No images needed", self.PROVIDER)):
+            doc = engine.new_doc("launch")
+            out = engine.record(doc, qid, said)
+            self.assertEqual((out["ok"], out["message"]), (False, msg), (qid, said))
+            self.assertNotIn(qid, doc["answers"])
 
 
 class ComputedNumbers(unittest.TestCase):
