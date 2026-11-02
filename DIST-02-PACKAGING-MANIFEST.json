@@ -164,8 +164,8 @@
       "999_version": "1.0.78",
       "source_version": "1.0.78",
       "action": "revendored by scripts/vendor-council-bundle.mjs; per-file distribution digests recorded in installer-registration/council-vendoring.json",
-      "files": 1219,
-      "sha256": "sha256:41f8964f89bc5508bdec2cdba0da5fc4511a83b7e4d7301d5c5ed12ed550478a",
+      "files": 1220,
+      "sha256": "sha256:0a869c2be2f5c3c7d86fdb361631566863407edf4dda22a845cd6f51f5975bfd",
       "note": "sha256 is the distribution aggregate recorded in council-vendoring.json (865 content files + 354 built runtime files)."
     },
     {
@@ -347,7 +347,7 @@
     "grep_installer_registration": {
       "command": "grep -rnE '\\[0-9\\]' installer-registration --include='*.sh'",
       "matches": [
-        "installer-registration/helpers/74-kie-live-adapter/qc-74-kie-live-adapter.sh:28 \u2014 a semantic-version regex for skill-version.txt, not a skill-directory assumption"
+        "installer-registration/helpers/74-kie-live-adapter/qc-74-kie-live-adapter.sh:28 — a semantic-version regex for skill-version.txt, not a skill-directory assumption"
       ]
     },
     "conclusion": "no numeric-only assumption found, so no fix and no new test were needed. bundled_skills() returns registry names verbatim; resolve_skill_source() and link_skills_into_root() use that name unchanged. Bare-slug install is proven by verify-registration.sh section F; both conventions on the registration check are proven by tests/test_dependencies_registration.py."

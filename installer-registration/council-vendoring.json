@@ -4,8 +4,8 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "7ca6a622cf7f1750c19c0372316be4ad2d7b4a0b",
-    "canonical_aggregate_sha256": "62f7a8e12e6e18aa0d7e2d03a89ae18e2e3103b9e1825b4da2af2ff4841046bc",
+    "source_commit": "4fc5536dde163ea6f393958ae0dbef9b8d39fa54",
+    "canonical_aggregate_sha256": "88681824213c40142a59b19913e26f72129a40be65e6eb743045a931ac2752d3",
     "canonical_file_count": 864,
     "skill_version": "1.0.78"
   },
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "45e30ad3f7e04914e5c1106428015e67b18806091fbc501985efa3f2f63605cc",
-      "archive_bytes": 82696112,
+      "archive_sha256": "4abe15314cc4e1b08b29ebaaaf100409192e8889f3795171c61d2d76733e26ca",
+      "archive_bytes": 82696093,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,14 +120,14 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "45e30ad3f7e04914e5c1106428015e67b18806091fbc501985efa3f2f63605cc",
-    "bytes": 82696112
+    "sha256": "4abe15314cc4e1b08b29ebaaaf100409192e8889f3795171c61d2d76733e26ca",
+    "bytes": 82696093
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "41f8964f89bc5508bdec2cdba0da5fc4511a83b7e4d7301d5c5ed12ed550478a",
+    "distribution_aggregate_sha256": "51810384cfdb8eb575dbc7053f353ff781abf4c7883d152df134d77c05f05926",
     "distribution_file_count": 865,
-    "contract_aggregate_sha256": "62f7a8e12e6e18aa0d7e2d03a89ae18e2e3103b9e1825b4da2af2ff4841046bc",
+    "contract_aggregate_sha256": "88681824213c40142a59b19913e26f72129a40be65e6eb743045a931ac2752d3",
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -1463,7 +1463,7 @@
       },
       {
         "path": "extensions/council-before-dispatch/test/binding-predicate.test.mjs",
-        "sha256": "9da419cc73774222c6956b9f68602ceb8aca36f324bdea38cf5605fb20585083"
+        "sha256": "752a10dccd432a013c6277d2f70436ae71cbfd818a545fad701bc9e07191d499"
       },
       {
         "path": "extensions/council-before-dispatch/test/core.test.mjs",
@@ -5342,7 +5342,7 @@
     "extensions/council-before-dispatch/openclaw.plugin.json": "3082427267141f265ba182d858264f9742129cbb9fe03083bfd7a5507bc44c70",
     "extensions/council-before-dispatch/package.json": "dfaed8848cbb687897cbfeeb99bdb5304ac12d14926a83e8d6e85f9528d677d1",
     "extensions/council-before-dispatch/provision.mjs": "ecaae9bf2d4f4d1b069f89bd1593b6db39f81425cde8a5e08276629d769ec961",
-    "extensions/council-before-dispatch/test/binding-predicate.test.mjs": "9da419cc73774222c6956b9f68602ceb8aca36f324bdea38cf5605fb20585083",
+    "extensions/council-before-dispatch/test/binding-predicate.test.mjs": "752a10dccd432a013c6277d2f70436ae71cbfd818a545fad701bc9e07191d499",
     "extensions/council-before-dispatch/test/core.test.mjs": "9aa5dacc3ec65e272bf30b9ded66c03eb4e4f995ffcbc8d6588f1a3e1d7a1a25",
     "extensions/council-before-dispatch/test/ctr133-exploration.test.mjs": "5759c28d57de5ebcf4060e27ff8ea33f35d6c6dfc8b32a03d8bbf64df5309b41",
     "extensions/council-before-dispatch/test/ctr215-narrow-binding.test.mjs": "0a53dc7d4dec5ecd50069831b10b46d660c95cdb72e9cee860bebbc38038afa8",
