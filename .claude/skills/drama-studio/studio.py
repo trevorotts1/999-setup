@@ -2,10 +2,15 @@
 # studio.py — the Drama Studio pairing and link command (U13).
 #
 # Usage:
-#   studio.py pair ABCD-2345 [--studio URL] [--dry-run]
+#   studio.py pair [ABCD-2345] [--studio URL] [--dry-run]
 #   studio.py link [--new] [--print] [--studio URL]
 #
-# pair sends the one-time code, this computer's name, its operating system and which
+# A code is OPTIONAL. With no code argument and DS_ENROLLMENT_SECRET present in the
+# environment, `pair` enrolls this computer itself (POST /api/studio/enroll) and no
+# code is ever minted, shown or typed — that is the fleet path and the client never
+# sees a code. A code is the operator shortcut for a computer outside the fleet.
+#
+# When a code IS given, pair sends the one-time code, this computer's name, its operating system and which
 # tools are present (claude, claude-nine) to U2's POST /api/studio/pair. It burns the
 # code, then stores the per-machine key ONCE on this computer:
 #   Mac/Linux: ~/.drama-studio/machine.key   folder 700, file 600
@@ -39,7 +44,11 @@ STATE_DIR_NAME = ".drama-studio"
 CODE_RE = re.compile(r"^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$")
 AF_SHAPE = "AF-DS-PAIR-SHAPE"
 AF_FAILED = "AF-DS-PAIR-FAILED"
+AF_ENROLL_FAILED = "AF-DS-ENROLL-FAILED"
 AF_ARGS = "AF-DS-ARGS"
+#: The fleet enrollment secret. When it is present, `pair` with no code enrolls this
+#: computer directly (POST /api/studio/enroll) — the client never needs a code.
+ENROLL_SECRET_ENV = "DS_ENROLLMENT_SECRET"
 KEY_FILE = "machine.key"
 URL_FILE = "studio.url"
 LINK_FILE = "client.url"
@@ -98,6 +107,11 @@ def read_private(name):
         return ""
 
 
+def studio_address(explicit=None):
+    """The ONE resolver both `pair` and `enroll` use: flag, env, stored, default."""
+    return studio_url(explicit) or DEFAULT_STUDIO_URL
+
+
 def which_tools():
     present = []
     for name in ("claude", "claude-nine"):
@@ -126,14 +140,86 @@ def call_pair(url, code):
         return json.loads(resp.read().decode("utf-8") or "{}")
 
 
+def call_enroll(url, secret, label=None):
+    body = {"enrollment_secret": secret}
+    if label:
+        body["label"] = label
+    req = urllib.request.Request(
+        url.rstrip("/") + "/api/studio/enroll",
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={"content-type": "application/json", "User-Agent": STUDIO_USER_AGENT},
+    )
+    with urllib.request.urlopen(req, timeout=NETWORK_BUDGET_S) as resp:
+        return json.loads(resp.read().decode("utf-8") or "{}")
+
+
+def _store_receipt(out, url):
+    sd = state_dir()
+    write_private(os.path.join(sd, KEY_FILE), out["key"] + "\n")
+    write_private(os.path.join(sd, URL_FILE), url + "\n")
+
+
+def _finish_pair(out, url, a, canned):
+    _store_receipt(out, url)
+    sys.stdout.write("Drama Studio paired (%s). The key is stored on this computer and was not printed.\n"
+                     % out.get("client_id", "client"))
+    if url and not canned:
+        # best effort: the pair itself already succeeded, so exit 0 either way. A canned
+        # pair is the no-network knob (the prover drives it), so it never reaches out for
+        # the link either — with no --studio it would otherwise dial the real studio with
+        # a key that does not exist.
+        cmd_link(a)
+    return 0
+
+
+def cmd_enroll(a, secret):
+    """Enroll without a code. The fleet secret registers this computer directly."""
+    url = studio_address(a.studio)
+    canned = os.environ.get("DRAMA_STUDIO_FAKE_PAIR")
+    if canned:
+        out = json.loads(canned)
+    elif a.dry_run or os.environ.get("DRAMA_STUDIO_FAKE") == "1":
+        sys.stdout.write("AF-DS-ENROLL-DRY %s\n"
+                         % json.dumps({"url": url, "secret": "<set>"}, sort_keys=True))
+        return 0
+    elif not url:
+        sys.stderr.write(
+            "%s refused: this build carries no studio address. Set DRAMA_STUDIO_URL or pass "
+            "--studio URL. Never invent one.\n" % AF_ENROLL_FAILED)
+        return 3
+    else:
+        try:
+            out = call_enroll(url, secret,
+                              os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME", ""))
+        except Exception as exc:
+            sys.stderr.write("%s refused: %s\n" % (AF_ENROLL_FAILED, type(exc).__name__))
+            return 2
+    if not out.get("ok") or not out.get("key"):
+        sys.stderr.write("%s refused: %s\n" % (AF_ENROLL_FAILED, out.get("code") or "no key returned"))
+        return 2
+    return _finish_pair(out, url, a, canned)
+
+
 def cmd_pair(a):
-    if not a.code or not validate_code(a.code):
+    if not a.code:
+        # No code: enroll directly when this computer carries the fleet secret. The
+        # pairing code is an operator shortcut, never a requirement on a client box.
+        secret = os.environ.get(ENROLL_SECRET_ENV, "").strip()
+        if not secret:
+            sys.stderr.write(
+                "%s refused: no pairing code given and %s is unset on this computer. "
+                "With %s set, this command enrolls itself and no code is ever needed.\n"
+                % (AF_SHAPE, ENROLL_SECRET_ENV, ENROLL_SECRET_ENV))
+            return 2
+        return cmd_enroll(a, secret)
+    if not validate_code(a.code):
         sys.stderr.write("%s refused: a pairing code is four and four, ABCD-2345, no look-alikes\n" % AF_SHAPE)
         return 2
     # The address resolves the same way its siblings resolve one: --studio, then
     # DRAMA_STUDIO_URL, then the stored studio.url, then this distribution's own
     # documented default. Only a build carrying no default can still come up short.
-    url = studio_url(a.studio) or DEFAULT_STUDIO_URL
+    url = studio_address(a.studio)
     canned = os.environ.get("DRAMA_STUDIO_FAKE_PAIR")
     if canned:                                   # the prover drives this path; no network, no browser
         out = json.loads(canned)
@@ -157,18 +243,7 @@ def cmd_pair(a):
     if not out.get("ok") or not out.get("key"):
         sys.stderr.write("%s refused: %s\n" % (AF_FAILED, out.get("code") or "no key returned"))
         return 2
-    sd = state_dir()
-    write_private(os.path.join(sd, KEY_FILE), out["key"] + "\n")
-    write_private(os.path.join(sd, URL_FILE), url + "\n")
-    sys.stdout.write("Drama Studio paired (%s). The key is stored on this computer and was not printed.\n"
-                     % out.get("client_id", "client"))
-    if url and not canned:
-        # best effort: the pair itself already succeeded, so exit 0 either way. A canned
-        # pair is the no-network knob (the prover drives it), so it never reaches out for
-        # the link either — with no --studio it would otherwise dial the real studio with
-        # a key that does not exist.
-        cmd_link(a)
-    return 0
+    return _finish_pair(out, url, a, canned)
 
 
 def call_link(url, key, rotate):
