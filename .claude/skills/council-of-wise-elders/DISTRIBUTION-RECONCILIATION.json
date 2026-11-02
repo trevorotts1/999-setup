@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "60a48c764faa8b4c0bf7d9935c9acd55c3c8b7ad",
-    "canonical_aggregate_sha256": "911c89a729b5d885011fcb7994ff665d72ca9dd3a5416d96925fb0bf0e0da3bb",
-    "canonical_file_count": 863,
-    "skill_version": "1.0.76"
+    "source_commit": "79b8d65ad41d0c5fb1fe384e9e4e43d2e5ffd8e8",
+    "canonical_aggregate_sha256": "5b9fb57f2b7073010c1ad35d88b55de776a949091665f9ea69cbd86d00bb18f9",
+    "canonical_file_count": 864,
+    "skill_version": "1.0.77"
   },
   "intentional_distribution_differences": [
     {
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "62b68aab83f875bdef6a05d750e84ebb42beeb0c010de81ee03d3657f77f3107",
-      "archive_bytes": 82689674,
+      "archive_sha256": "001032b8d5674014e29efe9b31a728a0e5a07a66875687dd7e5501ec782ddc75",
+      "archive_bytes": 82692521,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
