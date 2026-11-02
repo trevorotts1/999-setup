@@ -60,7 +60,7 @@
           "webinar registration only"
         ]
       },
-      "notes": "Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys); the fail-closed provers are deterministic and model-free. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
+      "notes": "Client runtime uses the CLIENT's own configured providers (no vendor rule, never operator keys); the fail-closed provers are deterministic and model-free. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
     },
     {
       "id": "sales-page-assets",
@@ -123,7 +123,7 @@
           "signature look"
         ]
       },
-      "notes": "Direct-Response sibling of Skill 49 sharing the same labeling grammar (56 OWNS it) and the same STEP-0 selector + delivery rail. Client runtime uses the CLIENT's own configured providers (never Anthropic, never operator keys); the eight fail-closed provers are deterministic and model-free. A/B variants come from two client models OR two persona prompts on one client model. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
+      "notes": "Direct-Response sibling of Skill 49 sharing the same labeling grammar (56 OWNS it) and the same STEP-0 selector + delivery rail. Client runtime uses the CLIENT's own configured providers (no vendor rule, never operator keys); the eight fail-closed provers are deterministic and model-free. A/B variants come from two client models OR two persona prompts on one client model. Publish is human-approved (preview URLs + labeled ~/Downloads bundle only)."
     },
     {
       "id": "cinematic-web-funnel-engine",
@@ -188,7 +188,7 @@
           "webinar registration only"
         ]
       },
-      "notes": "Third registered engine (registered on branch skill62/cinematic-engine, not yet merged to main). Client runtime uses the CLIENT's own configured providers (Kie.ai on the client's own KIE_API_KEY; never Anthropic, never operator keys); the deterministic phase provers are model-free. No paid generation without an approved budget cap. Publish is human-approved (preview + production URLs only after explicit approval).",
+      "notes": "Third registered engine (registered on branch skill62/cinematic-engine, not yet merged to main). Client runtime uses the CLIENT's own configured providers (Kie.ai on the client's own KIE_API_KEY; no vendor rule, never operator keys); the deterministic phase provers are model-free. No paid generation without an approved budget cap. Publish is human-approved (preview + production URLs only after explicit approval).",
       "readiness": {"status": "skeleton", "certify_capable": false, "note": "offline build complete (CWFE-MANIFEST.json build_status COMPLETE offline); live E2E deliberately HELD pending operator-approved live run"}
     }
   ]

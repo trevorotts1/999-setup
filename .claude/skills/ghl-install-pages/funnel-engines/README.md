@@ -88,5 +88,6 @@ python3 06-ghl-install-pages/tools/funnel_engine_selector.py --self-test
 ## Client-runtime rule (binding)
 
 The selector is deterministic, model-free Python — it runs identically on every box. The engines it
-routes to run on the **client's OWN configured providers and keys on a client box (never Anthropic,
-never the operator's)**. Nothing here calls a model or the network.
+routes to run on the **client's OWN configured providers and keys on a client box (never the
+operator's)** — no vendor rule: an Anthropic / Claude model the client configured is fine.
+Nothing here calls a model or the network.
