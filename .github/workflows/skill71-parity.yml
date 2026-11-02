@@ -12,16 +12,60 @@ name: skill71-parity
 # deeper through a symlink. The expression then names the real checkout root
 # and the checker compares the two real trees. No file bytes are copied or
 # changed.
+#
+# Extended gate (CON-09, CON-06, CON-08). Beyond Skill 71 this one workflow
+# also judges the rest of the launch family and the GHL pack files that Skill
+# 71's pack manifest carries for Skills 44 (convert-and-flow-operator) and 38
+# (conversational-ai-system), so a red check means real drift on any of
+# Skills 49, 83, 78-82, 6, 44, 50, 38 or 71. Mark this workflow's `parity` job
+# as a required status check on main in the repository branch-protection
+# settings; that setting lives in GitHub, not in this file.
 
 on:
   push:
     branches: [main]
     paths:
       - '.claude/skills/blackceo-signature-page/**'
+      - '.claude/skills/black-friday-launcher/**'
+      - '.claude/skills/signature-funnel/**'
+      - '.claude/skills/signature-product-selection/**'
+      - '.claude/skills/signature-order-form/**'
+      - '.claude/skills/signature-upsell/**'
+      - '.claude/skills/signature-downsell/**'
+      - '.claude/skills/signature-thank-you/**'
+      - '.claude/skills/ghl-install-pages/**'
+      - '.claude/skills/convert-and-flow-operator/**'
+      - '.claude/skills/conversational-ai-system/**'
+      - '.claude/skills/email-engine/**'
+      - 'shared-utils/signature_launch/**'
+      - 'shared-utils/client_intake/**'
+      - 'shared-utils/signature_launch_contract/**'
+      - 'shared-utils/kie_prompt_enforcer.py'
+      - 'scripts/check-skill71-parity.py'
+      - 'scripts/check-launch-family-parity.py'
+      - 'scripts/qc-assert-skill-frontmatter-version.sh'
       - '.github/workflows/skill71-parity.yml'
   pull_request:
     paths:
       - '.claude/skills/blackceo-signature-page/**'
+      - '.claude/skills/black-friday-launcher/**'
+      - '.claude/skills/signature-funnel/**'
+      - '.claude/skills/signature-product-selection/**'
+      - '.claude/skills/signature-order-form/**'
+      - '.claude/skills/signature-upsell/**'
+      - '.claude/skills/signature-downsell/**'
+      - '.claude/skills/signature-thank-you/**'
+      - '.claude/skills/ghl-install-pages/**'
+      - '.claude/skills/convert-and-flow-operator/**'
+      - '.claude/skills/conversational-ai-system/**'
+      - '.claude/skills/email-engine/**'
+      - 'shared-utils/signature_launch/**'
+      - 'shared-utils/client_intake/**'
+      - 'shared-utils/signature_launch_contract/**'
+      - 'shared-utils/kie_prompt_enforcer.py'
+      - 'scripts/check-skill71-parity.py'
+      - 'scripts/check-launch-family-parity.py'
+      - 'scripts/qc-assert-skill-frontmatter-version.sh'
       - '.github/workflows/skill71-parity.yml'
   schedule:
     # openclaw-onboarding moves without a commit here, so it also runs on a clock
@@ -80,3 +124,24 @@ jobs:
           fi
           echo "Skill 71 parity printed neither PASS nor FAIL (verify.sh exit $rc)" >&2
           exit 1
+
+      - name: Skill 71 checker run directly (exit 0 required)
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python3 "$SKILL71_999_ROOT/scripts/check-skill71-parity.py" \
+            --onb-root "$SKILL71_ONB_ROOT" --nine-root "$SKILL71_999_ROOT"
+
+      - name: Launch-family parity (49, 83, 78-82, 6, 44, 50 and 71)
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python3 "$SKILL71_999_ROOT/scripts/check-launch-family-parity.py" \
+            --onboarding "$SKILL71_ONB_ROOT" --nine "$SKILL71_999_ROOT"
+
+      - name: Skill 49 entry self-test
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cd "$SKILL71_999_ROOT"
+          bash .claude/skills/signature-funnel/signature-funnel-entry.sh --self-test
