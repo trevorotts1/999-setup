@@ -37,6 +37,12 @@
 # skills via scripts/dispatch_launch.py. New launch requests must name their
 # mode explicitly: a run dir carrying a signature_launch launch-request.json
 # is REFUSED by the legacy path, never silently run through the old pipeline.
+#
+# EXECUTION vs EMISSION: the approved consumer-adapter configuration travels in
+# launch-request.json ("adapters": {<page_role or extra-page key>: {"command": [...], "timeout_s": n}}),
+# and the dispatcher executes through it. This shell forwards the run dir only —
+# never a --simulate-executor flag — so a launch through the canonical entry can
+# execute the owning skills' real entrypoints but can never fabricate results.
 # ==============================================================================
 set -euo pipefail
 
@@ -67,6 +73,18 @@ PINNED_FILES=(
   "scripts/delegation_receipt.py"
   # Skill 74 evidence writer + allow-list check used by the bypass scan below.
   "scripts/kie74_receipt.py"
+  # The launch dispatch chain: these decide which pages, routes and prompts are
+  # built and dispatched, so a swapped copy changes behaviour without touching
+  # any prover above.
+  "scripts/dispatch_launch.py"
+  "scripts/compile_launch_route.py"
+  "scripts/page_set.py"
+  "scripts/page_swarm.py"
+  "scripts/validate_launch_plan.py"
+  "scripts/agnes_dispatch.py"
+  "scripts/agnes_gates.py"
+  "scripts/agnes_orchestrator.py"
+  "scripts/agnes_response.py"
 )
 
 # Forbidden patterns in a run's working files — a hand-rolled GHL/sender bypass.
@@ -151,15 +169,14 @@ step_nonce() {
 
 # FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
 # record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sf_cert
-# --model-receipt. The client's OWN strongest model writes the copy; no vendor rule (Trevor order 2026-10-29).
+# --model-receipt. The client's OWN strongest model writes the copy.
 step_model_receipt() {
   local rd="$1"
   "$PY" - "$rd" <<'PYEOF'
 import json, os, sys, datetime
 rd = sys.argv[1]
 # Client-chain resolver seam: reuse model_router.select(role="content") semantics against the
-# CLIENT's providers. Operator/orchestrator supplies the resolved id via env. No vendor rule:
-# an Anthropic / Claude id the client configured is accepted.
+# CLIENT's providers. Operator/orchestrator supplies the resolved id via env.
 model = os.environ.get("SF_CONTENT_MODEL", "")
 provider = os.environ.get("SF_CONTENT_PROVIDER", "")
 tier = os.environ.get("SF_CONTENT_TIER", "content")
@@ -169,7 +186,6 @@ receipt = {
     "model": model,
     "provider": provider.lower(),
     "tier": tier,
-    "anthropic_banned": True,
     "resolved_at": datetime.datetime.utcnow().isoformat() + "Z",
 }
 os.makedirs(os.path.join(rd, "routing"), exist_ok=True)
@@ -177,7 +193,7 @@ with open(os.path.join(rd, "routing", "model-content-receipt.json"), "w", encodi
     json.dump(receipt, fh, indent=2)
 PYEOF
   "$PY" "$SCRIPTS_DIR/prove_sf_cert.py" --model-receipt "$rd/routing/model-content-receipt.json" \
-    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier / no-Anthropic gate — set SF_CONTENT_MODEL + SF_CONTENT_PROVIDER (+ SF_CONTENT_TIER) to the CLIENT's own strongest model"
+    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier gate — set SF_CONTENT_MODEL + SF_CONTENT_PROVIDER (+ SF_CONTENT_TIER) to the CLIENT's own strongest model"
 }
 
 # Launch mode: same front-door integrity guards (deps / version / hash-pin /
@@ -198,6 +214,8 @@ run_launch_pipeline() {
   step_hashpin
   step_bypass_scan "$rd"
   echo "== signature-funnel-entry :: launch mode front door cleared (deps/version/hash-pin/bypass) =="
+  # The approved adapters ride in launch-request.json (read by the dispatcher);
+  # --simulate-executor is deliberately NOT forwardable from this guarded door.
   "$PY" "$SCRIPTS_DIR/dispatch_launch.py" --run-dir "$rd"
 }
 
