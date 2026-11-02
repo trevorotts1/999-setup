@@ -126,11 +126,17 @@ hand-picked subset. The manifest currently bundles:
   advisory council. This copy is VENDORED from the canonical onboarding package
   (`77-council-of-wise-elders`) and is never edited here; provenance is recorded in
   `installer-registration/council-vendoring.json`. After step 5 links it, install its
-  runtime with `scripts/council-runtime-install.sh` (Windows:
-  `scripts/council-runtime-install.ps1`): the runtime stages into the per-user
-  WiseElders data profile outside every config root, and the installer adds the
-  `blackceo-council` command. Council state lives in that data profile, never in the
-  skill folder.
+  runtime and 999 front door with `scripts/council-runtime-install.sh --activate`
+  (Windows: `scripts/council-runtime-install.ps1`): the runtime stages into the per-user
+  WiseElders data profile outside every config root, the installer adds the
+  `blackceo-council` command, and `--activate` also installs the durable `council-ask`
+  front door, `chamber-visual.sh`, and the box's own Council service. On a machine
+  with the OpenClaw CLI it runs that skill's official `wire.sh` instead; it never
+  copies the OpenClaw interceptor package into a Claude-CLI-only machine. Council
+  state lives in that data profile, never in the skill folder. The activation result
+  is one `COUNCIL_999_FRONT_DOOR:` line; `READY`, `NOOP`, `DEFERRED_NO_GUI` and
+  `ADOPTED_EXISTING` mean the front door is installed, and `NOT_READY <code>` is the
+  precise state to report, never a reason to invent a chamber link.
 
 ```text
 Source:  <repo>/.claude/skills/<skill-name>
