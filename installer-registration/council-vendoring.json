@@ -4,8 +4,8 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "c54466279235a27390477824f85fca6f0e6dcaf9",
-    "canonical_aggregate_sha256": "6bc6796d0457ef6029801ac807c74fef8f3b7eb63f4b02700c89a803bb92f8c5",
+    "source_commit": "6333d68a25ed6657ef9fa4602329484b6bad5173",
+    "canonical_aggregate_sha256": "fc647b8105e607c4f54df955e10bd0de08df209b4d16b27395e25e63cd32bb67",
     "canonical_file_count": 864,
     "skill_version": "1.0.77"
   },
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "f41000384ee2bb880b7ddbda8d8a2fa5b7fb0767bce35edbdae21b3c57a9f238",
-      "archive_bytes": 82692560,
+      "archive_sha256": "a2809c99f8374c77fe78113e9bf41dbb38fcc266879f30aded45c9e11792b07b",
+      "archive_bytes": 82692557,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,14 +120,14 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "f41000384ee2bb880b7ddbda8d8a2fa5b7fb0767bce35edbdae21b3c57a9f238",
-    "bytes": 82692560
+    "sha256": "a2809c99f8374c77fe78113e9bf41dbb38fcc266879f30aded45c9e11792b07b",
+    "bytes": 82692557
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "9f7e9c7b8728cf614f8fa204cd7fa90071439656dcbbaa095267ec7295a479a3",
+    "distribution_aggregate_sha256": "04c98b279d948f239eba3206ea0f048605683bc1534aa79b2aaac0368a794af3",
     "distribution_file_count": 865,
-    "contract_aggregate_sha256": "6bc6796d0457ef6029801ac807c74fef8f3b7eb63f4b02700c89a803bb92f8c5",
+    "contract_aggregate_sha256": "fc647b8105e607c4f54df955e10bd0de08df209b4d16b27395e25e63cd32bb67",
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -1475,7 +1475,7 @@
       },
       {
         "path": "extensions/council-before-dispatch/test/ctr215-narrow-binding.test.mjs",
-        "sha256": "68c1101954d1c1fa44f846f0fc1ecb152fa82085627e68330f1fe0e981c84ec4"
+        "sha256": "0a53dc7d4dec5ecd50069831b10b46d660c95cdb72e9cee860bebbc38038afa8"
       },
       {
         "path": "launchd/ai.blackceo.council-access-autoprovision.plist.template",
@@ -5345,7 +5345,7 @@
     "extensions/council-before-dispatch/test/binding-predicate.test.mjs": "9da419cc73774222c6956b9f68602ceb8aca36f324bdea38cf5605fb20585083",
     "extensions/council-before-dispatch/test/core.test.mjs": "7fbb279a65b18ae7f56df893e6b22fe89a778e27bbacf6fb1c1ce9bdc6151cfe",
     "extensions/council-before-dispatch/test/ctr133-exploration.test.mjs": "5759c28d57de5ebcf4060e27ff8ea33f35d6c6dfc8b32a03d8bbf64df5309b41",
-    "extensions/council-before-dispatch/test/ctr215-narrow-binding.test.mjs": "68c1101954d1c1fa44f846f0fc1ecb152fa82085627e68330f1fe0e981c84ec4",
+    "extensions/council-before-dispatch/test/ctr215-narrow-binding.test.mjs": "0a53dc7d4dec5ecd50069831b10b46d660c95cdb72e9cee860bebbc38038afa8",
     "launchd/ai.blackceo.council-access-autoprovision.plist.template": "42d949036eaf5a3ba5e36682bfa3ea34352862c85a5e26963ddbfd6c50bdb104",
     "qc-council-of-wise-elders.sh": "f90560b7858cb36927815fd87d13871f845eb2251eb1bc0d15412e16ca9c4e1f",
     "references/install-matrix.md": "f69b0d30251f1b2e85aacc02aba99ddeb5da36478130d70d8743cfbb17908c9d",
