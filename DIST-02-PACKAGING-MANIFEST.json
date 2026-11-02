@@ -49,7 +49,7 @@
       "source_version": "v2.1.11",
       "files": 129,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:069ad620f76e299bbefa35888f9dd527f4086e6f81355edb7c8b668a95087874",
+      "sha256": "sha256:2ade96a4b784be4d4e779f91e5ae50ad717067cd418cbee02e9196f38cd285b9",
       "999_version": "v2.1.22"
     },
     {
@@ -157,21 +157,16 @@
       "id": "tree-77-council-of-wise-elders",
       "kind": "skill_tree",
       "required": true,
-      "status": "already_present",
+      "status": "vendored",
       "999_path": ".claude/skills/council-of-wise-elders",
       "source_path": "77-council-of-wise-elders",
-      "source_commit": "39e74434810d9c110f2c6ac506386c832f7b6fb5",
-      "999_version": "1.0.74",
-      "source_version": "v1.0.15",
-      "drift": {
-        "files_differing": 68,
-        "files_only_in_source": 47,
-        "files_only_in_999": 1,
-        "example_only_in_999": "DISTRIBUTION-RECONCILIATION.json"
-      },
-      "action": "not overwritten; 999-side copy left as-is",
-      "files": 1213,
-      "sha256": "sha256:23af53a7e86f8d90fd5f402c25db447ce7c070f833753ca00ca859a68d961822"
+      "source_commit": "4fc5536dde163ea6f393958ae0dbef9b8d39fa54",
+      "999_version": "1.0.78",
+      "source_version": "1.0.78",
+      "action": "revendored by scripts/vendor-council-bundle.mjs; per-file distribution digests recorded in installer-registration/council-vendoring.json",
+      "files": 1220,
+      "sha256": "sha256:45287d98ae5dc3734b505675c3d361b681f49504aa5af4a2eb3c6d1ed4635996",
+      "note": "sha256 is the distribution aggregate recorded in council-vendoring.json (865 content files + 354 built runtime files)."
     },
     {
       "id": "shared-utils-signature-launch",
@@ -296,8 +291,8 @@
     },
     {
       "command": "bash installer-registration/verify-council-registration.sh",
-      "exit_code": 0,
-      "result": "RESULT: 53 passed, 0 failed"
+      "exit_code": 1,
+      "result": "RESULT: 49 passed, 4 failed (section D installer update-path; pre-existing on main, unchanged by this source lane)"
     },
     {
       "command": "bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh",

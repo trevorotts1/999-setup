@@ -1,6 +1,6 @@
 {
   "schema": "bundled-components@1",
-  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (15; reconciled from the shipped tree)",
+  "generatedBy": "CONTROL/bundled-skills.txt — surviving bundled skills registry (15; reconciled from the shipped tree)",
   "generatedAt": "2026-11-01T00:00:00.000Z",
   "channel": {
     "default": "github-releases",
@@ -122,7 +122,7 @@
     ],
     "council-of-wise-elders": [
       {
-        "version": "1.0.74",
+        "version": "1.0.78",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/council-of-wise-elders",
