@@ -5,26 +5,19 @@ How the client is asked, and told, when Skill 83 (Black Friday Launcher) runs in
 ## Asking (one short chat message at a time)
 
 1. Detect: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/harness_profile.py --harness openclaw`.
-2. Say the introduction first, then the opening choice, as ONE message: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/guided_experience.py --what opening` prints the introduction, the computed length estimate, and *"What is the best way for me to help you with your launch?"* with A (recommend a plan for me), B (guide me through each decision) and C (I already have a plan).
-3. Ask ONE question, the next one that actually applies: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/render_question.py --answers-file <answers.json> --harness openclaw`. It selects through the shared intake engine, so a conditional question whose condition is false is never offered and a confirmed answer is never asked twice, and prints one short numbered message. `"done": true` means the interview has everything it needs.
-4. Say ONE message in this session's own reply. Wait for the client's reply. Do not send the next question until they answer, and never send several questions at once.
-5. Read the reply with `parse_reply` in `render_question.py`: a number picks that choice, any other text is their own answer, and "help", "not sure", "I don't know", "show me an example" or "help me answer" starts the coaching path. Never treat silence or "skip" on a must-answer question as an answer.
-6. Record the answer into the answers file with the intake engine, in `its intake`. If the session restarts, run step 3 again: confirmed answers are skipped, the rest are asked. Send `guided_experience.py --what progress` when the client asks how far along they are.
+2. Ask ONE question at a time. Render the next applicable question from the shared guided bank (`<REPO_ROOT>/shared-utils/client_intake/question-bank.json` in Black Friday mode — never a raw bank): `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/render_question.py --questions-file <REPO_ROOT>/shared-utils/client_intake/question-bank.json --answers-file <answers.json> --harness openclaw`. It prints exactly one short numbered message: the next applicable question, with its reasons, examples and each option's own explanation. Never batch questions. The seasonal questions (promotion dates, the offer and any discount or bonus, real limitations, existing vs new buyers, delivery and follow-up) and the three picture questions all come from this same interview, one at a time — the picture questions are not the whole interview.
+3. Say ONE message in this session's own reply. Wait for the client's reply. Do not send the next question until they answer.
+4. Read the reply with `parse_reply` in `render_question.py`: a number picks that choice, any other text is their own answer, and the word "help" (or "not sure", "I don't know") starts the help path. Never treat silence or "skip" on a must-answer question as an answer.
+5. Record the answer into the answers file with the intake engine, in its intake. The client's assistance preference is asked first and may change at any time: A "set it up for me to review" (use what is known, ask only what is missing, show the proposal for review), B "help me choose" (every decision explained and walked through), C "I know what I want" (jump to execution, flag anything important still missing). Any default or recommendation is a proposal flagged "to confirm" — never a silent decision, never an approval for spending. Copy never invents urgency or scarcity: real dates and real limits only. If the session restarts, run step 2 again: confirmed answers are never repeated, the rest are asked.
 
 ## When the client does not know
 
-They pick "I'm not sure, help me", or type "I don't know", "not sure", "show me an example" or "help me answer". Every one of those is a HELP REQUEST, never a recorded answer:
-
-1. **Show an example** from the question's own nested `help.examples`.
-2. **Explain it** in the words of the question's `help.explain`.
-3. **Recommend using what is known** from the answers already recorded.
-
-For colours the engine also offers three concrete ways: read them from the logo file, read them from the website (a plain web fetch of the page and its stylesheet; no browser of any kind), or pick one of three palettes, each with plain-English reasons. A second "I don't know" on a question that has a safe default applies it, flagged "to confirm"; a question with no safe default stays in the interview and is named plainly, because the build waits for it.
+They reply "help". Run the engine's help path: colours from their logo file, or from their website by a plain web fetch of the page and its stylesheet (no browser of any kind), three suggested palettes with plain-English reasons, then a safe default flagged "to confirm". The build is never blocked silently, and the default is reported at delivery.
 
 ## Progress and delivery
 
-- While pages build, send one short message per FINISHED page: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --rows-file <rows.json> --harness openclaw --announced <keys already sent>`. Keep the printed `announced` keys so no page is announced twice. No walls of text.
-- At the end, send `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness openclaw` as plain lines (no tables).
+- When the package check passes, generate the rows from the package manifest (never hand-write them): `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --emit-rows <rows.json>`. Then send one short message per FINISHED page: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --rows-file <rows.json> --harness openclaw --announced <keys already sent>`. Keep the printed `announced` keys so no page is announced twice. No walls of text.
+- At the end, send `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --manifest <package-manifest.json> --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness openclaw` as plain lines (no tables). A rows file that was not generated from that same package-manifest.json is refused (REFUSED, non-zero exit).
 
 ## Speed
 
@@ -36,11 +29,9 @@ One answers file per run (the shared client-intake answers file, written by `sha
 
 ## Never
 
-- Never guess a skills path. Use the install root you verified, or ask. This tree is the **999 distribution**: skills live under `<REPO_ROOT>/.claude/skills/` here and at the repository root in the onboarding repository. The code resolves both; a hand-written path resolves neither reliably.
-- Never default price, offer name and claims, representation, community or bonus truth, entitlement, paid-render approval, the launch timing, the sender name or the reply address. These pause the build until the client answers.
-- Never treat "I don't know" as an answer, and never skip past it: it opens coaching.
-- Never promise sales figures, and never present a recommendation as an approval.
-- Never show the client a schema name, an id, a hash or a provider route: translate it or leave it out.
-- Never diagnose the client, and never turn the conversation into therapy. This is a planner.
+- Never send client messages or use Telegram, GHL or any other channel except this session's own reply.
+- Never borrow credentials: no Telegram token, no operator key, no other client's key.
+- Never guess a skills path. Use the install root you verified, or ask.
+- Never default price, offer name and claims, representation, community or bonus truth, entitlement, or paid-render approval. These pause the build until the client answers.
 
 The adapter changes HOW the client is asked and told, never WHAT the gates enforce.

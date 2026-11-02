@@ -12,14 +12,15 @@ manifest itself is readable, so the report can be run at any time.
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .constants import (REPO_ROOT, SKILL_NAME, SkillResolutionError,
-                        resolve_ref, resolve_skill_dir)
+                        resolve_ref, resolve_skill_dir, skill_slug)
 
 MANIFEST = Path(__file__).resolve().parent / "dependencies.json"
 
@@ -98,12 +99,44 @@ def load_manifest() -> Dict[str, Any]:
     return manifest
 
 
-def _resolve(ref: str, root: Path) -> tuple[Optional[Path], Optional[str]]:
-    """Resolve a manifest ref by slug. A missing tree is a finding, not a crash."""
+def _resolve(ref: str, root: Path, kind: str = "") -> tuple[Optional[Path], Optional[str]]:
+    """Resolve a manifest ref by slug. A missing tree is a finding, not a crash.
+
+    A skill_tree resolves by its slug under either naming convention even when the
+    slug is not one of constants.SKILL_SLUGS (44 and 50 are not), so a 999 layout
+    that renames the tree still resolves.
+    """
     try:
+        if kind == "skill_tree":
+            return resolve_skill_dir(skill_slug(ref), root), None
         return resolve_ref(ref, root), None
     except SkillResolutionError as exc:
         return None, str(exc)
+
+
+def _version(text: str) -> Optional[tuple]:
+    """(major, minor, patch) from 'v2.1.28' or '0.2.5'; None when it holds no number."""
+    numbers = re.findall(r"\d+", str(text).strip().lstrip("vV").split()[0] if str(text).strip() else "")
+    return tuple(int(n) for n in (numbers + ["0", "0", "0"])[:3]) if numbers else None
+
+
+def _version_floor(entry: Dict[str, Any], tree: Path) -> Optional[str]:
+    """None when the tree meets entry['min_version']; otherwise the reason it does not.
+
+    The tree's own skill-version.txt is the version source. An unreadable or
+    unparseable version counts as unmet: a floor that cannot be read is never passed.
+    """
+    floor = entry.get("min_version")
+    if not floor:
+        return None
+    try:
+        found = (tree / "skill-version.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return f"{tree.name}/skill-version.txt unreadable; minimum version is {floor}"
+    have, need = _version(found), _version(floor)
+    if have is None or need is None or have < need:
+        return f"version {found!r} is below the minimum {floor!r}"
+    return None
 
 
 def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
@@ -111,9 +144,13 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
     ref = entry["ref"]
     if kind in ("skill_tree", "shared_utils", "department_map_entry",
                 "installer_registration"):
-        target, error = _resolve(ref, root)
+        target, error = _resolve(ref, root, kind)
         if target is None:
             return {"status": "missing", "evidence": error}
+        if kind == "skill_tree" and target.exists():
+            unmet = _version_floor(entry, target)
+            if unmet:
+                return {"status": "missing", "evidence": f"{ref} resolved={target}: {unmet}"}
         if kind == "installer_registration":
             judged = installer_registration_status(target)
             return {"status": "present" if judged["ok"] else "missing",
@@ -159,13 +196,17 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
                 "evidence": f"SKILL_NUMBER={SKILL_NUMBER!r} number_final={final} "
                             f"registry={registry}"}
     if kind == "runtime_package":
+        # A real import, not find_spec: find_spec only proves the package's files
+        # are on the path, so jsonschema with its own dependency (attrs) missing
+        # read as present and then failed inside the Skill 79 validator.
         try:
-            found = importlib.util.find_spec(ref) is not None
-        except (ImportError, ValueError):
-            found = False
-        isolated = bool(getattr(__import__("sys").flags, "isolated", 0))
+            importlib.import_module(ref)
+            found, failure = True, ""
+        except Exception as exc:  # a dependency of the package failing counts
+            found, failure = False, f"; import failed: {type(exc).__name__}: {exc}"
+        isolated = bool(getattr(sys.flags, "isolated", 0))
         return {"status": "present" if found else "missing",
-                "evidence": f"importlib.util.find_spec({ref!r}) -> {found}; "
+                "evidence": f"import {ref!r} under {sys.executable} -> {found}{failure}; "
                             f"isolated_interpreter={isolated}"}
     return {"status": "unverifiable", "evidence": f"unknown kind {kind!r}"}
 
@@ -212,3 +253,21 @@ def check(root: Optional[Path] = None) -> Dict[str, Any]:
         "unverifiable": unverifiable,
         "blockers": blockers,
     }
+
+
+def require(root: Optional[Path] = None) -> Dict[str, Any]:
+    """The preflight a build runs first: return the report, or refuse naming every blocker.
+
+    A green preflight must mean the launch can run, so dispatch and assemble call this
+    before they touch a page. A required entry that is missing, below its minimum
+    version, or unverifiable blocks; nothing has been built or spent when it raises.
+    """
+    report = check(root)
+    if report["blockers"]:
+        detail = {e["id"]: e for e in report["entries"]}
+        raise DependencyError(
+            "AF-LAUNCH-DEPENDENCY: required dependency not satisfied: "
+            + "; ".join(f"{i} [{detail[i]['ref']}] {detail[i]['status']} ({detail[i]['evidence']})"
+                        for i in report["blockers"])
+            + ". Nothing was built and nothing was spent.")
+    return report
