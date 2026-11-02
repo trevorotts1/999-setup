@@ -253,3 +253,90 @@ def test_run_ledger_and_state_roots_are_not_under_tmp(sr, monkeypatch, tmp_path)
         assert gb.ledger_root_is_ephemeral() is False
     monkeypatch.setenv("GHL_DURABLE_ROOT", str(tmp_path / "durable"))
     assert gb.ledger_root() == str(tmp_path / "durable" / "skill6-ledgers")
+
+
+# ── Every live executor is refused, not only the form builder (repair 2) ─────
+
+_LIVE_CASES = {
+    "pipeline": ("ghl_pipeline_builder", lambda m, ev: m._live_build({}, _PLAN, {}, {}, ev, 0.0)),
+    "community": ("ghl_community_builder", lambda m, ev: m._live_build({}, _PLAN, {}, {}, ev, 0.0)),
+    "course": ("ghl_course_builder", lambda m, ev: m._live_build({}, _PLAN, {}, {}, ev, 0.0, False)),
+    "form": ("ghl_form_builder", lambda m, ev: m._live_build({}, _PLAN, {}, [], {}, {}, ev, 0.0)),
+}
+_PLAN = {"location_id": "L0", "pipeline_name": "P"}
+
+
+@pytest.mark.parametrize("which", sorted(_LIVE_CASES))
+def test_every_browser_live_executor_refused_before_launch(sr, monkeypatch, tmp_path, which):
+    import importlib
+    import ghl_form_builder as fb
+    modname, call = _LIVE_CASES[which]
+    mod = importlib.import_module(modname)
+
+    def _launched(*a, **k):
+        raise AssertionError("LAUNCH-REACHED")
+    monkeypatch.setattr(fb.browser_manager, "headless_guard", _launched)
+    monkeypatch.setattr(fb.browser_manager, "browser_session", _launched)
+    ev = str(tmp_path / "ev")
+    with pytest.raises(sr.AdapterSeamsNotPorted, match="ADAPTER-SEAMS-NOT-PORTED"):
+        call(mod, ev)
+    # control: with the gate open the same call reaches the browser sentinel
+    monkeypatch.setattr(sr, "seams_refusal", lambda *a, **k: "")
+    with pytest.raises(AssertionError, match="LAUNCH-REACHED"):
+        call(mod, ev)
+
+
+def test_every_live_build_names_its_session_before_the_browser():
+    """Fails if a future sync adds a live executor that skips the choke point."""
+    import ast
+
+    def _dotted(n):
+        parts = []
+        while isinstance(n, ast.Attribute):
+            parts.append(n.attr)
+            n = n.value
+        if isinstance(n, ast.Name):
+            parts.append(n.id)
+        return ".".join(reversed(parts))
+
+    found = set()
+    for path in sorted((SKILL_ROOT / "tools").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in (n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_live_build"):
+            found.add(path.stem)
+            calls = sorted((c for c in ast.walk(fn) if isinstance(c, ast.Call)),
+                           key=lambda c: (c.lineno, c.col_offset))
+            names = [_dotted(c.func) for c in calls]
+            sess = [i for i, n in enumerate(names) if n.endswith("_canonical_session")]
+            browser = [i for i, n in enumerate(names) if "browser_manager." in n]
+            assert sess, f"{path.name}: _live_build never names its session"
+            assert not browser or sess[0] < browser[0], f"{path.name}: browser touched before the gate"
+    assert found >= {"ghl_form_builder", "ghl_pipeline_builder",
+                     "ghl_community_builder", "ghl_course_builder"}, found
+
+
+def test_dispatch_one_refuses_injected_live_builder(sr, tmp_path):
+    import v2_dispatcher as d
+    cap = tmp_path / "cap.json"
+    cap.write_text("{}", encoding="utf-8")
+    called = []
+
+    def builder(task, ev, **k):
+        called.append(1)
+        return {}
+
+    def run(dry):
+        task = {"id": "g", "brand": "b", "brief": "b", "location_id": "L0", "pages": []}
+        if dry:
+            task["dry_run"] = True
+        return d.dispatch_one(task, str(tmp_path / ("ev-dry" if dry else "ev")), builder=builder,
+                              verifier=lambda *a, **k: {"ok": True}, telemetry_glob=[],
+                              live=True, capability_path=str(cap))
+
+    res = run(False)
+    assert res.state == d.STATE_FAILED and res.reason.startswith("ADAPTER-SEAMS-NOT-PORTED")
+    assert not called
+    # control: a dry run is not refused and reaches the builder
+    res = run(True)
+    assert not (res.reason or "").startswith("ADAPTER-SEAMS-NOT-PORTED")
+    assert called

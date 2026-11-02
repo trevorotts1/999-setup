@@ -960,9 +960,24 @@ def _form_builder_route(loc: str, form_id: str) -> str:
     return f"/v2/location/{loc}/form-builder-v2/{form_id}"
 
 
+def _require_live_seams() -> None:
+    """Refuse (ADAPTER-SEAMS-NOT-PORTED) until the four adapter seams pass.
+    A missing skill_runner.py raises ImportError: fail closed, never caught."""
+    _sr_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _sr_root not in sys.path:
+        sys.path.insert(0, _sr_root)
+    import skill_runner
+    skill_runner.require_adapter_seams()
+
+
 def _canonical_session(location_id: str) -> str:
     """The box-canonical agent-browser session name — MUST match browser_manager.sh
-    bm_session_name (ghl-skill6-<loc>, lowercased, [a-z0-9-])."""
+    bm_session_name (ghl-skill6-<loc>, lowercased, [a-z0-9-]).
+
+    On the 999 harness every live executor (form, pipeline, community, course)
+    names its session here first, so the ADAPTER-SEAMS-NOT-PORTED gate sits here
+    (ADAPTER.md)."""
+    _require_live_seams()
     if browser_manager is not None and hasattr(browser_manager, "session_name"):
         try:
             return browser_manager.session_name(location_id)  # type: ignore[attr-defined]

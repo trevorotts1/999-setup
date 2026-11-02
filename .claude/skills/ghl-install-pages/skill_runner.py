@@ -1513,6 +1513,7 @@ def seams_cli(argv: List[str]) -> int:
 
 
 if __name__ == "__main__":
+    sys.modules.setdefault("skill_runner", sys.modules[__name__])  # one module, not two
     if sys.argv[1:2] == ["seams"]:
         raise SystemExit(seams_cli(sys.argv[2:]))
     try:
