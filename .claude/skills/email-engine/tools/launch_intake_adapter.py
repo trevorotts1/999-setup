@@ -17,6 +17,14 @@ Inputs (all five are required, all produced and approved upstream):
   --landing-facts  landing facts document (sections 5, 6, 8, 9, 10 facts,
                    round timing, testimonial evidence or explicit null)
 
+Launch mode (EM-B3): pass `--launch-plan PLAN` to read the U-CONTRACT
+launch plan (shared-utils/signature_launch_contract/launch-plan.schema.json).
+The plan's `email_sequences[]` units are the sequence selector: the adapter
+emits one locked brief per planned Skill 50 sequence, each with its own
+sequence_position and objective. The shared launch answers (the S49 intake
+session answer ledger) are consumed exactly as above; the Skill 50
+one-block questionnaire is never read or asked on this path.
+
 Every S49-shape assumption lives in tools/s49_launch_shape.py, the single
 translation module; this file speaks only in engine terms. The contract is
 intake/launch-intake-contract.json (human doc: intake/LAUNCH-INTAKE.md).
@@ -32,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -39,6 +48,7 @@ from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import s49_launch_shape as s49  # noqa: E402
+import launch_profiles  # noqa: E402
 
 EXIT_OK = 0
 EXIT_REFUSAL = 2
@@ -46,8 +56,25 @@ EXIT_USAGE = 3
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 CONTRACT_PATH = SKILL_DIR / "intake" / "launch-intake-contract.json"
-PROFILE = "signature-launch-landing-10"
-PROFILE_RECORD_REF = "email-library/sequences/sequence-signature-launch-landing-10.json"
+
+# ---- ONE profile registry (profiles/launch-email-families.json) --------------
+# Every launch family's count, paired variants, purpose and timing is defined in
+# that registry and read here, by the prover and by P4 emission. This adapter
+# keeps NO second copy of the family table: a registry that cannot be read is a
+# refusal, never a fallback to built-in sequence ids.
+try:
+    REGISTRY = launch_profiles.load_registry()
+    REGISTRY_ERROR = None
+except launch_profiles.RegistryError as exc:
+    REGISTRY = {"families": [], "registry_version": None}
+    REGISTRY_ERROR = str(exc)
+
+FAMILIES = launch_profiles.families(REGISTRY) if not REGISTRY_ERROR else {}
+PROFILE = (FAMILIES["main_launch"]["sequence_position"]
+           if "main_launch" in FAMILIES else "signature-launch-landing-10")
+PROFILE_RECORD_REF = (FAMILIES["main_launch"]["sequence_record"]
+                      if "main_launch" in FAMILIES
+                      else "email-library/sequences/sequence-signature-launch-landing-10.json")
 OVERRIDE_CHANNELS = ("word_band_override", "expected_preview_count",
                      "subject_mode")
 _OFFER_STATE_BY_KIND = {
@@ -56,6 +83,31 @@ _OFFER_STATE_BY_KIND = {
     "recommendation": "approved_recommendation",
     "test_fixture": "provided",
 }
+
+# U-CONTRACT launch plan -> Skill 50 sequence profile (EM-B3). A launch plan
+# unit kind resolves to the sequence library record that authors it; the
+# objective follows the email's job, never invented from the plan. Both come
+# from the ONE registry.
+LAUNCH_PLAN_SCHEMA_VERSION = "1.0.0"
+LAUNCH_SEQUENCE_PROFILES = {
+    kind: (fam["sequence_position"], fam["objective"])
+    for kind, fam in FAMILIES.items()
+}
+LAUNCH_SEQUENCE_PROVIDER = "skill50"
+
+# The L01 session contract (shared intake/approval lane) — the agreed consumer
+# surface for typed eligibility / lifecycle / sender metadata carried to L07.
+SESSION_CONTRACT_REL = ("shared-utils", "signature_launch",
+                        "session_contract.json")
+SUPPORTED_SESSION_CONTRACT_MAJOR = "1"
+
+
+def _registry() -> Dict[str, Any]:
+    if REGISTRY_ERROR:
+        raise Refusal("launch email profile registry is unreadable: %s — a "
+                      "brief can never be locked against an unknown family"
+                      % REGISTRY_ERROR)
+    return REGISTRY
 
 
 class Refusal(Exception):
@@ -154,6 +206,144 @@ def _consumed(entry: Dict[str, Any], label: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Launch plan mode (EM-B3): the shared U-CONTRACT plan selects the sequences
+# ---------------------------------------------------------------------------
+def _profile_record_ref(family: Dict[str, Any]) -> str:
+    """The sequence library record that defines this family (from the registry)."""
+    return family["sequence_record"]
+
+
+def _launch_contract():
+    """The shared launch plan validator and schema, from the repo checkout or
+    the installed skills tree. Imported by path so a same-named module on
+    sys.path can never shadow the contract this adapter is bound to."""
+    here = Path(__file__).resolve()
+    candidates = [p / "shared-utils" / "signature_launch_contract"
+                  for p in here.parents]
+    candidates += [
+        Path.home() / ".openclaw" / "skills" / "shared-utils" / "signature_launch_contract",
+        Path("/data/.openclaw/skills/shared-utils/signature_launch_contract"),
+    ]
+    for directory in candidates:
+        schema_path = directory / "launch-plan.schema.json"
+        validator_path = directory / "validate_launch_plan.py"
+        if not (schema_path.is_file() and validator_path.is_file()):
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "_s50_launch_contract_validator", validator_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module, schema_path
+    raise Refusal(
+        "shared launch contract not found (shared-utils/"
+        "signature_launch_contract): launch mode cannot be proven against "
+        "the contract it claims to read")
+
+
+def _validate_launch_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Fail closed unless the plan validates against the shared launch contract."""
+    if not isinstance(plan, dict):
+        raise Refusal("launch plan is not a JSON object")
+    if plan.get("schema_version") != LAUNCH_PLAN_SCHEMA_VERSION:
+        raise Refusal(
+            f"launch plan schema_version is {plan.get('schema_version')!r}, "
+            f"expected {LAUNCH_PLAN_SCHEMA_VERSION!r}")
+    module, schema_path = _launch_contract()
+    try:
+        schema = module.load_json(schema_path)
+        errors = module.validate_plan(plan, schema)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise Refusal(f"launch plan contract could not be read: {exc}")
+    if errors:
+        raise Refusal(
+            "launch plan violates the shared launch contract: "
+            + "; ".join(errors[:8]))
+    return plan
+
+
+def _launch_sequences(plan: Dict[str, Any],
+                      sequence_id: Optional[str] = None) -> list:
+    """The planned Skill 50 email units, in plan order. A named unit must
+    exist; with no name every planned Skill 50 unit is returned."""
+    units = [u for u in plan.get("email_sequences") or []
+             if isinstance(u, dict)]
+    if sequence_id is not None:
+        units = [u for u in units if u.get("id") == sequence_id]
+        if not units:
+            raise Refusal(
+                f"launch plan has no email_sequences unit {sequence_id!r}")
+    else:
+        units = [u for u in units
+                 if u.get("provider") == LAUNCH_SEQUENCE_PROVIDER]
+    if not units:
+        raise Refusal("launch plan plans no Skill 50 email sequence")
+    for unit in units:
+        uid = unit.get("id")
+        if unit.get("provider") != LAUNCH_SEQUENCE_PROVIDER:
+            raise Refusal(
+                f"email sequence {uid!r} provider is "
+                f"{unit.get('provider')!r}, expected "
+                f"{LAUNCH_SEQUENCE_PROVIDER!r}")
+        if unit.get("draft_only") is not True:
+            raise Refusal(f"email sequence {uid!r} is not draft_only")
+        if unit.get("kind") not in LAUNCH_SEQUENCE_PROFILES:
+            raise Refusal(
+                f"email sequence {uid!r} kind {unit.get('kind')!r} has no "
+                "Skill 50 launch sequence profile")
+        family = FAMILIES[unit["kind"]]
+        declared = unit.get("email_count")
+        if declared != family["email_count"]:
+            raise Refusal(
+                f"email sequence {uid!r} declares {declared!r} emails but the "
+                f"{family['kind']} family ({family['profile']}) fixes exactly "
+                f"{family['email_count']} — a count mismatch is never padded "
+                "and never trimmed; fix the plan or extend the registry")
+    return units
+
+
+def adapt_launch_plan(session: Dict[str, Any], launch: Dict[str, Any],
+                      approval: Dict[str, Any], brand_facts: Dict[str, Any],
+                      landing_facts: Dict[str, Any], launch_plan: Dict[str, Any],
+                      *, sequence_id: Optional[str] = None,
+                      full_launch_plan: Optional[Dict[str, Any]] = None,
+                      **adapt_kwargs: Any) -> list:
+    """Launch mode: read the shared launch answers and the shared launch plan,
+    and emit one locked brief per planned Skill 50 sequence.
+
+    The Skill 50 one-block questionnaire is never read, asked, or attested:
+    each brief carries intake_mode "signature_launch" and the same approved
+    provenance the single-profile path emits. Returns
+    [{"sequence_id", "kind", "brief"}, ...] in plan order.
+
+    `full_launch_plan` is the L01 full launch plan beside the launch record
+    (typed `launch_answers` + `launch_calendar`); the session's own
+    `launch_plan` is the fallback, so the real producer output is consumed
+    without the caller threading it twice.
+    """
+    _validate_launch_plan(launch_plan)
+    plan_launch_id = launch_plan.get("launch_id")
+    if not _nonempty_str(plan_launch_id) \
+            or plan_launch_id != launch.get("launch_id"):
+        raise Refusal(
+            "launch plan launch_id does not match the launch record: the "
+            "plan belongs to another launch")
+    full = full_launch_plan
+    if full is None and isinstance(session, dict):
+        cand = session.get("launch_plan")
+        if isinstance(cand, dict) and cand.get("launch_answers"):
+            full = cand
+    briefs = []
+    for unit in _launch_sequences(launch_plan, sequence_id):
+        profile, objective = LAUNCH_SEQUENCE_PROFILES[unit["kind"]]
+        brief = adapt(session, launch, approval, brand_facts, landing_facts,
+                      profile=profile, objective=objective,
+                      full_launch_plan=full, **adapt_kwargs)
+        briefs.append({"sequence_id": unit["id"], "kind": unit["kind"],
+                       "brief": brief})
+    return briefs
+
+
+# ---------------------------------------------------------------------------
 # The adapter
 # ---------------------------------------------------------------------------
 def adapt(session: Dict[str, Any], launch: Dict[str, Any],
@@ -163,13 +353,44 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
           brand_facts_sha256: Optional[str] = None,
           landing_facts_sha256: Optional[str] = None,
           brand_facts_ref: str = "brand-facts document",
-          landing_facts_ref: str = "landing-facts document") -> Dict[str, Any]:
+          landing_facts_ref: str = "landing-facts document",
+          profile: str = PROFILE,
+          objective: Optional[str] = None,
+          full_launch_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Validate the five launch artifacts and emit the locked brief.
+
+    `profile` selects which approved launch family the brief locks (launch mode
+    passes one per planned email_sequences unit); it is resolved against the ONE
+    profile registry, so an unknown profile is a refusal, never a guess. The
+    default is the main landing-10 family, so the original single-brief CLI path
+    is unchanged. `objective` defaults to the family's objective and may not
+    contradict it. `full_launch_plan` is the L01 full launch plan beside the
+    launch record (pages + emails + texts + automations, carrying the typed
+    `launch_answers` block and `launch_calendar`); when present the session
+    consumer reads its typed block, otherwise the session ledger.
 
     Raises Refusal on any defect. The emitted brief is the shape
     tools/prove-email.py consumes under intake_mode signature_launch.
     """
+    if full_launch_plan is None and isinstance(session, dict):
+        cand = session.get("launch_plan")
+        if isinstance(cand, dict) and cand.get("launch_answers"):
+            full_launch_plan = cand
     _load_contract()
+    registry = _registry()
+    family = launch_profiles.family_for(profile, registry)
+    if family is None:
+        raise Refusal(
+            "profile %r is not a registered launch email family (%s): a brief "
+            "cannot be locked against an unknown family"
+            % (profile, ", ".join(sorted(FAMILIES)) or "registry empty"))
+    if objective is None:
+        objective = family["objective"]
+    elif objective != family["objective"]:
+        raise Refusal(
+            "objective %r contradicts the %s family objective %r — the "
+            "objective follows the email's job, never the caller's guess"
+            % (objective, family["kind"], family["objective"]))
     for label, doc in (("intake session", session), ("launch record", launch),
                        ("approval record", approval),
                        ("brand facts", brand_facts),
@@ -185,9 +406,13 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             f"intake session schema is {session.get('schema')!r}, expected "
             f"{s49.SESSION_SCHEMA!r}: this adapter consumes only the S49 "
             "launch intake session shape")
-    if session.get("status") not in s49.BUILDABLE_SESSION_STATES:
+    # Real L01 new_session() keys the lifecycle as `state` (collecting -> ...
+    # -> approved); the handcrafted adapter fixtures use `status`. Read the
+    # real key first, fall back to the legacy alias — never the reverse.
+    session_state = session.get("state", session.get("status"))
+    if session_state not in s49.BUILDABLE_SESSION_STATES:
         raise Refusal(
-            f"intake session status is {session.get('status')!r}: only an "
+            f"intake session state is {session_state!r}: only an "
             "approved or building session can produce a locked brief")
     client_ref = session.get("client_identity_ref")
     if not _nonempty_str(client_ref):
@@ -422,8 +647,9 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
     # --- assemble the locked brief ------------------------------------------
     offer_answer = " + ".join(offer_names)
     first_main = mains[0]
+    record_ref = _profile_record_ref(family)
     constant_prov = _prov("verified_existing", "existing_verified_catalog",
-                          PROFILE_RECORD_REF)
+                          record_ref)
     brand_field = _prov(brand_prov["state"], brand_prov["source_kind"],
                         brand_prov["source_ref"], artifact=brand_facts_ref,
                         artifact_hash=brand_hash)
@@ -465,11 +691,11 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             "question_id": entry.get("question_id"),
         }
     answers: Dict[str, Any] = {
-        "objective": "promotional",
+        "objective": objective,
         "buyer_type": "all",
         "offer": offer_answer,
         "brand_voice": brand_voice,
-        "sequence_position": PROFILE,
+        "sequence_position": family["sequence_position"],
         "founder_name": founder_name,
         "high_ticket": "no",
         "offer_token_ledger": offer_names,
@@ -482,7 +708,8 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
         "skill": "email-engine",
         "intake_mode": "signature_launch",
         "launch_provenance": {
-            "profile": PROFILE,
+            "profile": family["profile"],
+            "family_kind": family["kind"],
             "launch_id": launch.get("launch_id"),
             "launch_revision": launch.get("revision"),
             "tenant_id": launch.get("tenant_id"),
@@ -508,7 +735,7 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             },
             "session": {
                 "session_id": session.get("session_id"),
-                "status": session.get("status"),
+                "status": session.get("state", session.get("status")),
                 "client_identity_ref": client_ref,
             },
             "fields": fields,
@@ -521,8 +748,313 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             },
         },
         "answers": answers,
+        "family": _family_block(family, registry),
+        "session_contract": _consume_session_contract(
+            session, family, full_launch_plan),
     }
     return brief
+
+
+def _family_block(family: Dict[str, Any], registry: Dict[str, Any]) -> Dict[str, Any]:
+    """The family the brief is locked for, as typed data. The prover checks it
+    against the locked answers (wrong family fails), and P4 emission copies the
+    eligibility / lifecycle / sender metadata from it so L07 consumes the same
+    typed values the gate certified."""
+    return {
+        "kind": family["kind"],
+        "profile": family["profile"],
+        "sequence_position": family["sequence_position"],
+        "sequence_id": family["sequence_id"],
+        "source_record": family["sequence_record"],
+        "purpose": family["purpose"],
+        "destination": family["destination"],
+        "email_count": family["email_count"],
+        "preview_count": family["preview_count"],
+        "subject_count": family["subject_count"],
+        "paired_variants": {
+            "pairs": ["A", "B"],
+            "subjects": family["subject_count"],
+            "previews": family["preview_count"],
+        },
+        "timing": family["timing"],
+        "eligibility": _deep_copy(family["eligibility"]),
+        "lifecycle": _deep_copy(family["lifecycle"]),
+        "sender": _deep_copy(family["sender"]),
+        "overrides": _deep_copy(family["overrides"]),
+        "registry_version": registry.get("registry_version"),
+    }
+
+
+def _deep_copy(value: Any) -> Any:
+    """Deep copy that keeps JSON types EXACTLY (a boolean stays a boolean; a
+    timestamp stays the confirmed string it was — never coerced)."""
+    return json.loads(json.dumps(value))
+
+
+# ---------------------------------------------------------------------------
+# L01 session contract consumer
+# ---------------------------------------------------------------------------
+def _session_contract_path() -> Optional[Path]:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent.joinpath(*SESSION_CONTRACT_REL)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _typed_value(name: str, value: Any, spec: Any) -> Any:
+    """Validate one typed value declared by the session contract. Fail closed:
+    a value whose type the contract declares and that does not match is a
+    refusal, never a quiet coercion (the exact defect class: a string 'No'
+    read as a boolean)."""
+    expected = spec.get("type") if isinstance(spec, dict) else spec
+    checks = {
+        "boolean": lambda v: isinstance(v, bool),
+        "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "string": lambda v: isinstance(v, str),
+        "timestamp": lambda v: isinstance(v, str) and bool(v.strip()),
+        "array": lambda v: isinstance(v, list),
+        "object": lambda v: isinstance(v, dict),
+    }
+    if expected in checks and not checks[expected](value):
+        raise Refusal(
+            "session contract field %r is declared %s but carries %r — a typed "
+            "value is never coerced" % (name, expected, type(value).__name__))
+    if isinstance(spec, dict) and spec.get("confirmed") is True \
+            and not (isinstance(value, dict) and value.get("confirmed") is True):
+        raise Refusal(
+            "session contract field %r must carry a confirmed value "
+            "(confirmed: true), never an assumed one" % name)
+    return _deep_copy(value)
+
+
+def _metadata_sources(session: Dict[str, Any], family: Dict[str, Any]) -> Dict[str, Any]:
+    """Typed eligibility / lifecycle / sender metadata carried to L07.
+
+    The approved launch family is the authority for each family's rules; the
+    session answers may override a value ONLY when they carry a confirmed,
+    typed entry. Nothing here is string-coerced and nothing is defaulted from a
+    guess."""
+    answers = s49.session_answers(session)
+    out: Dict[str, Any] = {}
+    for key in ("eligibility", "lifecycle", "sender"):
+        from_session = answers.get(key)
+        if isinstance(from_session, dict) and from_session.get("confirmed") is True:
+            out[key] = _deep_copy(from_session)
+            out.setdefault("provenance", {})[key] = {
+                "state": "provided", "source_kind": "owner",
+                "source_ref": "approved launch intake session answers.%s" % key,
+            }
+        else:
+            out[key] = _deep_copy(family[key])
+            out.setdefault("provenance", {})[key] = {
+                "state": "verified_existing",
+                "source_kind": "existing_verified_catalog",
+                "source_ref": family["sequence_record"],
+            }
+    return out
+
+
+def _consume_session_contract(session: Dict[str, Any],
+                              family: Dict[str, Any],
+                              full_launch_plan: Optional[Dict[str, Any]] = None,
+                              ) -> Dict[str, Any]:
+    """Consume the versioned L01 session contract when it is published.
+
+    Absent contract: the brief says so explicitly and names the blocked
+    acceptance, rather than inventing a version or silently skipping the
+    consumer. Present contract, two shapes:
+      * legacy (agreed-shape): `required_answers` + `typed_fields`;
+      * real L01 (signature-launch-session-contract/v1, contract_version
+        1.0.0): `launch_answers[]` descriptors (id + ledger_keys) with the
+        required behavior under `consumer_requirements.L06_skill50`, and the
+        fixture at `fixtures/session_contract.complete_plan.json`.
+    Both shapes: the declared version is checked, every declared required
+    answer must exist in the approved session ledger, and every declared
+    typed field is validated (booleans stay booleans — the string "No" is
+    never truthy). A present contract with missing required answers is a
+    refusal, never an empty typed:{}.
+    """
+    path = _session_contract_path()
+    metadata = _metadata_sources(session, family)
+    rel = "/".join(SESSION_CONTRACT_REL)
+    if path is None:
+        return {
+            "state": "absent",
+            "ref": rel,
+            "family": family["profile"],
+            "typed_metadata": metadata,
+            "blocked_acceptance": (
+                "L01 has not published %s on this branch (no commits beyond "
+                "origin/main), so the consumer is exercised against the agreed "
+                "shape only; re-run this adapter once L01 lands to consume the "
+                "real fixture" % rel),
+        }
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise Refusal("session contract at %s is unreadable: %s" % (path, exc))
+    if not isinstance(doc, dict):
+        raise Refusal("session contract at %s is not a JSON object" % path)
+    if doc.get("contract") not in (None, "signature-launch-session"):
+        raise Refusal("session contract at %s declares contract %r, not "
+                      "'signature-launch-session'" % (path, doc.get("contract")))
+    # Real L01 contract identifies as schema
+    # signature-launch-session-contract/v1 with contract_version "1.0.0".
+    version = doc.get("contract_version")
+    if not (isinstance(version, str)
+            and version.split(".")[0] == SUPPORTED_SESSION_CONTRACT_MAJOR):
+        raise Refusal("session contract version %r is not supported (major %s)"
+                      % (version, SUPPORTED_SESSION_CONTRACT_MAJOR))
+    if "launch_answers" in doc:
+        return _consume_l01_contract(doc, session, family, metadata,
+                                     full_launch_plan)
+    answers = s49.session_answers(session)
+    missing = [name for name in (doc.get("required_answers") or [])
+               if name not in answers]
+    if missing:
+        raise Refusal(
+            "approved session carries no answer for session-contract "
+            "requirement(s): %s" % ", ".join(sorted(missing)))
+    typed = {}
+    for name, spec in (doc.get("typed_fields") or {}).items():
+        if name in answers:
+            typed[name] = _typed_value(name, answers[name], spec)
+    return {
+        "state": "consumed",
+        "ref": rel,
+        "contract_version": version,
+        "family": family["profile"],
+        "typed": typed,
+        "typed_metadata": metadata,
+    }
+
+
+# The eight launch answers, keyed by the session-ledger key the consumer
+# reads and the Python type the contract demands. States gate separately:
+# only `provided` (or verified_existing) counts as ready — a
+# recommended_unapproved or unknown entry is carried, never approved.
+_L01_LEDGER_TYPES = {
+    "launch.launch_at": "timestamp",
+    "launch.doors_open_at": "timestamp",
+    "launch.doors_close_at": "timestamp",
+    "launch.timezone": "string",
+    "launch.channels": "array",
+    "launch.conversation_ai": "boolean",
+    "launch.access_delivery": "boolean",
+    "launch.payment_plans": "boolean",
+    "launch.sender_name": "string",
+    "launch.reply_to_email": "string",
+    "launch.a2p_ready": "boolean",
+}
+_L01_READY_STATES = ("provided", "verified_existing")
+_L01_BOOLEAN_ANSWERS = ("launch.conversation_ai", "launch.access_delivery",
+                        "launch.payment_plans", "launch.a2p_ready")
+
+
+def _l01_ledger(session: Dict[str, Any],
+                full_launch_plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The typed launch_answers block: the full plan's block wins (it is the
+    assembled, digest-bound record), the session ledger is the fallback."""
+    if isinstance(full_launch_plan, dict):
+        block = full_launch_plan.get("launch_answers")
+        if isinstance(block, dict) and block:
+            return block
+    answers = s49.session_answers(session)
+    return answers if isinstance(answers, dict) else {}
+
+
+def _consume_l01_contract(doc: Dict[str, Any], session: Dict[str, Any],
+                          family: Dict[str, Any], metadata: Dict[str, Any],
+                          full_launch_plan: Optional[Dict[str, Any]]
+                          ) -> Dict[str, Any]:
+    """Consume the real L01 session contract (contract_version 1.0.0).
+
+    Required coverage comes from `launch_answers[].ledger_keys`: every key
+    must exist in the session/full-plan ledger or the consumer refuses by
+    name — never an empty typed:{}. Typed values are validated by the
+    contract's own rules (booleans are real booleans; the string "No" is
+    never truthy; recommended_unapproved/unknown is never ready); sender
+    names and reply-to mailboxes must be present and non-empty; deadlines
+    come from launch_calendar ISO timestamps with a real IANA zone.
+    """
+    req = doc.get("consumer_requirements") or {}
+    l06_req = req.get("L06_skill50") or {}
+    descriptors = doc.get("launch_answers") or []
+    if not isinstance(descriptors, list) or not descriptors:
+        raise Refusal("session contract declares no launch_answers: "
+                      "required coverage cannot be proven")
+    ledger = _l01_ledger(session, full_launch_plan)
+    required_keys = sorted(
+        {k for d in descriptors if isinstance(d, dict)
+         for k in (d.get("ledger_keys") or [])})
+    missing = [k for k in required_keys if k not in ledger]
+    if missing:
+        raise Refusal(
+            "approved session carries no answer for L01 session-contract "
+            "requirement(s): %s" % ", ".join(missing))
+    typed: Dict[str, Any] = {}
+    for key in required_keys:
+        entry = ledger.get(key)
+        if not isinstance(entry, dict) or "value" not in entry:
+            raise Refusal(
+                "session-contract answer %r is not a ledger entry "
+                "(value is required)" % key)
+        expected = _L01_LEDGER_TYPES.get(key)
+        state = entry.get("state")
+        value = entry.get("value")
+        if expected is not None:
+            typed[key] = _typed_value(key, value, expected)
+        else:
+            typed[key] = _deep_copy(value)
+        ready = state in _L01_READY_STATES
+        typed[key + ".state"] = state
+        typed[key + ".ready"] = ready
+        if key in _L01_BOOLEAN_ANSWERS and not isinstance(value, bool):
+            raise Refusal(
+                "session contract field %r is declared boolean but carries "
+                "%r — a typed value is never coerced" % (key, type(value).__name__))
+        if key in ("launch.sender_name", "launch.reply_to_email") \
+                and not _nonempty_str(value):
+            raise Refusal(
+                "session contract field %r must be present and non-empty "
+                "before any email is composed — a missing sender blocks by "
+                "name, never a placeholder" % key)
+    # Text work only when 'text' is present in the channels array — never
+    # from a display string. a2p_ready/conversation_ai/access_delivery/
+    # payment_plans that are non-boolean or not ready count as NOT ready.
+    channels = typed.get("launch.channels")
+    text_planned = isinstance(channels, list) and "text" in channels
+    readiness = {}
+    for key in _L01_BOOLEAN_ANSWERS:
+        readiness[key] = typed.get(key + ".ready") is True \
+            and isinstance(typed.get(key), bool) and typed[key] is True
+    out: Dict[str, Any] = {
+        "state": "consumed",
+        "ref": "/".join(SESSION_CONTRACT_REL),
+        "contract_version": doc.get("contract_version"),
+        "family": family["profile"],
+        "typed": typed,
+        "typed_metadata": metadata,
+        "channels": channels,
+        "text_planned": text_planned,
+        "readiness": readiness,
+    }
+    calendar = (full_launch_plan.get("launch_calendar")
+                if isinstance(full_launch_plan, dict) else None)
+    if isinstance(calendar, dict) and calendar:
+        out["launch_calendar"] = _deep_copy(calendar)
+    if isinstance(l06_req, dict) and l06_req.get("reads"):
+        out["contract_reads"] = list(l06_req["reads"])
+    digest_doc = doc.get("digest") or {}
+    if isinstance(digest_doc, dict) and digest_doc.get("value_shape"):
+        out["digest_rule"] = {
+            "algorithm": digest_doc.get("algorithm"),
+            "canonicalization": digest_doc.get("canonicalization"),
+            "value_shape": digest_doc.get("value_shape"),
+        }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -634,6 +1166,27 @@ def build_fixtures() -> Dict[str, Any]:
                               "session-fixture-0001",
                 "question_id": "a5",
             },
+            # The L01 session contract requires these ledger keys and the
+            # access destination; no intake question produces them, so the
+            # fixture states them the way an operator would supply them.
+            **{
+                key: {"value": value, "state": "provided",
+                      "source_ref": "operator-supplied fixture fact %s" % key}
+                for key, value in (
+                    ("launch.a2p_ready", False),
+                    ("launch.access_delivery", True),
+                    ("launch.access_url", "https://momentum-method.example/access"),
+                    ("launch.channels", ["email"]),
+                    ("launch.conversation_ai", False),
+                    ("launch.doors_close_at", "2026-11-10T23:59:00-05:00"),
+                    ("launch.doors_open_at", "2026-11-03T09:00:00-05:00"),
+                    ("launch.launch_at", "2026-11-03T12:00:00-05:00"),
+                    ("launch.payment_plans", False),
+                    ("launch.reply_to_email", "hello@momentum-method.example"),
+                    ("launch.sender_name", "Jordan Marsh"),
+                    ("launch.timezone", "America/New_York"),
+                )
+            },
         },
         "plan_hash": plan_hash,
         "approval_id": "approval-fixture-0001",
@@ -704,6 +1257,44 @@ def build_fixtures() -> Dict[str, Any]:
             "brand_facts": brand_facts, "landing_facts": landing_facts,
             "client_identity_ref": "client:jordan-marsh",
             "worker_identity_ref": "worker:s50-adapter"}
+
+
+def build_launch_plan_fixture() -> Dict[str, Any]:
+    """A U-CONTRACT launch plan for the fixture launch: every planned Skill 50
+    sequence kind, so launch mode is exercised end to end. Fictional."""
+    sequences = [
+        ("email_pre_launch", "pre_launch"),
+        ("email_main_launch", "main_launch"),
+        ("email_doors_closing", "doors_closing"),
+        ("email_upsell_1", "upsell_followup"),
+        ("email_downsell_1", "downsell_followup"),
+        ("email_abandoned_checkout", "abandoned_checkout"),
+        ("email_welcome_access", "welcome_access"),
+    ]
+    return {
+        "schema_version": "1.0.0",
+        "launch_id": "launch-fixture-0001",
+        "offer": {"name": "The Momentum Method", "price_usd": 497,
+                  "currency": "USD", "payment_plans": False},
+        "launch_calendar": {
+            "launch_at": "2026-11-03T12:00:00-05:00",
+            "doors_open_at": "2026-11-03T09:00:00-05:00",
+            "doors_close_at": "2026-11-10T23:59:00-05:00",
+            "timezone": "America/New_York",
+        },
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
+        "pages": [{"id": "page_landing", "kind": "landing",
+                   "url": None, "waits_for": []}],
+        "email_sequences": [
+            {"id": uid, "kind": kind, "provider": "skill50",
+             "email_count": FAMILIES[kind]["email_count"],
+             "draft_only": True, "waits_for": []}
+            for uid, kind in sequences
+        ],
+        "text_sets": [],
+        "automations": [],
+    }
 
 
 def _self_test() -> int:
@@ -793,6 +1384,89 @@ def _self_test() -> int:
         say(False, "worker self-approval is refused")
     except Refusal:
         say(True, "worker self-approval is refused")
+
+    # --- EM-B3 launch mode: the shared launch plan selects the sequences -----
+    lfx = build_fixtures()
+    plan = build_launch_plan_fixture()
+    try:
+        adapted = adapt_launch_plan(
+            lfx["session"], lfx["launch"], lfx["approval"],
+            lfx["brand_facts"], lfx["landing_facts"], plan,
+            worker_identity_ref=lfx["worker_identity_ref"])
+        say(len(adapted) == len(plan["email_sequences"]),
+            "launch mode emits one brief per planned Skill 50 sequence")
+        say({a["sequence_id"] for a in adapted}
+            == {u["id"] for u in plan["email_sequences"]},
+            "every planned sequence id is covered")
+        by_kind = {a["kind"]: a["brief"] for a in adapted}
+        say(by_kind["abandoned_checkout"]["answers"]["objective"]
+            == "abandoned-cart"
+            and by_kind["upsell_followup"]["answers"]["objective"] == "upsell"
+            and by_kind["downsell_followup"]["answers"]["objective"]
+            == "downsell",
+            "objective follows the planned sequence kind")
+        say(by_kind["pre_launch"]["answers"]["sequence_position"]
+            == "signature-launch-prelaunch"
+            and by_kind["main_launch"]["answers"]["sequence_position"]
+            == PROFILE,
+            "sequence_position follows the planned profile")
+        say(all("asked_all_at_once" not in a["brief"]
+                and "question_block_msg_id" not in a["brief"]
+                for a in adapted),
+            "launch mode never emits the legacy questionnaire attestation")
+        say(all(a["brief"]["intake_mode"] == "signature_launch"
+                for a in adapted),
+            "every launch brief carries intake_mode signature_launch")
+        say(all(a["brief"].get("family", {}).get("kind") == a["kind"]
+                and a["brief"]["family"]["profile"]
+                == a["brief"]["launch_provenance"]["profile"]
+                for a in adapted),
+            "every launch brief carries the typed family block it locked")
+        say(all(a["brief"].get("session_contract", {}).get("state")
+                in ("absent", "consumed")
+                and a["brief"]["session_contract"].get("typed_metadata")
+                for a in adapted),
+            "session contract state is explicit and typed metadata is carried")
+        say({a["brief"]["family"]["kind"]: a["brief"]["family"]["email_count"]
+             for a in adapted}
+            == {k: FAMILIES[k]["email_count"] for k in FAMILIES},
+            "each brief's family count equals the registry count")
+        one = adapt_launch_plan(
+            lfx["session"], lfx["launch"], lfx["approval"],
+            lfx["brand_facts"], lfx["landing_facts"], plan,
+            sequence_id="email_main_launch",
+            worker_identity_ref=lfx["worker_identity_ref"])
+        say(len(one) == 1
+            and one[0]["brief"]["answers"]["sequence_position"] == PROFILE,
+            "a named sequence adapts to exactly one brief")
+    except Refusal as exc:
+        say(False, f"launch mode adapts a valid plan (refused: {exc})")
+
+    def plan_refuses(label: str, mutate) -> None:
+        bad = json.loads(json.dumps(plan))
+        mutate(bad)
+        try:
+            adapt_launch_plan(
+                lfx["session"], lfx["launch"], lfx["approval"],
+                lfx["brand_facts"], lfx["landing_facts"], bad,
+                worker_identity_ref=lfx["worker_identity_ref"])
+            say(False, label)
+        except Refusal:
+            say(True, label)
+
+    plan_refuses("plan bound to another launch is refused",
+                 lambda p: p.__setitem__("launch_id", "another-launch"))
+    plan_refuses("plan violating the shared contract is refused",
+                 lambda p: p["launch_calendar"].pop("timezone"))
+    plan_refuses("plan with a non-draft email sequence is refused",
+                 lambda p: p["email_sequences"][0].__setitem__(
+                     "draft_only", False))
+    plan_refuses("plan with an unknown sequence kind is refused",
+                 lambda p: p["email_sequences"][0].__setitem__(
+                     "kind", "follow_up"))
+    plan_refuses("plan with the wrong count for the family is refused",
+                 lambda p: p["email_sequences"][3].__setitem__(
+                     "email_count", 2))
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return EXIT_OK if ok else 1
 
@@ -830,8 +1504,17 @@ def main(argv=None) -> int:
     ap.add_argument("--worker-identity",
                     help="identity ref of the worker operating this run "
                          "(self-approval check)")
+    ap.add_argument("--launch-plan",
+                    help="U-CONTRACT launch plan JSON (launch mode): emit one "
+                         "brief per planned Skill 50 email sequence")
+    ap.add_argument("--sequence",
+                    help="launch mode: the email_sequences unit id to adapt "
+                         "(default: every planned Skill 50 sequence)")
     ap.add_argument("--out", help="write the locked brief here "
                                   "(default: stdout)")
+    ap.add_argument("--out-dir",
+                    help="launch mode: write each brief to "
+                         "BRIEF-<sequence-id>.json in this directory")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
@@ -844,6 +1527,10 @@ def main(argv=None) -> int:
               + ", ".join("--" + m.replace("_", "-") for m in missing),
               file=sys.stderr)
         return EXIT_USAGE
+    if args.launch_plan and (args.out and args.out_dir):
+        print("USAGE ERROR: pass --out or --out-dir in launch mode, not both",
+              file=sys.stderr)
+        return EXIT_USAGE
     session, _, _ = _read_json_arg(args.session, "intake session")
     launch, _, _ = _read_json_arg(args.launch, "launch record")
     approval, _, _ = _read_json_arg(args.approval, "approval record")
@@ -851,13 +1538,61 @@ def main(argv=None) -> int:
         args.brand_facts, "brand facts")
     landing_facts, landing_sha, landing_name = _read_json_arg(
         args.landing_facts, "landing facts")
+    adapt_kwargs = {
+        "worker_identity_ref": args.worker_identity or "",
+        "brand_facts_sha256": brand_sha,
+        "landing_facts_sha256": landing_sha,
+        "brand_facts_ref": brand_name,
+        "landing_facts_ref": landing_name,
+    }
     try:
+        if args.launch_plan:
+            launch_plan, _, _ = _read_json_arg(args.launch_plan, "launch plan")
+            adapted = adapt_launch_plan(
+                session, launch, approval, brand_facts, landing_facts,
+                launch_plan, sequence_id=args.sequence, **adapt_kwargs)
+            if not args.out and not args.out_dir:
+                sys.stdout.write(json.dumps(
+                    {"launch_id": launch_plan.get("launch_id"),
+                     "briefs": adapted}, indent=2) + "\n")
+                return EXIT_OK
+            if args.out:
+                if len(adapted) != 1:
+                    print("USAGE ERROR: --out needs exactly one brief; pass "
+                          "--sequence or use --out-dir", file=sys.stderr)
+                    return EXIT_USAGE
+                brief = adapted[0]["brief"]
+                try:
+                    Path(args.out).write_text(
+                        json.dumps(brief, indent=2) + "\n", encoding="utf-8")
+                except OSError as exc:
+                    print(f"USAGE/IO ERROR: cannot write brief to "
+                          f"{args.out}: {exc}", file=sys.stderr)
+                    return EXIT_USAGE
+                prov = brief["launch_provenance"]
+                print(f"ADAPTED: locked brief for {prov['profile']} written "
+                      f"to {args.out} (launch {prov['launch_id']}, plan_hash "
+                      f"{prov['plan_hash'][:12]}..., approval "
+                      f"{prov['approval']['approval_id']})")
+                return EXIT_OK
+            out_dir = Path(args.out_dir)
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                for item in adapted:
+                    target = out_dir / ("BRIEF-%s.json" % item["sequence_id"])
+                    target.write_text(
+                        json.dumps(item["brief"], indent=2) + "\n",
+                        encoding="utf-8")
+            except OSError as exc:
+                print(f"USAGE/IO ERROR: cannot write briefs to "
+                      f"{args.out_dir}: {exc}", file=sys.stderr)
+                return EXIT_USAGE
+            print(f"ADAPTED: {len(adapted)} locked launch briefs written to "
+                  f"{args.out_dir} (launch "
+                  f"{launch_plan.get('launch_id')})")
+            return EXIT_OK
         brief = adapt(session, launch, approval, brand_facts, landing_facts,
-                      worker_identity_ref=args.worker_identity or "",
-                      brand_facts_sha256=brand_sha,
-                      landing_facts_sha256=landing_sha,
-                      brand_facts_ref=brand_name,
-                      landing_facts_ref=landing_name)
+                      **adapt_kwargs)
     except Refusal as exc:
         print(f"REFUSAL: {exc}")
         return EXIT_REFUSAL
