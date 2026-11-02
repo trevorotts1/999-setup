@@ -3,12 +3,16 @@
 browser-driven Funnel / Website / Page builder (Skill 06 overhaul).
 
 THIS IS THE GLUE, NOT THE CLICKER. The actual UI navigation is performed by the
-AGENT at runtime using agent-browser (PRIMARY) or Playwright (FALLBACK), driven
+AGENT at runtime using the OpenClaw Chrome extension (PRIMARY lane),
+agent-browser (FALLBACK lane), or Playwright (escape hatch), driven
 by live snapshots and the gate registry (gates.json, D8). This module owns the
 deterministic, mechanical parts so they are never improvised:
 
   * the page MANIFEST (A0.4) — the ordered build plan + resume key
-  * the per-page LEDGER (D10/D12) — /tmp/<run-id>/<funnel>/<step>.json
+  * the per-page LEDGER (D10/D12) — <ledger-root>/<run-id>/<funnel>/<step>.json
+    (S06-05: the ledger root is the durable root — see ledger_root(); /tmp was
+    its pre-S06-05 home and survives only as a labelled ephemeral fallback +
+    a repair-in-place read fallback for runs started before the move)
   * the ZHC naming prefix enforcement (guardrail 2)
   * the hard sub-account match gate helper (A2.3)
   * the runtime-gate contract loader (gates.json) — captured vs runtime
@@ -53,6 +57,12 @@ import sys
 import time
 import urllib.error
 import urllib.request
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 evidence scrubber + Q4 file modes)
 
 # Page/funnel/website build states (furthest-reached, in order). The REST
 # autosave flow maps onto these verbatim: page-saved = autosave 201 verified;
@@ -280,28 +290,111 @@ def build_manifest(funnel_name: str, surface: str, pages: list[dict]) -> dict:
 
 # ── Ledger (D10 / D12 resume) ─────────────────────────────────────────────────
 
-def _ledger_path(run_id: str, funnel: str, step: str) -> str:
+LEDGER_ROOT_ENV = "GHL_LEDGER_ROOT"
+
+# Where per-page ledgers lived before S06-05: directly under /tmp — an
+# ephemeral root (tmpfs inside a container; wiped on recreate/reboot), which
+# is exactly how a resumable run used to vanish mid-build on a VPS. Kept
+# ONLY as (a) the labelled last-resort root when no durable root resolves
+# and (b) a read fallback (SK6002 repair-in-place): a run started before
+# the move stays resumable; nothing new is written there when a durable
+# root exists.
+_LEGACY_LEDGER_BASE = "/tmp"
+
+
+def _durable_root_for_ledger() -> str:
+    """``browser_manager.durable_root()`` via this module's usual lazy
+    import (ENV-MATRIX adaptation contract item 1: detect ONLY via that
+    primitive). "" on any failure — the caller then takes the labelled
+    ephemeral fallback rather than crashing a ledger call."""
+    try:
+        import browser_manager  # lazy: keeps ghl_builder importable standalone
+
+        return browser_manager.durable_root()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def ledger_root(env: dict | None = None) -> str:
+    """Where the per-page ledger lives (S06-05).
+
+    Resolution order:
+      1. ``GHL_LEDGER_ROOT`` env — explicit operator/test override (a
+         dispatcher that owns a run-evidence root points the ledger at it
+         through this).
+      2. ``<durable_root()>/skill6-ledgers`` — on a VPS that is
+         ``/data/.openclaw/skill6-ledgers`` (survives a container
+         recreate); on a Mac ``~/.openclaw/skill6-ledgers``.
+      3. ``/tmp`` — ONLY when no durable root resolves (a genuinely
+         ephemeral local run on a bare checkout). ``ledger_root_is_ephemeral``
+         labels this case wherever the root is reported; durable run state
+         must never silently live on tmpfs.
+    """
+    env = env if env is not None else os.environ
+    override = (env.get(LEDGER_ROOT_ENV) or "").strip()
+    if override:
+        return override
+    durable = _durable_root_for_ledger()
+    if durable:
+        return os.path.join(durable, "skill6-ledgers")
+    return _LEGACY_LEDGER_BASE
+
+
+def ledger_root_is_ephemeral(env: dict | None = None) -> bool:
+    """True iff the resolved ledger root is the /tmp fallback (or an explicit
+    override pointing into /tmp) — the RUN REPORT labels such a root
+    EPHEMERAL so a /tmp-resident ledger is never mistaken for durable run
+    state (the pre-S06-05 silent failure)."""
+    root = os.path.abspath(ledger_root(env))
+    return root == _LEGACY_LEDGER_BASE or root.startswith(
+        _LEGACY_LEDGER_BASE + os.sep
+    )
+
+
+def _ledger_relpath(run_id: str, funnel: str, step: str) -> str:
     safe_funnel = re.sub(r"[^A-Za-z0-9_-]+", "_", funnel)
     safe_step = re.sub(r"[^A-Za-z0-9_-]+", "_", step)
-    return os.path.join("/tmp", run_id, safe_funnel, f"{safe_step}.json")
+    return os.path.join(run_id, safe_funnel, f"{safe_step}.json")
 
 
-def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | None = None) -> str:
+def _ledger_path(run_id: str, funnel: str, step: str) -> str:
+    return os.path.join(ledger_root(), _ledger_relpath(run_id, funnel, step))
+
+
+def _legacy_ledger_path(run_id: str, funnel: str, step: str) -> str:
+    """The pre-S06-05 location of the same ledger record (read fallback only)."""
+    return os.path.join(_LEGACY_LEDGER_BASE, _ledger_relpath(run_id, funnel, step))
+
+
+def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | None = None, *, secret_values=None) -> str:
     """Record a page's furthest-reached state. Idempotent: only advances; never
     rewinds a page that already reached a later state (unless state==FAILED).
 
     ``FAILED`` and ``WORKFLOW_LEDGER_STATE`` ('wf-rewired') are accepted but are
     NOT part of the ordered page lifecycle — they are never ordered against the
     LEDGER_STATES sequence (a workflow rewire is a parallel fact about a
-    workflow step, not a page-build stage)."""
+    workflow step, not a page-build stage).
+
+    S06-08: the ledger record is a no-secret sink: ``extra`` is a free-form
+    caller dict, so the merged record passes through the evidence scrubber
+    before write and the redaction count is recorded as ``redactions`` when
+    nonzero. The write stays a PLAIN in-place write (its historical class)
+    and gains the explicit 0600 mode (Q4); the ledger dirs are created 0700.
+    """
     if state not in LEDGER_STATES and state not in ("FAILED", WORKFLOW_LEDGER_STATE):
         raise ValueError(f"unknown ledger state: {state}")
     path = _ledger_path(run_id, funnel, step)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    ghl_evidence.ensure_private_dir(os.path.dirname(path))
     prev = {}
-    if os.path.isfile(path):
+    # Repair-in-place merge base (S06-05): if this page's record exists only
+    # at the pre-move /tmp location, merge from THERE — otherwise the
+    # never-rewind guard below would compare against an empty prev and a
+    # post-move write could silently rewind a page the old run had already
+    # advanced. The write itself always lands at the new root.
+    prev_path = path if os.path.isfile(path) else _legacy_ledger_path(run_id, funnel, step)
+    if os.path.isfile(prev_path):
         try:
-            prev = json.load(open(path))
+            prev = json.load(open(prev_path))
         except Exception:
             prev = {}
     prev_state = prev.get("state")
@@ -313,13 +406,19 @@ def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | 
            "updated_at": int(time.time()), **(extra or {})}
     if prev:
         rec = {**prev, **rec}
-    with open(path, "w") as f:
-        json.dump(rec, f, indent=2)
+    rec, redactions = ghl_evidence.EvidenceScrubber(secret_values).scrub_obj(rec)
+    if redactions:
+        rec["redactions"] = int(rec.get("redactions") or 0) + redactions
+    ghl_evidence.write_json_private(path, rec)
     return path
 
 
 def ledger_read(run_id: str, funnel: str, step: str) -> dict:
     path = _ledger_path(run_id, funnel, step)
+    if not os.path.isfile(path):
+        # Repair-in-place read fallback (S06-05): a run started before the
+        # ledger-root move left its records under /tmp — still resumable.
+        path = _legacy_ledger_path(run_id, funnel, step)
     if not os.path.isfile(path):
         return {"state": None}
     try:
@@ -524,13 +623,38 @@ def subaccount_matches(current_location_id: str, target: str) -> MatchGuard:
 
 # ── Publish guard (A13.1 / guardrail 4) ───────────────────────────────────────
 
-def may_publish(approval: str | None) -> bool:
-    """Return True ONLY on an explicit affirmative LIVE answer. Default = draft.
-    Any absent/ambiguous/negative answer => False."""
-    if not approval:
-        return False
-    a = approval.strip().lower()
-    return a in ("live", "publish", "yes", "approved", "go", "go ahead", "true")
+def may_publish(approval, *, location_id=None, page_id=None,
+                evidence_root: str | None = None,
+                store_dir: str | None = None) -> bool:
+    """S06-06: True ONLY when ``approval`` is an approval_ref that resolves to a
+    launch-store record naming this location and page, with
+    allowed_write_target == approved_live_publication, test_only false, not
+    revoked/expired, AND ghl_gate has passed for this page (``evidence_root``).
+    A free string ("yes"/"live"), a bare boolean, or a record passed in memory
+    is never authority. Default = draft. See ghl_publish_approval."""
+    import ghl_publish_approval as pa  # lazy: it lazy-imports ghl_gate -> this module
+    return not pa.publish_refusals(
+        approval, location_id=location_id, page_id=page_id,
+        evidence_root=evidence_root, store_dir=store_dir)
+
+
+def page_autosave(page_id: str, page_data: dict, *, funnel_id: str,
+                  page_version: int, location_id: str,
+                  integrations: dict | None = None, publish=False,
+                  approval=None, evidence_root: str | None = None,
+                  store_dir: str | None = None, session: str | None = None) -> dict:
+    """Guarded autosave step. ``publish`` must be exactly False (draft) unless a
+    launcher approval record authorizes this page (see ``may_publish``);
+    ``publish=True`` with no record, a free string, or a ``test_only`` record
+    raises ``ghl_publish_approval.PublishApprovalError``."""
+    import ghl_publish_approval as pa
+    import ghl_rest_canvas as rc
+    if publish is not False:
+        pa.require_publish(approval, location_id=location_id, page_id=page_id,
+                           evidence_root=evidence_root, store_dir=store_dir)
+    return rc.page_autosave(
+        page_id, page_data, funnel_id=funnel_id, page_version=page_version,
+        integrations=integrations, publish=publish is not False, session=session)
 
 
 # ── Two-saves invariant (transcript steps 17→18, ~08:31–09:05) ────────────────
@@ -892,6 +1016,225 @@ def assert_seo_populated(seo_meta: dict | None, *, brand: str | None = None,
     return {"ok": not reasons, "reasons": reasons}
 
 
+# ── Step-type SEO/privacy policy (S06-06, prep step 6 / gap 5) ───────────────
+# Packet section 8: required SEO/content fields on PUBLIC MARKETING pages,
+# privacy/no-index on PURCHASE and THANK-YOU steps, and never expose customer
+# receipt data to crawlers. Before S06-06 the tree had ONE SEO builder applied
+# uniformly: no code distinguished a marketing step from a purchase or
+# thank-you step (gap 5). This layer classifies the step and applies the
+# matching policy:
+#   * marketing      -> build_seo_meta UNCHANGED (full transcript gates:
+#                       researched keywords, founder author, canonical, ogImage).
+#   * purchase /
+#     thank_you      -> a PRIVACY meta (build_private_step_seo_meta): a title
+#                       (still capped), an optional description (still under the
+#                       155 save cap), NO researched-keyword floor, NO founder
+#                       author binding, NO canonical/ogImage requirement, and
+#                       an explicit robots noindex directive (NOINDEX_ROBOTS).
+# Q8 HONESTY NOTE: by what live GHL mechanism a robots directive carried in
+# seoMeta is honored (page SEO setting, robots handling, or funnel-step
+# property) is UNVERIFIED - no approved test location exists, so the live
+# mechanism stays LIVE_PROOF_PENDING under prep Q8. This layer guarantees the
+# BUILD side: a purchase/thank-you step is never built or scored as an
+# SEO-bearing marketing step, and the noindex intent is always recorded in
+# the meta this code controls. It does not claim the live panel honors it.
+
+STEP_TYPE_MARKETING = "marketing"
+STEP_TYPE_PURCHASE = "purchase"
+STEP_TYPE_THANK_YOU = "thank_you"
+STEP_TYPES = (STEP_TYPE_MARKETING, STEP_TYPE_PURCHASE, STEP_TYPE_THANK_YOU)
+
+#: The robots directive recorded on every purchase/thank-you step's meta.
+NOINDEX_ROBOTS = "noindex, nofollow"
+
+# Step-type vocabularies, matched against a step's declared type first, then
+# its normalized name/slug. Thank-you tokens are checked before purchase
+# tokens during name inference: a post-purchase page (an order confirmation,
+# a receipt page) is the privacy-critical one, and it commonly carries an
+# "order" token in its name.
+_STEP_TYPE_EXPLICIT = {
+    STEP_TYPE_MARKETING: frozenset({
+        "marketing", "sales", "sales_page", "optin", "opt_in", "landing",
+        "lead", "webinar", "registration", "content"}),
+    STEP_TYPE_PURCHASE: frozenset({
+        "purchase", "checkout", "order", "order_form", "payment", "cart",
+        "billing", "orderform", "upsell", "downsell"}),
+    STEP_TYPE_THANK_YOU: frozenset({
+        "thank_you", "thankyou", "thank", "thanks", "confirmation",
+        "receipt", "success", "complete", "thank_you_page"}),
+}
+_STEP_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
+def _normalize_step_token(value: str) -> str:
+    return _STEP_TOKEN_SPLIT.sub("_", (value or "").strip().lower()).strip("_")
+
+
+def classify_step_type(step) -> dict:
+    """Classify a funnel step as marketing / purchase / thank_you.
+
+    ``step`` may be a step name/slug string, or a manifest step dict with a
+    declared ``step_type``/``type`` (which wins when recognized) and/or a
+    ``name``/``slug``/``path`` to infer from. Returns
+    ``{step_type, basis}`` where basis is "explicit" (declared type),
+    "name" (inferred from the step name), or "default" (nothing purchase or
+    thank-you-like was found, so the step is treated as a marketing step:
+    the historical uniform behavior, and the only default that cannot
+    silently strip SEO from a public page). Name inference checks
+    thank-you tokens before purchase tokens (see the policy note above);
+    an unrecognized DECLARED type is never silently trusted either way: it
+    falls through to name inference and, failing that, the default."""
+    declared = ""
+    name = ""
+    if isinstance(step, dict):
+        declared = _normalize_step_token(
+            str(step.get("step_type") or step.get("type") or ""))
+        name = _normalize_step_token(
+            str(step.get("name") or step.get("slug") or step.get("path") or ""))
+    else:
+        name = _normalize_step_token(str(step or ""))
+    if declared:
+        for step_type, vocab in _STEP_TYPE_EXPLICIT.items():
+            if declared in vocab:
+                return {"step_type": step_type, "basis": "explicit"}
+    probe = name or declared
+    if probe:
+        for step_type in (STEP_TYPE_THANK_YOU, STEP_TYPE_PURCHASE,
+                          STEP_TYPE_MARKETING):
+            if probe in _STEP_TYPE_EXPLICIT[step_type]:
+                return {"step_type": step_type, "basis": "name"}
+        tokens = [t for t in probe.split("_") if t]
+        if tokens and tokens[0] == "thank" or "thankyou" in tokens \
+                or "thanks" in tokens:
+            return {"step_type": STEP_TYPE_THANK_YOU, "basis": "name"}
+        for step_type in (STEP_TYPE_THANK_YOU, STEP_TYPE_PURCHASE,
+                          STEP_TYPE_MARKETING):
+            if any(t in _STEP_TYPE_EXPLICIT[step_type] for t in tokens):
+                return {"step_type": step_type, "basis": "name"}
+    return {"step_type": STEP_TYPE_MARKETING, "basis": "default"}
+
+
+def seo_policy_for_step(step_type: str) -> dict:
+    """The SEO/privacy policy for one step type. Raises ``SeoValidationError``
+    on an unknown step type (a policy question is never defaulted silently)."""
+    if step_type == STEP_TYPE_MARKETING:
+        return {"step_type": step_type, "seo_required": True,
+                "robots": None, "keyword_gate": True, "author_gate": True,
+                "canonical_required": True}
+    if step_type in (STEP_TYPE_PURCHASE, STEP_TYPE_THANK_YOU):
+        return {"step_type": step_type, "seo_required": False,
+                "robots": NOINDEX_ROBOTS, "keyword_gate": False,
+                "author_gate": False, "canonical_required": False}
+    raise SeoValidationError(
+        f"HALT: unknown step type {step_type!r}; expected one of {STEP_TYPES}.")
+
+
+def build_private_step_seo_meta(
+    *,
+    title: str,
+    description: str | None = None,
+    language: str = SEO_DEFAULT_LANGUAGE,
+) -> dict:
+    """Build the PRIVACY seoMeta for a purchase / thank-you step. The step
+    still gets a real title (capped at ``SEO_TITLE_MAX``) and may carry a
+    description (capped at the ``SEO_DESC_MAX`` 155 save cap), but the
+    marketing gates do NOT apply: no researched-keyword floor, no founder
+    author, no canonical, no ogImage. The meta carries the explicit robots
+    noindex directive (``NOINDEX_ROBOTS``) so the step's privacy intent is
+    recorded in the object the build controls (live honoring mechanism:
+    prep Q8, LIVE_PROOF_PENDING)."""
+    title = (title or "").strip()
+    if not title:
+        raise SeoValidationError(
+            "HALT: a purchase/thank-you step still needs a real page title.")
+    if _is_placeholder_token(title):
+        raise SeoValidationError(
+            f"HALT: private-step title {title!r} is a placeholder.")
+    if len(title) > SEO_TITLE_MAX:
+        raise SeoValidationError(
+            f"HALT: private-step title is {len(title)} chars (> {SEO_TITLE_MAX}).")
+    description = (description or "").strip()
+    if len(description) > SEO_DESC_MAX:
+        raise SeoValidationError(
+            f"HALT: private-step description is {len(description)} chars "
+            f"(> {SEO_DESC_MAX}, the save-time cap).")
+    lang = (language or "").strip() or SEO_DEFAULT_LANGUAGE
+    return {
+        "title": title,
+        "description": description,
+        "keywords": [],
+        "author": "",
+        "canonicalUrl": "",
+        "ogImage": "",
+        "language": lang,
+        "links": [],
+        "tags": [],
+        "robots": NOINDEX_ROBOTS,
+    }
+
+
+def build_step_seo_meta(step, **seo_kwargs) -> dict:
+    """Step-type-aware SEO entry point. A MARKETING step goes through
+    :func:`build_seo_meta` with every kwarg unchanged. A PURCHASE or
+    THANK-YOU step is built by :func:`build_private_step_seo_meta` from the
+    ``title`` / ``description`` / ``language`` kwargs only: marketing-only
+    inputs (keywords, founder_name, canonical_url, og_image) are
+    intentionally NOT required and NOT applied to a private step."""
+    step_type = classify_step_type(step)["step_type"]
+    if step_type == STEP_TYPE_MARKETING:
+        return build_seo_meta(**seo_kwargs)
+    return build_private_step_seo_meta(
+        title=seo_kwargs.get("title", ""),
+        description=seo_kwargs.get("description"),
+        language=seo_kwargs.get("language", SEO_DEFAULT_LANGUAGE),
+    )
+
+
+def assert_step_seo_populated(seo_meta: dict | None, step, *,
+                              brand: str | None = None,
+                              page_copy: str | None = None) -> dict:
+    """Step-type-aware end-state gate (the step-aware sibling of
+    :func:`assert_seo_populated`). PURE verdict: ``{ok, reasons, step_type,
+    basis}``, never raises.
+
+    A marketing step is scored by the full ``assert_seo_populated`` gates. A
+    purchase/thank-you step is scored against the PRIVACY policy instead:
+    the robots noindex directive must be present, a real title must be
+    present within the cap, and a description (when present) must respect
+    the 155 save cap - the marketing gates (researched keywords, founder
+    author, canonical, ogImage) are NOT misapplied to it."""
+    classification = classify_step_type(step)
+    step_type = classification["step_type"]
+    if step_type == STEP_TYPE_MARKETING:
+        verdict = assert_seo_populated(seo_meta, brand=brand,
+                                       page_copy=page_copy)
+        return {"ok": verdict["ok"], "reasons": verdict["reasons"],
+                "step_type": step_type, "basis": classification["basis"]}
+    reasons: list[str] = []
+    if not isinstance(seo_meta, dict) or not seo_meta:
+        return {"ok": False, "reasons": ["seoMeta is absent/empty"],
+                "step_type": step_type, "basis": classification["basis"]}
+    if (seo_meta.get("robots") or "").strip().lower() != NOINDEX_ROBOTS:
+        reasons.append(
+            f"privacy gate: a {step_type} step must carry robots "
+            f"{NOINDEX_ROBOTS!r} (got {seo_meta.get('robots')!r}) - the "
+            "noindex intent is not recorded")
+    title = (seo_meta.get("title") or "").strip()
+    if not title:
+        reasons.append("privacy gate: private-step title is empty")
+    elif len(title) > SEO_TITLE_MAX:
+        reasons.append(
+            f"privacy gate: private-step title is {len(title)} chars "
+            f"(> {SEO_TITLE_MAX})")
+    description = (seo_meta.get("description") or "")
+    if len(description) > SEO_DESC_MAX:
+        reasons.append(
+            f"privacy gate: private-step description is {len(description)} "
+            f"chars (> {SEO_DESC_MAX}, the save-time cap)")
+    return {"ok": not reasons, "reasons": reasons,
+            "step_type": step_type, "basis": classification["basis"]}
+
+
 # ── Marker-string verification (A12.2 / A13.3 / C3) ───────────────────────────
 
 def verify_url(url: str, marker: str, timeout: int = 20) -> dict:
@@ -1241,7 +1584,9 @@ def render_check(
     import subprocess
 
     render_dir = os.path.join(run_dir, "render")
-    os.makedirs(render_dir, exist_ok=True)
+    # Q4 interim default (S06-08): the render dir is created 0700; the
+    # DOM/PNG/console artifacts below are set 0600 as they land.
+    ghl_evidence.ensure_private_dir(render_dir)
 
     dom_path = os.path.join(render_dir, f"{step}.dom.html")
     png_path = os.path.join(render_dir, f"{step}.png")
@@ -1255,6 +1600,10 @@ def render_check(
     dom_content: str = ""
     richness: dict = {"img_count": 0, "block_count": 0, "has_headline": False}
     png_blank: dict = {"blank": False, "determinable": False, "reason": "not_inspected"}
+    # v18.2.0: True only once `console --clear` succeeded IMMEDIATELY before this
+    # navigation — the sole condition under which console entries may be attributed
+    # to the page being checked (see Step 0 below).
+    console_drained: bool = False
 
     # ── P2-4: agent-browser version-pin guard ─────────────────────────────────
     # The command spellings below are 0.27.0-specific: `get html html` (not
@@ -1269,6 +1618,7 @@ def render_check(
     # ── Drive the headless browser (browser_manager singleton gateway) ─────────
     # We use the browser_cmd machinery which enforces --headed false (D6).
     # The agent-browser command sequence is:
+    #   0. DRAIN the console buffer (`console --clear`) — must precede navigation
     #   1. navigate to the URL (waits for network-idle by default)
     #   2. capture the rendered HTML
     #   3. take a real PNG screenshot
@@ -1277,6 +1627,33 @@ def render_check(
     # we invoke the agent-browser CLI directly as a subprocess.  browser_cmd()
     # enforces the singleton session guard so this is safe.
     try:
+        # Step 0 (v18.2.0): DRAIN the console buffer IMMEDIATELY BEFORE navigating.
+        # `agent-browser console` reads a DAEMON-ACCUMULATED buffer, not this
+        # navigation's entries: without the drain, errors from an EARLIER page in
+        # the same daemon were attributed to the page being rendered (proven:
+        # example.com reproduced byte-identical 3 errors, console_sha256 a212bf03…,
+        # row12-verify/golden-probe-2; browser_cmd does not append --session, so
+        # render_check talks to the default daemon shared with everything else).
+        # `console --clear` empties that buffer, so what we read below is
+        # navigation-scoped. The gate itself (zero console errors) is UNCHANGED —
+        # only the MEASUREMENT is repaired. A failed drain is recorded as evidence,
+        # never silently ignored: an un-drained read cannot be attributed.
+        drain_cmd = browser_cmd("console", "--clear")
+        drain_result = subprocess.run(
+            shlex.split(drain_cmd),
+            capture_output=True, text=True, timeout=30,
+        )
+        console_drained = drain_result.returncode == 0
+        if not console_drained:
+            # stderr ONLY: stdout of `console` is buffer CONTENT, and replaying it
+            # here would re-inject another page's lines into this page's errors.
+            render_errors.append(
+                "console drain (console --clear) failed (exit "
+                f"{drain_result.returncode}): "
+                + ((drain_result.stderr or "").strip() or "no stderr")[:300]
+                + " — console entries below may belong to a PREVIOUS navigation"
+            )
+
         # Step 1: navigate to URL (waits for network-idle by default).
         nav_cmd = browser_cmd("open", preview_url)
         # Step 2: capture rendered HTML. agent-browser 0.27.0 uses `get html html`
@@ -1313,6 +1690,7 @@ def render_check(
         elif html_result.stdout:
             with open(dom_path, "w", encoding="utf-8") as f:
                 f.write(html_result.stdout)
+            ghl_evidence.set_private_file(dom_path)
 
         # Screenshot (saves to agent-browser tmp dir; path printed on stdout).
         shot_result = subprocess.run(
@@ -1333,8 +1711,14 @@ def render_check(
                 if os.path.isfile(tmp_png):
                     import shutil
                     shutil.copy2(tmp_png, png_path)
+                    ghl_evidence.set_private_file(png_path)
 
         # Capture console/pageerror. `console` in 0.27.0 outputs plain text.
+        # ONLY attributable when the drain landed before the navigation: when the
+        # drain failed the buffer may still hold a PREVIOUS page's entries, so the
+        # raw lines are kept as evidence but are NOT promoted to render_errors
+        # (the failure is already recorded above — the check still FAILS, it just
+        # does not blame the wrong page twice).
         console_result = subprocess.run(
             shlex.split(console_cmd),
             capture_output=True, text=True, timeout=30,
@@ -1351,12 +1735,15 @@ def render_check(
         # Write console log.
         with open(console_path, "w", encoding="utf-8") as f:
             json.dump(console_entries, f, indent=2)
+        ghl_evidence.set_private_file(console_path)
 
         # Extract pageerror / console.error entries (P0-1d). agent-browser's
         # `console` emits PLAIN TEXT (kind is usually empty), so structured
         # type/level is checked FIRST, then a robust text-severity parse — ANY
         # pageerror / console.error fails the render, never silently dropped.
         for entry in console_entries:
+            if not console_drained:
+                break   # unattributable — see the drain note above
             kind = (entry.get("type") or entry.get("level") or "").lower()
             msg = entry.get("text") or entry.get("message") or entry.get("raw") or ""
             if kind in ("pageerror", "error", "severe") or console_line_is_error(msg):
@@ -1450,6 +1837,10 @@ def render_check(
         "dom_sha256": dom_sha256,
         "png_sha256": png_sha256,
         "console_sha256": console_sha256,
+        # v18.2.0: proven the console buffer was drained BEFORE this navigation, so
+        # the entries above describe THIS page. False ⇒ unattributable (already
+        # failed the gate via render_errors).
+        "console_drained": console_drained,
         "url": preview_url,
         "step": step,
     }
@@ -1501,6 +1892,8 @@ def emit_rest_save_plan(
     session: str | None = None,
     seo: dict | None = None,
     copy_md_path: str | None = None,
+    evidence_root: str | None = None,
+    approval_store: str | None = None,
 ) -> dict:
     """Emit the ordered REST-autosave plan (read→splice→autosave→verify→revert
     baseline), per solution §5.2. The steps the agent runs IN-BROWSER, in order:
@@ -1515,11 +1908,17 @@ def emit_rest_save_plan(
          custom-code node's ``rawCustomCode`` to ``new_value`` (e.g. the marker +
          a real ``<img src=<cdn_url>>``). Pure transform — the pristine
          ``page_data`` baseline is preserved for the revert.
-      4. ``page_autosave`` — POST the edited blob as a DRAFT (``publish`` is gated
-         by ``may_publish(approval)`` — default DRAFT; the live pointer never
-         moves while ``pageType`` is ``draft``).
-      5. ``verify_preview`` — ``verify_url(preview_url, marker)`` (HTTP 200 AND
-         marker in body — never trust no-error).
+      4. ``page_autosave`` — POST the edited blob as a DRAFT. ``publish`` needs an
+         approval RECORD (``approval`` = an approval_ref read from the launch
+         store, allowed_write_target approved_live_publication, not test_only)
+         AND ``ghl_gate`` passed for this page (``evidence_root``), so the first
+         emission (before verification) is always DRAFT; re-emit with
+         ``evidence_root`` after verify_all passed to get a publish step. The
+         live pointer never moves while ``pageType`` is ``draft``.
+      5. ``verify_preview`` — ``ghl_verify.verify_all`` (``render_check``: the
+         headless RENDERED DOM, HTTP 200, marker in the rendered DOM, no render
+         errors). The raw-body ``verify_url`` marker check is a pre-screen only
+         and never advances the ledger to 'previewed'.
       6. ``revert_baseline`` — re-POST the pristine baseline as a new draft
          version (byte-identical restore; the live pointer never moves).
 
@@ -1565,7 +1964,13 @@ def emit_rest_save_plan(
     if not guard.ok:
         return _rest_refuse_plan("rest_save", guard)
 
-    publish = may_publish(approval)
+    # S06-06: publish needs a launcher approval record AND ghl_gate passed for
+    # this page; anything less stays DRAFT (and says why when approval was given).
+    import ghl_publish_approval as _pa
+    publish_refusals = _pa.publish_refusals(
+        approval, location_id=location_id, page_id=page_id,
+        evidence_root=evidence_root, store_dir=approval_store)
+    publish = not publish_refusals
 
     # Step 3 (pure transform): produce the edited blob now so the autosave step
     # carries the spliced body. The input page_data is NOT mutated (deep-copied
@@ -1597,21 +2002,33 @@ def emit_rest_save_plan(
     read_step["step"] = "page_read"
 
     # 4. AUTOSAVE the edited blob (DRAFT unless may_publish gated it True).
-    save_step = rc.page_autosave(
+    save_step = page_autosave(
         page_id, edited, funnel_id=funnel_id, page_version=page_version,
-        integrations=integrations, publish=publish, session=session,
+        location_id=location_id, integrations=integrations,
+        publish=publish, approval=approval, evidence_root=evidence_root,
+        store_dir=approval_store, session=session,
     )
     save_step["step"] = "page_autosave"
 
-    # 5. VERIFY the preview (HTTP 200 AND marker present — never no-error alone).
+    # 5. VERIFY the preview through the canonical verifier: ghl_verify.verify_all
+    # drives render_check (headless RENDERED DOM, HTTP 200, marker in the rendered
+    # DOM, no render errors). The raw-body verify_url marker check proves only that
+    # bytes were stored (GHL returns 200 + the marker for a page that never
+    # renders), so it never advances a page to 'previewed' (S06-24).
     verify_step = {
         "step": "verify_preview",
-        "action": "verify_url",
+        "action": "verify_all",
+        "call": "ghl_verify.verify_all(run_dir, [{page_id, preview_url, marker, step}]) "
+                "-> ghl_builder.render_check",
+        "page_id": page_id,
         "url": preview_url,
         "marker": marker,
-        "expect": {"ok": True, "http": 200, "marker_found": True},
-        "note": "ghl_builder.verify_url(preview_url, marker): HTTP 200 AND marker "
-                "in body; a passing preview advances the ledger to 'previewed'",
+        "expect": {"PASS": True, "http": 200, "marker_in_rendered_dom": True,
+                   "render_errors": []},
+        "note": "ghl_verify.verify_all -> render_check: HTTP 200 AND marker in "
+                "the RENDERED DOM AND no render errors; only a PASS row "
+                "advances the ledger to 'previewed' and satisfies ghl_gate. "
+                "NOT ghl_builder.verify_url (raw bytes, pre-screen only).",
     }
     # FIX-COPY-02: pin the APPROVED copy source on the verify descriptor so the
     # copy-fidelity gate asserts the approved copy rendered (not just the marker).
@@ -1687,6 +2104,11 @@ def emit_rest_save_plan(
     }
     if seo_meta is not None:
         plan["seo"] = seo_meta
+    if approval and publish_refusals:
+        # An approval was offered but did not authorize a live publish (no record,
+        # test_only, wrong page/location, or the gate has not passed yet): the plan
+        # stays DRAFT and names why, so nothing publishes before verification.
+        plan["publish_refused"] = publish_refusals
     if copy_md_path:
         plan["copy_md_path"] = copy_md_path
     # Self-verify the two-saves invariant (CODE save before PAGE save) — the REST
@@ -1951,13 +2373,31 @@ def _emit_builder_run_report(rc: int) -> None:
         resume_cmd = " ".join(shlex.quote(x) for x in
                               [sys.executable, os.path.abspath(__file__), *argv])
 
+    # S06-05: the report's evidence_root row names this run's LEDGER dir —
+    # which used to be hardcoded as /tmp/<run_id>. It now follows
+    # ledger_root() (the durable root), and is LABELLED when the resolved
+    # root is the ephemeral /tmp fallback so nobody mistakes it for
+    # durable run state.
+    _ledger_dir = os.path.join(ledger_root(), run_id) if run_id else ""
+    if _ledger_dir:
+        # S06-08 (NQ3): the label is now ALWAYS present, not only in the
+        # ephemeral case. This row names the run's LEDGER dir; on its own the
+        # bare row name invited reading the ledger root as the run EVIDENCE
+        # root, which it is not: the evidence root is the per-run directory
+        # the object builders write receipts / verify / render artifacts
+        # into. The contract (tools/ghl_evidence.py) names the two roots as
+        # distinct things; this label keeps the report honest about which
+        # one it is printing.
+        _ledger_dir += " [ledger root: per-page build ledger, not the run evidence root]"
+    if _ledger_dir and ledger_root_is_ephemeral():
+        _ledger_dir += " [EPHEMERAL ledger root: /tmp is wiped on recreate/reboot — not durable run state]"
     status = (ghl_run_state.STATUS_OK if rc == 0 else ghl_run_state.STATUS_FAILED)
     ghl_run_state.emit_run_report(
         builder="ghl_builder",
         run_id=run_id,
         status=status,
         dry_run=False,
-        evidence_root=(os.path.join("/tmp", run_id) if run_id else ""),
+        evidence_root=_ledger_dir,
         duration_s=time.monotonic() - _MAIN_STARTED[0],
         script_path=__file__,
         error="" if rc == 0 else f"exit code {rc}",
@@ -1989,6 +2429,8 @@ def _main_subcommands() -> int:
     p = sub.add_parser("resume"); p.add_argument("run_id"); p.add_argument("manifest_path")
     p = sub.add_parser("gates"); p.add_argument("--runtime", action="store_true"); p.add_argument("--captured", action="store_true")
     p = sub.add_parser("may-publish"); p.add_argument("approval", nargs="?", default="")
+    p.add_argument("--location-id", default=None); p.add_argument("--page-id", default=None)
+    p.add_argument("--evidence-root", default=None)
     p = sub.add_parser("subaccount"); p.add_argument("current"); p.add_argument("target")
     # REST-autosave canvas wire-in plan emitters (solution §5.2). Each reads a
     # JSON spec file (the params include page-data blobs) and prints the plan.
@@ -2052,7 +2494,9 @@ def _main_subcommands() -> int:
         else: print(json.dumps(load_gates(), indent=2))
         return 0
     if args.cmd == "may-publish":
-        ok = may_publish(args.approval); print("PUBLISH" if ok else "DRAFT"); return 0 if ok else 1
+        ok = may_publish(args.approval, location_id=args.location_id,
+                         page_id=args.page_id, evidence_root=args.evidence_root)
+        print("PUBLISH" if ok else "DRAFT"); return 0 if ok else 1
     if args.cmd == "subaccount":
         guard = subaccount_matches(args.current, args.target)
         print(json.dumps(guard.as_dict(), indent=2))

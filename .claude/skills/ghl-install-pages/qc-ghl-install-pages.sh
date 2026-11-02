@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Skill 06 — GHL Install Pages — Install QC (agent-browser PRIMARY + Playwright FALLBACK + GHL auth)
+# Skill 06 — GHL Install Pages — Install QC (OpenClaw Chrome extension PRIMARY + agent-browser FALLBACK lane + Playwright escape hatch + GHL auth)
 set -u
 PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
@@ -44,18 +44,31 @@ assert "Skill 06 folder present" "[ -d \"$SK\" ]"
 # The probe writes working/skill6-capability.json (secret VALUES never emitted —
 # booleans only). Fail-closed contract: a missing probe module or a null
 # selectedLane must FAIL the QC — a box with zero browser lanes can never score
-# green (plan 2.2). Probe-run hiccups are best-effort WARN; secret gaps surface
-# as probe WARNINGS (the Firebase token itself is hard-asserted below).
+# green (plan 2.2). Secret gaps surface as probe WARNINGS (the Firebase token
+# itself is hard-asserted below).
+#
+# FRESHNESS (findings 31): a receipt is only valid for the run that wrote it.
+# The capability file left by an earlier run is deleted INSIDE the gate — a
+# failed delete FAILS the gate (never a silent `|| true` swallow) — and the
+# gate passes only when THIS invocation exits 0 AND writes the receipt.
+# PROBE_OK is set only then, and every assertion below consumes the receipt
+# ONLY when PROBE_OK=1: a stale success must never green a currently broken
+# probe, and a receipt written by an invocation that FAILED is never consumed.
 CAP_PROBE="$SK/tools/capability_probe.py"
 CAP_JSON="$SK/working/skill6-capability.json"
 assert "capability probe module present (adaptive lane probe)" "[ -f \"$CAP_PROBE\" ]"
-warn_only "capability probe ran (best-effort; writes working/skill6-capability.json)" \
-  "python3 \"$CAP_PROBE\" --out \"$CAP_JSON\" >/dev/null 2>&1"
+PROBE_OK=0
+if rm -f "$CAP_JSON" 2>/dev/null \
+   && python3 "$CAP_PROBE" --out "$CAP_JSON" >/dev/null 2>&1 \
+   && [ -f "$CAP_JSON" ]; then
+  PROBE_OK=1
+fi
+assert "capability probe ran in this invocation and wrote working/skill6-capability.json" "[ \"$PROBE_OK\" = 1 ]"
 assert "capability probe selected a browser lane (selectedLane set; never CUA last resort)" \
-  "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));lane=d.get(\"selectedLane\");assert lane is not None and lane != \"cua_last_resort\", lane'"
+  "[ \"$PROBE_OK\" = 1 ] && python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));lane=d.get(\"selectedLane\");assert lane is not None and lane != \"cua_last_resort\", lane'"
 assert "capability probe reports no hard blockers (no-browser-lane)" \
-  "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert not d.get(\"blockers\"), d.get(\"blockers\")'"
-if [ -f "$CAP_JSON" ]; then
+  "[ \"$PROBE_OK\" = 1 ] && python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert not d.get(\"blockers\"), d.get(\"blockers\")'"
+if [ "$PROBE_OK" = 1 ]; then
   assert "capability probe iframeDrag.available is a boolean (schema contract)" \
     "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert isinstance(d.get(\"iframeDrag\",{}).get(\"available\"),bool)'"
   warn_only "cross-origin tile/drag hybrid available (else: cross-origin tile/drag degraded — Playwright required)" \
@@ -104,17 +117,28 @@ warn_only "GHL manual-only login password set (operator last resort, optional)" 
 assert "Secrets file chmod 600"         "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
-# Plan 2.2: fail closed when zero browser lanes — agent-browser (PRIMARY lane 1,
-# with its Mac npm-global fallback path) is now a hard assert.
-assert "agent-browser installed (PRIMARY engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"
-# Playwright stays warn_only — it is the FALLBACK lane (D7-adjacent doctrine;
-# SKILL.md: known-hard flows only), so its absence degrades but must not fail QC.
-warn_only "Playwright installed (FALLBACK)"   "npm list -g playwright 2>/dev/null | grep -q playwright || npm list playwright 2>/dev/null | grep -q playwright || command -v playwright"
+# Engine order (2026-10-13): the OpenClaw Chrome extension is the PRIMARY
+# engine. Its version preflight is warn_only HERE because a fallback-lane-only
+# install is valid (INSTALL.md rule: the extension lane is not an install
+# gate); the hard stop lives at run time — the capability probe will not
+# select Lane 1 unless the extension is installed and current.
+warn_only "OpenClaw Chrome extension installed + current (PRIMARY engine)" "bash \"$SKILL_DIR/scripts/check-openclaw-extension-version.sh\" >/dev/null 2>&1"
+# Plan 2.2: fail closed when zero browser lanes — agent-browser (FALLBACK
+# lane 2, with its Mac npm-global fallback path) stays a hard assert: without
+# it, a host whose extension lane is unavailable has no full browser lane.
+assert "agent-browser installed (FALLBACK engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"
+# Playwright stays warn_only — it is the escape-hatch lane (D7-adjacent
+# doctrine; SKILL.md: known-hard flows only), so its absence degrades but
+# must not fail QC.
+warn_only "Playwright installed (escape hatch)"   "npm list -g playwright 2>/dev/null | grep -q playwright || npm list playwright 2>/dev/null | grep -q playwright || command -v playwright"
 # Plan 2.4-1: the Firebase refresh token is the ONLY unattended auth path
-# (TOKEN-ONLY doctrine) — now a hard assert. CAF_FIREBASE_REFRESH_TOKEN stays as
-# a legacy-compat alias in this test string; it is NOT secret canon (the
-# canonical chain is GOHIGHLEVEL_ -> GHL_ -> FIREBASE_REFRESH_TOKEN).
-assert "Firebase refresh token set (seeds logged-in session)" "[ -n \"\${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${CAF_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${GHL_FIREBASE_REFRESH_TOKEN:-}\" ]"
+# (TOKEN-ONLY doctrine) — now a hard assert, resolved through the SAME resolver
+# the runtime uses: GHL_REFRESH_TOKEN_FILE -> the alias chain (GOHIGHLEVEL_ ->
+# CAF_ -> GHL_FIREBASE_...) -> canonical env stores, placeholder-screened.
+# Findings 32: asserting three process env vars directly rejected a properly
+# mounted *_FILE token (and a store-held token) that runtime resolves fine.
+assert "Firebase refresh token resolvable (seeds logged-in session; resolver-backed --check)" \
+  "python3 \"$SK/tools/seed-ghl-auth.py\" --check"
 warn_only "Chrome/Chromium present" "command -v chromium || command -v google-chrome || ls '/Applications/Google Chrome.app' 2>/dev/null"
 warn_only "Client white-label URL stored" "grep -qiE 'app\\.gohighlevel\\.com|app\\.convertandflow\\.com|app\\.[a-z0-9]+\\.com' \"$WORKSPACE/MEMORY.md\" 2>/dev/null"
 # W4 union restore: the W2 end-of-line UNQUOTED branch (no-digit values to EOL)

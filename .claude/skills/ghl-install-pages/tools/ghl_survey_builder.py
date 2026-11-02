@@ -41,12 +41,15 @@ GOVERNING RULES
 - ``--dry-run`` default: write plan + field-map + ordered click list WITHOUT
   browser execution; flip off only after a full end-to-end live-verified run
 
-MODEL DOCTRINE — client-owned providers, NEVER Anthropic
----------------------------------------------------------
-Fallback order: Ollama Cloud → OpenRouter equivalent → Gemini last-resort.
-``thinking=high`` on every rung. MiniMax M2 is BANNED; execution uses
-MiniMax M3 only → DeepSeek V4.1 Flash. Vision QC goes to MiniMax M3 only.
-``assert_model_sovereignty`` hard-blocks any Anthropic slug before dispatch.
+MODEL DOCTRINE — client-owned providers
+----------------------------------------
+Model: the client's choice, or the client's configured default model, resolved
+via tools/model_router.py (MODEL_ROUTER_CHOICE / MODEL_ROUTER_DEFAULT). No
+model is prescribed by name here, and ladder building stops with an
+ask-the-client error when the client has configured neither. Recommendation:
+reliable tool calling for execution and a vision-capable model for QC, because
+the drive loop is tool calls and QC reads screenshots. ``thinking=high`` on
+every rung. MiniMax M2 is BANNED.
 
 COMMAND CENTER HOOKS (fail-soft — never block the build)
 ---------------------------------------------------------
@@ -155,6 +158,10 @@ import ghl_receipts  # noqa: E402
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
 
+# Model ladders resolve through the shared router (client choice / configured
+# default only; no model is prescribed by name in this module).
+import model_router  # noqa: E402
+
 try:
     import cc_board as _cc_board  # noqa: E402 — best-effort board producer
 except Exception:  # noqa: BLE001
@@ -191,6 +198,13 @@ try:
     import ghl_survey_rest as _srest  # noqa: E402
 except Exception:  # noqa: BLE001
     _srest = None  # type: ignore[assignment]
+
+# The ONE Skill 44 → Skill 06 dependency handoff contract (§3.2). Soft import so
+# plan-only/dry-run stays dependency-free; preflight P6b is what enforces B06.
+try:
+    import ghl_form_survey_handoff as _handoff  # noqa: E402
+except Exception:  # noqa: BLE001
+    _handoff = None  # type: ignore[assignment]
 
 try:  # SHARED frame-scoped coordinate-drag primitive (cross-origin iframe FIX)
     import ghl_iframe_drag as _ghl_iframe_drag  # noqa: E402
@@ -344,86 +358,60 @@ CONDITIONAL_LOGIC_RULES: List[dict] = [
     },
 ]
 
-# ── Phase model ladders (passed to model_router.select when available) ────
-# Ollama Cloud FIRST → OpenRouter equivalent → Gemini last-resort (only if live+credited)
-# thinking=high on every rung. MiniMax M2 BANNED. Vision only to MiniMax M3.
+# ── Phase model ladders: client resolution via model_router ─────────────────
+# The ladders are built at plan time from the client's own configuration: the
+# client's explicit choice first, then the client's configured default model
+# (see tools/model_router.py, resolve_client_models). No model is prescribed
+# by name here. When the client has configured neither, building a ladder
+# raises model_router.ClientModelNotConfiguredError: the ask-the-client stop.
+# Module-level THINK_LADDER / EXECUTE_LADDER / QC_LADDER attribute access is
+# preserved for existing consumers via __getattr__.
 
-THINK_LADDER: List[dict] = [
-    {
-        "rung": 1, "provider": "ollama-cloud", "model": "glm-5.2:cloud",
-        "role": "funnel/reasoning", "thinking": "high",
-        "note": "Verify glm-5.2:cloud tag live; fallback MODEL_ROUTER_GLM=glm-5.1:cloud",
-    },
-    {
-        "rung": 2, "provider": "ollama-cloud", "model": "kimi-k2.6:cloud",
-        "role": "reasoning", "thinking": "high",
-        "note": "Kimi via Ollama Cloud ONLY; never kimi-2.6 (wrong slug)",
-    },
-    {
-        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
-        "role": "reasoning", "thinking": "high",
-    },
-    {
-        "rung": 4, "provider": "openrouter", "model": "z-ai/glm-5.2",
-        "role": "funnel/reasoning", "thinking": "high",
-    },
-    {
-        "rung": 5, "provider": "openrouter", "model": "moonshotai/kimi-k2.6",
-        "role": "reasoning", "thinking": "high",
-    },
-    {
-        "rung": 6, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-        "role": "reasoning", "thinking": "high",
-    },
-    {
-        "rung": 7, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-        "role": "cheap-multimodal-fallback", "thinking": "high",
-        "gate": "only_if_live_and_credited",
-        "note": "Last-resort only; if 404 override to google/gemini-3.1-flash-lite via MODEL_ROUTER_GEMINI",
-    },
-]
 
-EXECUTE_LADDER: List[dict] = [
-    {
-        "rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-        "role": "browser-control", "thinking": "high", "probe_gated": True,
-        "note": "Probe: tool_call_fired AND parsed AND args=={ok:True}; one retry then advance",
-    },
-    {
-        "rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-        "role": "browser-control", "thinking": "high", "probe_gated": True,
-    },
-    {
-        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
-        "role": "browser-control", "thinking": "high",
-    },
-    {
-        "rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-        "role": "browser-control", "thinking": "high",
-    },
-    {
-        "rung": 5, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-        "role": "cheap-multimodal-fallback", "thinking": "high",
-        "gate": "only_if_live_and_credited",
-    },
-]
+def _resolution_rungs(env, role, role_label, *, probe_gated=False):
+    env = env if env is not None else os.environ
+    resolved = model_router.resolve_client_models(env, role)
+    if not resolved:
+        raise model_router.ClientModelNotConfiguredError(
+            model_router.ask_client_message(role)
+        )
+    rungs: List[dict] = []
+    for i, (slug, provider, source) in enumerate(resolved, start=1):
+        rung = {"rung": i, "provider": provider, "model": slug,
+                "role": role_label, "thinking": "high", "resolution": source}
+        if probe_gated:
+            rung["probe_gated"] = True
+        rungs.append(rung)
+    return rungs
 
-QC_LADDER: List[dict] = [
-    {
-        "rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-        "role": "qc+vision", "thinking": "high", "probe_gated": True,
-        "note": "Vision REQUIRED on this rung; never route vision to DeepSeek/GLM",
-    },
-    {
-        "rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-        "role": "qc+vision", "thinking": "high", "probe_gated": True,
-    },
-    {
-        "rung": 3, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-        "role": "cheap-multimodal-fallback", "thinking": "high",
-        "gate": "only_if_live_and_credited",
-    },
-]
+
+def build_think_ladder(env=None):
+    """THINK ladder (funnel/reasoning role): client choice, then default."""
+    return _resolution_rungs(env, "reasoning", "funnel/reasoning")
+
+
+def build_execute_ladder(env=None):
+    """EXECUTE ladder (browser control, probe-gated): client resolution."""
+    return _resolution_rungs(env, "execution", "browser-control", probe_gated=True)
+
+
+def build_qc_ladder(env=None):
+    """QC ladder (vision QC, probe-gated): client resolution."""
+    return _resolution_rungs(env, "qc", "qc+vision", probe_gated=True)
+
+
+_LADDER_BUILDERS = {
+    "THINK_LADDER": build_think_ladder,
+    "EXECUTE_LADDER": build_execute_ladder,
+    "QC_LADDER": build_qc_ladder,
+}
+
+
+def __getattr__(name):
+    if name in _LADDER_BUILDERS:
+        return _LADDER_BUILDERS[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ── GHL field-type display labels ─────────────────────────────────────────
 _FIELD_TYPE_LABELS: dict[str, str] = {
@@ -1047,6 +1035,13 @@ def _idempotency_key(task: dict) -> str:
 def _run_preflight(task: dict, evidence_root: str) -> dict:
     """Run P1–P8 preflight checks; record results to routing/survey-preflight.json.
 
+    ``task['_handoff_record']`` (§3.2 / B06): the Skill 44 → Skill 06 dependency
+    handoff record. When present (or found at
+    ``<evidence_root>/routing/form-survey-handoff.json``) it is HARD-gated — an
+    unproven field/tag, a wrong-tenant result or an unapproved location stops the
+    survey BEFORE any browser action. Absent = the legacy out-of-band path,
+    recorded as DEFERRED (honest, never claimed as proven).
+
     Returns {pass: bool, checks: list, stop_reason?: str}.
     """
     checks: List[dict] = []
@@ -1148,6 +1143,31 @@ def _run_preflight(task: dict, evidence_root: str) -> dict:
         checks.append({"check": "P6:field_plan", "pass": True,
                        "detail": "field_creation='browser' — LEGACY in-browser create "
                                  "(no-PIT fallback ONLY, not the default rail)"})
+
+    # P6b (§3.2 / B06): the Skill 44 dependency HANDOFF must PROVE every planned
+    # custom field + tag on the APPROVED location before a single browser action.
+    # A missing dependency is a STOP — never a licence to create a duplicate field
+    # because a lookup missed. No record at all = legacy out-of-band path, recorded
+    # as DEFERRED (honest, never reported as proven).
+    handoff = task.get("_handoff_record")
+    if handoff is None and _handoff is not None:
+        handoff = _handoff.load_handoff(evidence_root)
+    if handoff is None:
+        checks.append({"check": "P6b:dependency_handoff", "pass": True,
+                       "detail": "no handoff record — legacy out-of-band Skill 44 path; "
+                                 "dependency proof DEFERRED (not claimed)"})
+    elif _handoff is None:
+        chk("P6b:dependency_handoff", False,
+            "a handoff record was supplied but ghl_form_survey_handoff is not "
+            "importable — cannot verify it, refusing to guess")
+    else:
+        try:
+            _handoff.assert_ready_for_native_build(handoff, build_location_id=loc or None)
+            chk("P6b:dependency_handoff", True,
+                "every planned field/tag proven on location "
+                f"{handoff.get('location_ref', {}).get('location_id')!r}")
+        except _handoff.HandoffIncomplete as exc:
+            chk("P6b:dependency_handoff", False, f"{type(exc).__name__}: {exc}")
 
     # P7 — agent-browser version pin (warn only; logged)
     try:
@@ -1593,7 +1613,31 @@ def _validate_topology(
     # (linear next) or it carries a convergence jump. A branch with neither falls
     # through into a sibling branch whose required fields make the survey
     # UNSUBMITTABLE, so it is a HARD STOP here (not a mid-build surprise).
+    #
     converge_ref = task.get("converge_slide")
+    # B08 (v3.0 §3.2): convergence is NOT opt-in when a branch target is
+    # IMMEDIATELY FOLLOWED by a sibling branch target — that is a genuine
+    # fall-through into the other branch (whose required fields sit between the
+    # respondent and Submit), so it fails closed even with no converge_slide
+    # declared. A branch followed by an ordinary slide is left alone: the survey
+    # continues linearly and stays submittable, which is the pre-existing
+    # behaviour for plain forward-router surveys.
+    if not converge_ref:
+        fwd = [nr for nr in _norm_rules if not nr.get("owner_slide")]
+        resolve_sib = _make_slide_resolver(slides)
+        sib_idx = {}
+        for nr in fwd:
+            t = resolve_sib(nr.get("then_slide"))
+            if t is not None:
+                sib_idx.setdefault(t["index"], nr.get("then_slide"))
+        for idx, label in sorted(sib_idx.items()):
+            nxt = sib_idx.get(idx + 1)
+            if nxt is not None:
+                errors.append(
+                    f"B08: branch slide {label!r} falls through into sibling branch "
+                    f"{nxt!r} (no slide between them, no convergence jump) — the "
+                    "respondent cannot submit; set converge_slide or add a jump"
+                )
     if converge_ref:
         resolve = _make_slide_resolver(slides)
         converge = resolve(converge_ref)
@@ -1675,9 +1719,9 @@ def _build_survey_plan(task: dict, fields: List[dict]) -> dict:
         ),
         "layout_source": "task" if layout_given else "linear-default",
         "model_ladders": {
-            "think": THINK_LADDER,
-            "execute": EXECUTE_LADDER,
-            "qc": QC_LADDER,
+            "think": build_think_ladder(),
+            "execute": build_execute_ladder(),
+            "qc": build_qc_ladder(),
         },
         "real_domains": {
             "app_shell": GHL_APP_ORIGIN_DEFAULT,
@@ -3161,7 +3205,8 @@ SURVEY_PHASES: List[PhaseSpec] = [
 
 
 def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
-                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
+                 state: Optional["ghl_run_state.RunState"] = None,
+                 handoff: Optional[dict] = None) -> dict:
     """Build a GoHighLevel native survey via browser-control.
 
     This is the v2_dispatcher INJECTED BUILDER: called as
@@ -3288,6 +3333,10 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
     # ── Step 1: Preflight ─────────────────────────────────────────────────────
     _board_activity(board_task_id, "updated",
                     f"Step 1/{total_steps}: Running preflight checks")
+    if handoff is not None:
+        # Route the record through the task dict so preflight reads it without a
+        # signature change (callers/tests that spy on _run_preflight keep working).
+        task = {**task, "_handoff_record": handoff}
     preflight = _phase("preflight", lambda: _run_preflight(task, evidence_root))
     if not preflight["pass"]:
         stop = preflight.get("stop_reason", "preflight failed")
@@ -3365,6 +3414,10 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
             "shots": [],
             "dry_run": True,
         }
+
+    # 999 harness (ADAPTER.md): everything below talks to the live GHL account, so
+    # it is refused until the four adapter seams pass (nothing opened or written yet).
+    skill_runner.require_adapter_seams()
 
     # ── F1/F2 LIVE gate: reuse API-pre-created custom fields (map-only) ────────
     # In api/map_only mode the browser NEVER creates a field. Before touching the
@@ -3732,6 +3785,10 @@ def _selftest() -> int:
     """Run unit-level assertions. Returns 0 on pass, 1 on any failure."""
     import tempfile
     errors: List[str] = []
+    # Offline dry runs build model ladders from the client's configuration;
+    # give the selftest a neutral configured default (never overrides a real
+    # client configuration already present in the environment).
+    os.environ.setdefault("MODEL_ROUTER_DEFAULT", "selftest-default:cloud")
 
     with tempfile.TemporaryDirectory() as tmp:
 
@@ -3774,12 +3831,16 @@ def _selftest() -> int:
         elif "NOT A2P" not in tc.get("note", ""):
             errors.append("T & C capture_fields note must contain 'NOT A2P'")
 
-        # 5. No PURGED model token in ladders. No vendor is banned (no rule against
-        #    Anthropic / Claude models — Trevor order 2026-10-29).
+        # 5. No banned model tokens in ladders (built from a neutral test
+        #    configuration: the client's configured default in selftest form)
+        _test_env = {"MODEL_ROUTER_DEFAULT": "selftest-default:cloud"}
         ladders_json = json.dumps(
-            THINK_LADDER + EXECUTE_LADDER + QC_LADDER
+            build_think_ladder(_test_env) + build_execute_ladder(_test_env)
+            + build_qc_ladder(_test_env)
         ).lower()
-        for banned in ("minimax-m2", "minimax_m2"):
+        for banned in (
+            "minimax-m2", "minimax_m2",
+        ):
             if banned in ladders_json:
                 errors.append(
                     f"BANNED model token found in ladders: {banned!r}"
