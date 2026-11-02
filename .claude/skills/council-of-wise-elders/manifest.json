@@ -1,11 +1,11 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "1.0.76",
+  "skill_version": "1.0.77",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "60a48c764faa8b4c0bf7d9935c9acd55c3c8b7ad",
-  "canonical_aggregate_sha256": "911c89a729b5d885011fcb7994ff665d72ca9dd3a5416d96925fb0bf0e0da3bb",
-  "file_count": 864,
-  "aggregate_sha256": "e2f0977c4eb09615ef894a2e3b8a972430283af1386fb6de56fbe08a93582c7a",
+  "source_commit": "6333d68a25ed6657ef9fa4602329484b6bad5173",
+  "canonical_aggregate_sha256": "fc647b8105e607c4f54df955e10bd0de08df209b4d16b27395e25e63cd32bb67",
+  "file_count": 865,
+  "aggregate_sha256": "04c98b279d948f239eba3206ea0f048605683bc1534aa79b2aaac0368a794af3",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "37536d379454c72ed197f34c4b40d0f993eea021370487c1c76fd45ec71b5d15",
+      "sha256": "37cf79426873b28d5e99f11bd74c478c33da26f6fb975dd0761bc7eddf3b2c47",
       "bytes": 6276
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "9f795983aa7e8486d05150f8063c4cf8b4b58fc7a0a9ba68bb719ce1ebd05bdb",
+      "sha256": "8ba678759265a2b391c54d707f15b0c13fd126d26aad6cb5e3d2f48d6e9351b0",
       "bytes": 22202
     },
     {
@@ -1660,8 +1660,8 @@
     },
     {
       "path": "extensions/council-before-dispatch/lib/binding-predicate.mjs",
-      "sha256": "0f36a8118f7b5c3e4fd3424406b393be79c671e27e00cbc1d4f8f3412e88fe82",
-      "bytes": 6848
+      "sha256": "1b93085d152b2767c98178c8fee877b90247a8097bae34ae9842fb0da11b3274",
+      "bytes": 10406
     },
     {
       "path": "extensions/council-before-dispatch/lib/core.mjs",
@@ -1670,23 +1670,23 @@
     },
     {
       "path": "extensions/council-before-dispatch/lib/entry-validate.mjs",
-      "sha256": "5e5429d534b8fc4dfe1ef09d056006dfacfc3bfb21502ae7358d5b5cb9df242a",
-      "bytes": 6175
+      "sha256": "c8882a76cb8d68a5ff6d2ade919237e6c9cd1eea5293efe4e7738f96651b8768",
+      "bytes": 6384
     },
     {
       "path": "extensions/council-before-dispatch/openclaw.plugin.json",
-      "sha256": "dceb95d6162c5228a53495f89d4a6b1cad698bdcdf9a51f020c0148eb40936e3",
+      "sha256": "3082427267141f265ba182d858264f9742129cbb9fe03083bfd7a5507bc44c70",
       "bytes": 2593
     },
     {
       "path": "extensions/council-before-dispatch/package.json",
-      "sha256": "8f45ad47117a28f92380d9895e1d7a351764b0ced51cb39db28f17255531aa1d",
+      "sha256": "dfaed8848cbb687897cbfeeb99bdb5304ac12d14926a83e8d6e85f9528d677d1",
       "bytes": 841
     },
     {
       "path": "extensions/council-before-dispatch/provision.mjs",
-      "sha256": "3b800e0a2281ea8c0f7c39683c4097a4e5af7948f363203e06365e0bc9013047",
-      "bytes": 26677
+      "sha256": "ecaae9bf2d4f4d1b069f89bd1593b6db39f81425cde8a5e08276629d769ec961",
+      "bytes": 26666
     },
     {
       "path": "extensions/council-before-dispatch/test/binding-predicate.test.mjs",
@@ -1702,6 +1702,11 @@
       "path": "extensions/council-before-dispatch/test/ctr133-exploration.test.mjs",
       "sha256": "5759c28d57de5ebcf4060e27ff8ea33f35d6c6dfc8b32a03d8bbf64df5309b41",
       "bytes": 6242
+    },
+    {
+      "path": "extensions/council-before-dispatch/test/ctr215-narrow-binding.test.mjs",
+      "sha256": "0a53dc7d4dec5ecd50069831b10b46d660c95cdb72e9cee860bebbc38038afa8",
+      "bytes": 4882
     },
     {
       "path": "launchd/ai.blackceo.council-access-autoprovision.plist.template",
@@ -4310,8 +4315,8 @@
     },
     {
       "path": "skill-version.txt",
-      "sha256": "ee316f92c3e7a43cb562fcff2598a71c2b016a9759f2315979bdcd7ba7827d52",
-      "bytes": 7
+      "sha256": "ed0a366b4ef36d40c055672a8b83679e99246fec71a706b4ae4cb7958feace3f",
+      "bytes": 6
     },
     {
       "path": "tests/CRITICAL-CONTRACT-council-front-door.test.mjs",
@@ -4330,7 +4335,7 @@
     },
     {
       "path": "version",
-      "sha256": "ee316f92c3e7a43cb562fcff2598a71c2b016a9759f2315979bdcd7ba7827d52",
+      "sha256": "875a3550caadd982d44218a1398684fc1003d3251f7de3326b3edff0d57150e1",
       "bytes": 7
     },
     {
