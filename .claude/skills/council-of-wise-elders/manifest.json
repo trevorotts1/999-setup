@@ -2,15 +2,15 @@
   "skill": "council-of-wise-elders",
   "skill_version": "1.0.75",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "d9bd68b43b7d0f69b0e82d42fd5ecabedb87f9dc",
-  "canonical_aggregate_sha256": "d75691fa34625cab579dfe9de8e2b6a973d3619002932e50f611dcf7d4a66f0d",
+  "source_commit": "e78fe2b3dab2d7b3233a9ae19d9a0057eb359cdf",
+  "canonical_aggregate_sha256": "0b379e33d2a67b46f180edb38b48c50cb6a8be58d1a3fd287aef4bf6a1aeb433",
   "file_count": 862,
-  "aggregate_sha256": "28273e7eec7fd0dea21064bbeda671fd49db86033fcf67655c39702c546d791d",
+  "aggregate_sha256": "ce54ed6b93522d0edf2157804259abe0c46dabc2eb3586e4debe7d8a72e9955c",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
-    "sha256": "f13610751b6db545f30c6c892c47ea512e7dcae4a343dc4093a57a124cdbf02d",
-    "bytes": 1321028
+    "sha256": "90ad7a8aac614bf42b5ea8bc8057863b2090d709b85f8746ceba4eff449b6398",
+    "bytes": 1321358
   },
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "66d907f71907e1520bfdd7a7cb08d3d214def0125ff0d85f1002c82bba7f08ed",
+      "sha256": "4a47a093b56463cc07f2db54aabc72c3c447c9336b55acbb1f81f8155d8b20a7",
       "bytes": 6276
     },
     {
@@ -2280,8 +2280,8 @@
     },
     {
       "path": "runtime/src/cli/dispatcher.ts",
-      "sha256": "3a7bbe607e9dd7ef0c361b6025afed19b3e40a1950443c2f462e7dc2bfdc9371",
-      "bytes": 37148
+      "sha256": "383ff7959127123d35376f1c8c13658235f89478498da50e9864e58f2afa29d9",
+      "bytes": 35029
     },
     {
       "path": "runtime/src/cli/engine.ts",
@@ -2360,8 +2360,8 @@
     },
     {
       "path": "runtime/src/cli/paths.ts",
-      "sha256": "73f1645139c4336400920b6dcd48dc4a34b43ab6a54e0e4f3598ae0edb208320",
-      "bytes": 7812
+      "sha256": "8c01f301038da0e6b8a871d2bdd2c7d48c9e6617dc7fe2425354b79a32a40228",
+      "bytes": 10732
     },
     {
       "path": "runtime/src/cli/report-export.ts",
@@ -2375,8 +2375,8 @@
     },
     {
       "path": "runtime/src/cli/skill-root.test.ts",
-      "sha256": "4a0929d18981d5884128705b01aaaf0d75f46b889965810504d22177f88ceba7",
-      "bytes": 8338
+      "sha256": "0a4585f2cf7637e9a4b761404290d8f5cc26f6720fd985dc2e666766b6b4bc4c",
+      "bytes": 8810
     },
     {
       "path": "runtime/src/cli/subprocess-transport.test.ts",
@@ -3025,8 +3025,8 @@
     },
     {
       "path": "runtime/src/service/composition.ts",
-      "sha256": "95983116dc3fbb27867e02d14b7abd8e420773e1d0688f02315461f82af679d5",
-      "bytes": 49435
+      "sha256": "d6c7a389491a351eb2a9889014b99fad97872f0894440209a464793bc8361e2c",
+      "bytes": 49418
     },
     {
       "path": "runtime/src/service/driver.ts",

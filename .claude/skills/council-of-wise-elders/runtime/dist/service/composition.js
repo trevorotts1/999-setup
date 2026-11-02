@@ -44,9 +44,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir, platform } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { resolveStandaloneInstallation, standaloneEnvelope, standalonePrincipal, standaloneScope, } from '../cli/authorization.js';
-import { openclawRoot } from '../cli/paths.js';
+import { openclawRoot, skillFolderForAssets } from '../cli/paths.js';
 import { discoverConfiguredRoutes, routeUsableWithModel, } from '../cli/route-discovery.js';
 import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/schemas.js';
 import { SEAT_IDS } from '../contracts/enums.js';
@@ -122,22 +121,17 @@ function defaultServiceDataDir() {
     }
 }
 /**
- * The skill folder that contains this runtime, found by walking up to the
- * first ancestor carrying the skill signature (SKILL.md beside runtime/).
- * Returns null instead of guessing another boundary.
+ * The skill folder that carries the advisor packs and config.
+ *
+ * PACKS_NOT_RESOLVED used to be emitted here because this probe walked
+ * up for `SKILL.md` beside `runtime/`, which an installed release does
+ * not carry (it is a runtime-only tree). The install's own record names
+ * the verified skill tree the release was built from — the same root
+ * the CLI reads — so packs and config resolve from ONE supported
+ * mechanism instead of a second, layout-specific guess.
  */
 function resolveSkillRoot() {
-    let dir = dirname(fileURLToPath(import.meta.url));
-    for (let depth = 0; depth < 8; depth += 1) {
-        if (existsSync(join(dir, 'SKILL.md')) && existsSync(join(dir, 'runtime'))) {
-            return dir;
-        }
-        const parent = dirname(dir);
-        if (parent === dir)
-            break;
-        dir = parent;
-    }
-    return null;
+    return skillFolderForAssets();
 }
 /** Resolve the installed tsx CLI without spawning it or reading the env. */
 function resolveTsxCli() {
