@@ -160,12 +160,12 @@
       "status": "vendored",
       "999_path": ".claude/skills/council-of-wise-elders",
       "source_path": "77-council-of-wise-elders",
-      "source_commit": "7ca6a622cf7f1750c19c0372316be4ad2d7b4a0b",
+      "source_commit": "4fc5536dde163ea6f393958ae0dbef9b8d39fa54",
       "999_version": "1.0.78",
       "source_version": "1.0.78",
       "action": "revendored by scripts/vendor-council-bundle.mjs; per-file distribution digests recorded in installer-registration/council-vendoring.json",
       "files": 1220,
-      "sha256": "sha256:0a869c2be2f5c3c7d86fdb361631566863407edf4dda22a845cd6f51f5975bfd",
+      "sha256": "sha256:45287d98ae5dc3734b505675c3d361b681f49504aa5af4a2eb3c6d1ed4635996",
       "note": "sha256 is the distribution aggregate recorded in council-vendoring.json (865 content files + 354 built runtime files)."
     },
     {

@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "4abe15314cc4e1b08b29ebaaaf100409192e8889f3795171c61d2d76733e26ca",
-      "archive_bytes": 82696093,
+      "archive_sha256": "fd662b09e43e12426998fc875106b4bd752f8485a82b578042ed30c98a537216",
+      "archive_bytes": 82696094,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,12 +120,12 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "4abe15314cc4e1b08b29ebaaaf100409192e8889f3795171c61d2d76733e26ca",
-    "bytes": 82696093
+    "sha256": "fd662b09e43e12426998fc875106b4bd752f8485a82b578042ed30c98a537216",
+    "bytes": 82696094
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "51810384cfdb8eb575dbc7053f353ff781abf4c7883d152df134d77c05f05926",
+    "distribution_aggregate_sha256": "2e3dc9a83687ac7a1d95f4d05639707fd9f251ef84c56b4fbf4dd3489c80a545",
     "distribution_file_count": 865,
     "contract_aggregate_sha256": "88681824213c40142a59b19913e26f72129a40be65e6eb743045a931ac2752d3",
     "files": [
