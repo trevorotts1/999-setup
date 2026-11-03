@@ -355,32 +355,74 @@ function Link-BundledSkills([string]$Root) {
                     # destination-only entries are KEPT and counted, nothing is
                     # ever deleted and no backup is minted. This is the only way
                     # the live copy moves off a stale delivery.
-                    $kept = 0
-                    $failed = 0
-                    foreach ($f in (Get-ChildItem -LiteralPath $src -Recurse -Force -File)) {
-                        $rel = $f.FullName.Substring($src.Length).TrimStart('\')
-                        $to = Join-Path $dst $rel
-                        try {
-                            $parent = Split-Path -Parent $to
-                            if (-not (Test-Path -LiteralPath $parent)) {
-                                New-Item -ItemType Directory -Path $parent -Force | Out-Null
-                            }
-                            Copy-Item -LiteralPath $f.FullName -Destination $to -Force
-                        } catch {
-                            Write-Log "skill ERROR: $s : could not refresh $to"
-                            $failed++
+                    #
+                    # SAFETY PRE-SCAN (mirror of so_refresh_updater's pass 1 on
+                    # the macOS path). Python before 3.12 cannot report a
+                    # Windows junction, so bundle_adapter._is_link sees one as a
+                    # real directory and the plan can call it 'refresh'.
+                    # Copy-Item would then write THROUGH the junction into a
+                    # foreign tree. Scan first and refuse the WHOLE refresh,
+                    # with nothing written, when the destination or anything
+                    # inside it is a reparse point (junction or symlink).
+                    # The walk is iterative and checks a child before
+                    # descending, so it never follows a reparse point.
+                    $scanBlocked = $false
+                    try {
+                        $dstItem = Get-Item -LiteralPath $dst -Force -ErrorAction Stop
+                        if (($dstItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                            Write-Log "skill BLOCKED: $s : $dst is a reparse point (junction or symlink); a refresh would write through a foreign link - nothing written"
+                            $scanBlocked = $true
                         }
+                        if (-not $scanBlocked) {
+                            $pending = New-Object System.Collections.Stack
+                            $pending.Push($dst)
+                            while (($pending.Count -gt 0) -and (-not $scanBlocked)) {
+                                $dir = $pending.Pop()
+                                foreach ($child in (Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop)) {
+                                    if (($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                                        Write-Log "skill BLOCKED: $s : $($child.FullName) is a reparse point (junction or symlink); a refresh would write through a foreign link - nothing written"
+                                        $scanBlocked = $true
+                                        break
+                                    }
+                                    if ($child.PSIsContainer) { $pending.Push($child.FullName) }
+                                }
+                            }
+                        }
+                    } catch {
+                        Write-Log "skill BLOCKED: $s : could not prove $dst is free of reparse points ($($_.Exception.Message)); nothing written"
+                        $scanBlocked = $true
                     }
-                    foreach ($f in (Get-ChildItem -LiteralPath $dst -Recurse -Force -File)) {
-                        $rel = $f.FullName.Substring($dst.Length).TrimStart('\')
-                        if (-not (Test-Path -LiteralPath (Join-Path $src $rel))) { $kept++ }
-                    }
-                    if ($kept -gt 0) {
-                        Write-Log "skill refreshed: $s : $kept extra old entr(y/ies) kept (never deleted) in $dst"
+                    if ($scanBlocked) {
+                        # No write happened: the destination is untouched.
+                        $failures++
                     } else {
-                        Write-Log "skill refreshed in place: $s -> $dst"
+                        $kept = 0
+                        $failed = 0
+                        foreach ($f in (Get-ChildItem -LiteralPath $src -Recurse -Force -File)) {
+                            $rel = $f.FullName.Substring($src.Length).TrimStart('\')
+                            $to = Join-Path $dst $rel
+                            try {
+                                $parent = Split-Path -Parent $to
+                                if (-not (Test-Path -LiteralPath $parent)) {
+                                    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+                                }
+                                Copy-Item -LiteralPath $f.FullName -Destination $to -Force
+                            } catch {
+                                Write-Log "skill ERROR: $s : could not refresh $to"
+                                $failed++
+                            }
+                        }
+                        foreach ($f in (Get-ChildItem -LiteralPath $dst -Recurse -Force -File)) {
+                            $rel = $f.FullName.Substring($dst.Length).TrimStart('\')
+                            if (-not (Test-Path -LiteralPath (Join-Path $src $rel))) { $kept++ }
+                        }
+                        if ($kept -gt 0) {
+                            Write-Log "skill refreshed: $s : $kept extra old entr(y/ies) kept (never deleted) in $dst"
+                        } else {
+                            Write-Log "skill refreshed in place: $s -> $dst"
+                        }
+                        if ($failed -gt 0) { $failures += $failed }
                     }
-                    if ($failed -gt 0) { $failures += $failed }
                 }
                 'preserve' {
                     # decide() refused or held this installation: a newer stamp,

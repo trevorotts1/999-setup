@@ -492,6 +492,46 @@ class InstalledCopyTests(FixtureCase):
         self.assertEqual(rc, ba.RC_FAIL, output)
         self.assertIn("FAIL install-copy spec-protocol", output)
 
+class RegisteredReceiptTests(unittest.TestCase):
+    """The SHIPPED record must be current for every registered skill.
+
+    decide() compares the tree with CONTROL/bundle-digests.json, not with the
+    installed copy. A record left stale by a skill change therefore makes a
+    same-version installation "update", and every full install re-refreshes it
+    (the 2026-11 round-2 blocker). This asserts the consequence at the decision
+    layer, on the real repo, read-only.
+    """
+
+    def test_every_registered_skill_is_current_after_a_content_change(self):
+        bundle = ba.load_bundle(REPO)
+        stale = []
+        for skill in bundle.skills:
+            if skill.version is None:
+                continue
+            action = ba.decide(skill, skill.version).action
+            if action != "current":
+                stale.append("%s: %s" % (skill.name, action))
+        self.assertEqual(
+            stale, [],
+            "a skill changed but CONTROL/bundle-digests.json was not "
+            "regenerated with --write-digests: " + "; ".join(stale))
+        nine = bundle.by_name("nine-router-setup")
+        self.assertEqual(
+            ba.decide(nine, nine.version).action, "current",
+            "nine-router-setup must be current, not update, or the new refresh "
+            "branch fires on every full install")
+
+    def test_negative_control_a_stale_record_makes_decide_say_update(self):
+        tmp = Path(tempfile.mkdtemp(prefix="t37-stale-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        root = make_bundle(tmp)
+        (root / SKILL / "SKILL.md").write_text("# changed after the receipt\n",
+                                               encoding="utf-8")
+        skill = ba.load_bundle(root).by_name("spec-protocol")
+        self.assertEqual(ba.decide(skill, "1.5.0").action, "update",
+                         "the guard must be able to fail")
+
+
 class WorkflowTriggerTests(FixtureCase):
     """D2: CI must trigger on the inputs the digest check reads."""
 

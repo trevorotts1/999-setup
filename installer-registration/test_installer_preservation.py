@@ -16,6 +16,7 @@ The Windows consumer cannot be executed on this host. Its runtime behaviour is
 UNVERIFIED; only the static contract both scripts must carry is asserted, and a
 copy that drops that contract must be named by the parity check.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -35,6 +36,45 @@ SKILL = "drama-song-ad-factory"
 SHIPPED_VERSION = "1.2.3"
 CONSUMER_START = "bundled_skills() {"
 CONSUMER_END = "main() {"
+
+def snapshot_tree(root: Path):
+    """{posix-relative path: (sha256, mtime_ns)} - a REWRITE is caught even when
+    the new bytes are identical, which is what "hold" has to mean."""
+    snapshot = {}
+    for path in sorted(Path(root).rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        snapshot[rel] = (hashlib.sha256(path.read_bytes()).hexdigest(),
+                         path.stat().st_mtime_ns)
+    return snapshot
+
+def windows_refresh_prescan_problems(text: str):
+    """Problems in the Windows `refresh` branch's reparse-point pre-scan.
+
+    Empty means the branch refuses a junction/symlink destination BEFORE it
+    copies anything. The Windows runtime cannot be executed on this host, so
+    this is a STRUCTURAL assertion, not a behavioural one.
+    """
+    start = text.find("'refresh' {")
+    if start < 0:
+        return ["no 'refresh' branch in the Windows consumer"]
+    end = text.find("'preserve' {", start)
+    block = text[start:end if end > 0 else len(text)]
+    problems = []
+    if "[IO.FileAttributes]::ReparsePoint" not in block:
+        problems.append("refresh branch never tests for a reparse point")
+    if "skill BLOCKED" not in block:
+        problems.append("refresh branch never reports the refused refresh")
+    scan_at = block.find("[IO.FileAttributes]::ReparsePoint")
+    copy_at = block.find("Copy-Item -LiteralPath $f.FullName -Destination $to")
+    if copy_at < 0:
+        problems.append("refresh branch has no per-file copy to guard")
+    elif scan_at < 0 or scan_at > copy_at:
+        problems.append("the reparse-point pre-scan does not precede the copy")
+    if "$scanBlocked" not in block:
+        problems.append("the pre-scan result is not used to gate the copy")
+    return problems
 
 
 def make_bundle(base: Path) -> Path:
@@ -190,6 +230,28 @@ class OlderInstallRefreshTests(FixtureCase):
             (target / "VERSION").read_text(encoding="utf-8").strip(),
             SHIPPED_VERSION, "a second run must be a no-op, not a rollback")
 
+        # A SECOND consumer run must HOLD, not refresh again. The recorded
+        # digest is what decides this: while CONTROL/bundle-digests.json is
+        # stale, decide() calls a same-version tree "update" and the refresh
+        # branch re-copies the whole live tree on every full install.
+        shipped = ba.load_bundle(self.repo).by_name(SKILL)
+        self.assertEqual(
+            ba.decide(shipped, ba.read_skill_version(target)[0]).action,
+            "current",
+            "after the refresh decide() must hold the record, not call it update")
+        after_first = snapshot_tree(target)
+        again = self.consume()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertNotIn(
+            "skill refreshed in place: " + SKILL, again.stdout,
+            "a second consumer run refreshed an already-refreshed copy:\n"
+            + again.stdout)
+        self.assertEqual(
+            snapshot_tree(target), after_first,
+            "a second consumer run rewrote the refreshed tree")
+        self.assertNotEqual(self.plan_row()[0], "refresh",
+                            "the plan must not refresh a copy that is current")
+
 class CustomSameVersionTests(FixtureCase):
     """A same-version custom install is held, and its destination-only files stay."""
 
@@ -257,6 +319,29 @@ class UnknownActionTests(FixtureCase):
                          "an unknown plan action was treated as a link")
         self.assertEqual((target / "VERSION").read_bytes(), before)
         self.assertTrue((target / "compat" / "999_only.json").is_file())
+
+
+class WindowsRefreshPrescanTests(unittest.TestCase):
+    """The Windows `refresh` branch must refuse a reparse-point destination.
+
+    PowerShell does not exist on this host, so the Windows runtime stays
+    UNVERIFIED. What is asserted is structural: the pre-scan text is present
+    and sits BEFORE the copy it guards, and a copy that loses it is reported.
+    """
+
+    def setUp(self):
+        self.text = (REPO / ba.INSTALLER_WIN).read_text(encoding="utf-8")
+
+    def test_the_refresh_branch_prescans_reparse_points_before_copying(self):
+        problems = windows_refresh_prescan_problems(self.text)
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    def test_negative_control_a_branch_without_the_prescan_is_reported(self):
+        kept = [line for line in self.text.splitlines(keepends=True)
+                if "ReparsePoint" not in line and "$scanBlocked" not in line]
+        problems = windows_refresh_prescan_problems("".join(kept))
+        self.assertTrue(problems, "a refresh branch that copies through a "
+                                  "junction must be named, not silently accepted")
 
 
 class ConsumerContractTests(unittest.TestCase):

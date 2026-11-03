@@ -566,9 +566,16 @@ def resolve_source(skill: SkillInfo, home: Path):
 def _is_link(target: Path) -> bool:
     """True for a symlink, and for a Windows junction where the runtime says so.
 
-    Python before 3.12 does not report a junction as a link. That case falls
-    through to the real-directory rule, which preserves it: a destination is
-    never replaced on a guess about what it is.
+    Python before 3.12 does not report a junction as a link, so such a
+    destination is indistinguishable here from a real directory. It is NOT
+    preserved by that: the plan can call it `refresh` when its stamp is older.
+    Neither the plan nor this helper may guess, so the REFUSAL lives in the
+    consumers, which pre-scan for a reparse point before writing: the macOS
+    refresh runs so_refresh_updater's BLOCKED pass (a symlinked destination or
+    a symlink anywhere below it refuses the whole refresh) and the Windows
+    refresh pre-scans the destination for a reparse point (junction or
+    symlink) and reports BLOCKED. Nothing is ever written through such an
+    entry on either platform.
     """
     if target.is_symlink():
         return True
@@ -585,10 +592,13 @@ def _existing_row(skill: SkillInfo, target: Path):
     """(action, reason) when the destination exists but is not the shipped source.
 
     decide() is the ONE update authority, so the plan cannot contradict it; on
-    top of the stamp this compares BYTES. Anything that is not the shipped tree
-    is preserved, because a real directory can hold destination-only
-    compatibility files (the tracked 999-only core files included) that a link
-    cannot, and no backup is minted without explicit consent.
+    top of the stamp this compares BYTES. A destination that is not the shipped
+    tree is preserved when decide() holds or refuses it, because a real
+    directory can hold destination-only compatibility files (the tracked
+    999-only core files included) that a link cannot, and no backup is minted
+    without explicit consent. A link is relinked; a real directory that
+    decide() ruled OLDER than the shipped tree is refreshed in place, file by
+    file (see install_plan's `refresh`).
     """
     linked = _is_link(target)
     if linked and not target.exists():
