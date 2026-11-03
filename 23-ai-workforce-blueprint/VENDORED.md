@@ -4,9 +4,10 @@ Only the department registry is vendored; this 999 package does not ship the
 rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source ref: `integration/bfl-onboarding-stage` head (the 999 combined re-sync
-  source; not yet on `origin/main`)
-- Source commit: `5c41646b0eeff0ffeccc955b52492e33ef9964cf`
+- Source ref: `prep/bfl-onboarding-pr2` (3aa7e07f0) plus the cli.py divergence
+  retirement commit fb469241 (the 999 combined re-sync source; not yet on
+  `origin/main`)
+- Source commit: `69ae6927a616edbb4cf42edb2dd092f10c81a914` (the map is byte-identical to the one at `5c41646b0`)
 - Git blob: `c9085e12742af812082f7aec44f5dcc2fdfe182f`
 - SHA-256: `59805fec8476714918a89d96ffa4553e976794e5c01a2e0fc8939603810c61e7`
 - Entries: 78 (skill numbers 01 through 83; the archived skills are no longer
@@ -33,23 +34,22 @@ combined re-sync, so its `black-friday-launcher` entry matches
 `83-black-friday-launcher/`, made by the onboarding launch-family sync
 (`scripts/sync_launch_family_to_999.py --family launcher`). Every file is a
 byte copy, version files included (`skill-version.txt`, `skill.json`,
-`registration.json`), except the declared 999 divergences:
+`registration.json`), including `launcher_core/cli.py`: it is a pinned Skill 49
+file (`front_door.py` hashes every `launcher_core/*.py`), so it cannot be a
+declared divergence and 999 receives the pin only through the sync. The only
+999-only files are:
 
-- `launcher_core/cli.py` is the onboarding file with the 999 `questions` path
-  (`_experience`, `--answers-file`, `--mode`) and the `REPO_ROOT` import kept.
-  The plan surface (`def cmd_plan`, `--launch-plan`, `--page-only`) is the
-  onboarding code, unchanged.
 - `scripts/generate_dist02_manifest.py` and
   `tests/verify_installer_python_deps.sh` exist only in 999.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source commit: `5c41646b0eeff0ffeccc955b52492e33ef9964cf` (head of `integration/bfl-onboarding-stage`; not yet
-  on `origin/main`)
-- Source version: `0.2.12`
+- Source commit: `69ae6927a616edbb4cf42edb2dd092f10c81a914` (`prep/bfl-onboarding-pr2` 3aa7e07f0 plus the cli.py
+  divergence retirement commit fb469241; not yet on `origin/main`)
+- Source version: `0.2.13`
 - Source tree (`83-black-friday-launcher/` at that commit): 90 files, digest
-  `sha256:39f899399b86c47f59abe1469dedeb2003363a06ffb0fc11dd70d5b0b468d2f5`
+  `sha256:55741fc80ec984486d226786eac1d62da984e9eb6d36eb8829616253acdc9d7d`
 - This tree: 92 files (the two 999-only files above), digest
-  `sha256:09665e8339d7d3adf443168d57911886a452cb56d74dd2a25158124dd9c32910`
+  `sha256:cc4c0cf461bcc2eb5455832cd8adcf00ce7dee12a42690215867f683d6968222`
 
 The digest is the generator's: SHA-256 over the newline-terminated, path-sorted
 lines `<file sha256>  <relative path>`.
