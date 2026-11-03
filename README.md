@@ -324,7 +324,7 @@ their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 Every bundled skill carries a readable update stamp at its root (`spec-protocol` 1.38.1,
-`nine-router-setup` 1.29.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
+`nine-router-setup` 1.29.1, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
 `blackceo-signature-page` 1.3.13, `hook-skill` 1.2.1, `kiss` 1.0.0,
 `drama-studio` 2.7.48). At every
 spec-protocol launch, `tools/check-update.sh` checks all bundled skills (exit 0 = current,

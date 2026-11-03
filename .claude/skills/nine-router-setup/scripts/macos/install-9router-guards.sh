@@ -17,6 +17,7 @@
 #                     Any other DIR that is not a 9Router package is an error (exit 2).
 #   --upgrade [VER]   npm-install 9router@VER (default latest) into the same prefix first, then re-apply
 #   --no-restart      do not kickstart the launchd job after a change
+#   (env) NINEROUTER_UPGRADE_PROBE_MODEL=route names the model the --upgrade acceptance probe uses.
 #
 # Exit 0 = every selected guard's patch is PROVEN present by content marker (not by exit code: a
 # guard's --check exits 0 even when it would patch, and a guard that cannot find its anchor must
@@ -37,6 +38,12 @@ LABEL="com.blackceo.9router-localhost"
 # agent-pull-fix: R13
 PORT="${NINEROUTER_PORT:-20128}"
 BASE="http://127.0.0.1:$PORT"
+# The --upgrade acceptance probe names its own route. Without this it ran whatever the box's default model
+# pin was set to, so an unavailable client default rolled back a correct upgrade for an unrelated reason.
+# A probe failure whose text matches PROBE_PREREQ_RE is a CLIENT model/credential prerequisite, never
+# evidence about the 9Router version, so it never rolls back.
+PROBE_MODEL="${NINEROUTER_UPGRADE_PROBE_MODEL:-ds/deepseek-v4-flash}"
+PROBE_PREREQ_RE="Model is unavailable|issue with the selected model|Keychain token missing|no provider credentials|provider credentials (are )?not configured|API Error: 401|invalid api key"
 SELF="$HERE/$(basename "$0")"
 # Order matters: dupfix first, codex-terminal after it (it converts dupfix's flag), ollama-done
 # before toolargs, ping last (it wraps the handler export).
@@ -51,7 +58,7 @@ while [ $# -gt 0 ]; do
     --no-restart) RESTART=0 ;;
     --root) ROOT="${2:-}"; shift ;;
     --upgrade) UPGRADE=1; case "${2:-}" in ""|--*) ;; *) VER="$2"; shift ;; esac ;;
-    -h|--help) sed -n 2,28p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,30p "$0"; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) SEL+=("$1") ;;
   esac; shift
@@ -154,6 +161,29 @@ prefix_of_root() {
   printf '%s\n' "$nm"
 }
 
+# Stage the guard assets the forwards path runs from: scripts into BIN_DIR, patch payloads into PATCH_DIR.
+stage_toolchain() {
+  mkdir -p "$BIN_DIR" "$PATCH_DIR"
+  for f in "$SRC"/9router-*.sh; do
+    cmp -s "$f" "$BIN_DIR/$(basename "$f")" || cp "$f" "$BIN_DIR/$(basename "$f")"
+    chmod 755 "$BIN_DIR/$(basename "$f")"
+  done
+  for d in "$SRC"/patches/*/; do
+    n="$(basename "$d")"; mkdir -p "$PATCH_DIR/$n"
+    for f in "$d"*; do cmp -s "$f" "$PATCH_DIR/$n/$(basename "$f")" || cp "$f" "$PATCH_DIR/$n/$(basename "$f")"; done
+  done
+}
+
+# node --check every file a guard may touch. Markers alone cannot see a bundle that no longer parses.
+syntax_sweep() {
+  local f bad=0
+  for f in "$CHUNKS"/*.js "$ROOT/cli.js" "$STREAM"; do
+    [ -f "$f" ] || continue
+    "$NODE" --check "$f" >/dev/null 2>&1 || { echo "[guards] SYNTAX FAIL: $f" >&2; bad=1; }
+  done
+  return "$bad"
+}
+
 # Reinstall the recorded previous version, re-apply the guards, re-prove them. Always exits: 3 = rolled back and
 # proven, 4 = rollback impossible or incomplete.
 rollback_upgrade() {
@@ -166,20 +196,31 @@ rollback_upgrade() {
     || { echo "[guards] ROLLBACK FAILED: npm install 9router@$UP_FROM failed; guards NOT re-applied" >&2; exit 4; }
   [ "$(pkg_version)" = "$UP_FROM" ] \
     || { echo "[guards] ROLLBACK FAILED: package at $ROOT reports $(pkg_version), expected $UP_FROM; guards NOT re-applied" >&2; exit 4; }
+  # The toolchain is otherwise staged only on the forward path, which a rollback reached from the version
+  # check below never gets to: stage it here or every run_guard below exits 127 and is silently dropped.
+  stage_toolchain
   up_rb=1
   for g in "${SEL[@]}"; do
-    run_guard "$g" >/dev/null 2>&1 || true
+    out="$(run_guard "$g" 2>&1)"; grc=$?
+    [ "$grc" -eq 0 ] && continue
+    echo "[guards] rollback: guard $g failed (rc=$grc)" >&2
+    printf '%s\n' "$out" | tail -5 | sed 's/^/    /' >&2
+    up_rb=0
   done
   if [ "$RESTART" = 1 ] && launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
     launchctl kickstart -k "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
   fi
-  if bash "$SELF" --check --root "$ROOT" "${SEL[@]}" >/dev/null 2>&1; then
+  syntax_sweep || up_rb=0
+  chk="$(bash "$SELF" --check --root "$ROOT" "${SEL[@]}" 2>&1)"; crc=$?
+  [ "$crc" -eq 0 ] || up_rb=0
+  if [ "$up_rb" = 1 ]; then
     echo "[guards] rollback OK: 9router@$UP_FROM reinstalled, patches re-proven present" >&2
-  else
-    echo "[guards] ROLLBACK INCOMPLETE: 9router@$UP_FROM reinstalled but patches are NOT proven present" >&2
-    up_rb=0
+    exit 3
   fi
-  [ "$up_rb" = 1 ] && exit 3
+  printf '%s\n' "$chk" | grep MISSING | sed 's/^/    /' >&2
+  echo "[guards] ROLLBACK INCOMPLETE: 9router@$UP_FROM reinstalled but patches are NOT proven present" >&2
+  echo "[guards] box left on an UNPATCHED 9Router bundle" >&2
+  echo "[guards] fix: bash $SELF --root $ROOT" >&2
   exit 4
 }
 
@@ -215,15 +256,7 @@ echo "[guards] 9Router $(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/pack
 fingerprint() { cat "$CHUNKS"/*.js "$ROOT/cli.js" "$STREAM" 2>/dev/null | /usr/bin/shasum | cut -d' ' -f1; }
 
 if [ "$CHECK" = 0 ]; then
-  mkdir -p "$BIN_DIR" "$PATCH_DIR"
-  for f in "$SRC"/9router-*.sh; do
-    cmp -s "$f" "$BIN_DIR/$(basename "$f")" || cp "$f" "$BIN_DIR/$(basename "$f")"
-    chmod 755 "$BIN_DIR/$(basename "$f")"
-  done
-  for d in "$SRC"/patches/*/; do
-    n="$(basename "$d")"; mkdir -p "$PATCH_DIR/$n"
-    for f in "$d"*; do cmp -s "$f" "$PATCH_DIR/$n/$(basename "$f")" || cp "$f" "$PATCH_DIR/$n/$(basename "$f")"; done
-  done
+  stage_toolchain
   before="$(fingerprint)"
   for g in "${SEL[@]}"; do
     # Guards that take a root get it; the four older ones (dupfix, codex-terminal, nextserver, cachecontrol) search the standard list (same order as above).
@@ -233,9 +266,7 @@ if [ "$CHECK" = 0 ]; then
   done
   after="$(fingerprint)"
   # node --check every file a guard may have touched, by absolute node path.
-  bad=0
-  for f in "$CHUNKS"/*.js "$ROOT/cli.js" "$STREAM"; do [ -f "$f" ] || continue; "$NODE" --check "$f" >/dev/null 2>&1 || { echo "[guards] SYNTAX FAIL: $f"; bad=1; }; done
-  [ "$bad" = 0 ] || { echo "[guards] a patched file does not parse; NOT restarting" >&2; exit 1; }
+  syntax_sweep || { echo "[guards] a patched file does not parse; NOT restarting" >&2; exit 1; }
 fi
 
 # Proof by content. Marker -> file glob -> minimum occurrences, one row per patch.
@@ -334,20 +365,30 @@ if [ "$UPGRADE" = 1 ] && [ "$CHECK" = 0 ]; then
     else
       # Bound the probe: claude-nine execs the CLI, and perl's alarm survives exec, so a hung
       # request is killed (macOS has no timeout(1)). Output is inspected here and never echoed.
+      # --model PROBE_MODEL keeps the probe off the box's default model pin, which is the client's
+      # business and says nothing about the 9Router version.
       up_out="$(perl -e 'alarm shift; exec @ARGV' "${NINEROUTER_UPGRADE_PROBE_TIMEOUT:-120}" \
-                 "$up_cli" -p "Reply with exactly: routing works" 2>&1)"
+                 "$up_cli" -p "Reply with exactly: routing works" --model "$PROBE_MODEL" 2>&1)"
       up_rc=$?
       if [ "$up_rc" -eq 142 ]; then
         up_fail="routed claude-nine request (timed out after ${NINEROUTER_UPGRADE_PROBE_TIMEOUT:-120}s)"
       elif [ "$up_rc" -ne 0 ] || ! printf '%s' "$up_out" | grep -q "routing works"; then
-        up_fail="routed claude-nine request (no expected reply)"
+        up_prereq="$(printf '%s' "$up_out" | grep -oiE "$PROBE_PREREQ_RE" | head -1)"
+        [ -n "$up_prereq" ] || up_fail="routed claude-nine request (no expected reply)"
       fi
       up_out=""
     fi
   fi
 
-  if [ -z "$up_fail" ]; then
+  if [ -z "$up_fail" ] && [ -z "${up_prereq:-}" ]; then
     echo "[guards] upgrade verified: 9router ${UP_FROM:-unknown} -> ${UP_TO:-$VER} (patches, health, routed request)"
+    exit 0
+  fi
+
+  if [ -z "$up_fail" ]; then
+    # The version gate is patch markers + health; the probe only reported a client prerequisite.
+    echo "[guards] upgrade verified: 9router ${UP_FROM:-unknown} -> ${UP_TO:-$VER} (patches, health; routed request NOT proven)"
+    echo "[guards] WARNING: routed probe '$PROBE_MODEL' reported '$up_prereq' - a client model/credential prerequisite, not the 9Router version; fix it on the box, then re-run: bash $SELF --check --root $ROOT" >&2
     exit 0
   fi
 
