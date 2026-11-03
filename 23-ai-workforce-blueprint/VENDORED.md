@@ -4,12 +4,14 @@ Only the department registry is vendored; this 999 package does not ship the
 rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source ref: `origin/main`
-- Source commit: `c4bf7530f6af9bcd0c3e1b55c7b0ae25761f2b8a`
-- Git blob: `ce4d5d105a4cf48f946489e545d17fb9e99960e7`
-- SHA-256: `ddee7a81ebb251c16f91bb6672491e68a7a69ddaa0d3ca9c63aa56bf219e2165`
-- Entries: 83 (skill 01 through 83, including `signature-downsell`,
-  `signature-thank-you` and `black-friday-launcher`)
+- Source ref: `integration/bfl-onboarding-stage` head (the 999 combined re-sync
+  source; not yet on `origin/main`)
+- Source commit: `5c41646b0eeff0ffeccc955b52492e33ef9964cf`
+- Git blob: `c9085e12742af812082f7aec44f5dcc2fdfe182f`
+- SHA-256: `59805fec8476714918a89d96ffa4553e976794e5c01a2e0fc8939603810c61e7`
+- Entries: 78 (skill numbers 01 through 83; the archived skills are no longer
+  shipped, as in the source), including `signature-downsell`,
+  `signature-thank-you` and `black-friday-launcher`
 
 Vendored verbatim. Do not edit it here: the Launcher dependency preflight reads
 it for registry lines, and a local edit would drift from the canonical
@@ -20,10 +22,10 @@ the preflight without being the department registry, and any consumer reading
 this path would then see an incomplete inventory. The map is the real artifact;
 vendoring it whole keeps the check honest.
 
-The three bullets above describe this one file, and only this file. The map was
-not refreshed by the Launcher resync below; it still carries the 83 entry text
-from the source commit named above, and it still has to be re-vendored from
-onboarding (CON-25) by whoever owns that path.
+The map was re-vendored byte for byte from the source commit above by the 999
+combined re-sync, so its `black-friday-launcher` entry matches
+`.claude/skills/black-friday-launcher/repo-integration/skill-department-map-entry.json`
+(CON-25).
 
 # Vendored: Black Friday Launcher tree
 
@@ -41,27 +43,27 @@ byte copy, version files included (`skill-version.txt`, `skill.json`,
   `tests/verify_installer_python_deps.sh` exist only in 999.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source commit: `35643344ddbd8dcea31bc4913dfb0378e93ef141` (branch
-  `integration/bfl-onboarding-fix-g83`: onboarding integration head
-  `2ac7be161eea5e148c31c20c410339fef74f713d` plus the finished launcher fix,
-  including the plan/dispatch APPROVAL-HASH fix; not yet on `origin/main`)
+- Source commit: `5c41646b0eeff0ffeccc955b52492e33ef9964cf` (head of `integration/bfl-onboarding-stage`; not yet
+  on `origin/main`)
 - Source version: `0.2.12`
-- Source tree (`83-black-friday-launcher/` at that commit): 87 files, digest
-  `sha256:502119c3bc3513668a3392cdc10f734e7f6e16279693f38f182a10af70e8338a`
-- This tree: 89 files (the two 999-only files above), digest
-  `sha256:f2bbf874b53ba309929ccf0060d1d9208658e44f83ace9a0ef5cedd7111a2681`
+- Source tree (`83-black-friday-launcher/` at that commit): 90 files, digest
+  `sha256:39f899399b86c47f59abe1469dedeb2003363a06ffb0fc11dd70d5b0b468d2f5`
+- This tree: 92 files (the two 999-only files above), digest
+  `sha256:09665e8339d7d3adf443168d57911886a452cb56d74dd2a25158124dd9c32910`
 
 The digest is the generator's: SHA-256 over the newline-terminated, path-sorted
 lines `<file sha256>  <relative path>`.
 
 The launcher family's `shared-utils/` trees (`signature_launch`,
 `signature_launch_contract`, `client_intake`, `ghl`, `fab_qc.py`,
-`fab_artifact.py`) are synced from the same commit by unit U-sync-999-01b, not
-by this tree copy.
+`fab_artifact.py`) are synced from the same commit by the same combined re-sync
+(`shared-utils/ghl`, `fab_qc.py` and `fab_artifact.py` are plain byte copies: the
+sync script's launcher family lists only `signature_launch`,
+`signature_launch_contract` and `client_intake`).
 
-This commit is the fix-branch head, not merged `main`. The onboarding batch PR
+This commit is an integration head, not merged `main`. The onboarding batch PR
 bumps versions and CI mints the Skill 49 pin on `main` after that merge. During
-the 999 batch PR, re-copy the tree from that merged commit (version and pin
+the 999 batch PR, re-copy every family from that merged commit (version and pin
 files are minted there, never here), then replace the commit, version and
 digests above with the merged ones.
 `python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py --onboarding <onboarding checkout>`

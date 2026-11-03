@@ -6,8 +6,10 @@ downsell, landing) cannot show up in them. This test builds the adapter commands
 launcher_core.launch_bridge from per-page inputs (the same path as `cli dispatch --adapter-inputs`), runs
 them on the free stub provider, then runs `cli assemble` and `cli check` over what they wrote.
 
-It must end in a package that `check` passes and that is labelled "images only, render pending": the stub
-provider draws section images only, so nothing here may claim review PDFs or boards that were never made.
+It ends at the design gate. A stub run draws unlabeled layout proofs only (Skill 71 labels and composes only
+paid renders), and final mockups need the client's recorded approval of a real (non-stub) Design Board, so
+`check` refuses with exactly the missing section kinds for every page and nothing else. Every earlier step
+must pass.
 No network, no paid call, no fake consumer.
 """
 
@@ -18,6 +20,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -34,14 +37,14 @@ import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
-from launcher_core import cli  # noqa: E402
+from launcher_core import checks, cli, page_designs  # noqa: E402
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
 S80_FIXTURES = REPO_ROOT / "80-signature-upsell" / "components" / "80-signature-upsell" / "fixtures"
 S80_JOURNEYS = REPO_ROOT / "80-signature-upsell" / "components" / "adapters" / "fixtures"
 S81_PAGE = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-page.json"
-S81_EXTENSION = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-result-trial-matched.json"
+S81_EXTENSION = REPO_ROOT / "81-signature-downsell" / "fixtures" / "valid-downsell-result.json"
 S49_FIXTURES = REPO_ROOT / "49-signature-funnel" / "scripts" / "fixtures"
 
 BRAND_OWNER = "blackceo"  # Skill 71 refuses a brand file whose brand_id is not the run's owner
@@ -56,8 +59,22 @@ DELIVERABLES = {
 }
 # the offer names the upsell copy fixtures were written for: the upsell page binds copy.offer_name to the offer
 OFFER_NAMES = {"upsell_1": "TEST ONLY Deep Work Library", "upsell_2": "TEST ONLY Implementation Studio"}
-D1_PRICE_MINOR = 100  # the trial price the pinned Skill 81 page fixture shows (its example amounts are refused unless the record prices them)
-LABEL = "images only, render pending"
+D1_PRICE_MINOR = 3700  # the one-time D1 price the pinned Skill 81 result fixture records (due_now_minor); the page copy is re-priced to it
+# The intake accepts one_time prices only, and Skill 49 refuses a one_time D1 whose copy promises a renewal, so the
+# fixture's $1-trial-then-$27-a-month page is re-priced to a one-time D1 (the same way Skill 49's own wrapper test does).
+_RENEWAL_PROMISE = ('After the trial, $27 per month continues the membership unless you cancel. The first renewal charge is '
+                    'on day 31, and renewals are monthly after that. You can cancel anytime before a renewal charge to '
+                    'stop future charges. If you cancel, your access continues until the end of the trial or the current '
+                    'paid month, then your membership access ends and you will not be charged again. ')
+
+
+def _one_time_d1_page() -> str:
+    text = S81_PAGE.read_text(encoding="utf-8")
+    text = json.dumps(json.loads(text))
+    assert _RENEWAL_PROMISE in text
+    page = json.loads(re.sub(r"\$1(?!\d)", "$%d" % (D1_PRICE_MINOR // 100), text.replace(_RENEWAL_PROMISE, "")))
+    page["page"]["approved_amounts_minor"] = [D1_PRICE_MINOR]
+    return json.dumps(page)
 
 
 def _design_prose(chars: int = 14500) -> str:
@@ -97,7 +114,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         brand = (S71 / "assets" / "brand" / "blackceo-brand.json").read_bytes()
         self.brand_file = self.root / "brand.json"
         self.brand_file.write_bytes(brand)
-        doc = dispatch_tests.payload("elevation", design_style="B", image_provider="kie", image_cap=200,
+        doc = dispatch_tests.payload("elevation", design_style="B", image_provider="kie", image_cap=264,
                                      brand_file=str(self.brand_file), brand_owner=BRAND_OWNER)
         doc["brand"]["hash"] = _sha256(self.brand_file)  # the landing build re-hashes the brand file
         # every price names an entry of the client's answers file, which must say what this launch's offers say
@@ -158,7 +175,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         bridge = write("landing-bridge.json", json.dumps({
             "skill71": {"root": str(S71), "python": sys.executable},
             "landing": {"run_dir": str(self.root / "landing-run"), "page_version": "standard", "page_kind": "sales",
-                        "brand_owner": BRAND_OWNER, "image_cap": 200, "launch_record": str(out / "launch.json"),
+                        "brand_owner": BRAND_OWNER, "image_cap": 264, "launch_record": str(out / "launch.json"),
                         # the 14 production stages are closed by an agent-driven process, never in an offline run:
                         # the landing lane is a declared draft, so the bridge places its result with the gate open
                         "draft": True,
@@ -170,7 +187,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             "checkout_manuscript": str(write("checkout-manuscript.md", self._checkout_manuscript(doc))),
             "copy": {"upsell_1": rebound(S80_FIXTURES / "copy-upsell1-public.valid.json", "copy-upsell_1.json"),
                      "upsell_2": rebound(S80_FIXTURES / "copy-upsell2-public.valid.json", "copy-upsell_2.json"),
-                     "downsell_1": S81_PAGE,
+                     "downsell_1": write("copy-downsell_1.json", _one_time_d1_page()),
                      "thank_you": COPY_EXAMPLES / "thank-you-path-b.md"},
             "journey": {"upsell_1": S80_JOURNEYS / "journey-main-only.testonly.json",
                         "upsell_2": S80_JOURNEYS / "journey-upsell2-from-upsell1.testonly.json",
@@ -194,10 +211,11 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             (work / name).write_text(_design_prose(), encoding="utf-8")
         # the downsell wrapper assembles its result around the extension record the Skill 81 side stages beside it
         # (the fixture matched to the page fixture above); it checks it against the launch record and the route,
-        # so it names this launch's upsell_2 page (Skill 49 ids a page <LAUNCH_ID>-<ROLE>)
+        # so it names this launch's upsell_2 page (Skill 49 ids a page <launch_id>-<ROLE>: the launch id as
+        # given, the role in upper case)
         extension = json.loads(S81_EXTENSION.read_text(encoding="utf-8"))
         extension["downsell_result_extension"]["route_result"]["canonical_u2_page_id"] = \
-            f"{launch_id.upper()}-UPSELL_2"
+            f"{launch_id}-UPSELL_2"
         (work / "extension-downsell_1.json").write_text(json.dumps(extension), encoding="utf-8")
         (work / "copy-thank_you.md").write_text((COPY_EXAMPLES / "thank-you-path-b.md").read_text(encoding="utf-8"),
                                                 encoding="utf-8")
@@ -258,10 +276,19 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         (package_dir / "client-confirmations.json").write_text(json.dumps({"confirmations": confirmations}),
                                                                encoding="utf-8")
 
-        # check: passes, and says what it is: section images only, the render still pending
+        # check: everything passes up to the design gate, which refuses exactly the designs a stub run
+        # cannot honestly have (IMG-02: only labeled, client-approved final mockups count; a stub run labels nothing)
         code, shown = self._cli("check", "--manifest", str(manifest_path), "--root", str(package_dir))
-        self.assertEqual((code, shown.strip().splitlines()[-1]), (0, "PASS package complete"), shown)
-        self.assertIn(f"delivery level: {LABEL}", shown, "a stub-provider package must say it holds images only, render pending")
+        self.assertEqual(code, 2, shown)
+        self.assertIn("delivery level: designs: failed", shown)
+        self.assertNotIn("PASS package complete", shown)
+        expected = {f"{page_designs.CODE}: {page_designs.page_key(p)} is missing {k.replace('_', ' ')}"
+                    for p in manifest["pieces"] for k in checks.SECTION_KINDS}
+        self.assertEqual(len(expected), len(ROLES) * len(checks.SECTION_KINDS))
+        got = {line.strip()[2:] for line in shown.splitlines() if line.strip().startswith("- ")}
+        self.assertEqual(got, expected, shown)
+        # the package says the client has approved nothing yet: no approval was recorded, none is claimed
+        self.assertEqual(manifest["design_approvals"], page_designs.default_approvals())
 
 
 if __name__ == "__main__":
