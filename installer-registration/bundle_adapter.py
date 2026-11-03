@@ -86,7 +86,7 @@ INSTALLER_DELEGATION = ("bundle_adapter.py", "--install-plan")
 # obeyed. A plan row nothing honours is not a fix: the old consumers linked any
 # action they did not recognise, which is how a `preserve` row could still
 # replace a real installation.
-INSTALLER_CONTRACT_TOKENS = ("up-to-date", "relink", "preserve",
+INSTALLER_CONTRACT_TOKENS = ("up-to-date", "relink", "refresh", "preserve",
                              "unknown plan action")
 
 # The standalone fallback both installers carry when there is no repo checkout.
@@ -617,8 +617,13 @@ def _existing_row(skill: SkillInfo, target: Path):
     if linked:
         return "relink", (verdict.reason + "; only the link is repointed, its old "
                           "target is left untouched")
-    return "preserve", (verdict.reason + "; a real directory is never replaced by "
-                        "a link (no backup is minted without explicit consent)")
+    # decide() ruled the shipped tree NEWER than this real directory. Holding it
+    # here is what left a stale copy installed for ever (the full install, the
+    # only path that reaches skills, preserved it too). Refresh it in place file
+    # by file instead: destination-only entries are kept and named, nothing is
+    # deleted and no backup is minted.
+    return "refresh", (verdict.reason + "; the real directory is refreshed in "
+                       "place, file by file (no backup is minted)")
 
 
 def install_plan(bundle: Bundle, claude_root, home=None):
@@ -629,17 +634,25 @@ def install_plan(bundle: Bundle, claude_root, home=None):
       link         nothing at the destination: a fresh install creates the link
       up-to-date   the destination already carries the shipped bytes
       relink       a link (symlink or junction) is repointed; its target is untouched
-      preserve     an existing installation is kept as it is: newer stamp,
-                   unreadable stamp, or bytes that are not the shipped tree.
-                   NOTHING is written and no backup is minted
+      refresh      a REAL directory that decide() ruled older than the shipped
+                   tree: its bundle files are written over in place, file by
+                   file; extra destination-only entries are kept and named,
+                   nothing is deleted and no backup is minted
+      preserve     an existing installation is kept as it is: the same or a
+                   newer stamp, or an unreadable stamp, or bytes that are not
+                   the shipped tree. NOTHING is written and no backup is minted
       missing      the bundle has no source for a registered skill
 
     PRESERVATION. decide() is the update authority and this plan consumes it, so
-    the bytes an installer links can never contradict what the update path says
+    the bytes an installer writes can never contradict what the update path says
     about the installation already present. A destination that is not the
-    shipped tree - a newer install, a customised same-version install, or a tree
-    carrying destination-only compatibility files - is preserved. Consumers must
-    honour `preserve` and must refuse an action they do not know.
+    shipped tree is preserved UNLESS decide() ruled the shipped tree newer and
+    the destination is a real directory: that case is `refresh`, because the
+    full install is the only path that reaches skills, so preserving it there
+    left a stale copy installed for ever. A newer install, a customised
+    same-version install, an unreadable stamp and an unshipped byte tree are all
+    still preserved. Consumers must honour `preserve` and `refresh`, and must
+    refuse an action they do not know.
     """
     home = Path(home) if home else Path.home()
     root = Path(claude_root)

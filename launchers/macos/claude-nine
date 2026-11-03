@@ -24,6 +24,13 @@ done
 SELF_DIR="$(cd "$(dirname "$_cc_src")" && pwd)"
 unset _cc_src _cc_target
 # shellcheck source=claude-code-lib.sh
+# The library is installed BESIDE the launcher and defines cc_resolve_binary,
+# which the launch below cannot run without. Say so by name instead of dying on
+# a raw "No such file or directory" plus "command not found".
+if [ ! -r "$SELF_DIR/claude-code-lib.sh" ]; then
+  echo "claude-nine: missing $SELF_DIR/claude-code-lib.sh - the launcher and its library install together; re-run install-claude-nine.sh." >&2
+  exit 1
+fi
 . "$SELF_DIR/claude-code-lib.sh"
 
 PORT=20128

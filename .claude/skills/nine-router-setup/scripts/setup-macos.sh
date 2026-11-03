@@ -436,6 +436,21 @@ link_skills_into_root() {
             echo "skill up to date: $s -> $dst" ;;
           link|relink)
             link_one_skill "$src" "$dst" "$s" || failures=$((failures + 1)) ;;
+          refresh)
+            # decide() ruled the shipped tree NEWER than this real directory.
+            # Refreshed in place with the same per-file atomic writes the
+            # updater refresh uses: a file is always complete (old or new),
+            # extra destination-only entries are KEPT and named, nothing is
+            # ever deleted and no backup is minted. This is the ONLY way the
+            # live copy moves off a stale delivery, because the full install is
+            # the only path that reaches skills.
+            so_refresh_updater "$src" "$dst" 0
+            if [ "$SO_RU" = refreshed ]; then
+              echo "skill refreshed in place: $s -> $dst"
+            else
+              echo "skill ERROR: $s: in-place refresh of $dst did not complete ($SO_RU) - every file is complete (old or new) and the copy is unchanged from the first error on; see the BLOCKED/ERROR lines above" >&2
+              failures=$((failures + 1))
+            fi ;;
           preserve)
             # decide() refused or held this installation: a newer stamp, an
             # unreadable stamp, or bytes that are not the shipped tree (the
@@ -501,31 +516,45 @@ install_launcher_support() {
 # 1M (DeepSeek V4). Reads the config report on stdin. No secret is written:
 # the token stays in the Keychain, fetched by the apiKeyHelper.
 #
-# PERMISSION MODE: an unattended build stops at the first tool-permission
-# prompt, so the file carries permissions.defaultMode=bypassPermissions. An
-# EXISTING file gets it merged in only when it has no permissions.defaultMode
-# (an existing value is never overwritten; the file is backed up first).
+# AN EXISTING FILE is repaired, never replaced: every value it already carries
+# is kept, and the routing keys it is MISSING are added — permissions.defaultMode
+# (an unattended build stops at the first tool-permission prompt), apiKeyHelper
+# and env.ANTHROPIC_BASE_URL. Without those keys the launcher starts and cannot
+# route. The file is backed up before the merge, and only the NAMES of the keys
+# added are reported.
 write_nine_settings() {
-  local dir="$HOME/.claude-nine"
+  local dir="$HOME/.claude-nine" out=""
   if [ -f "$dir/settings.json" ]; then
     if ! sl_unlock "$dir/settings.json"; then
-      log "WARNING: claude-nine settings.json is locked and could not be unlocked — permission mode not set"
+      log "WARNING: claude-nine settings.json is locked and could not be unlocked — routing keys not repaired"
       return 0
     fi
-    SETTINGS="$dir/settings.json" "$NODE_BIN" -e '
+    # An EXISTING file keeps every value it already has and gains only the keys
+    # that make it routable: permissions.defaultMode, apiKeyHelper and
+    # env.ANTHROPIC_BASE_URL. Missing keys used to stay missing (the run printed
+    # "kept" and exited 0), so a file without them was permanently unroutable.
+    # Only the NAMES of the keys added are ever printed - never a value.
+    out="$(SETTINGS="$dir/settings.json" HELPER="$HOME/.local/bin/get-9router-key.sh" \
+           BASE_URL="http://127.0.0.1:$PORT/v1" "$NODE_BIN" -e '
       const fs = require("fs"), f = process.env.SETTINGS;
       let j;
       try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch { console.error("unparseable"); process.exit(2); }
       if (!j || typeof j !== "object" || Array.isArray(j)) { console.error("not an object"); process.exit(2); }
-      if (j.permissions && j.permissions.defaultMode) { console.log("kept"); process.exit(0); }
+      const added = [];
+      const put = (o, k, v) => { if (o[k] === undefined) { o[k] = v; added.push(k); } };
+      if (!j.permissions || typeof j.permissions !== "object" || Array.isArray(j.permissions)) j.permissions = {};
+      put(j.permissions, "defaultMode", "bypassPermissions");
+      put(j, "apiKeyHelper", process.env.HELPER);
+      if (!j.env || typeof j.env !== "object" || Array.isArray(j.env)) j.env = {};
+      put(j.env, "ANTHROPIC_BASE_URL", process.env.BASE_URL);
+      if (added.length === 0) { console.log("kept (every routing key is already present)"); process.exit(0); }
       fs.copyFileSync(f, f + ".bak-" + Date.now());
-      j.permissions = Object.assign({}, j.permissions, { defaultMode: "bypassPermissions" });
       fs.writeFileSync(f + ".tmp", JSON.stringify(j, null, 2) + "\n", { mode: 0o600 });
       fs.renameSync(f + ".tmp", f);
-      console.log("set");
-    ' >/dev/null 2>&1 \
-      && log "claude-nine settings.json already present — only permissions.defaultMode added if it was missing" \
-      || log "WARNING: claude-nine settings.json unreadable — permission mode not set (unattended runs may stop at a permission prompt)"
+      console.log("added " + added.join(", "));
+    ' 2>&1)" \
+      && log "claude-nine settings.json: $out" \
+      || log "WARNING: claude-nine settings.json unreadable — routing keys not repaired (unattended runs may stop at a permission prompt)"
     sl_relock_all
     return 0
   fi

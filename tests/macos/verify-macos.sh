@@ -40,6 +40,9 @@ if [ "$MODE" = "ci" ]; then
   mkdir -p "$CI_ROOT/.local/bin" "$CI_ROOT/Library/Application Support/BlackCEO/999"
   cp "$(dirname "$0")/fixtures/ci-launcher.sh" "$CI_ROOT/.local/bin/claude-nine"
   chmod 755 "$CI_ROOT/.local/bin/claude-nine"
+  cp "$(dirname "$0")/../../launchers/macos/claude-code-lib.sh" \
+     "$CI_ROOT/.local/bin/claude-code-lib.sh"
+  chmod 755 "$CI_ROOT/.local/bin/claude-code-lib.sh"
   cp "$(dirname "$0")/fixtures/ci-router-session.json" \
      "$CI_ROOT/Library/Application Support/BlackCEO/999/router-session.json"
   chmod 600 "$CI_ROOT/Library/Application Support/BlackCEO/999/router-session.json"
@@ -62,6 +65,16 @@ if [ "$MODE" = "ci" ]; then
 else
   [ -x "$HOME/.local/bin/claude-nine" ]; check $? "\$HOME/.local/bin/claude-nine exists and is executable"
 fi
+
+# 4b. Launcher/library pairing. claude-nine sources claude-code-lib.sh from its
+#     OWN directory and calls cc_resolve_binary from it, so a launcher installed
+#     without that library cannot start Claude Code. Prove the pairing, not just
+#     the launcher's executable bit: deleting the library must fail here by name.
+BIN_DIR="$HOME/.local/bin"
+[ "$MODE" = "ci" ] && BIN_DIR="$CI_ROOT/.local/bin"
+[ -r "$BIN_DIR/claude-code-lib.sh" ]; check $? "$BIN_DIR/claude-code-lib.sh exists and is readable (claude-nine cannot start without it)"
+bash -n "$BIN_DIR/claude-nine" 2>/dev/null; check $? "$BIN_DIR/claude-nine passes bash -n"
+( . "$BIN_DIR/claude-code-lib.sh" 2>/dev/null && declare -f cc_resolve_binary >/dev/null 2>&1 ); check $? "$BIN_DIR/claude-code-lib.sh defines cc_resolve_binary"
 
 # 5. Login shell can resolve claude-nine — host-class check: a CI runner has
 #    no provisioned PATH entry, so it is BLOCKED there, never skipped.

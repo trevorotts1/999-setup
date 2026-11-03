@@ -62,6 +62,29 @@ install_launcher() {
   log "installed $BIN_DIR/claude-code-lib.sh and $HOME/.local/bin/get-9router-key.sh"
 }
 
+# Prove the pairing this launcher cannot run without: claude-nine sources
+# claude-code-lib.sh from its own directory and calls cc_resolve_binary from it.
+# A launcher installed without that library used to be reported as a success.
+selfcheck_launcher() {
+  local bad=0
+  if [ ! -r "$BIN_DIR/claude-code-lib.sh" ]; then
+    echo "self-check FAILED: claude-code-lib.sh is missing at $BIN_DIR/claude-code-lib.sh" >&2
+    bad=1
+  elif ! ( . "$BIN_DIR/claude-code-lib.sh" && declare -f cc_resolve_binary >/dev/null 2>&1 ); then
+    echo "self-check FAILED: $BIN_DIR/claude-code-lib.sh does not define cc_resolve_binary" >&2
+    bad=1
+  fi
+  if ! bash -n "$LAUNCHER" 2>/dev/null; then
+    echo "self-check FAILED: $LAUNCHER does not parse (bash -n)" >&2
+    bad=1
+  fi
+  if [ "$bad" != 0 ]; then
+    echo "self-check FAILED: the installed launcher cannot start Claude Code; install the launcher and its library together." >&2
+    exit 1
+  fi
+  log "self-check: claude-nine parses, claude-code-lib.sh is present and defines cc_resolve_binary"
+}
+
 # claude-codex: claude-nine pinned to the Codex model with a 350K auto-compact
 # window (see the launcher's own header for why the window is required).
 # `install -m 700` sets the destination mode outright, so this does not depend
@@ -165,6 +188,7 @@ PY
 
 main() {
   install_launcher
+  selfcheck_launcher
   [ -n "${CLAUDE_NINE_BIN_DIR:-}" ] || install_codex_launcher
   [ -n "${CLAUDE_NINE_BIN_DIR:-}" ] || manage_profile
   # Make launchers discoverable in the CURRENT process too.

@@ -348,6 +348,40 @@ function Link-BundledSkills([string]$Root) {
                 { $_ -in @('link', 'relink') } {
                     if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
                 }
+                'refresh' {
+                    # decide() ruled the shipped tree NEWER than this real
+                    # directory. Refresh it in place, file by file: every bundle
+                    # file is copied over the destination, extra
+                    # destination-only entries are KEPT and counted, nothing is
+                    # ever deleted and no backup is minted. This is the only way
+                    # the live copy moves off a stale delivery.
+                    $kept = 0
+                    $failed = 0
+                    foreach ($f in (Get-ChildItem -LiteralPath $src -Recurse -Force -File)) {
+                        $rel = $f.FullName.Substring($src.Length).TrimStart('\')
+                        $to = Join-Path $dst $rel
+                        try {
+                            $parent = Split-Path -Parent $to
+                            if (-not (Test-Path -LiteralPath $parent)) {
+                                New-Item -ItemType Directory -Path $parent -Force | Out-Null
+                            }
+                            Copy-Item -LiteralPath $f.FullName -Destination $to -Force
+                        } catch {
+                            Write-Log "skill ERROR: $s : could not refresh $to"
+                            $failed++
+                        }
+                    }
+                    foreach ($f in (Get-ChildItem -LiteralPath $dst -Recurse -Force -File)) {
+                        $rel = $f.FullName.Substring($dst.Length).TrimStart('\')
+                        if (-not (Test-Path -LiteralPath (Join-Path $src $rel))) { $kept++ }
+                    }
+                    if ($kept -gt 0) {
+                        Write-Log "skill refreshed: $s : $kept extra old entr(y/ies) kept (never deleted) in $dst"
+                    } else {
+                        Write-Log "skill refreshed in place: $s -> $dst"
+                    }
+                    if ($failed -gt 0) { $failures += $failed }
+                }
                 'preserve' {
                     # decide() refused or held this installation: a newer stamp,
                     # an unreadable stamp, or bytes that are not the shipped tree

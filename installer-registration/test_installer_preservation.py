@@ -146,6 +146,50 @@ class NewerInstallTests(FixtureCase):
                          "a backup was minted without consent")
 
 
+class OlderInstallRefreshTests(FixtureCase):
+    """decide() rules the shipped tree NEWER: the REAL consumer must refresh the
+    real directory in place. Preserving it here is what left a stale live copy
+    installed for ever, because the full install is the only path that reaches
+    skills."""
+
+    def test_older_installation_is_refreshed_in_place_not_preserved(self):
+        target = self.install_real("0.9.0")
+        shipped = ba.load_bundle(self.repo).by_name(SKILL)
+        self.assertEqual(
+            ba.decide(shipped, ba.read_skill_version(target)[0]).action,
+            "update", "control: decide must rule the shipped tree newer")
+        row = self.plan_row()
+        self.assertEqual(row[0], "refresh", "the plan must refresh it: %r" % (row,))
+        self.assertIn("refreshed in place", row[5])
+
+        compat = target / "compat" / "999_only.json"
+        compat_before = compat.read_bytes()
+        result = self.consume()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("skill refreshed in place: " + SKILL, result.stdout,
+                      "the consumer must report the refresh by name")
+        self.assertFalse(target.is_symlink(),
+                         "the refreshed copy was replaced by a link")
+        self.assertEqual(
+            (target / "VERSION").read_text(encoding="utf-8").strip(),
+            SHIPPED_VERSION, "the live copy did not move to the shipped version")
+        self.assertEqual(
+            (target / "SKILL.md").read_text(encoding="utf-8"),
+            (self.repo / ".claude" / "skills" / SKILL / "SKILL.md").read_text(
+                encoding="utf-8"),
+            "the shipped file was not written over the stale one")
+        self.assertEqual(compat.read_bytes(), compat_before,
+                         "the refresh deleted a destination-only compatibility file")
+        self.assertFalse((self.home / ".claude-skill-backups").exists(),
+                         "a backup was minted without consent")
+
+        again = self.consume()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertEqual(
+            (target / "VERSION").read_text(encoding="utf-8").strip(),
+            SHIPPED_VERSION, "a second run must be a no-op, not a rollback")
+
 class CustomSameVersionTests(FixtureCase):
     """A same-version custom install is held, and its destination-only files stay."""
 
