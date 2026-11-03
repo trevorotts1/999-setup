@@ -1,6 +1,6 @@
 {
   "schema": "bundled-components@1",
-  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (15; reconciled from the shipped tree)",
+  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (21; reconciled from the shipped tree)",
   "generatedAt": "2026-11-01T00:00:00.000Z",
   "channel": {
     "default": "github-releases",
@@ -131,7 +131,7 @@
     ],
     "signature-downsell": [
       {
-        "version": "0.1.1",
+        "version": "0.1.6",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-downsell",
@@ -140,7 +140,7 @@
     ],
     "signature-thank-you": [
       {
-        "version": "0.3.1",
+        "version": "0.3.2",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-thank-you",
@@ -149,10 +149,64 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.9",
+        "version": "0.2.12",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "ghl-install-pages": [
+      {
+        "version": "v27.1.78",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/ghl-install-pages",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "convert-and-flow-operator": [
+      {
+        "version": "v2.1.40",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/convert-and-flow-operator",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-funnel": [
+      {
+        "version": "v2.1.28",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-funnel",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-product-selection": [
+      {
+        "version": "0.2.5",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-product-selection",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-order-form": [
+      {
+        "version": "0.1.6",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-order-form",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-upsell": [
+      {
+        "version": "0.2.4",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-upsell",
         "license": "MIT (repo license)"
       }
     ]

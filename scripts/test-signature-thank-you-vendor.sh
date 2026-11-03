@@ -15,12 +15,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDORED="$REPO_ROOT/.claude/skills/signature-thank-you"
 
 # Recorded identity of the canonical source (openclaw-onboarding
-# origin/main 0d5caca80a66e29eadb240f8570c36889236b393,
-# 82-signature-thank-you v0.3.1), distribution tree after the S82-01
+# 5c41646b0eeff0ffeccc955b52492e33ef9964cf,
+# 82-signature-thank-you v0.3.2), distribution tree after the S82-01
 # purchase-event 1.0/1.1/1.2 acceptance change.
-EXPECTED_VERSION="0.3.1"
-EXPECTED_FILE_COUNT=47
-EXPECTED_AGGREGATE="e58a436bcc5f512469c3758e6a910750aa281971fc8cbe05232cddbb96fa72aa"
+EXPECTED_VERSION="0.3.2"
+EXPECTED_FILE_COUNT=51
+EXPECTED_AGGREGATE="bd5a7d19d9841fd2235d7d1ccf374a9358f3bdf3da04fda06a0c4c2795820ab6"
 
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); echo "  ok: $1"; }
