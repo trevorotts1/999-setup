@@ -1,0 +1,15 @@
+{
+  "_fixture": true,
+  "_note": "OFFLINE SELECTOR FIXTURE — LAYER 1 ONLY. Fake ids, fake relation name, fake evidence digest. This is NOT a capture: it has no artifact, no digest over real bytes, no session and no review receipt, so load_capture() refuses it and it can never enable anything. A capture must be BOUND (artifact_sha256 over a real file + an independent review receipt); see write_capture_bundle() and tools/ghl_split_variant_capture_checklist.sh, which is what writes a real one against an authorized staging location once the D5 login fix lands.",
+  "location_id": "loc-offline-0001",
+  "step_id": "step-offline-control",
+  "control_id_before": "step-offline-control",
+  "control_id_after": "step-offline-control",
+  "variant_id": "step-offline-variant",
+  "variant_relation": "variationOf",
+  "traffic_field": "control_traffic",
+  "traffic_permitted": false,
+  "traffic_default": 100,
+  "readback_keys": ["id", "name", "url", "variationOf", "control_traffic"],
+  "capture_evidence": "fixture://offline-capture sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}

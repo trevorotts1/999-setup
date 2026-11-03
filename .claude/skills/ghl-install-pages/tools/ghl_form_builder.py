@@ -79,11 +79,15 @@ is auditable and de-duplicated:
     conventions, on purpose: container NAMES → ``ZHC `` (fleet), machine
     KEYS/TAGS → ``zhc_`` (must be lowercase / no-space per GHL).
 
-MODEL DOCTRINE — client-owned providers, NEVER Anthropic
---------------------------------------------------------
-Ollama Cloud → OpenRouter equivalent → Gemini last-resort, thinking=high on every
-rung. MiniMax M2 is BANNED. Browser-control (execution) uses MiniMax M3 only →
-DeepSeek V4.1 Flash. Vision QC uses MiniMax M3 only. No Anthropic slug ever.
+MODEL DOCTRINE — client-owned providers
+----------------------------------------
+Model: the client's choice, or the client's configured default model, resolved
+at plan time via tools/model_router.py (MODEL_ROUTER_CHOICE /
+MODEL_ROUTER_DEFAULT). This module prescribes no model by name, and plan
+building stops with an ask-the-client error when the client has configured
+neither. Recommendation: reliable tool calling for browser control and a
+vision-capable model for QC, because every drive-loop step is a tool call and
+QC reads screenshots. thinking=high on every rung. MiniMax M2 is BANNED.
 
 NO LOGIN CODE — auth is handled upstream by the dispatcher / seeded browser
 session (token-only doctrine). The CI guard forbids login patterns outside
@@ -109,6 +113,17 @@ import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+# This module's OWN directory on sys.path BEFORE any sibling import below.
+# ORDER IS LOAD-BEARING: `python3 -I` (isolated mode) removes BOTH the script
+# directory (sys.path[0] becomes the stdlib zip) AND PYTHONPATH, so a sibling
+# module can only be found if the path is bootstrapped here. Placed above the
+# soft imports, the same `-I` run resolves ghl_iframe_drag (and therefore
+# Playwright) exactly as a non-isolated run does — see `_isolated_mode()` in the
+# F-P9 preflight for the honest report when it still cannot.
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
 
 # ---------------------------------------------------------------------------
 # Soft imports — selftest + dry-run stay runnable with ZERO deps (no ghl_builder /
@@ -142,14 +157,20 @@ except Exception:  # noqa: BLE001
 # U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter. A HARD
 # import (not a soft one): resume and the run report are part of the CLI contract,
 # and silently degrading to "no checkpoints" would be exactly the kind of gate that
-# fails open. It ships in the same tools/ dir as this file — bootstrap the path so
-# an import from any cwd resolves it.
-_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
-if _TOOLS_DIR not in sys.path:
-    sys.path.insert(0, _TOOLS_DIR)
-
+# fails open. It ships in the same tools/ dir as this file (bootstrapped above).
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec  # noqa: E402
+
+# The ONE Skill 44 → Skill 06 dependency handoff contract (§3.2). Soft import so
+# dry-run/selftest stay dependency-free; the gate below is what enforces B06.
+try:  # pragma: no cover - exercised via the gate below
+    import ghl_form_survey_handoff as _handoff  # type: ignore
+except Exception:  # noqa: BLE001
+    _handoff = None  # type: ignore
+
+# Model ladders resolve through the shared router (client choice / configured
+# default only; no model is prescribed by name in this module).
+import model_router  # noqa: E402
 
 
 # ── U8: the form builder's declared phase walk (the click list's own F1…F13) ────
@@ -209,38 +230,60 @@ QUICK_ADD_TAXONOMY: Dict[str, List[str]] = {
 # Fields GHL puts on a scratch form by default (01:39–02:27).
 DEFAULT_FORM_FIELDS = ["First Name", "Last Name", "Phone", "Email", "Terms & Conditions"]
 
-# ── Model ladders (Ollama-Cloud first → OpenRouter → Gemini last resort) ──────
-# thinking=high on every rung. MiniMax M2 BANNED. No Anthropic slug. Browser
-# execution = MiniMax M3 → DeepSeek V4.1 Flash. Vision QC = MiniMax M3 only.
-THINK_LADDER: List[dict] = [
-    {"rung": 1, "provider": "ollama-cloud", "model": "glm-5.2:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 2, "provider": "ollama-cloud", "model": "kimi-k2.6:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 4, "provider": "openrouter", "model": "z-ai/glm-5.2", "role": "reasoning", "thinking": "high"},
-    {"rung": 5, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash", "role": "reasoning", "thinking": "high"},
-    {"rung": 6, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-     "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
-]
-EXECUTE_LADDER: List[dict] = [
-    {"rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-     "role": "browser-control", "thinking": "high", "probe_gated": True},
-    {"rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-     "role": "browser-control", "thinking": "high", "probe_gated": True},
-    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
-     "role": "browser-control", "thinking": "high"},
-    {"rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-     "role": "browser-control", "thinking": "high"},
-    {"rung": 5, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-     "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
-]
-QC_LADDER: List[dict] = [
-    {"rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-     "role": "qc+vision", "thinking": "high", "probe_gated": True},
-    {"rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-     "role": "qc+vision", "thinking": "high", "probe_gated": True},
-    {"rung": 3, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-     "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
-]
+# ── Model ladders: client resolution via model_router ───────────────────────
+# The ladders are built at plan time from the client's own configuration: the
+# client's explicit choice first, then the client's configured default model
+# (see tools/model_router.py, resolve_client_models). No model is prescribed
+# by name here. When the client has configured neither, building a ladder
+# raises model_router.ClientModelNotConfiguredError: the ask-the-client stop.
+# Module-level THINK_LADDER / EXECUTE_LADDER / QC_LADDER attribute access is
+# preserved for existing consumers (ghl_pipeline_builder) via __getattr__.
+
+
+def _resolution_rungs(env, role, role_label, *, probe_gated=False):
+    env = env if env is not None else os.environ
+    resolved = model_router.resolve_client_models(env, role)
+    if not resolved:
+        raise model_router.ClientModelNotConfiguredError(
+            model_router.ask_client_message(role)
+        )
+    rungs: List[dict] = []
+    for i, (slug, provider, source) in enumerate(resolved, start=1):
+        rung = {"rung": i, "provider": provider, "model": slug,
+                "role": role_label, "thinking": "high", "resolution": source}
+        if probe_gated:
+            rung["probe_gated"] = True
+        rungs.append(rung)
+    return rungs
+
+
+def build_think_ladder(env=None):
+    """THINK ladder (reasoning role): client choice, then configured default."""
+    return _resolution_rungs(env, "reasoning", "reasoning")
+
+
+def build_execute_ladder(env=None):
+    """EXECUTE ladder (browser control, probe-gated): client resolution."""
+    return _resolution_rungs(env, "execution", "browser-control", probe_gated=True)
+
+
+def build_qc_ladder(env=None):
+    """QC ladder (vision QC, probe-gated): client resolution."""
+    return _resolution_rungs(env, "qc", "qc+vision", probe_gated=True)
+
+
+_LADDER_BUILDERS = {
+    "THINK_LADDER": build_think_ladder,
+    "EXECUTE_LADDER": build_execute_ladder,
+    "QC_LADDER": build_qc_ladder,
+}
+
+
+def __getattr__(name):
+    if name in _LADDER_BUILDERS:
+        return _LADDER_BUILDERS[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Selector strategy the DUMB browser must apply on EVERY click-list step.
 SELECTOR_STRATEGY = [
@@ -318,6 +361,10 @@ def is_zhc_field_key(key: str) -> bool:
 def is_zhc_tag(tag: str) -> bool:
     return tag.lower().startswith(ZHC_KEY_PREFIX)
 
+def _norm_key(value: Any) -> str:
+    """Lowercase+strip a field key / tag for handoff comparisons (never raises)."""
+    return str(value).strip().lower() if value is not None else ""
+
 
 # ---------------------------------------------------------------------------
 # THINK layer — field resolution, dependency plan, form plan, click list
@@ -327,6 +374,13 @@ def _find_quick_add_category(element: str) -> Optional[str]:
         if element in tiles:
             return cat
     return None
+
+
+def _is_payments_tile(element: str) -> bool:
+    """S06-06: True when ``element`` is one of the Payments Quick-Add tiles
+    ("Sell Products" / "Collect Payment") - the native ORDER elements. Every
+    other Quick-Add tile is an ordinary form field."""
+    return element in QUICK_ADD_TAXONOMY.get("Payments", [])
 
 
 def _resolve_fields(task: dict) -> List[dict]:
@@ -366,6 +420,23 @@ def _resolve_fields(task: dict) -> List[dict]:
         if entry["required"] and entry["hidden"]:
             entry["hidden"] = False
             entry["_warning"] = "required+hidden both set → forced hidden=False (not both)"
+        # S06-06 order-element carve-out: the Payments Quick-Add tiles are
+        # native ORDER elements, not ordinary fields. Stamp them so
+        # preflight (F-P10) and the F5 walk treat them as order elements
+        # that REQUIRE a product binding (task["order_binding"], supplied
+        # by ghl_order_elements.build_order_plan) instead of dragging them
+        # as unbound standard fields.
+        if entry.get("quick_add_category") == "Payments":
+            entry["order_element"] = True
+            # CHK-19: a per-element binding (task["order_element_bindings"],
+            # keyed by tile name) wins over the task-level order_binding, so
+            # Collect Payment keeps its own product/price.
+            binding = ((task.get("order_element_bindings") or {}).get(element)
+                       or task.get("order_binding") or {})
+            entry["order_product_ref"] = binding.get("product_ref") or None
+            entry["order_price_ref"] = binding.get("price_ref") or None
+            entry["order_binding_source"] = (
+                binding.get("source") or binding.get("binding_source") or None)
         if source == "standard":
             # query key (URL param) — lowercase, no spaces/special (05:56–06:48)
             entry["query_key"] = f.get("query_key") or _slug(label)
@@ -514,7 +585,7 @@ def _build_form_plan(task: dict, fields: List[dict], dep_plan: dict) -> dict:
             "verify": "render_check 200 + snippet tag present in RENDERED DOM "
                       "(ghl_verify.render_check); embed VERBATIM, NO SRI attrs.",
         },
-        "model_ladders": {"think": THINK_LADDER, "execute": EXECUTE_LADDER, "qc": QC_LADDER},
+        "model_ladders": {"think": build_think_ladder(), "execute": build_execute_ladder(), "qc": build_qc_ladder()},
         "real_domains": {
             "app_shell": GHL_APP_ORIGIN_DEFAULT,
             "form_builder": f"https://{GHL_FORM_BUILDER_HOST}/form-builder-v2/<formId> "
@@ -673,11 +744,35 @@ def _emit_click_list(task: dict, fields: List[dict], plan: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
+def _isolated_mode() -> bool:
+    """True when this interpreter runs with ``-I`` / ``-E``-style isolation.
+
+    ``python3 -I`` implies ``-E`` (ignore PYTHON* env) and ``-s`` (no user site)
+    and, critically, drops the SCRIPT DIRECTORY from ``sys.path`` — which is the
+    only reason a sibling import like ``ghl_iframe_drag`` could ever fail under
+    ``-I`` while succeeding without it. The module now bootstraps its own dir
+    (``_TOOLS_DIR`` at the top) so the import is path-independent either way; this
+    helper exists so a GENUINE Playwright miss is REPORTED with the isolation
+    context instead of being mistaken for a browse-to-the-wrong-interpreter bug.
+    Detection is by observation (is ``sys.flags.isolated`` set, or is the script
+    dir absent from ``sys.path``?) — never by guessing from argv."""
+    if getattr(sys.flags, "isolated", 0):
+        return True
+    return _TOOLS_DIR not in sys.path
+
+
 def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
                    *, live: bool = False) -> dict:
     """THINK-layer gate. ``live=True`` (the ``--no-dry-run`` path) additionally
     HARD-verifies the runtime environment so a live attempt is never burned on
-    an environment mistake (F-P9)."""
+    an environment mistake (F-P9).
+
+    ``task['_handoff_record']`` is the Skill 44 → Skill 06 dependency handoff record
+    (``ghl_form_survey_handoff``). When one exists it is HARD-gated: a record that
+    does not PROVE every planned field/tag on the approved location stops the form
+    BEFORE any browser step (B06). Absent = the legacy out-of-band path, recorded
+    honestly as deferred (never silently reported as proven).
+    """
     checks: List[dict] = []
     stop: Optional[str] = None
 
@@ -704,6 +799,31 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
     # custom fields must be add_object_fields (never create-on-the-fly)
     aof = all(f.get("add_via") == "add_object_fields" for f in fields if f["source"] == "custom")
     chk("F-P7:custom_via_object_fields", aof, "all custom fields routed via Add Object Fields")
+
+    # F-P11 (§3.2 / B06): the Skill 44 dependency HANDOFF must PROVE every planned
+    # custom field + tag on the APPROVED location before a single browser step is
+    # emitted. A missing dependency is a STOP, never a licence to create a
+    # duplicate field because a lookup missed. No record at all = the legacy
+    # out-of-band path, recorded as DEFERRED (honest, not "proven").
+    handoff = task.get("_handoff_record")
+    if handoff is None:
+        checks.append({"check": "F-P11:dependency_handoff", "pass": True,
+                       "detail": "no handoff record supplied — legacy out-of-band Skill 44 "
+                                 "path; dependency proof DEFERRED (not claimed)"})
+    elif _handoff is None:
+        chk("F-P11:dependency_handoff", False,
+            "a handoff record was supplied but ghl_form_survey_handoff is not importable "
+            "— cannot verify it, refusing to guess")
+    else:
+        try:
+            _handoff.assert_ready_for_native_build(
+                handoff, build_location_id=loc or None,
+                tag_attachment_method=dep_plan.get("tag_attachment", {}).get("method"))
+            chk("F-P11:dependency_handoff", True,
+                f"all {len(dep_plan['custom_fields'])} custom field(s) + "
+                f"{len(dep_plan['tags'])} tag(s) proven on location {loc!r}")
+        except _handoff.HandoffIncomplete as exc:
+            chk("F-P11:dependency_handoff", False, f"{type(exc).__name__}: {exc}")
     # headless guard (soft — only when the real skill module is present)
     if ghl_builder is not None and hasattr(ghl_builder, "headless_guard"):
         try:
@@ -726,10 +846,20 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
     # (soft check, recorded as a warning).
     pw_ok = bool(ghl_iframe_drag is not None
                  and getattr(ghl_iframe_drag, "PLAYWRIGHT_AVAILABLE", False))
+    # `python3 -I` is NOT a Playwright problem and must never be reported as one
+    # (the pre-fix message blamed the interpreter while every non-isolated run
+    # passed). Isolation only ever hid this module's OWN directory from
+    # sys.path — bootstrapped at import time — so when Playwright IS importable
+    # the check simply passes and the isolation is recorded as context.
+    isolated = _isolated_mode()
+    iso_note = (
+        " (running under an ISOLATED interpreter: `python3 -I` drops the script "
+        "directory from sys.path — this module bootstraps its own tools/ dir, so "
+        "the sibling import is unaffected)" if isolated else "")
     pw_detail = (
-        f"Playwright importable under {sys.executable}" if pw_ok else (
+        f"Playwright importable under {sys.executable}{iso_note}" if pw_ok else (
             f"Playwright is NOT importable under this interpreter "
-            f"({sys.executable}, python {sys.version.split()[0]}). The LIVE "
+            f"({sys.executable}, python {sys.version.split()[0]}){iso_note}. The LIVE "
             "walk requires it: F3 rename + F4 field-removal ride "
             "Playwright-over-CDP (ghl_iframe_drag). Re-run under the "
             "interpreter that HAS Playwright — verify with: "
@@ -746,6 +876,31 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
         chk("F-P9:playwright_interpreter", True,
             pw_detail if pw_ok else
             f"WARNING (dry-run, soft): {pw_detail}", hard=False)
+
+    # F-P10 (S06-06): a Payments tile in the field list is a native ORDER
+    # element and REQUIRES an order product binding (task["order_binding"],
+    # built by ghl_order_elements.build_order_plan). Without one, the
+    # generic F5 machinery would drag the tile as an ordinary unbound
+    # field - exactly the gap S06-06 closes. FAIL CLOSED here, in THINK,
+    # before any browser step is emitted.
+    order_fields = [f for f in fields if f.get("order_element")]
+    if order_fields:
+        bound = all(f.get("order_product_ref") for f in order_fields)
+        if bound:
+            detail = (f"Payments tile(s) {[f['element'] for f in order_fields]} "
+                      "bound to product_ref(s) "
+                      f"{[f['order_product_ref'] for f in order_fields]!r} "
+                      "via task['order_binding'] / "
+                      "task['order_element_bindings']")
+        else:
+            detail = ("Payments tile(s) "
+                      f"{[f['element'] for f in order_fields]} require "
+                      "task['order_binding'] with a product_ref from "
+                      "ghl_order_elements.build_order_plan (fail closed: "
+                      "no binding, no order element)")
+        chk("F-P10:order_binding", bound, detail)
+    else:
+        chk("F-P10:order_binding", True, "no Payments tiles in this form")
 
     out = {"pass": stop is None, "checks": checks, "ts": _ts()}
     if stop:
@@ -805,9 +960,24 @@ def _form_builder_route(loc: str, form_id: str) -> str:
     return f"/v2/location/{loc}/form-builder-v2/{form_id}"
 
 
+def _require_live_seams() -> None:
+    """Refuse (ADAPTER-SEAMS-NOT-PORTED) until the four adapter seams pass.
+    A missing skill_runner.py raises ImportError: fail closed, never caught."""
+    _sr_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _sr_root not in sys.path:
+        sys.path.insert(0, _sr_root)
+    import skill_runner
+    skill_runner.require_adapter_seams()
+
+
 def _canonical_session(location_id: str) -> str:
     """The box-canonical agent-browser session name — MUST match browser_manager.sh
-    bm_session_name (ghl-skill6-<loc>, lowercased, [a-z0-9-])."""
+    bm_session_name (ghl-skill6-<loc>, lowercased, [a-z0-9-]).
+
+    On the 999 harness every live executor (form, pipeline, community, course)
+    names its session here first, so the ADAPTER-SEAMS-NOT-PORTED gate sits here
+    (ADAPTER.md)."""
+    _require_live_seams()
     if browser_manager is not None and hasattr(browser_manager, "session_name"):
         try:
             return browser_manager.session_name(location_id)  # type: ignore[attr-defined]
@@ -900,8 +1070,91 @@ def _click(session: str, target: str, timeout: int = 15) -> subprocess.Completed
     ⚠️ SUBSTRING + first-DOM-order-match: when the target text is a SUBSTRING
     of OTHER on-screen text this can resolve rc=0 against the WRONG element
     (live 2026-07-07, F2 modal confirm — see ``_click_button``). Only use this
-    for text that is unambiguous on the live surface at click time."""
+    for text that is unambiguous on the live surface at click time.
+
+    ⚠️ rc=0 PROVES NOTHING ABOUT ACTIVATION. Live 2026-07-25 (row-7 acceptance):
+    `find text "Create form" click` returned rc=0 '✓ Done' and the Create-new-form
+    modal never appeared, while a direct DOM `.click()` on the SAME button opened
+    it — evidence: row7-live/form/routing/probe-create-modal.json (dialog text
+    'Create new form / Start from Scratch / From templates') vs
+    probe-raw-transport.json (A/B find-text AND find-role both rc=0,
+    has_create_new_form=false). For any click whose success matters, call
+    ``_click_with_proof`` — it VERIFIES the target materialized."""
     return _ab(session, "find", "text", target, "click", timeout=timeout)
+
+# Direct DOM click on the element whose OWN text is exactly ``target`` — the
+# mechanism PROVEN to activate GHL's 'Create form' handler where the CLI's
+# find-click silently no-ops (probe-create-modal.json). Clicks the first VISIBLE
+# match among button / [role=button] / a, exactly like the probe. Returns
+# {"clicked": bool, "n": int, "err": str}; never raises.
+_DOM_CLICK_JS = (
+    "(() => {"
+    "  const q = %s;"
+    "  const vis = (el) => { const r = el.getBoundingClientRect();"
+    "    const s = getComputedStyle(el);"
+    "    return r.width > 0 && r.height > 0"
+    "      && s.visibility !== 'hidden' && s.display !== 'none'; };"
+    "  const nodes = Array.from(document.querySelectorAll('button,[role=button],a'))"
+    "    .filter(vis).filter(e => (e.innerText || '').trim() === q);"
+    "  if (!nodes.length) return JSON.stringify({clicked: false, n: 0,"
+    "    err: 'NO-VISIBLE-MATCH'});"
+    "  nodes[0].click();"
+    "  return JSON.stringify({clicked: true, n: nodes.length});"
+    "})()"
+)
+
+def _dom_click_text(session: str, target: str, timeout: int = 15) -> Dict[str, Any]:
+    """Click ``target`` through a DIRECT DOM element click (the activation rail
+    proven in probe-create-modal.json). EVIDENCE, not a selector guess: the JS
+    reports how many visible matches it saw, so a miss is explainable."""
+    try:
+        raw = _eval(session, _DOM_CLICK_JS % json.dumps(target), timeout=timeout)
+        d = json.loads((raw or "").strip() or "{}")
+        return {"clicked": bool(d.get("clicked")), "n": int(d.get("n", 0)),
+                "err": str(d.get("err", ""))}
+    except Exception as exc:  # noqa: BLE001 — a DOM-click miss is reported, never fatal
+        return {"clicked": False, "n": 0, "err": f"{type(exc).__name__}: {exc}"}
+
+def _click_with_proof(session: str, target: str, proof_text: str, *,
+                      timeout: int = 15, wait_s: Optional[float] = None) -> Dict[str, Any]:
+    """Click ``target`` and PROVE the click ACTIVATED something.
+
+    Two mechanisms, in order, each verified by the SAME observable the click list
+    already declares as the step's ``wait_for`` target:
+
+      1. ``find text <target> click`` — the shipped text verb.
+      2. A DIRECT DOM ``.click()`` on the visible element whose own text equals
+         ``target`` — the mechanism proven on live GHL when (1) returned rc=0
+         '✓ Done' and activated nothing (row7-live/form/routing/
+         probe-raw-transport.json vs probe-create-modal.json).
+
+    Returns ``{"activated", "mechanism", "attempts", "matches", "detail"}``.
+    ``activated=False`` means BOTH mechanisms ran and the proof text never
+    materialized — the caller must STOP-and-report, never blunder past it."""
+    attempts: List[Dict[str, Any]] = []
+    cp = _click(session, target, timeout=timeout)
+    attempts.append({"mechanism": "find-text", "rc": cp.returncode})
+    if proof_text and _wait_text_polling(session, proof_text, timeout_s=wait_s):
+        return {"activated": True, "mechanism": "find-text", "attempts": attempts,
+                "matches": -1, "detail": f"'{proof_text}' appeared after the text click"}
+
+    _log(f"click '{target}': find-text rc={cp.returncode} but '{proof_text}' did NOT "
+         "materialize — retrying once via a DIRECT DOM element click")
+    dom = _dom_click_text(session, target, timeout=timeout)
+    attempts.append({"mechanism": "dom-click", "clicked": dom["clicked"],
+                     "matches": dom["n"], "err": dom["err"]})
+    if dom["clicked"] and proof_text and _wait_text_polling(session, proof_text,
+                                                            timeout_s=wait_s):
+        return {"activated": True, "mechanism": "dom-click", "attempts": attempts,
+                "matches": dom["n"],
+                "detail": f"'{proof_text}' appeared after the direct DOM click"}
+
+    return {"activated": False, "mechanism": "", "attempts": attempts,
+            "matches": dom["n"],
+            "detail": (f"neither a find-text click (rc={cp.returncode}) nor a direct "
+                       f"DOM click on an element whose text is '{target}' "
+                       f"({'no visible match' if not dom['clicked'] else 'clicked but inert'}) "
+                       f"made '{proof_text}' appear")}
 
 
 def _click_button(session: str, name: str, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -2154,6 +2407,16 @@ def _place_quick_add_field(session: str, field: dict, evidence_root: str,
     live 2026-07-07: ``City`` under ``Address``). The authoritative locate is the
     frame-scoped one inside ``_perform_iframe_drag`` — it has REAL access to the
     cross-origin frame and fails closed honestly."""
+    # S06-06 defense in depth: a Payments tile may only be dragged as a
+    # BOUND order element. Preflight F-P10 is the THINK-layer gate; this is
+    # the DO-layer guard for any caller that reaches placement directly.
+    if _is_payments_tile(field.get("element", "")) \
+            and not field.get("order_product_ref"):
+        raise StopAndReport(
+            "F5.order-binding",
+            f"Payments tile {field.get('element')!r} has no order product "
+            "binding (order_product_ref) - refusing to place it as an "
+            "ordinary field; bind it via ghl_order_elements first")
     tile = field["element"]
     label = field["label"]
     category = field.get("quick_add_category") or _find_quick_add_category(tile) or ""
@@ -2374,18 +2637,28 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
                 # doctrine as _capture_form_id's poll-with-deadline fix): a single
                 # _wait_text call does not actually get the timeout=20 budget from
                 # agent-browser — see _wait_text_polling's module notes.
-                _click(session, "Create form")
-                modal_ok = _wait_text_polling(session, "Start from Scratch")
+                #
+                # VERIFIED ACTIVATION (live 2026-07-25, row-7 acceptance): the
+                # find-text click returned rc=0 '✓ Done' and activated NOTHING — the
+                # modal never opened — while a direct DOM .click() on the same button
+                # DID (probe-create-modal.json vs probe-raw-transport.json). The
+                # click is therefore gated on the step's OWN wait_for target, with a
+                # one-shot DOM-click retry INSIDE _click_with_proof. Both mechanisms
+                # failing is still an honest STOP — never a blunder past it.
+                fired = _click_with_proof(session, "Create form", "Start from Scratch")
+                modal_ok = bool(fired["activated"])
                 if not modal_ok:
                     _log("F2: create-modal wait missed — retrying the 'Create form' click once")
-                    _click(session, "Create form")
-                    modal_ok = _wait_text_polling(session, "Start from Scratch")
+                    fired = _click_with_proof(session, "Create form", "Start from Scratch")
+                    modal_ok = bool(fired["activated"])
                 if not modal_ok:
                     raise StopAndReport(
                         "F2.modal",
-                        "clicked 'Create form' (twice) but the Create-new-form modal never "
-                        "showed 'Start from Scratch' — STOP here honestly instead of "
-                        f"blundering into the Create/capture steps blind ({_capture_entry_diag(session)})")
+                        "clicked 'Create form' (twice, find-text AND a direct DOM click) "
+                        "but the Create-new-form modal never showed 'Start from Scratch' — "
+                        "STOP here honestly instead of blundering into the Create/capture "
+                        f"steps blind (attempts={fired['attempts']}; "
+                        f"{_capture_entry_diag(session)})")
                 _screenshot(session, _shot(evidence_root, shot_n, "f2-create-modal"))
                 steps_done.append(tag)
             elif action == "confirm":
@@ -2586,16 +2859,20 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
                 dep_plan: dict, preflight: dict, evidence_root: str, started: float,
                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Drive the live browser build end-to-end: seed → land → walk → capture embed →
-    write build receipt → verify → CLEANUP (delete form + close session). Every
-    failure is a STOP-and-report; the created form is ALWAYS deleted in finally.
+    write build receipt → verify → CLEANUP. Every failure is a STOP-and-report.
+
+    CLEANUP (see the finally block): a SUCCESSFUL build is PRESERVED (the form is
+    the deliverable — deleting it made every returned id/url un-readable), a
+    ``--stop-after-phase`` stop is preserved for ``--resume``, and a FAILURE deletes
+    what the run created, with a positive present→absent verification.
 
     RESUME + CLEANUP, and why they do not fight (U8): cleanup deletes the form on
-    every path that REACHES it, so a run that ends normally leaves nothing to
-    resume — and nothing that needs resuming. Resume exists for the runs that never
-    reach cleanup at all: SIGKILL, a dead box, a browser crash. Those leave a real
-    form behind, and `--resume <run_id>` re-enters THAT form instead of building a
-    second one. A ``--stop-after-phase`` stop deliberately skips cleanup for the
-    same reason: the half-built form must survive for the resume to find it.
+    every FAILURE path that REACHES it, so a run that fails normally leaves nothing
+    to resume — and nothing that needs resuming. Resume exists for the runs that
+    never reach cleanup at all: SIGKILL, a dead box, a browser crash. Those leave a
+    real form behind, and `--resume <run_id>` re-enters THAT form instead of
+    building a second one. A ``--stop-after-phase`` stop deliberately skips cleanup
+    for the same reason: the half-built form must survive for the resume to find it.
     """
     location_id = plan["location_id"]
     os.environ["GHL_LOCATION_ID"] = location_id      # canonical session-name consistency
@@ -2608,6 +2885,13 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
     form_id = ""
     stop: Optional[StopAndReport] = None
     stopped_after: str = ""
+    # SUCCESS-vs-FAILURE is what decides cleanup now (v18.2.0). The pre-fix
+    # contract deleted the form on EVERY reached path — so a plain --no-dry-run
+    # SUCCESS created a real form and then instantly deleted it, leaving nothing
+    # to read back (only --stop-after-phase preserved one, :2723-2726). A built,
+    # verified form is the DELIVERABLE; deleting it on success made `form_id` /
+    # `form_url` / `embed_code` point at an object that no longer exists.
+    build_ok = False
     stop_after: str = str(task.get("stop_after_phase", "") or "")
     # Mutable walk state (v18.1.5): form_id / actual_title recorded AT CAPTURE
     # TIME so cleanup still sees them when a LATER step raises StopAndReport —
@@ -2675,6 +2959,11 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
                              "marker_in_rendered_dom": rec.get("marker_in_rendered_dom"),
                              "render_errors": rec.get("render_errors", [])}
 
+        # Reached the end of the build body with no exception → the form this run
+        # produced is the DELIVERABLE and must SURVIVE cleanup (see the cleanup
+        # block: success PRESERVES, failure/stop cleans up).
+        build_ok = True
+
     except ghl_run_state.StopAfterPhase as sap:
         # An OPERATOR-requested stop, not a failure. Cleanup is deliberately SKIPPED:
         # deleting the half-built form here would delete the very thing --resume is
@@ -2689,16 +2978,31 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
         stop = StopAndReport("unexpected", f"{type(exc).__name__}: {exc}")
         _log(f"live build unexpected error: {type(exc).__name__}: {exc}")
     finally:
-        # CLEANUP — ALWAYS delete the created form, then close the session (no
-        # residue), with a POSITIVE verification either way (v18.1.5): the id +
-        # actual title come from walk_state so a mid-walk STOP can no longer hide
-        # a created form, and 'nothing to delete' is only ever CLAIMED after the
-        # rendered Forms list positively shows zero rows for the intended name.
+        # CLEANUP POLICY (v18.2.0) — PRESERVE on success, DELETE on failure.
         #
-        # ONE exception (U8): a --stop-after-phase stop leaves the form ALIVE on
-        # purpose. Deleting it would destroy the object the operator explicitly
-        # stopped in order to inspect, and would leave --resume nothing to resume.
-        if stopped_after:
+        #   • SUCCESS (build_ok): the created form is the DELIVERABLE. Leave it in
+        #     place so form_id / form_url / embed_code are READBACK-ABLE and the
+        #     caller can render_check it. Nothing is deleted.
+        #   • --stop-after-phase: also left in place — deleting it would destroy
+        #     the object the operator stopped to inspect and leave --resume nothing.
+        #   • FAILURE (StopAndReport / unexpected exception): delete what this run
+        #     created, with a POSITIVE present→absent verification (v18.1.5): the id
+        #     + actual title come from walk_state so a mid-walk STOP can no longer
+        #     hide a created form, and 'nothing to delete' is only ever CLAIMED
+        #     after the rendered Forms list positively shows zero rows.
+        #
+        # The delete path is the only one that mutates GHL state; it runs solely on
+        # a failure, and its evidence lands in routing/cleanup.json either way.
+        if build_ok:
+            cleanup.update({
+                "attempted": False, "deleted": False, "verified_gone": False,
+                "preserved": True,
+                "skipped_reason": ("build SUCCEEDED — the created form is the deliverable "
+                                   "and is PRESERVED for readback/render_check; delete it "
+                                   "explicitly if a scratch object was intended"),
+                "form_id": walk_state.get("form_id") or form_id,
+            })
+        elif stopped_after:
             cleanup.update({
                 "attempted": False, "deleted": False, "verified_gone": False,
                 "skipped_reason": (f"--stop-after-phase {stopped_after}: form intentionally "
@@ -2778,7 +3082,8 @@ def _ghl_verify_available() -> bool:
 # Main entry point
 # ---------------------------------------------------------------------------
 def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
-               state: Optional["ghl_run_state.RunState"] = None) -> dict:
+               state: Optional["ghl_run_state.RunState"] = None,
+               handoff: Optional[dict] = None) -> dict:
     """Build a GHL (Convert and Flow) FORM via browser-control.
 
     THINK layer always runs (preflight + plan + dependency plan + field map +
@@ -2788,6 +3093,11 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
     ``state`` (U8): a RunState turns the click-list walk's own F1…F13 phases into
     resume points. ``None`` (the dispatcher / library callers) = no checkpointing,
     and the walk behaves exactly as it always did.
+
+    ``handoff`` (§3.2): the Skill 44 → Skill 06 dependency handoff record. When
+    omitted, one is loaded from ``<evidence_root>/routing/form-survey-handoff.json``
+    if it exists — a record on disk means the caller opted into the gate, and the
+    gate is what stops a build on an unproven dependency (B06).
     """
     # W10B2 entry wiring — dispatch into the accepted v27.1.74 behavior
     # (skill_runner's four canonical slices) BEFORE anything else runs.
@@ -2805,6 +3115,25 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
     dry_run = bool(task.get("dry_run", dry_run))
     os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
     os.makedirs(os.path.join(evidence_root, "shots"), exist_ok=True)
+
+    if handoff is None and _handoff is not None:
+        handoff = _handoff.load_handoff(evidence_root)
+    if handoff is not None:
+        # Route the record through the task dict so preflight reads it without a
+        # signature change (callers/tests that spy on _run_preflight keep working).
+        task = {**task, "_handoff_record": handoff}
+    if handoff is not None and _handoff is not None and not task.get("existing_field_keys"):
+        # The handoff already proves which keys exist — feed them into the plan so
+        # the dependency plan agrees with what Skill 44 actually reported.
+        _proven = [_norm_key(f.get("field_key")) for f in
+                   (handoff.get("dependency_results") or {}).get("custom_fields", [])
+                   if _norm_key(f.get("field_key"))]
+        _proven_tags = [_norm_key(t.get("tag")) for t in
+                        (handoff.get("dependency_results") or {}).get("tags", [])
+                        if _norm_key(t.get("tag"))]
+        if _proven:
+            task = {**task, "existing_field_keys": _proven,
+                    "existing_tags": _proven_tags}
 
     fields = _resolve_fields(task)
     dep_plan = plan_dependencies(
@@ -2853,9 +3182,10 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
     # Walks click_list['steps'] via agent-browser (router.push / click / wait / fill /
     # type / eval / snapshot / screenshot): seeds auth token-only (never reloads),
     # captures the embed snippet at F10, records F11/F12 handoffs to ghl_rest_canvas /
-    # Skill 44, verifies via ghl_verify.render_check, and ALWAYS deletes the built form
-    # in cleanup. In-iframe surfaces are snapshot-and-bound at runtime; a REQUIRED miss
-    # is a STOP-and-report (no invented CSS, no brute-force).
+    # Skill 44, verifies via ghl_verify.render_check, and on SUCCESS PRESERVES the
+    # built form (deleting it only on failure — v18.2.0). In-iframe surfaces are
+    # snapshot-and-bound at runtime; a REQUIRED miss is a STOP-and-report (no
+    # invented CSS, no brute-force).
     return _live_build(task, plan, click_list, fields, dep_plan, preflight,
                        evidence_root, started, state=state)
 
@@ -2866,6 +3196,10 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
 def _selftest() -> int:
     import tempfile
     errors: List[str] = []
+    # Offline dry runs build model ladders from the client's configuration;
+    # give the selftest a neutral configured default (never overrides a real
+    # client configuration already present in the environment).
+    os.environ.setdefault("MODEL_ROUTER_DEFAULT", "selftest-default:cloud")
 
     # 1. zhc helpers are idempotent + correctly shaped
     if zhc_field_key("Podcast Rating") != "zhc_podcast_rating":
@@ -2931,9 +3265,10 @@ def _selftest() -> int:
         if "add contact tag" not in blob:
             errors.append("click list missing tag-attachment handoff")
 
-    # 6. no PURGED model token anywhere in the ladders. No vendor is banned:
-    #    there is no rule against Anthropic / Claude models (Trevor order 2026-10-29).
-    lad = json.dumps(THINK_LADDER + EXECUTE_LADDER + QC_LADDER).lower()
+    # 6. no banned model tokens anywhere in the ladders (built from a neutral
+    #    test configuration: the client's configured default in selftest form)
+    _test_env = {"MODEL_ROUTER_DEFAULT": "selftest-default:cloud"}
+    lad = json.dumps(build_think_ladder(_test_env) + build_execute_ladder(_test_env) + build_qc_ladder(_test_env)).lower()
     for banned in ("minimax-m2", "minimax_m2"):
         if banned in lad:
             errors.append(f"BANNED model token in ladders: {banned}")

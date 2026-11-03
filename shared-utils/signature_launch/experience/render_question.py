@@ -220,6 +220,10 @@ def bank_of(questions):
     else:
         bank = {"questions": list(questions or [])}
     bank.setdefault("help_label", HELP_LABEL)
+    # the shared engine reads these keys directly; a partial bank (a bank-shaped question
+    # without them) is asked as an unconditional, defaultable question, as it always was
+    bank["questions"] = [{"condition": "always", "never_default": False, **q}
+                         for q in bank["questions"]]
     return bank
 
 
@@ -233,7 +237,10 @@ def doc_of(answers, mode=None):
            "answers": {}, "to_confirm": a.get("to_confirm") or []}
     for qid, r in records(a).items():
         if r.get("status"):
-            doc["answers"][qid] = {"value": r.get("value"), "status": r["status"],
+            # a suggestion is not the client's answer until they confirm it: the shared engine
+            # asks anything it sees as unknown, so a suggested answer reaches it as unknown
+            doc["answers"][qid] = {"value": r.get("value"),
+                                   "status": "unknown" if r["status"] == "suggested" else r["status"],
                                    "source": r.get("source", "client")}
     return doc
 
@@ -245,8 +252,7 @@ def next_applicable(questions, answers, mode=None):
     (`engine.next_question`), so the renderer cannot ask an inapplicable question and cannot
     re-ask a confirmed answer. A `suggested` answer is still asked: a suggestion is not the
     client's answer until they confirm it."""
-    return engine_module().next_question(doc_of(answers, mode), bank_of(questions),
-                                         include_suggested=True)
+    return engine_module().next_question(doc_of(answers, mode), bank_of(questions))
 
 
 def pending(questions, answers, mode=None):

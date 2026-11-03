@@ -1017,7 +1017,7 @@ so_refresh_updater() { # so_refresh_updater <src> <dst> <check:0|1> -> SO_RU=ref
 
 skills_only_mode() { # skills_only_mode <check:0|1>
   local check="$1" markers="" roots="" r d s src src_real dst dst_real verb up old_target
-  local repair="$REPAIR_LINKS"
+  local repair="$REPAIR_LINKS" js_ver
   local refresh="${REFRESH_UPDATER:-0}"
   local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 t_blocked=0 t_mode=0 t_updater=0 t_extra=0 skills_root="$SKILL_DIR/.."
 
@@ -1150,6 +1150,24 @@ $d
       t_updater=$((t_updater + 1))
     fi
   done < <(printf '%s' "$roots")
+
+  # jsonschema (CON-12): the Black Friday Launcher's one runtime dependency. The
+  # launcher link lands via the sync above, so a refreshed box must get its
+  # dependency too. APPLY runs ensure_jsonschema (idempotent: importable = no pip)
+  # in a subshell, because it fail()s on error - that becomes one counted error
+  # here instead of aborting before the RESULT line. CHECK is read-only: reports.
+  js_ver="$(python3 -B -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null)" || js_ver=""
+  if [ -n "$js_ver" ]; then
+    printf '[skills-only] jsonschema: OK (already importable, %s)\n' "$js_ver"
+  elif [ "$check" = 1 ]; then
+    printf '[skills-only] jsonschema: WOULD INSTALL from black-friday-launcher/requirements.txt (not importable by python3 now)\n'
+  elif ( ensure_jsonschema ) \
+       && js_ver="$(python3 -B -c'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null)"; then
+    printf '[skills-only] jsonschema: INSTALLED (%s)\n' "$js_ver"
+  else
+    printf '[skills-only] jsonschema: ERROR could not be installed (see BLOCKER above) - the Black Friday Launcher cannot run until it is\n'
+    t_fail=$((t_fail + 1))
+  fi
   printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d blocked; %d stale; %d mode drift; %d updater-stale; %d extra kept; %d error(s)\n' \
     "$([ "$check" = 1 ] && echo check || echo apply)" "$t_new" "$t_chg" \
     "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_blocked" "$t_stale" "$t_mode" "$t_updater" "$t_extra" "$t_fail"

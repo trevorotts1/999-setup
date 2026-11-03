@@ -24,3 +24,9 @@ OpenClaw bindings and are named individually in the pack manifest as
 adapter-pending. The seam bindings this harness requires are defined
 in ADAPTER.md in this skill. Nothing in this pack borrows from the
 OpenClaw skills tree at runtime.
+
+Update (S06-18): the Skill 6 tree is synced from onboarding after the S06
+fixes and the four seams have checks and a live-write gate; see "Seam status
+and the live-write gate" in ADAPTER.md. The adapter-pending statement above
+now means: the files keep their harness form, and a live GHL write stays
+refused (`ADAPTER-SEAMS-NOT-PORTED`) until the seams receipt is recorded.

@@ -101,12 +101,14 @@ def test_rule1_install_step1_does_not_require_openclaw_2x_or_cua():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Rule 2 — agent-browser stays PRIMARY until Lane 2 is proven equivalent
+# Rule 2 — OpenClaw Chrome extension is PRIMARY (2026-10-13); agent-browser
+# is the fallback lane and stays installed
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_rule2_lane_selection_priority_keeps_agent_browser_primary():
-    """Lane 1 (agent_browser) still heads the 9.6 priority table; lane 2 is
-    only reached when agent-browser is absent."""
+def test_rule2_lane_selection_priority_puts_extension_first():
+    """Lane 1 (openclaw extension) heads the priority table when the
+    extension is installed and current; agent_browser is the fallback lane
+    (probe suite, revised 2026-10-13 table)."""
     proc = _pytest("tests/test_capability_probe.py", "-k", "lane_selection")
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
@@ -358,3 +360,31 @@ def test_rule8_receipt_freshness_holds_in_waiting():
     proc = _pytest("tests/test_browser_manager_capability_wire.py",
                    "-k", "holds_in_waiting")
     assert proc.returncode == 0, proc.stdout + proc.stderr
+# ══════════════════════════════════════════════════════════════════════════════
+# Rule 2 addendum (S06-03) — the docs carry NO global extension stop
+# ══════════════════════════════════════════════════════════════════════════════
+
+_BUILDER_MD = os.path.join(_SKILL_DIR, "ghl-browser-builder-full.md")
+
+
+def test_rule2_docs_carry_no_global_extension_stop():
+    """S06-03: the extension preflight verdict gates Lane 1 only, in every
+    doc that states it - the pre-S06-03 global-stop wording must not
+    silently regress into SKILL.md, INSTALL.md, or the builder guide."""
+    skill = _read(_SKILL_MD)
+    start = skill.index("> **ENGINE")
+    block = skill[start:skill.index("\n\n", start)]
+    assert "STOPs the run" not in block, (
+        "SKILL.md ENGINE block regained a global extension stop (S06-03)")
+    assert "zero lanes" in block, (
+        "SKILL.md ENGINE block lost the zero-lanes fail-closed rule (S06-03)")
+    install = _read(_INSTALL_MD)
+    assert "Any STOP output means no install run starts" not in install, (
+        "INSTALL.md regained the global extension stop (S06-03)")
+    assert "LANE 1 UNAVAILABLE" in install, (
+        "INSTALL.md lost the lane-scoped LANE 1 UNAVAILABLE wording (S06-03)")
+    builder = _read(_BUILDER_MD)
+    # 999 form: the builder guide has no extension lane section (agent-browser is
+    # PRIMARY); it must not carry the global-stop wording either.
+    assert "STOPs the run with" not in builder, (
+        "builder guide regained a global extension stop (S06-03)")

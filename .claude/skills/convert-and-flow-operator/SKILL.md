@@ -1,6 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
+version: v2.1.41
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -61,9 +62,12 @@ uncertain whether the last build succeeded, verify with `caf workflows list` (or
 `workflows export`) before rebuilding — never rebuild blind.
 
 **Step 9 — QC GATE (before declaring done):** BINDING GATE — the build agent MUST NOT say
-"done" until an independent MiniMax QC sub-agent passes all checklist items and the filled
-checklist is handed to the client. Sequence: announce to client → spawn MiniMax sub-agent
-(via sessions_send, verify model available first) → QC runs `caf workflows export` +
+"done" until an independent QC sub-agent (a different model than the build agent — the
+client's selected QC model, or their configured default where it differs; see INSTRUCTIONS.md
+Step 9.2) passes all checklist items and the filled checklist is handed to the client.
+Sequence: announce to client → spawn the independent QC sub-agent (via sessions_send;
+resolve the model per Step 9.2 and verify it is available first; record which model ran)
+→ QC runs `caf workflows export` +
 `qc-built-workflow.sh <wf-id>` item-by-item → all WF-1..21 PASS → THEN compute the **weighted
 quality rubric** (`references/workflow-quality-rubric.md`, 8 dimensions, ≥ 8.5 to ship) → hand
 client the filled checklist + the rubric score. The rubric is a SUPERSET OVERLAY computed AFTER
@@ -90,9 +94,9 @@ specific low dimension. HALLUCINATION FAIL: hard stop + redo on reasoning-model 
    Step 9 AFTER WF-1..21)
 4c. **universal-sops/funnel-automation-build-quality-rubric.md** — the library-aware FAB-QC ≥ 8.5
    overlay (shared scorer `shared-utils/fab_qc.py`); run at Step 9.3c via `qc-built-workflow.sh --fab`
-5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21;
-   then emits the weighted rubric floor score + the FAB-QC overlay with `--fab`); invoked by the
-   MiniMax QC sub-agent at Step 9
+5. **qc-built-workflow.sh** — per-build QC script (mechanically asserts WF-3,4,5,6,7,12,15,18,21,22;
+   plus WF-19 under `--conversational`; then emits the weighted rubric floor score + the FAB-QC
+   overlay with `--fab`); invoked by the independent QC sub-agent at Step 9
 6. **CORE_UPDATES.md** — exact text to merge into AGENTS.md / TOOLS.md / MEMORY.md
 7. **QC.md** — human-readable checklist (authoritative install-QC script is `qc-convert-and-flow.sh`)
 8. **CHANGELOG.md** — skill version history
@@ -208,6 +212,57 @@ require the `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`. When that token is:
 
 The CLI has NO media upload commands. Media NEVER routes to Tier 0 — always Tier 3
 (`POST /medias/upload-file` — see `29-ghl-convert-and-flow/references/medias.md`).
+
+---
+
+## Consumers (who hands work to this skill, verified 2026-10-14)
+
+This section states, for each consumer, what that consumer actually does today, verified from the consumer's own code and docs on 2026-10-14. Trust this section over any looser description. The pattern across every consumer below: work arrives as FILES AND PLANS that an operator agent running this skill executes under this skill's own gates. No consumer calls the caf CLI in process, nothing here polls for work, and a handed-off plan is not a built object until execution receipts with read-backs exist.
+
+### Skill 6: 06-ghl-install-pages (P4 to P5 funnel seam)
+
+- Full-funnel builds: Skill 6's v2_dispatcher.py writes routing/skill44-handoff.json when a verified full-funnel build carries linked automations marked build_now (funnel template id, location id, the timing contract, and the to_build list), reads the file back, and FAILS the dispatch if the write or the read-back fails. An orchestrator then dispatches each to_build automation to this skill as its own build (PLAN MODE plus Step 9 QC). The handoff is a file, not an API call, and it fires only when build_now automations exist.
+- Form dependency plans: Skill 6's ghl_form_builder.py THINK layer emits routing/form-dependency-plan.json (owner_skill 44, cli "caf (PIT-authenticated)") listing the zhc_ custom fields and tags a form needs, each stamped create or reuse. This skill creates or looks up those dependencies BEFORE the browser build, because the browser layer adds pre-created fields via Add Object Fields and never mints fields on the fly. The builder itself never invokes caf.
+- The P4 to P5 page and form ids and the approved email sequence copy described in READ-BEFORE-ACT above arrive through these Skill 6 artifacts and the funnel task record, not through a live integration.
+
+### Presentations department: 23-ai-workforce-blueprint role library (presentations)
+
+- Emits plan contracts into a run folder, nothing more. checkout_form_builder.py writes working/sales-checkout/checkout_form_skill44.json (the checkout form plus Form-Submitted workflow contract, mechanism SKILL44_WIDGET -> FORM) and records its own receipt at status plan_emitted with the form and workflow ids null. ghl_external_installer.py (phases P-U-GHL-SALES, P-U-GHL-VSL, P-U-FORM-GATE) writes working/vsl/gate_form_skill44_plan.json naming this skill's real entry points (caf workflows build --from-plan via CampaignBuilder under the write lock, the Skill 6 workflow builder harness, caf read-backs) and leaves ecosystem/gate-form.json plus workflows/gate-workflow.json at pending_external_execution until an execution returns adapter ids and read-backs that pass its validate_receipt.
+- What does NOT happen today: no presentations code executes this skill. Its live Skill 44 adapters are stubs that refuse (DeferralRequired) until a wave owner designates a test location; only in-memory fakes have ever executed these contracts, inside tests. Any wording that reads as if the presentations pipeline builds live forms or workflows through this skill automatically is wrong; the contracts are plans until a delegated agent executes them here.
+- The run-level seam (FIX-PLAN Item 33a): presentations also emits working/ghl/ghl-ops-request.json at install and at delivery (scripts/ghl_ops.py), listing the GHL operations a run needs (form creation and attachment, workflow trigger coverage, product and order-form binding on the sandbox path, test-submission proof, booking-calendar verification), each with the Wiring Gate read-back checks the receipt must answer. The executing agent returns working/ghl/ghl-ops-receipt.json with per-object read-backs. The presentations reader judges an entry claiming success without its read-back as unverified, never success.
+- The VSL gate spec (presentations scripts/vsl-gate-form-spec.json) is a contract document for the gate form object. The VSL page the pipeline ships today (vsl_builder.py) carries a native HTML gate form whose submit unlocks playback client-side; wiring that submit to a live GHL endpoint is a deployment-time step, and the Skill 44 gate form exists only when the P-U-FORM-GATE plan above is executed.
+
+### Skill 38: 38-conversational-ai-system (TRINITY counterparty)
+
+- Skill 38 authors the communications playbook, its declares block, and its build contract (`<slug>--build-contract.json`) FIRST. Skill 44 then reads that build contract and declares block and builds the GHL automation to exactly that spec. Skill 44 never invents, alters, or reverses this order and never authors playbook content. This skill CONSUMES Skill 38's output and is not the entry point for a conversational build. The fourth TRINITY leg is the build contract, whose `playbook_structure_hash` must equal the freshly computed structure hash of the playbook. The coupling is enforced mechanically on this side: `qc-built-workflow.sh --conversational` executes Skill 38's `scripts/qc-trinity-registry.sh`, and the WF-19 gate fails the build on any non-zero exit. Without the flag, WF-19 stays a human-review item.
+### Dependency export for Skill 38 gates
+
+Skill 44 is the sole producer of `.caf-calendars-export.json` and `.caf-pipelines-export.json` in the client's `conversation-workflows` folder, via `tools/export_deps.py`.
+
+Run:
+
+```bash
+python3 tools/export_deps.py --workflows-dir <master-files>/conversation-workflows
+```
+
+The producer runs `caf --json calendars list` and `caf --json opportunities pipelines` through a PIT-authenticated `caf`, validates each response shape, and writes both export files atomically. No network means no export, never a fabricated one.
+
+- Exit 0: both exports written successfully.
+- Exit 2: usage or path resolution error.
+- Exit 3: caf failure or invalid response shape.
+
+Skill 38's `qc-playbook-declares.sh` FAILs with `REQUIRES_OPERATOR` when a playbook declares calendars or applied tags and the required export is absent. `qc-opportunity-sync.sh` FAILs with `REQUIRES_OPERATOR` when a playbook declares a pipeline or stage-map and the pipelines export is absent. Both gates fail closed, never skip required validation.
+
+Regenerate both exports after any calendar or pipeline change in GHL.
+
+### Skill 50: 50-email-engine (deploy rail)
+
+- On its P4 deploy step, Skill 50 emits a DRAFT-ONLY workflow build plan (tools/emit_build_plan.py, validated against its build-plan schema) covering email plus wait steps only. Skill 50 never sends anything. The plan enters this skill's PLAN MODE (Step 0.5 boards the build), a human approves before any send, and the built draft faces this skill's QC gate (score 8.5 or better).
+
+### Explicit non-consumers
+
+- Skill 46 (46-kie-callback-relay) does not consume this skill and does not use the GHL Firebase token. The daily token liveness check is owned here (tools/check-ghl-token-liveness.sh); Skill 46's SKILL.md cross-references it for discoverability only.
+- Skill 71 (71-blackceo-signature-page) hands nothing to this skill at this version: no automation-handoff producer exists in that folder (checked 2026-10-14). Skill 71 consumes presentations page briefs, a different seam.
 
 ---
 
@@ -398,9 +453,9 @@ discoverability.
 6. CHANGELOG.md
 7. skill-version.txt
 8. qc-convert-and-flow.sh — automated install-level QC validator (static + live modes)
-9. qc-built-workflow.sh — per-build QC script (takes workflow-id, asserts WF-3/4/5/6/7/12/15/18/21,
-   emits per-item PASS/FAIL JSON AND the weighted quality-rubric floor score; invoked by MiniMax
-   QC sub-agent at Step 9)
+9. qc-built-workflow.sh — per-build QC script (takes workflow-id, asserts WF-3/4/5/6/7/12/15/18/21/22,
+   plus WF-19 under --conversational; emits per-item PASS/FAIL JSON AND the weighted
+   quality-rubric floor score; invoked by the independent QC sub-agent at Step 9)
 10. platform/mac/ — Mac-specific paths + auto-re-grab recipe
 11. platform/vps/ — VPS-specific paths
 12. tools/engine/ — de-branded CLI engine (vendored from Jay's zip)
@@ -416,3 +471,5 @@ discoverability.
     WF-1..21)
 
 > **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's build path relates to Skill 38 and its backstop rail relates to Skill 3.
+
+> **Build-only, never a responder (T-19):** this skill builds and QC's the GHL workflow that renders interactive controls; it **never answers a conversation or an interactive step**. The single-owner rule — OpenClaw inbound by default, with rendered controls, provider callbacks, free text and stale taps all resolving to that one owner — lives in `38-conversational-ai-system/launch/interactive-owner-contract.md`. A native GHL workflow node is a build artifact, not a second responder.

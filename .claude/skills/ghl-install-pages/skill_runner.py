@@ -61,10 +61,14 @@ Usage (check): python3 -I skill_runner.py
 """
 from __future__ import annotations
 
+import ast
+import contextlib
+import hashlib
 import importlib
 import importlib.util
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -483,6 +487,8 @@ class _RoutedLiveBuild:
         self._impl = impl
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        # The live GHL write: refused until the four adapter seams pass (ADAPTER.md).
+        require_adapter_seams()
         _RUN.reset()
         _RUN.phase = "walking"
         return self._impl(*args, **kwargs)
@@ -541,6 +547,303 @@ def _repair_soft_imports(fb: Any) -> List[str]:
 
 
 _ROUTING: Optional[Dict[str, Any]] = None
+
+
+# =============================================================================
+# ADAPTER SEAMS GATE (ADAPTER.md): the four pack seams -- launch, session seed,
+# teardown, paths and secrets -- are checked here, and a LIVE GHL write is
+# REFUSED with ADAPTER-SEAMS-NOT-PORTED until every one passes AND a seams
+# receipt recorded for the CURRENT adapter files exists. The receipt is
+# written only by `python3 skill_runner.py seams --record` after all four pass;
+# any edit to a file the checks read changes the digest and re-closes the gate.
+# =============================================================================
+SEAMS_REFUSAL_CODE = "ADAPTER-SEAMS-NOT-PORTED"
+SEAM_NAMES = ("launch", "session-seed", "teardown", "paths-secrets")
+SEAMS_RECEIPT_NAME = "adapter-seams-receipt.json"
+_MANIFEST_REL = os.path.join("blackceo-signature-page", "repo-integration",
+                             "ghl-pack-manifest.json")
+_SESSIONS_REL = os.path.join("blackceo-signature-page", "scripts", "browser_sessions.py")
+_CONTRACT_REL = os.path.join("blackceo-signature-page", "references",
+                             "browser-engine-contract.md")
+_SEAM4_TOKENS = re.compile(
+    r"~/\.openclaw|/\.openclaw|\.openclaw/|\"\.openclaw\"|'\.openclaw'|"
+    r"MASTER_FILES_FOLDER|OPENCLAW_SKILLS_DIR|~/clawd|\$HOME/clawd|/clawd/")
+# Adapter files that may still name an OpenClaw path, each for a stated reason
+# (never a write path in this harness). Anything else naming one fails seam 4.
+SEAM4_DECLARED = {
+    "tools/capability_probe.py": "read-only OpenClaw lane detection; the lane is structurally absent here (seam 1)",
+    "tools/browser_manager.py": "deny-list marker for a personal OpenClaw profile (refusal, not a path in use)",
+    "tools/ghl_run_state.py": "pre-S06-05 legacy read fallback so an old run stays resumable (SK6002)",
+    "tools/ghl_env_matrix_ground_truth.py": "refusal guards that REJECT an OpenClaw root in a receipt",
+    "tools/openclaw_browser_adapter.sh": "gated off: refuses every verb with exit 75",
+    "scripts/install-github-archive-reconcile-cron.sh": "host scheduling, the declared fifth seam (carried unadapted)",
+    "scripts/install-page-inventory-lifecycle-cron.sh": "host scheduling, the declared fifth seam (carried unadapted)",
+    "scripts/install-routing-drift-check-cron.sh": "host scheduling, the declared fifth seam (carried unadapted)",
+    "scripts/install-selector-drift-probe-cron.sh": "host scheduling, the declared fifth seam (carried unadapted)",
+    "scripts/install-skill6-maintenance-crons.sh": "host scheduling, the declared fifth seam (carried unadapted)",
+    "tools/ghl_vps_mount_proof.py": "VPS mount proof pair, the declared fifth seam (carried unadapted)",
+}
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _load_by_path(name: str, path: str) -> Any:
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod  # a @dataclass in the loaded module looks itself up here
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    finally:
+        sys.modules.pop(name, None)
+    return mod
+
+
+def nine_env_stores(env: Optional[Dict[str, str]] = None) -> Tuple[str, ...]:
+    """Seam 2: the install's secrets env file ($SECRETS_ENV) is the one store."""
+    env = os.environ if env is None else env
+    designated = (env.get("SECRETS_ENV") or "").strip()
+    return (designated,) if designated else ()
+
+
+def bind_session_seed(resolver: Any, env: Optional[Dict[str, str]] = None) -> None:
+    """Seam 2: point the shared resolver's store list (read at call time) at the
+    install's secrets env instead of its OpenClaw-side default."""
+    resolver.ENV_STORES = nine_env_stores(env)
+
+
+def nine_public_engine_root() -> str:
+    """Seam 4 (paths): ``ghl_public_client`` walks up for onboarding's
+    ``44-convert-and-flow-operator``; in this repo Skill 44 is the sibling
+    ``convert-and-flow-operator`` skill, so its engine root is named here."""
+    return os.path.join(os.path.dirname(_SKILL_ROOT), "convert-and-flow-operator",
+                        "tools", "engine")
+
+
+def harness_hygiene_dir(bm: Any, env: Optional[Dict[str, str]] = None) -> str:
+    env = os.environ if env is None else env
+    return (env.get("SKILL6_BROWSER_HYGIENE_DIR") or "").strip() or os.path.join(
+        bm.durable_root(), "skill6-browser-hygiene")
+
+
+def wrap_browser_session(orig_cm: Callable[..., Any], sessions: Any,
+                         run_dir_fn: Callable[[], str], *,
+                         stage: str = "skill6-build",
+                         teardown_cmd_fn: Optional[Callable[[str], str]] = None) -> Callable[..., Any]:
+    """Seam 3: every session the pack opens is registered at open and closed,
+    with the stage's browser-hygiene receipt written, under Skill 71's Item 33
+    registry (blackceo-signature-page/scripts/browser_sessions.py)."""
+    @contextlib.contextmanager
+    def _wrapped(slug: Optional[str] = None):
+        with orig_cm(slug) as name:
+            run_dir = run_dir_fn()
+            sessions.register_open(
+                run_dir, session_name=name, stage=stage, engine="agent-browser",
+                binding="claude-nine", client_slug=str(slug or ""),
+                owner_pid=os.getpid(),
+                teardown_cmd=teardown_cmd_fn(name) if teardown_cmd_fn else None)
+            try:
+                yield name
+            finally:
+                sessions.register_close(run_dir, name, closed_by="normal")
+                sessions.write_stage_receipt(run_dir, stage)
+    _wrapped._seam3 = True  # type: ignore[attr-defined]
+    return _wrapped
+
+
+def _seam_launch(root: str) -> Tuple[bool, str]:
+    skills = os.path.dirname(root)
+    miss = []
+    if not os.path.isfile(os.path.join(skills, _CONTRACT_REL)):
+        miss.append("blackceo-signature-page browser-engine-contract.md absent")
+    if "999 HARNESS FORM" not in _read(os.path.join(root, "tools", "openclaw_browser_adapter.sh")):
+        miss.append("openclaw_browser_adapter.sh is not in its 999 gated-off form")
+    if "not part of the Claude" not in _read(os.path.join(root, "tools", "capability_probe.py")):
+        miss.append("capability_probe.py does not report the OpenClaw lane structurally absent")
+    return (not miss, "; ".join(miss) or "agent-browser engine contract present; OpenClaw lane gated off")
+
+
+def _seam_session_seed(root: str) -> Tuple[bool, str]:
+    try:
+        res = _load_by_path("_seam_probe_resolver", os.path.join(root, "tools", "ghl_secret_resolver.py"))
+        bind_session_seed(res, {"SECRETS_ENV": "/seam/probe.env"})
+        bound = tuple(res.ENV_STORES)
+        bind_session_seed(res, {})
+        empty = tuple(res.ENV_STORES)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"resolver not loadable: {type(exc).__name__}"
+    if bound != ("/seam/probe.env",) or empty != ():
+        return False, "resolver store list does not follow $SECRETS_ENV"
+    if "bind_session_seed" not in install.__code__.co_names:
+        return False, "install() does not bind the resolver to $SECRETS_ENV"
+    return True, "resolver stores follow $SECRETS_ENV; install() binds them"
+
+
+def _seam_teardown(root: str) -> Tuple[bool, str]:
+    skills = os.path.dirname(root)
+    try:
+        sessions = _load_by_path("_seam_probe_sessions", os.path.join(skills, _SESSIONS_REL))
+    except Exception as exc:  # noqa: BLE001
+        return False, f"browser_sessions.py not loadable: {type(exc).__name__}"
+    if "wrap_browser_session" not in install.__code__.co_names:
+        return False, "install() does not wrap browser_session in the session registry"
+
+    @contextlib.contextmanager
+    def fake(slug=None):
+        yield "seam-probe-session"
+
+    with tempfile.TemporaryDirectory(prefix="seam3-") as tmp:
+        with wrap_browser_session(fake, sessions, lambda: tmp)("probe"):
+            pass
+        c = sessions.stage_counts(tmp, "skill6-build")
+        ok = (c["sessions_opened"], c["sessions_closed"], c["unaccounted"]) == (1, 1, 0)
+        receipt = os.path.isfile(os.path.join(tmp, "skill6-build", "browser-hygiene.json"))
+    if not (ok and receipt):
+        return False, "a registered session did not fold to opened=1 closed=1 unaccounted=0 with a receipt"
+    return True, "every session is registered, closed and receipted (Item 33)"
+
+
+def _py_code_lines(path: str) -> List[Tuple[int, str]]:
+    src = _read(path)
+    lines = src.split("\n")
+    skip = set()
+    try:
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                body = node.body
+                if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
+                        and isinstance(body[0].value.value, str)):
+                    skip.update(range(body[0].lineno, (body[0].end_lineno or body[0].lineno) + 1))
+    except SyntaxError:
+        pass
+    return [(i + 1, l) for i, l in enumerate(lines)
+            if (i + 1) not in skip and not l.lstrip().startswith("#")]
+
+
+def _adapter_runtime_files(root: str) -> List[str]:
+    skills = os.path.dirname(root)
+    try:
+        files = json.loads(_read(os.path.join(skills, _MANIFEST_REL)) or "{}").get("files", [])
+    except ValueError:
+        files = []
+    pre = ".claude/skills/ghl-install-pages/"
+    out = []
+    for f in files:
+        d = f.get("dest", "")
+        if f.get("class") != "adapter" or not d.startswith(pre):
+            continue
+        rel = d[len(pre):]
+        base = os.path.basename(rel)
+        if base.startswith("test_") or rel.startswith(("tests/", "evidence/", "references/")):
+            continue
+        if rel.endswith((".py", ".sh")) and (rel.startswith(("tools/", "scripts/")) or "/" not in rel):
+            out.append(rel)
+    return sorted(out)
+
+
+def _seam_paths_secrets(root: str) -> Tuple[bool, str]:
+    bad = []
+    for rel in _adapter_runtime_files(root):
+        path = os.path.join(root, rel)
+        if rel in SEAM4_DECLARED or not os.path.isfile(path):
+            continue
+        lines = (_py_code_lines(path) if rel.endswith(".py") else
+                 [(i + 1, l) for i, l in enumerate(_read(path).split("\n")) if not l.lstrip().startswith("#")])
+        n = sum(1 for _i, l in lines if _SEAM4_TOKENS.search(l))
+        if n:
+            bad.append(f"{rel}({n})")
+    if bad:
+        return False, "OpenClaw path in adapted file(s): " + ", ".join(bad[:8])
+    return True, "no OpenClaw path in an adapted runtime file outside the declared fifth-seam set"
+
+
+def _seam_digest(root: str) -> str:
+    skills = os.path.dirname(root)
+    files = [os.path.join(skills, _MANIFEST_REL), os.path.join(skills, _SESSIONS_REL),
+             os.path.join(skills, _CONTRACT_REL), os.path.join(root, "skill_runner.py"),
+             os.path.join(root, "tools", "ghl_secret_resolver.py")]
+    files += [os.path.join(root, r) for r in _adapter_runtime_files(root)]
+    h = hashlib.sha256()
+    for p in sorted(set(files)):
+        h.update(os.path.relpath(p, skills).encode())
+        h.update(b"\0")
+        try:
+            with open(p, "rb") as f:
+                h.update(f.read())
+        except OSError:
+            h.update(b"<absent>")
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def adapter_seams_status(root: Optional[str] = None) -> Dict[str, Any]:
+    """Run the four seam checks. ``ok`` is True only when all four pass."""
+    root = root or _SKILL_ROOT
+    checks = {"launch": _seam_launch, "session-seed": _seam_session_seed,
+              "teardown": _seam_teardown, "paths-secrets": _seam_paths_secrets}
+    seams = {}
+    for name in SEAM_NAMES:
+        try:
+            ok, detail = checks[name](root)
+        except Exception as exc:  # noqa: BLE001 - a check that crashes is a failed seam
+            ok, detail = False, f"check crashed: {type(exc).__name__}"
+        seams[name] = {"ok": bool(ok), "detail": detail}
+    return {"ok": all(s["ok"] for s in seams.values()), "seams": seams,
+            "digest": _seam_digest(root)}
+
+
+def seams_receipt_path(root: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> str:
+    env = os.environ if env is None else env
+    d = (env.get("SKILL6_SEAMS_RECEIPT_DIR") or "").strip()
+    if not d:
+        import browser_manager  # tools/ is on sys.path (slice 4 bootstrap above)
+        d = os.path.join(browser_manager.durable_root(), "skill6-seams")
+    return os.path.join(d, SEAMS_RECEIPT_NAME)
+
+
+def record_seams_receipt(root: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Write the receipt for the CURRENT adapter files, only when all four pass."""
+    status = adapter_seams_status(root)
+    if not status["ok"]:
+        return status
+    path = seams_receipt_path(root, env)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"all_ok": True, "digest": status["digest"], "seams": status["seams"]}, f, indent=2)
+    return status
+
+
+class AdapterSeamsNotPorted(RuntimeError):
+    """A live GHL write was attempted on this harness before the four adapter
+    seams passed. ``str(exc)`` starts with ``ADAPTER-SEAMS-NOT-PORTED``."""
+
+
+def seams_refusal(root: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> str:
+    """Empty string when a live write may proceed; else the refusal text."""
+    status = adapter_seams_status(root)
+    failing = [f"{n}: {s['detail']}" for n, s in status["seams"].items() if not s["ok"]]
+    if failing:
+        return f"{SEAMS_REFUSAL_CODE}: seams not passing ({'; '.join(failing)})"
+    try:
+        rec = json.loads(_read(seams_receipt_path(root, env)) or "{}")
+    except ValueError:
+        rec = {}
+    if not (rec.get("all_ok") is True and rec.get("digest") == status["digest"]):
+        return (f"{SEAMS_REFUSAL_CODE}: all four seams pass but no seams receipt matches the "
+                "current adapter files; record one with `python3 skill_runner.py seams --record`")
+    return ""
+
+
+def require_adapter_seams(root: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> None:
+    """Gate every LIVE GHL write. Raises AdapterSeamsNotPorted until the seams pass."""
+    msg = seams_refusal(root, env)
+    if msg:
+        raise AdapterSeamsNotPorted(msg)
 
 
 def install(proof_pairs: Optional[Dict[str, str]] = None, *,
@@ -609,6 +912,24 @@ def install(proof_pairs: Optional[Dict[str, str]] = None, *,
     if ghl_verify is not None and hasattr(ghl_verify, "verify_page"):
         ghl_verify.verify_page = _RoutedVerify(ghl_verify.verify_page)
         wired.append("ghl_verify.verify_page (build_ok tail tracking)")
+
+    # -- seam 4 (paths): the public-route engine lives in the sibling Skill 44 --
+    if os.path.isdir(nine_public_engine_root()):
+        os.environ.setdefault("GHL_PUBLIC_ENGINE_ROOT", nine_public_engine_root())
+    # -- seam 2 (session seed): the shared resolver reads the install's secrets env --
+    try:
+        bind_session_seed(importlib.import_module("ghl_secret_resolver"))
+        wired.append("ghl_secret_resolver.ENV_STORES (seam 2: $SECRETS_ENV)")
+    except ImportError:
+        pass
+    # -- seam 3 (teardown): every browser_session is registered + reaped (Item 33) --
+    _sessions_py = os.path.join(os.path.dirname(_SKILL_ROOT), _SESSIONS_REL)
+    if os.path.isfile(_sessions_py) and not getattr(bm.browser_session, "_seam3", False):
+        bm.browser_session = wrap_browser_session(
+            bm.browser_session, _load_by_path("_skill6_browser_sessions", _sessions_py),
+            lambda: harness_hygiene_dir(bm),
+            teardown_cmd_fn=getattr(bm, "emit_teardown_step", None))
+        wired.append("browser_manager.browser_session (seam 3: Item 33 registry)")
 
     # -- slice 4: honest isolation reporting (soft-import repair above) --
     fb._isolated_mode = isolated_mode
@@ -1007,6 +1328,15 @@ def _selfcheck_slice3() -> None:
         dom2.append(t)
         return {"clicked": True, "n": 1, "err": ""}
 
+    # The dist now carries the canonical composite natively (S06 sync): its F2 walk
+    # calls fb._click_with_proof, whose DOM retry goes through fb._eval.
+    _orig_eval = fb._eval
+
+    def _fake_eval(session, js, timeout=15):
+        dom2.append("Create form")
+        return json.dumps({"clicked": True, "n": 1, "err": ""})
+
+    fb._eval = _fake_eval
     routed_click._impl = _impl_click
     routed_wait._impl = _impl_wait
     routed_wait.dom_fn = _fake_dom
@@ -1019,10 +1349,12 @@ def _selfcheck_slice3() -> None:
         fb._walk_click_list("sess-x", click_list, plan, ev, [0], [], [])
     except fb.StopAndReport as sr:
         raised = sr
+    fb._eval = _orig_eval
     _C.ok(raised is not None and raised.step == "F2.modal",
           "the REAL dist walk STOPs honestly at F2.modal (never blunders on)")
     _C.ok(clicks2 == ["Create form", "Create form"] and dom2 == ["Create form", "Create form"],
-          "two proof-gated attempts, ONE DOM retry each (canonical F2 semantics)")
+          "two proof-gated attempts, ONE DOM retry each (canonical F2 semantics)"
+          f" [clicks={clicks2} dom={dom2}]")
 
     (routed_write._impl, routed_walk._impl, routed_delete._impl,
      routed_residue._impl, routed_click._impl, routed_wait._impl,
@@ -1072,8 +1404,9 @@ def _selfcheck_slice4() -> None:
     _C.ok(routed.returncode == 0, f"routed -I child ran: {routed.stderr[-400:]}")
     a = json.loads(legacy.stdout.strip().splitlines()[-1])
     b = json.loads(routed.stdout.strip().splitlines()[-1])
-    _C.ok(a["iframe"] is False,
-          "control: bare `python3 -I` load MISSES the sibling import (the trap)")
+    _C.ok(a["iframe"] is True,
+          "the synced dist bootstraps its own tools/ dir (S06 upstream): a bare "
+          "`python3 -I` load already resolves the sibling import")
     _C.ok(b["iframe"] is True,
           "CHANGED behavior: routing the tools/ dir first resolves it under -I")
     _C.ok(b["isolated"] is True, "the -I run reports its isolation honestly")
@@ -1141,6 +1474,17 @@ def _selfcheck_slice4() -> None:
 
 
 def self_check() -> int:
+    # The slices are proven against hermetic fakes, never a live GHL write; the
+    # seams gate has its own suite (tests/test_s06_entry_wiring_skill_runner.py).
+    global seams_refusal
+    real, seams_refusal = seams_refusal, (lambda *a, **k: "")
+    try:
+        return _self_check()
+    finally:
+        seams_refusal = real
+
+
+def _self_check() -> int:
     print(f"skill_runner self-check — canonical {CANONICAL_VERSION} "
           f"(merge {CANONICAL_MERGE}) slices on the 999 distribution")
     print(f"  isolated_mode={isolated_mode()} tools_dir={TOOLS_DIR}")
@@ -1156,7 +1500,22 @@ def self_check() -> int:
     return 0
 
 
+def seams_cli(argv: List[str]) -> int:
+    """``python3 skill_runner.py seams [--record]``: print the four seam verdicts;
+    with ``--record`` write the seams receipt (only when all four pass)."""
+    status = record_seams_receipt() if "--record" in argv else adapter_seams_status()
+    for name in SEAM_NAMES:
+        s = status["seams"][name]
+        print(f"  seam {name}: {'PASS' if s['ok'] else 'FAIL'} - {s['detail']}")
+    msg = seams_refusal()
+    print("LIVE WRITES ALLOWED" if not msg else f"LIVE WRITES REFUSED - {msg}")
+    return 0 if not msg else 1
+
+
 if __name__ == "__main__":
+    sys.modules.setdefault("skill_runner", sys.modules[__name__])  # one module, not two
+    if sys.argv[1:2] == ["seams"]:
+        raise SystemExit(seams_cli(sys.argv[2:]))
     try:
         raise SystemExit(self_check())
     except AssertionError as exc:

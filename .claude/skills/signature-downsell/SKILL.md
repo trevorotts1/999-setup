@@ -1,12 +1,12 @@
 ---
 name: signature-downsell
 description: Build the Signature Downsell page (D1) - the reshaped alternative offer shown only after an explicit Upsell 1 decline. Derives an exact eight-section page from the 12-section landing format (keep sections 1-7, remove 8-11, replace section 12 with a renumbered section 8, "When Time Runs Out", listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, a guarded native one-click action shared with the checkout system, and routes: D1 paid goes to the SAME Upsell 2 when enabled else the final thank-you; D1 declined goes to the final thank-you with the original order untouched.
-version: 0.1.1
+version: 0.1.7
 ---
 
 # Signature Downsell Page (Skill 81)
 
-Status: BUILD CANDIDATE from the S81 room (Signature Launch packet v1.0, spec 11). Not merged, not installed, not live. Batch merge requires Trevor's explicit approval of an exact candidate.
+Status: design package (Signature Launch packet v1.0, spec 11), shipped in this repo at the version above. **Design only; not installed.** The package holds the copy contract, design profile, schemas, validators, fixtures and tests. It has no runtime: nothing here installs the D1 page or its one-click action, and Skill 6 has no D1 install step yet (scheduled Skill 06 work items S06-02 and UPS-08). Every D1 result and client summary line must read "design only; not installed" until Skill 6 records a binding read-back for D1.
 
 ## Route responsibility (packet 02 section 4, binding)
 
@@ -40,15 +40,15 @@ Reuse the shared transactional action component owned by the shared page/checkou
 - `schemas/downsell-result-extension.schema.json` - the D1 extension carried alongside the packet page-result: refined offer description, UI states reference, difference matrix, disclosure audit, CTA map, source-profile mapping, heading normalization record, route result. Cross-field semantics are enforced by `validate_result_extension` in the validator and exercised by `tests/test_result_extension.py`.
 - `validators/validate_downsell.py` - stdlib fail-closed validators: copy derivation, offer difference, trial disclosure, entry guard, result extension.
 - `validators/validate_request.py` - stdlib fail-closed evaluator for `schemas/downsell-request.schema.json`: evaluates the packaged request schema with the standard library only, so the request contract is enforceable without the third-party jsonschema package, and fails closed on any unsupported schema keyword. Exercised by `tests/test_validate_request.py`.
-- `fixtures/valid-downsell-page.json`, `fixtures/valid-downsell-result.json`, `fixtures/valid-downsell-request.json`, `fixtures/valid-downsell-result-trial-matched.json` - positive fixtures (test-only data, labeled). See the fixture pairing note under Package notes below and in `fixtures/README.md`: the page fixture and the result fixture are NOT a matched pair; the trial-matched fixture is a separate additional fixture, the matched result-extension companion to the page fixture's trial offer.
+- `fixtures/valid-downsell-page.json`, `fixtures/valid-downsell-result.json`, `fixtures/valid-downsell-request.json`, `fixtures/valid-downsell-request-policy.json`, `fixtures/valid-downsell-result-trial-matched.json` - positive fixtures (test-only data, labeled). See the fixture pairing note under Package notes below and in `fixtures/README.md`: the page fixture and the result fixture are NOT a matched pair; the trial-matched fixture is a separate additional fixture, the matched result-extension companion to the page fixture's trial offer.
 - `fixtures/README.md` - fixture inventory and the explicit not-a-matched-pair note for the page and result fixtures.
 - `tests/` - validator, validator defect-fix, route, route-law pin, result-extension, request-schema, page-fixture disclosure and matched-pair trial-result suites (the matched-pair suite is `tests/test_matched_pair_trial_result.py`). Run: `python3 -m unittest discover -s tests -v`
 - `adapters/README.md` - the two thin wrappers over the shared action component and the S06 native install rail, with their blocked status stated plainly. No payment client lives here.
-- `adapters/provisional-binding-map.md` - PROVISIONAL room prep artifact, named here so the contents list accounts for every file in this directory: it maps D1 requirements against the S79/S06 extra-offer interface DRAFT, it is superseded the moment the confirmed S79/S06 contract lands, and it does NOT ship as part of the installed skill package. Nothing in it is a confirmed contract.
+- `references/wireframe-layout.md` - the page's eight bands, one by one, on desktop and mobile: the structure Skill 71's image pipeline draws wireframes and mockups from (the machine form is `71-blackceo-signature-page/references/page-structures.json`, role `downsell_1`).
 
 ## Package notes
 
-- Fixture pairing: `fixtures/valid-downsell-page.json` and `fixtures/valid-downsell-result.json` are NOT a matched pair. They are independent positive fixtures for two different contract objects. The page fixture describes a $1 trial offer ($1 due now for 30 days, then $27 per month) checked by the copy validator; the result fixture describes a $37 one-time offer (due_now_minor 3700, billing_type one_time) checked against the result-extension schema and the semantic validator. Do not derive one from the other, do not read the result fixture's disclosure audit as the disclosure for the page fixture's trial offer, and do not align their amounts: other tests depend on each fixture's current values. `fixtures/valid-downsell-request.json` is a third, separate positive fixture: a genuine instance of `schemas/downsell-request.schema.json`.
+- Fixture pairing: `fixtures/valid-downsell-page.json` and `fixtures/valid-downsell-result.json` are NOT a matched pair. They are independent positive fixtures for two different contract objects. The page fixture describes a $1 trial offer ($1 due now for 30 days, then $27 per month) checked by the copy validator; the result fixture describes a $37 one-time offer (due_now_minor 3700, billing_type one_time) checked against the result-extension schema and the semantic validator. Do not derive one from the other, do not read the result fixture's disclosure audit as the disclosure for the page fixture's trial offer, and do not align their amounts: other tests depend on each fixture's current values. `fixtures/valid-downsell-request.json` is a third, separate positive fixture: a genuine instance of `schemas/downsell-request.schema.json`. `fixtures/valid-downsell-request-policy.json` is a fourth: the same request at schema_version 1.1 carrying the prompt-policy citation, the stored positive instance of the adoption map 1.5 dual-accept shape.
 
 ## Hard boundaries
 

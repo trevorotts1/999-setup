@@ -87,6 +87,15 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+import ghl_secret_resolver as _resolver  # the ONE shared secret resolver (S06-04)
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (S06-08 evidence contract: Q4 file modes)
+
+
 def _load_kie_prompt_enforcer():
     """Find shared-utils/kie_prompt_enforcer.py (in-tree beside an ancestor of
     this file, or under $SKILL6_SHARED_UTILS_DIR) and import it. Falls back to
@@ -100,7 +109,7 @@ def _load_kie_prompt_enforcer():
                 sys.path.insert(0, str(d))
             import kie_prompt_enforcer
             return kie_prompt_enforcer
-    # No shared-utils beside this skill (a box may not ship it): the vendored embedded copy of the enforcer,
+    # No shared-utils beside this skill (a box may not ship it): the byte-identical embedded copy of the enforcer,
     # generated and hash-locked by scripts/embed-kie-prompt-enforcer.py. It enforces the same 80 percent floor and
     # 100 percent ceiling from its last-known limit table, and fails closed for a model it has no limit for.
     import importlib.util
@@ -260,33 +269,30 @@ _GHL_ENV_STORES = _default_env_stores()
 def _stores_display() -> str:
     return ", ".join(_GHL_ENV_STORES) if _GHL_ENV_STORES else "(none designated — set $SECRETS_ENV)"
 
+# *_FILE indirection variables (packet spec 05 section 6; S06-04): when set,
+# the named file's CONTENTS are the credential — the highest-precedence layer
+# of the shared resolver (tools/ghl_secret_resolver.py). A set-but-broken
+# *_FILE variable (missing / loose-permissions / empty target) fails loudly.
+_PIT_FILE_VAR = "GHL_LOCATION_PIT_FILE"
+_LOCATION_ID_FILE_VAR = "GHL_LOCATION_ID_FILE"
+
 
 def _is_placeholder(value: str) -> bool:
     """True when ``value`` is a documentation placeholder, not a real credential.
 
-    Mirrors ``38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh``'s
-    ``_is_placeholder()`` (the proven, already-fixed reference implementation —
-    root-caused a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: the 10-char
-    doc placeholder ``pit-abc123`` is non-empty, so a naive first-non-empty-wins
-    resolver picks it up over the real credential). Same three shapes, ported to
-    Python: shorter than 20 characters (a real PIT/refresh token is far longer),
-    a known dummy literal (``pit-abc...``, ``changeme...``, ``xxx...``,
+    Delegates to ``ghl_secret_resolver.is_placeholder`` — since S06-04 the
+    placeholder contract has exactly ONE implementation, shared by the
+    refresh-token, PIT, and location-id resolvers. The shapes are unchanged
+    from the proven reference implementation that root-caused the false
+    "PIT is DEAD/EXPIRED" alarm on 2026-08-03 (the 10-char doc placeholder
+    ``pit-abc123`` is non-empty, so a naive first-non-empty-wins resolver
+    picks it up over the real credential): shorter than 20 characters, a
+    known dummy literal (``pit-abc...``, ``changeme...``, ``xxx...``,
     ``your-...`` / ``your_...``, a ``*_here``/``*-here`` suffix), or an
     angle-bracket placeholder token (``<...>``). The value is only ever
     inspected for shape here — never logged or returned.
     """
-    if not value:
-        return True
-    if len(value) < 20:
-        return True
-    low = value.lower()
-    if low.startswith("pit-abc") or low.startswith("changeme") or low.startswith("xxx") \
-       or low.startswith("your-") or low.startswith("your_") \
-       or low.endswith("_here") or low.endswith("-here") \
-       or (value.startswith("<") and value.endswith(">")):
-        return True
-    return False
-
+    return _resolver.is_placeholder(value)
 
 def _scan_env_stores(names: tuple[str, ...]) -> tuple[str, str] | None:
     """Search the canonical env STORES for the first non-empty value of any of
@@ -299,38 +305,18 @@ def _scan_env_stores(names: tuple[str, ...]) -> tuple[str, str] | None:
     A store line is parsed as ``KEY=VALUE`` (``export KEY=VALUE`` also accepted);
     surrounding quotes are stripped; ``#`` comment lines are ignored. For an
     allowlist-style value (comma-separated ids) the FIRST id is returned (callers
-    that pass *_ALLOWED_LOCATION_IDS rely on this to pick a single location)."""
-    # Preference is by NAME first (so GOHIGHLEVEL_API_KEY in a later store still
-    # beats GHL_API_KEY in an earlier store — the preferred alias always wins).
-    for name in names:
-        for store_path in _GHL_ENV_STORES:
-            expanded = os.path.expanduser(store_path)
-            if not os.path.isfile(expanded):
-                continue
-            try:
-                with open(expanded, encoding="utf-8", errors="replace") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if not line or line.startswith("#") or "=" not in line:
-                            continue
-                        if line.startswith("export "):
-                            line = line[len("export "):].lstrip()
-                        k, _, v = line.partition("=")
-                        if k.strip() != name:
-                            continue
-                        v = v.strip().strip("'\"").strip()
-                        # An allowlist value may be a comma list — take the first id.
-                        if "," in v:
-                            v = v.split(",", 1)[0].strip()
-                        # Placeholder-shaped store values are SKIPPED, not returned —
-                        # a store line is not automatically real just because it is a
-                        # file rather than the live env (see _is_placeholder docstring).
-                        if v and not _is_placeholder(v):
-                            return v, f"{name} in {store_path}"
-            except OSError:
-                continue
-    return None
+    that pass *_ALLOWED_LOCATION_IDS rely on this to pick a single location).
 
+    Delegates to ``ghl_secret_resolver.scan_env_stores`` (S06-04: the store
+    scan exists exactly once), passing the CURRENT ``_GHL_ENV_STORES`` at call
+    time — tests monkeypatch that module attribute — and the historic
+    comma-first store transform."""
+    hit = _resolver.scan_env_stores(
+        names,
+        stores=tuple(_GHL_ENV_STORES),
+        transform=_resolver.first_of_comma_list,
+    )
+    return hit if hit[0] else None
 
 # ── small helpers ─────────────────────────────────────────────────────────────
 
@@ -359,33 +345,35 @@ def kie_generate_path() -> str:
 def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True) -> str:
     """Resolve the GHL LOCATION Private Integration Token (media-scoped).
 
-    Resolution order (REAL research before any honest-fail):
-      1. The live process environment, across EVERY LOCATION-class alias in
+    Resolution goes through the ONE shared resolver
+    (``ghl_secret_resolver.attempt_resolution``) with this precedence:
+      1. The *_FILE indirection: when ``GHL_LOCATION_PIT_FILE`` is set, the
+         CONTENTS of the file it names (the file must be owner-only; a
+         missing, loose-permissions, or empty target fails loudly with the
+         variable and path named, never the contents).
+      2. The live process environment, across EVERY LOCATION-class alias in
          ``_PIT_ENV_NAMES`` (``PODCAST_ENGINE_GHL_PIT`` preferred, then
          ``GOHIGHLEVEL_API_KEY``, then ``GHL_API_KEY``, then the explicit
          ``*_LOCATION_PIT`` names) — preferred alias wins.
-         A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED here, not
-         returned: on a real box the live process env may carry config-seeded
-         copies of these vars, and those copies are placeholders BY
-         DESIGN (they rot / get seeded with the doc example ``pit-abc123``). Accepting
-         the first non-empty value — placeholder or not — is exactly the bug that
-         produced a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: a 10-char
-         placeholder is non-empty, so it silently outranked the real credential.
-      2. If no LIVE (non-placeholder) value resolved, the env STORE in
-         ``_GHL_ENV_STORES`` (the file ``$SECRETS_ENV`` designates) is parsed
-         directly — the SAME store the rest of this pack names, and the
-         AUTHORITATIVE store per TERMINOLOGY.md.
-         This is what makes a clean agent shell (where the wrapper never exported
-         the secrets env file) resolve the real token instead of false-failing on
-         an empty env var, AND what lets a real store value win over a placeholder
-         that leaked into the live env from a config seed.
+      3. The canonical env STORES in ``_GHL_ENV_STORES`` (the file
+         ``$SECRETS_ENV`` designates, then the legacy stores), name-major.
+    A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED at every
+    layer, not returned: on a real box the live process env may carry
+    config-seeded copies of these vars, and those copies are placeholders BY
+    DESIGN (they rot / get seeded with the doc example ``pit-abc123``). Accepting
+    the first non-empty value — placeholder or not — is exactly the bug that
+    produced a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: a 10-char
+    placeholder is non-empty, so it silently outranked the real credential. The
+    store layer is also what makes a clean agent shell (where the wrapper never
+    exported the secrets env file) resolve the real token instead of
+    false-failing on an empty env var.
 
     The LOCATION PIT is what media upload REQUIRES (``medias.write`` scope); an
     AGENCY PIT 401s for media, so this NEVER falls back to an agency-class name.
 
-    Only after every alias × every store is exhausted (or every hit was a
-    placeholder) does it raise — and the error NAMES exactly which env vars and
-    which store paths were checked, and tells the caller to ``source`` the store.
+    Only after every source is exhausted (or every hit was a placeholder)
+    does it raise — and the error NAMES exactly which file variable, env vars,
+    and store paths were checked, and tells the caller to ``source`` the store.
     If the search found an AGENCY PIT but no LOCATION PIT, the message says so
     explicitly (that is a scope problem, not a missing-token problem).
 
@@ -395,34 +383,24 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
             stores; tests set False to assert the pure-env behaviour in isolation.
 
     Raises:
-        RuntimeError: the LOCATION PIT was not found in ANY alias in the live env
-            NOR in any canonical store — with the full list of what was checked.
+        RuntimeError: the LOCATION PIT was not found in ANY source — with the
+            full list of what was checked. (A set-but-broken
+            ``GHL_LOCATION_PIT_FILE`` raises ghl_secret_resolver.SecretFileError,
+            a RuntimeError subclass, naming the variable, path, and mode.)
     """
     env = env if env is not None else os.environ
 
-    # 1) Live process environment — every LOCATION-class alias, preferred first.
-    #    Placeholder-shaped values are skipped (not returned) so a config-seeded
-    #    placeholder inherited into the process env can never shadow a real
-    #    credential sitting in the secrets store (step 2).
-    saw_placeholder = False
-    for name in _PIT_ENV_NAMES:
-        val = str(env.get(name, "")).strip().strip("'\"")
-        if not val:
-            continue
-        if _is_placeholder(val):
-            saw_placeholder = True
-            continue
-        return val
+    res = _resolver.attempt_resolution(
+        env,
+        file_vars=(_PIT_FILE_VAR,),
+        aliases=_PIT_ENV_NAMES,
+        stores=tuple(_GHL_ENV_STORES),
+        search_stores=search_stores,
+    )
+    if res.value:
+        return res.value
 
-    # 2) Canonical env stores (the value physically lives here in a real install).
-    #    This is the AUTHORITATIVE source (TERMINOLOGY.md) and is preferred over any
-    #    placeholder found in step 1.
-    if search_stores:
-        hit = _scan_env_stores(_PIT_ENV_NAMES)
-        if hit:
-            return hit[0]
-
-    # 3) Genuinely absent — fail loud, naming EVERYTHING that was checked.
+    # Genuinely absent — fail loud, naming EVERYTHING that was checked.
     agency_seen = any(str(env.get(n, "")).strip() for n in _AGENCY_PIT_ENV_NAMES)
     if search_stores and not agency_seen:
         agency_seen = _scan_env_stores(_AGENCY_PIT_ENV_NAMES) is not None
@@ -432,14 +410,16 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
         if agency_seen else ""
     )
     placeholder_note = (
-        " Note: at least one candidate in the live env was a documentation "
-        "PLACEHOLDER (short / dummy-shaped) and was SKIPPED rather than used — "
-        "put the real value in the install's secrets env file, not just a config seed."
-        if saw_placeholder else ""
+        " Note: at least one candidate among the checked sources was a "
+        "documentation PLACEHOLDER (short / dummy-shaped) and was SKIPPED "
+        "rather than used — put the real value in the install's secrets env "
+        "file, not just a config seed."
+        if res.placeholder_seen else ""
     )
     raise RuntimeError(
         "GHL LOCATION PIT not found IN THE ENVIRONMENT or in any canonical env "
-        "store. Checked env vars (LOCATION-class, in order): "
+        "store. Checked _FILE variable: "
+        f"{_PIT_FILE_VAR}. Checked env vars (LOCATION-class, in order): "
         f"{', '.join(_PIT_ENV_NAMES)}. Checked stores: "
         f"{_stores_display()}. "
         "The LOCATION Private Integration Token normally lives in the "
@@ -450,15 +430,21 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
         f"PIT 401s for media.{agency_note}{placeholder_note}"
     )
 
-
 def resolve_location_id(env: dict | None = None, *, search_stores: bool = True) -> str:
     """Resolve the GHL location id (the media/sub-account location).
 
-    Same robust resolution order as ``resolve_location_pit``: every alias in
-    ``_LOCATION_ENV_NAMES`` across the live env first (``GOHIGHLEVEL_LOCATION_ID``
-    preferred, then ``GHL_LOCATION_ID``, then the ``*_ALLOWED_LOCATION_IDS`` single-id
-    fallbacks), THEN the canonical env stores. Only after both are exhausted does it
-    raise, naming exactly which vars and stores were checked.
+    Same shared-resolver contract as ``resolve_location_pit``
+    (``ghl_secret_resolver.attempt_resolution``): (1) the *_FILE indirection
+    ``GHL_LOCATION_ID_FILE``; (2) every alias in ``_LOCATION_ENV_NAMES``
+    across the live env (``PODCAST_ENGINE_GHL_LOCATION_ID`` preferred, then
+    ``GOHIGHLEVEL_LOCATION_ID``, then ``GHL_LOCATION_ID``, then the
+    ``*_ALLOWED_LOCATION_IDS`` single-id fallbacks); (3) the canonical env
+    stores, name-major. An allowlist value may be a comma list; the first id
+    wins at every layer. Placeholder-shaped candidates are skipped at every
+    layer (before S06-04 the live-env layer did not screen them — the
+    unified contract screens everywhere). Only after all sources are
+    exhausted does it raise, naming exactly which file variable, vars, and
+    stores were checked.
 
     Args:
         env: env mapping to read (default ``os.environ``).
@@ -466,37 +452,42 @@ def resolve_location_id(env: dict | None = None, *, search_stores: bool = True) 
             stores; tests set False to assert pure-env behaviour in isolation.
 
     Raises:
-        RuntimeError: the location id was not found in any alias nor any store —
-            with the full list of what was checked.
+        RuntimeError: the location id was not found in any source — with the
+            full list of what was checked. (A set-but-broken
+            ``GHL_LOCATION_ID_FILE`` raises ghl_secret_resolver.SecretFileError,
+            a RuntimeError subclass, naming the variable, path, and mode.)
     """
     env = env if env is not None else os.environ
 
-    # 1) Live env — every alias, preferred first. An allowlist value may be a comma
-    #    list; take the first id (single-location builds pin one id).
-    for name in _LOCATION_ENV_NAMES:
-        val = str(env.get(name, "")).strip().strip("'\"")
-        if "," in val:
-            val = val.split(",", 1)[0].strip()
-        if val:
-            return val
+    res = _resolver.attempt_resolution(
+        env,
+        file_vars=(_LOCATION_ID_FILE_VAR,),
+        aliases=_LOCATION_ENV_NAMES,
+        stores=tuple(_GHL_ENV_STORES),
+        search_stores=search_stores,
+        transform=_resolver.first_of_comma_list,
+    )
+    if res.value:
+        return res.value
 
-    # 2) Canonical env stores.
-    if search_stores:
-        hit = _scan_env_stores(_LOCATION_ENV_NAMES)
-        if hit:
-            return hit[0]
-
+    placeholder_note = (
+        " Note: at least one candidate among the checked sources was a "
+        "documentation PLACEHOLDER (short / dummy-shaped) and was SKIPPED "
+        "rather than used."
+        if res.placeholder_seen else ""
+    )
     raise RuntimeError(
         "GHL location id not found IN THE ENVIRONMENT or in any canonical env "
-        "store. Checked env vars (in order): "
+        "store. Checked _FILE variable: "
+        f"{_LOCATION_ID_FILE_VAR}. Checked env vars (in order): "
         f"{', '.join(_LOCATION_ENV_NAMES)}. Checked stores: "
         f"{_stores_display()}. "
         "The location id normally lives in the install's secrets env file "
         "(the file $SECRETS_ENV designates) under "
         "GOHIGHLEVEL_LOCATION_ID — load it first "
         "(e.g. `set -a; source \"$SECRETS_ENV\"; set +a`) and retry."
+        f"{placeholder_note}"
     )
-
 
 # ── 1) build_prompts_json — derive the KIE prompts from the page copy ─────────
 
@@ -546,8 +537,10 @@ def build_prompts_json(
         default_mode: Fallback mode for entries that omit ``mode`` (default
             ``"t2i"``).
         enforce_floor: When True, every prompt's CONTENT (measured before the pin
-            is appended) must be at least ``PROMPT_CHAR_FLOOR`` characters or a
-            ``ValueError`` is raised. Default False so the mechanical unit tests of
+            is appended) must fall inside the KIE rule 12 length band (95-100% of
+            the model's maxLength, floor 80%, ceiling 100%), as measured by the
+            shared knowledge-prompt enforcer (``KPE.check``), or a ``ValueError``
+            is raised. Default False so the mechanical unit tests of
             pin/mode/dup behaviour are unaffected; the paid build path
             (``ghl_image_stage.run_image_pipeline``) always passes True, which is
             what makes it impossible for a weak prompt to reach a paid Kie call.
@@ -804,6 +797,16 @@ def _multipart_encode(fields: dict[str, str], file_field: str, file_path: str) -
     return body, f"multipart/form-data; boundary={boundary}"
 
 
+def _require_live_seams() -> None:
+    """Refuse (ADAPTER-SEAMS-NOT-PORTED) until the four adapter seams pass.
+    A missing skill_runner.py raises ImportError: fail closed, never caught."""
+    _sr_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _sr_root not in sys.path:
+        sys.path.insert(0, _sr_root)
+    import skill_runner
+    skill_runner.require_adapter_seams()
+
+
 def upload_media(
     png_path: str,
     location_id: str,
@@ -829,6 +832,11 @@ def upload_media(
     This is on the bare-Python side of the auth split (services.* + Bearer PIT is
     NOT Cloudflare-WAF-gated). FAIL-LOUD: a non-2xx response, or a 2xx with no
     ``fileId``/``url``, raises (we never fabricate a CDN URL).
+
+    NAMED GAP (GHL-169): ``media.upload`` is a registered row, but the public
+    adapter carries JSON bodies only and the row declares no readback plan, so
+    no supported adapter route can send this multipart write. See
+    ``ghl_route_gaps.py`` entry ``ghl_media.py:860``.
 
     Args:
         png_path: Local PNG to upload (must be a real PNG — re-verified).
@@ -869,6 +877,8 @@ def upload_media(
 
     body, content_type = _multipart_encode(fields, "file", png_path)
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH
+    if opener is None:
+        _require_live_seams()  # real transport only; an injected opener is the test seam
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
@@ -916,6 +926,98 @@ def upload_media(
     }
 
 
+# ── 3a) list_media — REQUIRED-type media list, routed through the adapter ────
+#
+# GHL-169: media LIST is the one media operation moved onto the frozen public
+# adapter. `type` is a REQUIRED GET /medias/files query parameter (a bare call
+# answers 422 "type must be a string / type should not be empty"); the type gate
+# runs BEFORE the adapter is built, so a missing/out-of-set value never reaches
+# a transport. `media.upload` and `media.folders.create` stay on the raw path
+# and are declared named gaps in ghl_route_gaps.py.
+
+MEDIA_LIST_TYPES = ("file", "image", "video", "audio", "document")
+
+
+class MediaListTypeError(ValueError):
+    """Media LIST refused before any HTTP: ``type`` missing or outside the set."""
+
+
+class MediaListError(RuntimeError):
+    """The media LIST call itself failed (non-2xx, non-JSON, or no ``files``)."""
+
+
+def list_media(
+    location_id: str,
+    pit: str,
+    *,
+    media_type: str | None = None,
+    timeout: int = 60,
+    opener: Callable[[urllib.request.Request, int], Any] | None = None,
+    capability: Any = None,
+    capability_record: str | None = None,
+) -> dict:
+    """List one media category through the frozen public adapter.
+
+    ``GET /medias/files`` REQUIRES a ``type`` query parameter. Without it the API
+    answers 422; with ``type=file`` it answers 200 ``{files, count, traceId}``.
+    The operation row supplies the Version (``v3``); this module carries no
+    media-list version literal and no origin/path literal for the call.
+
+    FAIL-LOUD: a missing/invalid ``media_type`` raises ``MediaListTypeError``
+    BEFORE any adapter/transport construction. A capability refusal (the
+    default-deny record) or a non-2xx/malformed response raises
+    ``MediaListError`` — never a fabricated empty listing.
+
+    Args:
+        location_id: The GHL sub-account location id.
+        pit: The LOCATION Private Integration Token (Bearer).
+        media_type: REQUIRED category — one of ``MEDIA_LIST_TYPES``; case and
+            surrounding whitespace are ignored.
+        timeout: HTTP timeout seconds.
+        opener: Optional ``(Request, timeout) -> response-like`` for tests.
+        capability: Optional ``CapabilityGate``; omitted = checked-in record
+            (default-deny).
+        capability_record: Optional explicit capability-record path.
+
+    Returns:
+        ``{files, count, traceId, http}``.
+    """
+    import ghl_public_client as client
+
+    normalized = str(media_type).strip().lower() if media_type is not None else ""
+    if not normalized:
+        raise MediaListTypeError(
+            "media LIST requires an explicit type: pass media_type= one of "
+            f"{', '.join(MEDIA_LIST_TYPES)}. `type` is a REQUIRED "
+            "GET /medias/files query parameter — omitting it yields HTTP 422 "
+            "'type must be a string / type should not be empty'."
+        )
+    if normalized not in MEDIA_LIST_TYPES:
+        raise MediaListTypeError(
+            f"media LIST type {media_type!r} is not supported; use one of "
+            f"{', '.join(MEDIA_LIST_TYPES)}."
+        )
+    _require(location_id, "location_id")
+    _require(pit, "pit")
+    try:
+        response = client.list_media_files(
+            location_id,
+            pit,
+            normalized,
+            opener=opener,
+            capability=capability,
+            capability_record=capability_record,
+            timeout=float(timeout),
+        )
+    except client.MediaTypeRequired as exc:  # defensive: same gate, one owner
+        raise MediaListTypeError(str(exc)) from exc
+    except client.PublicRouteError as exc:
+        raise MediaListError(
+            f"media list failed for type={normalized!r}: {exc}"
+        ) from exc
+    return response
+
+
 # ── 3b) create_media_folder — per-run named folder (Skill 48 addition) ────────
 
 def media_folder_name_prefix(folder_name: str) -> str:
@@ -958,6 +1060,10 @@ def create_media_folder(
     Sits on the bare-Python side of the auth split (``services.*`` + Bearer PIT is NOT
     Cloudflare-WAF-gated), exactly like ``upload_media``.
 
+    NAMED GAP (GHL-169): ``media.folders.create`` is a registered row, but no
+    non-vacuous readback plan exists for it, so no supported adapter route can
+    send this write. See ``ghl_route_gaps.py`` entry ``ghl_media.py:1082``.
+
     FAIL-LOUD: a non-2xx response, or a 2xx with no recognizable folder id, raises (we
     never fabricate a folder id). When the deployment's GHL plan does not expose a folder
     endpoint, the caller catches the ``RuntimeError`` and falls back to uploading into the
@@ -995,6 +1101,8 @@ def create_media_folder(
 
     body = json.dumps(payload).encode("utf-8")
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_FOLDER_PATH
+    if opener is None:
+        _require_live_seams()  # real transport only; an injected opener is the test seam
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
@@ -1200,6 +1308,20 @@ def build_image_manifest(records: list[dict], out_path: str | None = None) -> li
     violating either is rejected LOUD — the manifest can only ever describe real,
     publicly-resolving images.
 
+    S06-08 EVIDENCE STATUS (Q6 disposition, prep gap 7): the 200 above is a
+    CALLER-ASSERTED status. This function validates the SHAPE of the claim
+    only: nothing here fetches the URL, hashes the bytes, or measures the
+    image, so every entry is stamped ``evidence_status: "caller_asserted"``
+    wherever the manifest is consumed as evidence. A caller-supplied
+    ``evidence_status`` of ``"cdn_verified"`` is REFUSED: no code path in
+    this build performs the fetch, so the claim is unearnable here. The
+    named landing task that earns it: a ``verify_cdn_url()`` here
+    (injectable-opener fetch + sha256 + PNG dimension parse) flipping the
+    stamp only on a real fetch. The independent read-back that exists TODAY
+    is the rendered-<img> gate in ghl_verify (it checks the URL in the
+    rendered DOM, not this manifest's status claim). The written manifest
+    file is mode 0600 (Q4).
+
     Returns the validated list (and writes it to ``out_path`` when given).
     """
     if not isinstance(records, list) or not records:
@@ -1210,6 +1332,14 @@ def build_image_manifest(records: list[dict], out_path: str | None = None) -> li
             raise ValueError(f"records[{i}] must be a dict")
         rid = str(rec.get("id", "")).strip()
         _require(rid, f"records[{i}].id")
+        claimed_status = rec.get("evidence_status")
+        if claimed_status is not None and claimed_status != "caller_asserted":
+            raise ValueError(
+                f"records[{i}] ({rid}): evidence_status {claimed_status!r} is "
+                "refused: no code path in this build fetches/verifies the "
+                "CDN object, so a manifest entry can only ever be stamped "
+                "'caller_asserted' (S06-08 Q6)"
+            )
         cdn_url = str(rec.get("cdn_url", "")).strip()
         if not cdn_url.lower().startswith("https://"):
             raise ValueError(
@@ -1229,15 +1359,14 @@ def build_image_manifest(records: list[dict], out_path: str | None = None) -> li
             "cdn_url": cdn_url,
             "cdn_http_status": 200,
             "used_on_page_id": rec.get("used_on_page_id", ""),
+            "evidence_status": "caller_asserted",
         }
         if "file_id" in rec:
             entry["file_id"] = rec["file_id"]
         out.append(entry)
 
     if out_path:
-        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(out, f, indent=2)
+        ghl_evidence.write_json_private(out_path, out)
     return out
 
 
@@ -1248,7 +1377,6 @@ __all__ = [
     "GHL_MEDIA_VERSION",
     "ENGLISH_LATIN_PIN",
     "TEXT_ABSENT_PIN",
-    "PROMPT_CHAR_FLOOR",
     "PNG_MAGIC",
     "kie_generate_path",
     "resolve_location_pit",
