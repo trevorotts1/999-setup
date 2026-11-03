@@ -5,6 +5,7 @@
 - 999 version act, not a sync: the Skill 71 neutral files were already the synced onboarding code (the Skill 71 sync copied 0 files), so 1.3.4 was a stale label. `skill-version.txt` and `VERSION` now carry the onboarding value (1.3.13, byte copies of the source files) and the `SKILL.md` frontmatter `version:` line follows; nothing else in `SKILL.md` changed. Skill 83 (`black-friday-launcher`) requires Skill 71 at 1.3.12 or higher in its `dependencies.json`.
 - Same batch: the launch families re-synced from onboarding 69ae6927a (`prep/bfl-onboarding-pr2` 3aa7e07f0 plus fix fb469241). Divergence D3 is retired for `launcher_core/cli.py` only: it is a pinned Skill 49 file, so it is a byte copy of onboarding and the onboarding-minted `SF-PROVER-PIN.sha256` verifies here. The unpinned guided-experience files under `shared-utils/signature_launch/experience/` stay divergent.
 - `README.md`, `CONTROL/bundled-components.json`, `CONTROL/bundle-digests.json` and `DIST-02-PACKAGING-MANIFEST.json` carry 1.3.13.
+- 999 synced with onboarding d37c35a7f91988d9246d304cde8d4d0905065b67: `scripts/write_intake.py` and `adapters/openclaw/README.md` brought to source (IMG-07/08/09, CHK-28, CON-19); 999 delta unchanged (`--runtime claude-nine`, the Agnes-key refusal, `intake["runtime"]`). Version stays 1.3.13, still paired with onboarding.
 
 ## 1.3.4 - 2026-10-20 - 999 synced with onboarding v27.1.53: a zero-image generation run is FAILED (onboarding PR #2371)
 

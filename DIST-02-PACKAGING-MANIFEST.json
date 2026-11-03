@@ -13,7 +13,7 @@
   "sources": [
     {
       "repo": "trevorotts1/openclaw-onboarding",
-      "commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "used_for": [
         "49-signature-funnel",
         "71-blackceo-signature-page",
@@ -30,7 +30,7 @@
   ],
   "note_contract_location": {
     "declared_path": "83-black-friday-launcher/launcher_core/dependencies.json",
-    "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+    "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
     "present_at_source_commit": true
   },
   "entries": [
@@ -41,13 +41,13 @@
       "status": "vendored",
       "999_path": ".claude/skills/signature-funnel",
       "source_path": "49-signature-funnel",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "source_version": "v2.1.29",
       "files": 149,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:1189651922451aa6e969b42d59ac5947c4c6696a2d671c34d090b6e87836d72e",
+      "sha256": "sha256:21ceb87f84b991cdca0846518054028a371696eb611c003575196a7e9a45ff22",
       "999_version": "v2.1.29",
-      "source_sha256": "sha256:d1cfdc06169f1ec93707753caf8010b92d9d2fdd6c99549fedcdef5b68f01943"
+      "source_sha256": "sha256:23fa2d076b448855bd2eb3bbcde53080bf5f52e1aa56e43c36b2a6e8332f9461"
     },
     {
       "id": "tree-78-signature-product-selection",
@@ -56,7 +56,7 @@
       "status": "vendored",
       "999_path": ".claude/skills/signature-product-selection",
       "source_path": "78-signature-product-selection",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "source_version": "0.2.6",
       "files": 55,
       "evidence": "diff -r source vs destination -> identical",
@@ -71,7 +71,7 @@
       "status": "vendored",
       "999_path": ".claude/skills/signature-order-form",
       "source_path": "79-signature-order-form",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "source_version": "0.1.7",
       "files": 40,
       "evidence": "diff -r source vs destination -> identical",
@@ -86,7 +86,7 @@
       "status": "vendored",
       "999_path": ".claude/skills/signature-upsell",
       "source_path": "80-signature-upsell",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "source_version": "0.2.5",
       "files": 123,
       "evidence": "diff -r source vs destination -> identical",
@@ -102,7 +102,7 @@
       "status": "already_present",
       "999_path": ".claude/skills/signature-downsell",
       "source_path": "81-signature-downsell",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "999_version": "0.1.7",
       "source_version": "0.1.7",
       "drift": {
@@ -123,7 +123,7 @@
       "status": "already_present",
       "999_path": ".claude/skills/signature-thank-you",
       "source_path": "82-signature-thank-you",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "999_version": "0.3.3",
       "source_version": "0.3.3",
       "drift": {
@@ -143,7 +143,7 @@
       "status": "already_present",
       "999_path": ".claude/skills/blackceo-signature-page",
       "source_path": "71-blackceo-signature-page",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "999_version": "1.3.13",
       "source_version": "1.3.13",
       "drift": {
@@ -153,7 +153,7 @@
       },
       "action": "not overwritten; 999-side copy left as-is",
       "files": 393,
-      "sha256": "sha256:9045399d19a06b511f7e8b7e72fafa00d37703229651f51860e7de6a27b8805a",
+      "sha256": "sha256:333ce085a5259be6b1e33c94ac72f0414105fad80597652df9a8a90ee9fd481c",
       "source_sha256": "sha256:e6201be4b836a8345a0a4c95a851ab22ecf0d00d68b186125d1f89b7941b1d8c"
     },
     {
@@ -163,7 +163,7 @@
       "status": "already_present",
       "999_path": ".claude/skills/council-of-wise-elders",
       "source_path": "77-council-of-wise-elders",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "999_version": "1.0.74",
       "source_version": "1.0.78",
       "drift": {
@@ -184,13 +184,13 @@
       "status": "vendored",
       "999_path": "shared-utils/signature_launch",
       "source_path": "shared-utils/signature_launch",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "files": 111,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:bee218ab2b25f55084e1fee23f39d3c745e6bddc215a4c69ce34b935dbf35c7d",
+      "sha256": "sha256:beaae2b6496341d9d1a805f39a8dd46116d7edaa2b9f110fd1c0a1ef73af6d00",
       "999_version": null,
       "source_version": null,
-      "source_sha256": "sha256:7dbe836c247cb966257c8816ed4953329d52eb5802be0b8e6bb54b1254d74f4c"
+      "source_sha256": "sha256:12d5715719081e932a4f085c2fef705bb4f7e1818ca46424acb90d990f2bb7f4"
     },
     {
       "id": "registry-line-81",
@@ -258,7 +258,7 @@
       "status": "vendored",
       "999_path": ".claude/skills/black-friday-launcher",
       "source_path": "83-black-friday-launcher",
-      "source_commit": "69ae6927a616edbb4cf42edb2dd092f10c81a914",
+      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
       "source_version": "0.2.13",
       "files": 92,
       "evidence": "diff -r source vs destination -> identical",

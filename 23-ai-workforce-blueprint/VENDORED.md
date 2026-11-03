@@ -5,9 +5,10 @@ rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
 - Source ref: `prep/bfl-onboarding-pr2` (3aa7e07f0) plus the cli.py divergence
-  retirement commit fb469241 (the 999 combined re-sync source; not yet on
-  `origin/main`)
-- Source commit: `69ae6927a616edbb4cf42edb2dd092f10c81a914` (the map is byte-identical to the one at `5c41646b0`)
+  retirement commit fb469241 plus the repair commits (Skill 66 layout fix, progress_report
+  neutral, layout-neutral launch tests, pin re-mint) (the 999 combined re-sync source on
+  `scratch/bfl-prep2-plus-999seam`; not yet on `origin/main`)
+- Source commit: `d37c35a7f91988d9246d304cde8d4d0905065b67` (the map is byte-identical to the one at `5c41646b0`)
 - Git blob: `c9085e12742af812082f7aec44f5dcc2fdfe182f`
 - SHA-256: `59805fec8476714918a89d96ffa4553e976794e5c01a2e0fc8939603810c61e7`
 - Entries: 78 (skill numbers 01 through 83; the archived skills are no longer
@@ -43,8 +44,8 @@ declared divergence and 999 receives the pin only through the sync. The only
   `tests/verify_installer_python_deps.sh` exist only in 999.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source commit: `69ae6927a616edbb4cf42edb2dd092f10c81a914` (`prep/bfl-onboarding-pr2` 3aa7e07f0 plus the cli.py
-  divergence retirement commit fb469241; not yet on `origin/main`)
+- Source commit: `d37c35a7f91988d9246d304cde8d4d0905065b67` (`prep/bfl-onboarding-pr2` 3aa7e07f0 plus the cli.py
+  divergence retirement commit fb469241 plus the repair commits; not yet on `origin/main`)
 - Source version: `0.2.13`
 - Source tree (`83-black-friday-launcher/` at that commit): 90 files, digest
   `sha256:55741fc80ec984486d226786eac1d62da984e9eb6d36eb8829616253acdc9d7d`
@@ -60,6 +61,12 @@ The launcher family's `shared-utils/` trees (`signature_launch`,
 (`shared-utils/ghl`, `fab_qc.py` and `fab_artifact.py` are plain byte copies: the
 sync script's launcher family lists only `signature_launch`,
 `signature_launch_contract` and `client_intake`).
+
+`shared-utils/signature_launch/experience/progress_report.py` is now a byte copy
+of the source (no longer divergence D3): the neutral `delivery_report.py` calls its
+CON-19 API (`RowsRefused`, `--manifest`, `--emit-rows`), which the older D3 copy
+lacked. `render_question.py`, `test_experience.py` and `README.md` under
+`experience/` stay D3.
 
 This commit is an integration head, not merged `main`. The onboarding batch PR
 bumps versions and CI mints the Skill 49 pin on `main` after that merge. During
