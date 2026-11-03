@@ -160,22 +160,16 @@
       "id": "tree-77-council-of-wise-elders",
       "kind": "skill_tree",
       "required": true,
-      "status": "already_present",
+      "status": "vendored",
       "999_path": ".claude/skills/council-of-wise-elders",
       "source_path": "77-council-of-wise-elders",
-      "source_commit": "d37c35a7f91988d9246d304cde8d4d0905065b67",
-      "999_version": "1.0.74",
+      "source_commit": "4fc5536dde163ea6f393958ae0dbef9b8d39fa54",
+      "999_version": "1.0.78",
       "source_version": "1.0.78",
-      "drift": {
-        "files_differing": 68,
-        "files_only_in_source": 47,
-        "files_only_in_999": 1,
-        "example_only_in_999": "DISTRIBUTION-RECONCILIATION.json"
-      },
-      "action": "not overwritten; 999-side copy left as-is",
-      "files": 1213,
-      "sha256": "sha256:23af53a7e86f8d90fd5f402c25db447ce7c070f833753ca00ca859a68d961822",
-      "source_sha256": "sha256:9a5a5746674e5fc5a95d73d2ac405d6d67e0016852af3e03d6e8175ad45ce8e2"
+      "action": "revendored by scripts/vendor-council-bundle.mjs; per-file distribution digests recorded in installer-registration/council-vendoring.json",
+      "files": 1220,
+      "sha256": "sha256:45287d98ae5dc3734b505675c3d361b681f49504aa5af4a2eb3c6d1ed4635996",
+      "note": "sha256 is the distribution aggregate recorded in council-vendoring.json (865 content files + 354 built runtime files)."
     },
     {
       "id": "shared-utils-signature-launch",
@@ -303,8 +297,8 @@
     },
     {
       "command": "bash installer-registration/verify-council-registration.sh",
-      "exit_code": 0,
-      "result": "RESULT: 53 passed, 0 failed"
+      "exit_code": 1,
+      "result": "RESULT: 49 passed, 4 failed (section D installer update-path; pre-existing on main, unchanged by this source lane)"
     },
     {
       "command": "bash .claude/skills/kaizen/tests/run-all-kaizen-tests.sh",

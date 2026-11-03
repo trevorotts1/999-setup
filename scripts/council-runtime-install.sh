@@ -38,7 +38,11 @@
 # Usage:
 #   scripts/council-runtime-install.sh [--skill-dir DIR] [--source-dir DIR]
 #                                      [--data-dir DIR] [--bin-dir DIR]
-#                                      [--offline] [--check]
+#                                      [--offline] [--check] [--activate]
+#   --activate installs the 999 front door (council-ask), the chamber helper
+#   and the box's own Council service. With the OpenClaw CLI present it runs
+#   that skill's official wire.sh instead and never installs the plugin on a
+#   Claude-CLI-only machine.
 #   scripts/council-runtime-install.sh --refresh-record --skill-dir DIR
 #                                      [--source-dir DIR] [--data-dir DIR]
 # Nondestructive record reconciliation: --refresh-record re-runs the
@@ -70,6 +74,7 @@ DATA_DIR=""
 BIN_DIR="$HOME/.local/bin"
 OFFLINE=0
 CHECK=0
+ACTIVATE=0
 REFRESH_RECORD=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -78,9 +83,10 @@ while [ $# -gt 0 ]; do
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; shift 2 ;;
     --offline) OFFLINE=1; shift ;;
+    --activate) ACTIVATE=1; shift ;;
     --check) CHECK=1; shift ;;
     --refresh-record) REFRESH_RECORD=1; shift ;;
-    -h|--help) sed -n '2,54p' "$SELF"; exit 0 ;;
+    -h|--help) sed -n '2,61p' "$SELF"; exit 0 ;;
     *) echo "council-runtime-install: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -417,6 +423,24 @@ cp "$EXEC_SRC" "$EXEC_DEST" && chmod 755 "$EXEC_DEST" \
 printf '%s\n' "$DATA_DIR" > "$BIN_DIR/blackceo-council.profile" \
   || die COUNCIL_EXECUTABLE_FAILED "could not record the profile root beside the executable" 4
 say "executable: $EXEC_DEST"
+
+# --- CTR-195: activate the 999 front door and chamber ----------------------
+# A sole Claude Code / claude-nine host has no OpenClaw gateway and therefore
+# no interceptor plugin to install. The supported front door (`council-ask`)
+# and the chamber helper are wired here against this box's own 999 service.
+# An OpenClaw host is handed to the skill's official wire.sh instead; this
+# script never copies the plugin package onto a CLI-only machine.
+if [ "$ACTIVATE" -eq 1 ]; then
+  if [ -f "$SELF_DIR/council-activate-999.sh" ]; then
+    bash "$SELF_DIR/council-activate-999.sh" \
+      --prefix "$RUNTIME_DIR" --release-id "$AGGREGATE" \
+      --skill-dir "$SKILL_DIR" --bin-dir "$BIN_DIR" \
+      --node "$NODE_BIN" --data-dir "$DATA_DIR" \
+      || echo "COUNCIL_999_FRONT_DOOR: NOT_READY ACTIVATION_FAILED"
+  else
+    echo "COUNCIL_999_FRONT_DOOR: NOT_READY ACTIVATION_SCRIPT_MISSING $SELF_DIR/council-activate-999.sh"
+  fi
+fi
 
 say "OK: council runtime $AGGREGATE is current; data profile $DATA_DIR"
 exit 0

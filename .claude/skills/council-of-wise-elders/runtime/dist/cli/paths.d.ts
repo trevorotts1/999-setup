@@ -48,6 +48,42 @@ export declare function openclawRoot(env?: NodeJS.ProcessEnv, homeDir?: string):
 /** The immutable runtime prefix: explicit, else <openclaw root>/council-runtime. */
 export declare function councilRuntimePrefix(env?: NodeJS.ProcessEnv, homeDir?: string): string;
 /**
+ * Is `dir` a skill folder, named positively?
+ *
+ * A SKILL.md alone is too weak a signature: any ordinary ancestor (a
+ * repository root, a home directory) may carry an unrelated SKILL.md,
+ * and the guard would then refuse data directories far outside the
+ * skill. A council skill folder carries all three of SKILL.md,
+ * advisors/ and manifest.json.
+ */
+export declare function isSkillFolder(dir: string): boolean;
+/**
+ * The ACTUAL skill folder, for assets (advisor packs, config) and for the
+ * data-directory boundary. Two mechanisms, in order:
+ *
+ * 1. The install record. Neither installed layout has a SKILL.md,
+ *    advisors/ or manifest.json above its module, so the record is the
+ *    install's own statement of which folder it was built from. Two
+ *    installers write it, one per layout:
+ *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
+ *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
+ *      writes <prefix>/releases/install-record.json;
+ *    - the 999-setup vendoring's scripts/council-runtime-install.sh
+ *      installs <prefix>/runtime/dist/council-entry.mjs and writes
+ *      <prefix>/install-record.json.
+ *    The record is found by walking up from this module rather than by a
+ *    fixed relative URL, because the service launcher imports
+ *    src/service/* and src/cli/* (two levels below the release root)
+ *    while the bundled CLI sits at dist/ (one level). Walking serves
+ *    every shipped layout with ONE rule and still refuses to guess.
+ * 2. A layout-independent walk to the nearest ancestor carrying the
+ *    skill signature (SKILL.md beside advisors/ and manifest.json).
+ *
+ * null when neither applies: the caller refuses rather than measuring a
+ * guessed boundary.
+ */
+export declare function skillFolderForAssets(moduleUrl?: string | URL): string | null;
+/**
  * The directory the Council service itself runs on, when this box says
  * so. Null when nothing on the box has recorded one, never a guess.
  */
