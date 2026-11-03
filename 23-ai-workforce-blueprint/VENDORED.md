@@ -4,11 +4,9 @@ Only the department registry is vendored; this 999 package does not ship the
 rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source ref: `prep/bfl-onboarding-pr2` (3aa7e07f0) plus the cli.py divergence
-  retirement commit fb469241 plus the repair commits (Skill 66 layout fix, progress_report
-  neutral, layout-neutral launch tests, pin re-mint) (the 999 combined re-sync source on
-  `scratch/bfl-prep2-plus-999seam`; not yet on `origin/main`)
-- Source commit: `d37c35a7f91988d9246d304cde8d4d0905065b67` (the map is byte-identical to the one at `5c41646b0`)
+- Source ref: `origin/main` of onboarding, the merge of pull request 2806 (`prep/bfl-onboarding-pr2`,
+  head 975d820ef)
+- Source commit: `96866c532b32b68c3675456d860f46e70fcc4bd5` (the map is byte-identical to the one at `d37c35a7f` and `5c41646b0`)
 - Git blob: `c9085e12742af812082f7aec44f5dcc2fdfe182f`
 - SHA-256: `59805fec8476714918a89d96ffa4553e976794e5c01a2e0fc8939603810c61e7`
 - Entries: 78 (skill numbers 01 through 83; the archived skills are no longer
@@ -44,13 +42,12 @@ declared divergence and 999 receives the pin only through the sync. The only
   `tests/verify_installer_python_deps.sh` exist only in 999.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source commit: `d37c35a7f91988d9246d304cde8d4d0905065b67` (`prep/bfl-onboarding-pr2` 3aa7e07f0 plus the cli.py
-  divergence retirement commit fb469241 plus the repair commits; not yet on `origin/main`)
+- Source commit: `96866c532b32b68c3675456d860f46e70fcc4bd5` (onboarding `origin/main`, merge of pull request 2806)
 - Source version: `0.2.13`
 - Source tree (`83-black-friday-launcher/` at that commit): 90 files, digest
-  `sha256:55741fc80ec984486d226786eac1d62da984e9eb6d36eb8829616253acdc9d7d`
+  `sha256:d6d27b67f185519f754dc66cd882c0cca6a37c844b083ac9e80c0ba9720900ca`
 - This tree: 92 files (the two 999-only files above), digest
-  `sha256:cc4c0cf461bcc2eb5455832cd8adcf00ce7dee12a42690215867f683d6968222`
+  `sha256:c5110dda425ca68cab5c443d5d2688e6296fe6adbd80273edcdb4590468e038b`
 
 The digest is the generator's: SHA-256 over the newline-terminated, path-sorted
 lines `<file sha256>  <relative path>`.
@@ -68,11 +65,9 @@ CON-19 API (`RowsRefused`, `--manifest`, `--emit-rows`), which the older D3 copy
 lacked. `render_question.py`, `test_experience.py` and `README.md` under
 `experience/` stay D3.
 
-This commit is an integration head, not merged `main`. The onboarding batch PR
-bumps versions and CI mints the Skill 49 pin on `main` after that merge. During
-the 999 batch PR, re-copy every family from that merged commit (version and pin
-files are minted there, never here), then replace the commit, version and
-digests above with the merged ones.
+The families were re-copied from the merged onboarding commit above (version and pin
+files are minted there, never here), and the commit, version and digests above are the
+merged ones.
 `python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py --onboarding <onboarding checkout>`
 then records the same commit and digests in `DIST-02-PACKAGING-MANIFEST.json`,
 and `--check` fails whenever a vendored entry's 999 version differs from its

@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDORED="$REPO_ROOT/.claude/skills/signature-thank-you"
 
 # Recorded identity of the canonical source (openclaw-onboarding
-# d37c35a7f91988d9246d304cde8d4d0905065b67,
+# 96866c532b32b68c3675456d860f46e70fcc4bd5,
 # 82-signature-thank-you v0.3.3), distribution tree after the S82-01
 # purchase-event 1.0/1.1/1.2 acceptance change.
 EXPECTED_VERSION="0.3.3"
