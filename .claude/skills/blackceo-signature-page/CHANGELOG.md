@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.3.13 - 2026-11-02 - 999 version act: pair 1.3.4 to 1.3.13, 999 synced with onboarding 69ae6927a
+
+- 999 version act, not a sync: the Skill 71 neutral files were already the synced onboarding code (the Skill 71 sync copied 0 files), so 1.3.4 was a stale label. `skill-version.txt` and `VERSION` now carry the onboarding value (1.3.13, byte copies of the source files) and the `SKILL.md` frontmatter `version:` line follows; nothing else in `SKILL.md` changed. Skill 83 (`black-friday-launcher`) requires Skill 71 at 1.3.12 or higher in its `dependencies.json`.
+- Same batch: the launch families re-synced from onboarding 69ae6927a (`prep/bfl-onboarding-pr2` 3aa7e07f0 plus fix fb469241). Divergence D3 is retired for `launcher_core/cli.py` only: it is a pinned Skill 49 file, so it is a byte copy of onboarding and the onboarding-minted `SF-PROVER-PIN.sha256` verifies here. The unpinned guided-experience files under `shared-utils/signature_launch/experience/` stay divergent.
+- `README.md`, `CONTROL/bundled-components.json`, `CONTROL/bundle-digests.json` and `DIST-02-PACKAGING-MANIFEST.json` carry 1.3.13.
+
 ## 1.3.4 - 2026-10-20 - 999 synced with onboarding v27.1.53: a zero-image generation run is FAILED (onboarding PR #2371)
 
 - Neutral files re-synced from onboarding main e13c70e4b by `scripts/sync-skill71-to-999.sh`: `scripts/shared_page_service.py` (`--pipeline-command` is required for a generation run; `--validation-only` is the labelled admit-and-stage mode, exit 2 otherwise), new `scripts/stage_gate.py` `verify_generated_images()` (zero images is FAILED regardless of exit codes), `scripts/run_page_type.py` passes `--validation-only` for its admission call, plus `tests/test_shared_page_service_generation.py`, `tests/run_tests.py`, `tests/test_page_role_thank_you.py`. `references/kie-policy-999.json` regenerated from the new gate; the `ghl-install-pages` version stamp follows onboarding.
