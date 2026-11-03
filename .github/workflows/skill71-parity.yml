@@ -122,20 +122,6 @@ jobs:
           python3 "$SKILL71_999_ROOT/scripts/check-launch-family-parity.py" \
             --onboarding "$SKILL71_ONB_ROOT" --nine "$SKILL71_999_ROOT"
 
-      - name: Skill 49 entry self-test
-        if: ${{ !cancelled() }}
-        run: |
-          set -euo pipefail
-          # The self-test needs Skill 22 (persona registry) and Skill 74 (KIE prompt
-          # budget adapter). 999 ships neither, so expose the sync source's copies in
-          # the installed layout ($HOME/.openclaw/skills) that the Skill 49 scripts search.
-          mkdir -p "$HOME/.openclaw/skills"
-          for d in 22-book-to-persona-coaching-leadership-system 74-kie-live-adapter; do
-            ln -sfn "$SKILL71_ONB_ROOT/$d" "$HOME/.openclaw/skills/$d"
-          done
-          cd "$SKILL71_999_ROOT"
-          bash .claude/skills/signature-funnel/signature-funnel-entry.sh --self-test
-
       - name: DIST-02 manifest generator self-test
         if: ${{ !cancelled() }}
         run: |
@@ -149,3 +135,19 @@ jobs:
           set -euo pipefail
           cd "$SKILL71_999_ROOT"
           python3 .claude/skills/black-friday-launcher/scripts/generate_dist02_manifest.py --check
+
+      # Last on purpose: a full run writes bytecode and run files into the Skill 49 tree,
+      # which the DIST-02 tree hash above must not see.
+      - name: Skill 49 entry self-test
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          # The self-test needs Skill 22 (persona registry) and Skill 74 (KIE prompt
+          # budget adapter). 999 ships neither, so expose the sync source's copies in
+          # the installed layout ($HOME/.openclaw/skills) that the Skill 49 scripts search.
+          mkdir -p "$HOME/.openclaw/skills"
+          for d in 22-book-to-persona-coaching-leadership-system 74-kie-live-adapter; do
+            ln -sfn "$SKILL71_ONB_ROOT/$d" "$HOME/.openclaw/skills/$d"
+          done
+          cd "$SKILL71_999_ROOT"
+          bash .claude/skills/signature-funnel/signature-funnel-entry.sh --self-test
