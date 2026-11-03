@@ -61,6 +61,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -73,6 +74,7 @@ if _TOOLS_DIR not in sys.path:
 
 import browser_manager  # noqa: E402  (browser_session — the singleton gateway)
 import ghl_builder  # noqa: E402  (render_check, verify_url, browser_cmd, may_publish)
+import ghl_evidence  # noqa: E402  (S06-08 tenant contract + evidence scrubber)
 
 
 # ── SINGLETON BROWSER GATEWAY for the live verification loop (T2-01) ──────────
@@ -140,6 +142,9 @@ RAW_REL = os.path.join("logs", "final-preview-verify.json")
 SUMMARY_REL = os.path.join("scorecard", "verify-summary.json")
 RENDER_MANIFEST_REL = os.path.join("scorecard", "render-manifest.json")
 MOCK_SENTINEL_REL = os.path.join("scorecard", "MOCK-DO-NOT-SHIP")
+# Where bound-evidence receipts live: one JSON per reviewed artifact. Same
+# 0600/0700 writer as every other evidence file in this module.
+EVIDENCE_RECEIPT_REL = os.path.join("evidence", "receipts")
 
 # The two standard screenshot viewports (desktop + mobile) the agent captures as
 # REAL PNGs (replacing the V1 SVG placeholders).
@@ -190,6 +195,174 @@ def _sha256_file(path: str) -> str:
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+# ── ONE marker contract with Skill 71 (S06-22) ───────────────────────────────
+# A Skill 71 page carries its build marker as a DATA ATTRIBUTE on the root
+# element, e.g. <html data-skill71-build="run_id=L1;page=P1;rev=1;input=ab12...">.
+# render_check strips HTML comments before it looks for the marker, so the old
+# comment marker (<!-- skill71-build ... -->) could never be found by verify and
+# agents injected a visible marker by hand. The attribute survives the strip.
+# Skill 71's validate_install.py reads the SAME attribute; the value is the
+# page-result's own identity (launch_id / page_id / revision / input_hash), so
+# the marker is taken from the page-result and never typed by an agent.
+ROOT_MARKER_ATTR = "data-skill71-build"
+_MARKER_VALUE_OK = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-"
+)
+
+
+def root_marker_value(page_result: dict | None) -> str:
+    """The attribute VALUE for a page-result, or '' when it cannot be built
+    (missing identity field or a character that HTML would escape)."""
+    if not isinstance(page_result, dict):
+        return ""
+    parts = (
+        ("run_id", page_result.get("launch_id")),
+        ("page", page_result.get("page_id")),
+        ("rev", page_result.get("revision")),
+        ("input", page_result.get("input_hash")),
+    )
+    out = []
+    for key, val in parts:
+        val = "" if val is None else str(val)
+        if not val or any(c not in _MARKER_VALUE_OK for c in val):
+            return ""
+        out.append(f"{key}={val}")
+    return ";".join(out)
+
+
+def marker_from_page_result(page_result: dict | str | None) -> str:
+    """The full root-attribute marker string verify_page asserts in the rendered
+    DOM: ``data-skill71-build="<value>"``. ``page_result`` is the dict or the
+    path of a page-result.json. '' when unavailable (verify then fails closed)."""
+    if isinstance(page_result, str) and page_result:
+        try:
+            with open(page_result, encoding="utf-8") as f:
+                page_result = json.load(f)
+        except (OSError, ValueError):
+            return ""
+    value = root_marker_value(page_result if isinstance(page_result, dict) else None)
+    return f'{ROOT_MARKER_ATTR}="{value}"' if value else ""
+
+
+# ── Run-nonce file: the verdict's provenance lives OUTSIDE the evidence tree ──
+# (S06-04). The evidence tree is plain JSON an agent can write by hand; a
+# writer string and a UUID inside it prove nothing. verify_all (LIVE only)
+# also writes a 0600 file named after the nonce into a box-local directory
+# that is NOT under the evidence root, holding the sha256 of the raw log and
+# the render manifest it just wrote. ghl_gate refuses a verdict whose nonce
+# has no such file, or whose bytes no longer hash to it.
+NONCE_DIR_ENV = "GHL_VERIFY_NONCE_DIR"
+
+
+def nonce_dir() -> str:
+    # 999 harness (ADAPTER.md seam 4): box-local, outside the evidence tree, in
+    # the install's durable root (browser_manager.durable_root), not ~/.openclaw.
+    return os.environ.get(NONCE_DIR_ENV) or os.path.join(
+        browser_manager.durable_root(), "ghl-verify-nonces")
+
+
+def _inside(path: str, root: str) -> bool:
+    p, r = os.path.realpath(path), os.path.realpath(root)
+    return p == r or p.startswith(r.rstrip(os.sep) + os.sep)
+
+
+def _nonce_path(run_nonce: str) -> str:
+    # uuid-parse first: the nonce becomes a filename, so no traversal is possible.
+    return os.path.join(nonce_dir(), f"{uuid.UUID(str(run_nonce))}.nonce")
+
+
+def _nonce_binding(raw_path: str, manifest_path: str) -> str:
+    return json.dumps(
+        {"raw_sha256": _sha256_file(raw_path),
+         "manifest_sha256": _sha256_file(manifest_path)}, sort_keys=True)
+
+
+def write_run_nonce(run_dir: str, run_nonce: str, raw_path: str,
+                    manifest_path: str) -> str:
+    """Write the 0600 nonce file for a LIVE verify_all pass; refuse a nonce
+    directory inside the evidence tree (it would not be out of reach)."""
+    d = nonce_dir()
+    if _inside(d, run_dir):
+        raise VerifyContradiction(
+            f"nonce directory {d!r} is inside the evidence tree {run_dir!r}; "
+            f"set {NONCE_DIR_ENV} to a box-local path outside it")
+    return ghl_evidence.write_text_private(
+        _nonce_path(run_nonce), _nonce_binding(raw_path, manifest_path))
+
+
+def assert_run_nonce(run_dir: str, run_nonce: str, raw_path: str,
+                     manifest_path: str) -> None:
+    """Raise VerifyContradiction unless ``run_nonce`` has a genuine nonce file:
+    present, outside the evidence tree, owned by this user, mode 0600, and
+    bound to the CURRENT bytes of the raw log and render manifest."""
+    try:
+        path = _nonce_path(run_nonce)
+    except (ValueError, AttributeError, TypeError):
+        raise VerifyContradiction(f"run_nonce {run_nonce!r} is not a UUID")
+    if _inside(path, run_dir):
+        raise VerifyContradiction("nonce file lives inside the evidence tree")
+    try:
+        st = os.stat(path)
+        with open(path, encoding="utf-8") as f:
+            held = f.read()
+    except OSError:
+        raise VerifyContradiction(
+            f"no nonce file for run_nonce {run_nonce!r} outside the evidence "
+            "tree: this verdict was not written by verify_all on this box")
+    if (st.st_mode & 0o777) != 0o600 or st.st_uid != os.getuid():
+        raise VerifyContradiction(
+            "nonce file is not 0600 and owned by the verifying user")
+    if held != _nonce_binding(raw_path, manifest_path):
+        raise VerifyContradiction(
+            "raw log or render manifest changed after verify_all wrote the "
+            "nonce (hash no longer matches the nonce file)")
+
+
+def assert_artifacts_rendered(raw: list[dict], render_manifest: dict) -> None:
+    """Re-prove, from disk, that every PASS row was actually rendered.
+
+    For each PASS row the render manifest MUST name its dom, png and console
+    artifacts with sha256; each file must exist, be non-empty and re-hash to
+    the manifest (and to the raw row); and the DOM must carry the row's marker
+    outside script/style/comment. A hand-forged tree has none of this."""
+    if not isinstance(render_manifest, dict) or not render_manifest:
+        raise VerifyContradiction("render-manifest.json is empty: no page was rendered")
+    for idx, r in enumerate(raw):
+        if r.get("PASS") is not True:
+            continue
+        step = r.get("step") or "?"
+        entry = render_manifest.get(step)
+        if not isinstance(entry, dict):
+            raise VerifyContradiction(
+                f"PASS row {idx} (step={step!r}) has no render-manifest entry")
+        dom_text = ""
+        for path_key, sha_key in (("dom_path", "dom_sha256"),
+                                  ("png_path", "png_sha256"),
+                                  ("console_path", "console_sha256")):
+            path, want = entry.get(path_key), entry.get(sha_key)
+            if not path or not want:
+                raise VerifyContradiction(
+                    f"PASS row {idx} (step={step!r}): manifest names no "
+                    f"{path_key}/{sha_key}")
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                raise VerifyContradiction(
+                    f"PASS row {idx} (step={step!r}): {path_key} {path!r} is "
+                    "missing or empty")
+            if _sha256_file(path) != want or (
+                    r.get(sha_key) and r.get(sha_key) != want):
+                raise VerifyContradiction(
+                    f"PASS row {idx} (step={step!r}): {path_key} does not "
+                    "re-hash to the manifest / raw row")
+            if path_key == "dom_path":
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    dom_text = f.read()
+        marker = r.get("marker") or ""
+        if not marker or marker not in ghl_builder.strip_non_visible_html(dom_text):
+            raise VerifyContradiction(
+                f"PASS row {idx} (step={step!r}): the rendered DOM does not "
+                "contain the page marker")
 
 
 # ── Copy-fidelity gate (P1-4): approved copy.md tokens MUST render in the DOM ──
@@ -558,20 +731,47 @@ def _missing_manifest_images(page: dict, res: dict, run_dir: str) -> list[str]:
     return missing
 
 
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
+_IMG_SRC_ATTR_RE = re.compile(
+    r"""\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
+
+
+def _unmanifested_images(page: dict, res: dict, run_dir: str) -> list[str]:
+    """S06-11 (DOM -> manifest): every <img> src on a funnel page must be a
+    cdn_url of images/manifest.json or GHL media storage. Returns the others
+    (relative paths, external/temp URLs, data:/file:, empty src)."""
+    if str(page.get("surface") or "funnel") == "website":
+        return []
+    import ghl_rest_canvas  # lazy: ghl_rest_canvas does not import ghl_verify
+    allowed = {str(r.get("cdn_url", "")).strip() for r in _load_image_manifest(run_dir)}
+    bad: list[str] = []
+    for tag in _IMG_TAG_RE.findall(_resolve_rendered_dom(res)):
+        m = _IMG_SRC_ATTR_RE.search(tag)
+        src = next((g for g in m.groups() if g is not None), "") if m else ""
+        src = src.strip()
+        if src in allowed and src:
+            continue
+        if ghl_rest_canvas.is_ghl_media_url(src):
+            continue
+        bad.append(src or "<empty src>")
+    return bad
+
+
 def _image_gate_errors(page: dict, res: dict, run_dir: str) -> tuple[list[str], list[str]]:
     """Return ``(render_error_strings, missing_cdn_urls)`` for the rendered-<img>
     gate. Empty when the gate is off or all images rendered."""
+    errors: list[str] = []
     missing = _missing_manifest_images(page, res, run_dir)
-    if not missing:
-        return [], []
-    sample = "; ".join(missing[:5])
-    return (
-        [
+    if missing:
+        errors.append(
             f"missing_images: {len(missing)} manifest cdn_url(s) for page "
-            f"{page.get('page_id')!r} not found in the rendered DOM: {sample}"
-        ],
-        missing,
-    )
+            f"{page.get('page_id')!r} not found in the rendered DOM: {'; '.join(missing[:5])}")
+    bad = _unmanifested_images(page, res, run_dir)
+    if bad:
+        errors.append(
+            f"unmanifested_image: {len(bad)} <img> src(s) on page {page.get('page_id')!r} "
+            f"are neither in images/manifest.json nor GHL media storage: {'; '.join(bad[:5])}")
+    return errors, missing
 
 
 # ── The single real check (one page → one raw record) ────────────────────────
@@ -622,12 +822,148 @@ def _published_csp_errors(page: dict, render_one: Callable) -> list:
     return out
 
 
+def _observed_location_for(res: dict | None) -> str | None:
+    """The location a read-back actually observed, or None.
+
+    Order: an explicit location field on the render/fetch result
+    (``observed_location_id``, then ``location_id``), then the rendered DOM
+    (inline ``dom``/``dom_content``, else the captured ``dom_path`` file),
+    where a single distinct location id in the media-CDN / app-URL shapes
+    is the observation. Ambiguous or absent = None = unobserved (never a
+    guess; the record then states tenant_binding "unbound" explicitly).
+    """
+    if not isinstance(res, dict):
+        return None
+    for key in ("observed_location_id", "location_id"):
+        value = res.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for key in ("dom", "dom_content"):
+        value = res.get(key)
+        if isinstance(value, str) and value:
+            found = ghl_evidence.extract_observed_location_id(value)
+            if found:
+                return found
+    dom_path = res.get("dom_path")
+    if isinstance(dom_path, str) and dom_path and os.path.isfile(dom_path):
+        try:
+            with open(dom_path, encoding="utf-8", errors="replace") as fh:
+                return ghl_evidence.extract_observed_location_id(fh.read())
+        except OSError:
+            return None
+    return None
+
+
+def _finalize_record(
+    rec: dict,
+    res: dict | None,
+    *,
+    expected_location_id: str | None,
+    run_id: str,
+    scrubber: "ghl_evidence.EvidenceScrubber | None",
+) -> dict:
+    """Stamp the S06-08 tenant contract fields on a raw verify record.
+
+    A tenant mismatch appends a ``tenant_mismatch:`` render error and
+    forces PASS False: a wrong-location read-back FAILS, with no override
+    (the same discipline as every other render error). The record's
+    free-text fields (``render_errors``, ``error``) pass through the
+    evidence scrubber and the redaction count is recorded on the record
+    (prep step 5: every redaction counted, the count recorded).
+    """
+    observed = _observed_location_for(res)
+    rec.update(
+        ghl_evidence.tenant_fields(expected_location_id, observed, run_id=run_id)
+    )
+    if rec["tenant_binding"] == ghl_evidence.BINDING_MISMATCH:
+        rec["render_errors"] = list(rec.get("render_errors") or []) + [
+            "tenant_mismatch: read-back observed location "
+            f"{observed!r} but the run is gated for {expected_location_id!r} "
+            "(wrong-location read-back FAILS; no override)"
+        ]
+        rec["PASS"] = False
+    active = scrubber or ghl_evidence.EvidenceScrubber()
+    redactions = 0
+    if isinstance(rec.get("render_errors"), list):
+        scrubbed, n = active.scrub_obj(rec["render_errors"])
+        rec["render_errors"] = scrubbed
+        redactions += n
+    if isinstance(rec.get("error"), str):
+        scrubbed, n = active.scrub_text(rec["error"])
+        rec["error"] = scrubbed
+        redactions += n
+    rec["redactions"] = redactions
+    return rec
+
+
+# ── WF-E SUPPLEMENTARY-EVIDENCE SEAM (P7 / C8) ───────────────────────────────
+# Playwright journey assertions and recipe evidence are SUPPLEMENTARY evidence
+# (plan §11.1). They join the canonical raw-record/derived-summary pipeline
+# through the EXISTING forced-fail channel ONLY: any failing supplementary
+# assertion folds into ``render_errors`` and is therefore forced ``PASS: False``
+# by the same rule that governs render errors. Supplementary evidence can NEVER
+# set ``PASS: True``, NEVER clear an existing render_error (a clean HTML repair
+# cannot mask a failing journey), and NEVER write a summary — ``ghl_verify``
+# remains the SOLE ``overall_pass`` writer. There is deliberately NO second
+# overall_pass reducer here; the fold is additive evidence, not a new truth.
+#
+# A page carries its supplementary evidence in ``page["supplementary"]`` as a list
+# of assertion groups: ``{"source", "ref_id", "ok", "errors"}`` (see
+# ``supplementary_evidence``). The fold is order-preserving and idempotent.
+
+SUPPLEMENTARY_ERROR_PREFIX = "supplementary"
+
+
+def supplementary_evidence(
+    source: str, ref_id: str, ok: bool, errors: list[str] | None = None
+) -> dict:
+    """Build ONE supplementary assertion group for a page's ``supplementary`` list.
+
+    ``source`` is e.g. ``"playwright_journey"`` or ``"recipe"``; ``ref_id`` names
+    the journey/recipe. A failing group with no explicit ``errors`` still yields a
+    single folded failure so an empty failure can never slip through as clean.
+    """
+    errs = [str(e) for e in (errors or [])]
+    if not ok and not errs:
+        errs = [f"{source}:{ref_id} reported not-ok with no error detail"]
+    return {"source": source, "ref_id": ref_id, "ok": bool(ok), "errors": errs}
+
+
+def _supplementary_errors(page: dict) -> list[str]:
+    """Reduce a page's supplementary evidence to forced-fail render errors.
+
+    Only FAILING groups contribute errors; passing groups contribute none. The
+    returned strings are folded into ``render_errors`` and forced ``PASS: False``
+    by verify_page's existing rule. Never sets PASS True; never clears errors.
+    """
+    out: list[str] = []
+    for item in page.get("supplementary") or []:
+        if not isinstance(item, dict):
+            out.append(f"{SUPPLEMENTARY_ERROR_PREFIX}: malformed entry {item!r}")
+            continue
+        if item.get("ok") is True:
+            continue
+        source = item.get("source") or "unknown"
+        ref_id = item.get("ref_id") or "?"
+        errs = item.get("errors") or []
+        if not errs:
+            out.append(
+                f"{SUPPLEMENTARY_ERROR_PREFIX}:{source}:{ref_id} failed (no detail)"
+            )
+        for e in errs:
+            out.append(f"{SUPPLEMENTARY_ERROR_PREFIX}:{source}:{ref_id}: {e}")
+    return out
+
+
 def verify_page(
     page: dict,
     *,
     run_dir: str = "",
     fetcher: Callable | None = None,
     live: bool | object = _SENTINEL,
+    expected_location_id: str | None = None,
+    run_id: str = "",
+    scrubber: "ghl_evidence.EvidenceScrubber | None" = None,
 ) -> dict:
     """Run the SINGLE real check for one built page and return its raw record.
 
@@ -659,6 +995,14 @@ def verify_page(
     BACKWARD COMPAT: the record also carries ``http_code`` (alias of ``http``)
     and ``marker_in_preview`` (alias of ``marker_in_rendered_dom``) so existing
     callers and tests that reference those field names continue to work.
+
+    S06-08 TENANT BINDING: the record is stamped with the read-back contract
+    fields (``expected_location_id`` / ``observed_location_id`` /
+    ``tenant_binding``, see tools/ghl_evidence.py). A read-back that
+    observes a DIFFERENT location than ``expected_location_id`` appends a
+    ``tenant_mismatch:`` render error and is forced PASS False. When no
+    expected location is supplied the record states
+    ``tenant_binding: "unbound"`` explicitly, never a silent omission.
     """
     # Resolve the `live` sentinel: if the caller did not set `live` explicitly,
     # infer it from whether a `fetcher` was provided.  A fetcher implies mock mode
@@ -678,11 +1022,14 @@ def verify_page(
 
     step = page.get("step") or page.get("name") or page.get("slug") or "?"
     preview_url = page.get("preview_url") or ""
-    marker = page.get("marker") or ""
+    # S06-22: an explicit marker wins; otherwise the root-attribute marker is
+    # taken from the page's Skill 71 page-result (dict or page-result.json path).
+    marker = page.get("marker") or marker_from_page_result(
+        page.get("page_result") or page.get("page_result_path"))
     _run_dir = run_dir or "/tmp/ghl-verify-no-rundir"
 
     if not preview_url or not marker:
-        return {
+        return _finalize_record({
             "step": step,
             "page_id": page.get("page_id"),
             "preview_url": preview_url,
@@ -699,7 +1046,8 @@ def verify_page(
             "dom_bytes": 0, "visible_text_len": 0,
             "error": "missing preview_url or marker — cannot verify live (FAIL)",
             **({"trust": "MOCK"} if not live else {}),
-        }
+        }, None, expected_location_id=expected_location_id, run_id=run_id,
+            scrubber=scrubber)
 
     if not live:
         # MOCK path — fetcher is a test stub.
@@ -737,11 +1085,15 @@ def verify_page(
         # the page carries a published url + a JS signal). Routes the published
         # render through the SAME stub in mock mode.
         render_errors += _published_csp_errors(page, _call_fetcher)
+        # WF-E supplementary seam (C8d): Playwright journey / recipe assertions are
+        # SUPPLEMENTARY evidence folded into render_errors (forced-fail channel).
+        # They can only FAIL a page — never pass one, never clear an existing error.
+        render_errors += _supplementary_errors(page)
         http = res.get("http")
         mird = bool(res.get("marker_in_rendered_dom") or res.get("marker_found"))
         forced_fail = bool(render_errors) or http != 200
         pass_val = bool(res.get("ok")) and not forced_fail
-        return {
+        return _finalize_record({
             "step": step,
             "page_id": page.get("page_id"),
             "preview_url": preview_url,
@@ -762,7 +1114,8 @@ def verify_page(
             "dom_bytes": res.get("dom_bytes", 0),
             "visible_text_len": res.get("visible_text_len", 0),
             "trust": "MOCK",
-        }
+        }, res, expected_location_id=expected_location_id, run_id=run_id,
+            scrubber=scrubber)
 
     # LIVE path — the ONLY accepted pass criterion.
     # T2-01: hold ONE managed browser session across every browser-driven step
@@ -813,7 +1166,9 @@ def verify_page(
                         step=f"{step}-repair", timeout=45,
                     )
                     _re2 = list(_res2.get("render_errors") or [])
-                    _re2 += _copy_fidelity_errors(page, _res2)
+                    # S06-05: pass _run_dir so the default-on copy-fidelity
+                    # fallback (routing/copy.md etc.) still gates the repair.
+                    _re2 += _copy_fidelity_errors(page, _res2, _run_dir)
                     # Re-fold the rendered-<img> gate against the REPAIRED DOM — a
                     # clean preview repair must never mask a still-missing image.
                     _img_errs2, _missing_imgs2 = _image_gate_errors(page, _res2, _run_dir)
@@ -830,6 +1185,11 @@ def verify_page(
                         _missing_imgs = _missing_imgs2
                 except Exception:  # noqa: BLE001 — repair must never mask primary verdict
                     pass
+        # WF-E supplementary seam (C8d): Playwright journey / recipe assertions are
+        # SUPPLEMENTARY evidence folded into render_errors (forced-fail channel).
+        # Added AFTER the HTML-repair seam so a clean preview repair can never mask
+        # a failing journey/recipe assertion — they can only FAIL a page.
+        render_errors += _supplementary_errors(page)
     http = res.get("http")
     mird = bool(res.get("marker_in_rendered_dom"))
     # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.
@@ -861,7 +1221,9 @@ def verify_page(
         rec["error"] = res["error"]
     if _html_repair_receipt:
         rec["repair_model_receipt"] = _html_repair_receipt
-    return rec
+    return _finalize_record(
+        rec, res, expected_location_id=expected_location_id, run_id=run_id,
+        scrubber=scrubber)
 
 
 # ── The reduction (summary is a PURE function of the raw array) ───────────────
@@ -891,6 +1253,24 @@ def derive_summary(
     passed = sum(1 for r in raw if r.get("PASS") is True)
     failed = total - passed
     overall = total > 0 and failed == 0
+    # S06-08 tenant reduction: the summary's tenant state is a pure reduction
+    # of the raw records' contract fields. Legacy records without them reduce
+    # to "unbound" (Q2: flagged by the reduction, never silently bound). A
+    # single distinct expected location across the raw log is the summary's
+    # expected location; mixed expectations reduce to None plus "mismatch"
+    # via any disagreeing record's own binding.
+    _expected_ids = {
+        r.get("expected_location_id") for r in raw if r.get("expected_location_id")
+    }
+    _expected = next(iter(_expected_ids)) if len(_expected_ids) == 1 else None
+    _bindings = [ghl_evidence.effective_binding(r) for r in raw]
+    if any(b == ghl_evidence.BINDING_MISMATCH for b in _bindings):
+        _tenant_binding = ghl_evidence.BINDING_MISMATCH
+    elif raw and all(b == ghl_evidence.BINDING_BOUND for b in _bindings):
+        _tenant_binding = ghl_evidence.BINDING_BOUND
+    else:
+        _tenant_binding = ghl_evidence.BINDING_UNBOUND
+    _redactions = sum(int(r.get("redactions") or 0) for r in raw)
     # NOTE: we do NOT force overall_pass=False in MOCK mode here.  The counts
     # are always an honest reduction of the raw array.  The trust='MOCK' stamp
     # is how ghl_gate refuses mock verdicts — it checks trust, not overall_pass.
@@ -909,6 +1289,9 @@ def derive_summary(
         "passed": passed,
         "failed": failed,
         "overall_pass": overall,
+        "expected_location_id": _expected,
+        "tenant_binding": _tenant_binding,
+        "redactions": _redactions,
         "pages": [
             {
                 "step": r.get("step"),
@@ -918,6 +1301,9 @@ def derive_summary(
                 "marker_in_rendered_dom": bool(r.get("marker_in_rendered_dom")),
                 "marker_in_preview": bool(r.get("marker_in_rendered_dom")),
                 "render_errors": list(r.get("render_errors") or []),
+                "expected_location_id": r.get("expected_location_id"),
+                "observed_location_id": r.get("observed_location_id"),
+                "tenant_binding": ghl_evidence.effective_binding(r),
             }
             for r in raw
         ],
@@ -961,6 +1347,13 @@ def assert_consistent(
       6. RENDERED-<img> MIRROR (FIX-XC-03c): any raw record with a non-empty
          ``missing_images`` (a manifest cdn_url absent from the rendered DOM) MUST
          have ``PASS=False`` — a page whose images did not render cannot pass.
+      7. TENANT MIRROR (S06-08): fires ONLY when the summary declares an
+         ``expected_location_id`` (legacy summaries without one are untouched,
+         per Q2 grandfathering). A raw record stamped for a DIFFERENT expected
+         location is cross-tenant evidence in this run's log; a PASS record
+         that is not tenant-"bound" contradicts the gated tenant's pass; a
+         summary claiming tenant_binding "bound" while any raw record is not
+         bound is more optimistic than its evidence. All raise.
     """
     raw_total = len(raw)
     raw_passed = sum(1 for r in raw if r.get("PASS") is True)
@@ -1037,6 +1430,36 @@ def assert_consistent(
                 "(the un-fakeable rendered-<img> gate)."
             )
 
+    # Invariant 7 (S06-08 tenant mirror): see the docstring. Fires only for
+    # summaries that declare an expected location.
+    _expected = summary.get("expected_location_id")
+    if _expected:
+        for idx, r in enumerate(raw):
+            r_expected = r.get("expected_location_id")
+            if r_expected and r_expected != _expected:
+                raise VerifyContradiction(
+                    f"CROSS-TENANT RAW ROW at index {idx} (step={r.get('step')!r}): "
+                    f"record expected_location_id={r_expected!r} disagrees with "
+                    f"the summary's {_expected!r}. One run's evidence cannot "
+                    "mix tenants."
+                )
+            r_binding = ghl_evidence.effective_binding(r)
+            if r.get("PASS") and r_binding != ghl_evidence.BINDING_BOUND:
+                raise VerifyContradiction(
+                    f"TENANT-UNBOUND PASS at index {idx} (step={r.get('step')!r}): "
+                    f"PASS=True with tenant_binding={r_binding!r} in a run gated "
+                    f"for {_expected!r}. A pass observed on the wrong tenant "
+                    "(or on no observed tenant) is a contradiction, never a pass."
+                )
+        if summary.get("tenant_binding") == ghl_evidence.BINDING_BOUND:
+            for idx, r in enumerate(raw):
+                if ghl_evidence.effective_binding(r) != ghl_evidence.BINDING_BOUND:
+                    raise VerifyContradiction(
+                        "summary claims tenant_binding='bound' but raw row "
+                        f"{idx} (step={r.get('step')!r}) is not bound: more "
+                        "optimistic than the raw evidence."
+                    )
+
     # Invariant 5: artifact hash binding.
     if render_manifest:
         for step_name, entry in render_manifest.items():
@@ -1065,6 +1488,113 @@ def assert_consistent(
                     )
 
 
+# ── BOUND EVIDENCE RECEIPTS ─────────────────────────────────────────────────
+#
+# The render-manifest invariant (5) already binds a run's DOM/PNG/console
+# artifacts to their sha256. What it did NOT do is let an INDEPENDENT reviewer
+# sign those bytes: a manifest is produced by the same pass that captured the
+# artifacts, so a self-reporting chain could still agree with itself.
+#
+# A bound-evidence receipt closes that: it names one artifact path, the hash
+# the reviewer looked at, WHO reviewed it and when. ``assert_receipts_bound``
+# re-hashes every referenced file at validation time and refuses on absence,
+# mismatch, or a receipt authored by the capturing run itself. This reuses the
+# existing manifest/artifact-hash mechanism (`_sha256_file`) and the existing
+# 0600/0700 evidence writers — it is not a new platform.
+
+REQUIRED_EVIDENCE_RECEIPT_FIELDS = (
+    "artifact_path",      # the file the reviewer actually looked at
+    "artifact_sha256",    # what they signed off on
+    "reviewer",           # identity, never the capturing run
+    "reviewed_at",        # ISO-8601 UTC
+    "run_id",             # the run whose artifact this is
+)
+_APPROVED_RECEIPT_VERDICTS = ("approved", "passed", "reviewed")
+
+
+def make_evidence_receipt(
+    artifact_path: str,
+    *,
+    reviewer: str,
+    run_id: str = "",
+    reviewed_at: str = "",
+    verdict: str = "approved",
+    captured_by: str = "",
+    candidate_revision: str = "",
+) -> dict:
+    """Build one bound-evidence receipt for ``artifact_path``.
+
+    The digest is taken from the FILE, never passed in — a receipt that could
+    be told its own truth would prove nothing. ``captured_by`` records the run
+    that produced the artifact so ``assert_receipts_bound`` can refuse a
+    receipt signed by the capturing run itself.
+    """
+    return {
+        "artifact_path": str(artifact_path),
+        "artifact_sha256": _sha256_file(str(artifact_path)),
+        "reviewer": str(reviewer or ""),
+        "reviewed_at": reviewed_at or _ts(),
+        "verdict": str(verdict or ""),
+        "run_id": str(run_id or ""),
+        "captured_by": str(captured_by or ""),
+        "candidate_revision": str(candidate_revision or ""),
+    }
+
+
+def write_evidence_receipt(run_dir: str, receipt: dict,
+                           name: str = "") -> str:
+    """Write one receipt under ``<run_dir>/evidence/receipts/`` at 0600."""
+    safe = "".join(c if (c.isalnum() or c in "-_.") else "_"
+                   for c in (name or os.path.basename(
+                       str(receipt.get("artifact_path") or "receipt"))))[:80]
+    if not safe.endswith(".json"):
+        safe += ".json"
+    path = os.path.join(run_dir, EVIDENCE_RECEIPT_REL, safe)
+    return ghl_evidence.write_json_private(path, receipt)
+
+
+def assert_receipts_bound(receipts: list[dict]) -> None:
+    """Raise ``VerifyContradiction`` unless every receipt is bound to its bytes.
+
+    Refuses on: a missing required field, a non-approving verdict, an artifact
+    that no longer exists, an artifact whose bytes no longer hash to the signed
+    digest, and a receipt authored by the run that captured the artifact (a
+    reviewer must be independent of what they review).
+    """
+    for idx, receipt in enumerate(receipts or []):
+        if not isinstance(receipt, dict):
+            raise VerifyContradiction(
+                f"evidence receipt {idx} is not a JSON object")
+        for field_name in REQUIRED_EVIDENCE_RECEIPT_FIELDS:
+            if not str(receipt.get(field_name) or "").strip():
+                raise VerifyContradiction(
+                    f"evidence receipt {idx} is missing {field_name!r}; a "
+                    "receipt without it cannot be bound to anything")
+        verdict = str(receipt.get("verdict") or "").strip().lower()
+        if verdict not in _APPROVED_RECEIPT_VERDICTS:
+            raise VerifyContradiction(
+                f"evidence receipt {idx} verdict={receipt.get('verdict')!r} "
+                f"is not one of {_APPROVED_RECEIPT_VERDICTS}")
+        reviewer = str(receipt.get("reviewer") or "").strip().lower()
+        captured_by = str(receipt.get("captured_by") or "").strip().lower()
+        if reviewer and captured_by and reviewer == captured_by:
+            raise VerifyContradiction(
+                f"evidence receipt {idx} was signed by the capturing run "
+                f"({reviewer!r}); a review must be independent of the capture")
+        path = str(receipt.get("artifact_path") or "")
+        signed = str(receipt.get("artifact_sha256") or "")
+        actual = _sha256_file(path)
+        if not actual:
+            raise VerifyContradiction(
+                f"evidence receipt {idx}: artifact at {path!r} is missing. A "
+                "receipt can only vouch for bytes that exist.")
+        if actual != signed:
+            raise VerifyContradiction(
+                f"evidence receipt {idx}: artifact at {path!r} hashes to "
+                f"{actual!r} but the reviewer signed {signed!r}. The bytes "
+                "changed after review.")
+
+
 # ── The single canonical pass (writes BOTH files from one source of truth) ────
 
 def verify_all(
@@ -1077,6 +1607,8 @@ def verify_all(
     brand: str = "",
     fetcher: Callable | None = None,
     extra: dict | None = None,
+    expected_location_id: str | None = None,
+    secret_values: Any = None,
 ) -> dict:
     """THE canonical verify step. One pass, one source of truth, both files.
 
@@ -1104,6 +1636,11 @@ def verify_all(
     In MOCK mode (``live=False``), every raw record and the summary carry
     ``trust:'MOCK'`` and ``overall_pass`` is forced False.  A MOCK-DO-NOT-SHIP
     sentinel is written.  ``ghl_gate.require_pass`` will refuse a mock verdict.
+
+    S06-08: ``expected_location_id`` binds the pass to the run's gated tenant
+    (records stamped per tools/ghl_evidence.py; a wrong-location read-back
+    fails its page, no override) and ``secret_values`` seeds the evidence
+    scrubber with the run's resolved secret values (held in memory only).
 
     Returns ``{raw, summary, raw_path, summary_path, render_manifest_path,
     run_nonce, trust}``.  Raises ``VerifyContradiction`` or
@@ -1148,8 +1685,13 @@ def verify_all(
             )
 
     trust = "LIVE" if live else "MOCK"
-    os.makedirs(os.path.join(run_dir, "logs"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "scorecard"), exist_ok=True)
+    # S06-08 step 5: ONE evidence scrubber for the whole pass. secret_values
+    # are the run's resolved secret values, held in memory only (never
+    # persisted as a pattern list, see tools/ghl_evidence.py).
+    scrubber = ghl_evidence.EvidenceScrubber(secret_values)
+    # Q4 interim default: evidence dirs are created 0700, files written 0600.
+    ghl_evidence.ensure_private_dir(os.path.join(run_dir, "logs"))
+    ghl_evidence.ensure_private_dir(os.path.join(run_dir, "scorecard"))
 
     # ── ONE PASS: verify every page ───────────────────────────────────────────
     # T2-01: in LIVE mode hold ONE managed browser session for the WHOLE loop.
@@ -1163,20 +1705,50 @@ def verify_all(
     if live:
         with _live_browser_session("verify"):
             raw = [
-                verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+                verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live,
+                            expected_location_id=expected_location_id,
+                            run_id=run_id, scrubber=scrubber)
                 for p in pages
             ]
     else:
         raw = [
-            verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+            verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live,
+                        expected_location_id=expected_location_id,
+                        run_id=run_id, scrubber=scrubber)
             for p in pages
         ]
 
+    # S06-08 step 5: scrub the TEXT artifacts (DOM / console captures) in
+    # place BEFORE the raw log is written, so the record, the render
+    # manifest, and the disk all describe the same scrubbed bytes. PNG
+    # captures are binary and are NOT text-scrubbed (capture-time
+    # suppression territory, Q3). Record hashes / byte counts are refreshed
+    # from disk so a record never claims pre-scrub bytes.
+    for r in raw:
+        _extra_redactions = 0
+        for _path_key, _sha_key, _bytes_key in (
+            ("dom_path", "dom_sha256", "dom_bytes"),
+            ("console_path", "console_sha256", None),
+        ):
+            _artifact = r.get(_path_key)
+            if _artifact and os.path.isfile(_artifact):
+                _extra_redactions += ghl_evidence.scrub_file_text(
+                    _artifact, scrubber)
+                r[_sha_key] = _sha256_file(_artifact) or r.get(_sha_key, "")
+                if _bytes_key:
+                    r[_bytes_key] = os.path.getsize(_artifact)
+        if _extra_redactions:
+            r["redactions"] = int(r.get("redactions") or 0) + _extra_redactions
+
     raw_path = os.path.join(run_dir, RAW_REL)
 
-    # Write the RAW source of truth FIRST.
-    with open(raw_path, "w", encoding="utf-8") as f:
-        json.dump(raw, f, indent=2)
+    # Write the RAW source of truth FIRST. S06-08 step 8 (R1 honesty): this
+    # write, like the summary, manifest, and mock-sentinel writes below,
+    # is a PLAIN IN-PLACE write, not an atomic rename; S06-08 adds only the
+    # explicit 0600 mode (Q4). A torn file here is failed evidence, never a
+    # pass: the guard below re-reads it from disk and an unparseable raw log
+    # fails the run.
+    ghl_evidence.write_json_private(raw_path, raw)
 
     # Compute raw_sha256 (hash of the just-written raw log).
     with open(raw_path, "rb") as f:
@@ -1194,9 +1766,8 @@ def verify_all(
         raw_on_disk = json.load(f)
     assert_consistent(summary, raw_on_disk)
 
-    # Write the summary AFTER the guard passes.
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
+    # Write the summary AFTER the guard passes (plain in-place write, 0600).
+    ghl_evidence.write_json_private(summary_path, summary)
 
     # ── RENDER MANIFEST (artifact hash binding) ───────────────────────────────
     render_manifest: dict[str, dict] = {}
@@ -1219,23 +1790,30 @@ def verify_all(
             render_manifest[s_name] = entry
 
     render_manifest_path = os.path.join(run_dir, RENDER_MANIFEST_REL)
-    with open(render_manifest_path, "w", encoding="utf-8") as f:
-        json.dump(render_manifest, f, indent=2)
+    # Plain in-place write, 0600 (see the raw-log write note above).
+    ghl_evidence.write_json_private(render_manifest_path, render_manifest)
 
     # Re-run the consistency guard including artifact hash binding.
     assert_consistent(summary, raw_on_disk, render_manifest=render_manifest)
 
+    # S06-04: a LIVE pass leaves its provenance OUTSIDE the evidence tree
+    # (0600 nonce file bound to the raw log + manifest bytes). Written last so
+    # it hashes the final bytes. ghl_gate refuses a verdict without it.
+    if live:
+        write_run_nonce(run_dir, run_nonce, raw_path, render_manifest_path)
+
     # ── MOCK SENTINEL ──────────────────────────────────────────────────────────
     sentinel_path = os.path.join(run_dir, MOCK_SENTINEL_REL)
     if not live:
-        with open(sentinel_path, "w", encoding="utf-8") as f:
-            f.write(
-                "MOCK-DO-NOT-SHIP\n"
-                "This evidence tree was produced with live=False (mock verifier).\n"
-                "A mock verdict CANNOT be accepted as a shippable build pass.\n"
-                f"run_nonce: {run_nonce}\n"
-                f"written_at: {_ts()}\n"
-            )
+        # Plain in-place write, 0600 (the fourth of the four verify writes).
+        ghl_evidence.write_text_private(
+            sentinel_path,
+            "MOCK-DO-NOT-SHIP\n"
+            "This evidence tree was produced with live=False (mock verifier).\n"
+            "A mock verdict CANNOT be accepted as a shippable build pass.\n"
+            f"run_nonce: {run_nonce}\n"
+            f"written_at: {_ts()}\n",
+        )
     else:
         # Remove any stale mock sentinel from a prior mock run in this directory.
         if os.path.isfile(sentinel_path):
@@ -1330,17 +1908,22 @@ def select_html_repair_model(executor=None, env=None) -> dict:
 
     This is the designated call-site for the code-block repair-and-retry path
     (Wiring-Map §5.A.4, role='html'): when verify_page returns PASS=False due
-    to a render error, a repair loop should call this to obtain the GLM-5.2-class
-    model (Ollama Cloud → OpenRouter GLM → DeepSeek V4.1 Flash backup → Gemini
-    last-resort) that rewrites / fixes the failing code block.
+    to a render error, a repair loop should call this to obtain the client's
+    model for the html role (the client's choice, or the client's configured
+    default model, resolved by model_router) that rewrites / fixes the failing
+    code block. Recommendation: strong code generation and reliable tool
+    calling, because the fix-loop edits code in tight iterations.
 
     Uses ``make_stub_executor()`` if no executor is provided (offline receipt only,
     no network). Callers with a live executor should pass it explicitly so the
-    MiniMax probe-gate runs in real time if needed (not applicable to html role,
+    probe-gate runs in real time if needed (not applicable to html role,
     which is not probe-gated, but the pattern is uniform).
 
-    Never raises — returns {} when model_router is unavailable.
-    Role: 'html' (alias 'code').  Primary: GLM 5.2 via Ollama Cloud.
+    Never raises: returns {} when model_router is unavailable, and an
+    {"error": ...} receipt carrying the ask-the-client message when the client
+    has configured no model for the role.
+    Role: 'html' (alias 'code').  Model: the client's choice, or the client's
+    configured default model.
     """
     if not _MODEL_ROUTER_GV_AVAILABLE:
         return {}
@@ -1355,16 +1938,20 @@ def select_qc_model(executor=None, env=None) -> dict:
     """Return the model_router receipt for the vision QC seam.
 
     This is the designated call-site for the vision QC pass over screenshots and
-    rendered DOM (Wiring-Map §5.A.4, role='qc'). Only MiniMax M3 (probe-gated)
-    or Gemini 3.5 Flash (last-resort, only if live + credited) are valid for this
-    role — DeepSeek and GLM have no confirmed vision capability and must NOT be
-    used for screenshot / mobile-render QC.
+    rendered DOM (Wiring-Map §5.A.4, role='qc'). The client's model for this
+    role must be vision-capable (probe-gated): a text-only model cannot read
+    screenshots or rendered DOM and must NOT be used for screenshot /
+    mobile-render QC. Recommendation: a vision-capable model with reliable
+    tool calling.
 
     Uses ``make_stub_executor()`` if no executor is provided. For production QC,
-    pass a real executor so the MiniMax probe fires correctly.
+    pass a real executor so the probe fires correctly.
 
-    Never raises — returns {} when model_router is unavailable.
-    Role: 'qc'.  Primary: MiniMax M3 via Ollama Cloud (probe-gated).
+    Never raises: returns {} when model_router is unavailable, and an
+    {"error": ...} receipt carrying the ask-the-client message when the client
+    has configured no model for the role.
+    Role: 'qc'.  Model: the client's choice, or the client's configured default
+    model (probe-gated, vision required).
     """
     if not _MODEL_ROUTER_GV_AVAILABLE:
         return {}

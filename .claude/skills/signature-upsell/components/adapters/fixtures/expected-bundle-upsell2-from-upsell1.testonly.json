@@ -20,7 +20,7 @@
     "independent_review": false,
     "proof_class": "L1",
     "blockers": [
-      "S80-06 extra-offer binding is integrated at interface-conformance level only (S79 draft interface, fixture level): the native action ID is null pending S06 confirmation (open questions S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local only, NOT installed or live proof."
+      "S80-06 extra-offer binding is integrated at interface-conformance level only (S79 confirmed interface, revision 2, fixture level): the native action ID is null pending S06 confirmation (open questions S06-Q1..Q6, S44-Q7/Q8, S49-Q9) - result is authored/local only, NOT installed or live proof."
     ],
     "native_bindings_ref": null,
     "test_only": true,
@@ -226,13 +226,13 @@
       },
       {
         "condition": "from_upsell_1",
-        "text": "Your first upgrade is confirmed (TEST ONLY Deep Work Library). The Implementation Studio builds on it with guided implementation - a different step from the content upgrade you just added."
+        "text": "Your first upgrade is confirmed (TEST ONLY Deep Work Library). TEST ONLY Implementation Studio is a separate optional step that builds on it; your first upgrade stays yours either way."
       }
     ]
   },
   "native_binding": {
     "kind": "extra_offer_binding",
-    "interface_ref": "S79 extra_offer_interface.md DRAFT (fixture level)",
+    "interface_ref": "S79 extra_offer_interface.md CONFIRMED revision 2 (fixture level)",
     "binding_status": "interface_conformant_pending_s06",
     "native_action_id": null,
     "capability_evidence_ref": "native:TEST-CAPABILITY-EVIDENCE",

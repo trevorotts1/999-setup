@@ -94,6 +94,84 @@ from ghl_receipts import (  # noqa: E402,F401
 
 ROUTER_VERSION = "v1.0.0"
 
+# ── Public-adapter operation routing (GHL-169) ──────────────────────────────
+# The router stays dependency-injected (it performs no I/O), but the operation
+# IDs it may hand to a public-adapter runner are named here instead of being
+# implied by a free-text rail label. Every ID is a frozen registry row
+# (44-convert-and-flow-operator/.../public/operations.py); the guard test fails
+# on an unknown ID.
+#
+# ``routed``    — a Skill 06 client calls it through ghl_public_client today.
+# ``declared``  — a registry row exists but no adapter-capable client path does
+#                 (multipart/readback/internal shape); the reason lives in
+#                 ghl_route_gaps.py. Never a live route by declaration alone.
+PUBLIC_OPERATION_ROUTES = {
+    "media": {
+        "routed": ("media.files.list",),
+        "declared": ("media.upload", "media.folders.create"),
+    },
+    "survey": {
+        "routed": ("surveys.list",),
+        "declared": ("surveys.get", "surveys.write"),
+    },
+    "funnel": {
+        "routed": (),
+        "declared": (
+            "funnels.list", "funnels.pages.list", "funnels.create",
+            "funnels.steps.create", "funnels.get", "funnels.delete",
+            "funnels.pages.get", "funnels.pages.autosave",
+            "funnels.pages.list_internal",
+        ),
+    },
+    "website": {
+        "routed": (),
+        "declared": ("funnels.list", "funnels.pages.list"),
+    },
+    "page": {
+        "routed": (),
+        "declared": ("funnels.pages.list", "funnels.pages.get",
+                     "funnels.pages.autosave"),
+    },
+    "product": {
+        "routed": (),
+        "declared": (
+            "products.list", "products.get", "products.create",
+            "products.update", "products.delete", "products.prices.create",
+            "products.prices.list",
+        ),
+    },
+    "custom_field": {
+        "routed": (),
+        "declared": ("custom_fields.list", "custom_fields.get",
+                     "custom_fields.create"),
+    },
+    "tag": {
+        "routed": (),
+        "declared": ("tags.list", "tags.create"),
+    },
+    "contact": {
+        "routed": (),
+        "declared": ("contacts.get", "contacts.create", "contacts.upsert",
+                     "contacts.update", "contacts.search", "contacts.delete"),
+    },
+    # Authoring-only object types: no public operation row exists at all.
+    "community": {"routed": (), "declared": ()},
+    "course": {"routed": (), "declared": ()},
+    "channel": {"routed": (), "declared": ()},
+}
+
+
+def public_operation_route(object_type: str) -> Dict[str, tuple]:
+    """The public-adapter operation IDs for one router object type.
+
+    Returns ``{"routed": (...), "declared": (...)}``. An unknown object type
+    returns two empty tuples — never an invented operation.
+    """
+    entry = PUBLIC_OPERATION_ROUTES.get(str(object_type))
+    if entry is None:
+        return {"routed": (), "declared": ()}
+    return {"routed": tuple(entry["routed"]), "declared": tuple(entry["declared"])}
+
 
 # ---------------------------------------------------------------------------
 # Tiers (Skill 36) — the disclosure number N in [GHL tier used: N — tool]
@@ -101,7 +179,11 @@ ROUTER_VERSION = "v1.0.0"
 class Tier:
     CAF = 0          # Skill 44 caf CLI / Skill 44 internal Build API (Firebase)
     MCP_OFFICIAL = 1  # orchestrator-only official MCP
-    MCP_COMMUNITY = 2  # community MCP ($GHL_COMMUNITY_MCP_URL, port 8765)
+    # 2 was the community MCP rail ($GHL_COMMUNITY_MCP_URL, port 8765). Removed
+    # by GU-009/GU-010: the service is retired and is never a route. The number
+    # stays unassigned so a historical receipt's "tier used: 2" can only ever
+    # mean that retired rail, and REST/BROWSER keep the values other code and
+    # stored receipts already carry.
     REST = 3          # raw HTTPS services.* (dual Accept + Version, browser UA)
     BROWSER = 4       # agent-browser / Playwright / REST-in-browser eval
 
@@ -124,7 +206,8 @@ class Rail:
     SKILL44_CAF = "skill44_caf"
     SKILL44_BUILD = "skill44_build_api"     # Firebase-token internal workflow build
     MCP_OFFICIAL = "mcp_official"
-    MCP_COMMUNITY = "mcp_community"
+    # "mcp_community" removed with Tier 2 (GU-009/GU-010): the community MCP is a
+    # retired transport, not a rail. Do not re-add it as a fallback.
     REST_SERVICES = "rest_services"          # raw HTTPS services.leadconnectorhq.com
     REST_IN_BROWSER = "rest_in_browser"      # builder-origin autosave via seeded eval
     BROWSER = "browser"                      # agent-browser click-path (builders)
@@ -173,9 +256,29 @@ class ObjectRoute:
     create_api_exists: bool    # False → browser is the ONLY create rail
     verify: str                # read-back verification contract (plain English)
     note: str = ""
+    # S06-07: declared READ rails for this object type, kept BESIDE the
+    # write rails: execute_write never attempts them, and every read step
+    # carries can_create=False. Empty when no read surface is registered.
+    read_rails: List[RailStep] = field(default_factory=list)
 
     def rail_names(self) -> List[str]:
         return [s.rail for s in self.rails]
+
+
+def _public_inventory_read_step() -> RailStep:
+    """The S06-07 public inventory READ step (doc 19 W3): one read-only
+    services.* step naming both public reads. can_create=False: this step
+    can never create anything. It gives the inventory read a declared
+    router surface with a tier disclosure, beside (never inside) the
+    write rails."""
+    return RailStep(
+        Rail.REST_SERVICES, Tier.REST, Token.LOCATION_PIT,
+        "GET /funnels/funnel/list + GET /funnels/page "
+        "(public API read, tools/ghl_funnels_read.py)",
+        False,
+        "S06-07: implemented at build tier, declared-not-live-proven "
+        "(LIVE_PROOF_PENDING); reads only",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +417,10 @@ def _matrix() -> Dict[str, ObjectRoute]:
         idempotency_key="funnel_workspace_url",
         create_api_exists=False,
         verify="sealed render_check (200 + marker + no render errors)",
+        note="create_api_exists stays False: doc 19 W3 documents public "
+        "READS only, no public write API. The public inventory read is "
+        "registered under read_rails (S06-07).",
+        read_rails=[_public_inventory_read_step()],
     )
     # website shares the funnel rail (Part-B deltas only)
     m["website"] = ObjectRoute(
@@ -321,40 +428,56 @@ def _matrix() -> Dict[str, ObjectRoute]:
         idempotency_key="funnel_workspace_url",
         create_api_exists=False,
         verify=m["funnel"].verify,
-        note="Websites tab is an <a> (not role=tab); two-card create modal",
+        note="Websites tab is an <a> (not role=tab); two-card create modal. "
+        "Public inventory READ registered under read_rails (S06-07); "
+        "create_api_exists stays False (no public write API, doc 19 W3).",
+        read_rails=[_public_inventory_read_step()],
     )
     m["page"] = ObjectRoute(
         "page", list(m["funnel"].rails),
         idempotency_key="page_id",
         create_api_exists=False,
         verify=m["funnel"].verify,
+        note="create_api_exists stays False: doc 19 W3 documents public "
+        "READS only, no public write API. The public inventory read is "
+        "registered under read_rails (S06-07).",
+        read_rails=[_public_inventory_read_step()],
     )
 
     m["media"] = ObjectRoute(
         "media",
         [
             R(Rail.REST_SERVICES, Tier.REST, Token.LOCATION_PIT,
-              "POST /medias/upload-file + ghl_media.py (LOCATION PIT)", True,
-              "NEVER browser-routed; AGENCY PIT 401s for media"),
-            R(Rail.MCP_COMMUNITY, Tier.MCP_COMMUNITY, Token.LOCATION_PIT,
-              "community MCP media tools", True),
+              "POST /medias/upload-file + POST /medias/folder via ghl_media.py "
+              "(LOCATION PIT)", True,
+              "NEVER browser-routed; AGENCY PIT 401s for media. Sole route: the "
+              "community MCP media fallback was removed (GU-009/GU-010)"),
         ],
         idempotency_key="folder_per_funnel_name",
         create_api_exists=True,
         verify="CDN URL fetch 200",
+        note="Media LIST is routed through the frozen public adapter as "
+        "media.files.list (ghl_media.list_media; required `type`, refused before "
+        "transport when omitted). Upload and folder create have registry rows "
+        "but no adapter-capable route (JSON-only transport; no readback plan) "
+        "and are declared named gaps in ghl_route_gaps.py. No community route.",
     )
 
     m["product"] = ObjectRoute(
         "product",
         [
-            R(Rail.MCP_COMMUNITY, Tier.MCP_COMMUNITY, Token.LOCATION_PIT,
-              "community MCP ($GHL_COMMUNITY_MCP_URL, port 8765)", True),
             R(Rail.REST_SERVICES, Tier.REST, Token.LOCATION_PIT,
-              "raw HTTPS services.* /products", True),
+              "raw HTTPS services.* /products", True,
+              "sole route: the community MCP product rail was primary before "
+              "GU-009/GU-010 and is removed; never a blind community-first "
+              "attempt"),
         ],
         idempotency_key="product_sku",
         create_api_exists=True,
         verify="re-GET",
+        note="Public REST only. Product collection / inventory / bulk-edit "
+        "operations have no audited public operation row and are UNSUPPORTED — "
+        "they are not routed to a retired transport.",
     )
 
     m["community"] = ObjectRoute(
@@ -364,9 +487,11 @@ def _matrix() -> Dict[str, ObjectRoute]:
               "ghl_community_builder.py (Memberships area)", True),
         ],
         idempotency_key="zhc_name_search",
-        create_api_exists=False,  # ASSUMED — builder confirms Tier 1/2 tool lists first hour
+        create_api_exists=False,  # ASSUMED — no public create API; builder confirms first hour
         verify="list-page row + client-portal URL 200 (render_check)",
-        note="if a create tool is found on Tier 1/2, router flips primary to it",
+        note="GHL Communities/Memberships AUTHORING target (browser builder), "
+        "NOT the retired community MCP service — it has no MCP rail and must "
+        "never be read as one.",
     )
 
     m["course"] = ObjectRoute(
@@ -444,6 +569,16 @@ def route(object_type: str) -> ObjectRoute:
             f"unknown GHL object type {object_type!r}; known: {object_types()}"
         )
     return _MATRIX[key]
+
+
+def read_route(object_type: str) -> List[RailStep]:
+    """Return the declared READ rails for an object type (S06-07).
+
+    Read rails live BESIDE the write rails on the ObjectRoute: they are
+    never attempted by `execute_write` (a write orchestrator) and every
+    read step carries can_create=False. An object type with no registered
+    read surface returns an empty list."""
+    return list(route(object_type).read_rails)
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +693,10 @@ class RunResult:
     status: Optional[int] = None
     error_kind: Optional[str] = None
     detail: str = ""
+    # S06-08 (additive): the location the runner's own read observed, when it
+    # knows it, one of the router's observed-location sources for tenant
+    # binding (see execute_write).
+    location_id: Optional[str] = None
 
 
 def _as_run_result(x: Any) -> RunResult:
@@ -570,8 +709,12 @@ def _as_run_result(x: Any) -> RunResult:
             status=x.get("status"),
             error_kind=x.get("error_kind"),
             detail=x.get("detail", ""),
+            location_id=x.get("location_id") or x.get("observed_location_id"),
         )
     return RunResult(ok=bool(x))
+
+
+_OBS_UNSET = object()  # _finish sentinel: "derive the observed location"
 
 
 def execute_write(
@@ -586,32 +729,63 @@ def execute_write(
     rate_cooldown: Optional[Callable[[RailStep], None]] = None,
     logger: Optional[Callable[[str], None]] = None,
     max_backoff: int = 3,
+    expected_location_id: Optional[str] = None,
+    observed_location_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    secret_values: Any = None,
 ) -> dict:
     """Drive one idempotent, read-back-verified, receipted GHL write per §3.
 
     Returns a result dict: ``{ok, action, rail, tier, receipt, receipt_path,
     disclosures, board_note?, error?}``. NEVER raises for an expected GHL failure
     — it returns an honest FAIL with the receipt trail (card → blocked upstream).
+
+    S06-08 TENANT BINDING: ``expected_location_id`` is the run's GATED tenant
+    context (established by the caller, e.g. ghl_builder.subaccount_matches'
+    MatchGuard target). The observed location comes from, in order: the
+    explicit ``observed_location_id``, the verifier's read-back dict
+    (``location_id`` / ``observed_location_id``), the idempotency probe's
+    dict, or the runner result's ``location_id``. Every receipt is stamped
+    with the contract fields; when expected and observed are both known and
+    DIFFER, the write is receipted as FAILED with a tenant-mismatch error:
+    a cross-tenant read-back is a contradiction, never a create.
     """
     obj = route(object_type)
     log = logger or (lambda m: None)
     disclosures: List[str] = []
     rail_runners = rail_runners or {}
 
+    def _observed(verify: Any = None, probe: Any = None,
+                  result: Any = None) -> Optional[str]:
+        if observed_location_id:
+            return observed_location_id
+        for source in (verify, probe):
+            if isinstance(source, dict):
+                value = source.get("observed_location_id") or source.get("location_id")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        value = getattr(result, "location_id", None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
     def _finish(action: str, rail: Optional[RailStep], response_id, verify,
-                error=None, board_note=None) -> dict:
+                error=None, board_note=None, observed=_OBS_UNSET) -> dict:
+        obs = _observed(verify) if observed is _OBS_UNSET else observed
         receipt = make_receipt(
             object_type, slug, action, rail=rail, response_id=response_id,
             request_shape=request_shape, verify=verify, disclosures=disclosures,
-            error=error,
+            error=error, expected_location_id=expected_location_id,
+            observed_location_id=obs, run_id=run_id,
         )
-        rp = write_receipt(evidence_root, receipt)
+        rp = write_receipt(evidence_root, receipt, secret_values=secret_values)
         return {
             "ok": action in ("created", "reused"),
             "action": action, "rail": rail.rail if rail else None,
             "tier": rail.tier if rail else None,
             "disclosures": disclosures, "receipt": receipt, "receipt_path": rp,
             "board_note": board_note, "error": error,
+            "tenant_binding": receipt.get("tenant_binding"),
         }
 
     # 1. Idempotency probe (GET/search-first) — reuse an existing object.
@@ -628,7 +802,21 @@ def execute_write(
             log(d)
             rid = existing.get("id") if isinstance(existing, dict) else None
             verify = existing.get("verify") if isinstance(existing, dict) else None
-            return _finish("reused", step, rid, verify or {"probe": "existing"})
+            obs = _observed(verify, existing)
+            if (expected_location_id and obs
+                    and obs != expected_location_id):
+                last_error = (
+                    f"tenant mismatch on reuse probe: existing object observed "
+                    f"in location {obs!r} but the run is gated for "
+                    f"{expected_location_id!r}: cross-tenant reuse refused"
+                )
+                log(last_error)
+                return _finish("failed", step, rid, verify or {"probe": "existing"},
+                               error=last_error,
+                               board_note=BOARD_NOTE[Action.STOP_REPORT],
+                               observed=obs)
+            return _finish("reused", step, rid, verify or {"probe": "existing"},
+                           observed=obs)
 
     # 2. Ordered rails — attempt each with its failure policy.
     last_error = "no rail runner provided"
@@ -663,7 +851,26 @@ def execute_write(
                         return _finish("failed", step, res.response_id, verify,
                                        error=last_error,
                                        board_note=BOARD_NOTE[Action.STOP_REPORT])
-                return _finish("created", step, res.response_id, verify)
+                # S06-08 tenant gate: a read-back that observed a DIFFERENT
+                # location than the gated tenant turns the create into a
+                # failed, tenant-mismatch receipt (mirrors the failed-verify
+                # path above), never a created receipt for the wrong tenant.
+                obs = _observed(verify, result=res)
+                if (expected_location_id and obs
+                        and obs != expected_location_id):
+                    last_error = (
+                        f"tenant mismatch on {step.rail}: read-back observed "
+                        f"location {obs!r} but the run is gated for "
+                        f"{expected_location_id!r}: cross-tenant read-back "
+                        "is a contradiction, never a create"
+                    )
+                    log(last_error)
+                    return _finish("failed", step, res.response_id, verify,
+                                   error=last_error,
+                                   board_note=BOARD_NOTE[Action.STOP_REPORT],
+                                   observed=obs)
+                return _finish("created", step, res.response_id, verify,
+                               observed=obs)
 
             # Failure → classify → policy.
             action = classify_failure(res.error_kind, res.status)
@@ -743,6 +950,7 @@ def matrix_as_dict() -> dict:
             "verify": r.verify,
             "note": r.note,
             "rails": [asdict(s) for s in r.rails],
+            "read_rails": [asdict(s) for s in r.read_rails],
         }
     return out
 
@@ -887,16 +1095,17 @@ def _selftest() -> int:
             errors.append("exhausted 429 should honest-fail with RATE-LIMIT note")
 
         # 11. 403 with same-token next rail → STOP (token-context, no guessing).
+        # tag rails are caf + REST, both LOCATION_PIT, so a 403 on the primary
+        # must STOP rather than hop to the same token context.
         res = execute_write(
-            "media", "logo.png", evidence_root=tmp,
+            "tag", "zhc_403", evidence_root=tmp,
             idempotency_probe=lambda: None,
             rail_runners={
-                Rail.REST_SERVICES: lambda s: RunResult(ok=False, status=403),
-                Rail.MCP_COMMUNITY: lambda s: RunResult(ok=True, response_id="m1"),
+                Rail.SKILL44_CAF: lambda s: RunResult(ok=False, status=403),
+                Rail.REST_SERVICES: lambda s: RunResult(ok=True, response_id="t1"),
             },
             verifier=lambda rid: {"ok": True},
         )
-        # media REST + community MCP are both LOCATION_PIT → same context → STOP.
         if res["action"] != "failed" or res["board_note"] != "TOKEN-CONTEXT":
             errors.append("403 with same-token next rail should STOP as TOKEN-CONTEXT")
 
@@ -935,6 +1144,15 @@ def _selftest() -> int:
     if rail_requires_browser_context(Rail.REST_SERVICES):
         errors.append("rail_requires_browser_context(REST_SERVICES) should be False")
 
+    # 16. The community MCP is retired (GU-009/GU-010): no route may name it,
+    # and the product/media object types must lead with the public REST rail.
+    for name, r in _MATRIX.items():
+        for s in list(r.rails) + list(r.read_rails):
+            if s.rail == "mcp_community" or s.tier == 2:
+                errors.append(f"{name}: retired community MCP rail is still routed")
+    for rest_led in ("product", "media"):
+        if route(rest_led).rails[0].rail != Rail.REST_SERVICES:
+            errors.append(f"{rest_led}: primary rail must be the public REST route")
 
     if errors:
         for e in errors:

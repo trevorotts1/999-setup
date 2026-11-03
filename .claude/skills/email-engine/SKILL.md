@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: 2.0.3
+version: 2.0.9
 ---
 
 # Email Engine (Skill 50)
@@ -174,8 +174,7 @@ posture, and the human approval step are stated identically on both sides:
 ## Client-provider rule (binding)
 
 On a client box this skill uses the **client's own configured providers and keys** — never the
-operator's. There is NO vendor rule on model ids (Trevor order 2026-10-29): an
-Anthropic / Claude model the client configured is used like any other. The deterministic gates
+operator's, never Anthropic / `claude-*` model ids. The deterministic gates
 (`prove-email.py`, `email_matcher.py`, `run_email_engine.py`) are model-free Python that run
 identically everywhere; the authoring/QC LLM tiers named for the client path are the client's
 own provider chain. This skill is provider-neutral by construction.

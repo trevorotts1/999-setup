@@ -271,6 +271,16 @@ def _get_token() -> str:
     sys.exit(1)
 
 
+def _require_live_seams() -> None:
+    """Refuse (ADAPTER-SEAMS-NOT-PORTED) until the four adapter seams pass.
+    A missing skill_runner.py raises ImportError: fail closed, never caught."""
+    _sr_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _sr_root not in sys.path:
+        sys.path.insert(0, _sr_root)
+    import skill_runner
+    skill_runner.require_adapter_seams()
+
+
 class GhlHttpClient:
     """Real REST transport for the two documented endpoints this module
     drives (contacts.md:140-164, 217-241, 268-291, 776-825). Never
@@ -323,6 +333,7 @@ class GhlHttpClient:
         return data.get("contact", data) if isinstance(data, dict) else data
 
     def enroll_contact_in_workflow(self, contact_id: str, workflow_id: str) -> Dict[str, Any]:
+        _require_live_seams()  # live write: refused until the four seams pass
         import requests
 
         resp = requests.post(
@@ -337,6 +348,7 @@ class GhlHttpClient:
             return {"status": resp.status_code}
 
     def delete_contact(self, contact_id: str) -> Dict[str, Any]:
+        _require_live_seams()  # live write: refused until the four seams pass
         import requests
 
         resp = requests.delete(

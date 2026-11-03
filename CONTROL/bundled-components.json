@@ -1,6 +1,6 @@
 {
   "schema": "bundled-components@1",
-  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (15; reconciled from the shipped tree)",
+  "generatedBy": "CONTROL/bundled-skills.txt — surviving bundled skills registry (21; reconciled from the shipped tree)",
   "generatedAt": "2026-11-01T00:00:00.000Z",
   "channel": {
     "default": "github-releases",
@@ -68,7 +68,7 @@
     ],
     "blackceo-signature-page": [
       {
-        "version": "1.3.4",
+        "version": "1.3.13",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/blackceo-signature-page",
@@ -122,7 +122,7 @@
     ],
     "council-of-wise-elders": [
       {
-        "version": "1.0.74",
+        "version": "1.0.78",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/council-of-wise-elders",
@@ -131,7 +131,7 @@
     ],
     "signature-downsell": [
       {
-        "version": "0.1.1",
+        "version": "0.1.7",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-downsell",
@@ -140,7 +140,7 @@
     ],
     "signature-thank-you": [
       {
-        "version": "0.3.1",
+        "version": "0.3.3",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-thank-you",
@@ -149,10 +149,64 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.9",
+        "version": "0.2.13",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "ghl-install-pages": [
+      {
+        "version": "v27.1.80",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/ghl-install-pages",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "convert-and-flow-operator": [
+      {
+        "version": "v2.1.41",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/convert-and-flow-operator",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-funnel": [
+      {
+        "version": "v2.1.29",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-funnel",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-product-selection": [
+      {
+        "version": "0.2.6",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-product-selection",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-order-form": [
+      {
+        "version": "0.1.7",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-order-form",
+        "license": "MIT (repo license)"
+      }
+    ],
+    "signature-upsell": [
+      {
+        "version": "0.2.5",
+        "platform": "any",
+        "installFrom": "repo-tree",
+        "repoPath": ".claude/skills/signature-upsell",
         "license": "MIT (repo license)"
       }
     ]

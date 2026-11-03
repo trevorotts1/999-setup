@@ -94,13 +94,28 @@
       ],
       "handoff": {
         "intake_field": "funnel_handoff",
-        "behavior": "form_pop",
-        "step_order": [
-          "signature_page",
-          "product_selection_page",
-          "order_form_page"
-        ],
-        "note": "The signature page's funnel handoff (update plan Item 32): intake records the Convert and Flow form's identity (name and object id), the pop behavior, and the step order (signature page, then product selection page, then order form page). A run with no form identity records the handoff as an explicit missing input with its reason, never a silent placeholder. Written by scripts/write_intake.py (--handoff-form-name/--handoff-form-id, or --handoff-missing-reason); the built page is checked against the record by scripts/validate_handoff.py at the responsive-html stage, and the funnel-completion receipt proves the pop live at ghl-install-test."
+        "derived_from": "intake.json page_kind -> references/page-kinds.json kinds.<kind>.action; scripts/validate_handoff.py reads the requirement through scripts/page_kinds.py, so the same validator serves both landing kinds. A run that declares no page_kind keeps the form route.",
+        "routes": {
+          "checkout": {
+            "page_kind": "sales",
+            "primary_handoff_type": "external_link",
+            "behavior": null,
+            "step_order": null,
+            "note": "The signature sales page's handoff is its checkout destination: the copy manifest's primary CTA is an external_link, and the built page's primary CTA is an anchor to an absolute http(s) checkout page or payment link, compared with funnel_handoff.checkout_url / funnel_handoff.checkout.url / intake.json checkout_url when one is recorded. No form identity and no product-selection/order-form sequence applies."
+          },
+          "form": {
+            "page_kind": "opt_in",
+            "primary_handoff_type": "form_pop",
+            "behavior": "form_pop",
+            "step_order": [
+              "signature_page",
+              "product_selection_page",
+              "order_form_page"
+            ],
+            "note": "The signature landing (opt-in) page's handoff is the registration form: intake records the Convert and Flow form's identity (name and object id), the pop behavior, and the step order (signature page, then product selection page, then order form page). A run with no form identity records the handoff as an explicit missing input with its reason, never a silent placeholder."
+          }
+        },
+        "note": "Written by scripts/write_intake.py (--handoff-form-name/--handoff-form-id, or --handoff-missing-reason) for the form route; the built page is checked against the requirement its page kind declares by scripts/validate_handoff.py at the responsive-html stage, and the funnel-completion receipt proves the handoff live at ghl-install-test."
       },
       "review_required": false,
       "min_scores": null,
@@ -239,7 +254,7 @@
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe",
         "python3 scripts/design_style.py validate-inventory {run_dir}",
-        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/desktop-wireframe/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage desktop-wireframe"
       ],
       "review_required": true,
@@ -295,7 +310,7 @@
       ],
       "validators": [
         "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet",
-        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/mobile-tablet/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage mobile-tablet"
       ],
       "review_required": true,
@@ -351,6 +366,7 @@
       ],
       "validators": [
         "python3 scripts/validate_visual_direction.py {run_dir}",
+        "python3 scripts/validate_production_record.py {run_dir}/visual-mockup/production-record.json --ocr --model {model} --if-present",
         "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage visual-mockup"
       ],
@@ -379,7 +395,8 @@
         "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
         "assets/visual-standards/reference-catalog.json (typed hosted references: wireframe, mockup, hybrid image map, mood board, mockup crop, by section and viewport)"
       ],
-      "may_be_not_authorized": false
+      "may_be_not_authorized": false,
+      "production_record_note": "The layout proof's section images are read back (OCR, AF-G1) and checked against the logo (AF-G2) whenever the stage carries visual-mockup/production-record.json (--if-present: a stage that writes none is not failed here, because the record was never a visual-mockup artifact; the client-judged final-mockups stage requires it). The solid-block slots are by design and are never scored as photography."
     },
     "image-inventory-prompts": {
       "itemized": true,
@@ -403,7 +420,7 @@
       "count_of": "desktop-wireframe/image-inventory.json",
       "count_glob": "image-inventory-prompts/IMG-*.txt",
       "validators": [
-        "python3 scripts/validate_prompt.py {file} {sauce}"
+        "python3 scripts/validate_prompt.py {file} {sauce} --model {model} --max-chars {max_chars}"
       ],
       "review_required": true,
       "min_scores": {
@@ -580,7 +597,7 @@
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}",
         "python3 scripts/validate_mockup_slots.py {run_dir} final-mockups",
-        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json",
+        "python3 scripts/validate_production_record.py {run_dir}/final-mockups/production-record.json --ocr --model {model}",
         "python3 scripts/validate_review_pdf.py {run_dir} --stage final-mockups"
       ],
       "review_required": true,
@@ -658,7 +675,7 @@
         "image-map-upload/image-map.json",
         "copy/public-copy.md",
         "copy/copy-manifest.json (the CTA entries and their handoff types; the primary CTA)",
-        "intake.json (funnel_handoff: the named form the primary CTA pops, or the recorded missing input)",
+        "intake.json (page_kind and funnel_handoff: the handoff the page kind requires — an opt-in page's named form the primary CTA pops, or a sales page's checkout destination the primary CTA links to — or the recorded missing input; scripts/validate_handoff.py is invoked for both kinds because it derives the requirement from the page kind)",
         "font-action-plan/font-map.json",
         "references/html-qc-rubric.md",
         "references/composition-treatments.json (build each slot's treatment in CSS and emit data-image-slot and data-treatment on every slot element)"

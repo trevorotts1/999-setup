@@ -175,7 +175,7 @@ python3 tools/capability_probe.py
 
 It writes `working/skill6-capability.json` (the run-evidence root, never inside the skill dir) with `selectedLane` and the fallback chain. **`selectedLane != null` is the Day-0 acceptance** — a host with zero browser lanes is not installable (fail closed). Do NOT require CUA for this install to pass when Lane 1 (agent-browser) works; the OpenClaw managed-browser lane is not available in this harness and is never required.
 
-**3. Prove the lane through the gateway:**
+**3. Prove the lane through the gateway** (a `LANE 1 UNAVAILABLE` result — agent-browser missing or off the pin — disables Lane 1 ONLY: record the reason, continue to the capability probe (item 2) and let it select the best verified lane; an install run fails to start only when the probe verifies zero lanes, fail closed):
 
 ```bash
 bash tools/browser_manager.sh ensure
@@ -311,7 +311,7 @@ If the user does not specify which one, default to Funnels.
 > Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
 > the policy gates allow; Tier-3 fail-loud — never a silent UI login.
 
-**Tier-1 — TOKEN-ONLY (default, unattended).** The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) and NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form.
+**Tier-1 — TOKEN-ONLY (default, unattended).** The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) and NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form. Resolution is the shared resolver (`tools/ghl_secret_resolver.py`): `seed-ghl-auth.py --check` performs the FULL resolution (the `GHL_REFRESH_TOKEN_FILE` indirection, then the env alias chain GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / CAF_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN, then the canonical store), so a token that lives only in the store or only behind a `*_FILE` variable is found, not false-failed; the grep below is only a spot check of the canonical name in the canonical file.
 
 **ALWAYS check for an existing token before prompting the user. Presence-only checks — NEVER print the token value:**
 
@@ -369,6 +369,16 @@ The agent does NOT hand-roll a helper table. The legacy Playwright-era helper li
 
 3. **Recovery = the gateway contract itself.** The circuit-breaker PARKS a flaky build and reports loudly; orphan sessions are reaped under Item 33 browser hygiene (the blackceo-signature-page session registry and reaper) as the backstop for a hard crash; the guaranteed teardown trap closes the session. A failed action is surfaced, never papered over.
 
+
+## Step 7b: Maintenance Crons (host scheduling — NOT registered in this harness)
+
+Recurring registration is the fifth-seam candidate recorded in `ADAPTER.md`
+and `PACK.md`: the cron installers (`scripts/install-*-cron.sh`,
+`scripts/install-skill6-maintenance-crons.sh`) are carried unadapted from
+onboarding and call the OpenClaw `openclaw cron` CLI, which does not exist in
+the Claude Code harness. Nothing in this pack registers recurring jobs. Run
+the sweeps on demand, or register them with your own scheduler from the entry
+files in `schedule/`.
 
 ## Step 8: Update Core .md Files
 

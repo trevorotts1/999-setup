@@ -38,6 +38,7 @@ in front of it and only fires for a **specialist IP funnel** whose engine has re
 |---|---|---|---|
 | `signature-funnel` | 49-signature-funnel | Trevor Otts 12-section Hero + 3/5/7 funnel | `49-signature-funnel/signature-funnel-entry.sh` |
 | `sales-page-assets` | 56-sales-page-assets | Direct-Response asset stack: 8-section main sales page, 9-section upsell, downsell recovery page, high-ticket long-form page, order-bump copy | `56-sales-page-assets/sales-page-assets-entry.sh` |
+| `black-friday-launcher` | 83-black-friday-launcher | Black Friday (or any offer) LAUNCH composer: fail-closed intake, route graph (landing, optional product selection, native checkout order form + bump, upsell/downsell, thank-you), pages dispatched through Skill 49 and delivered by Skill 6; priority 12, above Skill 56, so a launch request is not routed to the direct-response asset stack; honours launch_mode `black_friday_launch` | `83-black-friday-launcher/launcher_core/cli.py` |
 | `cinematic-web-funnel-engine` | 62-cinematic-web-funnel-engine | Scroll-controlled cinematic scene sequences assembled into a website (readiness: skeleton, certify_capable false; the selector STEP-0 refuses a production route into it without --force-skeleton) | `62-cinematic-web-funnel-engine/cinematic-web-funnel-entry.sh` |
 
 ## How to register a SECOND entry (no selector code change)
@@ -77,6 +78,10 @@ deliverable-**labeling grammar** shared by Skills 49 and 56 stands as the labeli
 ONE object to `engines[]`, and the table above is extended in the same change:
 `tests/test_s06_09_parity.py` fails while the table and the registry disagree.
 
+Skill **83** is registered as the fourth entry (id
+`black-friday-launcher`, priority 12 above Skill 56's) so a Black Friday / launch request is composed by the launcher;
+a bare 'launch' alone stays NO_ENGINE_MATCH.
+
 ## CLI
 
 ```
@@ -88,6 +93,5 @@ python3 06-ghl-install-pages/tools/funnel_engine_selector.py --self-test
 ## Client-runtime rule (binding)
 
 The selector is deterministic, model-free Python — it runs identically on every box. The engines it
-routes to run on the **client's OWN configured providers and keys on a client box (never the
-operator's)** — no vendor rule: an Anthropic / Claude model the client configured is fine.
-Nothing here calls a model or the network.
+routes to run on the **client's OWN configured providers and keys on a client box (never Anthropic,
+never the operator's)**. Nothing here calls a model or the network.

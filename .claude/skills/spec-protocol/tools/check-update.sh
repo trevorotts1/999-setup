@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-update.sh — are the five bundled skills current?
+# check-update.sh — are the bundled skills current?
 #
 # WHY THIS EXISTS. Before this file, spec-protocol could only check ITSELF.
 # The repo bundles five skills — nine-router-setup, spec-protocol, kaizen,
@@ -42,10 +42,10 @@
 set -uo pipefail
 
 # -------------------------------------------------------------- skill list
-# Hardcoded. CONTROL/bundled-skills.txt may not exist on a client box, and the
-# list changes only when a skill is added to or removed from the repo — which
-# is a release-level event that updates this script anyway.
-SKILLS=(nine-router-setup spec-protocol kaizen eli5 bro)
+# Read from CONTROL/bundled-skills.txt (one skill per line, # comments). Order:
+# SPEC_PROTOCOL_BUNDLE_LIST (local file), then the published copy, then the
+# original five as a last resort so an unreachable list never silences the check.
+FALLBACK_SKILLS="nine-router-setup spec-protocol kaizen eli5 bro"
 
 # ------------------------------------------------------- paths and overrides
 LOCAL_SKILLS_ROOT="${SPEC_PROTOCOL_LOCAL_SKILLS_ROOT:-$HOME/.claude/skills}"
@@ -55,6 +55,8 @@ SKILLS_URL_BASE="${SPEC_PROTOCOL_SKILLS_URL_BASE:-https://raw.githubusercontent.
 # VERSION. self-update.sh re-execs with this and SPEC_PROTOCOL_DIR set. When
 # present it overrides the constructed URL for spec-protocol only.
 SPEC_PROTOCOL_URL="${SPEC_PROTOCOL_VERSION_URL:-}"
+BUNDLE_LIST_FILE="${SPEC_PROTOCOL_BUNDLE_LIST:-}"
+BUNDLE_LIST_URL="${SPEC_PROTOCOL_BUNDLE_LIST_URL:-${SKILLS_URL_BASE%/.claude/skills}/CONTROL/bundled-skills.txt}"
 
 # Second config root. self-update.sh handles the dual-root case on install;
 # this script mirrors it on the read side. When .claude-nine has its own
@@ -114,13 +116,66 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 # -------------------------------------------------- remote URL for one skill
+# $2 is the version file name: VERSION, or skill-version.txt for page skills.
 remote_url() {
-  local skill="$1"
+  local skill="$1" fname="${2:-VERSION}"
   if [ "$skill" = "spec-protocol" ] && [ -n "$SPEC_PROTOCOL_URL" ]; then
     printf '%s' "$SPEC_PROTOCOL_URL"
     return
   fi
-  printf '%s/%s/VERSION' "$SKILLS_URL_BASE" "$skill"
+  printf '%s/%s/%s' "$SKILLS_URL_BASE" "$skill" "$fname"
+}
+
+# ------------------------------------------------------------------ http_get
+# Sets HTTP_RC (curl rc), HTTP_CODE, HTTP_BODY. rc 99 = loopback http refused.
+# Loopback guard: http:// is only permitted when explicitly opted in AND the
+# host is 127.0.0.1 or localhost; any other http:// URL is refused by curl.
+http_get() {
+  local url="$1" response
+  local curl_opts=(-sS -L --max-time 15 --max-filesize 65536 -w '\n%{http_code}')
+  HTTP_RC=0; HTTP_CODE=""; HTTP_BODY=""
+  case "$url" in
+    https://*) curl_opts+=(--proto '=https') ;;
+    http://127.0.0.1[:/]*|http://localhost[:/]*)
+      if [ "${SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP:-0}" != "1" ]; then HTTP_RC=99; return; fi
+      ;;
+    http://*) curl_opts+=(--proto '=https') ;;
+  esac
+  response="$(curl "${curl_opts[@]}" "$url" 2>/dev/null)"
+  HTTP_RC=$?
+  [ "$HTTP_RC" -ne 0 ] && return
+  HTTP_CODE="$(printf '%s' "$response" | tail -n 1)"
+  HTTP_BODY="$(printf '%s' "$response" | sed '$d')"
+}
+
+# ------------------------------------------------------------ load skill list
+# Prints one valid skill name per line from a bundled-skills.txt body on stdin.
+parse_list() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(printf '%s' "$line" | tr -d ' \t\r')"
+    case "$line" in ''|'#'*) continue ;; *[!A-Za-z0-9._-]*) continue ;; esac
+    printf '%s\n' "$line"
+  done
+}
+
+load_skills() {
+  local body="" names=""
+  if [ -n "$BUNDLE_LIST_FILE" ]; then
+    [ -r "$BUNDLE_LIST_FILE" ] && body="$(cat "$BUNDLE_LIST_FILE")"
+  else
+    http_get "$BUNDLE_LIST_URL"
+    [ "$HTTP_RC" -eq 0 ] && [ "$HTTP_CODE" = "200" ] && body="$HTTP_BODY"
+  fi
+  names="$(printf '%s\n' "$body" | parse_list)"
+  if [ -z "$names" ]; then
+    names="$(printf '%s\n' $FALLBACK_SKILLS)"
+    printf 'note: bundled-skills.txt unreadable; checking the original five skills only\n' >&2
+  fi
+  SKILLS=()
+  while IFS= read -r line; do SKILLS+=("$line"); done <<EOL
+$names
+EOL
 }
 
 # ---------------------------------------------------- check one skill+root pair
@@ -131,6 +186,9 @@ check_one_skill() {
   local local_file="$LOCAL_SKILLS_ROOT/$skill/VERSION"
   local local_ver="" nine_ver="" remote_ver=""
   local nine_file="$NINE_SKILLS_ROOT/$skill/VERSION"
+  # Page skills carry skill-version.txt instead of VERSION.
+  [ -f "$local_file" ] || local_file="$LOCAL_SKILLS_ROOT/$skill/skill-version.txt"
+  [ -f "$nine_file" ] || nine_file="$NINE_SKILLS_ROOT/$skill/skill-version.txt"
   local nine_note=""
 
   # --- local side: primary root ---
@@ -163,41 +221,22 @@ check_one_skill() {
   # --- remote side ---
   local url
   url="$(remote_url "$skill")"
-
-  # Loopback guard: http:// is only permitted when explicitly opted in AND the
-  # host is 127.0.0.1 or localhost. Any other http:// URL gets the proto guard
-  # and curl will refuse it — which is the correct behaviour for a production
-  # run where someone fat-fingered the override.
-  local curl_opts=(-sS -L --max-time 15 --max-filesize 65536 -w '\n%{http_code}')
-  case "$url" in
-    https://*)
-      curl_opts+=(--proto '=https')
-      ;;
-    http://127.0.0.1[:/]*|http://localhost[:/]*)
-      if [ "${SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP:-0}" != "1" ]; then
-        CHK_STATUS="undetermined"
-        CHK_MSG="UNDETERMINED $skill — http:// loopback without SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP=1 (installed: $local_ver)$nine_note"
-        return
-      fi
-      ;;
-    http://*)
-      curl_opts+=(--proto '=https')
-      ;;
-  esac
-
-  local http_body="" http_code="" response="" curl_rc
-  response="$(curl "${curl_opts[@]}" "$url" 2>/dev/null)"
-  curl_rc=$?
-
-  if [ $curl_rc -ne 0 ]; then
+  http_get "$url"
+  if [ "$HTTP_CODE" = "404" ] && [ "$(basename "$local_file")" = "skill-version.txt" ]; then
+    url="$(remote_url "$skill" skill-version.txt)"
+    http_get "$url"
+  fi
+  if [ "$HTTP_RC" -eq 99 ]; then
     CHK_STATUS="undetermined"
-    CHK_MSG="UNDETERMINED $skill — could not reach published VERSION (curl rc=$curl_rc)  installed: $local_ver$nine_note"
+    CHK_MSG="UNDETERMINED $skill — http:// loopback without SPEC_PROTOCOL_ALLOW_LOCALHOST_HTTP=1 (installed: $local_ver)$nine_note"
     return
   fi
-
-  http_code="$(printf '%s' "$response" | tail -n 1)"
-  http_body="$(printf '%s' "$response" | sed '$d')"
-
+  if [ "$HTTP_RC" -ne 0 ]; then
+    CHK_STATUS="undetermined"
+    CHK_MSG="UNDETERMINED $skill — could not reach published VERSION (curl rc=$HTTP_RC)  installed: $local_ver$nine_note"
+    return
+  fi
+  local http_body="$HTTP_BODY" http_code="$HTTP_CODE"
   if [ "$http_code" != "200" ]; then
     CHK_STATUS="undetermined"
     CHK_MSG="UNDETERMINED $skill — published VERSION unreadable (HTTP $http_code)  installed: $local_ver$nine_note"
@@ -234,6 +273,7 @@ UNDETERMINED_COUNT=0
 CURRENT_COUNT=0
 SPEC_UPDATE=0
 
+load_skills
 for skill in "${SKILLS[@]}"; do
   check_one_skill "$skill"
   say "$CHK_MSG"

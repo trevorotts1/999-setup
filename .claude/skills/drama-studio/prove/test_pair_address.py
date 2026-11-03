@@ -215,8 +215,8 @@ class PairAddressTests(unittest.TestCase):
     def test_pair_without_the_fallback_still_refuses(self):
         """The planted-bad control: `pair` reading only the old sources must FAIL here."""
         old = self.plant("pair-without-fallback",
-                         "url = studio_url(a.studio) or DEFAULT_STUDIO_URL",
-                         "url = studio_url(a.studio)")
+                         "return studio_url(explicit) or DEFAULT_STUDIO_URL",
+                         "return studio_url(explicit)")
         proc = subprocess.run([PY, str(old), "pair", CODE], env=self.env(),
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(proc.returncode, 3,

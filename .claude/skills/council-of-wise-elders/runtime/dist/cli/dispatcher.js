@@ -27,7 +27,7 @@ import { createLocalHost, localScope } from './local-host.js';
 import { createStandaloneRunAuthorization, handleAuthorizationCommand, mirrorSession, } from './authorization.js';
 import { chamberUrlFor, durablePublicOrigin, runConvene, runRoutes } from './convene.js';
 import { exportVerdictReport } from './report-export.js';
-import { resolveDataDir } from './paths.js';
+import { resolveDataDir, skillFolderForAssets } from './paths.js';
 const defaultIo = {
     out: (text) => process.stdout.write(text),
     err: (text) => process.stderr.write(text),
@@ -65,36 +65,8 @@ export function skillRootFromModule() {
     return resolve(here, '..', '..', '..');
 }
 /**
- * Is `dir` a skill folder, named positively?
- *
- * A SKILL.md alone is too weak a signature: any ordinary ancestor (a
- * repository root, a home directory) may carry an unrelated SKILL.md,
- * and the guard would then refuse data directories far outside the
- * skill. A council skill folder carries all three of SKILL.md,
- * advisors/ and manifest.json.
- */
-function isSkillFolder(dir) {
-    return (existsSync(join(dir, 'SKILL.md')) &&
-        existsSync(join(dir, 'advisors')) &&
-        existsSync(join(dir, 'manifest.json')));
-}
-/**
- * The ACTUAL skill folder. Two mechanisms, in order:
- *
- * 1. The install record, read from `../../install-record.json` beside
- *    the running module. Neither installed layout has a SKILL.md,
- *    advisors/ or manifest.json above it, so the record is the
- *    install's own statement of which folder it was built from. Two
- *    installers write it, one per layout:
- *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
- *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
- *      writes <prefix>/releases/install-record.json;
- *    - the 999-setup vendoring's scripts/council-runtime-install.sh
- *      (that repo only, not this tree) installs
- *      <prefix>/runtime/dist/council-entry.mjs and writes
- *      <prefix>/install-record.json.
- * 2. A layout-independent walk to the nearest ancestor carrying the
- *    skill signature (SKILL.md beside advisors/ and manifest.json).
+ * The ACTUAL skill folder (see paths.ts skillFolderForAssets): the install
+ * record's skill_dir when one is installed, else a positive-signature walk.
  *
  * null when neither applies: the guard then has no root, and every
  * command that must keep state out of the skill tree refuses rather
@@ -103,29 +75,7 @@ function isSkillFolder(dir) {
  * sample and the host-backed commands throw invalidInput).
  */
 export function skillRootForAssets() {
-    // From <prefix>/releases/<id>/dist/<entry> this URL is
-    // <prefix>/releases/install-record.json; from the 999 bundle
-    // <prefix>/runtime/dist/<entry> it is <prefix>/install-record.json;
-    // from runtime/{src,dist}/cli/ it is runtime/install-record.json.
-    try {
-        const record = JSON.parse(readFileSync(new URL('../../install-record.json', import.meta.url), 'utf8'));
-        if (typeof record.skill_dir === 'string' && record.skill_dir.length > 0) {
-            return resolve(record.skill_dir);
-        }
-    }
-    catch {
-        // No install record: a source or development layout.
-    }
-    let dir = dirname(fileURLToPath(import.meta.url));
-    for (let depth = 0; depth < 8; depth += 1) {
-        if (isSkillFolder(dir))
-            return dir;
-        const parent = dirname(dir);
-        if (parent === dir)
-            break;
-        dir = parent;
-    }
-    return null;
+    return skillFolderForAssets();
 }
 function parseArgs(argv) {
     const positionals = [];
@@ -736,6 +686,13 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                 if (!verdict) {
                     throw new CouncilError('COUNCIL_VERDICT_NOT_READY', `Session ${sessionId} has no validated verdict to export.`, { retryable: false, exitCode: 3 });
                 }
+                const outPath = flagString(flags, 'out');
+                if (!outPath && format === 'pdf') {
+                    // Binary deliverable: never print PDF bytes as text. This contract
+                    // check runs BEFORE the renderer: a bare `--format pdf` is a usage
+                    // error on every host, never a host-dependent render failure.
+                    throw usageError('export --format pdf requires --out FILE so the real PDF bytes are written to a file.');
+                }
                 // CWE-050 composition (B15 portable half): exports run through
                 // CWE-038's validated ReportExportService: publication
                 // validation, journaling, and deliverable registration on the
@@ -749,11 +706,6 @@ export async function runCli(argv, io = defaultIo, deps = {}) {
                     requestId: host.ids.newId(),
                     exportedAt: host.clock.nowUtc(),
                 });
-                const outPath = flagString(flags, 'out');
-                if (!outPath && format === 'pdf') {
-                    // Binary deliverable: never print PDF bytes as text.
-                    throw usageError('export --format pdf requires --out FILE so the real PDF bytes are written to a file.');
-                }
                 if (outPath) {
                     // base64 only for the binary PDF artifact; text formats stay utf8.
                     writeFileSync(outPath, artifact.encoding === 'base64' ? Buffer.from(artifact.bytes, 'base64') : artifact.bytes);

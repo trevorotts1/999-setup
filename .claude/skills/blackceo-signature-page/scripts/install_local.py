@@ -1,19 +1,294 @@
 #!/usr/bin/env python3
 import argparse
+import contextlib
+import io
+import os
+import re
 import shutil
 import sys
+import tempfile
+import uuid
 from pathlib import Path
 
 SKILL_NAME = "blackceo-signature-page"
+# The authority artifact is read by launch_context._registry_policy_ids from
+# skill_root.parent / "shared-utils/...", with allow_vendored=False.
+REGISTRY_REL = Path("shared-utils") / "signature_launch" / "domain"
+REGISTRY_FILES = ("prompt-policy-registry.json",
+                  "prompt-policy-registry.schema.json")
+# Files a genuine install of this skill always carries. --update replaces the
+# whole tree, so identity is proven against these before anything is touched.
+REQUIRED_FILES = (
+    "scripts/stage_executor.py",
+    "scripts/build_production_request.py",
+    "references/stage-contract.json",
+    "references/copy-specs/standard-v6.json",
+)
+VERSION_RE = re.compile(r"^\d+(?:\.\d+)+$")
+COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
 DEFAULT_ROOTS = {
     "claude-code": [Path.home() / ".claude" / "skills"],
     "codex": [Path.home() / ".agents" / "skills", Path.home() / ".codex" / "skills"],
 }
 
 
-def install_one(root, source, mode, dry_run):
+def within(path, root):
+    try:
+        return os.path.commonpath([str(path), str(root)]) == str(root)
+    except ValueError:
+        return False
+
+
+def escapes_root(dst, root):
+    """True when dst is outside root, is a symlink leaf, or sits under a symlinked ancestor."""
+    if not within(dst, root):
+        return True
+    # Refuse a symlink leaf outright: copyfile would follow it and overwrite
+    # whatever it points at, inside the root or far outside it.
+    if dst.is_symlink():
+        return True
+    if not Path(root).exists():
+        # An absent root holds nothing, so nothing inside it can be a symlink yet.
+        return False
+    resolved_root = Path(root).resolve()
+    anchor = dst.parent
+    while not (anchor.is_symlink() or anchor.exists()):
+        if anchor.parent == anchor:
+            break
+        anchor = anchor.parent
+    try:
+        resolved = anchor.resolve()
+    except OSError:
+        return True
+    return not within(resolved, resolved_root)
+
+
+def frontmatter_name(skill_md):
+    try:
+        text = skill_md.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("name:"):
+            value = line[len("name:"):].strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            return value.strip()
+    return None
+
+
+def version_problem(target):
+    seen = []
+    for name in ("VERSION", "skill-version.txt"):
+        path = target / name
+        if not path.is_file():
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError as exc:
+            seen.append(f"{name} is unreadable ({exc})")
+            continue
+        if VERSION_RE.match(raw):
+            return None
+        seen.append(f"{name} is {raw[:40]!r}, not a dotted version")
+    if not seen:
+        return "neither VERSION nor skill-version.txt exists"
+    return "; ".join(seen)
+
+
+def identity_problems(target):
+    """Everything that disqualifies target as a real install of this skill."""
+    if target.is_symlink():
+        return ["target is a symlink"]
+    if not target.is_dir():
+        return ["target is not a directory"]
+    problems = []
+    skill_md = target / "SKILL.md"
+    if not skill_md.is_file():
+        problems.append("SKILL.md is missing")
+    else:
+        name = frontmatter_name(skill_md)
+        if name is None:
+            problems.append("SKILL.md has no YAML frontmatter name")
+        elif name != SKILL_NAME:
+            problems.append(f"SKILL.md frontmatter name is {name!r}, not {SKILL_NAME!r}")
+    for rel in REQUIRED_FILES:
+        if not (target / rel).is_file():
+            problems.append(f"{rel} is missing")
+    version = version_problem(target)
+    if version:
+        problems.append(version)
+    return problems
+
+
+def registry_sources(source):
+    src_dir = source.parent / REGISTRY_REL
+    missing = [name for name in REGISTRY_FILES if not (src_dir / name).is_file()]
+    return src_dir, missing
+
+
+def validate_registry(root, registry):
+    """Plan every registry write without touching the filesystem.
+
+    Returns (writes, failures); a non-empty failures list must abort before any
+    mutation so a bad destination cannot leave a half-applied install.
+    """
+    src_dir, missing = registry
+    if missing:
+        return [], [f"canonical registry missing at {src_dir}: {', '.join(missing)}"]
+    writes, failures = [], []
+    for name in REGISTRY_FILES:
+        src = src_dir / name
+        dst = root / REGISTRY_REL / name
+        if escapes_root(dst, root):
+            failures.append(f"registry destination escapes the skills root or is a symlink: {dst}")
+            continue
+        writes.append((src, dst))
+    return writes, failures
+
+
+def same_file(src, dst):
+    """True when src and dst are one file on disk.
+
+    os.path.samefile compares (st_dev, st_ino) and follows symlinks, so a hard
+    link or a link leaf pointing back at src counts too. It raises when either
+    path is absent; an absent destination is simply not the same file.
+    """
+    try:
+        return os.path.samefile(src, dst)
+    except OSError:
+        return False
+
+
+def copy_no_follow(src, dst):
+    """Copy src onto dst without following a symlink leaf.
+
+    Returns False without touching either file when dst already is src: the
+    O_TRUNC open would empty the destination and then read the emptied file
+    back as the source, destroying installs into a root that already holds the
+    sibling shared-utils registry.
+    """
+    if same_file(src, dst):
+        return False
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    # Open the source first: a missing or unreadable source must never leave a
+    # truncated destination behind.
+    with open(src, "rb") as src_file:
+        fd = os.open(dst, flags, 0o644)
+        with os.fdopen(fd, "wb") as dst_file:
+            shutil.copyfileobj(src_file, dst_file)
+    return True
+
+
+def write_registry(writes):
+    ok = True
+    for src, dst in writes:
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.is_symlink():
+                raise OSError("destination became a symlink; refusing to follow it")
+            if not copy_no_follow(src, dst):
+                print(f"SKIP: registry source and destination are the same file: {dst}")
+                continue
+            print(f"PASS: registry written: {dst}")
+        except OSError as exc:
+            print(f"FAIL: could not write registry to {dst}: {exc}")
+            ok = False
+    return 0 if ok else 1
+
+
+def plan_registry(writes):
+    """Dry-run plan: a same-file destination is a skip, never a planned write."""
+    for src, dst in writes:
+        if same_file(src, dst):
+            print(f"SKIP registry write (source and destination are the same file): {dst}")
+            continue
+        print(f"PLAN registry write: {src} -> {dst}")
+
+
+def install_registry(root, registry, dry_run):
+    writes, failures = validate_registry(root, registry)
+    for failure in failures:
+        print(f"FAIL: {failure}")
+    if dry_run:
+        plan_registry(writes)
+        return 1 if failures else 0
+    if failures:
+        return 1
+    return write_registry(writes)
+
+
+def replace_copy(root, target, source):
+    token = uuid.uuid4().hex[:12]
+    staged = root / f".{SKILL_NAME}.new-{token}"
+    aside = root / f".{SKILL_NAME}.old-{token}"
+    try:
+        shutil.copytree(source, staged, ignore=COPY_IGNORE)
+        os.replace(target, aside)
+    except OSError as exc:
+        shutil.rmtree(staged, ignore_errors=True)
+        print(f"FAIL: could not stage the replacement: {exc}")
+        return 1
+    try:
+        os.replace(staged, target)
+    except OSError as exc:
+        try:
+            os.replace(aside, target)
+            restored = "old copy restored"
+        except OSError as restore_exc:
+            restored = f"RESTORE FAILED, old copy is at {aside}: {restore_exc}"
+        shutil.rmtree(staged, ignore_errors=True)
+        print(f"FAIL: could not move the new copy into place: {exc}; {restored}")
+        return 1
+    shutil.rmtree(aside, ignore_errors=True)
+    print(f"PASS: copy replaced from {source}.")
+    return 0
+
+
+def install_one(root, source, mode, dry_run, registry, update=False):
     target = root / SKILL_NAME
     print(f"Target: {target}")
+
+    if update:
+        if not within(target, root):
+            print(f"FAIL: target escapes the requested skills root: {target}")
+            return 1
+        if target.is_symlink():
+            print("FAIL: target is a symlink; --update replaces real copy directories only.")
+            return 1
+        if not target.exists():
+            print("FAIL: --update needs an existing copy target; use --mode copy for a fresh install.")
+            return 1
+        problems = identity_problems(target)
+        if problems:
+            print(f"FAIL: {target} is not a {SKILL_NAME} installation; refusing to replace it "
+                  f"(--update deletes and rewrites the whole tree):")
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        # Validate every registry destination before the swap, so a destination
+        # that cannot legally be written aborts with the tree untouched.
+        writes, registry_failures = validate_registry(root, registry)
+        for failure in registry_failures:
+            print(f"FAIL: {failure}")
+        if registry_failures:
+            print("FAIL: --update refused before any change; the existing copy was not touched.")
+            return 1
+        if dry_run:
+            print(f"PLAN: replace the copy at {target} from {source}")
+            plan_registry(writes)
+            print("PASS: dry run only; no filesystem change was made.")
+            return 0
+        rc = replace_copy(root, target, source)
+        if rc != 0:
+            return rc
+        return write_registry(writes)
+
     if target.exists() or target.is_symlink():
         if target.is_symlink():
             try:
@@ -27,6 +302,13 @@ def install_one(root, source, mode, dry_run):
         return 1
 
     if dry_run:
+        if mode == "copy":
+            # A refused registry destination is a refused install: returning 0
+            # here would approve a layout the real copy path rejects. The
+            # verdict is known before any PASS line is printed.
+            rc = install_registry(root, registry, dry_run=True)
+            if rc != 0:
+                return rc
         print("PASS: dry run only; target is free and no filesystem change was made.")
         return 0
 
@@ -34,9 +316,140 @@ def install_one(root, source, mode, dry_run):
     if mode == "symlink":
         target.symlink_to(source, target_is_directory=True)
         print("PASS: symlink created.")
-    else:
-        shutil.copytree(source, target)
-        print("PASS: copy created. This copy must be updated intentionally when the canonical skill changes.")
+        return 0
+    writes, registry_failures = validate_registry(root, registry)
+    for failure in registry_failures:
+        print(f"FAIL: {failure}")
+    if registry_failures:
+        print("FAIL: refusing before any change; nothing was copied.")
+        return 1
+    shutil.copytree(source, target, ignore=COPY_IGNORE)
+    print("PASS: copy created. This copy must be updated intentionally when the canonical skill changes.")
+    return write_registry(writes)
+
+
+def self_check():
+    """Prove the installer guards on throwaway trees. No real root is touched."""
+    failures = []
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+
+        def seed_skill(folder):
+            """A minimal tree identity_problems accepts."""
+            for rel in REQUIRED_FILES:
+                path = folder / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(rel, encoding="utf-8")
+            (folder / "SKILL.md").write_text(f"---\nname: {SKILL_NAME}\n---\n", encoding="utf-8")
+            (folder / "VERSION").write_text("1.0.0\n", encoding="utf-8")
+
+        # Case 1: the registry src and dst are the same file, as they are when
+        # a copy installs into a root that already holds the sibling
+        # shared-utils. The plan must skip the write and the bytes must survive.
+        same_root = td / "same"
+        same_dir = same_root / REGISTRY_REL
+        same_dir.mkdir(parents=True)
+        expected = {}
+        for name in REGISTRY_FILES:
+            (same_dir / name).write_text(f'{{"case": "{name}"}}', encoding="utf-8")
+            expected[name] = (same_dir / name).read_bytes()
+        registry = (same_dir, [])
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_dry = install_registry(same_root, registry, dry_run=True)
+        planned = buf.getvalue()
+        if "PLAN registry write" in planned:
+            failures.append("dry run planned a registry write when src and dst are one file")
+        if "SKIP registry write" not in planned:
+            failures.append("dry run did not report the same-file skip")
+        if rc_dry != 0:
+            failures.append(f"same-file dry run returned {rc_dry}, expected 0")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_real = install_registry(same_root, registry, dry_run=False)
+        applied = buf.getvalue()
+        if rc_real != 0:
+            failures.append(f"same-file install returned {rc_real}, expected 0")
+        if "SKIP: registry source and destination are the same file" not in applied:
+            failures.append("same-file install did not report the registry skip")
+        if "PASS: registry written" in applied:
+            failures.append("same-file install rewrote a registry it must skip")
+        for name in REGISTRY_FILES:
+            if (same_dir / name).read_bytes() != expected[name]:
+                failures.append(f"same-file install truncated {name}")
+
+        # Case 2: a symlinked registry destination must make the copy dry run
+        # exit nonzero, because the real copy path refuses that destination.
+        link_root = td / "symlink"
+        (link_root / REGISTRY_REL).mkdir(parents=True)
+        elsewhere = td / "elsewhere.json"
+        elsewhere.write_text("{}", encoding="utf-8")
+        (link_root / REGISTRY_REL / REGISTRY_FILES[0]).symlink_to(elsewhere)
+        source = td / "src"
+        source_registry = source / REGISTRY_REL
+        source_registry.mkdir(parents=True)
+        seed_skill(source)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_link = install_one(link_root, source, "copy", True, (source_registry, []))
+        refused = buf.getvalue()
+        if rc_link == 0:
+            failures.append("copy dry run returned 0 with a symlinked registry destination")
+        if "registry destination escapes the skills root or is a symlink" not in refused:
+            failures.append("copy dry run did not refuse the symlinked registry destination")
+
+        # Case 3: --update into a root that already holds the sibling registry.
+        # The planner must skip the write, and the real update must replace the
+        # tree while leaving the shared registry bytes untouched.
+        upd_root = td / "update"
+        upd_target = upd_root / SKILL_NAME
+        upd_source = upd_root / "unnumbered"
+        seed_skill(upd_target)
+        seed_skill(upd_source)
+        (upd_target / "replaced-marker").write_text("old tree", encoding="utf-8")
+        upd_dir = upd_root / REGISTRY_REL
+        upd_dir.mkdir(parents=True)
+        upd_expected = {}
+        for name in REGISTRY_FILES:
+            (upd_dir / name).write_text(f'{{"case": "update {name}"}}', encoding="utf-8")
+            upd_expected[name] = (upd_dir / name).read_bytes()
+        upd_registry = (upd_dir, [])
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_upd_dry = install_one(upd_root, upd_source, "copy", True, upd_registry, update=True)
+        planned = buf.getvalue()
+        if rc_upd_dry != 0:
+            failures.append(f"update same-file dry run returned {rc_upd_dry}, expected 0")
+        if "PLAN registry write" in planned:
+            failures.append("update dry run planned a registry write when src and dst are one file")
+        if "SKIP registry write" not in planned:
+            failures.append("update dry run did not report the same-file skip")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_upd = install_one(upd_root, upd_source, "copy", False, upd_registry, update=True)
+        applied = buf.getvalue()
+        if rc_upd != 0:
+            failures.append(f"same-file update returned {rc_upd}, expected 0")
+        if "SKIP: registry source and destination are the same file" not in applied:
+            failures.append("same-file update did not report the registry skip")
+        if (upd_target / "replaced-marker").exists():
+            failures.append("update did not replace the installed tree")
+        for name in REGISTRY_FILES:
+            if (upd_dir / name).read_bytes() != upd_expected[name]:
+                failures.append(f"same-file update truncated {name}")
+
+    for failure in failures:
+        print(f"SELF-CHECK FAIL: {failure}")
+    if failures:
+        return 1
+    print("SELF-CHECK PASS — same-file registry writes are skipped, a symlinked "
+          "registry destination fails the copy dry run, and --update replaces the "
+          "tree without touching the shared registry")
     return 0
 
 
@@ -45,9 +458,16 @@ def main():
     parser.add_argument("--runtime", required=True, choices=["claude-code", "codex", "claude-nine", "custom"])
     parser.add_argument("--target-root", type=Path, help="Verified runtime skills root. Required for claude-nine/custom.")
     parser.add_argument("--source", type=Path, help="Canonical skill folder. Defaults to the folder containing this script's parent.")
-    parser.add_argument("--mode", choices=["symlink", "copy"], default="symlink")
+    parser.add_argument("--mode", choices=["symlink", "copy"], default=None)
+    parser.add_argument("--update", action="store_true",
+                        help="Replace an existing copy target of this skill, then refresh the shared registry.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    mode = args.mode or ("copy" if args.update else "symlink")
+    if args.update and mode != "copy":
+        print("FAIL: --update replaces copy targets; do not combine it with --mode symlink.")
+        return 1
 
     source = (args.source or Path(__file__).resolve().parents[1]).expanduser().resolve()
     if not (source / "SKILL.md").exists():
@@ -62,8 +482,16 @@ def main():
             print(f"FAIL: --target-root is required for runtime {args.runtime!r}.")
             return 1
 
+    registry = registry_sources(source)
+    if (args.update or mode == "copy") and registry[1]:
+        # Refuse before any mutation: a skill installed without the registry
+        # cannot verify a 1.1 prompt_policy_id citation.
+        print(f"FAIL: canonical registry missing at {registry[0]}: {', '.join(registry[1])}; "
+              f"searched only beside the skill folder.")
+        return 1
+
     print(f"Source: {source}")
-    print(f"Mode: {args.mode}")
+    print(f"Mode: {'update' if args.update else mode}")
     failures = 0
     attempted = 0
     for root in roots:
@@ -73,7 +501,13 @@ def main():
             print(f"SKIP: {root} (Codex runtime not present at {Path.home() / '.codex'}).")
             continue
         attempted += 1
-        rc = install_one(root, source, args.mode, args.dry_run)
+        try:
+            rc = install_one(root, source, mode, args.dry_run, registry, update=args.update)
+        except OSError as exc:
+            # One unwritable root is a counted failure, not a traceback that
+            # abandons every root after it.
+            print(f"FAIL: {root}: {exc}")
+            rc = 1
         if rc != 0:
             # Keep going: one conflicting root must not abandon the remaining roots.
             failures += 1
@@ -88,4 +522,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-check"]:
+        sys.exit(self_check())
     sys.exit(main())

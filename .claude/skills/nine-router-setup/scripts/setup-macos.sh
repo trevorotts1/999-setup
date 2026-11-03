@@ -306,10 +306,16 @@ ensure_gh() {
 # Link the bundled skills into one Claude config root. Idempotent: re-runs
 # converge to exactly one current link per manifest skill — an existing link
 # to the SAME source is left alone ("up to date"), a stale link is removed
-# (the link only, never its target) and recreated, and an existing REAL
-# directory is moved to an EXTERNAL timestamped backup
+# (the link only, never its target) and recreated.
+#
+# PRESERVATION (P15/XR-1): the adapter's plan decides, and its decide() is the
+# authority. `preserve` means an installation that is newer, unreadable, or not
+# the shipped bytes is left EXACTLY as it is - never replaced, and no backup
+# minted. Only the standalone fallback below (no repo checkout, so no adapter to
+# ask) still applies link_one_skill's own real-directory rule, which moves a
+# real directory to an EXTERNAL timestamped backup
 # ($HOME/.claude-skill-backups/<skill>.<timestamp>, never inside any Claude
-# config root) that is verified to exist BEFORE the fresh link is created.
+# config root) verified to exist BEFORE the link is created.
 # Missing sources fail per-skill with a clear error; other skills continue
 # and the function returns the failure count (nonzero = at least one failed).
 # Never creates a config root it was not handed — callers decide which roots
@@ -439,7 +445,7 @@ link_skills_into_root() {
     adapter="$REPO_ROOT/installer-registration/bundle_adapter.py"
     if plan="$(python3 -I -B "$adapter" --root "$REPO_ROOT" \
                 --install-plan --claude-root "$root" 2>&1)"; then
-      while IFS=$'\t' read -r action s src dst digest; do
+      while IFS=$'\t' read -r action s src dst digest reason; do
         [ -n "$s" ] || continue
         case "$action" in
           missing)
@@ -448,39 +454,17 @@ link_skills_into_root() {
           up-to-date)
             echo "skill up to date: $s -> $dst" ;;
           link|relink)
-            # The adapter inspected the destination and authorised this change:
-            # a fresh path, a dangling link, or a provably older linked
-            # installation. Only a pointer may be unlinked; never its target.
-            link_one_skill "$src" "$dst" "$s" 1 || failures=$((failures + 1)) ;;
-          backup-and-link)
-            # The adapter emits this ONLY for an EMPTY real destination (nothing
-            # to lose): drop that empty directory NONRECURSIVELY, verify the
-            # removal, and only then link. Nothing is moved to
-            # ~/.claude-skill-backups and no installation is replaced.
-            if [ -L "$dst" ]; then
-              echo "skill ERROR: $s: plan says backup-and-link but $dst is a link - left untouched" >&2
-              failures=$((failures + 1))
-            elif [ -e "$dst" ]; then
-              if [ -d "$dst" ] && rmdir "$dst" 2>/dev/null; then
-                link_one_skill "$src" "$dst" "$s" 1 || failures=$((failures + 1))
-              else
-                echo "skill ERROR: $s: plan says backup-and-link but $dst is not an empty directory - left untouched" >&2
-                failures=$((failures + 1))
-              fi
-            else
-              # Absent, or a lookup we cannot complete. The linker makes that
-              # call explicitly and refuses to treat a failed lookup as absent.
-              link_one_skill "$src" "$dst" "$s" 1 || failures=$((failures + 1))
-            fi ;;
-          preserve-newer|preserve-custom|preserve-unreadable)
-            # The adapter consulted the SAME preservation decision as decide():
-            # an existing real installation that is not provably this bundle at
-            # a lower version is left EXACTLY as it is - no link, no backup, no
-            # destination-only compatibility file moved.
-            echo "skill preserved ($action): $s -> $dst (existing installation left untouched)" ;;
+            link_one_skill "$src" "$dst" "$s" || failures=$((failures + 1)) ;;
+          preserve)
+            # decide() refused or held this installation: a newer stamp, an
+            # unreadable stamp, or bytes that are not the shipped tree (the
+            # destination-only compatibility files live there). Nothing is
+            # written and no backup is minted; the operator decides.
+            echo "skill preserved: $s: $dst left unchanged (${reason:-no reason given})" ;;
           *)
-            # Fail closed: an action this consumer does not know never links.
-            echo "skill ERROR: $s: unknown plan action '$action' - refusing to touch $dst" >&2
+            # An action this consumer does not know is NEVER a link: linking on an
+            # unknown action is how a plan row silently replaced a real install.
+            echo "skill ERROR: $s: unknown plan action '$action' for $dst - refusing to touch it" >&2
             failures=$((failures + 1)) ;;
         esac
       done <<< "$plan"
@@ -1055,7 +1039,7 @@ so_refresh_updater() { # so_refresh_updater <src> <dst> <check:0|1> -> SO_RU=ref
 
 skills_only_mode() { # skills_only_mode <check:0|1>
   local check="$1" markers="" roots="" r d s src src_real dst dst_real verb up old_target
-  local repair="$REPAIR_LINKS"
+  local repair="$REPAIR_LINKS" js_ver
   local refresh="${REFRESH_UPDATER:-0}"
   local t_new=0 t_chg=0 t_same=0 t_fail=0 t_skip=0 t_stale=0 t_blocked=0 t_mode=0 t_updater=0 t_extra=0 skills_root="$SKILL_DIR/.."
 
@@ -1188,6 +1172,24 @@ $d
       t_updater=$((t_updater + 1))
     fi
   done < <(printf '%s' "$roots")
+
+  # jsonschema (CON-12): the Black Friday Launcher's one runtime dependency. The
+  # launcher link lands via the sync above, so a refreshed box must get its
+  # dependency too. APPLY runs ensure_jsonschema (idempotent: importable = no pip)
+  # in a subshell, because it fail()s on error - that becomes one counted error
+  # here instead of aborting before the RESULT line. CHECK is read-only: reports.
+  js_ver="$(python3 -B -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null)" || js_ver=""
+  if [ -n "$js_ver" ]; then
+    printf '[skills-only] jsonschema: OK (already importable, %s)\n' "$js_ver"
+  elif [ "$check" = 1 ]; then
+    printf '[skills-only] jsonschema: WOULD INSTALL from black-friday-launcher/requirements.txt (not importable by python3 now)\n'
+  elif ( ensure_jsonschema ) \
+       && js_ver="$(python3 -B -c'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null)"; then
+    printf '[skills-only] jsonschema: INSTALLED (%s)\n' "$js_ver"
+  else
+    printf '[skills-only] jsonschema: ERROR could not be installed (see BLOCKER above) - the Black Friday Launcher cannot run until it is\n'
+    t_fail=$((t_fail + 1))
+  fi
   printf '[skills-only] RESULT (%s): %d new + %d changed file(s) %s; %d unchanged; %d skipped; %d blocked; %d stale; %d mode drift; %d updater-stale; %d extra kept; %d error(s)\n' \
     "$([ "$check" = 1 ] && echo check || echo apply)" "$t_new" "$t_chg" \
     "$([ "$check" = 1 ] && echo 'WOULD be written' || echo written)" "$t_same" "$t_skip" "$t_blocked" "$t_stale" "$t_mode" "$t_updater" "$t_extra" "$t_fail"

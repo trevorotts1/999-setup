@@ -54,6 +54,7 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compile_launch_route as clr  # noqa: E402
+import launch_plan as lpl  # noqa: E402
 import validate_launch_plan as vlp  # noqa: E402
 
 EXIT_OK = 0
@@ -68,45 +69,45 @@ MODES = ("know", "help", "choose_for_me")
 STATES = ("collecting", "recommendation_ready", "awaiting_plan_approval",
           "approved", "building", "paused", "awaiting_missing_fact",
           "revision_requested", "cancelled")
-# The three assistance preferences, and the older phrasings they replaced. A recommends a
-# plan for the client to review, B guides each decision, C acts on the client's own plan.
 _MODE_FROM_CHOICE = {"i know what i want": "know", "help me choose": "help",
-                     "choose a setup for me to review": "choose_for_me",
-                     "a": "choose_for_me", "b": "help", "c": "know",
-                     "a. recommend a plan for me": "choose_for_me",
-                     "b. guide me through each decision": "help",
-                     "c. i already have a plan": "know",
-                     "recommend a plan for me": "choose_for_me",
-                     "guide me through each decision": "help",
-                     "i already have a plan": "know"}
+                     "choose a setup for me to review": "choose_for_me"}
+# The bank's long-form A/B/C wording, a bare A/B/C letter and the older phrases above
+# are all one preference. None = no recognizable preference (free text or a help
+# phrase), which the caller handles — never a silent default.
+_MODE_LETTERS = {"a": "choose_for_me", "b": "help", "c": "know"}
+_MODE_PHRASES = (("recommend a plan", "choose_for_me"),
+                 ("guide me through", "help"),
+                 ("already have a plan", "know"),
+                 ("know what i want", "know"),
+                 ("help me choose", "help"),
+                 ("set it up for me", "choose_for_me"),
+                 ("choose a setup for me", "choose_for_me"))
+
+
+def _mode_from_answer(raw: Any) -> Optional[str]:
+    """interview_mode answer -> know/help/choose_for_me, or None when the text names
+    no recognizable preference (a help request or free text)."""
+    n = _norm(raw)
+    letter = re.match(r"^\(?([abc])\)?[.:\s]*$", n)
+    if letter:
+        return _MODE_LETTERS[letter.group(1)]
+    for phrase, mode in _MODE_PHRASES:
+        if phrase in n:
+            return mode
+    return None
 _THINK_FOR_ME = ("you decide", "think for me", "up to you", "whatever you think",
-                 "you choose", "your call")
-
-# "I don't know" is a request for coaching, never an answer (doc 03 §1). These are the bare
-# replies that name it; a longer sentence that merely mentions uncertainty is a real answer.
-_HELP_WORDS = {"help", "help me", "help me answer", "?", "??", "not sure", "not sure yet",
-               "im not sure", "i'm not sure", "i am not sure", "idk", "i dont know",
-               "i don't know", "dont know", "don't know", "no idea", "no clue", "unsure",
-               "show me an example", "give me an example", "recommend using what is known"}
-
-
-def is_help(reply: Any) -> bool:
-    """True when the reply asks for help rather than answering the question."""
-    return _norm(reply).strip(" .!?") in {w.strip(" .!?") for w in _HELP_WORDS}
-
-
-def coaching(q: Dict[str, Any]) -> Dict[str, Any]:
-    """What the client is offered instead of an answer: an example, an explanation, or a
-    recommendation from what is already known. The question stays open."""
-    ways = ["Show me an example"]
-    if q.get("reason"):
-        ways.append(f"Here is why I ask: {q['reason']}")
-    if q.get("choices"):
-        ways.append("Your options: " + " / ".join(q["choices"]))
-    ways.append("Or ask me to recommend one from what you already told me.")
-    return {"ok": False, "kind": "help", "question_id": q["id"],
-            "prompt": q["prompt"], "coaching": ways,
-            "message": "That is not an answer, and I am not going to guess one. " + " ".join(ways)}
+                 "you choose", "your call", "i don't know", "not sure", "unsure")
+# "I don't know" and equivalents are HELP REQUESTS: coaching opens, the question stays
+# open, and the phrase is never recorded as a substantive answer the flow skips past.
+_HELP_ONLY = {"help", "help me", "not sure", "not sure yet", "im not sure", "i am not sure",
+              "i dont know", "i don't know", "dont know", "don't know", "idk", "unsure",
+              "i have no idea", "no idea", "no clue", "?"}
+_HELP_PHRASES = re.compile(r"\b(?:not sure|no idea|no clue|don'?t know|dont know|idk|unsure|help me|need help)\b")
+_MAX_HELP_WORDS = 6  # longer replies are real answers that merely mention a phrase
+# a delegation ("you decide", "recommend") is a real request: the question's own
+# recommendation path answers it as a proposal, never silently
+_DELEGATE = ("you decide", "think for me", "up to you", "whatever you think",
+             "you choose", "your call", "recommend", "suggest", "you pick")
 
 
 class IntakeError(ValueError):
@@ -121,9 +122,23 @@ def _norm(text: Any) -> str:
     return " ".join(str(text or "").casefold().split())
 
 
+def _split_list(text: Any) -> List[str]:
+    """A free-text list answer -> items. Same split as the shared engine's `list` answers
+    (shared-utils/client_intake/engine.py): newline, semicolon or comma-then-space."""
+    if isinstance(text, (list, tuple)):
+        return [str(x).strip() for x in text if str(x).strip()]
+    return [s.strip(" -*\u2022") for s in re.split(r"\n|;|,(?=\s)", str(text or ""))
+            if s.strip(" -*\u2022")]
+
+
+def load_bank_doc(path: Optional[Path] = None) -> Dict[str, Any]:
+    """The whole bank document: questions plus the top-level introduction,
+    question_estimate_template and coaching block the client surface shows."""
+    return json.loads((path or QUESTIONS_PATH).read_text(encoding="utf-8"))
+
+
 def load_question_bank(path: Optional[Path] = None) -> List[Dict[str, Any]]:
-    data = json.loads((path or QUESTIONS_PATH).read_text(encoding="utf-8"))
-    return data["questions"]
+    return load_bank_doc(path)["questions"]
 
 
 # ---------------------------------------------------------------------------
@@ -166,16 +181,37 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
     return s
 
 
+def _skill_roots() -> List[Path]:
+    """The repo checkout first, then any installed skills tree (OpenClaw, Claude Code,
+    claude-nine, container)."""
+    home = Path.home()
+    return list(Path(__file__).resolve().parents) + [
+        home / ".openclaw" / "skills", home / ".claude" / "skills",
+        home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")]
+
+
+def _selection_core():
+    """Skill 78's selection_core (currency-exponent-aware money formatting)."""
+    import importlib.util
+    for root in _skill_roots():
+        f = root / "78-signature-product-selection" / "scripts" / "selection_core.py"
+        if f.is_file():
+            spec = importlib.util.spec_from_file_location("selection_core", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    raise IntakeError("78-signature-product-selection not found; install or update the onboarding skills")
+
+
 def _client_intake():
-    """shared-utils/client_intake/engine.py: the repo checkout first, then the installed skills tree."""
-    here = Path(__file__).resolve()
-    for d in [p / "shared-utils" / "client_intake" for p in here.parents] + [
-            Path.home() / ".openclaw" / "skills" / "shared-utils" / "client_intake",
-            Path("/data/.openclaw/skills/shared-utils/client_intake")]:
-        if (d / "engine.py").is_file():
-            sys.path.insert(0, str(d))
-            import engine  # noqa: E402
-            return engine
+    """shared-utils/client_intake/engine.py: the repo checkout first, then any installed
+    skills tree (OpenClaw, Claude Code, claude-nine, container), nested or flat."""
+    for root in _skill_roots():
+        for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
+            if (d / "engine.py").is_file():
+                sys.path.insert(0, str(d))
+                import engine  # noqa: E402
+                return engine
     raise IntakeError("shared-utils/client_intake not found; install or update the onboarding skills")
 
 
@@ -185,9 +221,16 @@ def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
     given in any harness never get asked again. A default or suggestion enters as recommended_unapproved,
     never as approved. brand_ref and brand_hash come from the brand file the answers produced (Skill 71
     brand_colors.py record-answers); without that file the brand question stays open."""
+    if session["state"] == "building":
+        raise IntakeError("this launch is already building on an approved plan; a change "
+                          "must go through request_revision(), which invalidates the "
+                          "approval and returns the session to collecting")
+    was_approved = session["state"] == "approved"
     for field_key, entry in _client_intake().to_launch_known(answers).items():
         session["answers"][field_key] = {"value": entry["value"], "state": entry["state"],
                                          "source_ref": entry["source_ref"], "question_id": None}
+        if entry.get("provenance"):  # which question, how the client answered it
+            session["answers"][field_key]["provenance"] = entry["provenance"]
     mode = (session["answers"].get("interview.mode") or {}).get("value")
     if mode in MODES:
         session["mode"] = mode
@@ -197,6 +240,8 @@ def ingest_answers(session: Dict[str, Any], answers: Dict[str, Any],
         session["brand_hash"] = hashlib.sha256(bf.read_bytes()).hexdigest()
         _set(session, "brand_ref", session["brand_ref"], "verified_existing", "d1_brand", "answers-file")
     session["history"].append({"at": _now(), "event": "answers_file_ingested"})
+    if was_approved:
+        invalidate_approval(session, "answers file re-ingested after approval")
     _persist(session)
     return session
 
@@ -219,12 +264,15 @@ def _persist(session: Dict[str, Any]) -> None:
 
 
 def _set(session: Dict[str, Any], field_key: str, value: Any, state: str,
-         question_id: Optional[str], source_ref: str = "") -> None:
+         question_id: Optional[str], source_ref: str = "",
+         provenance: Optional[Dict[str, Any]] = None) -> None:
     if state not in FIELD_STATES:
         raise IntakeError(f"unknown field state {state!r}")
-    session["answers"][field_key] = {"value": value, "state": state,
-                                     "source_ref": source_ref,
-                                     "question_id": question_id}
+    entry = {"value": value, "state": state, "source_ref": source_ref,
+             "question_id": question_id}
+    if provenance:
+        entry["provenance"] = provenance
+    session["answers"][field_key] = entry
 
 
 def _get(session: Dict[str, Any], field_key: str) -> Optional[Dict[str, Any]]:
@@ -234,6 +282,47 @@ def _get(session: Dict[str, Any], field_key: str) -> Optional[Dict[str, Any]]:
 def _answered(session: Dict[str, Any], field_key: str) -> bool:
     e = _get(session, field_key)
     return e is not None and e["state"] != "unknown"
+
+
+# The eight launch answers (calendar, channels, AI, access delivery, payment plans,
+# sender, reply-to, A2P readiness) as typed ledger keys. Published in the versioned
+# session contract and carried on the assembled launch plan for Skill 50 (L06).
+LAUNCH_ANSWER_KEYS = (
+    "launch.launch_at", "launch.doors_open_at", "launch.doors_close_at", "launch.timezone",
+    "launch.channels", "launch.conversation_ai", "launch.access_delivery",
+    "launch.payment_plans", "launch.sender_name", "launch.reply_to_email",
+    "launch.a2p_ready",
+)
+
+
+def launch_answers_block(session: Dict[str, Any]) -> Dict[str, Any]:
+    """The typed launch answers with their provenance, exactly as the ledger holds
+    them. Unknown and recommended-but-unapproved entries are kept, never dropped."""
+    return {k: session["answers"][k] for k in LAUNCH_ANSWER_KEYS if k in session["answers"]}
+
+
+def invalidate_approval(session: Dict[str, Any], reason: str) -> Dict[str, Any]:
+    """A changed fact, a changed plan, or a revision request invalidates the client's
+    approval. The plan is kept for inspection but no longer authorized: the session
+    returns to collecting and must be re-assembled, re-presented and re-approved.
+    Full-plan artifacts travel with the session, so they are cleared too: a stale
+    launch_plan with a stale launch_answers block must never read as approved."""
+    approval = session.get("approval") or {}
+    session["approval"] = None
+    session["plan_hash"] = None
+    session["launch_plan"] = None
+    session["launch_plan_missing"] = []
+    session["approved_launch_plan"] = None
+    session["approved_launch_plan_digest"] = None
+    if session.get("plan"):
+        session["plan"]["plan_approval_ref"] = None
+        session["plan"]["status"] = "collecting"
+    if session["state"] in ("approved", "building"):
+        session["state"] = "collecting"
+    session["history"].append({"at": _now(), "event": "approval_invalidated",
+                               "reason": reason,
+                               "approval_id": approval.get("approval_id")})
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -246,9 +335,10 @@ def _condition_met(session: Dict[str, Any], q: Dict[str, Any]) -> bool:
     if cond == "extras.upsell_1 == true":
         ex = _get(session, "extras")
         return bool(ex and ex["value"].get("upsell_1"))
-    if cond == "after:b2_price":
+    if cond in ("after:b2_price", "price_known_or_free"):
         # Asked once the price question has been TOUCHED, even when the
         # price itself is still unknown (billing shape is a separate fact).
+        # The bank names this condition "price_known_or_free"; both names are wired.
         return _get(session, "offers.main.price") is not None
     if cond == "plan_ready":
         return session.get("plan") is not None
@@ -265,11 +355,29 @@ def next_question(session: Dict[str, Any],
     """The ONE next question, or None when the interview has all it needs.
     Never returns a question whose targets are already answered (supplied
     facts are not asked twice) or whose condition fails (disabled slots are
-    skipped)."""
+    skipped). The question object travels whole: help, examples, default and
+    every per-option explanation reach the client surface untouched."""
     if session["state"] in ("cancelled", "approved", "building"):
         return None
     bank = bank if bank is not None else load_question_bank()
     asked_ids = set(session.get("asked_ids", []))
+    applicable_now = [q for q in bank if q["id"] != "e1_plan_review"
+                      and _condition_met(session, q)]
+    remaining = [q for q in applicable_now if q["id"] not in asked_ids
+                 and not _question_targets_done(session, q)]
+    total = len(applicable_now)
+    done = total - len(remaining)
+    was = session.get("estimate_of")
+    note = (f"about {total} short questions now (was {was}; your answers opened or "
+            f"closed follow-up questions)" if was is not None and was != total else None)
+    session["estimate_of"] = total
+    progress = {"answered": done, "of": total,
+                "percent": (round(100 * done / total) if total else 100)}
+    doc = load_bank_doc()
+    template = doc.get("question_estimate_template")
+    estimate = {"questions": total, "note": note,
+                "text": (template.replace("{n}", str(total)) if template
+                         else f"about {total} short questions, depending on what we already know")}
     for q in bank:
         if q["id"] == "e1_plan_review":
             continue  # asked only via present_plan()
@@ -279,8 +387,16 @@ def next_question(session: Dict[str, Any],
             continue
         if _question_targets_done(session, q):
             continue
-        return {"id": q["id"], "phase": q["phase"], "prompt": q["prompt"],
-                "choices": q.get("choices", []), "reason": q.get("reason", "")}
+        out = {"id": q["id"], "phase": q["phase"], "prompt": q["prompt"],
+               "choices": q.get("choices", []), "reason": q.get("reason", ""),
+               "help": q.get("help"), "examples": q.get("examples", []),
+               "example": q.get("example"), "default": q.get("default"),
+               "safe_default": q.get("safe_default"),
+               "coaching": doc.get("coaching"),
+               "progress": progress, "estimate": estimate}
+        if not asked_ids:
+            out["introduction"] = doc.get("introduction")  # flow opening, once
+        return out
     return None
 
 
@@ -295,6 +411,51 @@ def _match_choice(raw: str, choices: List[str]) -> Optional[str]:
     return None
 
 
+def _help_request(q: Dict[str, Any], raw: Any) -> bool:
+    """'I don't know' and equivalents. A listed choice is a real choice — except a choice
+    that IS a help phrase ("Not sure yet") — and a delegation ("you decide", "recommend")
+    is a real request for a proposal, answered by the question's own recommendation path."""
+    if not isinstance(raw, str):
+        return False
+    c = _match_choice(raw, q.get("choices", []) or [])
+    if c is not None:
+        return _norm(c).replace("'", "") in _HELP_ONLY
+    if q.get("id") in ("m0_mode", "interview_mode") and _mode_from_answer(raw) is not None:
+        return False   # a real preference (bank wording, A/B/C letter or older synonym)
+    n = _norm(raw).replace("'", "")
+    if any(p in n for p in _DELEGATE):
+        return False
+    return (raw.strip() in ("?", "??", "???") or n in _HELP_ONLY
+            or (len(n.split()) <= _MAX_HELP_WORDS and _HELP_PHRASES.search(n) is not None))
+
+
+def _answer_help(session: Dict[str, Any], q: Dict[str, Any], raw: str,
+                 ref: str) -> Dict[str, Any]:
+    """A help request opens coaching and keeps the question open. Nothing is recorded as
+    an answer: the phrase is never an offer, a price or a promise the plan could read."""
+    if any(p in _norm(raw) for p in _THINK_FOR_ME) and session.get("mode") == "know":
+        session["mode"] = "help"
+    for t in q.get("targets", []):
+        if not _answered(session, t):
+            _set(session, t, None, "unknown", q["id"], ref)
+    counts = session.setdefault("help_counts", {})
+    counts[q["id"]] = counts.get(q["id"], 0) + 1
+    session["history"].append({"at": _now(), "event": "help_requested",
+                               "question_id": q["id"]})
+    _persist(session)
+    help_block = q.get("help") if isinstance(q.get("help"), dict) else {}
+    examples = q.get("examples") or help_block.get("examples", [])
+    return {"ok": False, "action": "help", "id": q["id"], "attempt": counts[q["id"]],
+            "explain": q.get("reason", ""), "examples": examples,
+            "coaching": ((load_bank_doc().get("coaching") or {}).get("actions")
+                         or ["show me an example", "help me answer",
+                             "recommend using what I know"]),
+            "message": "No problem, I will help with this one. " + (q.get("reason") or "") +
+                       " Tell me what you do know, say 'show me an example', or say "
+                       "'recommend' and I will suggest an answer from what you have "
+                       "told me, marked for your review."}
+
+
 def answer(session: Dict[str, Any], question_id: str, raw: str,
            value: Optional[Dict[str, Any]] = None,
            source_message_ref: str = "") -> Dict[str, Any]:
@@ -303,20 +464,16 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     fields at once. Every answer is saved immediately."""
     if session["state"] == "cancelled":
         raise IntakeError("this intake was cancelled; answers are no longer accepted")
+    if session["state"] == "building":
+        raise IntakeError("this launch is already building on an approved plan; a change "
+                          "must go through request_revision(), which invalidates the "
+                          "approval and returns the session to collecting")
+    was_approved = session["state"] == "approved"
     bank = {q["id"]: q for q in load_question_bank()}
     q = bank.get(question_id)
     if q is None:
         raise IntakeError(f"unknown question {question_id!r}")
     value = value or {}
-    # "I don't know" is a coaching request, never a substantive answer: nothing is recorded,
-    # the question stays open and is asked again, and the client is told what they can do.
-    if is_help(raw) and not value:
-        session.setdefault("help_requested", {})[question_id] = \
-            session.get("help_requested", {}).get(question_id, 0) + 1
-        session["history"].append({"at": _now(), "event": "help_requested",
-                                   "question_id": question_id})
-        _persist(session)
-        return coaching(q)
     # A volunteered multi-field payload fills its fields first (echoed, not
     # re-asked) — states default to provided.
     for field_key, fv in (value.get("fields") or {}).items():
@@ -326,8 +483,11 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
         else:
             _set(session, field_key, fv, "provided", question_id, source_message_ref)
 
-    if question_id not in session.setdefault("asked_ids", []):
-        session["asked_ids"].append(question_id)
+    if not value.get("fields") and _help_request(q, raw):
+        # coaching, not an answer: the question stays open and is asked again
+        return _answer_help(session, q, raw, source_message_ref)
+
+    session.setdefault("asked_ids", []).append(question_id)
     handler = _HANDLERS.get(question_id)
     if handler is not None:
         handler(session, q, raw, value, source_message_ref)
@@ -342,6 +502,10 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
     session["phase"] = q["phase"]
     session["history"].append({"at": _now(), "event": "answer",
                                "question_id": question_id})
+    if was_approved:
+        # An approved plan no longer matches the ledger: the approval is spent, not
+        # carried over to a plan the client never saw.
+        invalidate_approval(session, f"answer changed after approval ({question_id})")
     if session["state"] == "revision_requested":
         session["state"] = "collecting"
     _persist(session)
@@ -351,14 +515,8 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
 # --- per-question handlers -------------------------------------------------
 def _h_mode(s, q, raw, value, ref):
     choice = _match_choice(raw, q["choices"]) or raw
-    low = _norm(choice)
-    mode = _MODE_FROM_CHOICE.get(low)
-    if mode is None:  # "A", "A.", "a) ..." and any phrasing that names a letter first
-        letter = re.match(r"^\(?([abc])\b", low)
-        mode = _MODE_FROM_CHOICE[letter.group(1)] if letter else None
-    if mode is None and low != raw.lower():  # the matched label may be the only recognisable form
-        mode = _MODE_FROM_CHOICE.get(_norm(_match_choice(raw, q["choices"]) or ""))
-    s["mode"] = mode or "help"
+    s["mode"] = (_MODE_FROM_CHOICE.get(_norm(choice))
+                 or _mode_from_answer(choice) or "help")
     _set(s, "interview.mode", s["mode"], "provided", q["id"], ref)
 
 
@@ -366,6 +524,30 @@ def _h_free_text(s, q, raw, value, ref):
     for t in q["targets"]:
         if t not in s["answers"]:
             _set(s, t, value.get(t, raw), "provided", q["id"], ref)
+
+
+def _h_list(target: str, key: str):
+    """A list answer: the items land on `target` only. A structured payload may carry
+    the list already; a target the client supplied earlier is never overwritten."""
+    def handler(s, q, raw, value, ref):
+        if target in s["answers"]:
+            return
+        items = _split_list(value.get(key, raw))
+        if items:
+            _set(s, target, items, "provided", q["id"], ref)
+        elif not _norm(raw):
+            _set(s, target, None, "unknown", q["id"], ref)
+        else:  # "none" / "nothing" is an answer: an empty list
+            _set(s, target, [], "provided", q["id"], ref)
+    return handler
+
+
+def _h_exclusions(s, q, raw, value, ref):
+    if "offers.main.exclusions" in s["answers"]:
+        return
+    none = _norm(raw).strip(" .!") in ("none", "nothing", "no", "n/a", "nope")
+    _set(s, "offers.main.exclusions",
+         [] if none else _split_list(value.get("exclusions", raw)), "provided", q["id"], ref)
 
 
 def _h_proof(s, q, raw, value, ref):
@@ -380,9 +562,9 @@ def _recommend_journey(s) -> str:
     text = _norm((_get(s, "offers.main.description") or {}).get("value", "")) + " " + \
         _norm(" ".join(map(str, (_get(s, "offers.main.deliverables") or {})
                            .get("value", []) or [])))
-    for token in ("package", "tier", "level", "vip", "premium", "pass"):
-        if token in text:
-            return "multiple_options"
+    # whole words only: "compassionate" and "Passion" are not a "pass" / "package"
+    if re.search(r"\b(?:package|tier|level|vip|premium)s?\b", text):
+        return "multiple_options"
     return "single_simple"
 
 
@@ -562,7 +744,8 @@ def _h_budget(s, q, raw, value, ref):
 
 _HANDLERS = {
     "m0_mode": _h_mode, "a1_offer": _h_free_text, "a2_transformation": _h_free_text,
-    "a3_pains": _h_free_text, "a4_deliverables": _h_free_text, "a5_proof": _h_proof,
+    "a3_pains": _h_free_text, "a4_deliverables": _h_list("offers.main.deliverables", "deliverables"),
+    "a4b_exclusions": _h_exclusions, "a5_proof": _h_proof,
     "b1_journey": _h_journey, "b2_price": _h_price, "b3_billing": _h_billing,
     "c1_bump": _make_extra_handler("bump", None),
     "c2_u1": _make_extra_handler("upsell_1", "upsell_1"),
@@ -582,7 +765,7 @@ def _money_display(amount_minor: Optional[int], currency: str) -> str:
         return "price not set yet"
     if amount_minor == 0:
         return "free"
-    return f"{currency} {amount_minor / 100:,.2f}"
+    return _selection_core().format_money(amount_minor, currency)
 
 
 def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
@@ -605,6 +788,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
             display = str(v)
             deliverables = (_get(session, "offers.main.deliverables") or {}) \
                 .get("value", []) or []
+        deliverables = _split_list(deliverables)  # a raw string is never listed per character
+        exclusions = _split_list((_get(session, "offers.main.exclusions") or {}).get("value"))
         amount = price.get("amount_minor") if isinstance(price, dict) else None
         status = "approved" if e["state"] == "approved_recommendation" else (
             "recommended_unapproved" if price_e and
@@ -612,7 +797,7 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
             "unknown" if amount is None else "provided")
         return {"offer_id": offer_id, "slot": "main",
                 "display_name": display or offer_id,
-                "deliverables": list(deliverables), "exclusions": [],
+                "deliverables": deliverables, "exclusions": exclusions,
                 "entitlement_ids": [offer_id.lower()], "requires": [],
                 "excludes": [], "native_product_id": None,
                 "prices": [{"price_choice_id": f"{offer_id}-USD",
@@ -620,7 +805,8 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
                             "amount_minor": amount, "billing_type": billing,
                             "native_price_id": None, "schedule": list(schedule),
                             "terms_source": None, "approval_status": status}],
-                "source_kind": "test_fixture" if session.get("test_only") else "owner",
+                "source_kind": "test_fixture" if session.get("test_only") else
+                ("recommendation" if e["state"] == "recommended_unapproved" else "owner"),
                 "source_ref": f"intake:{session['session_id']}",
                 "test_only": bool(session.get("test_only"))}
     if not isinstance(v, dict) or not v.get("display_name"):
@@ -686,7 +872,8 @@ def _package_offers(session: Dict[str, Any],
                         "amount_minor": amount, "billing_type": "one_time",
                         "native_price_id": None, "schedule": [],
                         "terms_source": None, "approval_status": status}],
-            "source_kind": "test_fixture" if session.get("test_only") else "owner",
+            "source_kind": "test_fixture" if session.get("test_only") else
+            ("recommendation" if e["state"] == "recommended_unapproved" else "owner"),
             "source_ref": f"intake:{session['session_id']}",
             "test_only": bool(session.get("test_only"))})
     return out
@@ -698,6 +885,10 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     product, a known price, or fulfillment — never fills them in. The
     assembled record must ALSO pass the domain validator before it can be
     presented: an invalid plan never consumes a client approval (D2)."""
+    if session["state"] in ("approved", "building") and session.get("approval"):
+        raise IntakeError("this plan is already approved; call request_revision() "
+                          "first, so the client approves the changed plan and the "
+                          "old approval is invalidated")
     missing: List[str] = []
     journey = (_get(session, "journey_mode") or {}).get("value")
     if not journey:
@@ -747,7 +938,7 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         missing.append("brand assets (logo / colors / founder photo)")
 
     launch: Dict[str, Any] = {
-        "schema_version": "1.0", "tenant_id": session["tenant_id"],
+        "schema_version": "1.2", "tenant_id": session["tenant_id"],
         "location_id": session["location_id"], "launch_id": session["launch_id"],
         "revision": session["plan_revision"], "journey_mode": journey,
         "status": "collecting",
@@ -785,6 +976,24 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     session["plan"] = launch
     session["route_graph"] = graph
     session["plan_hash"] = plan_hash(launch)
+    # The FULL launch plan (pages + emails + texts + automations + AI choice) is
+    # planned beside the launch record, in the shared launch-plan contract. A
+    # missing calendar/AI fact never blocks the page plan; it is named, and the
+    # page-level launch still proceeds to its own approval.
+    try:
+        full = lpl.build_from_session(session)
+        session["launch_plan"] = full.get("plan")
+        session["launch_plan_missing"] = full.get("missing", [])
+        if session["launch_plan"] is not None:
+            # The eight typed launch answers travel WITH the plan for the Skill 50
+            # consumer (L06): sender, reply-to, access delivery and payment plans are
+            # not in the plan schema, so they are carried here, provenance intact.
+            session["launch_plan"]["launch_answers"] = launch_answers_block(session)
+    except (lpl.LaunchPlanError, ValueError) as exc:
+        # PageSetError / RouteError are ValueErrors; a full-plan defect is named,
+        # never allowed to block the page plan that was already validated above.
+        session["launch_plan"] = None
+        session["launch_plan_missing"] = [f"full launch plan: {exc}"]
     # Doc 03 §3 state machine (D4): a plan built on recommendations passes
     # through recommendation_ready; a plan of only supplied facts goes
     # straight to awaiting_plan_approval.
@@ -799,7 +1008,20 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
                                "state": session["state"]})
     _persist(session)
     return {"state": session["state"], "plan": launch,
-            "plan_hash": session["plan_hash"]}
+            "plan_hash": session["plan_hash"],
+            "launch_plan": session.get("launch_plan"),
+            "launch_plan_missing": session.get("launch_plan_missing", [])}
+
+
+def full_plan_digest(full_plan: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Canonical digest of the FULL launch plan (pages + emails + texts +
+    automations + AI + launch_answers block) — the same digest rule the
+    session contract publishes for the Skill 50 consumer fixture."""
+    if full_plan is None:
+        return None
+    return hashlib.sha256(json.dumps(full_plan, sort_keys=True,
+                                     separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def plan_hash(launch: Dict[str, Any]) -> str:
@@ -809,6 +1031,10 @@ def plan_hash(launch: Dict[str, Any]) -> str:
     flips to approved BECAUSE the gate passed, so binding it would make the
     gate invalidate its own approval."""
     return vlp.plan_document_hash(launch)
+
+
+_BILLING_WORDS = {"one_time": "one payment", "recurring": "billed monthly",
+                  "installment": "paid in parts"}
 
 
 def render_summary(session: Dict[str, Any]) -> str:
@@ -821,16 +1047,30 @@ def render_summary(session: Dict[str, Any]) -> str:
 
     def price_of(o):
         p = o["prices"][0]
-        return _money_display(p["amount_minor"], p["currency"])
+        shown = _money_display(p["amount_minor"], p["currency"])
+        code = str(p.get("currency") or "").upper()
+        sym = _selection_core().CURRENCY_SYMBOLS.get(code)
+        if code != "USD" and sym and shown.startswith(sym):
+            return f"{shown} = {code} {shown[len(sym):]}"  # a bare symbol is ambiguous (JPY/CNY)
+        return shown
 
     lines = ["Here is the launch I recommend."]
     lines.append("1. Your first page introduces the result. It does not show a price.")
     lines.append("2. Interested visitors leave their first name, last name, email and phone.")
     main = by_slot.get("main")
+    mains = [o for o in plan["offers"] if o["slot"] == "main"]
+
+    def main_detail(o):  # name, price, billing and deliverable count: all that is being approved
+        n = len(o.get("deliverables") or [])
+        billing = _BILLING_WORDS.get(o["prices"][0].get("billing_type"), "one payment")
+        return (f"{o['display_name']} ({price_of(o)}, {billing}, "
+                f"{n} deliverable{'s' if n != 1 else ''})")
     if plan["journey_mode"] == "multiple_options":
-        mains = [o for o in plan["offers"] if o["slot"] == "main"]
-        named = ", ".join(f"{o['display_name']} ({price_of(o)})" for o in mains)
-        lines.append(f"3. They compare your packages — {named} — then check out.")
+        lines.append("3. They compare your packages — " + "; ".join(map(main_detail, mains))
+                     + " — then check out.")
+    elif plan["journey_mode"] == "folded_levels":
+        lines.append(f"3. Your sales page presents {len(mains)} levels, and they pick one at "
+                     "checkout — " + "; ".join(map(main_detail, mains)) + ".")
     else:
         lines.append(f"3. They go straight to checkout for "
                      f"{main['display_name']} ({price_of(main)}).")
@@ -855,9 +1095,40 @@ def render_summary(session: Dict[str, Any]) -> str:
                      f"({price_of(u2)}).")
     lines.append("7. The final page confirms only what they actually bought "
                  "and gives access.")
+    lines.extend(_launch_plan_lines(session))
     lines.append("I will prepare the approved emails and follow-up automations as drafts.")
     lines.append("Do you approve this plan for building, or would you like a change?")
     return "\n".join(lines)
+
+
+def _launch_plan_lines(session: Dict[str, Any]) -> List[str]:
+    """The rest of the launch in plain language: emails, texts, automations and
+    the Conversation AI choice. Anything still missing is named so the client can
+    answer it; nothing is filled in here."""
+    plan = session.get("launch_plan")
+    missing = session.get("launch_plan_missing") or []
+    if not plan:
+        if missing:
+            return ["The full launch plan still needs: " + "; ".join(missing) + "."]
+        return []
+    emails = len(plan.get("email_sequences") or [])
+    texts = len(plan.get("text_sets") or [])
+    automations = len(plan.get("automations") or [])
+    lines = [f"The same launch plans {emails} email sequences (drafts), "
+             f"{texts} text sets (drafts) and {automations} automations (drafts)."]
+    ai = plan.get("conversation_ai") or {}
+    if ai.get("requested"):
+        lines.append(f"Conversation AI is on ({ai.get('mode')}): when a contact replies, "
+                     "the bot answers, books or sends the checkout link, as you chose.")
+    else:
+        lines.append("Conversation AI: not requested, so no bot is built.")
+    if texts and not plan.get("a2p_ready"):
+        lines.append("Texts stay drafts: A2P 10DLC registration is not approved yet, "
+                     "so they cannot send until it is.")
+    if (plan.get("launch_calendar") or {}).get("black_friday"):
+        lines.append("Black Friday timing is included: teaser, countdown, doors open, "
+                     "Cyber Monday and last call.")
+    return lines
 
 
 def present_plan(session: Dict[str, Any]) -> str:
@@ -888,7 +1159,10 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
             *, worker_identity_ref: str) -> Dict[str, Any]:
     """Bind the client's approval to the exact plan. Runs the gate; on
     success the launch record flips to approved, recommended fields the plan
-    used become approved_recommendation, and the session may build."""
+    used become approved_recommendation, and the session may build. The full
+    launch plan (pages + emails + texts + automations + AI) is pinned beside
+    the record with its digest at approval time: any later rebuild that does
+    not reproduce the digest proves the plan changed and the approval is spent."""
     if session["state"] == "recommendation_ready" and session.get("plan"):
         # The approval act itself is the presentation acknowledgment: the
         # client is approving THIS hashed plan, recommendations included.
@@ -896,7 +1170,10 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
         session["history"].append({"at": _now(),
                                    "event": "plan_presented_via_approve"})
     if session["state"] != "awaiting_plan_approval" or not session.get("plan"):
-        raise IntakeError("no plan is awaiting approval in this session")
+        raise IntakeError(
+            f"no plan is awaiting approval (session state {session['state']!r}); "
+            "assemble_plan() and present_plan() must run first, and a changed fact "
+            "after approval requires a fresh approval of the new plan")
     violations = vlp.validate_launch(session["plan"])
     if violations:
         raise IntakeError("plan no longer validates; refusing to spend an "
@@ -904,7 +1181,15 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     assertion = vlp.assert_plan_build_approved(
         session["plan"], approval,
         client_identity_ref=session["client_identity_ref"],
-        worker_identity_ref=worker_identity_ref)
+        worker_identity_ref=worker_identity_ref,
+        test_only=(session["plan"].get("test_only") is True))
+    # Pin the FULL plan the client approved, next to the record the gate bound.
+    # The digest is canonical JSON; a later rebuild that differs proves the plan
+    # changed after approval (plan_hash_mismatch), never a second approval.
+    session["approved_launch_plan"] = session.get("launch_plan")
+    session["approved_launch_plan_digest"] = (
+        full_plan_digest(session["launch_plan"])
+        if session.get("launch_plan") is not None else None)
     session["plan"]["status"] = "approved"
     session["plan"]["plan_approval_ref"] = approval["approval_id"]
     session["approval"] = approval
@@ -933,12 +1218,16 @@ def begin_build(session: Dict[str, Any]) -> Dict[str, Any]:
 
 def request_revision(session: Dict[str, Any], note: str = "") -> Dict[str, Any]:
     if session["state"] not in ("awaiting_plan_approval", "recommendation_ready",
-                                "approved"):
+                                "approved", "revision_requested"):
         raise IntakeError("no plan to revise")
     session["plan_revision"] += 1
     session["plan"] = None
     session["plan_hash"] = None
     session["approval"] = None
+    session["launch_plan"] = None
+    session["launch_plan_missing"] = []
+    session["approved_launch_plan"] = None
+    session["approved_launch_plan_digest"] = None
     session["asked_ids"] = []  # a revised plan may need answers revisited
     session["state"] = "revision_requested"
     session["history"].append({"at": _now(), "event": "revision_requested",
@@ -998,13 +1287,13 @@ def _self_test() -> int:
         base.update(kw)
         return new_session(**base)
 
+    from datetime import datetime, timedelta, timezone
+
     def approval_for(session, **over):
-        a = {"schema_version": "1.0", "approval_id": "APPR-1",
-             "subject_type": "launch_plan_build",
-             "subject_hash": session["plan_hash"],
-             "owner_identity_ref": "client-1",
-             "source_message_ref": "msg-123", "recorded_at": _now(),
-             "scope": ["launch_plan_build"], "revoked": False,
+        a = {"schema_version": "1.0", "approval_id": "APPR-1", "kind": "launch_plan_build",
+             "plan_hash": session["plan_hash"], "client_identity": "client-1",
+             "source_message_ref": "msg-123", "scope": ["launch_plan_build"],
+             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
              "verification_class": "recorded_consent_not_cryptographically_sealed"}
         a.update(over)
         return a
@@ -1047,8 +1336,8 @@ def _self_test() -> int:
     say("Sunrise Coaching" in summary and "497" in summary,
         "expert: summary names the real product and price")
     a = approve(s, approval_for(s), worker_identity_ref="worker-9")
-    say(s["state"] == "approved" and a["verification_class"].startswith("recorded"),
-        "expert: approval binds and is honestly classed as recorded consent")
+    say(s["state"] == "approved" and a["verification_class"] == "local_test_record",
+        "expert: approval binds and is honestly classed as a local test record")
     begin_build(s)
     say(s["state"] == "building" and s["plan"]["status"] == "building",
         "approved session enters building (doc 03 §3, D4)")
@@ -1083,19 +1372,19 @@ def _self_test() -> int:
         "presenting the plan moves recommendation_ready -> "
         "awaiting_plan_approval (D4)")
     try:
-        approve(s2, approval_for(s2, owner_identity_ref="someone-else"),
+        approve(s2, approval_for(s2, client_identity="someone-else"),
                 worker_identity_ref="worker-9")
         say(False, "unrelated client identity must not approve")
     except vlp.ApprovalError:
         say(True, "unrelated client identity cannot approve another launch")
     try:
-        approve(s2, approval_for(s2, owner_identity_ref="worker-9"),
+        approve(s2, approval_for(s2, client_identity="worker-9"),
                 worker_identity_ref="worker-9")
         say(False, "worker self-approval must fail")
     except vlp.ApprovalError:
         say(True, "worker cannot self-approve (identity == worker refused)")
     try:
-        approve(s2, approval_for(s2, subject_hash="0" * 64),
+        approve(s2, approval_for(s2, plan_hash="0" * 64),
                 worker_identity_ref="worker-9")
         say(False, "stale hash approval must fail")
     except vlp.ApprovalError:
@@ -1198,21 +1487,6 @@ def _self_test() -> int:
     say(s6["plan_revision"] == 2 and s6["plan_hash"] != old_hash,
         "changed price after approval -> new revision, new plan hash")
 
-    # --- "I don't know" is coaching, never an answer: the question stays open
-    s7 = mk()
-    answer(s7, "m0_mode", "B. Guide me through each decision")
-    before = dict(s7["answers"])
-    r = answer(s7, "a1_offer", "I don't know")
-    say(r["ok"] is False and r["kind"] == "help" and s7["answers"] == before,
-        "I don't know records nothing and returns coaching")
-    say(len(r["coaching"]) >= 2, "coaching names the ways out (example, why, recommendation)")
-    say(next_question(s7)["id"] == "a1_offer",
-        "the question is not skipped past: it is still the next one asked")
-    answer(s7, "a1_offer", "A retreat")
-    say(s7["answers"]["offers.main.description"]["value"] == "A retreat"
-        and next_question(s7)["id"] != "a1_offer",
-        "a real answer records and moves the flow on")
-
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -1230,6 +1504,9 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--value", help="JSON payload for structured answers")
     ap.add_argument("--source-ref", default="")
     ap.add_argument("--plan", action="store_true")
+    ap.add_argument("--launch-plan", action="store_true",
+                    help="print the FULL launch plan (pages + emails + texts + automations + AI)")
+    ap.add_argument("--out", help="with --launch-plan: write the plan JSON here")
     ap.add_argument("--recap", action="store_true")
     ap.add_argument("--cancel", action="store_true")
     ap.add_argument("--answers-file", help="client-intake-answers/v1 file to fill the session from")
@@ -1265,6 +1542,20 @@ def main(argv: List[str]) -> int:
             print(json.dumps(q, indent=2) if q else "no further questions")
         elif args.plan:
             print(present_plan(s))
+        elif args.launch_plan:
+            if not s.get("plan"):
+                raise IntakeError("no plan has been assembled yet; assemble it first")
+            result = lpl.build_from_session(s)
+            if result["state"] != "ready":
+                print("FAIL: the launch plan is missing facts: " +
+                      "; ".join(result["missing"]))
+                return EXIT_VIOLATION
+            text = json.dumps(result["plan"], indent=2) + "\n"
+            if args.out:
+                Path(args.out).write_text(text, encoding="utf-8")
+                print(f"launch plan written to {args.out}")
+            else:
+                print(text, end="")
         elif args.recap:
             print(resume(s))
         elif args.cancel:

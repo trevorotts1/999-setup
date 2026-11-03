@@ -16,3 +16,9 @@ council-of-wise-elders
 signature-downsell
 signature-thank-you
 black-friday-launcher
+ghl-install-pages
+convert-and-flow-operator
+signature-funnel
+signature-product-selection
+signature-order-form
+signature-upsell

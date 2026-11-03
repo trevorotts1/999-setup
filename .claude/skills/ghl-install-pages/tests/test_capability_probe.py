@@ -41,6 +41,24 @@ import capability_probe as cp
 
 NOW = "2026-09-07T00:00:00Z"
 
+# Fake Chrome user-data root carrying the OpenClaw Chrome extension at
+# v2.3.0 (tests/fixtures/fake-chrome/Default/Secure Preferences). Since
+# 2026-10-13 the OpenClaw lane is PRIMARY and requires the extension to be
+# installed + current, so OC-lane tests inject this root + the expected
+# version instead of depending on the machine running the tests.
+FIXTURE_CHROME_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures", "fake-chrome")
+EXT_ENV = {
+    "GHL_SKILL6_CHROME_PROFILE_ROOTS": FIXTURE_CHROME_ROOT,
+    "SKILL6_OPENCLAW_EXTENSION_EXPECTED_VERSION": "2.3.0",
+}
+
+# Same fixture shape with the extension at v1.0.0 (S06-03 T-A3): proves
+# the INSTALLED version gates the lane, not only the operator pin.
+FIXTURE_CHROME_OLD_ROOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures",
+    "fake-chrome-old")
+
 
 # ── fake runner plumbing ──────────────────────────────────────────────────────
 
@@ -111,6 +129,29 @@ def runner_oc2_managed():
     )
 
 
+def runner_oc2_plus_agent_browser():
+    """OpenClaw 2.x managed stack AND agent-browser 0.27.0 both present.
+
+    S06-03 T-A1: the OpenClaw rules are inserted BEFORE the agent-browser
+    rules - _fake_runner matches substrings in dict insertion order, and
+    the bare "--version" rule is a substring of "openclaw --version", so
+    agent-browser first would shadow the OpenClaw version probe.
+    """
+    return _fake_runner(
+        **{
+            "openclaw --version": _CP(returncode=0, stdout="OpenClaw 2026.9.2 (3928bad)\n"),
+            "openclaw plugins list": _CP(
+                returncode=0,
+                stdout="@openclaw/browser-plugin 2.0.1 enabled\ncua-computer 0.21.0 enabled\n",
+            ),
+            "--browser-profile": _CP(returncode=0, stdout="profile openclaw ready\n"),
+            "import playwright": _CP(returncode=0, stdout=""),
+            "command -v": _CP(returncode=0, stdout="/usr/local/bin/agent-browser\n"),
+            "--version": _CP(returncode=0, stdout="agent-browser 0.27.0\n"),
+        }
+    )
+
+
 def runner_playwright_only():
     """Playwright importable; no agent-browser, no OpenClaw CLI."""
     return _fake_runner(
@@ -135,7 +176,8 @@ def runner_nothing():
     (runner_nothing, None),
 ])
 def test_lane_selection_priority_9_6(runner_factory, expected_lane):
-    res = cp.run_probe(runner=runner_factory(), env={}, now=NOW)
+    env = dict(EXT_ENV) if expected_lane == "openclaw_managed_browser" else {}
+    res = cp.run_probe(runner=runner_factory(), env=env, now=NOW)
     assert res["selectedLane"] == expected_lane
 
 
@@ -304,6 +346,9 @@ def test_no_secret_values_in_output_json():
 EXPECTED_TOP_KEYS = {
     "probedAt", "platform", "openclaw", "lanes", "secrets", "selectedLane",
     "fallbackChain", "optimizations", "iframeDrag", "blockers", "warnings",
+    # S06-02 (spec 05 section 3): the environment-capabilities record is an
+    # additive top-level key; every plan 2.1 key above is unchanged.
+    "environmentCapabilities",
 }
 
 

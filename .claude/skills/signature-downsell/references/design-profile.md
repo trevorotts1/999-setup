@@ -4,7 +4,7 @@ Status: build candidate. Governing sources: packet 11 section 8; packet 16 secti
 
 ## Production sequence (shared workflow, D1 profile)
 
-Approved copy -> section/action plan -> desktop wireframe -> mobile wireframe (intentional reflow, never a shrunk desktop) -> visual mockup -> per-asset prompts approved -> generation through the selected client-owned provider -> visual QC -> final layout -> responsive HTML -> S06 native install -> native action and route tests.
+Approved copy -> section/action plan -> desktop wireframe -> mobile wireframe (intentional reflow, never a shrunk desktop) -> visual mockup -> image inventory and per-asset prompts approved -> generation through the selected client-owned provider and visual QC -> image map -> Design Board (one board for the downsell role, client approval recorded) -> final mockups -> responsive HTML -> S06 native install -> native action and route tests. This is the order of `71-blackceo-signature-page/references/stage-contract.json`; Skill 71's shared image service runs the wireframe, mockup and final-mockup stages for this page (`49-signature-funnel/scripts/downsell_wrapper.py` calls it once), and the band-by-band layout is in `references/wireframe-layout.md`.
 
 ## D1-specific design rules
 
@@ -16,6 +16,16 @@ Approved copy -> section/action plan -> desktop wireframe -> mobile wireframe (i
 6. **States are designed, not improvised.** Default, focus, selected (where the component has a selection analogue), loading/processing (CTAs disabled, spinner at the action), error/failed (recoverable, retry or continue-without-extra), pending/requires-action, expired-context (checkout fallback), and completed/success states all have desktop and mobile previews before install (doc 16 section 5 requires default, focus, selected, loading, error and completed previews). The completed state matters doubly here: it is the section 7 handoff trigger to U2 or final thank-you, and it may render only from verified native success evidence.
 7. **Brand comes from the launch brand file only** (shared tokens and loader owned by S71). No per-page palette invention. Imagery follows the launch creative direction with provider provenance recorded per asset; a planned asset is not a generated asset.
 8. **Accessibility and performance** per doc 16: real buttons for actions, links for navigation, visible focus order preserved, no animation that hides price or shifts the pay button, reduced-motion respected.
+
+## Result extension and money statements (derived, never attested)
+
+The D1 result extension and, for a trial, recurring or installment price, the disclosure document are DERIVED by `49-signature-funnel/scripts/downsell_extension.py` from the validated page copy, the launch record's D1 offer and the route graph. The operator stages neither. The same bytes come out of the same inputs.
+
+- Every currency amount on the page (headings, bodies, CTA labels, missed-out items, the decline label; digits, ISO codes, "dollars" or "bucks", and amounts written as words) must equal a due-now, renewal or schedule amount of THIS D1 offer. An amount from another offer is refused (`price-not-in-record`), and a page that never states the due-now amount is refused (`price-not-on-page`).
+- A trial, recurring or installment page must also state the renewal amount, the billing interval next to the money or renewal terms, and a cancellation statement, plus the trial length for a trial (`missing-renewal-terms`).
+- A staged extension is only cross-checked: its `billing_type`, due-now and renewal figures, CTA action refs, decline action ref and route must equal what is derived (`billing_type mismatch`).
+- `entitlements_removed_vs_u1` is computed from the U1 and D1 offers. D1 may not grant any entitlement a main or bump offer grants (`D1-OFFER-REGRANTS-MAIN`), and the base-purchase check covers every main and bump offer, not only a launch with one main.
+- Design consequence: the wireframes and mockups are drawn from copy that has already passed these checks, so the price a client approves is the price charged.
 
 ## QC gates for this profile
 

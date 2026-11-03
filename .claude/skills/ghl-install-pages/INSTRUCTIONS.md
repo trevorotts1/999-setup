@@ -5,8 +5,11 @@ This document explains the step-by-step process for deploying HTML pages into Go
 This assumes your HTML code is already written and ready to paste. This guide is about the process of getting that code into GoHighLevel's page builder.
 
 > **v7.0.0 OVERHAUL — READ THIS FIRST.** The canonical procedure now lives in
-> **`ghl-browser-builder-full.md`** (v3.0), driven by **agent-browser** (PRIMARY)
-> with Playwright as fallback, and backed by the code in **`tools/`**. The
+> **`ghl-browser-builder-full.md`**, driven by the **OpenClaw Chrome
+> extension** (PRIMARY, the OpenClaw browser on the operator's paired
+> signed-in Chrome), with **agent-browser** as the fallback lane and
+> Playwright as the scripted escape hatch, and backed by the code in
+> **`tools/`**. The
 > 10-phase text below is retained as the human-readable click-path narrative; the
 > mechanics (auth seeding, runtime gate selection, ledger/resume, ZHC naming,
 > sub-account gate, publish guard, marker verification) are implemented in code.
@@ -14,7 +17,9 @@ This assumes your HTML code is already written and ready to paste. This guide is
 > **GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.**
 > The Firebase refresh token ALONE seeds a
 > logged-in session. There is NO "refresh-token vs login" choice: the token-seed
-> is the SOLE auth path. On token failure the builder STOPS and reports — it
+> is the SOLE auth path for ordinary builds (the gated Tier-2 bootstrap
+> below is the orchestrator's alone: never a build's, never silent). On
+> token failure the builder STOPS and reports — it
 > NEVER auto-opens the Sign-in form or a two-factor prompt, and NEVER types a
 > login/password. Fix = re-grab a fresh refresh token via the Convert and Flow
 > Token Grabber Chrome extension, then retry the seed. GHL_AGENCY_EMAIL /

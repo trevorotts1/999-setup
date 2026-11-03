@@ -56,8 +56,9 @@ or any model NOT identified as a high-reasoning model) **OR thinking is not set 
 Surface this recommendation to the owner BEFORE proceeding:
 
 > ⚠️ **GHL workflow builds are complex and error-prone on lighter models.**
-> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. DeepSeek V4.1 Flash
-> or GLM 5.2 — Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding — for the best
+> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (the client's selected
+> high-reasoning model, or their configured default model if it is a high-reasoning one;
+> Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding, for the best
 > possible output and to avoid hard-to-catch hallucinations in workflow logic.
 > *(A lighter model previously turned a 2-minute fix into a 12-hour loop by
 > hallucinating a failure cause, a fake link, and a wrong number.)*
@@ -271,6 +272,26 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 | "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |
 | "Add a user to <SUBACCOUNT>" / "create a login for <PERSON>" / "give <PERSON> access" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a SUB-ACCOUNT user — see Agency operations below) |
 
+
+## Dependency exports for Skill 38 gates
+
+Generate the calendar and pipeline exports from live GHL data:
+
+```bash
+python3 tools/export_deps.py --workflows-dir <master-files>/conversation-workflows
+```
+
+The producer writes these files:
+
+- `<master-files>/conversation-workflows/.caf-calendars-export.json`
+- `<master-files>/conversation-workflows/.caf-pipelines-export.json`
+
+Exit codes: `0` means both exports succeeded; `2` means usage or path resolution error; `3` means caf failure or invalid response shape. The producer requires a live PIT-authenticated `caf`. No network means no export, never a fabricated one.
+
+Skill 38's `qc-playbook-declares.sh` fails with `REQUIRES_OPERATOR` when a playbook declares calendars or applied tags and the required export is absent. `qc-opportunity-sync.sh` fails with `REQUIRES_OPERATOR` when a playbook declares a pipeline or stage-map and the pipelines export is absent. Both gates fail closed; missing exports never mean skipped validation.
+
+Regenerate both exports after any calendar or pipeline change in GHL.
+
 ---
 
 ## Agency operations — create sub-account / add user
@@ -420,9 +441,9 @@ etc. are PLACEHOLDERS — substitute the live values at runtime.)
 When the operator asks to "build a workflow / playbook / funnel" AND the workflow contains
 a conversational node:
 
-1. Skill 44 builds the GHL automation structure (the HANDS)
-2. Skill 44 AUTO-INVOKES skill 38 for the brain (communications playbook + Build-with-AI prompt)
-3. All three TRINITY legs ship together, or the build is NOT registered
+1. Skill 38 authors the communications playbook, its declares block, and its build contract FIRST (Skill 44 does not begin before those exist)
+2. Skill 44 reads that build contract and declares block and builds the GHL automation structure to exactly that spec, refusing to build when the contract is missing or stale (`playbook_structure_hash` mismatch). Skill 44 never invents, alters, or reverses the order and never authors playbook content.
+3. All three TRINITY legs and the build contract ship together, or the build is NOT registered
 
 **WF-19 is a MECHANICAL HARD GATE for conversational builds (FIX-S36-27).** Run the Step-9 QC
 with `--conversational`: `./qc-built-workflow.sh <workflow-id> --conversational …`. That flag
@@ -514,20 +535,23 @@ Send from the client's own install/session, through the client's configured chan
 > "I've built the workflow. Before I call it done, I'm running an independent QC agent to
 > verify it against the checklist item-by-item. One moment."
 
-### Step 9.2 — Spawn an independent QC sub-agent on MiniMax
+### Step 9.2: Spawn an independent QC sub-agent on a different model
 
 Dispatch a fresh sub-agent (a new agent session in this harness), in a fresh session, on an
-INDEPENDENT MiniMax model (independent = a DIFFERENT model than the build agent, so QC cannot
-inherit the builder's own hallucinations).
+INDEPENDENT model (independent = a DIFFERENT model than the build agent, so QC cannot
+inherit the builder's own hallucinations): the client's selected QC model, or their configured
+default model where it differs from the build model.
 
 **Model resolution (in order):**
-1. Prefer `minimax/minimax-m3` via OpenRouter (the repo's established MiniMax extraction model,
-   per skill 38 Step 9.24).
-2. Or `minimax-m3:cloud` if an Ollama-Cloud MiniMax slug is configured.
-3. VERIFY the MiniMax model is actually configured + reachable before spawning (per
+1. The model the client selected for QC work, where it is a DIFFERENT model than the build agent's.
+2. Or the client's configured default model, where it differs from the build model.
+3. VERIFY the QC model is actually configured + reachable before spawning (per
    subagent-delegation-pattern.md: "Verify the chosen model exists in the client's configured model setup and
-   has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no MiniMax model is
-   available, fall back to the next independent high-reasoning model and RECORD which model QC'd.
+   has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no independent model is
+   available, ask the client which model should run QC; never silently QC on the build model
+   itself. RECORD which model QC'd.
+   Recommendation: a high-reasoning model from a different family than the build model, because
+   independence is the point of the QC pass.
 
 The QC sub-agent receives: the filled checklist artifact, the workflow id, and read-only `caf`
 access.
@@ -668,14 +692,14 @@ WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
 
 2. **REQUIRE a high-reasoning model at thinking HIGH for the redo.** This is the v12.3.5
    Step 0 recommendation FLIPPED FROM RECOMMENDATION TO REQUIREMENT for this case. The redo
-   MUST run on a high-reasoning model (e.g. DeepSeek V4.1 Flash / GLM 5.2, Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
+   MUST run on a high-reasoning model (the client's selected high-reasoning model, or their configured default model if it is a high-reasoning one; Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
    if the current build session is on a lighter model, the build does NOT proceed until
    switched (cross-references and strengthens INSTRUCTIONS.md Step 0).
 
 3. **RE-DO** the affected build steps on the reasoning model at thinking HIGH, restoring from
    the pre-build snapshot if the workflow state is suspect.
 
-4. **RE-RUN QC** (fresh independent MiniMax sub-agent) from scratch against the FULL checklist
+4. **RE-RUN QC** (fresh independent QC sub-agent on a different model than the build agent) from scratch against the FULL checklist
    — a hallucination invalidates the whole build agent's report, so QC re-verifies ALL items,
    not just the flagged one.
 

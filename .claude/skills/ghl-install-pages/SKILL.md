@@ -21,12 +21,21 @@ This skill is about deploying finished HTML code into the GoHighLevel (Go High
 Level) or Convert and Flow page builder using browser automation. The AI agent
 drives the browser, pastes the code, and handles all the clicks and navigation.
 
-> **ENGINE (v3.0 overhaul):** PRIMARY = `agent-browser` (Vercel Labs, the
-> repo-sanctioned tool from Skill 03), run **headless** with an **isolated
+> **ENGINE (v4.0, 999 harness):** PRIMARY = `agent-browser` (Vercel Labs,
+> the repo-sanctioned tool from Skill 03), driven per Skill 71's browser-engine
+> contract (the claude-nine mapping) through the mandatory
+> `tools/browser_manager.sh` gateway, run **headless** with an **isolated
 > `--session <client>`** so it never touches a personal browser. FALLBACK =
-> self-hosted Playwright, a scripted escape hatch for known-hard flows only.
-> The previous raw-Playwright-only stack is replaced. The full hardened
-> procedure is in `ghl-browser-builder-full.md` (v3.0).
+> self-hosted Playwright, a scripted escape hatch for known-hard flows and the
+> CDP hybrid for cross-origin iframe drag. The OpenClaw Chrome extension and
+> the OpenClaw managed browser are not part of this harness and are never
+> assumed (see `ADAPTER.md`, seam 1). The full hardened procedure is in
+> `ghl-browser-builder-full.md`. **Standing preflight (Lane 1 only):**
+> `bash tools/browser_manager.sh probe` reports the agent-browser lane's
+> verdict before any install run. An unavailable agent-browser lane (LANE 1
+> UNAVAILABLE) disables Lane 1 ONLY, with the reason recorded; the run proceeds
+> on the next lane the capability probe verifies. The run STOPs only when the
+> probe verifies zero lanes (fail closed).
 
 > **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
 > **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
@@ -45,8 +54,10 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > `tools/ghl_rest_canvas.py`; its per-gate results in `gates.json` stay
 > PENDING-LIVE-RUN), Skill 62's U26 live proof (deliberately HELD), and the
 > full-funnel publish E2E. The sole auth blocker for every owed run is a fresh
-> Firebase refresh token — the token-seed is the sole auth path; there is NO
-> login-form / two-factor run, attended or otherwise, per the TOKEN-ONLY doctrine
+> Firebase refresh token — the token-seed is the sole auth path for these
+> owed runs; there is NO login-form / two-factor run, attended or otherwise,
+> for them (the gated Tier-2 bootstrap exists in tools/ghl_auth.py but has
+> no live proof yet: LIVE_PROOF_PENDING), per the TOKEN-ONLY doctrine
 > in §2/D7. No live run is scheduled or approved; the operator steps that clear
 > ONLY the owed half are in `OPERATOR-LIVE-CHECKLIST.md`.
 
@@ -85,9 +96,13 @@ template-first matcher above:
 - `NO_ENGINE_MATCH` → fall through to `funnel_matcher.py` (the 38 templates) + the generic build. Never
   blocks a build.
 
-Registered engine: **`signature-funnel`** (Skill 49 — the Trevor Otts 12-section Hero + 3/5/7 funnel;
-entry `49-signature-funnel/signature-funnel-entry.sh`). A second entry (Skill 56 Sales-Page-Assets) is
-added by appending one object to `engines[]` — no selector code change. CLI:
+Registered engines: **`signature-funnel`** (Skill 49, the Trevor Otts 12-section Hero + 3/5/7
+funnel; entry `49-signature-funnel/signature-funnel-entry.sh`), **`sales-page-assets`** (Skill 56,
+the direct-response Sales-Page / VSL family; entry `56-sales-page-assets/sales-page-assets-entry.sh`),
+and **`cinematic-web-funnel-engine`** (Skill 62, cinematic web funnels; entry
+`62-cinematic-web-funnel-engine/cinematic-web-funnel-entry.sh`; readiness `skeleton`,
+certify_capable false, so STEP-0 refuses a production route into it without `--force-skeleton`).
+A further entry is added by appending one object to `engines[]`, no selector code change. CLI:
 `python3 tools/funnel_engine_selector.py --match "<request>"` / `--list` / `--self-test`. See
 `funnel-engines/README.md`.
 
@@ -182,6 +197,18 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   resolver's RuntimeError already does). This is the fix for the six-month
   false-fail where the image step reported "GHL LOCATION PIT not found" on a token
   that was in the store the whole time. See v2-autonomous-build-sop.md §2.0.1.
+  **_FILE indirection + the one shared resolver (S06-04).** Every credential
+  in this skill (the Firebase refresh token, the LOCATION PIT, the location
+  id) resolves through ONE shared resolver, `tools/ghl_secret_resolver.py`,
+  with the same precedence everywhere: (1) a `*_FILE` variable
+  (`GHL_REFRESH_TOKEN_FILE` / `GHL_LOCATION_PIT_FILE` /
+  `GHL_LOCATION_ID_FILE`) naming a file whose CONTENTS are the value (the
+  Docker-secrets / mounted-file shape); (2) the live env across the alias
+  chain; (3) the canonical stores above. Placeholder-shaped values are
+  skipped at every layer. A `*_FILE` variable that is set but whose file is
+  missing, unreadable, empty, or group/world-accessible fails loudly,
+  naming the variable and the path (never the contents); the file must be
+  mode 0600. Resolved values are never printed or logged.
 
 ## What This Skill Covers
 
@@ -193,7 +220,10 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    dashboard). NO login form is rendered, NO password is typed, two-factor is
    NEVER reached. On token failure the builder STOPS and reports — it NEVER
    auto-opens the Sign-in form or a two-factor prompt and NEVER falls back to a
-   login/password.
+   login/password. The sole exception is the orchestrator's gated Tier-2
+   bootstrap (`tools/ghl_auth.py`), which a build never invokes directly and
+   which is never silent: it runs only when its four gates pass and
+   self-heals back to token-only (see Critical Things to Know).
 3. **GHL's iframe architecture** - The page builder loads inside nested
    iframes. You cannot just click elements on the main page. The skill
    explains how to find and switch into the correct iframe context.
@@ -219,18 +249,22 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 10. **Publishing** - NEVER publish without explicit user approval. Always send
     a deployment report with screenshots first.
 11. **Role-aware model_router** - `tools/model_router.py` assigns a model to
-    every subtask before execution via an Ollama-Cloud-first ladder (five
-    roles; aliases in parentheses). `content` = `ollama/kimi-k2.6:cloud` →
-    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4.1-flash (universal backup) →
-    Gemini 3.5 Flash (last resort); `html`
-    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4.1-flash →
-    Gemini 3.5 Flash (last resort); `reasoning` (`funnel`) = GLM 5.2 then
-    DeepSeek V4.1 Flash (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
-    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud`
-    → `openrouter/minimax/minimax-m3` (probe-gated) →
-    `openrouter/deepseek/deepseek-v4.1-flash` → `google/gemini-3.5-flash` (last
-    rung); `qc` (vision) = MiniMax M3 (probe-gated) → Gemini 3.5 Flash last
-    resort. MiniMax M2 is PURGED — it never appears in any rung. The
+    every subtask before execution. Model: the client's choice, or the
+    client's configured default model, for every role (five roles; aliases in
+    parentheses: `content`, `html` (`code`), `reasoning` (`funnel`),
+    `execution`, `qc`). The router prescribes no model by name: it resolves
+    the client's explicit choice for the task first, then the client's
+    configured default model, and stops with an ask-the-client message when
+    neither is configured. Recommendations (guidance only, the client can
+    override): content, a model with a large context window, because it
+    drafts full page and slide copy in one pass; html/code, strong code
+    generation and reliable tool calling, because the fix-loop edits code in
+    tight iterations; reasoning, strong reasoning and a large context window,
+    because funnel planning holds the whole structure at once; execution,
+    reliable tool calling, because the drive loop issues a tool call on every
+    step (probe-gated to prove it before the role runs); qc, a vision-capable
+    model, because QC reads screenshots and rendered DOM (probe-gated).
+    MiniMax M2 is PURGED, it never appears in any rung. The
     router is wired into `tools/v2_dispatcher.py` (role selection at every
     dispatch entry) and `ghl_verify` (`select_html_repair_model` /
     `select_qc_model` seam functions); no subtask runs without a model
@@ -382,14 +416,17 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
      generates recommended answers on request, then confirms before proceeding;
      output written to the task manifest before build starts.
-   - `model_router.py` - role-aware model selector (Ollama-Cloud-first); called
+   - `model_router.py` - role-aware model selector; called
      by `v2_dispatcher.py` and `ghl_verify` to assign a model to every subtask
-     before execution. Role → ladder: `content` → `ollama/kimi-k2.6:cloud` →
-     `openrouter/moonshotai/kimi-k2.6` → DeepSeek V4.1 Flash (universal backup);
-     `html`/`code` → GLM 5.2 → DeepSeek V4.1 Flash (universal backup); `reasoning` →
-     GLM 5.2 / DeepSeek V4.1 Flash; `execution` → MiniMax M3 probe-gated →
-     DeepSeek V4.1 Flash; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
-     at Gemini 3.5 Flash as last resort. MiniMax M2 is PURGED from every rung.
+     before execution. Model: the client's choice, or the client's configured
+     default model (per role: `MODEL_ROUTER_CHOICE_<ROLE>` /
+     `MODEL_ROUTER_DEFAULT`); no model is prescribed by name, and resolution
+     stops with an ask-the-client message when the client has configured
+     neither. Per-role recommendations (guidance only) live in the module
+     docstring: large context for content and reasoning, strong code
+     generation for html/code, reliable tool calling for execution
+     (probe-gated), a vision-capable model for qc (probe-gated). MiniMax M2 is BANNED
+     fleet-wide and is never used.
 6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
 7. **INSTRUCTIONS.md** - Operational quick-start.
@@ -408,8 +445,10 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 ## Critical Things to Know
 
 - PRIMARY engine is agent-browser, headless, with an isolated `--session
-  <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
-  the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
+  <client>`, driven per Skill 71's browser-engine contract. It never touches a
+  personal browser (NO-COMINGLING). A rendered GHL login form on ANY lane is the
+  D7 stop signal, never a form to fill. Playwright is the fallback only; if you
+  use it, `launchPersistentContext()` never `launch()`.
 - SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
   Route EVERY agent-browser call through the single mandatory
   gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
@@ -444,14 +483,23 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   non-zero exit, precise client instruction. ALL login/password/2FA code lives in
   EXACTLY ONE module (tools/ghl_auth_fallback.py + its browser helper
   tools/ghl_login_browser.py); CI guard `scripts/guard-ghl-auth-fallback.sh` locks
-  the invariants.
+  the invariants. Sanctioned Tier-1 delegates: `tools/browser_manager.sh`
+  (session-expired self-heal) and `tools/ghl_form_builder.py`
+  (seed-and-land) shell `tools/seed-ghl-auth.py` directly for one bounded
+  re-seed each; they are delegates of the orchestrator's Tier 1, not
+  separate auth paths, and they inherit the full shared resolution (env,
+  stores, `*_FILE`) through the seed process.
 - HARD RULE: NEVER ask for, type, or fall back to a GHL login/email/password or a
   two-factor (2FA) prompt. On token failure (no token / revoked / seed does not
   log in) the builder STOPS and reports (non-zero exit) — it MUST NOT auto-open
   the Sign-in form or a two-factor prompt. Fix = re-grab a fresh refresh token via
   the Convert and Flow Token Grabber Chrome extension, then retry the seed.
   GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never
-  auto-invoked.
+  auto-invoked. Scope: this rule binds the builder. The only login code in
+  the skill is the gated Tier-2 bootstrap in tools/ghl_auth_fallback.py,
+  entered solely through the orchestrator (tools/ghl_auth.py) when its four
+  gates pass; it is never invoked by a build directly and never runs
+  silently.
 
 ### Adaptive browser lanes
 
@@ -467,7 +515,15 @@ Lanes are selected per host by the capability probe — never assumed:
 | 5 | CUA | NOT in Skill 6 yet — future last resort only |
 
 Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
-is the runtime source of truth. Capability-class mapping and lane detail live in
+is the runtime source of truth. Probe secret booleans are env-presence
+checks against the chains declared in Prerequisites only: a credential
+provisioned solely under the CAF refresh alias, solely in a store, or
+solely via a `*_FILE` variable reads as not-present in the probe even
+though the orchestrator and the media resolver resolve it. Treat a false
+boolean as "not in the live env under a declared name", never as
+"absent from the box". The probe selects the agent-browser lane (Lane 1)
+when it is available and otherwise falls to Playwright and warns; the OpenClaw
+lanes are structurally absent in this harness. Capability-class mapping and lane detail live in
 `ENV-MATRIX.md` ("Capability classes").
 
 - Always verify you are in the correct sub-account before building
@@ -488,8 +544,8 @@ is the runtime source of truth. Capability-class mapping and lane detail live in
   `create_media_folder` on the `services.*` + Bearer **LOCATION**-PIT path), then
   **upload → GHL returns a CDN link → reference THAT media-storage link in the
   HTML.** **NO browser control for media storage** — folders/uploads go via the
-  GHL API / official MCP / community MCP / Skill 44, NEVER by driving the page
-  builder UI. Fail-soft: if the plan has no folder endpoint, the wrapper groups
+  GHL API / official MCP / Skill 44, NEVER by driving the page
+  builder UI. (The community MCP route is RETIRED and is not a lane.) Fail-soft: if the plan has no folder endpoint, the wrapper groups
   by `media_folder_name_prefix` instead (still findable). "Grocery-shopping"
   rule: pre-build forms/calendars/tags/workflows (Skill 44) BEFORE the page.
 - **FORMS = same ONE rail.** Forms are built by `tools/ghl_form_builder.py` under
@@ -560,6 +616,17 @@ is the runtime source of truth. Capability-class mapping and lane detail live in
   the exact 18-entry shape (and `apply_palette_to_page_styles` keeps the
   `:root{--primary:…}` CSS vars in sync). A 201 autosave status does NOT prove a
   page renders; it only proves bytes were stored.
+- **Splice guards (`ghl_rest_canvas.html_fragment` / `new_page_blob` / `lint_ghl_fragment`).**
+  Head assets are carried into the fragment, never dropped: `<style>`, inline and
+  remote `<script>`, remote `<link>` (stylesheet, fonts, preconnect) and the
+  viewport `<meta>` are hoisted; local stylesheets/scripts are inlined from
+  `base_dir` (the source file's folder); a head `<link>` that cannot be carried
+  raises naming the tag. A raw card input (`cc-number`, `cc-csc`, `cc-exp`,
+  `cardnumber`, `cvv`/`cvc` names) is refused: only the processor's native order
+  form takes card data. Funnel builds require every `<img>` to be a GHL media
+  link (`require_ghl_media` defaults ON for `surface="funnel"` and in the lint);
+  a relative path or external/temporary URL raises naming the file.
+  `tools/test_rest_canvas_safety.py` proves all three.
 - **Sealed un-fakeable verification.** A page PASS requires ONLY: `ghl_verify.render_check`
   returns HTTP 200, marker present in the RENDERED (JavaScript-hydrated) DOM, and
   zero render errors — captured as real DOM snapshot + PNG + console artifacts.
@@ -690,6 +757,24 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > `state/skill6-fix`) or register it with your own scheduler using the
 > entry file as the cadence record.
 >
+> **ZERO CANDIDATES IS NOT A CLEAN SWEEP (finding 50, 2026-10-25).** Exit 0
+> with `total_runs: 0` proves only that the sweep DISCOVERED nothing to
+> check — never that any deployed page's code was confirmed in GitHub.
+> Discovery is `cc_board.list_evidence_runs`: immediate `<base>/v2-*`
+> subdirectories that carry `routing/intake-receipt.json`. A box whose runs
+> predate that naming, or whose receipts live elsewhere, yields an empty set
+> and a green log. Proven on the operator box: the base resolved correctly to
+> `$HOME/clawd/skill6-fix` and was NOT empty (9 entries, incl. `v1-operator`,
+> `v1-T2-20260622T160654Z`, `v1-t3-20260622-120754`,
+> `v1-t4-20260622T161729Z`, `v3-createfix`, `acceptance-73-20261022`), yet
+> `total_runs` was 0 because none of the three `v2-*` directories carried
+> `routing/intake-receipt.json`. The base was RIGHT; the predicate
+> under-discovered. So assert a non-zero candidate count whenever runs are
+> expected, BEFORE trusting a green sweep (run from the skill root):
+> `python3 -c 'import sys; sys.path.insert(0,"tools"); import cc_board as c; b=c.resolve_evidence_base(); r=c.list_evidence_runs(b); print("%s -> %d candidate run(s)" % (b, len(r))); sys.exit(0 if r else 1)'`
+> (exit 1 = zero candidates: the sweep's `all_clean` is vacuous, not proof).
+> If the base is non-empty while candidates are zero, the DISCOVERY
+>
 > **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
 > `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
 > runs on every per-build QC pass. It never fails a build over a transient
@@ -703,9 +788,122 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 >
 > **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
 > scorecards, and screenshots are written to a run-evidence root
-> (`skill6-fix/v2-<RUN_ID>/` or `/tmp`), never inside `06-ghl-install-pages/`,
+> (`skill6-fix/v2-<RUN_ID>/`), never inside `06-ghl-install-pages/`,
 > so a skill UPDATE (which overlays the whole skill dir) can never wipe a build's
 > history. Any new tool MUST keep durable run state out of the skill dir.
+> `/tmp` is NOT a run-evidence root: it is ephemeral scratch only, and on a
+> VPS/container it is tmpfs that a recreate wipes, so durable run state
+> (ledgers, run state, receipts) belongs under the durable root instead
+> (S06-05; see the provisioning contract in `ENV-MATRIX.md` and
+> `ghl_builder.ledger_root()` / `ghl_run_state.default_state_root()`).
+>
+> **Tenant-safe read-back + no-secret evidence (S06-08, doc 18 section 7).**
+> ONE read-back contract lives in `tools/ghl_evidence.py`: it DEFINES how
+> a run's evidence binds to the tenant it was gated for. The contract
+> text never upgrades a stamp into an enforcement: which families
+> enforce the binding in code, which only stamp it, and which only flag
+> it is stated per family below. `tenant_binding` is "bound" only when
+> expected and observed are both present and equal, "mismatch" when
+> both are present and unequal, and "unbound" when either is absent.
+> Field truth per family (native, additive): raw verify records stamp
+> `expected_location_id`, `observed_location_id`, and `tenant_binding`
+> on every record, and the verify summary carries `run_id`, the single
+> distinct `expected_location_id` (or None when the raw log declares
+> none or mixes them), a derived `tenant_binding`, and each page's own
+> observed id in its per-page rows (the summary has no single top-level
+> observed id). F6 receipts and ladder receipts stamp
+> `expected_location_id`, `observed_location_id`, and `tenant_binding`
+> on every record; a receipt's `run_id` appears only when the producing
+> call supplies one, while verify records and ladder receipts always
+> carry their run id. On those families a record that cannot bind
+> states `tenant_binding: "unbound"` explicitly, never a silent
+> omission. The run-state document is narrower: it stores
+> `expected_location_id` ONLY when one is supplied for a new run
+> (absent, not null, otherwise), stores NO `observed_location_id` and
+> NO stored `tenant_binding` ever, and its binding is DERIVED at report
+> time (`ghl_evidence.effective_binding`) rather than stored. Inventory
+> exports carry `observed_location_id` and `tenant_binding`, with the
+> pre-existing `location_id` serving the expected role; an export
+> carries NO `expected_location_id` field and NO contract `run_id`.
+> Deviation S06-08-DEV-01 (coordinator-accepted, room evidence): the Q1
+> disposition assigned the inventory export and the run-state document to
+> the read-back index below; as shipped they satisfy the contract HERE,
+> natively, with the per-family fields just stated (the run-state
+> document's conditional `expected_location_id` and derived binding;
+> the inventory export's `observed_location_id` and `tenant_binding`
+> under its `location_id`), and are NOT index members. The index's
+> designated members are the file-shaped artifacts named in the next
+> sentence. The shipped assignment is the contract.
+> File-shaped artifacts (render manifest + DOM/PNG/console captures, the
+> ID-handoff record, provisioning / path-set receipts) are the
+> designated members of the per-run read-back index
+> (`skill6-readback-index/1`, `<run>/readback-index.json`: run id,
+> expected location, each artifact's path + sha256, verified by
+> re-hash). The index is a PROVIDED mechanism in
+> `tools/ghl_evidence.py`: NO production module calls it yet (only its
+> definitions, its self-test, and the tests exercise it), so no
+> production run writes a `readback-index.json` today; the designated
+> members are the artifacts the index is designed to bind when a
+> production caller writes one. Observed != expected is a CONTRADICTION
+> (VerifyContradiction / ReceiptContradiction class), never a pass,
+> ONLY in the verify family (a mismatch forces PASS False, and
+> invariant 7 refuses a PASS record that is not "bound" in a
+> declared-expected run) and at the router's create and reuse success
+> gates (a read-back observing a different location than the gated
+> tenant fails the write; both gates require an actual observation, so
+> a gated run whose read-back obtains NO observation can still succeed
+> stamped "unbound"). The other families do NOT fail on a mismatch:
+> ladder receipts stamp the binding (including "mismatch") with no
+> verdict effect, so a ladder run can close SUCCESS carrying a mismatch
+> stamp; receipts flag and guard a mismatch (`reduce_receipts` groups
+> it in the summary's tenant section, `assert_consistent` refuses a
+> summary that conceals one or leaves a mixed-tenant reduction
+> undeclared, and since the D6 cure it also refuses a declared-expected
+> summary holding a verified receipt that is not "bound"), but
+> `reduce_receipts`' `all_verified` is NOT forced false by a mismatch
+> alone; inventory enumeration excludes rows naming a different tenant,
+> counts them in `tenant_mismatch_rows`, stamps the binding, and
+> returns normally without raising a contradiction. Fields are
+> additive-optional: a legacy record without them is
+> tenant-unbound and flagged as such, never silently bound; old evidence
+> roots stay readable; nothing already written is re-stamped. Order plans
+> are INPUTS, not evidence: never stamped, swept, or cited as proof.
+> Credential presence is stated as "resolvable via the canonical
+> resolver" (`tools/ghl_secret_resolver.py`); capability-probe output is
+> env-presence only (see the probe paragraph under Adaptive browser
+> lanes) and is never cited as evidence of resolvability.
+>
+> **No secret lands in evidence.** Every text sink (verify records,
+> DOM/console captures, receipt + ladder free-form fields, run-state
+> argv/carry, inventory exports, ledger extras) passes through the
+> evidence scrubber before write: generic secret SHAPES plus the run's
+> resolved secret VALUES, the values held in memory only and never
+> persisted as a pattern list; every redaction is counted, and the
+> count is recorded on the record in the families whose writers always
+> stamp it (raw verify records and the verify summary, F6 receipts,
+> ladder receipts). In several families the count is stored ONLY WHEN
+> NONZERO (inventory exports, the run-state document, the ID-handoff
+> record, builder ledger records), so in those families the absence of
+> a `redactions` key does not by itself distinguish "scrubbed, nothing
+> found" from "not stamped"; read-back index member entries likewise
+> carry a member's `redactions` count only when the caller supplied
+> one. Where masking cannot be done honestly (binary captures on the
+> login and payment steps), artifacts are SUPPRESSED at capture time
+> and the suppression is recorded (the `ghl_login_browser.py`
+> precedent; rule + record shape in `tools/ghl_evidence.py`). For
+> payment steps that sentence states the S06-08 rule and the recorded
+> suppression flag only: proof is fixture-tier, live payment capture
+> behavior is LIVE_PROOF_PENDING, and the payment capture surfaces are
+> owned by S06-06/S79. Evidence roots are mode 0700 on creation and
+> evidence files mode 0600, set explicitly by the writer (Q4 interim
+> default): `ghl_evidence.audit_evidence_permissions()` REPORTS a loose
+> root, never silently accepts it. The four `verify_all` writes (raw log,
+> summary, render manifest, mock sentinel) are PLAIN IN-PLACE writes, not
+> atomic renames: a partial or unparseable evidence file is FAILED
+> evidence, never a pass. Media manifest entries are stamped
+> `evidence_status: "caller_asserted"`: no build code fetches or verifies
+> the CDN object, and a caller-supplied "cdn_verified" claim is refused;
+> the rendered-<img> gate in `ghl_verify` is the independent read-back.
 >
 > **Page inventory + staged lifecycle — nothing auto-deletes client content
 > (U31/B-U17).** `tools/ghl_inventory.py` closes the VERIFIED absence noted
@@ -745,21 +943,25 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > into the `/api/health/deep` advisory shape (`inventory_advisory`) the same
 > way `cc_board.reconcile()`'s output already does (B-U13/U27, verified).
 >
-> **THE ONE LIVE GAP THIS UNIT SHIPS WITHOUT A WIRED ROUTE**: discovering the
-> SET of funnel ids for a location. Neither the official GHL public API (no
-> Funnels endpoint exists there — checked against Skill 44's own
-> `endpoints.py`) nor the proven internal SPA-canvas REST family
-> (`ghl_rest_canvas.py`, which only proves fetch-a-known-funnel-by-id and
-> list-pages-within-a-known-funnel) documents a "list every funnel for a
-> location" call. `funnel_lister` is a REQUIRED caller-supplied dependency
-> with no default live implementation (`live_funnel_lister_over_browser_
-> manager` raises `NotImplementedError` rather than ever fabricate a funnel
-> list) — wiring + proving a live discovery route (most likely a DOM-snapshot
-> walk of the Sites -> Funnels list, same discipline as
-> `ghl_selector_drift_probe.py`'s `finder`) is a live leg owed to the operator,
-> parallel to U22. `live_page_lister_over_rest_canvas` (the pages-within-a-
-> known-funnel half) IS wired to the already-proven `ghl_rest_canvas.page_
-> list` step, ready the moment a funnel id is available.
+> **THE FORMER LIVE GAP IS CLOSED AT BUILD TIER (S06-07, doc 19 W3)**:
+> discovering the SET of funnel ids for a location. Doc 19 (W3) corrects
+> the claim this block used to carry: the official GHL public API DOES
+> document funnel/page READ endpoints (`GET /funnels/funnel/list` and
+> `GET /funnels/page`), captured from the public documentation in S06-07
+> step 1. The supported public reads live in `tools/ghl_funnels_read.py`
+> (services origin, Bearer LOCATION PIT via the shared resolver,
+> fail-closed pagination) and are wired as the inventory defaults
+> (`live_funnel_lister_over_public_api` / `live_page_lister_over_public_
+> api`, behind `ghl_inventory.py --enumerate`). NO public WRITE API for
+> funnels/pages is documented or claimed: create stays on the internal
+> canvas / browser rails, and internal routes stay labeled internal.
+> `live_funnel_lister_over_browser_manager` remains as the still-unproven
+> BROWSER route sketch (it still raises `NotImplementedError`); it is no
+> longer the only route, just not a proven one. LIVE PROOF of the public
+> reads is still owed (LIVE_PROOF_PENDING: no approved test location for
+> these reads), parallel to U22. `live_page_lister_over_rest_canvas`
+> (the pages-within-a-known-funnel half over the INTERNAL canvas family)
+> remains wired and labeled internal.
 >
 > **Scheduled maintenance-window sweep (U31/B-U17).** The retention half
 > above is entirely live-wiring-free today (compress-only, zero live

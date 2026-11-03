@@ -55,6 +55,7 @@
 #   bash browser_manager.sh session-name
 #   bash browser_manager.sh auth-age [-- <session>]    # F5-b: seconds since last seed (-1=unknown)
 #   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
+#   bash browser_manager.sh watchdog                   # P3: one Playwright-lane watchdog sweep
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
@@ -269,10 +270,17 @@ _bm_lock_acquire() {
 
 # ── LEASE (Approach 0 graft) — process+mtime liveness, never .pid ─────────────
 _bm_now() { date -u +%s; }
+# PID start-time token — with the PID this is a PID-REUSE-SAFE process identity
+# (plan P3: "watchdog keyed by lease+PID+start-time+profile-path"). A recycled
+# PID has a different start time and can never match a stale lease.
+_bm_pid_start() {
+  ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | tr -d '"\\' | sed -e 's/^ //' -e 's/ $//'
+}
 _bm_write_lease() {
   local session="$1"
-  printf '{"session":"%s","manager_pid":%s,"started_epoch":%s,"ttl_sec":%s,"box_id":"%s","override":%s}\n' \
+  printf '{"session":"%s","manager_pid":%s,"started_epoch":%s,"ttl_sec":%s,"box_id":"%s","override":%s,"pid_start":"%s","profile_path":"%s"}\n' \
     "$session" "$$" "$(_bm_now)" "$AB_SESSION_TTL" "$(_bm_box_id)" "$_BM_OVERRIDE" \
+    "$(_bm_pid_start $$)" "${AB_ENGINE_DIR:-$HOME/.agent-browser}" \
     > "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
 }
 
@@ -491,15 +499,36 @@ _bm_start_ttl() {
 }
 
 # ── GUARANTEED TEARDOWN ───────────────────────────────────────────────────────
+# _bm_release_lock — drop the box singleton lock WE hold. Call LAST, never first:
+# releasing before close/state-clear let a successor acquire the lock and then have
+# its canonical session closed by us (finding 26). On the mkdir branch the owned
+# `pid` file is still inside the lock dir, so a bare `rmdir` fails and leaves the
+# stale directory behind — remove the owned pid first, then rmdir.
+_bm_release_lock() {
+  # ONLY ever drop a lock WE hold. _bm_teardown can fire twice (an INT/TERM trap
+  # fire followed by the EXIT fire): after the first release a successor may own
+  # the lock, and removing ITS pid / `rm -rf`-ing ITS dir would silently drop a
+  # live successor's box lock — the same successor race as finding 26, one level
+  # down. The pid file is removed only when it is OURS (or absent), so a
+  # successor's recorded pid always survives even in the same lock dir.
+  [ "$_BM_LOCK_HELD" = "1" ] || return 0
+  flock -u 9 2>/dev/null || true
+  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
+    local _bm_lock_pid=""
+    _bm_lock_pid="$(cat "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true)"
+    if [ -z "$_bm_lock_pid" ] || [ "$_bm_lock_pid" = "$$" ]; then
+      rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
+      rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+    fi
+  fi
+  _BM_LOCK_HELD=0
+}
+
 # Closes ONLY the canonical session (NEVER close --all — blast-radius safety,
 # Approach 3 tradeoff; close --all is reserved for the reaper / breaker trip).
 _BM_SESSION=""
 _bm_teardown() {
   [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
-  flock -u 9 2>/dev/null || true
-  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || true
-  fi
   if [ -n "$_BM_SESSION" ]; then
     command "$AB_BIN" --headed false close --session "$_BM_SESSION" 2>/dev/null || true
     command "$AB_BIN" --headed false state clear "$_BM_SESSION" 2>/dev/null || true
@@ -510,7 +539,9 @@ _bm_teardown() {
     # of a session regardless; this is hygiene, not a correctness dependency.)
     rm -f "$(_bm_auth_stamp_file "$_BM_SESSION")" 2>/dev/null || true
   fi
-  _BM_LOCK_HELD=0
+  _bm_release_lock   # LAST: close + clear happened while we still owned the lock
+  _BM_SESSION=""     # idempotent: a second trap fire must not close/re-clear a
+                     # session a SUCCESSOR now owns (finding 26, double-fire path)
 }
 
 # ── B1 VERSION-GATE — refuse to launch a browser build through an old/headed guard
@@ -604,6 +635,32 @@ bm_capability_preflight() {
   return 0
 }
 
+# ── S06-05: VPS provisioning preflight (WARN-only, OPT-IN) ──────────────────
+# Runs the provisioning verifier (tools/ghl_vps_provision_check.py) in its
+# advisory mode and forwards its finding lines to stderr. OPT-IN: completely
+# silent unless GHL_VPS_PROVISION_CLIENT names the client/location identity
+# the box serves (an unconfigured box has nothing to verify against, and a
+# preflight that invents findings is worse than none). Advisory ONLY —
+# never fails bm_ensure, exactly like the two preflights above; the gate
+# form is the standalone verifier run by the operator. Defers entirely
+# under BM_DURABLE_ROOT_OVERRIDE (test isolation), mirroring
+# bm_capability_preflight: a harness fake HOME must never gain real
+# provisioning findings or receipts.
+bm_provision_preflight() {
+  [ -n "${GHL_VPS_PROVISION_CLIENT:-}" ] || return 0
+  [ "${BM_DURABLE_ROOT_OVERRIDE+x}" = x ] && return 0
+  local py
+  py="$(command -v python3 || true)"
+  [ -z "$py" ] && return 0   # no python3 on PATH — silent, advisory only
+  local self_dir
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+  [ -f "$self_dir/ghl_vps_provision_check.py" ] || return 0
+  local out
+  out="$("$py" "$self_dir/ghl_vps_provision_check.py" --client "$GHL_VPS_PROVISION_CLIENT" --advisory 2>/dev/null)" || return 0
+  [ -n "$out" ] && echo "$out" >&2
+  return 0
+}
+
 # ── SESSION-EXPIRED (GHL login-bounce) circuit breaker ────────────────────────
 # INCIDENT (2026-07-30, operator box): a live securetoken exchange confirmed
 # the GHL Firebase ID token is a hard ONE-HOUR expiry (`expires_in: 3600`).
@@ -657,19 +714,14 @@ _bm_login_state() {
 _bm_release_lock_keep_session() {
   local session="$1"
   [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
-  flock -u 9 2>/dev/null || true
-  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
-    # inside it. Remove the pid file first, then rmdir, with the SAME `rm -rf`
-    # fallback `_bm_lock_acquire`'s own stale-lock reclaim already uses. Without
-    # this, the directory survives, our own PID is still recorded+alive inside
-    # it, and the reacquire two lines below in _bm_self_heal_reseed spins the
-    # full AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before
-    # REFUSING (exit 75) — self-deadlock, verified live in this fix's own test
-    # suite before this line was added.
-    rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
-  fi
+  # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
+  # inside it. `_bm_release_lock` removes the owned pid first, then rmdir, with
+  # the SAME `rm -rf` fallback `_bm_lock_acquire`'s own stale-lock reclaim uses.
+  # Without this, the directory survives, our own PID is still recorded+alive
+  # inside it, and the reacquire in _bm_self_heal_reseed spins the full
+  # AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before REFUSING
+  # (exit 75) — self-deadlock, verified live in this fix's own test suite.
+  _bm_release_lock
   rm -f "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
   _BM_LOCK_HELD=0
 }
@@ -791,6 +843,7 @@ bm_ensure() {
   bm_require_current_guard || return $?   # B1: refuse old-guard / headed launch
   bm_stale_env_preflight                  # B-U15 item 3: advisory, never fails ensure
   bm_capability_preflight                 # P0-6: capability-probe advisory, never fails ensure
+  bm_provision_preflight                  # S06-05: provisioning advisory (opt-in), never fails ensure
   local session
   session="$(bm_session_name)"
   bm_assert_session "$session"
@@ -881,6 +934,22 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       else
         echo "FRESH"; exit 1
       fi
+      ;;
+    watchdog)
+      # P3: ONE watchdog sweep over the Playwright-lane leases (*.pwlease).
+      # The implementation lives once, in browser_manager.py (PID-reuse-safe
+      # lease identity: PID + start-time + exact owned profile path; graceful
+      # stop before force; personal Chrome never signaled). LOCK-FREE: a sweep
+      # never takes the box singleton lock (it only reclaims leases whose owner
+      # is dead/reused or whose bounded lifetime passed).
+      _bm_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+      if [ -f "$_bm_self_dir/browser_manager.py" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$_bm_self_dir/browser_manager.py" --pw-watchdog
+      else
+        echo "WARN watchdog: python3/browser_manager.py unavailable — sweep skipped" >&2
+        echo '{"reclaimed": [], "healthy": [], "detail": {}, "error": "skipped"}'
+      fi
+      exit 0
       ;;
     probe)
       # P0-6 / plan 2.4-1: capability probe. LOCK-FREE (auth-age model):
@@ -1019,7 +1088,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       echo "TORN-DOWN: session=$(bm_session_name)"
       ;;
     *)
-      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale|probe} [-- args...]" >&2
+      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale|watchdog|probe} [-- args...]" >&2
       exit 64
       ;;
   esac

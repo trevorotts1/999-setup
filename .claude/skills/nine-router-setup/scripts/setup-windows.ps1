@@ -346,8 +346,9 @@ function Link-BundledSkills([string]$Root) {
     }
     $failures = 0
     # One plan, produced by the same adapter the macOS installer calls: it
-    # decides the source, the target and whether a link is already current.
-    # Only the link mechanic below (junction here, symlink on macOS) differs.
+    # decides the source, the target, whether a link is already current and
+    # whether an existing installation must be PRESERVED. Only the link
+    # mechanic below (junction here, symlink on macOS) differs.
     $adapter = Get-BundleAdapter
     if ($adapter) {
         $plan = @(& python -I -B $adapter --root $RepoRoot --install-plan --claude-root $Root 2>$null)
@@ -365,62 +366,32 @@ function Link-BundledSkills([string]$Root) {
             $parts = $line -split "`t"
             if ($parts.Count -lt 4) { continue }
             $action = $parts[0]; $s = $parts[1]; $src = $parts[2]; $dst = $parts[3]
-            if ($action -eq 'missing') {
-                Write-Log "skill ERROR: $s : no source found (manifest skill absent from repo and $env:USERPROFILE\.claude\skills)"
-                $failures++
-                continue
-            }
-            if ($action -eq 'up-to-date') {
-                Write-Log "skill up to date: $s -> $dst"
-                continue
-            }
-            if ($replaceActions -contains $action) {
-                if (-not (Link-OneBundledSkill $s $src $dst -Authorized)) { $failures++ }
-                continue
-            }
-            if ($action -eq 'backup-and-link') {
-                # The adapter emits this ONLY for an EMPTY real destination
-                # (nothing to lose): inspect it, remove the empty directory
-                # NONRECURSIVELY, verify the removal, then junction it.
-                # Nothing is ever moved to .claude-skill-backups.
-                $isEmpty = $false
-                try {
-                    $existing = Get-Item -LiteralPath $dst -Force -ErrorAction Stop
-                    if ($existing.PSIsContainer -and (-not $existing.LinkType)) {
-                        $children = @(Get-ChildItem -LiteralPath $dst -Force -ErrorAction Stop)
-                        $isEmpty = ($children.Count -eq 0)
-                    }
-                } catch {
-                    Write-Log "skill ERROR: $s : cannot inspect $dst ($($_.Exception.Message)) - left untouched"
-                    $failures++
-                    continue
-                }
-                if ($isEmpty) {
-                    $removed = $false
-                    try { Remove-Item -LiteralPath $dst -Force -ErrorAction Stop; $removed = $true }
-                    catch { Write-Log "skill ERROR: $s : could not remove the empty directory $dst" }
-                    if ($removed) {
-                        if (-not (Link-OneBundledSkill $s $src $dst -Authorized)) { $failures++ }
-                    } else {
-                        $failures++
-                    }
-                } else {
-                    Write-Log "skill ERROR: $s : plan says backup-and-link but $dst is not an empty directory - left untouched"
+            $reason = ''
+            if ($parts.Count -gt 5) { $reason = $parts[5] }
+            switch ($action) {
+                'missing' {
+                    Write-Log "skill ERROR: $s : no source found (manifest skill absent from repo and $env:USERPROFILE\.claude\skills)"
                     $failures++
                 }
-                continue
+                'up-to-date' { Write-Log "skill up to date: $s -> $dst" }
+                { $_ -in @('link', 'relink') } {
+                    if (-not (Link-OneBundledSkill $s $src $dst)) { $failures++ }
+                }
+                'preserve' {
+                    # decide() refused or held this installation: a newer stamp,
+                    # an unreadable stamp, or bytes that are not the shipped tree
+                    # (the destination-only compatibility files live there).
+                    # Nothing is written and no backup is minted.
+                    Write-Log "skill preserved: $s : $dst left unchanged ($reason)"
+                }
+                default {
+                    # An action this consumer does not know is NEVER a link:
+                    # linking on an unknown action is how a plan row silently
+                    # replaced a real installation.
+                    Write-Log "skill ERROR: $s : unknown plan action '$action' for $dst - refusing to touch it"
+                    $failures++
+                }
             }
-            if ($action -like 'preserve-*') {
-                # The adapter consulted the SAME preservation decision as the
-                # update path: an existing real installation that is not
-                # provably this bundle at a lower version is left EXACTLY as it
-                # is - no junction, no backup, no destination-only file moved.
-                Write-Log "skill preserved ($action): $s -> $dst (existing installation left untouched)"
-                continue
-            }
-            # Fail closed: an action this consumer does not know never links.
-            Write-Log "skill ERROR: $s : unknown plan action '$action' - refusing to touch $dst"
-            $failures++
         }
         return $failures
     }

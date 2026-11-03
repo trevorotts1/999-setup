@@ -1,0 +1,538 @@
+{
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
+  "id": "abandoned-checkout-recovery",
+  "lane": "launch-b",
+  "name": "Abandoned Checkout Recovery (Started, Unpaid)",
+  "aliases": [
+    "Started Unpaid Recovery",
+    "Checkout Started Not Paid",
+    "Abandoned Checkout Sequence",
+    "Unpaid Order Recovery"
+  ],
+  "category": "multichannel-automation",
+  "template": "abandoned-cart-multichannel-recovery",
+  "template_path": "44-convert-and-flow-operator/automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json",
+  "purpose": "Recover contacts who started checkout and remain unpaid. The sequence fires only after a start with no purchase, re-checks the purchase tag before every send, and stops the whole lane permanently on the purchase event.",
+  "trigger": {
+    "what_starts_it": "Contact starts checkout (Step 1 contact details captured) and stays unpaid past the abandon window of 30 minutes.",
+    "event": "checkout_started",
+    "unpaid_window_minutes": 30,
+    "ghl_trigger_type": "Form Submitted on Step 1 order form -> Wait 30 min -> IF/ELSE tag 'purchased-[offer-id]' NOT present -> enter sequence",
+    "fires": "Once per contact per offer",
+    "reentry_guard": "Enter only if tag 'cart-abandon-started' is NOT present AND tag 'purchased-[offer-id]' is NOT present"
+  },
+  "stop_on_purchase": {
+    "enabled": true,
+    "purchase_tag": "purchased-[offer-id]",
+    "check_before_every_send": true,
+    "on_purchase": [
+      "Add tag 'purchased-[offer-id]'",
+      "Remove tag 'cart-abandon-started'",
+      "Stop all abandonment nodes for this contact and offer",
+      "Remove from retargeting audience D",
+      "Route to buyer onboarding"
+    ],
+    "no_send_after_purchase": true
+  },
+  "channels": [
+    "Email (primary)",
+    "SMS / Text (secondary, only when email not opened)",
+    "Facebook Messenger (tertiary, only if 'messenger-subscribed')"
+  ],
+  "sequence": [
+    {
+      "step": 1,
+      "beat": "'You left something behind' email",
+      "delay_minutes": 30,
+      "delay_note": "Measured from checkout start. Runs only when still unpaid at the gate.",
+      "channels_active": [
+        "Email"
+      ],
+      "gate": {
+        "type": "purchase_check",
+        "when": "before_send",
+        "if_purchased": "exit_to_buyer_onboarding"
+      },
+      "purpose": "First recovery touch. Soft, helpful, direct link back to checkout.",
+      "subject": "Did something come up? Your [offer name] is waiting for you",
+      "body_framework": [
+        "Hey [name] - looks like you started checking out [offer name] and something came up before you finished.",
+        "No worries - your order is still here.",
+        "One-line value reminder: what they were about to get plus the key benefit",
+        "Direct link back to checkout: [Complete your order here: {{checkout_url}}]",
+        "Friction reducer: {{guarantee_statement}} or how fast delivery is",
+        "Personal sign-off from the AC"
+      ]
+    },
+    {
+      "step": 2,
+      "beat": "Email open branch -> SMS nudge (if not opened)",
+      "delay_minutes": 120,
+      "delay_note": "+2 hours after step 1 email",
+      "channels_active": [
+        "SMS",
+        "Messenger"
+      ],
+      "gate": {
+        "type": "purchase_check",
+        "when": "before_send",
+        "if_purchased": "exit_to_buyer_onboarding",
+        "then": "email_opened? -> skip this step; not opened -> send SMS and Messenger"
+      },
+      "purpose": "Switch channel only when the email went unopened. Short, direct, no pitch.",
+      "sms": "Hey [name] - [AC name] here. You started grabbing [offer] a bit ago. Here is the link to finish: {{checkout_url}}. No pressure at all.",
+      "messenger": "Hey [name] - you were grabbing [offer] earlier! Here is the link to finish up if you want: {{checkout_url}}. Happy to help if you have any questions.",
+      "conditions": [
+        "sms-subscribed for SMS",
+        "messenger-subscribed for Messenger"
+      ]
+    },
+    {
+      "step": 3,
+      "beat": "Story / objection handle email",
+      "delay_minutes": 1440,
+      "delay_note": "+24 hours after checkout abandon",
+      "channels_active": [
+        "Email"
+      ],
+      "gate": {
+        "type": "purchase_check",
+        "when": "before_send",
+        "if_purchased": "exit_to_buyer_onboarding"
+      },
+      "purpose": "Address the most common hesitation with a short story and restate the guarantee.",
+      "subject": "The #1 thing people worry about with [offer name] (and what actually happens)",
+      "body_framework": [
+        "Empathy for the hesitation",
+        "Short customer story that names the objection and resolves it",
+        "Restate guarantee / risk reversal",
+        "Link back to checkout"
+      ]
+    },
+    {
+      "step": 4,
+      "beat": "SMS / Messenger urgency touch",
+      "delay_minutes": 2880,
+      "delay_note": "+48 hours after checkout abandon",
+      "channels_active": [
+        "SMS",
+        "Messenger"
+      ],
+      "gate": {
+        "type": "purchase_check",
+        "when": "before_send",
+        "if_purchased": "exit_to_buyer_onboarding"
+      },
+      "purpose": "Light urgency only when a real reason exists. No fabricated countdowns.",
+      "sms": "Hey [name] - quick heads-up: {{urgency_reason}}. Link: {{checkout_url}}. No worries if the timing is not right.",
+      "messenger": "Hey [name] - quick heads-up: {{urgency_reason}}. Here is the link: {{checkout_url}}. No worries if the timing is not right.",
+      "urgency_rule": "Send only with a genuine reason. If none exists, use {{urgency_reason}} as a plain check-in, never a fake deadline.",
+      "conditions": [
+        "sms-subscribed for SMS",
+        "messenger-subscribed for Messenger"
+      ]
+    },
+    {
+      "step": 5,
+      "beat": "Last call email",
+      "delay_minutes": 4320,
+      "delay_note": "+72 hours after checkout abandon",
+      "channels_active": [
+        "Email"
+      ],
+      "gate": {
+        "type": "purchase_check",
+        "when": "before_send",
+        "if_purchased": "exit_to_buyer_onboarding"
+      },
+      "purpose": "Graceful close, door left open.",
+      "subject": "Last note about [offer name]",
+      "body_framework": [
+        "This is my last message about [offer] - I do not want to fill your inbox.",
+        "One-line value summary",
+        "Real deadline if one exists; otherwise the link stays open: {{checkout_url}}",
+        "Graceful close and what they will keep receiving"
+      ]
+    },
+    {
+      "step": 6,
+      "beat": "Purchase event - stop all and route",
+      "delay_minutes": 0,
+      "delay_note": "Fires immediately on purchase at any point in the sequence",
+      "channels_active": [
+        "System"
+      ],
+      "gate": {
+        "type": "purchase_event",
+        "when": "on_purchase",
+        "action": "stop_all_and_route"
+      },
+      "purpose": "Hard stop. No abandonment message may send after a purchase.",
+      "actions": [
+        "Add tag 'purchased-[offer-id]'",
+        "Remove tag 'cart-abandon-started'",
+        "Stop every node in this lane for the contact and offer",
+        "Remove from retargeting audience D",
+        "Start buyer onboarding"
+      ]
+    }
+  ],
+  "dependencies": {
+    "tags": [
+      "cart-abandon-started",
+      "purchased-[offer-id]",
+      "messenger-subscribed",
+      "sms-subscribed"
+    ],
+    "custom_values": [
+      "{{checkout_url}}",
+      "{{offer_name}}",
+      "{{guarantee_statement}}",
+      "{{urgency_reason}}"
+    ]
+  },
+  "ghl_build": {
+    "builder": "Skill 44 - Convert & Flow Operator (caf)",
+    "draft_only": true,
+    "live": false,
+    "draft_only_state": "Every workflow is created as a draft. Triggers are written `status: draft` and `active` stays gated by CAF_DRAFT_ONLY. Nothing sends, nothing goes live. Live switch-on is a separate client approval.",
+    "workflow_nodes": [
+      "Trigger: Form Submitted (Step 1 order form)",
+      "Wait 30 minutes",
+      "If/Else: purchased-[offer-id] present? Yes -> exit to buyer onboarding; No -> continue",
+      "Add Tag cart-abandon-started",
+      "Email CA-01 You Left Something Behind",
+      "Wait 2 hours",
+      "If/Else: purchased? Yes -> exit; No -> If email opened in 2h? Yes -> skip; No -> SMS CA-S01 and (if messenger-subscribed) Messenger CA-M01",
+      "Wait 22 hours",
+      "If/Else: purchased? Yes -> exit; No -> Email CA-02 Story/Objection Handle",
+      "Wait 24 hours",
+      "If/Else: purchased? Yes -> exit; No -> SMS CA-S02 and (if subscribed) Messenger CA-M02",
+      "Wait 24 hours",
+      "If/Else: purchased? Yes -> exit; No -> Email CA-03 Last Call",
+      "Remove Tag cart-abandon-started"
+    ],
+    "purchase_interrupt": "Add purchased-[offer-id]; remove cart-abandon-started; stop all lane nodes; start buyer onboarding.",
+    "notes": "Set order and parentKey on every node before first save. Emails CA-01..CA-03 in GHL Email Builder; SMS CA-S01..CA-S02; Messenger CA-M01..CA-M02."
+  },
+  "copy_persona": {
+    "tone": "Helpful, personal, low-pressure. The AC is a trusted guide who noticed the prospect stopped, not a pushy salesperson.",
+    "voice": "First person from the Attractive Character. Personal sign-off.",
+    "email_mechanics": "150-300 words max. Short paragraphs. One CTA per email - the click back to checkout."
+  },
+  "flexibility": {
+    "core_principle": "This lane is a guide and a resource, never a rule. The user's explicit desire wins.",
+    "timing": "30 min / 2h / 24h / 48h / 72h are defaults. Compress for high-ticket; extend for subscriptions.",
+    "non_negotiable": "The purchase check before every send and the hard stop on purchase."
+  },
+  "build_graph_resolution": "Authoring choices that clear the prose-only 'missing' reason: the 'email opened in 2h? Yes -> skip' branch targets the 22-hour wait node (n12, a join). The SMS (sms-subscribed) and Messenger (messenger-subscribed) guards are sequential if_else nodes, and each false arm continues to the next node. Every 'purchased?' check plus the final email joins at x1 (remove cart-abandon-started), then x2 workflow_goal: the purchase goal event stops the lane at any point, and buyer onboarding starts from the post-sale family.",
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Form Submitted (Step 1 order form)",
+        "ref": "1. Trigger: Form Submitted (Step 1 order form)"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "wait",
+      "after": "trg",
+      "attributes": {
+        "duration": "30 minutes",
+        "kind": "duration",
+        "ref": "2. Wait 30 minutes"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "if_else",
+      "after": "n1",
+      "branches": {
+        "true": "x1",
+        "false": "n3"
+      },
+      "attributes": {
+        "condition": "contact has tag `purchased-[offer-id]`",
+        "ref": "3. If/Else purchased? Yes -> exit; No -> continue"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "add_contact_tag",
+      "after": "n2",
+      "attributes": {
+        "tag": "cart-abandon-started",
+        "ref": "4. Add Tag cart-abandon-started"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "email",
+      "after": "n3",
+      "attributes": {
+        "message": "CA-01 You Left Something Behind",
+        "timing": "Immediately",
+        "ref": "5. Email CA-01"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "wait",
+      "after": "n4",
+      "attributes": {
+        "duration": "2 hours",
+        "kind": "duration",
+        "ref": "6. Wait 2 hours"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "if_else",
+      "after": "n5",
+      "branches": {
+        "true": "x1",
+        "false": "n7"
+      },
+      "attributes": {
+        "condition": "contact has tag `purchased-[offer-id]`",
+        "ref": "7. If/Else purchased? Yes -> exit"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "if_else",
+      "after": "n6",
+      "branches": {
+        "true": "n12",
+        "false": "n8"
+      },
+      "attributes": {
+        "condition": "email CA-01 opened",
+        "ref": "7. If email opened in 2h? Yes -> skip to the 22-hour wait (node 8)"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "if_else",
+      "after": "n7",
+      "branches": {
+        "true": "n9",
+        "false": "n10"
+      },
+      "attributes": {
+        "condition": "contact has tag `sms-subscribed`",
+        "ref": "7. SMS CA-S01 gated on sms-subscribed"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "sms",
+      "after": "n8",
+      "attributes": {
+        "message": "CA-S01",
+        "ref": "7. SMS CA-S01"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "if_else",
+      "after": [
+        "n8",
+        "n9"
+      ],
+      "branches": {
+        "true": "n11",
+        "false": "n12"
+      },
+      "attributes": {
+        "condition": "contact has tag `messenger-subscribed`",
+        "ref": "7. (if messenger-subscribed) Messenger CA-M01; not subscribed -> continue to node 8",
+        "join": true
+      }
+    },
+    {
+      "id": "n11",
+      "type": "messenger",
+      "after": "n10",
+      "attributes": {
+        "message": "CA-M01",
+        "ref": "7. Messenger CA-M01"
+      }
+    },
+    {
+      "id": "n12",
+      "type": "wait",
+      "after": [
+        "n7",
+        "n10",
+        "n11"
+      ],
+      "attributes": {
+        "duration": "22 hours",
+        "kind": "duration",
+        "ref": "8. Wait 22 hours",
+        "join": true
+      }
+    },
+    {
+      "id": "n13",
+      "type": "if_else",
+      "after": "n12",
+      "branches": {
+        "true": "x1",
+        "false": "n14"
+      },
+      "attributes": {
+        "condition": "contact has tag `purchased-[offer-id]`",
+        "ref": "9. If/Else purchased? Yes -> exit"
+      }
+    },
+    {
+      "id": "n14",
+      "type": "email",
+      "after": "n13",
+      "attributes": {
+        "message": "CA-02 Story/Objection Handle",
+        "ref": "9. Email CA-02"
+      }
+    },
+    {
+      "id": "n15",
+      "type": "wait",
+      "after": "n14",
+      "attributes": {
+        "duration": "24 hours",
+        "kind": "duration",
+        "ref": "10. Wait 24 hours"
+      }
+    },
+    {
+      "id": "n16",
+      "type": "if_else",
+      "after": "n15",
+      "branches": {
+        "true": "x1",
+        "false": "n17"
+      },
+      "attributes": {
+        "condition": "contact has tag `purchased-[offer-id]`",
+        "ref": "11. If/Else purchased? Yes -> exit"
+      }
+    },
+    {
+      "id": "n17",
+      "type": "if_else",
+      "after": "n16",
+      "branches": {
+        "true": "n18",
+        "false": "n19"
+      },
+      "attributes": {
+        "condition": "contact has tag `sms-subscribed`",
+        "ref": "11. SMS CA-S02 gated on sms-subscribed"
+      }
+    },
+    {
+      "id": "n18",
+      "type": "sms",
+      "after": "n17",
+      "attributes": {
+        "message": "CA-S02",
+        "ref": "11. SMS CA-S02"
+      }
+    },
+    {
+      "id": "n19",
+      "type": "if_else",
+      "after": [
+        "n17",
+        "n18"
+      ],
+      "branches": {
+        "true": "n20",
+        "false": "n21"
+      },
+      "attributes": {
+        "condition": "contact has tag `messenger-subscribed`",
+        "ref": "11. (if subscribed) Messenger CA-M02",
+        "join": true
+      }
+    },
+    {
+      "id": "n20",
+      "type": "messenger",
+      "after": "n19",
+      "attributes": {
+        "message": "CA-M02",
+        "ref": "11. Messenger CA-M02"
+      }
+    },
+    {
+      "id": "n21",
+      "type": "wait",
+      "after": [
+        "n19",
+        "n20"
+      ],
+      "attributes": {
+        "duration": "24 hours",
+        "kind": "duration",
+        "ref": "12. Wait 24 hours",
+        "join": true
+      }
+    },
+    {
+      "id": "n22",
+      "type": "if_else",
+      "after": "n21",
+      "branches": {
+        "true": "x1",
+        "false": "n23"
+      },
+      "attributes": {
+        "condition": "contact has tag `purchased-[offer-id]`",
+        "ref": "13. If/Else purchased? Yes -> exit"
+      }
+    },
+    {
+      "id": "n23",
+      "type": "email",
+      "after": "n22",
+      "attributes": {
+        "message": "CA-03 Last Call",
+        "ref": "13. Email CA-03"
+      }
+    },
+    {
+      "id": "x1",
+      "type": "remove_contact_tag",
+      "after": [
+        "n2",
+        "n6",
+        "n13",
+        "n16",
+        "n22",
+        "n23"
+      ],
+      "attributes": {
+        "tags": [
+          "cart-abandon-started"
+        ],
+        "ref": "14. Remove Tag cart-abandon-started (also the purchase exit)",
+        "join": true
+      }
+    },
+    {
+      "id": "x2",
+      "type": "workflow_goal",
+      "after": "x1",
+      "attributes": {
+        "goal": "tag `purchased-[offer-id]` added (goal event: stops the lane at any point)",
+        "ref": "Purchase interrupt: stop all lane nodes; buyer onboarding starts from the post-sale family"
+      }
+    }
+  ]
+}

@@ -20,12 +20,15 @@ writes into a Claude config root — packaging must not create a second skills
 copy under a personal config root (directive 2.2 / 2.4).
 
 Modes:
-  (default)  mirror source -> dest: copy every canonical file, drop files the
-             source no longer ships (runtime __pycache__/*.pyc exempt)
-  --check    compare only; exit 1 on any drift, 0 when dest matches source
-             exactly (file set AND per-file sha256)
+  (default)  mirror source -> dest: copy/update every canonical file. Files
+             present only in dest (packaged compatibility shims) are PRESERVED
+             and reported, never unlinked; runtime __pycache__/*.pyc exempt.
+  --check    compare owned files only; exit 1 on missing or changed canonical
+             files. Destination-only files are reported as preserved, so a
+             pass proves owned-file parity, never whole-tree equality.
 
-Exit codes: 0 ok / match, 1 drift under --check, 2 usage or source error.
+Exit codes: 0 ok / owned-file match, 1 owned drift under --check, 2 usage or
+source error.
 stdlib only, no network.
 
 Build-time tool: running it end to end needs the canonical core (build-tree
@@ -90,18 +93,36 @@ def digest(files):
 
 
 def drift(src_files, dst):
+    """Owned-file problems only; destination-only files are preserved, not drift."""
     if not dst.is_dir():
         return ["destination missing: %s" % dst]
     dst_files = collect(dst)
     problems = []
     problems += ["missing: %s" % r for r in sorted(set(src_files) - set(dst_files))]
-    problems += ["extra: %s" % r for r in sorted(set(dst_files) - set(src_files))]
     problems += [
         "hash differs: %s" % r
         for r in sorted(set(src_files) & set(dst_files))
         if src_files[r] != dst_files[r]
     ]
     return problems
+
+
+def parity_report(src_files, dst_files, extras):
+    """Print digest evidence that never claims equality while extras exist."""
+    owned = {rel: dst_files[rel] for rel in src_files if rel in dst_files}
+    print(
+        "  owned-file tree sha256 canonical=%s packaged=%s"
+        % (digest(src_files), digest(owned))
+    )
+    if extras:
+        print(
+            "  destination-only files preserved (%d): NOT full-tree equal to canonical"
+            % len(extras)
+        )
+        for rel in extras:
+            print("    preserved: %s" % rel)
+    else:
+        print("  full-tree sha256 %s (no destination-only files)" % digest(dst_files))
 
 
 def sync(src, dst, src_files):
@@ -114,24 +135,17 @@ def sync(src, dst, src_files):
         d.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(s, d)
         written += 1
-    removed = 0
-    for p in sorted(dst.rglob("*")):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(dst).as_posix()
-        if "__pycache__" in rel or rel.endswith(".pyc"):
-            continue
-        if rel not in src_files:
-            p.unlink()
-            removed += 1
-    return written, removed
+    # Destination-only files are preserved and reported: the packaged tree may
+    # legitimately carry compatibility shims the canonical source does not ship.
+    preserved = sorted(set(collect(dst)) - set(src_files))
+    return written, preserved
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--source", help="canonical core directory (else DSAF_CANONICAL_CORE, else build-tree default)")
     ap.add_argument("--dest", help="packaged core directory (else this repo's skill scripts/core)")
-    ap.add_argument("--check", action="store_true", help="verify only; exit 1 on drift")
+    ap.add_argument("--check", action="store_true", help="verify only; exit 1 on owned drift")
     a = ap.parse_args(argv)
 
     src = resolve_source(a.source)
@@ -147,26 +161,32 @@ def main(argv=None):
     if a.check:
         problems = drift(src_files, dst)
         if problems:
-            print("package_core --check: %d problem(s), dest=%s" % (len(problems), dst))
+            print("package_core --check: %d owned problem(s), dest=%s" % (len(problems), dst))
             for p in problems:
                 print("  " + p)
             return 1
-        print("package_core --check: OK  %d files match canonical" % len(src_files))
-        print("  tree sha256 packaged=%s canonical=%s" % (digest(collect(dst)), digest(src_files)))
+        dst_files = collect(dst)
+        extras = sorted(set(dst_files) - set(src_files))
+        print(
+            "package_core --check: OK  %d owned files match canonical%s"
+            % (len(src_files), "" if extras else " (full tree)")
+        )
+        parity_report(src_files, dst_files, extras)
         return 0
 
-    written, removed = sync(src, dst, src_files)
+    written, preserved = sync(src, dst, src_files)
     problems = drift(src_files, dst)
+    dst_files = collect(dst)
     if problems:
-        print("package_core: post-write verification FAILED")
+        print("package_core: post-write verification FAILED (%d owned problem(s))" % len(problems))
         for p in problems:
             print("  " + p)
         return 1
     print(
-        "package_core: OK  %d files (%d written, %d stale removed) source=%s dest=%s"
-        % (len(src_files), written, removed, src, dst)
+        "package_core: OK  %d owned files (%d written, %d destination-only preserved) source=%s dest=%s"
+        % (len(src_files), written, len(preserved), src, dst)
     )
-    print("  tree sha256 packaged=%s canonical=%s" % (digest(src_files), digest(src_files)))
+    parity_report(src_files, dst_files, preserved)
     print("  packaged tree only — no Claude config root was read or written")
     return 0
 

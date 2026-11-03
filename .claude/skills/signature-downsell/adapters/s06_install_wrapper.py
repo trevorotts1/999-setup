@@ -25,7 +25,9 @@ provisional by design.
 This wrapper produces the S06 install PLAN for the D1 page and nothing
 else. It performs NO install, NO network call, and NO file write: the
 plan object is handed to Skill 6's native install rail later. A plan
-is not evidence of an installed binding.
+is not evidence of an installed binding. Status: design only; not
+installed. ``install_d1_page`` refuses and names the scheduled Skill 06
+work items (S06-02, UPS-08) instead of doing nothing.
 
 The shape mirrors the committed S06 plan layer: the product binding is
 CALLER-SUPPLIED (this wrapper never invents a native product or price
@@ -51,6 +53,33 @@ class InstallPlanError(Exception):
         self.code = code
         self.detail = detail
         self.missing = list(missing or [])
+
+
+# DTY-11: the D1 page is design-only until Skill 6 ships a native
+# install step for it. Skill 06 work items that schedule that step:
+# S06-02 (commerce driver) and UPS-08 (extra-offer install). Any client
+# summary line for D1 reads DESIGN_ONLY_STATUS until Skill 6 records a
+# binding read-back for it.
+DESIGN_ONLY_STATUS = "design only; not installed"
+SCHEDULED_SKILL06_WORK_ITEMS = ("S06-02", "UPS-08")
+
+
+class InstallRefusedError(InstallPlanError):
+    """The D1 install was requested but no installer exists. Raised by
+    ``install_d1_page``; ``detail`` names the scheduled Skill 06 work
+    items so the refusal is never a silent no-op."""
+
+
+def install_d1_page(*_args, **_kwargs):
+    """Refuse. This package has no installer: Skill 6's native install
+    step for D1 is scheduled work (``SCHEDULED_SKILL06_WORK_ITEMS``), not
+    shipped code. Always raises ``InstallRefusedError``; never returns,
+    never writes, never calls the network."""
+    raise InstallRefusedError(
+        "D1-INSTALL-DESIGN-ONLY",
+        f"{DESIGN_ONLY_STATUS}: no D1 installer exists; the native "
+        "install is scheduled Skill 06 work item(s) "
+        + " / ".join(SCHEDULED_SKILL06_WORK_ITEMS))
 
 
 # Required fields of schemas/downsell-request.schema.json, in the
@@ -82,6 +111,45 @@ def _require_const(request, field, expected, code):
         raise InstallPlanError(
             code, f"request {field} must be {expected!r}, got "
             f"{request.get(field)!r}")
+
+# The adoption map 1.5 dual-accept pair rule, applied at the plan
+# layer: request 1.0 must carry no prompt_policy_id key, and request
+# 1.1 must carry it as a non-empty string. The citation itself is
+# read at the receipt and registry layer (map section 4); the plan
+# dict never echoes it, and plan_kind / provisional-1 are unchanged.
+POLICY_FIELD = "prompt_policy_id"
+
+def _check_request_version_pair(request):
+    version = request.get("schema_version")
+    if version == "1.0":
+        if POLICY_FIELD in request:
+            raise InstallPlanError(
+                "D1-INSTALL-REQUEST-UNEXPECTED-PROMPT_POLICY_ID",
+                "request schema_version 1.0 must not carry "
+                f"{POLICY_FIELD} (the 1.0 contract has no such field)")
+        return
+    if version == "1.1":
+        if POLICY_FIELD not in request:
+            raise InstallPlanError(
+                "D1-INSTALL-REQUEST-MISSING-PROMPT_POLICY_ID",
+                "request schema_version 1.1 must carry a non-empty "
+                f"{POLICY_FIELD}; the request carries none")
+        value = request.get(POLICY_FIELD)
+        if not isinstance(value, str):
+            raise InstallPlanError(
+                "D1-INSTALL-REQUEST-PROMPT_POLICY_ID-WRONG-TYPE",
+                f"{POLICY_FIELD} must be a non-empty string, got "
+                f"{value!r}")
+        if _blank(value):
+            raise InstallPlanError(
+                "D1-INSTALL-REQUEST-PROMPT_POLICY_ID-TOO-SHORT",
+                f"{POLICY_FIELD} must be a non-empty string, got "
+                f"{value!r}")
+        return
+    raise InstallPlanError(
+        "D1-INSTALL-REQUEST-SCHEMA-VERSION",
+        "request schema_version must be '1.0' or '1.1', got "
+        f"{version!r}")
 
 
 def build_install_plan(request, product_binding, page_bundle):
@@ -117,8 +185,7 @@ def build_install_plan(request, product_binding, page_bundle):
         raise InstallPlanError(
             "D1-INSTALL-REQUEST-MISSING-FIELDS",
             "page request is missing required fields", missing=missing)
-    _require_const(request, "schema_version", "1.0",
-                   "D1-INSTALL-REQUEST-SCHEMA-VERSION")
+    _check_request_version_pair(request)
     _require_const(request, "page_role", "downsell_1",
                    "D1-INSTALL-REQUEST-PAGE-ROLE")
     _require_const(request, "assigned_skill", 81,
@@ -231,6 +298,9 @@ def build_install_plan(request, product_binding, page_bundle):
         "provisional": True,
         "executes_install": False,
         "network_calls": False,
+        "installed": False,
+        "install_status": DESIGN_ONLY_STATUS,
+        "scheduled_skill06_work_items": list(SCHEDULED_SKILL06_WORK_ITEMS),
         "skill": 81,
         "page_role": "downsell_1",
         "request_id": request["request_id"],

@@ -1,0 +1,560 @@
+"""L04 artifact proof and package validation (UL-008).
+
+The launcher's package is only as good as the receipt that proves it. These
+tests are synthetic-local: no network, no provider call, no live send. They
+prove the acceptance this lane owns:
+
+  * canonical launch-plan validation: cycles, unknown dependencies, unsupported
+    schema versions and non-draft units fail closed;
+  * calendar validation: IANA zones, DST-correct offsets, strict phase order;
+  * typed per-unit receipts bound to tenant, location, launch, revision and the
+    approved plan hash, each carrying artifact bytes, the request it answers
+    and the lane that validated it;
+  * authored / draft-installed / tested / live-verified proof stay separate, so
+    a draft is never read as live;
+  * zero-byte or tampered artifacts never recover a unit to done.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = SKILL_ROOT.parent
+BF_PLAN = REPO_ROOT / "shared-utils/signature_launch_contract/fixtures/black-friday.json"
+sys.path.insert(0, str(SKILL_ROOT))
+
+from launcher_core import (  # noqa: E402
+    checks, council, intake, launch_plan, package, route,
+)
+
+
+_UNSET = object()
+
+
+def _base_intake_raw(launch_id: str = "black-friday-2026") -> dict:
+    return {
+        "schema_version": "1.0",
+        "tenant_id": "tenant-a",
+        "location_id": "loc-a",
+        "launch_id": launch_id,
+        "revision": 1,
+        "journey_mode": "single_simple",
+        "brand": {"ref": "brand-a", "hash": "a" * 64},
+        "copy_profile": "signature_12_section",
+        "approval": {"ref": "approval-1", "hash": "b" * 64},
+        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "TEST-ONLY-EVIDENCE",
+                                    "attested_by": "operator", "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
+                                "amount_minor": 49700, "currency": "USD"},
+        "offers": [{"offer_id": "main-1", "name": "Launch", "role": "main",
+                    "price": {"amount_minor": 49700, "currency": "USD"}}],
+    }
+
+
+def stub_council(_launch):
+    return {"status": "advice_returned", "ready": True,
+            "advice": {"recommendation": "stub"}, "advice_state": "returned"}
+
+
+def pieces_for(run_dir: Path, graph: dict, normalized: dict) -> dict:
+    pieces = {}
+    for node in graph["nodes"]:
+        rel = f"pieces/{node['page_id']}/page.html"
+        target = run_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"<html>{node['role']}</html>\n", encoding="utf-8")
+        pieces[node["role"]] = {
+            "schema_version": "1.0",
+            "tenant_id": normalized["tenant_id"],
+            "location_id": normalized["location_id"],
+            "launch_id": normalized["launch_id"],
+            "revision": normalized["revision"],
+            "request_id": f"req-{node['page_id']}",
+            "input_hash": "c" * 64,
+            "page_id": node["page_id"],
+            "status": "authored",
+            "artifacts": [{"path": rel,
+                           "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}],
+            "author_session": "builder-1",
+            "independent_review": False,
+            "proof_class": "L0",
+            "blockers": [],
+            "native_bindings_ref": None,
+            "test_only": True,
+        }
+    return pieces
+
+
+def plan_fixture() -> dict:
+    from test_delivery_units import bound_plan
+    return bound_plan()  # bound to this file's intake: tenant-a, loc-a, revision 1, approval 'b'*64 (CON-04)
+
+
+def all_delivered(plan: dict) -> dict:
+    return {unit["id"]: {"state": "complete"} for unit in launch_plan.planned_units(plan)}
+
+
+def lane_deliveries(plan: dict, run_dir: Path, plan_sha: str | None = None) -> dict:
+    """One producing-lane delivery receipt per planned non-launcher unit.
+
+    Each lane stages its own artifact bytes under run_dir and records the
+    request it answers plus its own passed validation — the exact record
+    package.assemble consumes. A bare state claim is never built here.
+    Page units with a launcher piece ride on that piece; pages the route does
+    not carry (sales, upsell, downsell) ride on another lane's receipt.
+    """
+    out = {}
+    for unit in launch_plan.planned_units(plan):
+        rel = f"lane/{unit['id']}/delivery.html"
+        target = run_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f"<html>{unit['id']}</html>\n".encode("utf-8"))
+        out[unit["id"]] = {
+            "state": "complete",
+            "artifacts": [{"path": rel,
+                           "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                           "size": target.stat().st_size}],
+            "lane_validation": {"lane": "L06", "contract": "lane.output.v1",
+                                "state": "passed",
+                                "detail": "synthetic producing-lane validation"},
+            "request": {"plan_sha256": plan_sha,
+                        "request_id": f"lane-{unit['id']}",
+                        "input_hash": "d" * 64},
+        }
+    from test_delivery_units import with_skill44_builds
+    return with_skill44_builds(plan, run_dir, out)
+
+
+class _RunFixture(unittest.TestCase):
+    """One assembled offline package in a temp run dir."""
+
+    plan: dict | None = None
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self.tmp.name) / "run"
+        self.payload = base_intake()
+        self.normalized = intake.validate(self.payload)
+        self.advice = council.planning_step(self.normalized, runner=stub_council)
+        self.graph = route.compile_route(self.normalized)
+        self.pieces = pieces_for(self.run_dir, self.graph, self.normalized)
+        self.plan = copy.deepcopy(self.plan) if self.plan else None
+        self.out = self.assemble()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def assemble(self, pieces=None, plan=_UNSET, deliveries=_UNSET):
+        if plan is _UNSET:
+            plan = self.plan
+        kwargs = {"council": self.advice}
+        if plan is not None:
+            kwargs["launch_plan"] = plan
+            if deliveries is _UNSET:
+                plan_sha = hashlib.sha256(
+                    (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")
+                ).hexdigest()
+                deliveries = lane_deliveries(plan, self.run_dir, plan_sha=plan_sha)
+            kwargs["deliveries"] = deliveries
+        return package.assemble(self.run_dir, self.normalized, self.graph,
+                                pieces or self.pieces, **kwargs)
+
+    @property
+    def manifest_path(self) -> Path:
+        return self.run_dir / "package-manifest.json"
+
+    def read_manifest(self) -> dict:
+        return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+
+    def write_manifest(self, manifest: dict) -> None:
+        self.manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                                      encoding="utf-8")
+
+    def read_receipt(self) -> dict:
+        return json.loads((self.run_dir / "receipt.json").read_text(encoding="utf-8"))
+
+    def write_receipt(self, receipt: dict) -> None:
+        (self.run_dir / "receipt.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
+class CanonicalPlanTests(unittest.TestCase):
+    def test_a_cycle_fails_closed(self):
+        plan = plan_fixture()
+        plan["pages"][0]["waits_for"] = [plan["pages"][1]["id"]]
+        plan["pages"][1]["waits_for"] = [plan["pages"][0]["id"]]
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.planned_units(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-CYCLE")
+
+    def test_an_unknown_dependency_fails_closed(self):
+        plan = plan_fixture()
+        plan["automations"][0]["waits_for"] = ["unit_that_does_not_exist"]
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.planned_units(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-DEPENDENCY")
+
+    def test_an_unsupported_schema_version_fails_closed(self):
+        plan = plan_fixture()
+        plan["schema_version"] = "2.0.0"
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.planned_units(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-SCHEMA")
+
+    def test_a_non_draft_email_fails_closed(self):
+        plan = plan_fixture()
+        plan["email_sequences"][0]["draft_only"] = False
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.planned_units(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-DRAFT")
+
+
+@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
+class CalendarValidatorTests(unittest.TestCase):
+    def test_an_unknown_iana_zone_fails_closed(self):
+        plan = plan_fixture()
+        plan["launch_calendar"]["timezone"] = "Mars/Olympus_Mons"
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.black_friday_calendar(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-CALENDAR-ZONE")
+
+    def test_a_dst_wrong_offset_fails_closed(self):
+        plan = plan_fixture()
+        # 2026-07-01 in New York is EDT (-04:00); -05:00 is the winter offset.
+        plan["launch_calendar"]["black_friday"]["teaser_at"] = "2026-07-01T09:00:00-05:00"
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.black_friday_calendar(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-CALENDAR-OFFSET")
+
+    def test_an_empty_open_window_fails_closed(self):
+        plan = plan_fixture()
+        plan["launch_calendar"]["doors_close_at"] = plan["launch_calendar"]["doors_open_at"]
+        with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+            launch_plan.black_friday_calendar(plan)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-CALENDAR-ORDER")
+
+    def test_the_compiler_gets_aware_instants_and_data_violations(self):
+        plan = plan_fixture()
+        instants = launch_plan.calendar_instants(plan)
+        self.assertEqual(set(instants), {"teaser", "countdown", "doors_open", "launch",
+                                         "cyber_monday", "last_call", "doors_close"})
+        self.assertTrue(all(value.tzinfo is not None for value in instants.values()))
+        self.assertLess(instants["teaser"], instants["doors_open"])
+        self.assertEqual(launch_plan.calendar_violations(plan), [])
+        broken = copy.deepcopy(plan)
+        broken["launch_calendar"]["timezone"] = "Nowhere/Nothing"
+        self.assertEqual(launch_plan.calendar_violations(broken)[0]["code"],
+                         "AF-LAUNCH-CALENDAR-ZONE")
+
+
+class PageOnlyReceiptTests(_RunFixture):
+    def test_the_receipt_is_typed_and_clean(self):
+        receipt = self.read_receipt()
+        self.assertEqual(receipt["schema_version"], package.RECEIPT_SCHEMA_VERSION)
+        self.assertEqual(receipt["receipt_type"], package.RECEIPT_TYPE)
+        self.assertEqual(receipt["approved_plan_hash"], self.payload["approval"]["hash"])
+        self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
+        self.assertEqual(len(receipt["units"]), 3)
+        for row in receipt["units"]:
+            for key in checks.IDENTITY_KEYS:
+                self.assertEqual(row[key], self.payload[key])
+            self.assertEqual(row["approved_plan_hash"], self.payload["approval"]["hash"])
+            self.assertEqual(row["lane_validation"]["state"], "passed")
+            self.assertTrue(row["artifacts"])
+            for art in row["artifacts"]:
+                self.assertGreater(art["size"], 0)
+            self.assertEqual(row["request"]["request_id"], row["request"]["request_id"])
+
+    def test_a_boolean_only_receipt_fails(self):
+        receipt = self.read_receipt()
+        receipt["units"] = [True, False, True]
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-UNITS") for f in fails), fails)
+
+    def test_an_unsupported_receipt_schema_fails(self):
+        receipt = self.read_receipt()
+        receipt["schema_version"] = "0.9"
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-SCHEMA") for f in fails), fails)
+
+    def test_a_receipt_bound_to_another_launch_fails(self):
+        receipt = self.read_receipt()
+        receipt["launch_id"] = "someone-elses-launch"
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-BINDING") for f in fails), fails)
+
+    def test_a_receipt_for_another_approved_plan_hash_fails(self):
+        receipt = self.read_receipt()
+        receipt["approved_plan_hash"] = "d" * 64
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-BINDING") for f in fails), fails)
+
+    def test_a_missing_artifact_fails(self):
+        receipt = self.read_receipt()
+        target = self.run_dir / receipt["units"][0]["artifacts"][0]["path"]
+        target.unlink()
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-ARTIFACT-MISSING") for f in fails), fails)
+
+    def test_a_tampered_artifact_fails_its_hash(self):
+        receipt = self.read_receipt()
+        target = self.run_dir / receipt["units"][0]["artifacts"][0]["path"]
+        target.write_text("tampered\n", encoding="utf-8")
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-HASH") for f in fails), fails)
+
+    def test_a_zero_byte_artifact_never_proves_a_unit(self):
+        receipt = self.read_receipt()
+        row = receipt["units"][0]
+        target = self.run_dir / row["artifacts"][0]["path"]
+        target.write_bytes(b"")
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-ARTIFACT-EMPTY") for f in fails), fails)
+        report = checks.verify_package_receipt(self.run_dir)
+        self.assertEqual(report["state"], "failed")
+        self.assertEqual(report["units"][row["unit_id"]], "failed")
+
+    def test_forged_live_proof_on_a_draft_fails(self):
+        receipt = self.read_receipt()
+        receipt["units"][0]["proof"]["live_verified"] = True
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-PROOF") for f in fails), fails)
+
+    def test_a_live_label_with_no_live_effects_fails(self):
+        receipt = self.read_receipt()
+        row = receipt["units"][0]
+        row["status"] = "live_verified"
+        row["proof"] = {"authored": True, "draft_installed": True,
+                        "tested": True, "live_verified": True}
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-LIVE") for f in fails), fails)
+
+    def test_recovery_verifies_a_clean_package_and_refuses_a_deleted_artifact(self):
+        report = checks.verify_package_receipt(self.run_dir)
+        self.assertEqual(report["state"], "verified")
+        self.assertEqual(report["artifacts_checked"], 3)
+        receipt = self.read_receipt()
+        (self.run_dir / receipt["units"][1]["artifacts"][0]["path"]).unlink()
+        report = checks.verify_package_receipt(self.run_dir)
+        self.assertEqual(report["state"], "failed")
+        self.assertEqual(report["units"][receipt["units"][1]["unit_id"]], "failed")
+
+    def test_recovery_reports_absence_not_success(self):
+        (self.run_dir / "receipt.json").unlink()
+        report = checks.verify_package_receipt(self.run_dir)
+        self.assertEqual(report["state"], "absent")
+        self.assertTrue(report["violations"])
+
+    def test_the_receipt_schema_matches_the_enforcement(self):
+        schema = json.loads((SKILL_ROOT / "receipt.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["schema_version"]["const"],
+                         package.RECEIPT_SCHEMA_VERSION)
+        self.assertEqual(schema["properties"]["receipt_type"]["const"], package.RECEIPT_TYPE)
+        self.assertEqual(tuple(schema["definitions"]["unit_receipt"]["required"]),
+                         checks.RECEIPT_UNIT_KEYS)
+
+
+@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
+class PlannedUnitReceiptTests(_RunFixture):
+    def setUp(self):
+        self.plan = plan_fixture()
+        super().setUp()
+
+    def test_every_planned_unit_carries_a_typed_receipt(self):
+        receipt = self.read_receipt()
+        planned = {unit["id"] for unit in launch_plan.planned_units(self.plan)}
+        self.assertEqual({row["unit_id"] for row in receipt["units"]}, planned)
+        self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
+
+    def test_draft_units_are_never_draft_installed_or_live(self):
+        receipt = self.read_receipt()
+        for row in receipt["units"]:
+            if row["unit_type"] in ("email", "text", "automation"):
+                self.assertIs(row.get("draft_only"), True, row["unit_id"])
+                self.assertEqual(row["proof"], {"authored": True, "draft_installed": False,
+                                                "tested": False, "live_verified": False})
+
+    def test_a_missing_planned_unit_receipt_fails(self):
+        receipt = self.read_receipt()
+        dropped = receipt["units"].pop(0)["unit_id"]
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(dropped in f and "typed receipt" in f for f in fails), fails)
+
+    def test_a_non_draft_unit_receipt_fails(self):
+        receipt = self.read_receipt()
+        for row in receipt["units"]:
+            if row["unit_type"] == "email":
+                row["draft_only"] = False
+                break
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-DRAFT") for f in fails), fails)
+
+    def test_lane_rows_carry_the_producing_lane_not_l04(self):
+        receipt = self.read_receipt()
+        lanes = {row["lane_validation"]["lane"] for row in receipt["units"]
+                 if row["unit_type"] in ("email", "text", "automation")}
+        self.assertTrue(lanes)
+        self.assertNotIn("L04", lanes)
+
+    def test_a_bare_state_claim_stays_planned_and_refuses_assembly(self):
+        (self.run_dir / "receipt.json").unlink()
+        with self.assertRaises(package.PackageError) as ctx:
+            self.assemble(deliveries=all_delivered(self.plan))
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-PKG-RECEIPT-ARTIFACT")
+        self.assertFalse((self.run_dir / "receipt.json").exists())
+
+    def test_plan_bytes_are_never_delivery_proof(self):
+        receipt = self.read_receipt()
+        manifest = self.read_manifest()
+        plan_path = manifest["launch_plan"]["plan"]["path"]
+        target = next(row for row in receipt["units"] if row["unit_type"] == "email")
+        target["artifacts"] = [{"path": plan_path,
+                                "sha256": manifest["launch_plan"]["plan"]["sha256"],
+                                "size": (self.run_dir / plan_path).stat().st_size}]
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any("never delivery proof" in f for f in fails), fails)
+
+    def test_an_l04_stamped_lane_row_fails(self):
+        receipt = self.read_receipt()
+        for row in receipt["units"]:
+            if row["unit_type"] == "email":
+                row["lane_validation"] = {"lane": "L04",
+                                          "contract": package.RECEIPT_TYPE,
+                                          "state": "passed"}
+                break
+        self.write_receipt(receipt)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-LANE") for f in fails), fails)
+
+    # No skip guard: an interpreter that cannot import jsonschema is not a
+    # verification environment, so this test fails loudly there (L25-BF-40).
+    def test_a_probe_verdict_the_contract_does_not_reproduce_fails(self):
+        manifest = self.read_manifest()
+        manifest["checkout"]["validator"]["probe"] = {"result": "accepted"}
+        self.write_manifest(manifest)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-CHECKOUT-VALIDATOR") for f in fails), fails)
+
+    def test_a_smuggled_schema_version_in_the_inner_envelope_fails(self):
+        manifest = self.read_manifest()
+        manifest["checkout"]["supplied"]["schema_version"] = "0.2-draft"
+        self.write_manifest(manifest)
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertTrue(any(f.startswith("AF-LAUNCH-CHECKOUT-VALIDATOR") for f in fails), fails)
+
+
+class CheckoutProducerTests(unittest.TestCase):
+    """The group-7 L04 slice: the probe replays the inner envelope only.
+
+    Uses a stub Skill 79 validator so the envelope shape is proved even where
+    jsonschema is not installed: no document-level key may ride inside
+    checkout_request, and a shape rejection must never read as a missing fact.
+    """
+
+    def _probe_with(self, validate):
+        import types
+        from launcher_core import checkout as checkout_module
+        stub = types.SimpleNamespace(validate_request=validate)
+        original = checkout_module._load_validator
+        checkout_module._load_validator = lambda: stub
+        try:
+            return checkout_module._probe_validator(
+                {"contract_schema_version": "0.2-draft"},
+                {"tenant_id": "t", "launch_id": "x", "test_only": True})
+        finally:
+            checkout_module._load_validator = original
+
+    def test_the_probe_envelope_carries_no_document_level_keys(self):
+        seen = {}
+
+        def validate(request):
+            seen.update(request)
+
+        probe = self._probe_with(validate)
+        self.assertEqual(probe["probe"]["result"], "accepted")
+        self.assertNotIn("schema_version", seen)
+
+    def test_a_shape_rejection_is_recorded_not_masked(self):
+        def validate(request):
+            raise ValueError("Additional properties are not allowed "
+                             "('schema_version' was unexpected)")
+
+        probe = self._probe_with(validate)
+        self.assertEqual(probe["probe"]["result"], "rejected")
+        self.assertIn("Additional properties", probe["probe"]["error"])
+
+
+
+CHECKOUT_TERMS = {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+    "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+}
+
+
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the inline intakes below
+
+
+def _answers_doc(offers: list) -> dict:
+    """A client-intake-answers/v1 doc that says exactly what the inline offers say (every entry provided)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    return {"schema": "client-intake-answers/v1", "answers": answers}
+
+
+def with_checkout_facts(payload: dict) -> dict:
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
+    and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    mains = 0
+    for o in payload["offers"]:
+        o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
+                                  "owner_confirmed": True})
+        if o["role"] in ("upsell_1", "downsell_1", "upsell_2") or (
+                o["role"] == "main" and payload["journey_mode"] != "single_simple"):
+            o.setdefault("level", {"state": "supplied", "name": o["name"],
+                                   "deliverables": [f"{o['name']} access"]})
+        if o["role"] == "main":
+            o["price"].setdefault("source_ref", f"answers-file:packages[{mains}]")
+            mains += 1
+        else:
+            o["price"].setdefault("source_ref", f"answers-file:{o['role']}")
+    if "answers_file" not in payload:
+        text = json.dumps(_answers_doc(payload["offers"]), indent=1, sort_keys=True)
+        path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+        path.write_text(text, encoding="utf-8")
+        payload["answers_file"] = str(path)
+    return payload
+
+
+def base_intake(*args, **kwargs) -> dict:
+    return with_checkout_facts(_base_intake_raw(*args, **kwargs))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

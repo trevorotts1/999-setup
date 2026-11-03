@@ -228,6 +228,509 @@ def page_list_path(funnel_id: str, location_id: str) -> str:
     return f"/funnels/page/list?funnelId={funnel_id}&locationId={location_id}"
 
 
+# The two DISTINCT folder scopes. A funnel folder is not a website folder: same
+# row shape, same "Create folder" button, different `type` scope on the call.
+FOLDER_TYPES: tuple[str, ...] = ("funnel", "website")
+
+
+def folder_list_path(location_id: str, folder_type: str) -> str:
+    """GET path that lists folder rows for one type scope (CAPTURED LIVE).
+
+    ``GET /funnels/funnel/folder/list?locationId=<loc>&type=funnel`` → 200;
+    ``type=website`` → 200 (the live capture returned 0 rows for a location with
+    no website folders). This is the READ half of folder identity and the
+    inventory read every folder recipe reconciles against.
+    """
+    _require(location_id, "location_id")
+    ft = str(folder_type or "").strip().lower()
+    if ft not in FOLDER_TYPES:
+        raise ValueError(
+            f"folder_type must be one of {list(FOLDER_TYPES)} (got {folder_type!r}); "
+            "a funnel folder and a website folder are different type scopes"
+        )
+    return f"/funnels/funnel/folder/list?locationId={location_id}&type={ft}"
+
+
+# ── FOLDER CREATE — CAPTURE-GATED (the create interior was never captured) ───
+# HONEST STATUS, measured: the folder LIST route is captured live (200, both
+# type scopes) and the "Create folder" button anchor is captured at conf 9 in
+# BOTH lists. What was NEVER captured is everything that decides whether a
+# folder create is real: the create dialog's interior (its name field, its
+# confirm button), the create ROUTE + verb the SPA actually fires, the body's
+# field names, and the create RESPONSE shape. A folder create written against a
+# guessed route is worse than no folder create: it either 404s the build or
+# lands a folder in the wrong type scope, which is the exact corruption
+# `ghl_recipe_objects` exists to prevent (a funnel folder is not a website
+# folder). So the create is shipped COMPLETE and UNREACHABLE until a live
+# capture proves those names — same construction as `ghl_split_variant.py`:
+# schema, checklist, refusal-with-reason, and a fixture that can never be
+# mistaken for evidence.
+#
+# ENABLING IT: one authorized staging capture of the "Create folder" dialog on
+# each type scope, recorded as the 11 fields below. Fill the checklist, then
+# ``load_folder_create_capture(path)``. A capture that passes the FULL schema
+# (not merely present keys) reports ENABLED_FOR_REVIEW; ``enabled`` stays False
+# until a reviewer approves, which is a separate, tested change.
+
+FOLDER_CREATE_CAPABILITY_ID = "ghl.folder.create"
+FOLDER_CREATE_PENDING = "PENDING_LIVE_CAPTURE"
+FOLDER_CREATE_ENABLED_FOR_REVIEW = "ENABLED_FOR_REVIEW"
+
+FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS: tuple[str, ...] = (
+    "location_id",        # the authorized staging location captured
+    "folder_type",        # "funnel" | "website" — the type scope captured
+    "create_method",      # the verb the SPA fires (POST/PUT)
+    "create_path",        # the route the SPA fires, as observed
+    "body_location_key",  # body key carrying locationId, as observed
+    "body_name_key",      # body key carrying the folder name, as observed
+    "body_type_key",      # body key carrying the type scope, "" if none sent
+    "response_id_field",  # where the created folder id comes back
+    "readback_keys",      # keys the re-list returns for the new row
+    "expect_status",      # the status the create returned (200/201)
+    "capture_evidence",   # raw-artifact reference carrying a sha256 digest
+)
+
+_EVIDENCE_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _nonempty_str(v: Any) -> bool:
+    return isinstance(v, str) and bool(v.strip())
+
+
+FOLDER_CREATE_CAPTURE_SCHEMA: dict[str, dict[str, Any]] = {
+    "location_id": {
+        "rule": "non-empty string: the authorized staging location",
+        "check": _nonempty_str,
+    },
+    "folder_type": {
+        "rule": f"one of {list(FOLDER_TYPES)}: the type scope the dialog was "
+                "opened under (a funnel folder is not a website folder)",
+        "check": lambda v: isinstance(v, str) and v.strip().lower() in FOLDER_TYPES,
+    },
+    "create_method": {
+        "rule": "one of ['POST', 'PUT']: the verb the SPA actually fired",
+        "check": lambda v: isinstance(v, str) and v.strip().upper() in ("POST", "PUT"),
+    },
+    "create_path": {
+        "rule": "non-empty string starting '/', containing 'folder': the route "
+                "the SPA actually fired (a guessed path is a failed capture)",
+        "check": lambda v: _nonempty_str(v) and v.strip().startswith("/")
+                           and "folder" in v.lower(),
+    },
+    "body_location_key": {
+        "rule": "non-empty string: the request-body key carrying locationId",
+        "check": _nonempty_str,
+    },
+    "body_name_key": {
+        "rule": "non-empty string: the request-body key carrying the name",
+        "check": _nonempty_str,
+    },
+    "body_type_key": {
+        "rule": "string, possibly EMPTY: the body key carrying the type scope; "
+                "empty means the capture observed no type key in the body",
+        "check": lambda v: isinstance(v, str),
+    },
+    "response_id_field": {
+        "rule": "non-empty string: the response field carrying the new folder id",
+        "check": _nonempty_str,
+    },
+    "readback_keys": {
+        "rule": "non-empty list of strings: keys the folder list returns for the "
+                "new row (must include response_id_field)",
+        "check": lambda v: isinstance(v, (list, tuple)) and len(v) > 0
+                           and all(_nonempty_str(k) for k in v),
+    },
+    "expect_status": {
+        "rule": "integer 200 or 201: the status the create returned",
+        "check": lambda v: isinstance(v, int) and not isinstance(v, bool)
+                           and v in (200, 201),
+    },
+    "capture_evidence": {
+        "rule": "string carrying a raw-artifact reference with a "
+                "sha256:<64 hex> digest; a shape fixture cannot satisfy this "
+                "by accident",
+        "check": lambda v: isinstance(v, str) and bool(_EVIDENCE_RE.search(v)),
+    },
+}
+
+assert tuple(FOLDER_CREATE_CAPTURE_SCHEMA) == FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS, (
+    "FOLDER_CREATE_CAPTURE_SCHEMA drifted from "
+    "FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS"
+)
+
+
+class CaptureRequired(RuntimeError):
+    """The live capture that would authorize a folder create is missing."""
+
+
+class FolderCreateRefused(RuntimeError):
+    """A folder create was requested while its capture gate is closed."""
+
+
+class CaptureInvalid(CaptureRequired):
+    """A capture is present but fails the schema. Never rounded up to valid."""
+
+
+OFFLINE_FOLDER_CAPTURE: dict[str, Any] = {
+    "_fixture": True,
+    "_note": "offline fixture; fake values; NOT evidence about GHL",
+    "location_id": "loc-offline-0001",
+    "folder_type": "funnel",
+    "create_method": "POST",
+    "create_path": "/funnels/funnel/folder/create",
+    "body_location_key": "locationId",
+    "body_name_key": "name",
+    "body_type_key": "type",
+    "response_id_field": "id",
+    "readback_keys": ["id", "name", "locationId", "type"],
+    "expect_status": 201,
+    "capture_evidence": "fixture://offline-folder-capture sha256:" + "0" * 64,
+}
+
+FOLDER_CREATE_FIXTURE_WARNING = (
+    "OFFLINE_FOLDER_CAPTURE is a shape fixture. It is NOT a live capture and "
+    "must never be treated as evidence; a real capture carries observed route, "
+    "body keys and a hash of the raw artifact."
+)
+
+
+def is_synthetic_folder_capture(capture: Any) -> bool:
+    """Detect a shape fixture so a caller can never mistake one for evidence."""
+    if not isinstance(capture, dict):
+        return False
+    if capture.get("_fixture"):
+        return True
+    for key, value in capture.items():
+        if str(key) == "_fixture":
+            continue
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, str) and "SYNTHETIC" in item.upper():
+                return True
+    return False
+
+
+def folder_create_capture_checklist() -> dict[str, Any]:
+    """The checklist the authenticated-browser capture step fills in later.
+
+    Emitted FROM the schema, so the checklist can never drift from validation.
+    """
+    return {
+        "capability": FOLDER_CREATE_CAPABILITY_ID,
+        "state_until_filled": FOLDER_CREATE_PENDING,
+        "artifact": "JSON object: one capture per type scope per staging location",
+        "dialog_entry": "getByRole('button', { name: 'Create folder' }) conf 9 in "
+                        "BOTH the funnels list and the websites list",
+        "what_to_record": [
+            "open the Create folder dialog under ONE type scope (funnel, then "
+            "repeat for website) and screenshot the dialog interior",
+            "the name field selector and the confirm button selector",
+            "the network request the confirm fires: METHOD + FULL PATH",
+            "the request BODY keys carrying locationId, name and (if present) type",
+            "the create RESPONSE: status + the field carrying the new folder id",
+            "re-list /funnels/funnel/folder/list?locationId=&type=<scope> and record "
+            "the keys the new row carries",
+            "hash the raw capture artifact (har.json / screenshot set) as sha256",
+        ],
+        "note": "Fill every field from OBSERVED traffic. A guessed route or key is "
+                "a failed capture, not a partial pass.",
+        "fields": [
+            {"name": name, "rule": FOLDER_CREATE_CAPTURE_SCHEMA[name]["rule"],
+             "required": True}
+            for name in FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS
+        ],
+    }
+
+
+def validate_folder_create_capture(capture: Any) -> list[str]:
+    """Return every schema problem; empty list == valid. Never raises."""
+    if not isinstance(capture, dict):
+        return ["capture is not a JSON object"]
+    problems: list[str] = []
+    for name in FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS:
+        value = capture.get(name)
+        # body_type_key is the ONE field allowed to be an empty string: empty
+        # means the capture observed no type key in the create body.
+        blank = value is None or (isinstance(value, str) and not value.strip())
+        if blank and not (name == "body_type_key" and value == ""):
+            problems.append(f"{name}: missing")
+            continue
+        try:
+            ok = bool(FOLDER_CREATE_CAPTURE_SCHEMA[name]["check"](value))
+        except Exception:  # a hostile value must not crash the gate
+            ok = False
+        if not ok:
+            problems.append(f"{name}: {FOLDER_CREATE_CAPTURE_SCHEMA[name]['rule']}")
+    if "readback_keys" in capture and isinstance(capture.get("readback_keys"), list):
+        rid = capture.get("response_id_field")
+        if rid and rid not in capture["readback_keys"]:
+            problems.append(
+                f"readback_keys must include response_id_field {rid!r}; without "
+                "it the created folder's identity is not read back"
+            )
+    return problems
+
+
+def load_folder_create_capture(path: str) -> dict[str, Any]:
+    """Load and validate a capture file. The ONLY ingress for a real capture.
+    Refuses synthetic fixtures and any schema problem."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            capture = json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: cannot read capture {path}: {exc}"
+        )
+    if is_synthetic_folder_capture(capture):
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture {path} is synthetic; "
+            f"{FOLDER_CREATE_FIXTURE_WARNING}"
+        )
+    problems = validate_folder_create_capture(capture)
+    if problems:
+        raise CaptureInvalid(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture {path} fails the schema: "
+            f"{problems}"
+        )
+    return capture
+
+
+def folder_create_capability_state(capture: Any = None,
+                                   reviewed: bool = False) -> dict[str, Any]:
+    """Report the folder-create capability state, what is missing, what is
+    malformed.
+
+    ``capture=None`` is the honest default: nothing was captured, so the state
+    is PENDING_LIVE_CAPTURE and every required field is missing. A partial
+    capture lists only what is still missing — it never rounds up. ``enabled``
+    is gated on BOTH a complete schema-valid capture AND an explicit
+    ``reviewed=True``.
+    """
+    if not isinstance(capture, dict):
+        return {
+            "capability": FOLDER_CREATE_CAPABILITY_ID,
+            "state": FOLDER_CREATE_PENDING,
+            "enabled": False,
+            "missing_capture_fields": list(FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS),
+            "schema_valid": False,
+            "schema_problems": [],
+            "reviewed": bool(reviewed),
+            "reason": (
+                "the Create folder dialog interior, the create route+verb, the "
+                "body keys and the create response shape were never captured; "
+                "a folder create written against a guess would either 404 the "
+                "build or land the folder in the wrong type scope (a funnel "
+                "folder is not a website folder)"
+            ),
+            "next_action": (
+                "capture the Create folder dialog under one type scope; "
+                "required fields: "
+                + ", ".join(FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS)
+            ),
+        }
+    problems = validate_folder_create_capture(capture)
+    missing = [f for f in FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS
+               if capture.get(f) is None
+               and not (f == "body_type_key" and capture.get(f) == "")]
+    if not problems:
+        return {
+            "capability": FOLDER_CREATE_CAPABILITY_ID,
+            "state": FOLDER_CREATE_ENABLED_FOR_REVIEW,
+            "enabled": bool(reviewed),
+            "missing_capture_fields": [],
+            "schema_valid": True,
+            "schema_problems": [],
+            "reviewed": bool(reviewed),
+            "folder_type": capture.get("folder_type"),
+            "reason": (
+                "a complete live capture is present and passes the schema; the "
+                "capability may be ENABLED only after review of that capture"
+                if reviewed else
+                "a capture is present and schema-valid, but no reviewer has "
+                "approved it yet; enablement is a separate, tested change"
+            ),
+            "next_action": (
+                "execute through the receipted write driver, then assert the "
+                "readback keys" if reviewed else
+                "reviewer approves the capture (enablement is a separate step)"
+            ),
+        }
+    return {
+        "capability": FOLDER_CREATE_CAPABILITY_ID,
+        "state": FOLDER_CREATE_PENDING,
+        "enabled": False,
+        "missing_capture_fields": missing,
+        "schema_valid": False,
+        "schema_problems": problems,
+        "reviewed": bool(reviewed),
+        "reason": (
+            "a capture is present but FAILS the schema; it is not evidence and "
+            "can never enable a folder create"
+        ),
+        "next_action": "re-run the capture checklist and fix: " + "; ".join(problems),
+    }
+
+
+def assert_folder_create_enabled(capture: Any = None,
+                                 reviewed: bool = False) -> dict[str, Any]:
+    """Raise unless the folder-create capture gate is OPEN (capture complete,
+    schema-valid, reviewed). Returns the capture on success.
+
+    This is the single check that stands between a build and a guessed folder
+    create, so it is called by ``folder_create_path``, ``folder_create_body``
+    and ``folder_create`` — there is no second, laxer door.
+    """
+    if is_synthetic_folder_capture(capture):
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: the supplied capture is synthetic "
+            f"({FOLDER_CREATE_FIXTURE_WARNING}); a shape fixture is not evidence"
+        )
+    state = folder_create_capability_state(capture, reviewed=reviewed)
+    if state["state"] == FOLDER_CREATE_PENDING:
+        if state.get("schema_problems"):
+            raise CaptureInvalid(
+                f"{FOLDER_CREATE_CAPABILITY_ID}: capture fails schema: "
+                f"{state['schema_problems']}"
+            )
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: {FOLDER_CREATE_PENDING}; missing "
+            f"{state['missing_capture_fields']}"
+        )
+    if not state["enabled"]:
+        raise FolderCreateRefused(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture is schema-valid but NOT "
+            "reviewed; a folder create requires an explicit review"
+        )
+    return capture  # type: ignore[return-value]
+
+
+def folder_create_path(capture: Any = None,
+                       reviewed: bool = False) -> str:
+    """POST path that creates a NET-NEW folder — REPLAYED, never guessed.
+
+    The route and verb were never captured, so there is no constant to return:
+    the path comes verbatim from an approved live capture. With no capture this
+    raises ``CaptureRequired`` — the same refusal shape as
+    ``ghl_split_variant.build_variant_request``. The captured row shape IS
+    known, which is why ``folder_list_path`` above needs no gate.
+
+    Args:
+        capture: an approved capture dict (or a path to one).
+        reviewed: the reviewer's approval; without it this refuses.
+
+    Returns:
+        The captured create path, e.g. ``/funnels/funnel/folder/create``.
+    """
+    if isinstance(capture, str):
+        capture = load_folder_create_capture(capture)
+    cap = assert_folder_create_enabled(capture, reviewed=reviewed)
+    return str(cap["create_path"]).strip()
+
+
+def folder_create_body(location_id: str, name: str, folder_type: str, *,
+                       capture: Any = None,
+                       reviewed: bool = False) -> dict:
+    """Build the folder-create POST body from CAPTURED body keys.
+
+    Every key name comes from the capture: the create body's field names were
+    never observed, and inventing ``locationId``/``name``/``type`` would be the
+    same guess the gate exists to prevent. The type scope is included only when
+    the capture observed a type key, and it must equal the capture's own scope —
+    a capture taken under ``funnel`` can never create a ``website`` folder.
+
+    Args:
+        location_id: The sub-account location id.
+        name: The folder name (callers ZHC-prefix it).
+        folder_type: ``"funnel"`` or ``"website"``; must match the capture.
+        capture: an approved capture dict (or a path to one).
+        reviewed: the reviewer's approval.
+
+    Returns:
+        The JSON-serialisable POST body.
+    """
+    _require(location_id, "location_id")
+    _require(name, "name")
+    ft = str(folder_type or "").strip().lower()
+    if ft not in FOLDER_TYPES:
+        raise ValueError(
+            f"folder_type must be one of {list(FOLDER_TYPES)} (got {folder_type!r})"
+        )
+    if isinstance(capture, str):
+        capture = load_folder_create_capture(capture)
+    cap = assert_folder_create_enabled(capture, reviewed=reviewed)
+    if ft != str(cap["folder_type"]).strip().lower():
+        raise FolderCreateRefused(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture was taken under type "
+            f"{cap['folder_type']!r} but this request is for {ft!r}; a capture "
+            "authorizes only its own type scope"
+        )
+    if str(cap["location_id"]).strip() != str(location_id).strip():
+        raise FolderCreateRefused(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture was taken at "
+            f"{cap['location_id']!r} but this request is for {location_id!r}; a "
+            "capture authorizes only its own location"
+        )
+    body: dict[str, Any] = {
+        str(cap["body_location_key"]): location_id,
+        str(cap["body_name_key"]): name,
+    }
+    type_key = str(cap.get("body_type_key") or "").strip()
+    if type_key:
+        body[type_key] = ft
+    return body
+
+
+def folder_create(location_id: str, name: str, folder_type: str, *,
+                  capture: Any = None, reviewed: bool = False,
+                  session: str | None = None,
+                  token_global: str = TOKEN_JS_GLOBAL) -> dict:
+    """NET-NEW folder create step: emit the captured create XHR.
+
+    Same shape as ``funnel_create`` / ``step_create`` (path + body + eval +
+    expect), but every unknown is replayed from an approved capture. The agent
+    runs the eval, reads the created folder id from the response via the
+    captured ``response_id_field``, then re-lists ``folder_list_path`` to prove
+    the row — a create without that readback is unproven.
+
+    Args:
+        location_id: The sub-account location id (caller hard-gates it first).
+        name: The folder name (caller ZHC-prefixes it).
+        folder_type: ``"funnel"`` or ``"website"``.
+        capture: an approved capture dict (or a path to one).
+        reviewed: the reviewer's approval.
+        session: Optional agent-browser session for an ``argv``.
+        token_global: The staged-JWT window global.
+
+    Returns:
+        ``{method, path, url, body, eval, argv?, expect}``.
+    """
+    if isinstance(capture, str):
+        capture = load_folder_create_capture(capture)
+    cap = assert_folder_create_enabled(capture, reviewed=reviewed)
+    path = folder_create_path(cap, reviewed=reviewed)
+    body = folder_create_body(location_id, name, folder_type, capture=cap,
+                              reviewed=reviewed)
+    method = str(cap["create_method"]).strip().upper()
+    js = build_fetch_js(method, path, body=body, token_global=token_global)
+    step: dict[str, Any] = {
+        "method": method,
+        "path": path,
+        "url": GHL_BACKEND_ORIGIN.rstrip("/") + path,
+        "body": body,
+        "eval": js,
+        "folder_type": str(cap["folder_type"]).strip().lower(),
+        "expect": {
+            "status": int(cap["expect_status"]),
+            "new_folder_id_field": str(cap["response_id_field"]),
+            "readback_keys": list(cap["readback_keys"]),
+            "verify": "re-list folder/list?locationId=<loc>&type=<scope> and "
+                      "assert the new row carries the id + locationId + type",
+        },
+    }
+    if session:
+        step["argv"] = agent_browser_eval_cmd(session, js)
+    return step
+
+
 def funnel_delete_path() -> str:
     """POST path that deletes a funnel (reversible-cleanup primitive).
 
@@ -418,19 +921,153 @@ def funnel_delete_body(location_id: str, funnel_id: str, user_id: str) -> dict:
     return {"locationId": location_id, "funnelId": funnel_id, "userId": user_id}
 
 
+# ── Card-field refusal (S06-10) ───────────────────────────────────────────────
+# A page that carries its OWN card inputs collects card data outside the payment
+# processor (PCI exposure, no real charge). Only the processor's native order
+# form may take card data, so a raw <input>/<select>/<textarea> named like a card
+# field is refused at the splice boundary. Mirrors the key list of
+# skills/06-ghl-delivery/order_components.py ``_CARD_KEY_FRAGMENTS`` (kept as a
+# local copy: skills are installed as separate folders, so a cross-skill import
+# is not safe) plus the HTML ``autocomplete`` card tokens (cc-number, cc-csc, ...).
+_CARD_FIELD_FRAGMENTS = (
+    "cardnumber", "ccnumber", "cccsc", "ccexp", "cardcvc", "cardcvv", "cardexp",
+    "cardcode", "cvv", "cvc", "securitycode", "expmonth", "expyear", "expiry",
+    "track1", "track2",
+)
+_CARD_FIELD_EXACT = ("pan",)  # too short/common to match as a substring
+_FORM_FIELD_TAG_RE = re.compile(r"<(?:input|select|textarea)\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_FIELD_ATTR_RE = re.compile(
+    r"""\b(name|id|autocomplete)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""",
+    re.IGNORECASE,
+)
+
+
+def find_card_fields(html: str) -> list[str]:
+    """Return a problem string for every raw card input in *html* (name / id /
+    autocomplete naming a card number, expiry or security code)."""
+    if not isinstance(html, str):
+        raise TypeError(f"find_card_fields: expected str, got {type(html).__name__}")
+    problems: list[str] = []
+    for tag in _FORM_FIELD_TAG_RE.findall(html):
+        for m in _FIELD_ATTR_RE.finditer(tag):
+            raw = next(g for g in m.groups()[1:] if g is not None)
+            norm = re.sub(r"[^a-z0-9]", "", raw.lower())
+            if norm and (norm in _CARD_FIELD_EXACT
+                         or any(f in norm for f in _CARD_FIELD_FRAGMENTS)):
+                problems.append(f"card field {m.group(1).lower()}={raw!r} in {tag.strip()[:120]!r}")
+                break
+    return problems
+
+
+def _card_msg(problems: list[str]) -> str:
+    return (
+        "card-data fields refused: card numbers, expiry and security codes are "
+        "collected ONLY by the payment processor's native order form, never by "
+        "a custom-code page:\n  - " + "\n  - ".join(problems)
+    )
+
+
+def assert_no_card_fields(html: str) -> None:
+    """Raise ``ValueError`` when *html* carries a home-made card input."""
+    problems = find_card_fields(html)
+    if problems:
+        raise ValueError(_card_msg(problems))
+
+
+# ── Head-asset carry-over (S06-09) ────────────────────────────────────────────
+_HEAD_LINK_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_HEAD_SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+_HEAD_META_RE = re.compile(r"<meta\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_ATTR_RE = r"""\b{n}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"""
+
+
+def _attr(tag: str, name: str) -> str | None:
+    m = re.search(_ATTR_RE.format(n=name), tag, re.IGNORECASE)
+    return None if m is None else next(g for g in m.groups() if g is not None)
+
+
+def _is_remote(url: str) -> bool:
+    return url.strip().lower().startswith(("http://", "https://", "//"))
+
+
+def _read_local_asset(ref: str, base_dir: Any, tag: str) -> str:
+    """Read a head asset that lives next to the source file. Raises ``ValueError``
+    naming the tag when it cannot be inlined (no *base_dir*, or the path leaves it)."""
+    if base_dir is None:
+        raise ValueError(
+            f"html_fragment: head asset {tag.strip()[:120]!r} is a local file and would be "
+            "dropped; pass base_dir=<folder of the source html> so it is inlined, or hoist "
+            "it to a remote URL"
+        )
+    base = Path(base_dir).resolve()
+    target = (base / ref.split("?", 1)[0].split("#", 1)[0]).resolve()
+    if base != target and base not in target.parents:
+        raise ValueError(f"html_fragment: head asset {ref!r} escapes base_dir; refused")
+    if not target.is_file():
+        raise ValueError(f"html_fragment: head asset {ref!r} not found under base_dir")
+    return target.read_text(encoding="utf-8")
+
+
+def _head_assets(head: str, base_dir: Any) -> str:
+    """Carry every head asset into the body fragment: <style> and inline <script>
+    verbatim; local stylesheets/scripts inlined; remote <link> (stylesheet, fonts,
+    preconnect, dns-prefetch, preload) and <script src> hoisted unchanged; the
+    viewport <meta> kept. A head <link> that cannot be carried raises. Other head
+    tags (<title>, charset, description) carry no render behaviour and are dropped
+    (page title/SEO are set through ``build_seo_meta``)."""
+    out: list[str] = []
+    for m in re.finditer(r"<style[^>]*>.*?</style>", head, re.IGNORECASE | re.DOTALL):
+        out.append(m.group(0))
+    scripts = _HEAD_SCRIPT_RE.findall(head)
+    # Scan tags outside <style>/<script> bodies so markup inside JS/CSS strings is not misread.
+    head = _HEAD_SCRIPT_RE.sub("", re.sub(r"<style[^>]*>.*?</style>", "", head, flags=re.IGNORECASE | re.DOTALL))
+    for tag in _HEAD_LINK_RE.findall(head):
+        href = _attr(tag, "href") or ""
+        rel = (_attr(tag, "rel") or "").lower()
+        if _is_remote(href):
+            out.append(tag)
+        elif "stylesheet" in rel and href:
+            out.append("<style>\n" + _read_local_asset(href, base_dir, tag) + "\n</style>")
+        else:
+            raise ValueError(
+                f"html_fragment: head <link> {tag.strip()[:120]!r} would be dropped "
+                "(only remote links and local stylesheets can be carried)"
+            )
+    for tag in scripts:
+        src = _attr(tag, "src")
+        if src is None or _is_remote(src):
+            out.append(tag)
+        else:
+            out.append("<script>\n" + _read_local_asset(src, base_dir, tag) + "\n</script>")
+    for tag in _HEAD_META_RE.findall(head):
+        if (_attr(tag, "name") or "").lower() == "viewport":
+            out.append(tag)
+    return "\n".join(out)
+
+
 def html_fragment(raw: str, *, require_ghl_media: bool = False,
-                  media_hosts: tuple[str, ...] = ()) -> str:
+                  media_hosts: tuple[str, ...] = (),
+                  base_dir: "str | os.PathLike | None" = None) -> str:
     """Normalise *raw* to a body-level HTML fragment.
 
     Strips ``<!DOCTYPE>``, ``<html>``, ``<head>``, ``<body>`` wrappers
-    case-insensitively.  ``<style>`` blocks found inside a ``<head>`` wrapper
-    are hoisted to the top of the returned fragment so that CSS survives
-    stripping.
+    case-insensitively.  Head assets are CARRIED, never silently dropped:
+    ``<style>`` blocks, inline and remote ``<script>``, remote
+    ``<link>`` (stylesheet, fonts, preconnect...) and the viewport ``<meta>`` are
+    hoisted to the top of the returned fragment; local stylesheets / scripts are
+    inlined from *base_dir* (the folder of the source file). A head ``<link>`` or
+    local asset that cannot be carried raises ``ValueError`` naming the tag.
+
+    Raw card inputs (``cc-number``, ``cc-csc``, ``cardnumber``, ``cvv`` ...) are
+    refused with ``ValueError`` on every return path (S06-10).
 
     Raises ``TypeError`` on non-string input, ``ValueError`` on empty or
     empty-after-strip result.
 
     Fragment passthrough (no wrappers) is a no-op and incurs no cost.
+
+    Head-asset, card-field and image problems on a full document are reported
+    together in one ``ValueError`` (one line group per problem class).
 
     IMAGES-AS-MEDIA-LINKS (``require_ghl_media``):
         When ``require_ghl_media`` is True, every ``<img>`` in the resulting
@@ -463,6 +1100,7 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
     # If there are no document-structure wrappers, return the raw text immediately
     # (after the images-as-media-links gate, which must run on every return path).
     if not (has_doctype or has_html or has_head or has_body):
+        assert_no_card_fields(text)
         if require_ghl_media:
             assert_images_are_ghl_media(text, media_hosts=media_hosts)
         return text
@@ -474,14 +1112,12 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
         flags=re.IGNORECASE | re.DOTALL,
     )
     hoisted_styles = ""
+    head_err: ValueError | None = None
     if head_match:
-        head_content = head_match.group(1)
-        styles = re.findall(
-            r"<style[^>]*>.*?</style>",
-            head_content,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        hoisted_styles = "\n".join(styles)
+        try:
+            hoisted_styles = _head_assets(head_match.group(1), base_dir)
+        except ValueError as e:
+            head_err = e
 
     # Extract <body> content if present.
     body_match = re.search(
@@ -509,13 +1145,23 @@ def html_fragment(raw: str, *, require_ghl_media: bool = False,
     # Strip <!DOCTYPE> from leading text in case it survived.
     fragment = re.sub(r"^\s*<!DOCTYPE[^>]*>", "", fragment, flags=re.IGNORECASE).strip()
 
+    parts: list[str] = []
+    card = find_card_fields(fragment)
+    if card:
+        parts.append(_card_msg(card))
+    if require_ghl_media:
+        imgs = find_non_ghl_images(fragment, extra_hosts=media_hosts)
+        if imgs:
+            parts.append(_IMG_MSG + "\n  - " + "\n  - ".join(imgs))
+    if head_err is not None:
+        parts.append(str(head_err))
+    if parts:
+        raise ValueError("\n".join(parts))
+
     if not fragment:
         raise ValueError(
             "html_fragment: stripping full-document wrappers produced an empty result"
         )
-
-    if require_ghl_media:
-        assert_images_are_ghl_media(fragment, media_hosts=media_hosts)
 
     return fragment
 
@@ -600,16 +1246,16 @@ def find_non_ghl_images(html: str, *, extra_hosts: tuple[str, ...] = ()) -> list
     return problems
 
 
+_IMG_MSG = "images must reference GHL media-storage CDN links, not external URLs:"
+
+
 def assert_images_are_ghl_media(html: str, *, media_hosts: tuple[str, ...] = ()) -> None:
     """Raise ``ValueError`` listing every ``<img>`` in *html* that does not
     reference a GHL media-storage URL. No-op when all images are GHL-hosted (or
     there are no images at all)."""
     problems = find_non_ghl_images(html, extra_hosts=media_hosts)
     if problems:
-        raise ValueError(
-            "images must reference GHL media-storage CDN links, not external URLs:\n  - "
-            + "\n  - ".join(problems)
-        )
+        raise ValueError(_IMG_MSG + "\n  - " + "\n  - ".join(problems))
 
 
 # Constructs the LIVE GoHighLevel /preview/ render probe (2026-06) CONFIRMED
@@ -670,7 +1316,9 @@ def normalize_entities(fragment: str) -> str:
     return cur
 
 
-def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) -> dict:
+def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False,
+                      require_ghl_media: bool = True,
+                      media_hosts: tuple[str, ...] = ()) -> dict:
     """Pre-save lint for a body-level HTML fragment bound for a GoHighLevel
     custom-code element. Returns a result dict — it does NOT raise on content
     findings (only ``TypeError`` on a non-string input).
@@ -691,11 +1339,14 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) 
     hatch and msgsndr tracking, so the ban-list for those constructs is EMPTY by
     design and must stay that way until a live probe proves otherwise.
 
-    Hard errors (block; ``ok=False``) are limited to TWO uncontested, render-
-    verified failures that are NOT "GHL strips X" claims:
+    Hard errors (block; ``ok=False``) are limited to uncontested failures that
+    are NOT "GHL strips X" claims:
       - an empty / blank fragment (renders nothing — mirrors invariant 6)
       - a full-document wrapper left un-stripped (starts with ``<!doctype`` /
         ``<html`` — mirrors invariant 7; run ``html_fragment()`` first)
+      - a home-made card input (cc-number, cc-csc, cardnumber, cvv ... S06-10)
+      - an ``<img>`` whose src is not a GHL media-storage URL (S06-11; on by
+        default, ``require_ghl_media=False`` only for non-funnel callers)
 
     enforce_unverified_strip (default ``False`` = SAFE):
         Reserved hook for strip rules a FUTURE live save round-trip proves. The
@@ -739,6 +1390,14 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False) 
             "fragment is a full HTML document (starts with <!DOCTYPE / <html), not "
             "a body-level fragment — run html_fragment() first (mirrors invariant 7)."
         )
+
+    # Hard error 3 — raw card inputs collect card data outside the processor.
+    errors.extend(find_card_fields(fragment))
+
+    # Hard error 4 — images must be GHL media-storage links (relative paths and
+    # external/temporary URLs break or expire after launch).
+    if require_ghl_media:
+        errors.extend(find_non_ghl_images(fragment, extra_hosts=media_hosts))
 
     # Transparency: which probe-confirmed-survivor constructs are present. These
     # are reported, never penalised — the lint exists partly to PROVE these are
@@ -1106,6 +1765,9 @@ def new_page_blob(
     allow_row_max_width: bool = False,
     primary_color: str | None = None,
     secondary_color: str | None = None,
+    require_ghl_media: bool | None = None,
+    media_hosts: tuple[str, ...] = (),
+    base_dir: "str | os.PathLike | None" = None,
 ) -> dict:
     """Build a complete native ``pageData`` blob for a freshly-created page.
 
@@ -1166,6 +1828,14 @@ def new_page_blob(
         secondary_color: Client brand secondary color as a CSS hex string.
             Replaces the ``Secondary`` palette entry and ``--secondary`` in
             ``pageStyles``. ``None`` (default) keeps ``#188bf6``.
+        require_ghl_media: every ``<img>`` must be a GHL media-storage URL
+            (``html_fragment`` raises naming each offender, e.g. ``images/hero.png``).
+            ``None`` (default) = ON for ``surface="funnel"`` (funnel builds must
+            never ship local mockup paths or expiring KIE temp URLs), off for
+            ``"website"``. Pass ``False`` to opt out explicitly.
+        media_hosts: extra allowed GHL media hosts (custom media domain).
+        base_dir: folder of the source html, so local head stylesheets/scripts
+            are inlined by ``html_fragment`` (see its docstring).
 
     Returns:
         A complete ``pageData`` blob ASSEMBLED FROM THE INLINED ``_FLAT_*`` /
@@ -1196,7 +1866,12 @@ def new_page_blob(
     # collapse any double-escaped entity so the stored rawCustomCode is the
     # canonical single-escape form (P2 idempotency: re-runs cannot compound
     # &amp; -> &amp;amp;).
-    fragment = normalize_entities(html_fragment(raw_custom_code))
+    if require_ghl_media is None:
+        require_ghl_media = surface == "funnel"
+    fragment = normalize_entities(html_fragment(
+        raw_custom_code, require_ghl_media=require_ghl_media,
+        media_hosts=media_hosts, base_dir=base_dir,
+    ))
 
     # ── NESTED section -> row -> col -> custom-code blob (the renderable shape) ─
     #
@@ -1381,13 +2056,25 @@ def edit_element_customcode(page_data: dict, locator: dict, new_value: str) -> d
 # gates are deliberately strict (never-fabricate): the author is BOUND to the
 # intake founder name (it cannot default to the brand or blank), keywords must be
 # a researched, non-placeholder set, the canonical must be the intended live/
-# preview domain (never a Firebase storage URL), and title/description honour the
-# search-engine display-truncation limits. Pure: no network — the live ogImage
-# 200 re-verify is the §3 asset-cdn stage's job; callers pass its result in.
+# preview domain (never a Firebase storage URL), and the title honours the
+# search-engine display-truncation limit while the description honours the
+# stricter 155-char save-time cap (see SEO_DESCRIPTION_SAVE_MAX below). Pure:
+# no network; the live ogImage 200 re-verify is the §3 asset-cdn stage's job;
+# callers pass its result in.
 
 SEO_TITLE_MAX = 60          # search-engine title truncation threshold
-SEO_DESCRIPTION_MAX = 160   # search-engine meta-description truncation threshold
-SEO_LANGUAGE_DEFAULT = "en"  # set explicitly — never inherit the GHL default
+# S06-06 Q1 disposition: TWO description numbers with TWO different jobs.
+# SEO_DESCRIPTION_MAX (160) is the search-engine DISPLAY-truncation threshold
+# only: beyond it, search results may cut the description off. It never
+# authorizes a longer description. The operative SAVE-TIME cap is
+# SEO_DESCRIPTION_SAVE_MAX (155): GHL's own in-app validator rejects a
+# description over 155 chars (validator string "Description is under 155
+# characters", the same gate ghl_builder.SEO_DESC_MAX enforces; 156-160 char
+# descriptions passed the old 160 cap but failed GHL's validator). Every
+# build/validation path enforces 155; the 156-160 band is refused here too.
+SEO_DESCRIPTION_MAX = 160   # DISPLAY-truncation threshold ONLY (never a save cap)
+SEO_DESCRIPTION_SAVE_MAX = 155  # operative save-time cap (GHL validator)
+SEO_LANGUAGE_DEFAULT = "en"  # set explicitly; never inherit the GHL default
 SEO_MIN_KEYWORDS = 3        # researched-keywords gate: >= N distinct, non-placeholder
 
 # Tokens a *researched* keyword/tag set must never contain — these betray an
@@ -1494,7 +2181,9 @@ def build_seo_meta(
     malformed:
 
       * ``title``    — required, ``<= SEO_TITLE_MAX`` (60) chars.
-      * ``description`` — required, ``<= SEO_DESCRIPTION_MAX`` (160) chars.
+      * ``description`` - required, ``<= SEO_DESCRIPTION_SAVE_MAX`` (155) chars
+        (the GHL save-time validator cap; 160 is only the search-engine
+        display-truncation threshold and never authorizes a longer value).
       * ``keywords`` — researched set: non-empty, ``>= SEO_MIN_KEYWORDS`` distinct,
         no placeholder tokens (``_assert_researched_keywords``).
       * ``author``   — BOUND to ``founder_name`` (never free-typed, never the brand
@@ -1525,10 +2214,11 @@ def build_seo_meta(
             f"seoMeta.title is {len(title)} chars; must be <= {SEO_TITLE_MAX} "
             "(search engines truncate beyond this)"
         )
-    if len(description) > SEO_DESCRIPTION_MAX:
+    if len(description) > SEO_DESCRIPTION_SAVE_MAX:
         raise ValueError(
             f"seoMeta.description is {len(description)} chars; must be <= "
-            f"{SEO_DESCRIPTION_MAX} (search engines truncate beyond this)"
+            f"{SEO_DESCRIPTION_SAVE_MAX} (the GHL save-time validator cap; "
+            "search engines may also truncate display beyond 160)"
         )
 
     kw = _seo_clean_list(keywords, "keywords")
@@ -1692,8 +2382,9 @@ def page_seo_autosave(page_id: str, page_data: dict, seo_meta: dict, *,
     step["expect"]["seo_author_is_founder"] = bool(founder_name)
     step["expect"]["verify_seo"] = (
         "re-read GET /funnels/page/<id>; fetch its pageDataDownloadUrl; confirm "
-        "pageData.seoMeta is present + populated (title<=60, description<=160, "
-        ">=3 researched keywords, author==founder, https canonical, language='en')"
+        "pageData.seoMeta is present + populated (title<=60, description<=155 "
+        "(save cap), >=3 researched keywords, author==founder, https canonical, "
+        "language='en')"
     )
     return step
 
@@ -2317,6 +3008,27 @@ __all__ = [
     "page_autosave_path",
     "funnel_create_path",
     "step_create_path",
+    "FOLDER_TYPES",
+    "folder_list_path",
+    "FOLDER_CREATE_CAPABILITY_ID",
+    "FOLDER_CREATE_PENDING",
+    "FOLDER_CREATE_ENABLED_FOR_REVIEW",
+    "FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS",
+    "FOLDER_CREATE_CAPTURE_SCHEMA",
+    "CaptureRequired",
+    "CaptureInvalid",
+    "FolderCreateRefused",
+    "OFFLINE_FOLDER_CAPTURE",
+    "FOLDER_CREATE_FIXTURE_WARNING",
+    "is_synthetic_folder_capture",
+    "folder_create_capture_checklist",
+    "validate_folder_create_capture",
+    "load_folder_create_capture",
+    "folder_create_capability_state",
+    "assert_folder_create_enabled",
+    "folder_create_path",
+    "folder_create_body",
+    "folder_create",
     "funnel_fetch_path",
     "page_list_path",
     "funnel_delete_path",
@@ -2342,6 +3054,7 @@ __all__ = [
     "edit_element_customcode",
     "SEO_TITLE_MAX",
     "SEO_DESCRIPTION_MAX",
+    "SEO_DESCRIPTION_SAVE_MAX",
     "SEO_LANGUAGE_DEFAULT",
     "SEO_MIN_KEYWORDS",
     "build_seo_meta",
