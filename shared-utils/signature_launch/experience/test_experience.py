@@ -51,7 +51,10 @@ class Questions(unittest.TestCase):
                 self.assertTrue(2 <= len(q["options"]) <= 4, q)
                 self.assertLessEqual(len(q["header"]), 12)
                 self.assertEqual(q["options"][-1]["label"], rq.HELP_LABEL)
-                self.assertTrue(all(o["description"] for o in q["options"]))
+                # the bank's own explanation is kept; the help option is always explained; a label that
+                # already says it all (QS has "Yes, I will tell you") carries an empty description
+                self.assertTrue(all(isinstance(o["description"], str) for o in q["options"]))
+                self.assertTrue(q["options"][-1]["description"])
                 self.assertNotIn("Use this one", [o["description"] for o in q["options"]])
 
     def test_many_questions_never_batch(self):
@@ -80,7 +83,61 @@ class Questions(unittest.TestCase):
             {"value": "B", "label": "B, Circle"}]}
         n = rq.normalize(q)
         self.assertEqual(n["choices"][0]["description"], "Clean rectangular photos.")
-        self.assertTrue(n["choices"][1]["description"])  # never an empty explanation
+        self.assertEqual(n["choices"][1]["description"], "")  # the bank said nothing: nothing is invented
+        opts = rq.structured([q])[0]["questions"][0]["options"]
+        self.assertEqual(opts[0]["description"], "Clean rectangular photos.")
+        self.assertEqual(opts[1]["description"], rq.HINT)  # a short label gets one warm line under it
+        self.assertNotIn("Circle", opts[1]["description"])  # ... that never repeats the label
+
+    def test_a_label_that_says_it_all_gets_no_filler(self):
+        """33 of the 60 bank questions carry choices with no description. A long label or one that reads
+        as a sentence is never followed by a line that repeats it; a question of short labels gets the one
+        warm hint on every option; a mix gets none, so no row looks unfinished; the chat message never
+        adds a hint (a numbered 'Monthly' needs none)."""
+        def hints(labels, **described):
+            cs = [{"label": x, "description": described.get(x, "")} for x in labels]
+            return rq._hints(cs)
+        for label in ["A: Recommend a plan for me (use what is known, ask only what is missing, let them review)",
+                      "Yes, send access after purchase", "Light (white or cream)", "Use my own story for it.",
+                      "Is this right?"]:
+            self.assertTrue(rq._says_it_all(label), label)
+            self.assertEqual(hints([label, "No"]), ["", ""], label)
+        for label in ["Monthly", "Dark", "88", "I have a price", "No"]:
+            self.assertFalse(rq._says_it_all(label), label)
+            self.assertNotIn(label, rq.HINT)
+        self.assertEqual(hints(["All at once", "Monthly"]), [rq.HINT, rq.HINT])
+        self.assertEqual(hints(["All at once", "Monthly", "In parts or trial first"]), ["", "", ""])
+        self.assertEqual(hints(["Dark", "Light"], Dark="Dark backgrounds."), ["Dark backgrounds.", rq.HINT])
+        self.assertEqual(hints(["Dark", "Light (white or cream)"], Dark="Dark backgrounds."), ["Dark backgrounds.", ""])
+        q = {"id": "b", "text": "How do you bill?", "choices": ["All at once", "Monthly"]}
+        self.assertEqual([o["description"] for o in rq.structured([q])[0]["questions"][0]["options"][:2]],
+                         [rq.HINT, rq.HINT])
+        msg = rq.chat(q)
+        self.assertIn("\n2. Monthly\n", msg)
+        self.assertNotIn("Pick this one", msg)
+        self.assertNotIn(" - ", msg)
+
+    def test_a_way_out_never_gets_the_pick_this_one_hint(self):
+        """"Pick this one if it sounds right to you" under "Not sure" reads as nonsense. A way out
+        (Not sure / I don't know / Skip / Other ...) gets no hint, does not stop the real answers
+        from getting theirs, and keeps the bank's own words when the bank wrote some."""
+        def hints(labels, **described):
+            return rq._hints([{"label": x, "description": described.get(x, "")} for x in labels])
+        for label in ["Not sure", "Not sure yet", "Unsure", "I don't know", "I don\u2019t know yet", "Skip",
+                      "Skip this one", "Other", "Other (type it in)", "Something else", "Decide later",
+                      "None of these", "Prefer not to say"]:
+            self.assertTrue(rq._is_way_out(label), label)
+            self.assertEqual(hints(["Monthly", label]), [rq.HINT, ""], label)
+        for label in ["Monthly", "Sure thing", "Skipper", "Others", "Darkness", "None yet", "A different logo"]:
+            self.assertFalse(rq._is_way_out(label), label)
+        # a way out is not a real answer: its length never silences the others, and the others' hints stay
+        self.assertEqual(hints(["Monthly", "Yearly", "Not sure about this one"]), [rq.HINT, rq.HINT, ""])
+        self.assertEqual(hints(["Monthly", "Not sure"], **{"Not sure": "We can work it out together."}),
+                         [rq.HINT, "We can work it out together."])
+        q = {"id": "b", "text": "How do you bill?", "choices": ["All at once", "Monthly", "Not sure"]}
+        opts = rq.structured([q])[0]["questions"][0]["options"]
+        self.assertEqual([o["description"] for o in opts[:3]], [rq.HINT, rq.HINT, ""])
+        self.assertNotIn("Pick this one", rq.chat(q))
 
     def test_a_one_sentence_help_is_kept_as_the_explanation(self):
         """Skill 83's picture questions carry `help` as a plain sentence; its coaching must survive."""
@@ -96,7 +153,7 @@ class Questions(unittest.TestCase):
              "help": {"explain": "Email always works."}, "default": {"value": "Email only"}}
         opts = rq.structured([q])[0]["questions"][0]["options"]
         self.assertEqual(opts[-1]["label"], rq.HELP_LABEL)
-        self.assertIn("show me an example", opts[-1]["description"])
+        self.assertIn("show you an example", opts[-1]["description"])
         self.assertIn("recommend", opts[-1]["description"])
 
     def test_three_choice_cap_reported_not_silent(self):

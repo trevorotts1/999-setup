@@ -180,28 +180,66 @@ function Ensure-Pillow {
 }
 
 # Ensure-Jsonschema - the Black Friday Launcher's ONE third-party runtime
-# requirement (same rule as setup-macos.sh ensure_jsonschema). The Launcher's
-# checkout validator does `import jsonschema` at module load; the declaration is
-# the sibling skill's requirements.txt. Idempotent (an importable jsonschema
-# skips pip) and FATAL on failure, unlike Pillow: a Launcher that cannot import
-# jsonschema cannot run, so a silent MISSING line would ship a broken skill.
-# The import is the verdict, never pip's exit code. Returns the summary text.
+# requirement (same rule as setup-macos.sh ensure_jsonschema; the 999 counterpart
+# of onboarding's oc_ensure_jsonschema). The Launcher's checkout validator does
+# `import jsonschema` at module load; the declaration and the version floor are
+# the sibling skill's requirements.txt. Idempotent (an importable jsonschema at
+# or above the floor skips pip) and FATAL on failure, unlike Pillow: a Launcher
+# that cannot import jsonschema cannot run, so a silent MISSING line would ship a
+# broken skill.
+# WHERE: %USERPROFILE%\.claude\pydeps\py<major>.<minor> (override: $env:OC_PYDEPS_DIR,
+# used as the folder itself), the same contract as onboarding and the Command
+# Center. `pip install --target` writes there with no --user, no
+# --break-system-packages and no venv; the folder is versioned by python
+# <major>.<minor> because jsonschema pulls compiled wheels. The skills do NOT read
+# that folder yet: they will once the onboarding launch-family sync lands, which
+# adds the block that puts it first on sys.path to every skill that imports
+# jsonschema. The verdict already does what that block will do: a REAL import
+# plus the floor, run under `python` (the interpreter the skills run under),
+# never pip's exit code. pip runs under that same `python`;
+# `py -3` is only the fallback when `python` has no pip. Returns the summary text.
+function Test-JsonschemaOk([int]$Major, [int]$Minor, [string]$Deps) {
+    $code = "import re, sys; sys.path.insert(0, sys.argv[1]); import jsonschema, importlib.metadata as m; v = m.version(jsonschema.__name__); raise SystemExit(0 if (tuple(int(x) for x in re.findall(r'\d+', v)[:2]) + (0, 0))[:2] >= ($Major, $Minor) else 1)"
+    return (Test-Runs 'python' @('-W', 'ignore', '-c', $code, $Deps))
+}
 function Ensure-Jsonschema {
-    if (Test-Runs 'python' @('-c', 'import jsonschema')) { return 'OK   already importable' }
     $req = Join-Path $Scripts '..\..\black-friday-launcher\requirements.txt'
-    if (-not (Test-Path -LiteralPath $req)) {
-        Write-Blocker "jsonschema is required by the Black Friday Launcher but its declaration is missing: $req. Setup stops here instead of shipping a Launcher that cannot import it."
+    $major = 4; $minor = 0; $spec = 'jsonschema>=4.0'
+    if (Test-Path -LiteralPath $req) {
+        $m = [regex]::Match((Get-Content -LiteralPath $req -Raw), '(?m)^\s*(jsonschema\s*>=\s*(\d+)(?:\.(\d+))?)')
+        if ($m.Success) {
+            $spec = $m.Groups[1].Value -replace '\s', ''
+            $major = [int]$m.Groups[2].Value
+            if ($m.Groups[3].Success) { $minor = [int]$m.Groups[3].Value }
+        }
     }
-    $pipExe = $null
-    if (Test-Runs 'py' @('-m', 'pip', '--version')) { $pipExe = 'py' }
-    elseif (Test-Runs 'python' @('-m', 'pip', '--version')) { $pipExe = 'python' }
-    if (-not $pipExe) {
-        Write-Blocker "jsonschema is required by the Black Friday Launcher and neither py nor python has pip. Install it yourself: python -m pip install -r $req"
+    $pyv = (& python -c 'import sys; print(sys.version_info[0], sys.version_info[1])') -split '\s+'
+    $deps = $env:OC_PYDEPS_DIR
+    if (-not $deps) { $deps = Join-Path $env:USERPROFILE ".claude\pydeps\py$($pyv[0]).$($pyv[1])" }
+    if (Test-JsonschemaOk $major $minor $deps) { return 'OK   already importable' }
+    $pipExes = @()
+    if (Test-Runs 'python' @('-m', 'pip', '--version')) { $pipExes += 'python' }
+    if (Test-Runs 'py' @('-3', '-m', 'pip', '--version')) { $pipExes += 'py -3' }
+    if ($pipExes.Count -eq 0) {
+        Write-Blocker "jsonschema $major.$minor or newer is required by the Black Friday Launcher and neither python nor py has pip. Install it yourself: python -m pip install --target $deps `"$spec`""
     }
-    & $pipExe -m pip install -r $req | Out-Host
-    Refresh-Path
-    if (Test-Runs 'python' @('-c', 'import jsonschema')) { return "OK   $pipExe -m pip install -r requirements.txt" }
-    Write-Blocker "jsonschema is still not importable after '$pipExe -m pip install -r $req'. The Black Friday Launcher cannot run without it. Install it into the python on PATH, then rerun setup."
+    # `pip --upgrade --target` writes the new jsonschema next to the old
+    # jsonschema-<old>.dist-info instead of replacing it, and importlib.metadata reads
+    # whichever dist-info the directory listing returns first (the lowest version on
+    # NTFS, which lists sorted): a false "too old" after a floor raise. Clear the old
+    # jsonschema (package and dist-info) first, only inside the pydeps folder.
+    if (Test-Path -LiteralPath $deps) {
+        Get-ChildItem -LiteralPath $deps -Force | Where-Object { $_.Name -eq 'jsonschema' -or $_.Name -like 'jsonschema-*' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    foreach ($pe in $pipExes) {
+        $parts = $pe -split ' '
+        $exe = $parts[0]
+        $a = @($parts | Select-Object -Skip 1) + @('-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', '--no-input', '--upgrade', '--target', $deps, $spec)
+        & $exe @a | Out-Host
+        Refresh-Path
+        if (Test-JsonschemaOk $major $minor $deps) { return "OK   $pe -m pip install --target $deps" }
+    }
+    Write-Blocker "jsonschema $major.$minor or newer is still not importable by python after installing it into $deps. The Black Friday Launcher cannot run without it. Install it yourself: python -m pip install --target $deps `"$spec`", then rerun setup."
 }
 
 # Bundled personal skills — the list and the plan come from

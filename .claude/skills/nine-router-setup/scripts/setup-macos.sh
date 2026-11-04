@@ -226,48 +226,80 @@ ensure_pillow() {
   return 0
 }
 
-# ensure_jsonschema — the Black Friday Launcher's ONE third-party runtime
-# requirement. Launcher_core/checkout.py imports Skill 79's validator, which
-# does `import jsonschema` at module load; the declaration is the Launcher's
-# own requirements.txt. Idempotent (an importable jsonschema skips pip
-# entirely) and FATAL on failure, unlike Pillow: a Launcher that cannot import
-# jsonschema cannot run at all, so a silent MISSING line would ship a broken
-# skill. --user is the only safe form on a stock PEP 668 Mac (never
-# --break-system-packages); inside a venv pip rejects --user, so the flag is
-# dropped when the interpreter is already isolated in one.
+# ensure_jsonschema [--check] — the Black Friday Launcher's ONE third-party
+# runtime requirement. launcher_core/checkout.py imports Skill 79's validator,
+# which does `import jsonschema` at module load; the declaration (and the
+# version floor) is the Launcher's own requirements.txt. Skills 49, 71, 78-82,
+# 44 and 38 import it too. This is the 999 counterpart of onboarding's
+# oc_ensure_jsonschema and the ONE implementation of the step: the full install
+# and `--skills-only` (the update path) both call it.
+#   --check  read-only probe: prints the installed version and returns 0, or
+#            prints the reason and returns 1. Never installs.
+#   (none)   probe; when missing or older than the floor, install into the
+#            shared pydeps folder, then re-probe. Idempotent (a good import
+#            skips pip entirely) and FATAL on failure, unlike Pillow: a Launcher
+#            that cannot import jsonschema cannot run at all, so a silent
+#            MISSING line would ship a broken skill.
+# WHERE: $HOME/.claude/pydeps/py<major>.<minor> (override: $OC_PYDEPS_DIR, used
+# as the folder itself). The same contract as onboarding and the Command
+# Center. `pip install --target` is the one form a Homebrew python (PEP 668,
+# externally managed) accepts: plain and --user are refused there, and
+# --break-system-packages is never used. No venv. The folder is versioned by
+# python <major>.<minor> because jsonschema pulls compiled wheels, so a python
+# upgrade re-converges into a new folder instead of loading the wrong ABI.
+# The skills do NOT read that folder yet: they will once the onboarding
+# launch-family sync lands, which adds the block that puts it first on sys.path
+# to every skill that imports jsonschema. The probe already does what that block
+# will do, so it judges the install the way the skills will: a REAL import plus
+# the version floor, never find_spec or pip's exit code (an old jsonschema
+# imports fine, and pip can exit 0 and leave the import broken). Everything
+# stays inside this function so tests/verify_installer_python_deps.sh can
+# extract it verbatim.
 ensure_jsonschema() {
   local req="$SKILL_DIR/../black-friday-launcher/requirements.txt"
-  local out rc ver in_venv
-  out="$(python3 -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>&1)" && rc=0 || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    DEP_SUMMARY+=("$(printf '%-14s OK   %s' jsonschema "already importable ($out)")")
+  local spec="" out ver py pyver deps stale
+  local probe='import re, sys
+sys.path.insert(0, sys.argv[2])
+need = re.match(r"^[A-Za-z0-9_.-]+\s*>=\s*(\d+)(?:\.(\d+))?", sys.argv[1])
+need = (int(need.group(1)), int(need.group(2) or 0)) if need else (0, 0)
+try:
+    import jsonschema
+    from importlib.metadata import version
+    v = version("jsonschema")
+    got = (tuple(int(x) for x in re.findall(r"\d+", v)[:2]) + (0, 0))[:2]
+except Exception as e:
+    print("%s: %s" % (type(e).__name__, e)); sys.exit(1)
+if got < need:
+    print("installed %s is older than the required %d.%d" % (v, need[0], need[1])); sys.exit(1)
+print(v)'
+  [ -f "$req" ] && spec="$(sed -n 's/^[[:space:]]*\(jsonschema[^#[:space:]]*\).*/\1/p' "$req" | head -1)"
+  [ -n "$spec" ] || spec="jsonschema>=4.0"
+  py="$(command -v python3 || true)"
+  pyver="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo 0.0)"
+  deps="${OC_PYDEPS_DIR:-$HOME/.claude/pydeps/py$pyver}"
+  # rc=0 only when the import works AND meets the floor; $ver is the version or the reason.
+  if ver="$(python3 -B -W ignore -c "$probe" "$spec" "$deps" 2>&1)"; then
+    if [ "${1:-}" = "--check" ]; then printf '%s\n' "$ver"
+    else DEP_SUMMARY+=("$(printf '%-14s OK   %s' jsonschema "already importable ($ver)")"); fi
     return 0
   fi
-  [ -f "$req" ] || fail "jsonschema is required by the Black Friday Launcher but its declaration is missing: $req. Nothing else names the dependency, so setup stops here instead of shipping a Launcher that cannot import it."
-  in_venv="$(python3 -c 'import sys; print(int(sys.prefix != sys.base_prefix))' 2>/dev/null || echo 0)"
-  log "Installing the Black Friday Launcher Python requirement (jsonschema) from $req..."
-  set +e
-  if [ "$in_venv" = 1 ]; then
-    out="$(python3 -m pip install -r "$req" 2>&1)"
-  else
-    out="$(python3 -m pip install --user -r "$req" 2>&1)"
-  fi
-  rc=$?
-  set -e
-  # The import is the verdict and rc only explains it (same rule as Pillow):
-  # pip can exit 0 and still leave the module unimportable on this interpreter.
-  if [ "$rc" -eq 0 ] && ver="$(python3 -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>&1)"; then
-    DEP_SUMMARY+=("$(printf '%-14s OK   %s' jsonschema "python3 -m pip install -r requirements.txt ($ver)")")
+  if [ "${1:-}" = "--check" ]; then printf '%s\n' "$ver"; return 1; fi
+  log "Installing the Black Friday Launcher Python requirement ($spec) into $deps for $py ($ver)..."
+  # `pip --upgrade --target` writes the new jsonschema next to the old
+  # jsonschema-<old>.dist-info instead of replacing it, and importlib.metadata
+  # reads whichever dist-info the directory listing returns first (the lowest
+  # version on a sorted listing): a false "too old" after a floor raise. Clear
+  # the old jsonschema first, only inside the pydeps folder (`|| true`: an unwritable one reaches the BLOCKER).
+  for stale in "$deps"/jsonschema "$deps"/jsonschema-*; do
+    if [ -e "$stale" ] || [ -L "$stale" ]; then rm -rf "$stale" 2>/dev/null || true; fi
+  done
+  out="$(python3 -m pip install --quiet --disable-pip-version-check --no-input --upgrade --target "$deps" "$spec" 2>&1)" || true
+  # The import is the verdict, never pip's exit code.
+  if ver="$(python3 -B -W ignore -c "$probe" "$spec" "$deps" 2>&1)"; then
+    DEP_SUMMARY+=("$(printf '%-14s OK   %s' jsonschema "pip install --target $deps ($ver)")")
     return 0
   fi
-  local em why
-  em="$(python3 -c 'import pathlib, sysconfig; print(int((pathlib.Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED").exists()))' 2>/dev/null || echo 0)"
-  if [ "$em" = 1 ]; then
-    why="this python3 ($(command -v python3)) is externally managed (PEP 668) and refuses --user; macOS Command Line Tools' /usr/bin/python3 does not. Run setup with that interpreter first on PATH, or install jsonschema into this one yourself."
-  else
-    why="install it yourself: python3 -m pip install --user -r $req"
-  fi
-  fail "jsonschema is still not importable after installing $req (pip rc=$rc). The Black Friday Launcher cannot run without it. $why Then rerun setup. Last pip output: $(printf '%s' "$out" | head -3)"
+  fail "Python package $spec could not be installed into $deps for $py (last check: $ver). The Black Friday Launcher cannot run without it. Fix: $py -m pip install --target $deps \"$spec\", then rerun setup. Last pip output: $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')"
 }
 
 # ensure_gh (fix #33) — GitHub CLI, used for the one-click GitHub sign-in that
@@ -1156,13 +1188,12 @@ $d
   # dependency too. APPLY runs ensure_jsonschema (idempotent: importable = no pip)
   # in a subshell, because it fail()s on error - that becomes one counted error
   # here instead of aborting before the RESULT line. CHECK is read-only: reports.
-  js_ver="$(python3 -B -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null)" || js_ver=""
+  js_ver="$(ensure_jsonschema --check)" && js_why="" || { js_why="$js_ver"; js_ver=""; }
   if [ -n "$js_ver" ]; then
     printf '[skills-only] jsonschema: OK (already importable, %s)\n' "$js_ver"
   elif [ "$check" = 1 ]; then
-    printf '[skills-only] jsonschema: WOULD INSTALL from black-friday-launcher/requirements.txt (not importable by python3 now)\n'
-  elif ( ensure_jsonschema ) \
-       && js_ver="$(python3 -B -c'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null)"; then
+    printf '[skills-only] jsonschema: WOULD INSTALL from black-friday-launcher/requirements.txt (python3 now: %s)\n' "$js_why"
+  elif ( ensure_jsonschema ) && js_ver="$(ensure_jsonschema --check)"; then
     printf '[skills-only] jsonschema: INSTALLED (%s)\n' "$js_ver"
   else
     printf '[skills-only] jsonschema: ERROR could not be installed (see BLOCKER above) - the Black Friday Launcher cannot run until it is\n'

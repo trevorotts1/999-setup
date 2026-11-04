@@ -48,8 +48,8 @@ CITATIONS = [
     ("interfaces[0].symbols[0]", MAC, "323", "bundled_skills"),
     ("interfaces[0].symbols[1]", MAC, "363", "link_one_skill"),
     ("interfaces[0].symbols[2]", MAC, "408", "link_skills_into_root"),
-    ("interfaces[0].symbols[3]", WIN, "226", "Get-BundledSkills"),
-    ("interfaces[0].symbols[4]", WIN, "316", "Link-BundledSkills"),
+    ("interfaces[0].symbols[3]", WIN, "264", "Get-BundledSkills"),
+    ("interfaces[0].symbols[4]", WIN, "354", "Link-BundledSkills"),
 
     ("interfaces[3].symbols[0]", MAC, "1128", "main"),
     ("interfaces[3].symbols[1]", MAC, "1173-1175", "Darwin"),
@@ -65,8 +65,8 @@ CITATIONS = [
 
     ("interfaces[4].symbols[0]", WIN, "23", "param"),
     ("interfaces[4].symbols[1]", WIN, "385-389", "Windows_NT"),
-    ("interfaces[4].symbols[2]", WIN, "226", "Get-BundledSkills"),
-    ("interfaces[4].symbols[3]", WIN, "316", "Link-BundledSkills"),
+    ("interfaces[4].symbols[2]", WIN, "264", "Get-BundledSkills"),
+    ("interfaces[4].symbols[3]", WIN, "354", "Link-BundledSkills"),
     ("interfaces[4].symbols[4]", WIN, "375", "DPAPI"),
 
     ("interfaces[2].measured.wire_sh_contract", WIRE, "39", "exits 0"),
@@ -93,7 +93,7 @@ CITATIONS = [
     ("interfaces[8].symbols[2]", MAC, "771", "so_sync"),
     ("interfaces[8].symbols[3]", MAC, "838", "so_refresh_updater"),
     ("interfaces[8].symbols[4]", MAC, "989", "skills_only_mode"),
-    ("interfaces[8].symbols[5]", MAC, "1146-1150", "--skills-only"),
+    ("interfaces[8].symbols[5]", MAC, "1238-1241", "--skills-only"),
 
     ("interfaces[9].measured.launcher_invocation", LAUN, "205-206", "sync-nine-skills.sh"),
     ("interfaces[9].measured.self_install_flag", SYNC, "67", "--install"),

@@ -7,6 +7,12 @@
 # function is extracted verbatim from setup-macos.sh (the same technique
 # installer-registration/verify-registration.sh uses) and run with the venv's
 # python3 first on PATH. Nothing is written outside a temp directory.
+# The installer writes into the shared pydeps folder (pip install --target
+# $HOME/.claude/pydeps/py<X.Y>), not into the venv. The skills do not read that
+# folder yet: they will once the onboarding launch-family sync lands, which adds
+# the block that puts it first on sys.path to every skill that imports
+# jsonschema. The checks after the install already do what that block will do
+# (preflight takes the folder as an argument).
 #
 # Control: the identical preflight runs BEFORE the install and must report
 # MISSING, so a PRESENT result afterwards is the install, not the host.
@@ -56,20 +62,25 @@ grep -q '^ensure_jsonschema() {' "$WRAPPER" \
 export HOME="$BASE/home"
 python3 -m venv "$BASE/venv" || { echo "venv creation failed" >&2; exit 2; }
 PY="$BASE/venv/bin/python3"
+DEPS="$HOME/.claude/pydeps/py$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
 "$PY" -c 'import sys; assert sys.prefix != sys.base_prefix' \
   && pass "venv interpreter is isolated from the host (clean HOME=$HOME)" \
   || fail "venv interpreter is not isolated"
 
-# preflight_isolation — the real Launcher preflight, run under -I.
+# preflight_isolation — the real Launcher preflight, run under -I. An optional
+# second argument is a pydeps folder put first on sys.path (what the skills will do
+# once the onboarding launch-family sync lands).
 preflight() {
   "$PY" -I -c '
 import json, sys
 sys.path.insert(0, sys.argv[1])
+if len(sys.argv) > 2:
+    sys.path.insert(0, sys.argv[2])
 from launcher_core import dependencies
 report = dependencies.check()
 entry = next(e for e in report["entries"] if e["id"] == "runtime-jsonschema")
 print(json.dumps({"status": entry["status"], "evidence": entry["evidence"]}))
-' "$LAUNCHER" 2>&1
+' "$LAUNCHER" ${1:+"$1"} 2>&1
 }
 
 # --- control: BEFORE the install ------------------------------------------
@@ -90,9 +101,12 @@ case "$OUT1" in
   *jsonschema*OK*) pass "installer records jsonschema OK in the dependency summary" ;;
   *) fail "installer summary does not record jsonschema OK (got: $OUT1)" ;;
 esac
-"$PY" -I -c 'import jsonschema' \
-  && pass "jsonschema imports in the clean venv after the install" \
+"$PY" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import jsonschema' "$DEPS" \
+  && pass "jsonschema imports with the pydeps folder first on sys.path after the install" \
   || fail "jsonschema still not importable after the install"
+"$PY" -I -c 'import jsonschema' 2>/dev/null \
+  && fail "jsonschema leaked into the venv itself (the install must go to $DEPS only)" \
+  || pass "the venv python itself is untouched (the install went to the pydeps folder)"
 
 # --- second run: idempotent -----------------------------------------------
 OUT2="$(PATH="$BASE/venv/bin:$PATH" SKILL_DIR="$INSTALLER_SKILL_DIR" \
@@ -107,7 +121,7 @@ case "$OUT2" in
 esac
 
 # --- after: the Launcher preflight itself ---------------------------------
-AFTER="$(preflight)"
+AFTER="$(preflight "$DEPS")"
 case "$AFTER" in
   *'"status": "present"'*'isolated_interpreter=True'*)
     pass "preflight: runtime-jsonschema PRESENT with isolated_interpreter=True" ;;
