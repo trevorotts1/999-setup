@@ -149,7 +149,7 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.15",
+        "version": "0.2.16",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
@@ -176,7 +176,7 @@
     ],
     "signature-funnel": [
       {
-        "version": "v2.1.30",
+        "version": "v2.1.31",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-funnel",
