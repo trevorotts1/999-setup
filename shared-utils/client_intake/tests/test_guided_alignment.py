@@ -290,6 +290,24 @@ class ClientVoice(unittest.TestCase):
             self.assertNotIn(rq.HINT, rq.chat(q), q["id"])  # the chat message adds no hint at all
         self.assertGreater(seen, 0)
 
+    def test_the_real_banks_not_sure_choices_never_get_the_pick_this_one_hint(self):
+        """The bank's 'Not sure', 'Not sure yet' and 'Decide later' are ways out, not answers: no
+        'Pick this one if it sounds right to you' under them, while the real answers beside them keep it."""
+        import render_question as rq
+        seen = hinted = 0
+        for q in BANK["questions"]:
+            opts = {o["label"]: o["description"] for o in rq.structured([q])[0]["questions"][0]["options"]}
+            for c in rq.normalize(q)["choices"]:
+                if rq._is_way_out(c["label"]):
+                    seen += 1
+                    self.assertNotEqual(opts[c["label"]], rq.HINT, f"{q['id']}: {c['label']}")
+                    if not c["description"]:
+                        self.assertEqual(opts[c["label"]], "", f"{q['id']}: {c['label']}")
+                elif opts[c["label"]] == rq.HINT:
+                    hinted += 1
+        self.assertGreater(seen, 0)
+        self.assertGreater(hinted, 0)
+
     def test_an_unknown_group_never_shows_a_raw_internal_name(self):
         import guided_experience as gx
         self.assertNotIn("some_internal_group", gx._stage_name("some_internal_group"))

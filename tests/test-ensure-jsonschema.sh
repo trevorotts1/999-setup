@@ -134,6 +134,47 @@ rm -rf "$HOME/.claude"
 out="$(PIP_FIND_LINKS="$T/oldonly" run)"; rc=$?
 [ "$rc" -ne 0 ] && has "$out" "BLOCKER: Python package jsonschema>=4.0 could not be installed into $DEPS" && ok "apply: unsatisfiable -> BLOCKER, rc=$rc" || bad "apply failure path (rc=$rc: $out)"
 
+# 4b. a pydeps folder the user cannot write to, with an old jsonschema inside. The FULL install
+#     calls ensure_jsonschema bare under `set -e`, so an unguarded `rm -rf` would abort the whole
+#     install with a raw "rm: ...: Permission denied" before the plain BLOCKER. The wrapper here
+#     calls the function bare, exactly as the installer does (the `&& rc=0 || rc=$?` wrapper above
+#     would switch `set -e` off and hide the abort).
+{
+  sed -n '1,/^ensure_jsonschema() {/p' "$T/wrapper.sh" | sed '$d'
+  awk '/^ensure_jsonschema\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$SETUP_SH"
+  printf '\nensure_jsonschema\nprintf "%%s\\n" "${DEP_SUMMARY[@]:-}"\n'
+} > "$T/wrapper-bare.sh"
+rm -rf "$HOME/.claude"; mkdir -p "$DEPS"
+"$PY" -m pip install -q --target "$DEPS" "$T/good/jsonschema-3.2.0-py3-none-any.whl" >/dev/null 2>&1
+mkdir -p "$HOME/.claude/pydeps/jsonschema-decoy"      # a sibling OUTSIDE the py<X.Y> folder
+chmod 555 "$DEPS"
+if [ -w "$DEPS" ]; then
+  ok "unwritable pydeps folder: SKIPPED (this user can write a mode-555 folder, e.g. root)"
+else
+  bare() { PATH="$T/venv/bin:$PATH" SKILL_DIR="$T/skills/nine-router-setup" bash "$1" 2>&1; }
+  out="$(bare "$T/wrapper-bare.sh")"; rc=$?
+  nblock="$(printf '%s\n' "$out" | grep -c '^BLOCKER: ')"
+  [ "$rc" -eq 1 ] && [ "$nblock" = 1 ] && has "$out" "BLOCKER: Python package jsonschema>=4.0 could not be installed into $DEPS" \
+    && has "$out" "Fix: " && has "$out" "-m pip install --target $DEPS" && ! printf '%s\n' "$out" | grep -q '^rm: ' \
+    && [ -d "$DEPS/jsonschema" ] && [ -d "$HOME/.claude/pydeps/jsonschema-decoy" ] \
+    && ok "unwritable pydeps folder: plain BLOCKER with the fix command, rc=$rc (the script's own), no raw rm abort, nothing outside the folder touched" \
+    || bad "unwritable pydeps folder (rc=$rc, blockers=$nblock): $out"
+  # control: with the guard removed, the same fixture DOES die on a raw rm error under set -e,
+  # so the test above can tell a guarded rm from an unguarded one
+  sed 's/rm -rf "\$stale" 2>\/dev\/null || true/rm -rf "$stale"/' "$T/wrapper-bare.sh" > "$T/wrapper-unguarded.sh"
+  ! cmp -s "$T/wrapper-bare.sh" "$T/wrapper-unguarded.sh" || bad "control: could not remove the rm guard from the wrapper copy"
+  out="$(bare "$T/wrapper-unguarded.sh")"; rc=$?
+  [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -q '^rm: ' && ! has "$out" "BLOCKER: " \
+    && ok "control: without the guard the install aborts on a raw rm error (rc=$rc) and never reaches the BLOCKER" \
+    || bad "control: unguarded rm did not abort as expected (rc=$rc: $out)"
+fi
+chmod -R u+w "$HOME/.claude" 2>/dev/null; rm -rf "$HOME/.claude"
+# the delete is one loop over ONLY the jsonschema entries inside $deps, nothing else
+[ "$(printf '%s\n' "$(awk '/^ensure_jsonschema\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$SETUP_SH")" | grep -c 'rm -rf')" = 1 ] \
+  && grep -q 'for stale in "\$deps"/jsonschema "\$deps"/jsonschema-\*; do' "$SETUP_SH" \
+  && ok "the only rm -rf in ensure_jsonschema is the loop over \$deps/jsonschema and \$deps/jsonschema-*" \
+  || bad "ensure_jsonschema deletes something other than \$deps/jsonschema*"
+
 # 5. PEP 668 python: pip refuses every install that is not --target. Exactly one
 #    pip call, --target <folder>, no --user, no --break-system-packages.
 "$PY" -m pip uninstall -q -y jsonschema >/dev/null 2>&1; rm -rf "$HOME/.claude"
@@ -181,7 +222,7 @@ has "$body_ps" "pydeps" && has "$body_ps" "OC_PYDEPS_DIR" \
 # the stale jsonschema (package and jsonschema-* dist-info) is cleared inside $deps BEFORE the pip call
 pre_ps="${body_ps%%"$PS_ARGS"*}"
 has "$pre_ps" "Get-ChildItem -LiteralPath \$deps" && has "$pre_ps" "\$_.Name -eq 'jsonschema'" && has "$pre_ps" "-like 'jsonschema-*'" \
-  && has "$pre_ps" "Remove-Item -LiteralPath \$_.FullName -Recurse -Force" \
+  && has "$pre_ps" "Remove-Item -LiteralPath \$_.FullName -Recurse -Force -ErrorAction SilentlyContinue" \
   && ok "setup-windows.ps1 Ensure-Jsonschema clears jsonschema and jsonschema-* inside \$deps before the pip install" \
   || bad "setup-windows.ps1 does not clear the stale jsonschema before the pip install"
 

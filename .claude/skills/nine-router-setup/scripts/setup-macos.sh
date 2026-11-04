@@ -289,9 +289,9 @@ print(v)'
   # jsonschema-<old>.dist-info instead of replacing it, and importlib.metadata
   # reads whichever dist-info the directory listing returns first (the lowest
   # version on a sorted listing): a false "too old" after a floor raise. Clear
-  # the old jsonschema (package and dist-info) first, only inside the pydeps folder.
+  # the old jsonschema first, only inside the pydeps folder (`|| true`: an unwritable one reaches the BLOCKER).
   for stale in "$deps"/jsonschema "$deps"/jsonschema-*; do
-    if [ -e "$stale" ] || [ -L "$stale" ]; then rm -rf "$stale"; fi
+    if [ -e "$stale" ] || [ -L "$stale" ]; then rm -rf "$stale" 2>/dev/null || true; fi
   done
   out="$(python3 -m pip install --quiet --disable-pip-version-check --no-input --upgrade --target "$deps" "$spec" 2>&1)" || true
   # The import is the verdict, never pip's exit code.

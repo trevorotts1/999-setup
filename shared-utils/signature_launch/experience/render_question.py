@@ -136,14 +136,31 @@ def _says_it_all(label):
     return len(label.split()) > 4 or label.rstrip().endswith((".", "!", "?", ")"))
 
 
+# How a client says "I can't or won't pick one of these": a way out, not an answer.
+_WAY_OUT = ("not sure", "unsure", "i don't know", "i do not know", "don't know", "do not know",
+            "no idea", "skip", "other", "something else", "decide later", "i'll decide later",
+            "none of these", "none of the above", "prefer not to say", "i'd rather not say")
+_WAY_OUT_RE = re.compile(r"(?:%s)\b" % "|".join(re.escape(w) for w in _WAY_OUT))
+
+
+def _is_way_out(label):
+    """'Not sure', 'I don't know', 'Skip', 'Other' ...: "Pick this one if it sounds right to you"
+    under those reads as nonsense, so they never get the hint (the bank's own words still show)."""
+    text = " ".join(label.lower().replace("\u2019", "'").replace("_", " ").split())
+    return len(text.split()) <= 5 and bool(_WAY_OUT_RE.match(text))
+
+
 def _hints(choices):
     """What each choice says under its label. The bank's own words always win. A choice the bank
     leaves unexplained gets one short, warm line that never repeats the label, unless a label in
     the same question already says it all: then none of them get one, because a line under some
     options and not others looks unfinished, and a line under a long label only repeats it.
+    A way out ("Not sure", "Skip", "Other") never gets the line: it is not an answer to pick
+    because it "sounds right", and it does not count when deciding whether the others get one.
     The chat message never adds a hint: "1. Monthly" needs none."""
-    quiet = any(_says_it_all(c["label"]) for c in choices if not c["description"])
-    return [c["description"] or ("" if quiet else HINT) for c in choices]
+    quiet = any(_says_it_all(c["label"]) for c in choices
+                if not c["description"] and not _is_way_out(c["label"]))
+    return [c["description"] or ("" if quiet or _is_way_out(c["label"]) else HINT) for c in choices]
 
 
 def _tool_question(n):

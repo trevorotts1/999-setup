@@ -229,7 +229,7 @@ function Ensure-Jsonschema {
     # NTFS, which lists sorted): a false "too old" after a floor raise. Clear the old
     # jsonschema (package and dist-info) first, only inside the pydeps folder.
     if (Test-Path -LiteralPath $deps) {
-        Get-ChildItem -LiteralPath $deps -Force | Where-Object { $_.Name -eq 'jsonschema' -or $_.Name -like 'jsonschema-*' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+        Get-ChildItem -LiteralPath $deps -Force | Where-Object { $_.Name -eq 'jsonschema' -or $_.Name -like 'jsonschema-*' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
     }
     foreach ($pe in $pipExes) {
         $parts = $pe -split ' '

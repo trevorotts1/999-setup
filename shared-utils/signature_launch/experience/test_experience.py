@@ -117,6 +117,28 @@ class Questions(unittest.TestCase):
         self.assertNotIn("Pick this one", msg)
         self.assertNotIn(" - ", msg)
 
+    def test_a_way_out_never_gets_the_pick_this_one_hint(self):
+        """"Pick this one if it sounds right to you" under "Not sure" reads as nonsense. A way out
+        (Not sure / I don't know / Skip / Other ...) gets no hint, does not stop the real answers
+        from getting theirs, and keeps the bank's own words when the bank wrote some."""
+        def hints(labels, **described):
+            return rq._hints([{"label": x, "description": described.get(x, "")} for x in labels])
+        for label in ["Not sure", "Not sure yet", "Unsure", "I don't know", "I don\u2019t know yet", "Skip",
+                      "Skip this one", "Other", "Other (type it in)", "Something else", "Decide later",
+                      "None of these", "Prefer not to say"]:
+            self.assertTrue(rq._is_way_out(label), label)
+            self.assertEqual(hints(["Monthly", label]), [rq.HINT, ""], label)
+        for label in ["Monthly", "Sure thing", "Skipper", "Others", "Darkness", "None yet", "A different logo"]:
+            self.assertFalse(rq._is_way_out(label), label)
+        # a way out is not a real answer: its length never silences the others, and the others' hints stay
+        self.assertEqual(hints(["Monthly", "Yearly", "Not sure about this one"]), [rq.HINT, rq.HINT, ""])
+        self.assertEqual(hints(["Monthly", "Not sure"], **{"Not sure": "We can work it out together."}),
+                         [rq.HINT, "We can work it out together."])
+        q = {"id": "b", "text": "How do you bill?", "choices": ["All at once", "Monthly", "Not sure"]}
+        opts = rq.structured([q])[0]["questions"][0]["options"]
+        self.assertEqual([o["description"] for o in opts[:3]], [rq.HINT, rq.HINT, ""])
+        self.assertNotIn("Pick this one", rq.chat(q))
+
     def test_a_one_sentence_help_is_kept_as_the_explanation(self):
         """Skill 83's picture questions carry `help` as a plain sentence; its coaching must survive."""
         q = {"id": "image_provider", "text": "Standard image service?",
