@@ -4,12 +4,13 @@ Only the department registry is vendored; this 999 package does not ship the
 rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source ref: `origin/main` of onboarding, the merge of pull request 2806 (`prep/bfl-onboarding-pr2`,
-  head 975d820ef)
-- Source commit: `96866c532b32b68c3675456d860f46e70fcc4bd5` (the map is byte-identical to the one at `d37c35a7f` and `5c41646b0`)
-- Git blob: `c9085e12742af812082f7aec44f5dcc2fdfe182f`
-- SHA-256: `59805fec8476714918a89d96ffa4553e976794e5c01a2e0fc8939603810c61e7`
-- Entries: 78 (skill numbers 01 through 83; the archived skills are no longer
+- Source ref: `origin/main` of onboarding, the merge of pull request 2809
+- Source commit: `7c21e86ba848f1c1f953d98451ee538d63057de2` (this map replaces the one from `96866c532`: the
+  `black-friday-launcher` entry now carries the plain-English client line the synced
+  `repo-integration/skill-department-map-entry.json` carries, and skill 84 is listed)
+- Git blob: `e10745e4e0079773aa8d45af9e7980ba3fa4e044`
+- SHA-256: `40cb461724f88e76230f27dd830b2a7192b224ab4dbf5b0d02956ac01c632e20`
+- Entries: 79 (skill numbers 01 through 84; the archived skills are no longer
   shipped, as in the source), including `signature-downsell`,
   `signature-thank-you` and `black-friday-launcher`
 
@@ -42,12 +43,12 @@ declared divergence and 999 receives the pin only through the sync. The only
   `tests/verify_installer_python_deps.sh` exist only in 999.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
-- Source commit: `96866c532b32b68c3675456d860f46e70fcc4bd5` (onboarding `origin/main`, merge of pull request 2806)
-- Source version: `0.2.13`
-- Source tree (`83-black-friday-launcher/` at that commit): 90 files, digest
-  `sha256:d6d27b67f185519f754dc66cd882c0cca6a37c844b083ac9e80c0ba9720900ca`
-- This tree: 92 files (the two 999-only files above), digest
-  `sha256:805d88b8a27a23d75075f2bf9dfa8c0ca937968ea84c217bdfb44caaa3bf46ce`
+- Source commit: `7c21e86ba848f1c1f953d98451ee538d63057de2` (onboarding `origin/main`, merge of pull request 2809)
+- Source version: `0.2.15`
+- Source tree (`83-black-friday-launcher/` at that commit): 95 files, digest
+  `sha256:a8c37cd413f24b15d7abee6e6ab40f9b7560561ec73d510baf0e7097c05ccefd`
+- This tree: 97 files (the two 999-only files above), digest
+  `sha256:278943ff378f327462b7acc8eb2b1030a94e78a85e701aa7cb1dcbcf5fd3b399`
 
 The digest is the generator's: SHA-256 over the newline-terminated, path-sorted
 lines `<file sha256>  <relative path>`.

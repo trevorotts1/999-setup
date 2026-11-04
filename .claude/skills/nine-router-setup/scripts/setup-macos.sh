@@ -247,10 +247,10 @@ ensure_pillow() {
 # --break-system-packages is never used. No venv. The folder is versioned by
 # python <major>.<minor> because jsonschema pulls compiled wheels, so a python
 # upgrade re-converges into a new folder instead of loading the wrong ABI.
-# The skills do NOT read that folder yet: they will once the onboarding
-# launch-family sync lands, which adds the block that puts it first on sys.path
-# to every skill that imports jsonschema. The probe already does what that block
-# will do, so it judges the install the way the skills will: a REAL import plus
+# The skills read that folder: the onboarding launch-family sync put the block
+# that puts it first on sys.path (launcher_core/pydeps.py) into every skill that
+# imports jsonschema. The probe does the same, so it judges the install the way
+# the skills do: a REAL import plus
 # the version floor, never find_spec or pip's exit code (an old jsonschema
 # imports fine, and pip can exit 0 and leave the import broken). Everything
 # stays inside this function so tests/verify_installer_python_deps.sh can

@@ -19,9 +19,9 @@ python3 -m venv "$T/venv" || { echo "cannot create venv"; exit 2; }
 export PATH="$T/venv/bin:$PATH" HOME="$T/home" NINEROUTER_PORT=1
 mkdir -p "$HOME/.9router" "$HOME/.claude/skills"
 # The installer puts jsonschema in $HOME/.claude/pydeps/py<X.Y> (pip --target), not in
-# the python itself. The skills do not read that folder yet: they will once the onboarding
-# launch-family sync lands and puts it first on sys.path. js_plain is the bare interpreter
-# (precondition), js is the interpreter with that folder first, as the skills will have it.
+# the python itself. The skills read that folder: the onboarding launch-family sync put the
+# block that puts it first on sys.path into each of them. js_plain is the bare interpreter
+# (precondition), js is the interpreter with that folder first, as the skills have it.
 DEPS="$HOME/.claude/pydeps/py$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
 js_plain() { python3 -c 'import jsonschema' >/dev/null 2>&1; }
 js() { python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import jsonschema' "$DEPS" >/dev/null 2>&1; }

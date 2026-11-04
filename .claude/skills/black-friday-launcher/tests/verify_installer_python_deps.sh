@@ -8,11 +8,11 @@
 # installer-registration/verify-registration.sh uses) and run with the venv's
 # python3 first on PATH. Nothing is written outside a temp directory.
 # The installer writes into the shared pydeps folder (pip install --target
-# $HOME/.claude/pydeps/py<X.Y>), not into the venv. The skills do not read that
-# folder yet: they will once the onboarding launch-family sync lands, which adds
-# the block that puts it first on sys.path to every skill that imports
-# jsonschema. The checks after the install already do what that block will do
-# (preflight takes the folder as an argument).
+# $HOME/.claude/pydeps/py<X.Y>), not into the venv. The skills read that folder:
+# the onboarding launch-family sync added the block that puts it first on sys.path
+# to every skill that imports jsonschema (launcher_core/pydeps.py). The checks
+# after the install do what that block does (preflight takes the folder as an
+# argument).
 #
 # Control: the identical preflight runs BEFORE the install and must report
 # MISSING, so a PRESENT result afterwards is the install, not the host.
@@ -68,8 +68,8 @@ DEPS="$HOME/.claude/pydeps/py$("$PY" -c 'import sys; print("%d.%d" % sys.version
   || fail "venv interpreter is not isolated"
 
 # preflight_isolation — the real Launcher preflight, run under -I. An optional
-# second argument is a pydeps folder put first on sys.path (what the skills will do
-# once the onboarding launch-family sync lands).
+# second argument is a pydeps folder put first on sys.path (what the skills do,
+# through launcher_core/pydeps.py, since the onboarding launch-family sync).
 preflight() {
   "$PY" -I -c '
 import json, sys

@@ -191,10 +191,10 @@ function Ensure-Pillow {
 # used as the folder itself), the same contract as onboarding and the Command
 # Center. `pip install --target` writes there with no --user, no
 # --break-system-packages and no venv; the folder is versioned by python
-# <major>.<minor> because jsonschema pulls compiled wheels. The skills do NOT read
-# that folder yet: they will once the onboarding launch-family sync lands, which
-# adds the block that puts it first on sys.path to every skill that imports
-# jsonschema. The verdict already does what that block will do: a REAL import
+# <major>.<minor> because jsonschema pulls compiled wheels. The skills read that
+# folder: the onboarding launch-family sync put the block that adds it first on
+# sys.path (launcher_core/pydeps.py) into every skill that imports jsonschema.
+# The verdict does what that block does: a REAL import
 # plus the floor, run under `python` (the interpreter the skills run under),
 # never pip's exit code. pip runs under that same `python`;
 # `py -3` is only the fallback when `python` has no pip. Returns the summary text.
