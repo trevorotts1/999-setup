@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness_profile  # noqa: E402
 
 HELP_LABEL = "I'm not sure, help me"
+HINT = "Pick this one if it sounds right to you."
 TYPE_LABEL = "Type my own answer"
 MAX_CHOICES = 3
 MAX_TOOL_QUESTIONS = 1  # one question at a time: the client is never handed a wall of questions
@@ -83,9 +84,7 @@ def _safe_default(q):
     return nested if nested not in (None, "") else q.get("safe_default")
 
 def normalize(q):
-    choices = [_choice(c) for c in (q.get("choices") or [])]
-    for c in choices:  # every choice keeps an explanation, even when the bank gives none
-        c["description"] = c["description"] or f"Choose {c['label']}."
+    choices = [_choice(c) for c in (q.get("choices") or [])]  # a description is the bank's own words, or ""
     qid = str(q["id"])
     examples = _examples(q)
     return {
@@ -125,18 +124,51 @@ def structured(questions):
 
 def _coach(n):
     """What the help option promises, in the client's own words: concrete ways out."""
-    ways = ["show me an example"]
+    ways = ["show you an example"]
     if n["help_text"]:
         ways.append("explain it in plain language")
     if can_default(n):
-        ways.append("recommend something using what is already known")
+        ways.append("recommend something using what I already know")
     return "I will " + ", ".join(ways[:-1] + ["or " + ways[-1]]) if len(ways) > 1 else ways[0]
 
+def _says_it_all(label):
+    """A long label, or one that reads as a sentence, needs nothing said under it."""
+    return len(label.split()) > 4 or label.rstrip().endswith((".", "!", "?", ")"))
+
+
+# How a client says "I can't or won't pick one of these": a way out, not an answer.
+_WAY_OUT = ("not sure", "unsure", "i don't know", "i do not know", "don't know", "do not know",
+            "no idea", "skip", "other", "something else", "decide later", "i'll decide later",
+            "none of these", "none of the above", "prefer not to say", "i'd rather not say")
+_WAY_OUT_RE = re.compile(r"(?:%s)\b" % "|".join(re.escape(w) for w in _WAY_OUT))
+
+
+def _is_way_out(label):
+    """'Not sure', 'I don't know', 'Skip', 'Other' ...: "Pick this one if it sounds right to you"
+    under those reads as nonsense, so they never get the hint (the bank's own words still show)."""
+    text = " ".join(label.lower().replace("\u2019", "'").replace("_", " ").split())
+    return len(text.split()) <= 5 and bool(_WAY_OUT_RE.match(text))
+
+
+def _hints(choices):
+    """What each choice says under its label. The bank's own words always win. A choice the bank
+    leaves unexplained gets one short, warm line that never repeats the label, unless a label in
+    the same question already says it all: then none of them get one, because a line under some
+    options and not others looks unfinished, and a line under a long label only repeats it.
+    A way out ("Not sure", "Skip", "Other") never gets the line: it is not an answer to pick
+    because it "sounds right", and it does not count when deciding whether the others get one.
+    The chat message never adds a hint: "1. Monthly" needs none."""
+    quiet = any(_says_it_all(c["label"]) for c in choices
+                if not c["description"] and not _is_way_out(c["label"]))
+    return [c["description"] or ("" if quiet or _is_way_out(c["label"]) else HINT) for c in choices]
+
+
 def _tool_question(n):
-    opts = [{"label": c["label"], "description": c["description"]} for c in n["choices"]]
+    opts = [{"label": c["label"], "description": d}
+            for c, d in zip(n["choices"], _hints(n["choices"]))]
     if not opts:
         opts.append({"label": TYPE_LABEL,
-                     "description": "Pick Other below and type your own answer, or pick this and I will ask in chat"})
+                     "description": "Pick Other below and type your own answer, or pick this and I will ask you right here"})
     opts.append({"label": HELP_LABEL, "description": _coach(n)})
     text = n["text"]
     if n["why"]:
@@ -159,9 +191,9 @@ def chat(q, index=None, total=None):
             lines.append(f"{i}. {c['label']}" + (f" - {c['description']}" if c["description"] else ""))
         lines.append(f"{len(n['choices']) + 1}. {HELP_LABEL}")
     else:
-        lines.append("Just type your answer. Not sure? Reply \"help\" and I will show you options.")
+        lines.append("Just type your answer. Not sure? Reply \"help\" and I will show you some options.")
     if can_default(n):
-        lines.append("Or reply \"default\" and I will use a safe one and mark it \"to confirm\".")
+        lines.append("Or reply \"default\" and I will pick a sensible answer for now, and we will double-check it together later.")
     return "\n".join(lines)
 
 
