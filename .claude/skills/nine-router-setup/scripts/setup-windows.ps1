@@ -191,10 +191,12 @@ function Ensure-Pillow {
 # used as the folder itself), the same contract as onboarding and the Command
 # Center. `pip install --target` writes there with no --user, no
 # --break-system-packages and no venv; the folder is versioned by python
-# <major>.<minor> because jsonschema pulls compiled wheels. The skills put that
-# folder first on sys.path before they import jsonschema, so the verdict does the
-# same: a REAL import plus the floor, run under `python` (the interpreter the
-# skills run under), never pip's exit code. pip runs under that same `python`;
+# <major>.<minor> because jsonschema pulls compiled wheels. The skills do NOT read
+# that folder yet: they will once the onboarding launch-family sync lands, which
+# adds the block that puts it first on sys.path to every skill that imports
+# jsonschema. The verdict already does what that block will do: a REAL import
+# plus the floor, run under `python` (the interpreter the skills run under),
+# never pip's exit code. pip runs under that same `python`;
 # `py -3` is only the fallback when `python` has no pip. Returns the summary text.
 function Test-JsonschemaOk([int]$Major, [int]$Minor, [string]$Deps) {
     $code = "import re, sys; sys.path.insert(0, sys.argv[1]); import jsonschema, importlib.metadata as m; v = m.version(jsonschema.__name__); raise SystemExit(0 if (tuple(int(x) for x in re.findall(r'\d+', v)[:2]) + (0, 0))[:2] >= ($Major, $Minor) else 1)"
@@ -220,6 +222,14 @@ function Ensure-Jsonschema {
     if (Test-Runs 'py' @('-3', '-m', 'pip', '--version')) { $pipExes += 'py -3' }
     if ($pipExes.Count -eq 0) {
         Write-Blocker "jsonschema $major.$minor or newer is required by the Black Friday Launcher and neither python nor py has pip. Install it yourself: python -m pip install --target $deps `"$spec`""
+    }
+    # `pip --upgrade --target` writes the new jsonschema next to the old
+    # jsonschema-<old>.dist-info instead of replacing it, and importlib.metadata reads
+    # whichever dist-info the directory listing returns first (the lowest version on
+    # NTFS, which lists sorted): a false "too old" after a floor raise. Clear the old
+    # jsonschema (package and dist-info) first, only inside the pydeps folder.
+    if (Test-Path -LiteralPath $deps) {
+        Get-ChildItem -LiteralPath $deps -Force | Where-Object { $_.Name -eq 'jsonschema' -or $_.Name -like 'jsonschema-*' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
     }
     foreach ($pe in $pipExes) {
         $parts = $pe -split ' '

@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness_profile  # noqa: E402
 
 HELP_LABEL = "I'm not sure, help me"
+HINT = "Pick this one if it sounds right to you."
 TYPE_LABEL = "Type my own answer"
 MAX_CHOICES = 3
 MAX_TOOL_QUESTIONS = 1  # one question at a time: the client is never handed a wall of questions
@@ -83,9 +84,7 @@ def _safe_default(q):
     return nested if nested not in (None, "") else q.get("safe_default")
 
 def normalize(q):
-    choices = [_choice(c) for c in (q.get("choices") or [])]
-    for c in choices:  # every choice keeps an explanation, even when the bank gives none
-        c["description"] = c["description"] or f"Pick this one if \"{c['label']}\" is right for you."
+    choices = [_choice(c) for c in (q.get("choices") or [])]  # a description is the bank's own words, or ""
     qid = str(q["id"])
     examples = _examples(q)
     return {
@@ -132,8 +131,24 @@ def _coach(n):
         ways.append("recommend something using what I already know")
     return "I will " + ", ".join(ways[:-1] + ["or " + ways[-1]]) if len(ways) > 1 else ways[0]
 
+def _says_it_all(label):
+    """A long label, or one that reads as a sentence, needs nothing said under it."""
+    return len(label.split()) > 4 or label.rstrip().endswith((".", "!", "?", ")"))
+
+
+def _hints(choices):
+    """What each choice says under its label. The bank's own words always win. A choice the bank
+    leaves unexplained gets one short, warm line that never repeats the label, unless a label in
+    the same question already says it all: then none of them get one, because a line under some
+    options and not others looks unfinished, and a line under a long label only repeats it.
+    The chat message never adds a hint: "1. Monthly" needs none."""
+    quiet = any(_says_it_all(c["label"]) for c in choices if not c["description"])
+    return [c["description"] or ("" if quiet else HINT) for c in choices]
+
+
 def _tool_question(n):
-    opts = [{"label": c["label"], "description": c["description"]} for c in n["choices"]]
+    opts = [{"label": c["label"], "description": d}
+            for c, d in zip(n["choices"], _hints(n["choices"]))]
     if not opts:
         opts.append({"label": TYPE_LABEL,
                      "description": "Pick Other below and type your own answer, or pick this and I will ask you right here"})

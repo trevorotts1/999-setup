@@ -47,7 +47,7 @@ declared divergence and 999 receives the pin only through the sync. The only
 - Source tree (`83-black-friday-launcher/` at that commit): 90 files, digest
   `sha256:d6d27b67f185519f754dc66cd882c0cca6a37c844b083ac9e80c0ba9720900ca`
 - This tree: 92 files (the two 999-only files above), digest
-  `sha256:4f7d46111da3a10a3e72dc1274f0c1244f50203e33abf780cae3b54d08b6c3e9`
+  `sha256:805d88b8a27a23d75075f2bf9dfa8c0ca937968ea84c217bdfb44caaa3bf46ce`
 
 The digest is the generator's: SHA-256 over the newline-terminated, path-sorted
 lines `<file sha256>  <relative path>`.

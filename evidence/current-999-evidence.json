@@ -69,7 +69,7 @@
         {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979},
         {"path": ".claude/skills/nine-router-setup/scripts/setup-windows.ps1", "sha256": "a6dc1a72a33856b4533d8f663c6af47abde90c863cbd61d303ba5a3abd368815", "lines": 1119}
       ],
-      "symbols": ["setup-macos.sh bundled_skills() L323", "setup-macos.sh link_one_skill() L363", "setup-macos.sh link_skills_into_root() L408", "setup-windows.ps1 Get-BundledSkills L254", "setup-windows.ps1 Link-BundledSkills L344"],
+      "symbols": ["setup-macos.sh bundled_skills() L323", "setup-macos.sh link_one_skill() L363", "setup-macos.sh link_skills_into_root() L408", "setup-windows.ps1 Get-BundledSkills L264", "setup-windows.ps1 Link-BundledSkills L354"],
       "measured": {
         "registered_entries": 15,
         "skill_dirs_with_SKILL_md": 24,
@@ -155,7 +155,7 @@
       "files": [
         {"path": ".claude/skills/nine-router-setup/scripts/setup-windows.ps1", "sha256": "a6dc1a72a33856b4533d8f663c6af47abde90c863cbd61d303ba5a3abd368815", "lines": 1119}
       ],
-      "symbols": ["param() L23", "OS gate L385-389", "Get-BundledSkills L254", "Link-BundledSkills L344", "DPAPI token L375"],
+      "symbols": ["param() L23", "OS gate L385-389", "Get-BundledSkills L264", "Link-BundledSkills L354", "DPAPI token L375"],
       "measured": {
         "host_gate": "Windows_NT only",
         "numbered_stage_comments": 15,
@@ -249,7 +249,7 @@
         {"path": ".claude/skills/nine-router-setup/scripts/setup-macos.sh", "sha256": "5e5b695835909138829db16a0a4ed2edc2765917c3afe8c9d0187091a6fc6ad5", "lines": 1979},
         {"path": ".claude/skills/nine-router-setup/tests/test-skills-only.sh", "sha256": "ea4b8020812849d1a4a01a789046c4afce6ff915f5f70c0198e306b5b0bcd9de", "lines": 373}
       ],
-      "symbols": ["so_link_escapes() L692", "so_tree_diff() L710", "so_sync() L771", "so_refresh_updater() L838", "skills_only_mode() L989", "main flags --skills-only/--check/--repair-links/--refresh-updater L1227-1230"],
+      "symbols": ["so_link_escapes() L692", "so_tree_diff() L710", "so_sync() L771", "so_refresh_updater() L838", "skills_only_mode() L989", "main flags --skills-only/--check/--repair-links/--refresh-updater L1238-1241"],
       "measured": {
         "modes": ["--check (read-only)", "--repair-links (opt-in)", "--refresh-updater (opt-in, nine-router-setup only)"],
         "preconditions": "box must already run 9Router (markers ~/.9router or ~/.local/bin/claude-nine or :20128 health)",

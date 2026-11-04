@@ -9,11 +9,14 @@
 #   installs ONLY with `pip install --target $HOME/.claude/pydeps/py<X.Y>` (the
 #   one form a PEP 668 Homebrew python accepts; never --user or
 #   --break-system-packages)    OC_PYDEPS_DIR override    loud failure
+#   a floor raise leaves no stale jsonschema-<old>.dist-info for importlib.metadata
+#   to read first
+# SETUP_SH / SETUP_PS1 may be set to a mutated copy of the installer (mutation proofs).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$HERE/.."
-SETUP_SH="$REPO/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
-SETUP_PS1="$REPO/.claude/skills/nine-router-setup/scripts/setup-windows.ps1"
+SETUP_SH="${SETUP_SH:-$REPO/.claude/skills/nine-router-setup/scripts/setup-macos.sh}"
+SETUP_PS1="${SETUP_PS1:-$REPO/.claude/skills/nine-router-setup/scripts/setup-windows.ps1}"
 
 T="$(mktemp -d "${TMPDIR:-/tmp}/ensure-jsonschema.XXXXXX")" || exit 2
 trap 'rm -rf "$T"' EXIT
@@ -62,6 +65,20 @@ DEPS="$HOME/.claude/pydeps/py$PYVER"
 # js_sys: version in the venv itself.  js_deps <dir>: version loaded with <dir> first on sys.path.
 js_sys() { "$PY" -I -c 'import importlib.metadata as m; print(m.version("jsonschema"))' 2>/dev/null; }
 js_deps() { "$PY" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import jsonschema, importlib.metadata as m; print(m.version("jsonschema"))' "$1" 2>/dev/null; }
+# js_order <dir> <natural|sorted|reversed>: the same read with the directory listing forced into
+# that order. importlib.metadata takes the first jsonschema dist-info it is listed, so the answer
+# depends on the filesystem (NTFS lists sorted) unless exactly one dist-info is there.
+js_order() { "$PY" -I -c '
+import os, sys
+real = os.listdir
+def lst(p=".", _r=real):
+    out = _r(p)
+    return sorted(out) if sys.argv[2] == "sorted" else sorted(out)[::-1] if sys.argv[2] == "reversed" else out
+os.listdir = lst
+sys.path.insert(0, sys.argv[1])
+import jsonschema, importlib.metadata as m
+print(m.version("jsonschema"))' "$1" "$2" 2>/dev/null; }
+dist_infos() { ls "$1" 2>/dev/null | grep -c '^jsonschema-.*\.dist-info$'; }
 run() { PATH="$T/venv/bin:$PATH" SKILL_DIR="$T/skills/nine-router-setup" bash "$T/wrapper.sh" "$@" 2>&1; }
 
 # 1. missing everywhere -> --check reports it and creates nothing; apply installs
@@ -87,6 +104,30 @@ out="$(run --check)"; rc=$?
 [ "$rc" -ne 0 ] && has "$out" "older than the required 4.0" && ok "--check: 3.2.0 rejected by the 4.0 floor" || bad "--check floor (rc=$rc: $out)"
 out="$(run)"; rc=$?
 [ "$rc" -eq 0 ] && [ "$(js_deps "$DEPS")" = "4.1.0" ] && [ "$(js_sys)" = "3.2.0" ] && ok "apply: too-old 3.2.0 shadowed by 4.1.0 in pydeps, python left alone" || bad "apply upgrade (rc=$rc: $out)"
+
+# 3b. stale dist-info: a real 3.2.0 install sits IN the pydeps folder. `pip --upgrade --target`
+#     leaves jsonschema-3.2.0.dist-info beside the new one, and on a sorted listing (NTFS)
+#     importlib.metadata then reads 3.2.0: a false "too old" after a floor raise.
+rm -rf "$HOME/.claude"; mkdir -p "$DEPS"
+"$PY" -m pip install -q --target "$DEPS" "$T/good/jsonschema-3.2.0-py3-none-any.whl" >/dev/null 2>&1
+[ "$(js_deps "$DEPS")" = "3.2.0" ] || { echo "precondition: could not plant 3.2.0 in $DEPS"; exit 2; }
+cp -R "$DEPS" "$T/control-deps"
+"$PY" -m pip install -q --upgrade --target "$T/control-deps" "jsonschema>=4.0" >/dev/null 2>&1
+[ "$(dist_infos "$T/control-deps")" = 2 ] && [ "$(js_order "$T/control-deps" sorted)" = "3.2.0" ] && [ "$(js_order "$T/control-deps" reversed)" = "4.1.0" ] \
+  && ok "control: a bare pip --upgrade --target leaves two dist-infos and the answer depends on the listing order (sorted -> 3.2.0)" \
+  || bad "control: expected two dist-infos and an order-dependent read (infos=$(dist_infos "$T/control-deps"), sorted=$(js_order "$T/control-deps" sorted), reversed=$(js_order "$T/control-deps" reversed))"
+out="$(run)"; rc=$?
+[ "$rc" -eq 0 ] && [ "$(dist_infos "$DEPS")" = 1 ] && [ ! -e "$DEPS/jsonschema-3.2.0.dist-info" ] \
+  && [ "$(js_order "$DEPS" natural)" = "4.1.0" ] && [ "$(js_order "$DEPS" sorted)" = "4.1.0" ] && [ "$(js_order "$DEPS" reversed)" = "4.1.0" ] \
+  && ok "apply: the stale 3.2.0 dist-info is removed; the probe reads 4.1.0 in natural, sorted and reversed listing order" \
+  || bad "apply stale dist-info (rc=$rc, infos=$(dist_infos "$DEPS"), sorted=$(js_order "$DEPS" sorted), reversed=$(js_order "$DEPS" reversed): $out)"
+# other packages in the shared folder are never touched
+rm -rf "$HOME/.claude"; mkdir -p "$DEPS/otherpkg" "$DEPS/otherpkg-1.0.dist-info"; : > "$DEPS/otherpkg/__init__.py"
+"$PY" -m pip install -q --target "$DEPS" "$T/good/jsonschema-3.2.0-py3-none-any.whl" >/dev/null 2>&1
+out="$(run)"; rc=$?
+[ "$rc" -eq 0 ] && [ -f "$DEPS/otherpkg/__init__.py" ] && [ -d "$DEPS/otherpkg-1.0.dist-info" ] && [ "$(js_order "$DEPS" sorted)" = "4.1.0" ] \
+  && ok "apply: only jsonschema is cleared; the other packages in the shared pydeps folder are left alone" \
+  || bad "apply left-alone check (rc=$rc: $out)"
 
 # 4. nothing satisfies the floor -> loud one-line BLOCKER, non-zero
 rm -rf "$HOME/.claude"
@@ -127,8 +168,21 @@ grep -q 'ensure_jsonschema --check' "$SETUP_SH" && grep -q '( ensure_jsonschema 
 body_sh="$(awk '/^ensure_jsonschema\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$SETUP_SH")"
 body_ps="$(awk '/^function Ensure-Jsonschema/ {f=1} f {print} f && /^\}/ {exit}' "$SETUP_PS1")"
 ! has "$body_sh$body_ps" "--user" && ! has "$body_sh$body_ps" "break-system-packages" && ok "neither installer function uses --user or --break-system-packages" || bad "a forbidden pip flag is in an installer function"
-has "$body_ps" "--target" && has "$body_ps" "pydeps" && has "$body_ps" "OC_PYDEPS_DIR" \
+# The Windows install cannot run here (no PowerShell), so its argument list is pinned literally:
+# a bare `--target` somewhere in the body would also match the BLOCKER messages, so the check is
+# on the quoted array that is actually passed to pip, in the order macOS uses.
+PS_ARGS="'-m', 'pip', 'install', '--quiet', '--disable-pip-version-check', '--no-input', '--upgrade', '--target', \$deps, \$spec"
+has "$body_ps" "'--target', \$deps" && has "$body_ps" "$PS_ARGS" \
+  && ok "setup-windows.ps1 Ensure-Jsonschema passes the literal pip arguments: ... '--upgrade', '--target', \$deps, \$spec" \
+  || bad "setup-windows.ps1 does not pass the literal pip arguments ('--target', \$deps)"
+has "$body_ps" "pydeps" && has "$body_ps" "OC_PYDEPS_DIR" \
   && grep -q 'jsonschema      \$(Ensure-Jsonschema)' "$SETUP_PS1" && grep -q '^function Test-JsonschemaOk' "$SETUP_PS1" \
-  && ok "setup-windows.ps1 Ensure-Jsonschema: --target into pydeps, floor probe, wired into the dependency step" || bad "setup-windows.ps1 wiring"
+  && ok "setup-windows.ps1 Ensure-Jsonschema: pydeps folder, OC_PYDEPS_DIR, floor probe, wired into the dependency step" || bad "setup-windows.ps1 wiring"
+# the stale jsonschema (package and jsonschema-* dist-info) is cleared inside $deps BEFORE the pip call
+pre_ps="${body_ps%%"$PS_ARGS"*}"
+has "$pre_ps" "Get-ChildItem -LiteralPath \$deps" && has "$pre_ps" "\$_.Name -eq 'jsonschema'" && has "$pre_ps" "-like 'jsonschema-*'" \
+  && has "$pre_ps" "Remove-Item -LiteralPath \$_.FullName -Recurse -Force" \
+  && ok "setup-windows.ps1 Ensure-Jsonschema clears jsonschema and jsonschema-* inside \$deps before the pip install" \
+  || bad "setup-windows.ps1 does not clear the stale jsonschema before the pip install"
 
 [ "$FAILS" -eq 0 ] && echo "PASS" || { echo "$FAILS failure(s)"; exit 1; }

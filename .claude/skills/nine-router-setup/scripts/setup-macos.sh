@@ -247,14 +247,17 @@ ensure_pillow() {
 # --break-system-packages is never used. No venv. The folder is versioned by
 # python <major>.<minor> because jsonschema pulls compiled wheels, so a python
 # upgrade re-converges into a new folder instead of loading the wrong ABI.
-# The skills put that folder first on sys.path before they import jsonschema, so
-# the probe does exactly that: a REAL import plus the version floor, never
-# find_spec or pip's exit code (an old jsonschema imports fine, and pip can exit
-# 0 and leave the import broken). Everything stays inside this function so
-# tests/verify_installer_python_deps.sh can extract it verbatim.
+# The skills do NOT read that folder yet: they will once the onboarding
+# launch-family sync lands, which adds the block that puts it first on sys.path
+# to every skill that imports jsonschema. The probe already does what that block
+# will do, so it judges the install the way the skills will: a REAL import plus
+# the version floor, never find_spec or pip's exit code (an old jsonschema
+# imports fine, and pip can exit 0 and leave the import broken). Everything
+# stays inside this function so tests/verify_installer_python_deps.sh can
+# extract it verbatim.
 ensure_jsonschema() {
   local req="$SKILL_DIR/../black-friday-launcher/requirements.txt"
-  local spec="" out ver py pyver deps
+  local spec="" out ver py pyver deps stale
   local probe='import re, sys
 sys.path.insert(0, sys.argv[2])
 need = re.match(r"^[A-Za-z0-9_.-]+\s*>=\s*(\d+)(?:\.(\d+))?", sys.argv[1])
@@ -282,6 +285,14 @@ print(v)'
   fi
   if [ "${1:-}" = "--check" ]; then printf '%s\n' "$ver"; return 1; fi
   log "Installing the Black Friday Launcher Python requirement ($spec) into $deps for $py ($ver)..."
+  # `pip --upgrade --target` writes the new jsonschema next to the old
+  # jsonschema-<old>.dist-info instead of replacing it, and importlib.metadata
+  # reads whichever dist-info the directory listing returns first (the lowest
+  # version on a sorted listing): a false "too old" after a floor raise. Clear
+  # the old jsonschema (package and dist-info) first, only inside the pydeps folder.
+  for stale in "$deps"/jsonschema "$deps"/jsonschema-*; do
+    if [ -e "$stale" ] || [ -L "$stale" ]; then rm -rf "$stale"; fi
+  done
   out="$(python3 -m pip install --quiet --disable-pip-version-check --no-input --upgrade --target "$deps" "$spec" 2>&1)" || true
   # The import is the verdict, never pip's exit code.
   if ver="$(python3 -B -W ignore -c "$probe" "$spec" "$deps" 2>&1)"; then

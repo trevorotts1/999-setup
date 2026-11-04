@@ -256,6 +256,7 @@ class ClientVoice(unittest.TestCase):
         wrapped = {"id": "x", "text": "What is your price?", "why": "It goes on the order form.",
                    "example": "$97", "help": {"explain": "A number is fine."},
                    "default": {"value": "$97"}, "choices": ["I have a price", "Suggest one"]}
+        out["hint"] = rq.HINT
         out["chat"] = rq.chat(wrapped, 1, 5)
         out["chat/open"] = rq.chat({"id": "y", "text": "What is your name?"})
         for call in rq.structured([wrapped, {"id": "z", "text": "What is your name?"}]):
@@ -271,6 +272,23 @@ class ClientVoice(unittest.TestCase):
         for where, text in self.client_strings().items():
             self.assertNotRegex(text.lower(), r"\b(error|traceback|exception|failed|failure|not installed|"
                                 r"missing dependency|set up python|run this command)\b", where)
+
+    def test_a_choice_the_bank_does_not_explain_never_repeats_its_own_label(self):
+        """33 of the 60 bank questions have choices with no description. Whatever is shown under such a
+        choice is empty (the label already says it all) or the one short hint, never the label again."""
+        import render_question as rq
+        seen = 0
+        for q in BANK["questions"]:
+            bare = [c for c in rq.normalize(q)["choices"] if not c["description"]]
+            if not bare:
+                continue
+            seen += 1
+            opts = {o["label"]: o["description"] for o in rq.structured([q])[0]["questions"][0]["options"]}
+            for c in bare:
+                self.assertIn(opts[c["label"]], ("", rq.HINT), q["id"])
+                self.assertNotIn(c["label"].lower(), opts[c["label"]].lower(), q["id"])
+            self.assertNotIn(rq.HINT, rq.chat(q), q["id"])  # the chat message adds no hint at all
+        self.assertGreater(seen, 0)
 
     def test_an_unknown_group_never_shows_a_raw_internal_name(self):
         import guided_experience as gx
