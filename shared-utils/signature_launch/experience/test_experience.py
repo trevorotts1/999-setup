@@ -96,7 +96,7 @@ class Questions(unittest.TestCase):
              "help": {"explain": "Email always works."}, "default": {"value": "Email only"}}
         opts = rq.structured([q])[0]["questions"][0]["options"]
         self.assertEqual(opts[-1]["label"], rq.HELP_LABEL)
-        self.assertIn("show me an example", opts[-1]["description"])
+        self.assertIn("show you an example", opts[-1]["description"])
         self.assertIn("recommend", opts[-1]["description"])
 
     def test_three_choice_cap_reported_not_silent(self):

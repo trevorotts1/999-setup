@@ -85,7 +85,7 @@ def _safe_default(q):
 def normalize(q):
     choices = [_choice(c) for c in (q.get("choices") or [])]
     for c in choices:  # every choice keeps an explanation, even when the bank gives none
-        c["description"] = c["description"] or f"Choose {c['label']}."
+        c["description"] = c["description"] or f"Pick this one if \"{c['label']}\" is right for you."
     qid = str(q["id"])
     examples = _examples(q)
     return {
@@ -125,18 +125,18 @@ def structured(questions):
 
 def _coach(n):
     """What the help option promises, in the client's own words: concrete ways out."""
-    ways = ["show me an example"]
+    ways = ["show you an example"]
     if n["help_text"]:
         ways.append("explain it in plain language")
     if can_default(n):
-        ways.append("recommend something using what is already known")
+        ways.append("recommend something using what I already know")
     return "I will " + ", ".join(ways[:-1] + ["or " + ways[-1]]) if len(ways) > 1 else ways[0]
 
 def _tool_question(n):
     opts = [{"label": c["label"], "description": c["description"]} for c in n["choices"]]
     if not opts:
         opts.append({"label": TYPE_LABEL,
-                     "description": "Pick Other below and type your own answer, or pick this and I will ask in chat"})
+                     "description": "Pick Other below and type your own answer, or pick this and I will ask you right here"})
     opts.append({"label": HELP_LABEL, "description": _coach(n)})
     text = n["text"]
     if n["why"]:
@@ -159,9 +159,9 @@ def chat(q, index=None, total=None):
             lines.append(f"{i}. {c['label']}" + (f" - {c['description']}" if c["description"] else ""))
         lines.append(f"{len(n['choices']) + 1}. {HELP_LABEL}")
     else:
-        lines.append("Just type your answer. Not sure? Reply \"help\" and I will show you options.")
+        lines.append("Just type your answer. Not sure? Reply \"help\" and I will show you some options.")
     if can_default(n):
-        lines.append("Or reply \"default\" and I will use a safe one and mark it \"to confirm\".")
+        lines.append("Or reply \"default\" and I will pick a sensible answer for now, and we will double-check it together later.")
     return "\n".join(lines)
 
 
