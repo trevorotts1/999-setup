@@ -11,6 +11,7 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 INTAKE = HERE.parent
@@ -174,12 +175,14 @@ class ComputedNumbers(unittest.TestCase):
         self.assertLess(gx.estimate(launch)[1], gx.estimate(bf)[1])
         engine.record(launch, "business_name", "Elevation Coaching")
         self.assertLess(gx.estimate(launch)[0], gx.estimate(engine.new_doc("launch"))[0])
-        self.assertRegex(gx.progress_line(launch), r"^\d+ of \d+ answered \(\d+%\)\.")
+        self.assertRegex(gx.progress_line(launch), r"^You've answered \d+ of \d+ questions so far \(\d+%\)\.")
 
     def test_a_changed_estimate_is_explained(self):
         import guided_experience as gx
         line = gx.estimate_change(20, 18, "your package answer covered both packages")
-        self.assertIn("from 20 to 18", line)
+        self.assertIn("your package answer covered both packages", line)
+        self.assertIn("about 18 now, instead of 20", line)
+        self.assertIn("about 20 now, instead of 18", gx.estimate_change(18, 20, "one answer opened a follow-up"))
         self.assertIsNone(gx.estimate_change(20, 20, "nothing changed"))
 
 
@@ -198,12 +201,129 @@ class PlanReview(unittest.TestCase):
 
     def test_the_introduction_states_the_promise_and_the_three_choices(self):
         import guided_experience as gx
-        text = gx.opening(engine.new_doc("launch"))
-        self.assertIn("one thing at a time", text)
+        text = gx.opening(engine.new_doc("launch"), "Sam")
+        self.assertTrue(text.startswith("Hi Sam! I'm so glad you're here."))
+        self.assertIn("one at a time", text)
+        self.assertIn("Nothing goes live and nothing is sent to anyone until you've told me it looks right", text)
         self.assertIn("A. Recommend a plan for me", text)
         self.assertIn("B. Guide me through each decision", text)
         self.assertIn("C. I already have a plan", text)
-        self.assertIn("Expect about", text)
+        self.assertIn("I have about", text)
+        # the three letters keep working as replies to the first question
+        self.assertLess(text.index("I have about"), text.index("A. Recommend a plan for me"))
+
+    def test_the_greeting_has_no_placeholder_and_the_sale_is_named_per_run(self):
+        import guided_experience as gx
+        self.assertTrue(gx.opening().startswith("Hi there! "))
+        self.assertTrue(gx.opening(engine.new_doc("launch"), "  ").startswith("Hi there! "))
+        self.assertIn("get your Black Friday sale ready", gx.opening(engine.new_doc("bf"), "Sam"))
+        self.assertIn("get your launch ready", gx.opening(engine.new_doc("launch"), "Sam"))
+        for mode in ("launch", "legacy", "bf"):
+            text = gx.opening(engine.new_doc(mode), "Sam")
+            self.assertNotRegex(text, r"[{}\[\]]", mode)
+
+
+# What the owner banned from anything a client reads: tool and system vocabulary, plus the
+# words that sound like a robot. Plain words only, from the first hello to the plan review.
+CLIENT_BANNED = re.compile(
+    r"\b(route[- ]graph|entitlements?|gates?|intake|validat\w*|contracts?|manifests?|dispatch\w*|"
+    r"schemas?|jsonschema|python|prereq\w*|council|7figurepreneur|completeness|install\w*|funnels?|"
+    r"json|api|webhook|endpoint|sha256|hash|tenant|location[_ ]id|provider id)\b"
+    r"|\b\d+\.\d+(\.\d+)?\b",  # a version number such as 2.9.8
+    re.I)
+
+
+class ClientVoice(unittest.TestCase):
+    """Everything the 999-only guided experience says to the client stays warm, plain English."""
+
+    def client_strings(self):
+        import guided_experience as gx
+        import render_question as rq
+        out = {"INTRO": gx.INTRO, "CHOICES": gx.CHOICES}
+        for mode in ("launch", "legacy", "bf"):
+            doc = engine.new_doc(mode)
+            out[f"opening/{mode}"] = gx.opening(doc, "Sam")
+            out[f"plan_review/{mode}"] = gx.plan_review(doc)
+            out[f"progress/{mode}"] = gx.progress_line(doc)
+        out["estimate_change/down"] = gx.estimate_change(20, 18, "your package answer covered both packages")
+        out["estimate_change/up"] = gx.estimate_change(18, 20, "one answer opened a follow-up")
+        for counts in ((0, 0), (0, 5), (1, 5), (7, 7)):  # every sentence estimate_line can say
+            with mock.patch.object(gx, "estimate", return_value=counts):
+                out[f"estimate_line/{counts}"] = gx.estimate_line(engine.new_doc("launch"))
+        for group, name in gx._STAGES.items():
+            out[f"stage/{group}"] = name
+        out["stage/unknown"] = gx._stage_name("some_internal_group")
+        wrapped = {"id": "x", "text": "What is your price?", "why": "It goes on the order form.",
+                   "example": "$97", "help": {"explain": "A number is fine."},
+                   "default": {"value": "$97"}, "choices": ["I have a price", "Suggest one"]}
+        out["hint"] = rq.HINT
+        out["chat"] = rq.chat(wrapped, 1, 5)
+        out["chat/open"] = rq.chat({"id": "y", "text": "What is your name?"})
+        for call in rq.structured([wrapped, {"id": "z", "text": "What is your name?"}]):
+            for question in call["questions"]:
+                out[f"tool/{question['header']}"] = json.dumps(question)
+        return out
+
+    def test_no_jargon_reaches_the_client(self):
+        for where, text in self.client_strings().items():
+            self.assertIsNone(CLIENT_BANNED.search(text), f"{where}: {CLIENT_BANNED.search(text)}")
+
+    def test_the_client_is_never_offered_an_install_or_told_about_a_technical_problem(self):
+        for where, text in self.client_strings().items():
+            self.assertNotRegex(text.lower(), r"\b(error|traceback|exception|failed|failure|not installed|"
+                                r"missing dependency|set up python|run this command)\b", where)
+
+    def test_a_choice_the_bank_does_not_explain_never_repeats_its_own_label(self):
+        """33 of the 60 bank questions have choices with no description. Whatever is shown under such a
+        choice is empty (the label already says it all) or the one short hint, never the label again."""
+        import render_question as rq
+        seen = 0
+        for q in BANK["questions"]:
+            bare = [c for c in rq.normalize(q)["choices"] if not c["description"]]
+            if not bare:
+                continue
+            seen += 1
+            opts = {o["label"]: o["description"] for o in rq.structured([q])[0]["questions"][0]["options"]}
+            for c in bare:
+                self.assertIn(opts[c["label"]], ("", rq.HINT), q["id"])
+                self.assertNotIn(c["label"].lower(), opts[c["label"]].lower(), q["id"])
+            self.assertNotIn(rq.HINT, rq.chat(q), q["id"])  # the chat message adds no hint at all
+        self.assertGreater(seen, 0)
+
+    def test_the_real_banks_not_sure_choices_never_get_the_pick_this_one_hint(self):
+        """The bank's 'Not sure', 'Not sure yet' and 'Decide later' are ways out, not answers: no
+        'Pick this one if it sounds right to you' under them, while the real answers beside them keep it."""
+        import render_question as rq
+        seen = hinted = 0
+        for q in BANK["questions"]:
+            opts = {o["label"]: o["description"] for o in rq.structured([q])[0]["questions"][0]["options"]}
+            for c in rq.normalize(q)["choices"]:
+                if rq._is_way_out(c["label"]):
+                    seen += 1
+                    self.assertNotEqual(opts[c["label"]], rq.HINT, f"{q['id']}: {c['label']}")
+                    if not c["description"]:
+                        self.assertEqual(opts[c["label"]], "", f"{q['id']}: {c['label']}")
+                elif opts[c["label"]] == rq.HINT:
+                    hinted += 1
+        self.assertGreater(seen, 0)
+        self.assertGreater(hinted, 0)
+
+    def test_an_unknown_group_never_shows_a_raw_internal_name(self):
+        import guided_experience as gx
+        self.assertNotIn("some_internal_group", gx._stage_name("some_internal_group"))
+        self.assertEqual(gx._stage_name(None), "")
+
+    def test_every_group_in_the_real_bank_has_a_plain_stage_name(self):
+        import guided_experience as gx
+        for group in {x["group"] for x in BANK["questions"]}:
+            self.assertIn(group, gx._STAGES, group)
+
+    def test_the_banned_word_check_catches_what_it_should(self):
+        for bad in ("Checking the route graph", "your entitlement", "the manifest", "run python",
+                    "version 2.9.8", "the Council planning step", "7FigurePreneur shape",
+                    "completeness checks", "I will install it", "the jsonschema package"):
+            self.assertIsNotNone(CLIENT_BANNED.search(bad), bad)
+        self.assertIsNone(CLIENT_BANNED.search("I'm so glad you're here. Let's navigate your 12 questions."))
 
 
 if __name__ == "__main__":
