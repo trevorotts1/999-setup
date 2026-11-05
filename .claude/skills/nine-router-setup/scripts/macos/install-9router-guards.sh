@@ -294,8 +294,19 @@ rc=$?
 if [ "$rc" = 0 ] && case " ${SEL[*]} " in *" glm53-thinking "*) true ;; *) false ;; esac; then
   if [ -f "$PATCH_DIR/glm-5.3-thinking/regression-v2.cjs" ] || [ "$CHECK" = 1 ]; then
     if [ "$CHECK" = 1 ]; then s="$SRC/patches/glm-5.3-thinking/regression-v2.cjs"; else s="$PATCH_DIR/glm-5.3-thinking/regression-v2.cjs"; fi
-    if "$NODE" "$s" "$ROOT" >/dev/null 2>&1; then echo "[guards] OK   glm53-thinking: behavioural regression suite passes"
-    else echo "[guards] MISSING glm53-thinking: behavioural regression suite FAILED"; rc=1; fi
+    # Keep the suite's verdict THREE-WAY. A stale fixture (exit 2: the build renumbered its modules)
+    # and a real behavioural regression (exit 1) are different facts; collapsing every non-zero exit
+    # into one line is what made a correct box read as off-target. Name the fixture identity either way.
+    suite_out="$("$NODE" "$s" "$ROOT" 2>&1)"; suite_rc=$?
+    fixture="$(printf '%s\n' "$suite_out" | sed -n 's/^fixture *: \([^ ]*\).*/\1/p' | head -1)"
+    fatal="$(printf '%s\n' "$suite_out" | sed -n 's/^FATAL: //p' | head -1)"
+    case "$suite_rc" in
+      0) echo "[guards] OK   glm53-thinking: behavioural regression suite passes (fixture ${fixture:-unknown})" ;;
+      2) echo "[guards] STALE glm53-thinking: regression fixture ${fixture:-unknown} cannot run against 9Router $(pkg_version) - NOT a behavioural regression${fatal:+; $fatal}"
+         rc=1 ;;
+      *) echo "[guards] MISSING glm53-thinking: behavioural regression suite FAILED (fixture ${fixture:-unknown}, rc=$suite_rc)"
+         rc=1 ;;
+    esac
   fi
 fi
 
