@@ -22,7 +22,18 @@ const FIXTURE_SHA=require('crypto').createHash('sha256').update(fs.readFileSync(
 console.log('fixture      : '+FIXTURE_ID+'@'+FIXTURE_REV+'+sha256:'+FIXTURE_SHA+' (9Router 0.5.111 / 0.5.112)');
 // Any throw while resolving or driving the bundle is the STALE/unloadable class (exit 2), never a
 // behavioural FAIL: the assertions only run after every module and applier has resolved.
-process.on('uncaughtException',e=>{ console.error('FATAL: suite cannot run against this bundle: '+((e&&e.message)||e)); process.exit(2); });
+// Counters live above the handler: typeof does NOT protect a let in TDZ, so an early throw
+// (unloadable bundle) must still find them initialised and exit 2 rather than crash.
+let pass=0, fail=0; const failures=[];
+process.on('uncaughtException',e=>{
+  // A throw AFTER assertions have already recorded FAILs is a behavioural FAIL (exit 1), never the
+  // STALE/unloadable class (exit 2): otherwise a real regression is misreported as 'not a regression'.
+  const rec = (typeof fail === 'number' && fail > 0);
+  console.error((rec?'BEHAVIOURAL FAIL: ':'FATAL: suite cannot run against this bundle: ')+((e&&e.message)||e));
+  if(rec){ console.log('PASS '+(typeof pass==='number'?pass:0)+'   FAIL '+fail);
+           if(typeof failures==='object'&&failures) console.log('failed: '+failures.join(' | '));
+           process.exit(1); }
+  process.exit(2); });
 
 // ---------------------------------------------------------------- loader ----
 function walk(dir,out=[]){ for(const e of fs.readdirSync(dir,{withFileTypes:true})){
@@ -73,7 +84,6 @@ const CAPS=req(24), LEVELS=req(72239), PIPE=req(req.find('Ws:()=>','Ai:()=>','Y8
 if(!FMT||!FMT.OLLAMA){ console.error('FATAL: format enum not found'); process.exit(2); }
 
 // ---------------------------------------------------------------- harness ----
-let pass=0, fail=0; const failures=[];
 function chk(name, got, want){
   const g=JSON.stringify(got), w=JSON.stringify(want);
   if(g===w){ pass++; console.log('  PASS  '+name); }

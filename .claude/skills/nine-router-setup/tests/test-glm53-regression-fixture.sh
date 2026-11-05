@@ -48,4 +48,20 @@ if [ -f "$real/package.json" ] && grep -q '"name": *"9router"' "$real/package.js
 else
   echo "SKIP no 9Router install at $real"
 fi
+
+# 4. the exception handler must NOT swallow recorded FAILs into the STALE class: a real behavioural
+#    regression is exit 1, exit 2 is reserved for a bundle the suite cannot run at all.
+H="$(sed -n "/uncaughtException/,/^});/p" "$SUITE")"
+printf '%s' "$H" | grep -q 'fail > 0' \
+  && ok "handler distinguishes recorded FAILs (fail>0) from the STALE class" \
+  || bad "handler maps every throw to STALE - a real behavioural FAIL would be misreported as NOT a regression"
+printf '%s' "$H" | grep -q 'process.exit(1)' \
+  && ok "handler exits 1 for a behavioural FAIL" \
+  || bad "handler never exits 1: recorded FAILs are discarded"
+DECL="$(grep -n '^let pass=0, fail=0;' "$SUITE" | head -1 | cut -d: -f1)"
+REG="$(grep -n 'uncaughtException' "$SUITE" | head -1 | cut -d: -f1)"
+[ -n "$DECL" ] && [ -n "$REG" ] && [ "$DECL" -lt "$REG" ] \
+  && ok "counters declared above the handler (no TDZ crash on an early throw)" \
+  || bad "counters declared after the handler: an early throw would crash the handler"
+
 exit $fail
