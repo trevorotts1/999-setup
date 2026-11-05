@@ -29,6 +29,14 @@ grep -Eq '^\[guards\] STALE glm53-thinking: regression fixture glm53-regression-
 grep -q 'behavioural regression suite FAILED' "$T/inst.out" \
   && bad "a stale fixture is still reported as a behavioural regression" || ok "stale fixture is not reported as a behavioural regression"
 
+# 2b. the standalone repair helper must draw the same line
+CHK="$HERE/../assets/guards/9router-glm53-regression-check.sh"
+o="$(GLM53_SUITE="$SUITE" bash "$CHK" "$R" 2>&1)"; rc=$?
+[ "$rc" -eq 2 ] && printf '%s\n' "$o" | grep -q 'could not run against .* (fixture glm53-regression-v2@' \
+  && printf '%s\n' "$o" | grep -q 'NOT a behavioural regression' \
+  && ok "regression-check names the fixture and the stale class on exit 2" \
+  || bad "regression-check rc=$rc: $(printf '%s\n' "$o" | head -3)"
+
 # 3. on a real 9Router install the fixture passes and the pass line still carries its identity
 real="$HOME/.npm-global/lib/node_modules/9router"
 if [ -f "$real/package.json" ] && grep -q '"name": *"9router"' "$real/package.json"; then
