@@ -4,10 +4,10 @@
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
     "skill_folder": "77-council-of-wise-elders",
-    "source_commit": "4fc5536dde163ea6f393958ae0dbef9b8d39fa54",
-    "canonical_aggregate_sha256": "88681824213c40142a59b19913e26f72129a40be65e6eb743045a931ac2752d3",
+    "source_commit": "48d2ee31f99998f95c6472eccfa80e37cbf82449",
+    "canonical_aggregate_sha256": "f545238ac7c05caca75ba20d82447e25c64dae811beacd7861460e3f42878b84",
     "canonical_file_count": 864,
-    "skill_version": "1.0.78"
+    "skill_version": "1.0.79"
   },
   "intentional_distribution_differences": [
     {
@@ -103,8 +103,8 @@
     {
       "kind": "generated_archive_not_vendored",
       "file": "council-of-wise-elders.skill",
-      "archive_sha256": "fd662b09e43e12426998fc875106b4bd752f8485a82b578042ed30c98a537216",
-      "archive_bytes": 82696094,
+      "archive_sha256": "26ebf45989cc8e887ab9c8998dca68e301eb674ec4157b8b1028e99b51ede659",
+      "archive_bytes": 82697184,
       "rule": "The canonical tree's generated distributable archive is a sibling artifact of the same tree (the canonical hash method excludes it from the tree identity). It is not vendored: the vendored folder is itself the 999 distribution of this tree. Its identity is recorded here and in the vendoring record."
     },
     {
@@ -120,18 +120,18 @@
   ],
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "fd662b09e43e12426998fc875106b4bd752f8485a82b578042ed30c98a537216",
-    "bytes": 82696094
+    "sha256": "26ebf45989cc8e887ab9c8998dca68e301eb674ec4157b8b1028e99b51ede659",
+    "bytes": 82697184
   },
   "distribution": {
     "vendored_path": ".claude/skills/council-of-wise-elders",
-    "distribution_aggregate_sha256": "2e3dc9a83687ac7a1d95f4d05639707fd9f251ef84c56b4fbf4dd3489c80a545",
+    "distribution_aggregate_sha256": "dc20c05829a387094cf6a3f1952eb4414f2dd0f7da32b8f05a0d27aa3f4ee6a4",
     "distribution_file_count": 865,
-    "contract_aggregate_sha256": "88681824213c40142a59b19913e26f72129a40be65e6eb743045a931ac2752d3",
+    "contract_aggregate_sha256": "f545238ac7c05caca75ba20d82447e25c64dae811beacd7861460e3f42878b84",
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "10cd929e70877092da848be33580b612fa5e91b098f403beaf91ac2159476c5b"
+        "sha256": "68db8f80e57f8db34d18291ad56d3dca02bfa158bc2919d62f2e3185a5831db9"
       },
       {
         "path": "CORE_UPDATES.md",
@@ -159,7 +159,7 @@
       },
       {
         "path": "SKILL.md",
-        "sha256": "a2ab83eeeec81cf74beb723af2fbc40b439716d609ca950266b05c580096893a"
+        "sha256": "57a012c4f295db6a62ea6cac4196e4109ad5a2fc83561611e52ce5389b1af111"
       },
       {
         "path": "advisors/brene-brown/briefing.md",
@@ -3295,7 +3295,7 @@
       },
       {
         "path": "scripts/selected-tree-gate.mjs",
-        "sha256": "aeeeed8feb1d4a1a21aa29cd8822ac834544b8a50b124ff16a4d409076d649be"
+        "sha256": "a816b5ba10e14a642532c87511f2ec770a3683888d0a9fe7b22f6a7149606254"
       },
       {
         "path": "scripts/supervisor/health-collector.mjs",
@@ -3519,7 +3519,7 @@
       },
       {
         "path": "scripts/tests/selected-tree-gate.test.mjs",
-        "sha256": "0423a00452caf0197d887431ab9fc6c9763d93912e7ff63ae205f5a1d1db7c6c"
+        "sha256": "86b7d12bcee62dbb662c237bc9c43d7275d8e377f36bf9cad08d793fbe2d2a9b"
       },
       {
         "path": "scripts/tests/verify-cohort-parity.test.mjs",
@@ -3563,7 +3563,7 @@
       },
       {
         "path": "skill-version.txt",
-        "sha256": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced"
+        "sha256": "84b6f8a0983c5b9dd92ad1389e75ca6966b4d9792d79d56174c3444a89c4a300"
       },
       {
         "path": "tests/CRITICAL-CONTRACT-council-front-door.test.mjs",
@@ -3579,7 +3579,7 @@
       },
       {
         "path": "version",
-        "sha256": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced"
+        "sha256": "84b6f8a0983c5b9dd92ad1389e75ca6966b4d9792d79d56174c3444a89c4a300"
       },
       {
         "path": "wire.sh",
@@ -3637,7 +3637,7 @@
       },
       {
         "path": "runtime/dist/blackceo-council.mjs",
-        "sha256": "08106351d02238f6b605edd4e0b2a7108590538d73da20a237fee93005ca747a"
+        "sha256": "d8fc3e5ddec8606b628e36bc7c0d2570ece64239ecd5d1b437e1634605e9aa7d"
       },
       {
         "path": "runtime/dist/bridges/browser-open.d.ts",
@@ -4105,7 +4105,7 @@
       },
       {
         "path": "runtime/dist/export-skill22.mjs",
-        "sha256": "b576ef2c6af8b240f9c1dac8ab838db526b1d22517bc02fd19f15a1c152eda77"
+        "sha256": "159b3c4741cb539b5b5ecddd2df3a4c1bfef6798ecb07a04d07e18579ebd106c"
       },
       {
         "path": "runtime/dist/flow/convene-flow.d.ts",
@@ -5009,14 +5009,14 @@
     ]
   },
   "canonical_files": {
-    "CHANGELOG.md": "10cd929e70877092da848be33580b612fa5e91b098f403beaf91ac2159476c5b",
+    "CHANGELOG.md": "68db8f80e57f8db34d18291ad56d3dca02bfa158bc2919d62f2e3185a5831db9",
     "CORE_UPDATES.md": "f91ac3056710d73458f739f2a7e0b4bb91d43b6999d188d21ee04fd5f761f9c7",
     "EXAMPLES.md": "4d8245365d28943b2ff2385d7079770e39a0f827ef52c6e87ad8e2ae622a7646",
     "INSTALL.md": "aac2fcf7f76c015e8e671e954953ed68a9bc2f7902497e8ea577ebf7edd8fd22",
     "INSTRUCTIONS.md": "a69e0ecd2ca59734ade20312248256705db0e4e10dbba89b82632770dcd8e1ad",
     "PREREQS.json": "cadfefaeef39d1b5a5f4f8562e4f19df7048dcabc874f754629f9c73eaa22871",
     "QC.md": "07cfe25db8920eee0b2548051f61ad9ef32149479b4bce5a5a6b998e325c8e9b",
-    "SKILL.md": "a2ab83eeeec81cf74beb723af2fbc40b439716d609ca950266b05c580096893a",
+    "SKILL.md": "57a012c4f295db6a62ea6cac4196e4109ad5a2fc83561611e52ce5389b1af111",
     "advisors/brene-brown/briefing.md": "88f8c1a048e2d02b331ba594972b9bc259d50aeeb213646ea189a11506daf1ba",
     "advisors/brene-brown/communication.md": "1334fd2a595046005b03e47b0ee32dd8cb1edf35b90c3c2d43e5837c3cd218fd",
     "advisors/brene-brown/coverage.json": "acb622349e7f7fcd7985d7cc47df04457658863401e97e5db4dc241021f2d981",
@@ -5800,7 +5800,7 @@
     "scripts/register-skill22-personas.mjs": "4b7d41be2b4836949508d374d27f46e7d96574f5d10c0317f14c847166d5eded",
     "scripts/register-skill22-personas.test.mjs": "70827be0a514f264914b0bbec1ba1b44d320a5f35e50e959a1319f13892e08bd",
     "scripts/render-counsel-artifact.mjs": "4e39a93ef0555753e29e9906d557f86c63f02dead8eec66e586aa53845b19c68",
-    "scripts/selected-tree-gate.mjs": "aeeeed8feb1d4a1a21aa29cd8822ac834544b8a50b124ff16a4d409076d649be",
+    "scripts/selected-tree-gate.mjs": "a816b5ba10e14a642532c87511f2ec770a3683888d0a9fe7b22f6a7149606254",
     "scripts/supervisor/health-collector.mjs": "1aa20ce637bb437de603bc4c87051d90fdd90cd387760b3dc1f817791ca83bb1",
     "scripts/supervisor/health-observer.mjs": "ceea60cc785a83203c551a42aa64cba3b74104b9633ea5ab64ac83dba2265e21",
     "scripts/supervisor/hybrid/package.json": "7636401bd64f62bc6216500abd30d8c19a1b88b0daf73990af83e4e86a5b8ace",
@@ -5856,7 +5856,7 @@
     "scripts/tests/node-runtime-preflight.test.mjs": "ada1d7acd7f6300e1d3c7d607bc47b6d21799b79679058a52cfbdd0fc892029b",
     "scripts/tests/provision-council-access.test.sh": "05aaed901f65b6afebf0c32d764a6c69ce448e714940bc209e7a8fe1204c2003",
     "scripts/tests/render-counsel-artifact.test.mjs": "f325885267aeb121b9e23ccc8f35d117c593dbde75afca29e0f04036878e4564",
-    "scripts/tests/selected-tree-gate.test.mjs": "0423a00452caf0197d887431ab9fc6c9763d93912e7ff63ae205f5a1d1db7c6c",
+    "scripts/tests/selected-tree-gate.test.mjs": "86b7d12bcee62dbb662c237bc9c43d7275d8e377f36bf9cad08d793fbe2d2a9b",
     "scripts/tests/verify-cohort-parity.test.mjs": "6ff1bda8e69312ef07bf146e9bed09c62aeb0a5117115fdfbcac6f2d2b85b030",
     "scripts/tests/verify-council-box.test.sh": "6db9f0bf2caf6084f7c51b86e6b61993bf43bbd706ddbcc25d0b552cc24ab497",
     "scripts/tests/wire-connector.test.sh": "ad711a553d47cc8ce0a27b5e6e95b1b41878cace7869f6185606951df768837b",
@@ -5867,17 +5867,17 @@
     "scripts/verify-cohort-parity.mjs": "6aebc56ba1065335f3175edb8cba2eff43915413a05c59ff07397f4682b0a5fc",
     "scripts/verify-council-box.sh": "4b5ec7d379e7ad954d6e7d0c586ab9c14240923882fab2515ea8629abfb9bdc4",
     "scripts/verify-council-plugin.mjs": "ef68224e02a9de84d280c3c62cc9ca3c746149e27d2b515321dc7ca3b2bfed95",
-    "skill-version.txt": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced",
+    "skill-version.txt": "84b6f8a0983c5b9dd92ad1389e75ca6966b4d9792d79d56174c3444a89c4a300",
     "tests/CRITICAL-CONTRACT-council-front-door.test.mjs": "1167d7003a2e8f11a055a6c7fabb49804500234f5219ba0c07bf2594d50c2d39",
     "tests/fixtures/README.md": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
     "tests/fixtures/sample-decision-brief.synthetic.json": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
-    "version": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced",
+    "version": "84b6f8a0983c5b9dd92ad1389e75ca6966b4d9792d79d56174c3444a89c4a300",
     "wire.sh": "9ba3be95e228bc0dd69d4c6ae231be64a703467d3ce851db142c4919c57a0549"
   },
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
-    "sha256": "08106351d02238f6b605edd4e0b2a7108590538d73da20a237fee93005ca747a",
-    "bytes": 1329358
+    "sha256": "d8fc3e5ddec8606b628e36bc7c0d2570ece64239ecd5d1b437e1634605e9aa7d",
+    "bytes": 1321358
   },
   "verification": {
     "canonical_manifest_recomputed": true,
