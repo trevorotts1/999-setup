@@ -1,16 +1,16 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "1.0.78",
+  "skill_version": "1.0.80",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "4fc5536dde163ea6f393958ae0dbef9b8d39fa54",
-  "canonical_aggregate_sha256": "88681824213c40142a59b19913e26f72129a40be65e6eb743045a931ac2752d3",
+  "source_commit": "7e3ac06ee573d619a92bf7b1b42c22baad498bab",
+  "canonical_aggregate_sha256": "0a02f1b26c96fc6d3d5f3f2979df09ece247e610e34b4fdb3cfab307ef17fc02",
   "file_count": 865,
-  "aggregate_sha256": "2e3dc9a83687ac7a1d95f4d05639707fd9f251ef84c56b4fbf4dd3489c80a545",
+  "aggregate_sha256": "db33d43c0a97d744bbe6eb2e3534364081c64eebee8dff8f6e132f18b0125b8b",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
-    "sha256": "08106351d02238f6b605edd4e0b2a7108590538d73da20a237fee93005ca747a",
-    "bytes": 1329358
+    "sha256": "d8fc3e5ddec8606b628e36bc7c0d2570ece64239ecd5d1b437e1634605e9aa7d",
+    "bytes": 1321358
   },
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "10cd929e70877092da848be33580b612fa5e91b098f403beaf91ac2159476c5b",
-      "bytes": 146560
+      "sha256": "9be9ed7475f1f51913bc35b2aeb158e4ee92551604a1a77d1c9408381bf6b1c8",
+      "bytes": 149177
     },
     {
       "path": "CORE_UPDATES.md",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "04261df9bff42b087e90b3efceb82af3a2e682fc5af55b1c50022faf34f26cfc",
+      "sha256": "bbc0a5cded836a4bcf0f24115787d68a0c0f94498eb866392938db2dfbbd511f",
       "bytes": 6276
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "a2ab83eeeec81cf74beb723af2fbc40b439716d609ca950266b05c580096893a",
+      "sha256": "4b1633c54a0aacee4287981e2f16da3973e972896af34e37dd70711030def3bb",
       "bytes": 22202
     },
     {
@@ -3980,8 +3980,8 @@
     },
     {
       "path": "scripts/selected-tree-gate.mjs",
-      "sha256": "aeeeed8feb1d4a1a21aa29cd8822ac834544b8a50b124ff16a4d409076d649be",
-      "bytes": 61426
+      "sha256": "a816b5ba10e14a642532c87511f2ec770a3683888d0a9fe7b22f6a7149606254",
+      "bytes": 63518
     },
     {
       "path": "scripts/supervisor/health-collector.mjs",
@@ -4260,8 +4260,8 @@
     },
     {
       "path": "scripts/tests/selected-tree-gate.test.mjs",
-      "sha256": "0423a00452caf0197d887431ab9fc6c9763d93912e7ff63ae205f5a1d1db7c6c",
-      "bytes": 40841
+      "sha256": "86b7d12bcee62dbb662c237bc9c43d7275d8e377f36bf9cad08d793fbe2d2a9b",
+      "bytes": 44137
     },
     {
       "path": "scripts/tests/verify-cohort-parity.test.mjs",
@@ -4315,7 +4315,7 @@
     },
     {
       "path": "skill-version.txt",
-      "sha256": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced",
+      "sha256": "7d70afabc81efc44a8afbbc7419b836b1a498beeb5bf956fd186d6972183aa19",
       "bytes": 7
     },
     {
@@ -4335,7 +4335,7 @@
     },
     {
       "path": "version",
-      "sha256": "668dd829d18f3e5749b48324872998555e6b109508f4a8d37415a396d3a74ced",
+      "sha256": "7d70afabc81efc44a8afbbc7419b836b1a498beeb5bf956fd186d6972183aa19",
       "bytes": 7
     },
     {

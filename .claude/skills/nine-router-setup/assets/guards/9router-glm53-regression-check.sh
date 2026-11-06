@@ -59,7 +59,10 @@ done
 
 OUT="$("$NODE" "$SUITE" "$ROOT" 2>&1)"; RC=$?
 if [ $RC -eq 2 ]; then
-  echo "REGRESSION-CHECK FAIL: the suite could not load the bundle at $ROOT"
+  # exit 2 is "could not run", never "regressed": that is a stale fixture against a renumbered or
+  # unpatched build. Name the fixture so it can be compared with the kit that shipped it.
+  echo "REGRESSION-CHECK FAIL: the suite could not run against $ROOT (fixture $(echo "$OUT" | sed -n 's/^fixture *: \([^ ]*\).*/\1/p' | head -1))"
+  echo "  This is a stale fixture or a bundle it does not know, NOT a behavioural regression."
   echo "$OUT" | tail -5
   exit 2
 fi
