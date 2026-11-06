@@ -1,11 +1,11 @@
 {
   "skill": "council-of-wise-elders",
-  "skill_version": "1.0.79",
+  "skill_version": "1.0.80",
   "generated_by": "scripts/vendor-council-bundle.mjs (999-setup) using the hash method of the canonical scripts/build-bundles.mjs",
-  "source_commit": "48d2ee31f99998f95c6472eccfa80e37cbf82449",
-  "canonical_aggregate_sha256": "f545238ac7c05caca75ba20d82447e25c64dae811beacd7861460e3f42878b84",
+  "source_commit": "7e3ac06ee573d619a92bf7b1b42c22baad498bab",
+  "canonical_aggregate_sha256": "0a02f1b26c96fc6d3d5f3f2979df09ece247e610e34b4fdb3cfab307ef17fc02",
   "file_count": 865,
-  "aggregate_sha256": "dc20c05829a387094cf6a3f1952eb4414f2dd0f7da32b8f05a0d27aa3f4ee6a4",
+  "aggregate_sha256": "db33d43c0a97d744bbe6eb2e3534364081c64eebee8dff8f6e132f18b0125b8b",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json, any .skill archive, runtime/dist and runtime/node_modules are excluded from the tree aggregate; the built executable entry point is recorded in runtime_entry and verified by scripts/entry-point-gate.mjs.",
   "runtime_entry": {
     "path": "runtime/dist/blackceo-council.mjs",
@@ -20,8 +20,8 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "68db8f80e57f8db34d18291ad56d3dca02bfa158bc2919d62f2e3185a5831db9",
-      "bytes": 148312
+      "sha256": "9be9ed7475f1f51913bc35b2aeb158e4ee92551604a1a77d1c9408381bf6b1c8",
+      "bytes": 149177
     },
     {
       "path": "CORE_UPDATES.md",
@@ -30,7 +30,7 @@
     },
     {
       "path": "DISTRIBUTION-RECONCILIATION.json",
-      "sha256": "e588222b75e73db1ffada01d3ca46cb50df210f955e3baccbd73cb421bc605e7",
+      "sha256": "bbc0a5cded836a4bcf0f24115787d68a0c0f94498eb866392938db2dfbbd511f",
       "bytes": 6276
     },
     {
@@ -60,7 +60,7 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "57a012c4f295db6a62ea6cac4196e4109ad5a2fc83561611e52ce5389b1af111",
+      "sha256": "4b1633c54a0aacee4287981e2f16da3973e972896af34e37dd70711030def3bb",
       "bytes": 22202
     },
     {
@@ -4315,7 +4315,7 @@
     },
     {
       "path": "skill-version.txt",
-      "sha256": "84b6f8a0983c5b9dd92ad1389e75ca6966b4d9792d79d56174c3444a89c4a300",
+      "sha256": "7d70afabc81efc44a8afbbc7419b836b1a498beeb5bf956fd186d6972183aa19",
       "bytes": 7
     },
     {
@@ -4335,7 +4335,7 @@
     },
     {
       "path": "version",
-      "sha256": "84b6f8a0983c5b9dd92ad1389e75ca6966b4d9792d79d56174c3444a89c4a300",
+      "sha256": "7d70afabc81efc44a8afbbc7419b836b1a498beeb5bf956fd186d6972183aa19",
       "bytes": 7
     },
     {
