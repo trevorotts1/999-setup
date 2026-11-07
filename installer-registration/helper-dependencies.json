@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-07T19:35:28Z",
+  "generatedAt": "2026-11-07T19:57:35Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -135,13 +135,13 @@
       "role": "KIE key resolver, prompt rule 12 enforcer, declared gate list and its test",
       "kind": "files",
       "required": true,
-      "version": "sha256:8033fb3d3a69",
+      "version": "sha256:bdf0c6e4bb43",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
       "fileCount": 142,
-      "sizeBytes": 1177165,
-      "treeSha256": "8033fb3d3a693616bbdd09360a2ec60112062fee4d9a75fad8be23bae9f1b02c",
+      "sizeBytes": 1179194,
+      "treeSha256": "bdf0c6e4bb4326d4b9feeaa13d20415711b03d15c2b3790581b1bce291c6e0bc",
       "skillMdSha256": null,
       "files": [
         {
@@ -607,7 +607,7 @@
         {
           "path": "signature_launch/experience/harness_profile.py",
           "sourcePath": "shared-utils/signature_launch/experience/harness_profile.py",
-          "sha256": "5e282431d6b7e6cc1a07eb10843b3f4573cd034342e0c82223e73e13dc97b2ac"
+          "sha256": "2d9d9be5d56e2f995bdccfacb4c701263ea750ce8e5ee34a4ffe5255a5b7aea5"
         },
         {
           "path": "signature_launch/experience/progress_report.py",
