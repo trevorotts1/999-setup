@@ -62,8 +62,10 @@ HELPER_SPECS = [
      "(references/kie-common-rules.md)",
      "openclaw-onboarding/07-kie-setup", "skill"),
     ("shared-utils", "shared-utils", "shared-utils",
-     "KIE key resolver, prompt rule 12 enforcer, declared gate list and its "
-     "test",
+     "The shared launch runtime (client_intake, signature_launch, "
+     "signature_launch_contract) plus the KIE key resolver, prompt rule 12 "
+     "enforcer, declared gate list and its test; merged into the installed "
+     "shared-utils tree, never swapped in for it",
      "openclaw-onboarding/shared-utils", "files"),
     # Agnes doors, vendored the same way as the KIE helpers (W3-twin-sync-U2).
     # OPTIONAL: required=false, so preflight never fails a box that does not
@@ -85,15 +87,46 @@ OPTIONAL_SPEC_IDS = {"63", "64"}
 # For a "files" helper: (path inside helpers/<name>/, path inside the
 # openclaw-onboarding repository). The pin guard checks each of these against
 # the onboarding ref, so a newer onboarding copy fails CI.
-FILE_SOURCES = {
-    "shared-utils": [
-        ("key_resolver.py", "shared-utils/key_resolver.py"),
-        ("kie_prompt_enforcer.py", "shared-utils/kie_prompt_enforcer.py"),
-        ("kie_prompt_gates.json", "shared-utils/kie_prompt_gates.json"),
-        ("kie-prompt-enforcer-and-gates.test.py",
-         "tests/unit/kie-prompt-enforcer-and-gates.test.py"),
-    ],
+#
+# shared-utils carries the whole launch RUNTIME, not a KIE-only subset (F13):
+# client_intake (the guided interview), signature_launch (the launch adapters,
+# events, scheduler and the experience modules) and signature_launch_contract
+# (the plan/approval contract Skill 83 requires). The list is DERIVED from the
+# vendored tree so adding a runtime module cannot silently leave it unpinned;
+# only the KIE files keep an explicit source path (their onboarding homes differ).
+_SHARED_UTILS_DIRS = ("client_intake", "signature_launch", "signature_launch_contract")
+_SHARED_UTILS_TOP_LEVEL = {
+    "key_resolver.py": "shared-utils/key_resolver.py",
+    "kie_prompt_enforcer.py": "shared-utils/kie_prompt_enforcer.py",
+    "kie_prompt_gates.json": "shared-utils/kie_prompt_gates.json",
+    "kie-prompt-enforcer-and-gates.test.py":
+        "tests/unit/kie-prompt-enforcer-and-gates.test.py",
 }
+# Test suites, fixtures and bytecode are not runtime; they stay out of the pin.
+_FILES_HELPER_SKIP_DIRS = {"__pycache__", "tests", "fixtures"}
+
+
+def _runtime_file_sources(name):
+    """(path inside helpers/<name>/, path inside openclaw-onboarding), sorted.
+
+    Runtime trees map to the same relative path inside the onboarding
+    repository; the KIE files keep their explicit onboarding homes.
+    """
+    root = HELPERS_DIR / name
+    found = dict(_SHARED_UTILS_TOP_LEVEL)
+    for directory in _SHARED_UTILS_DIRS:
+        for path in sorted((root / directory).rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            parts = set(rel.split("/"))
+            if parts & _FILES_HELPER_SKIP_DIRS or rel.endswith(".pyc"):
+                continue
+            found[rel] = "shared-utils/" + rel
+    return sorted(found.items())
+
+
+FILE_SOURCES = {"shared-utils": _runtime_file_sources("shared-utils")}
 
 # Same exclusions the repository .gitignore enforces, so a clean clone hashes
 # identical to the tree this machine pinned.
@@ -444,8 +477,9 @@ def cmd_repin(a):
         # A "files" helper has no skill-version.txt: its version IS its content
         # hash, so "stale" is decided file by file by the pin guard.
         if kind == "files":
-            if not entry["version"]:
-                entry["version"] = "sha256:" + entry["treeSha256"][:12]
+            # Its content IS its version: never keep a stale version when the
+            # composition changes (the old code kept the previous stamp).
+            entry["version"] = "sha256:" + entry["treeSha256"][:12]
             entry["files"] = [
                 {"path": rel, "sourcePath": onb, "sha256": sha256_file(src / rel)}
                 for rel, onb in FILE_SOURCES.get(name, [])
