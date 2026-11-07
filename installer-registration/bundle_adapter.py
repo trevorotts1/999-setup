@@ -606,7 +606,8 @@ def harness_rows(bundle: Bundle, home=None, claude_root=None):
     """
     home = Path(home) if home else Path.home()
     rows = []
-    active = resolve_harness_root(home, claude_root=claude_root)[0]
+    active, _active_skills, _active_name, active_source = resolve_harness_root(
+        home, claude_root=claude_root)
     for name, rel in HARNESS_ROOTS:
         skills_root = home / rel / SKILLS_DIRNAME
         if not skills_root.exists() and not skills_root.is_symlink():
@@ -644,7 +645,9 @@ def harness_rows(bundle: Bundle, home=None, claude_root=None):
         if versions:
             detail += "; OLD-VERSION " + "; ".join(sorted(versions))
         if Path(active) == home / rel:
-            detail += "; ACTIVE install target"
+            # Name the resolution, never a bare assertion: a defaulted root is
+            # not the same fact as a root the caller chose on this box.
+            detail += f"; ACTIVE install target (resolved by {active_source})"
         elif name in INSTALL_HARNESSES:
             detail += "; known install harness, not the active root"
         else:
@@ -1238,6 +1241,17 @@ def main(argv=None) -> int:
             # `.claude`; the resolution is named in the plan's own reasons, never
             # silently applied.
             args.claude_root = str(resolve_harness_root(args.home, args.harness)[0])
+        # An install plan never targets a read-only harness root. `.codex/skills`
+        # and `.agents/skills` are inspected by --check/--check-install, never
+        # rewritten, so a plan to link into them is refused here.
+        home = Path(args.home) if args.home else Path.home()
+        destination = Path(args.claude_root)
+        for name, rel in HARNESS_ROOTS:
+            if name not in INSTALL_HARNESSES and destination == home / rel:
+                print(f"REFUSED: {name} is a read-only harness root; install "
+                      f"targets are {', '.join(INSTALL_HARNESSES)}. Use --check or "
+                      f"--check-install to inspect it.", file=sys.stderr)
+                return 2
         rows = install_plan(bundle, args.claude_root, args.home)
         if args.json:
             print(json.dumps([dict(zip(("action", "skill", "source", "target",
@@ -1256,17 +1270,17 @@ def main(argv=None) -> int:
         return 0
 
     if args.check_install:
-        if not args.claude_root:
-            # Same resolution as --install-plan: name the active harness path
-            # rather than refusing, and report it above the rows.
-            args.claude_root = str(resolve_harness_root(args.home, args.harness)[0])
+        # Resolve once, then reuse it: re-resolving after assigning
+        # --claude-root made every run print "resolved by --claude-root",
+        # which erased whether --harness or the default chose the root.
+        root, skills_root, harness, source = resolve_harness_root(
+            args.home, args.harness, args.claude_root)
+        args.claude_root = str(root)
         rows, installed_digests = installed_copy_rows(bundle, args.claude_root)
         rows.append(installed_order_row(bundle, installed_digests))
         counts = {"PASS": 0, "FAIL": 0, "UNDETERMINED": 0}
         for status, name, detail in rows:
             counts[status] += 1
-        root, skills_root, harness, source = resolve_harness_root(
-            args.home, args.harness, args.claude_root)
         if args.json:
             print(json.dumps({"rows": [{"status": s, "name": n, "detail": d}
                                        for s, n, d in rows],
