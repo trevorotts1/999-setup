@@ -93,6 +93,20 @@ INSTALLER_CONTRACT_TOKENS = ("up-to-date", "relink", "preserve",
 # Here so installer_parity_problems() can prove the two scripts still agree.
 FALLBACK_SKILLS = ("nine-router-setup", "spec-protocol", "kaizen", "eli5", "bro")
 
+# The harness config roots this repo recognises on a box, under $HOME. A box can
+# carry several; the ACTIVE one is the root an installer is handed, never a
+# guess. Only `claude` and `claude-nine` are install targets (AGENT_INSTALL.md
+# step 5). `codex` and `agents` carry links into the same skills and are READ
+# for visibility only: an installer never rewrites them.
+HARNESS_ROOTS = (
+    ("claude", ".claude"),
+    ("claude-nine", ".claude-nine"),
+    ("codex", ".codex"),
+    ("agents", ".agents"),
+)
+INSTALL_HARNESSES = ("claude", "claude-nine")
+SKILLS_DIRNAME = "skills"
+
 CANONICALISATION = (
     "paths: posix-relative, sorted by utf-8 bytes | "
     "text: crlf+cr -> lf, trailing sp/tab stripped, trailing blank lines "
@@ -554,12 +568,99 @@ def decision_for_provision(skill: SkillInfo) -> Decision:
 # Install plan (what both installers consume)
 # --------------------------------------------------------------------------
 
+def _harness_rel(harness):
+    for name, rel in HARNESS_ROOTS:
+        if name == harness:
+            return rel
+    raise BundleError(
+        f"unknown harness {harness!r}; known: {', '.join(n for n, _ in HARNESS_ROOTS)}")
+
+
+def resolve_harness_root(home=None, harness=None, claude_root=None):
+    """(config root, skills root, harness, source) for the ACTIVE install.
+
+    `--claude-root <root>` wins (it is what both installers pass today), then
+    `--harness <name>`, then `~/.claude`. The resolution is RETURNED so a caller
+    can print which harness path the plan was computed against instead of a
+    blanket assumption that every box is `.claude`.
+    """
+    home = Path(home) if home else Path.home()
+    if claude_root:
+        root, name, source = Path(claude_root), (harness or "explicit"), "--claude-root"
+    else:
+        name = harness or "claude"
+        root, source = home / _harness_rel(name), ("--harness" if harness else "default")
+    return root, root / SKILLS_DIRNAME, name, source
+
+
+def harness_rows(bundle: Bundle, home=None, claude_root=None):
+    """One row per harness root: (status, harness, detail).
+
+    RETAINED and OLDER/UNREADABLE states are REPORTED by name. None of them is
+    rewritten: a real directory (a destination-only compatibility tree) and a
+    link set that does not follow the active tree are preserved, and an older or
+    unreadable installed stamp is stated with both versions. `.codex/skills` and
+    `.agents/skills` are inspected for exactly this reason - a link there that
+    does not follow the active tree is invisible today, and silence is not a
+    pass.
+    """
+    home = Path(home) if home else Path.home()
+    rows = []
+    active = resolve_harness_root(home, claude_root=claude_root)[0]
+    for name, rel in HARNESS_ROOTS:
+        skills_root = home / rel / SKILLS_DIRNAME
+        if not skills_root.exists() and not skills_root.is_symlink():
+            rows.append(("ABSENT", name, f"no {skills_root} on this box"))
+            continue
+        links, real, missing, targets = 0, 0, 0, set()
+        versions = []
+        for skill in bundle.skills:
+            target = skills_root / skill.name
+            if target.is_symlink():
+                links += 1
+                try:
+                    targets.add(os.readlink(target))
+                except OSError:
+                    targets.add("<unreadable link>")
+            elif target.exists():
+                real += 1
+                installed, _why = read_skill_version(target)
+                if installed and skill.version and str(installed) != str(skill.version):
+                    versions.append(f"{skill.name} installed {installed} shipped {skill.version}")
+            else:
+                missing += 1
+        if links == 0 and real == 0:
+            rows.append(("ABSENT", name, f"{skills_root} has none of the bundled skills"))
+            continue
+        parts = [f"{links} link(s)", f"{real} real director{'y' if real == 1 else 'ies'}",
+                 f"{missing} absent"]
+        if real or len(targets) > 1:
+            detail = (f"{skills_root}: " + ", ".join(parts)
+                      + "; RETAINED as found (never rewritten)")
+            if len(targets) > 1:
+                detail += f"; links point at {len(targets)} different trees"
+        else:
+            detail = f"{skills_root}: " + ", ".join(parts) + "; follows one tree"
+        if versions:
+            detail += "; OLD-VERSION " + "; ".join(sorted(versions))
+        if Path(active) == home / rel:
+            detail += "; ACTIVE install target"
+        elif name in INSTALL_HARNESSES:
+            detail += "; known install harness, not the active root"
+        else:
+            detail += "; read-only harness root"
+        rows.append(("RETAINED" if (real or len(targets) > 1) else "LINKED", name, detail))
+    return rows
+
+
 def resolve_source(skill: SkillInfo, home: Path):
     if skill.has_skill_md:
         return skill.dir
-    candidate = Path(home) / ".claude" / "skills" / skill.name
-    if (candidate / "SKILL.md").is_file():
-        return candidate
+    home = Path(home)
+    for _name, rel in HARNESS_ROOTS:
+        candidate = home / rel / SKILLS_DIRNAME / skill.name
+        if (candidate / "SKILL.md").is_file():
+            return candidate
     return None
 
 
@@ -915,7 +1016,7 @@ def write_digest_record(bundle: Bundle, path=None) -> Path:
     return path
 
 
-def run_checks(bundle: Bundle):
+def run_checks(bundle: Bundle, home=None):
     lines = []
     counters = {"passed": 0, "failed": 0, "undetermined": 0, "drift": 0}
 
@@ -1043,6 +1144,12 @@ def run_checks(bundle: Bundle):
                f"{order_digest_now}: {REGISTRY_PATH} order or a skill's content moved "
                f"since --write-digests")
 
+    # 9. harness roots: which installed skill path each harness on this box
+    #    resolves to, and every retained directory or old-version condition in it.
+    #    Reported, never counted as a pass and never rewritten.
+    for status, harness, detail in harness_rows(bundle, home):
+        lines.append(f"HARNESS {status} {harness} {detail}")
+
     summary = (f"SUMMARY: {counters['passed']} passed, {counters['failed']} failed, "
                f"{counters['undetermined']} undetermined, {counters['drift']} manifest "
                f"drift, hosts: {host_verified} verified / "
@@ -1094,6 +1201,9 @@ def main(argv=None) -> int:
     group.add_argument("--digest", metavar="PATH",
                        help="print the canonical digest of one directory")
     parser.add_argument("--claude-root", default=None)
+    parser.add_argument("--harness", default=None, choices=[n for n, _ in HARNESS_ROOTS],
+                        help="the harness whose ACTIVE installed skill path to use when "
+                             "--claude-root is not given (default: claude)")
     parser.add_argument("--home", default=None)
     parser.add_argument("--installed", action="append", default=[],
                         metavar="NAME=VERSION")
@@ -1124,8 +1234,10 @@ def main(argv=None) -> int:
 
     if args.install_plan:
         if not args.claude_root:
-            print("--install-plan needs --claude-root", file=sys.stderr)
-            return 2
+            # Resolve the ACTIVE harness path instead of assuming every box is
+            # `.claude`; the resolution is named in the plan's own reasons, never
+            # silently applied.
+            args.claude_root = str(resolve_harness_root(args.home, args.harness)[0])
         rows = install_plan(bundle, args.claude_root, args.home)
         if args.json:
             print(json.dumps([dict(zip(("action", "skill", "source", "target",
@@ -1145,18 +1257,24 @@ def main(argv=None) -> int:
 
     if args.check_install:
         if not args.claude_root:
-            print("--check-install needs --claude-root", file=sys.stderr)
-            return RC_UNDETERMINED
+            # Same resolution as --install-plan: name the active harness path
+            # rather than refusing, and report it above the rows.
+            args.claude_root = str(resolve_harness_root(args.home, args.harness)[0])
         rows, installed_digests = installed_copy_rows(bundle, args.claude_root)
         rows.append(installed_order_row(bundle, installed_digests))
         counts = {"PASS": 0, "FAIL": 0, "UNDETERMINED": 0}
         for status, name, detail in rows:
             counts[status] += 1
+        root, skills_root, harness, source = resolve_harness_root(
+            args.home, args.harness, args.claude_root)
         if args.json:
             print(json.dumps({"rows": [{"status": s, "name": n, "detail": d}
                                        for s, n, d in rows],
+                              "harness": {"name": harness, "root": str(root),
+                                          "skills": str(skills_root), "source": source},
                               "summary": counts}, indent=2))
         else:
+            print(f"HARNESS active {harness} {skills_root} (resolved by {source})")
             for status, name, detail in rows:
                 print(f"{status} install-copy {name} {detail}")
             print(f"SUMMARY: {counts['PASS']} passed, {counts['FAIL']} failed, "
@@ -1174,7 +1292,7 @@ def main(argv=None) -> int:
               f"distribution_order={order_digest_now or 'UNDETERMINED'}")
         return 0
 
-    lines, rc = run_checks(bundle)
+    lines, rc = run_checks(bundle, home=args.home)
     if args.json:
         print(json.dumps({"lines": lines, "exit": rc}, indent=2))
     else:
