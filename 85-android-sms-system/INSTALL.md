@@ -17,13 +17,13 @@ there, **B** they are not.
 ## Expected documentation path
 
 ```
-/Users/<user>/Downloads/openclaw-master-files/mycrmsim/
+$HOME/Downloads/openclaw-master-files/mycrmsim/
 ```
 
 On the operator box that resolves to:
 
 ```
-/Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/
+$HOME/Downloads/openclaw-master-files/mycrmsim/
 ```
 
 Required structure at that path:
@@ -81,7 +81,7 @@ directory from any machine that already has it:
 
 ```bash
 rsync -a --info=progress2 \
-  /Users/blackceomacmini/Downloads/openclaw-master-files/mycrmsim/ \
+  $HOME/Downloads/openclaw-master-files/mycrmsim/ \
   ~/Downloads/openclaw-master-files/mycrmsim/
 ```
 
@@ -104,9 +104,9 @@ grep -c '/article/' /tmp/urls.txt   # expect 148
 ```
 
 Fetch and convert each article page with pandoc (HTML to Markdown), writing into
-`articles/` under the category folders. Images must be downloaded separately
-into `_assets/<DOC-ID>/` and the links rewritten to relative paths, otherwise
-every image link breaks.
+`articles/` under the category folders. Do **not** download images — this set is
+image-free by design. The converted pages will carry image reference lines that
+resolve to nothing, which is expected and harmless.
 
 Rebuild limits you must know before you start:
 
@@ -124,27 +124,27 @@ If the task is "answer client questions about myCRMSIM", B1 is correct and B2 is
 a fallback that costs hours and loses structure. Say so rather than quietly
 starting a crawl.
 
-### Size warning — read before you copy
+### Size — what you are actually copying
 
 | Part | Size | Needed to answer questions? |
 |---|---|---|
-| `articles/` + `categories/` + index + manifests | **~1.3 MB of text** | Yes — this is the whole knowledge base |
-| `_assets/` | **~788 MB of images and GIFs** | **No — optional** |
+| `articles/` + `categories/` + index + manifests + labels | **~2 MB of text** | Yes — this is the whole knowledge base |
+| `_source-html/` | **~37 MB of raw pages** | No — provenance only |
+| `_assets/` | **not present** — 788 MB of images and GIFs deleted to avoid repo bloat | No — the set is image-free by design |
 
-The text is 1.3 MB. The images are 788 MB. That is a 600:1 ratio for zero added
-answer quality. Every image is a screenshot or GIF that illustrates a step the
-article already describes in words.
+The text is about 2 MB. The 788 MB of images that used to sit beside it are gone
+on purpose. Every one was a screenshot or GIF illustrating a step the article
+already describes in words, so nothing in the answer quality depends on them.
 
 Consequences:
 
-- **Transferring over a slow link:** copy the text first, `_assets/` last or not
-  at all. The skill works immediately after the text lands.
-- **Disk-constrained box:** skip `_assets/`. Nothing in the skill's answer path
-  reads an image file; only an explicit "show me the screenshot" request does,
-  and it degrades gracefully when the file is absent.
-- **Never** move `_assets/` into a location where the relative links break.
-  Article links look like `../../../_assets/MCS-042/01-CCx2A0eQju.gif`, resolved
-  from the article's own folder. Keeping the folder tree intact keeps them valid.
+- **Copy the text, skip `_source-html/` unless you need provenance.** The skill
+  never reads it.
+- **Expect 660 dangling image reference lines.** Article links look like
+  `../../../_assets/MCS-042/01-CCx2A0eQju.gif` and resolve to nothing. That is
+  correct for this set — leave them alone rather than rewriting 660 links.
+- **Do not restore `_assets/` from the live site into a repo.** It was deleted to
+  keep the repo small. Re-adding it undoes that decision.
 
 ---
 
@@ -154,13 +154,13 @@ The skill must be readable at the installed path. Two supported arrangements:
 
 ```bash
 # Symlink from the build repo (development; edits go live immediately)
-ln -sfn /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system \
+ln -sfn $HOME/Downloads/openclaw-master-files/85-android-sms-system \
         ~/.openclaw/skills/85-android-sms-system
 ```
 
 ```bash
 # Copy (a client box, or once the skill is frozen)
-cp -R /Users/blackceomacmini/Downloads/openclaw-master-files/85-android-sms-system \
+cp -R $HOME/Downloads/openclaw-master-files/85-android-sms-system \
       ~/.openclaw/skills/
 ```
 
@@ -176,8 +176,9 @@ A missing `SKILL.md` at that path means the install did not take.
 
 ## Verification
 
-Run all four checks. They are independent; a failure in one is not excused by a
-pass in another.
+Run all four checks. Checks 1, 2 and 4 are pass/fail and independent; a failure in
+one is not excused by a pass in another. Check 3 is informational — it reports the
+image reference count and is expected to show 0 files.
 
 ### 1. Article count — expect 156
 
@@ -214,10 +215,14 @@ grep -c '^### ' ~/Downloads/openclaw-master-files/mycrmsim/00-INDEX.md
 Expected: `index present`, then `7` — one section heading per category. An index
 present but with zero `###` headings is an empty stub, not the real index.
 
-### 3. Every image link resolves
+### 3. Image links — informational only, not a pass/fail check
 
-660 image references across the articles; all 660 files are in `_assets/`. Verify
-the links actually point at files rather than assuming it:
+The articles carry **660 image reference lines**. The image files were deleted on
+purpose to avoid repo bloat, so `_assets/` is absent and **0 of the 660 resolve**.
+**That is correct for this set** — it is an image-free install. The skill answers
+from article text and never opens an image.
+
+This check is here to prove the count, not to gate the install:
 
 ```bash
 python3 -I - <<'PY'
@@ -225,7 +230,6 @@ import os, re
 root = os.path.expanduser("~/Downloads/openclaw-master-files/mycrmsim")
 pat = re.compile(r'!\[[^\]]*\]\(([^)]+)\)')
 tot = ok = bad = 0
-broken = []
 for dp, _, fns in os.walk(os.path.join(root, "articles")):
     for fn in fns:
         if not fn.endswith(".md"):
@@ -240,19 +244,16 @@ for dp, _, fns in os.walk(os.path.join(root, "articles")):
                 ok += 1
             else:
                 bad += 1
-                broken.append((fn, t))
 print("image links:", tot, "resolved:", ok, "broken:", bad)
-for fn, t in broken[:10]:
-    print("  BROKEN:", fn, "->", t)
 PY
 ```
 
-Expected: `image links: 660 resolved: 660 broken: 0`.
+Expected: `image links: 660 resolved: 0 broken: 660`.
 
-If `_assets/` was deliberately skipped, this check is expected to report 660
-broken links, and that is not a failed install — it is a text-only install. State
-which one you have. Do not report "660 broken" as a defect when the images were
-intentionally omitted.
+Read that line as **660 references, 0 files — correct**. Do not treat the 660 as a
+defect, do not go hunting for a download, and do not try to restore `_assets/`.
+The only failure mode here is a reference count other than 660, which would mean
+the article tree is incomplete or has been edited.
 
 ### 4. Skill folder is readable
 
@@ -268,7 +269,7 @@ All of the following, or the install is not complete:
 
 - 156 article files, 156 manifest entries, 156 files present
 - `00-INDEX.md` present with 7 category headings
-- 660 image links, 660 resolved (or a declared text-only install)
+- 660 image references, 0 resolved — expected, by design; not a failure
 - `SKILL.md`, `INSTRUCTIONS.md`, `INSTALL.md` all readable at the installed path
 
 Report the numbers you actually saw. A summary that says "installed fine" without
@@ -331,7 +332,7 @@ PY
 test -f "$DOCS/00-INDEX.md" && echo "index present"
 grep -c '^### ' "$DOCS/00-INDEX.md"
 
-# Check 3 — image links. A text-only copy reports 660 broken by design.
+# Check 3 — image references. Informational: 660 expected, 0 files is correct.
 python3 -I - "$DOCS" <<'PY'
 import os, re, sys
 root = sys.argv[1]
@@ -363,10 +364,9 @@ ls /data/.openclaw/skills/85-android-sms-system/{SKILL.md,INSTRUCTIONS.md,INSTAL
 ```
 
 Expected: `156`; then `manifest entries: 156` and `files present: 156`; then
-`index present` and `7`; then `image links: 660 resolved: 660 broken: 0` on a
-full copy — or `resolved: 0 broken: 660` on a declared text-only copy, which is
-correct for this section and is not a defect. Check 4 requires the skill folder
-to sit under `/data/.openclaw/skills/`; see the last bullet below.
+`index present` and `7`; then `image links: 660 resolved: 0 broken: 660` — which is
+correct for this image-free set and is not a defect. Check 4 requires the skill
+folder to sit under `/data/.openclaw/skills/`; see the last bullet below.
 
 If a check prints an error instead of a number (`find: ... No such file or
 directory`, `grep: ... No such file`), the copy failed — read the error, not the
@@ -374,20 +374,20 @@ count. `grep` exits 1 on zero matches, which here means an empty index stub.
 
 ### 3. Point the skill at the VPS path
 
-The docs root is written literally in two files. Edit them by hand — there is no
-setting to change and no command to run:
+Set one environment variable in the box's OpenClaw env. Nothing in the skill has
+to be edited:
 
-- `SKILL.md` — the docs root line and the `00-INDEX.md` line near the top.
-- `INSTRUCTIONS.md` — the docs root line at the top, the example article path,
-  and the `cd` at the start of the tools section.
-
-Write this string in each place:
-
-```
-/data/.openclaw/docs/myCRMSIM-Support-Docs-2026-11-05
+```bash
+ASMS_DOCS_DIR=/data/.openclaw/docs/myCRMSIM-Support-Docs-2026-11-05
 ```
 
-That is the whole change. No symlink is needed.
+`qc-android-sms-system.sh` reads the same variable, so verification and answering
+stay on the same path. Resolution order when the variable is unset: `docs/` beside
+`SKILL.md`, then `$HOME/Downloads/openclaw-master-files/mycrmsim`.
+
+If you would rather not set a variable, edit the docs-root lines in `SKILL.md`
+(the docs root and the `00-INDEX.md` line) and `INSTRUCTIONS.md` (the docs root
+line, the example article path, and the `cd` in the tools section) by hand.
 
 ### 4. Optional: symlink instead of editing the path
 
@@ -428,8 +428,9 @@ Then re-run the `ln -sfn` line and `readlink` above.
 
 Two things that make this worse on a VPS than on a Mac:
 
-- **788 MB of images is a real disk cost on a small VPS.** Copy the text only.
-  The image check will report 660 broken links by design; declare it.
+- **The docs are about 2 MB of text.** The 788 MB of images was deleted on purpose;
+  there is nothing large left to copy, and the image check reports 660 references
+  against 0 files by design.
 - **`/data/.openclaw/skills/`** is where the skill folder belongs on a VPS — a
   skill installed under a home directory outside `/data/.openclaw/` does not
   survive a rebuild.
@@ -448,8 +449,8 @@ ls -d /data/.openclaw/skills/85-android-sms-system /data/.openclaw/docs/myCRMSIM
 |---|---|---|
 | Manifest 156, files present < 156 | Files deleted from `articles/` after the manifest was generated | Re-copy the missing articles; do not edit the manifest |
 | Article files 156, manifest < 156 | Stray or unindexed files in the tree | Find files whose doc ID is not in `_manifest.json` |
-| Image links 660, resolved 0 | `_assets/` missing, or whole tree copied without it | Intentional on a text-only install; otherwise copy `_assets/` |
-| Image links resolve to wrong folder | `_assets/` was moved out of the docs root | Move it back; links are relative to each article's own folder |
+| Image links 660, resolved 0 | `_assets/` is absent | Expected — the set is image-free by design. Not a fault; do not restore images |
+| Image reference count is not 660 | Article tree incomplete or edited | Re-copy `articles/`; the count is the integrity signal, not the file count |
 | `00-INDEX.md` present, 0 headings | Empty stub copied instead of the real file | Re-copy `00-INDEX.md` |
 | Skill answers "no documentation found" | Docs path differs from the expected `~/Downloads/` path, or the VPS copy is outside `/data/.openclaw/` | Set the docs path, or symlink it to the expected location |
 | Skill loads but answers vaguely | `_labels.json` missing, so tag and summary lookup is unavailable | Copy `_labels.json` and `_labels-parts/` |
