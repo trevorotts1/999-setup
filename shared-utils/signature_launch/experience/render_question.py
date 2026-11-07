@@ -305,11 +305,15 @@ def _progress(q):
 
 def render(questions, profile):
     """One question, one shape: a structured call (Claude Code, claude-nine) or one chat message.
-    An empty list means the interview has everything it needs; nothing is rendered."""
+
+    The structured shape is used only when the profile says it AND the session's question
+    tool is actually available (``question_tool`` false/absent means no tool). Codex and
+    every other plain-chat harness therefore get the same interview as one message, over
+    the same answers file and resume state. An empty list means the interview is done."""
     one = list(questions or [])[:MAX_TOOL_QUESTIONS]
     if not one:
         return []
-    if profile["question_shape"] == "structured":
+    if profile["question_shape"] == "structured" and profile.get("question_tool", True):
         return structured(one)
     q = one[0]
     index, total = _progress(q)

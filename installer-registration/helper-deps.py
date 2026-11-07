@@ -7,7 +7,10 @@ Pinned versions and sha256 hashes live in helper-dependencies.json.
 
   install    verify the vendored helpers against the pins, copy each one into
              <config root>/skills/<name> (an existing different copy is backed
-             up externally first, never deleted), then run preflight. One run
+             up externally first, never deleted), then run preflight. A "files"
+             helper owns only its pinned files inside a shared tree it does not
+             own, so it is MERGED into that tree and never replaces it; a linked
+             destination is never written through. One run
              covers EVERY config root the machine has: with no --root and no
              CLAUDE_CONFIG_DIR that is both ~/.claude and ~/.claude-nine when
              both exist, so plain claude and claude-nine receive the same set.
@@ -59,8 +62,10 @@ HELPER_SPECS = [
      "(references/kie-common-rules.md)",
      "openclaw-onboarding/07-kie-setup", "skill"),
     ("shared-utils", "shared-utils", "shared-utils",
-     "KIE key resolver, prompt rule 12 enforcer, declared gate list and its "
-     "test",
+     "The shared launch runtime (client_intake, signature_launch, "
+     "signature_launch_contract) plus the KIE key resolver, prompt rule 12 "
+     "enforcer, declared gate list and its test; merged into the installed "
+     "shared-utils tree, never swapped in for it",
      "openclaw-onboarding/shared-utils", "files"),
     # Agnes doors, vendored the same way as the KIE helpers (W3-twin-sync-U2).
     # OPTIONAL: required=false, so preflight never fails a box that does not
@@ -82,15 +87,46 @@ OPTIONAL_SPEC_IDS = {"63", "64"}
 # For a "files" helper: (path inside helpers/<name>/, path inside the
 # openclaw-onboarding repository). The pin guard checks each of these against
 # the onboarding ref, so a newer onboarding copy fails CI.
-FILE_SOURCES = {
-    "shared-utils": [
-        ("key_resolver.py", "shared-utils/key_resolver.py"),
-        ("kie_prompt_enforcer.py", "shared-utils/kie_prompt_enforcer.py"),
-        ("kie_prompt_gates.json", "shared-utils/kie_prompt_gates.json"),
-        ("kie-prompt-enforcer-and-gates.test.py",
-         "tests/unit/kie-prompt-enforcer-and-gates.test.py"),
-    ],
+#
+# shared-utils carries the whole launch RUNTIME, not a KIE-only subset (F13):
+# client_intake (the guided interview), signature_launch (the launch adapters,
+# events, scheduler and the experience modules) and signature_launch_contract
+# (the plan/approval contract Skill 83 requires). The list is DERIVED from the
+# vendored tree so adding a runtime module cannot silently leave it unpinned;
+# only the KIE files keep an explicit source path (their onboarding homes differ).
+_SHARED_UTILS_DIRS = ("client_intake", "signature_launch", "signature_launch_contract")
+_SHARED_UTILS_TOP_LEVEL = {
+    "key_resolver.py": "shared-utils/key_resolver.py",
+    "kie_prompt_enforcer.py": "shared-utils/kie_prompt_enforcer.py",
+    "kie_prompt_gates.json": "shared-utils/kie_prompt_gates.json",
+    "kie-prompt-enforcer-and-gates.test.py":
+        "tests/unit/kie-prompt-enforcer-and-gates.test.py",
 }
+# Test suites, fixtures and bytecode are not runtime; they stay out of the pin.
+_FILES_HELPER_SKIP_DIRS = {"__pycache__", "tests", "fixtures"}
+
+
+def _runtime_file_sources(name):
+    """(path inside helpers/<name>/, path inside openclaw-onboarding), sorted.
+
+    Runtime trees map to the same relative path inside the onboarding
+    repository; the KIE files keep their explicit onboarding homes.
+    """
+    root = HELPERS_DIR / name
+    found = dict(_SHARED_UTILS_TOP_LEVEL)
+    for directory in _SHARED_UTILS_DIRS:
+        for path in sorted((root / directory).rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            parts = set(rel.split("/"))
+            if parts & _FILES_HELPER_SKIP_DIRS or rel.endswith(".pyc"):
+                continue
+            found[rel] = "shared-utils/" + rel
+    return sorted(found.items())
+
+
+FILE_SOURCES = {"shared-utils": _runtime_file_sources("shared-utils")}
 
 # Same exclusions the repository .gitignore enforces, so a clean clone hashes
 # identical to the tree this machine pinned.
@@ -220,6 +256,27 @@ def _preflight_root(root, roots, helpers):
                 f"(AGENT_INSTALL.md section 5), then rerun this preflight."
                 f"{suffix}")
             continue
+        if helper_kind(h) == "files":
+            # A "files" helper is MERGED into a shared tree it does not own, so the
+            # tree hash of that destination is not this helper's pin and extra files
+            # beside the pinned ones are expected, not damage. Each pinned file is
+            # judged on its own: presence and its own sha256.
+            for row in h.get("files") or []:
+                path = dst / row["path"]
+                if not path.is_file():
+                    failures.append(
+                        f"MISSING file '{row['path']}' of helper '{name}' "
+                        f"(Skill {sid}, {ver}): expected {path}. Repair: run "
+                        f"`{repair}`.{suffix}")
+                    continue
+                got = sha256_file(path)
+                if row.get("sha256") and got != row["sha256"]:
+                    failures.append(
+                        f"HASH MISMATCH file '{row['path']}' of helper '{name}' "
+                        f"(Skill {sid}, {ver}): expected {row['sha256']}, found "
+                        f"{got} at {path}. Repair: run `{repair}` to restore the "
+                        f"pinned copy.{suffix}")
+            continue
         got = tree_hash(dst)
         if got != pin:
             failures.append(
@@ -286,6 +343,44 @@ def _install_root(root, helpers, backup_dir, multi):
                 f"pin {pin}, vendored {src_hash}. Repair: inspect the change; if "
                 f"intended, rerun `{script_ref()} repin` and commit the "
                 f"manifest.{suffix}")
+            continue
+        # 1b. a "files" helper is MERGED into the shared tree, never swapped in for it.
+        # The destination holds the whole runtime (client_intake, signature_launch,
+        # signature_launch_contract, ...) and this helper owns only its pinned files;
+        # replacing the tree with the KIE subset deleted those modules on every box
+        # that ran an install (F13). A linked destination is never written through:
+        # the link already supplies the runtime, so the pinned files must be visible
+        # through it and that is all this tool checks.
+        if helper_kind(h) == "files":
+            rows = h.get("files") or []
+            if dst.is_symlink():
+                missing = [r["path"] for r in rows if not (dst / r["path"]).is_file()]
+                if missing:
+                    errors.append(
+                        f"LINKED DESTINATION helper '{name}' (Skill {sid}): {dst} "
+                        f"is a link and does not expose {missing}. Repair: add "
+                        f"those files to the linked tree, or point "
+                        f"{dst.parent} at a copied install; this tool never writes "
+                        f"through a link.{suffix}")
+                    continue
+                print(f"helper install: {name} {ver} -> {dst} "
+                      f"(linked; pinned files visible)")
+                continue
+            stale = [r["path"] for r in rows
+                     if not (dst / r["path"]).is_file()
+                     or (r.get("sha256")
+                         and sha256_file(dst / r["path"]) != r["sha256"])]
+            try:
+                dst.mkdir(parents=True, exist_ok=True)
+                for row in rows:
+                    target = dst / row["path"]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(src / row["path"], target)
+            except Exception as e:
+                errors.append(f"INSTALL FAILED helper '{name}': {e}{suffix}")
+                continue
+            print(f"helper install: {name} {ver} -> {dst} "
+                  f"({'merged' if stale else 'up to date'})")
             continue
         # 2. converge the install target
         try:
@@ -382,8 +477,9 @@ def cmd_repin(a):
         # A "files" helper has no skill-version.txt: its version IS its content
         # hash, so "stale" is decided file by file by the pin guard.
         if kind == "files":
-            if not entry["version"]:
-                entry["version"] = "sha256:" + entry["treeSha256"][:12]
+            # Its content IS its version: never keep a stale version when the
+            # composition changes (the old code kept the previous stamp).
+            entry["version"] = "sha256:" + entry["treeSha256"][:12]
             entry["files"] = [
                 {"path": rel, "sourcePath": onb, "sha256": sha256_file(src / rel)}
                 for rel, onb in FILE_SOURCES.get(name, [])

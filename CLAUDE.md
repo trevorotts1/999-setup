@@ -9,8 +9,12 @@ leaving plain `claude` unchanged.
 1. **Detect the native OS before selecting any platform script.** Windows → native Windows;
    macOS → `uname -s` = `Darwin`; anything else → stop as unsupported. Never infer the OS
    only from the current shell (PowerShell exists on macOS; Bash exists on Windows).
-2. **Use the bundled deterministic scripts** (`setup-windows.ps1` / `setup-macos.sh` and the
-   helpers under `scripts/`) instead of improvising shell commands.
+2. **Use the bundled deterministic scripts** instead of improvising shell commands. The setup
+   orchestrators live in the skill tree, not at the repository root:
+   `.claude/skills/nine-router-setup/scripts/setup-windows.ps1` and
+   `.claude/skills/nine-router-setup/scripts/setup-macos.sh`. The repository-root `scripts/`
+   folder holds maintenance scripts only (council, `sync-nine-skills.sh`, docs checks); it is
+   not where setup runs from.
 3. **Keep platform logic in the platform branch.** Windows-only work lives in the Windows
    branch; macOS-only work lives in the macOS branch. After Node.js is available, prefer the
    shared Node.js helpers under `scripts/common/` for provider/routing behavior.
@@ -49,4 +53,12 @@ leaving plain `claude` unchanged.
     missing key omits that provider from every combo.
 18. **Setup never overwrites a combo that already exists** unless `--update-combos` is given.
 
-19. **Main window orchestrates only; nothing fails silently.** In Claude Code or `claude-nine`, the main session only operates and orchestrates. ALL work is done by visible workflows and agents (Workflow tool, named agents shown in /workflows). Anything wrong, broken or not working is NEVER allowed to fail silently: report it by name with its error, and carry it in the final receipt (skill 75: `failures` / `warnings`).
+19. **The installer topology is fixed.** Pinned provider helpers ship under
+    `installer-registration/helpers/` and are installed by
+    `installer-registration/helper-deps.py`; launchers live under `launchers/`; setup runs from
+    the nine-router-setup skill. `AGENT_INSTALL.md` is the procedure; this file and it must agree.
+    The `shared-utils` helper is the whole launch RUNTIME (client_intake, signature_launch
+    including its experience modules, signature_launch_contract) plus the KIE files: it is
+    MERGED into the installed `skills/shared-utils` tree, never swapped in for it, because a
+    copied install must not replace the runtime with a KIE-only subset.
+20. **Main window orchestrates only; nothing fails silently.** In Claude Code or `claude-nine`, the main session only operates and orchestrates. ALL work is done by visible workflows and agents (Workflow tool, named agents shown in /workflows). Anything wrong, broken or not working is NEVER allowed to fail silently: report it by name with its error, and carry it in the final receipt (skill 75: `failures` / `warnings`).

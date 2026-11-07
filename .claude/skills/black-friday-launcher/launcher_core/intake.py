@@ -60,7 +60,16 @@ PERMITTED_DEFAULTS = {
 
 # Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
 # cap, provider); it is shape-checked here and resolved, with flagged defaults, only at dispatch.
-OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "free_entry")
+# activation carries the client's DESIRED end state and, for installation/publication, the
+# recorded authority that already covers that page/location scope (F06).
+OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "free_entry", "activation")
+
+# F06: the four stages are separate facts. Local preparation is the default and is
+# always allowed; installation and publication each need recorded authority and are
+# never reachable from a test-only run. A package's achieved stage is decided by
+# evidence at assembly, never by this declaration alone.
+ACTIVATION_STATES = ("local_prepared", "draft_constructed", "installed", "published")
+ACTIVATION_AUTHORITY_SCOPES = {"installed": "installation", "published": "publication"}
 
 OFFER_REQUIRED = ("offer_id", "name", "role", "price", "delivery")
 # product_id/product_role separate a product's IDENTITY from the funnel role it plays, so an offer
@@ -435,6 +444,64 @@ def _validate_free_entry(raw: Any) -> Dict[str, Any]:
             "source_ref": raw["source_ref"].strip(), "source_text": raw.get("source_text")}
 
 
+def _validate_activation(raw: Any, *, location_id: str, test_only: bool) -> Dict[str, Any]:
+    """The client's desired end state, and the recorded authority it needs.
+
+    Absent means ``local_prepared``: the historical local/test default is unchanged and
+    nothing is installed or published. ``installed`` and ``published`` need an authority
+    record whose scope matches the stage and whose location is this launch's own — the
+    same recorded approval is carried forward, never asked for twice, and it can never
+    authorize another location. A test-only run may not request either.
+    """
+    if raw is None:
+        return {"desired_state": "local_prepared", "authority": None,
+                "source": "default: local preparation; nothing is installed or published"}
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation", "must be an object")
+    extra = set(raw) - {"desired_state", "authority"}
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation",
+              f"undeclared field(s) {sorted(extra)!r}")
+    desired = raw.get("desired_state")
+    if desired not in ACTIVATION_STATES:
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.desired_state",
+              f"must be one of {ACTIVATION_STATES!r}; a stage is never inferred")
+    authority = raw.get("authority")
+    if desired not in ACTIVATION_AUTHORITY_SCOPES:
+        if authority is not None:
+            _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.authority",
+                  f"{desired!r} is local/draft construction and carries no installation or "
+                  "publication authority")
+        return {"desired_state": desired, "authority": None, "source": "supplied"}
+    if test_only:
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.desired_state",
+              f"{desired!r} needs a live (test_only false) run; a local/test package is "
+              "never relabelled installed or live")
+    if not isinstance(authority, dict):
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.authority",
+              f"{desired!r} needs the recorded authority that covers this page and location")
+    extra = set(authority) - {"ref", "scope", "location_id"}
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.authority",
+              f"undeclared field(s) {sorted(extra)!r}")
+    for key in ("ref", "scope", "location_id"):
+        if not _nonempty_str(authority.get(key)):
+            _fail("AF-LAUNCH-INTAKE-ACTIVATION", f"activation.authority.{key}",
+                  "must be a non-empty string")
+    want = ACTIVATION_AUTHORITY_SCOPES[desired]
+    if authority["scope"] != want:
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.authority.scope",
+              f"{desired!r} needs scope {want!r}, got {authority['scope']!r}")
+    if authority["location_id"].strip() != location_id.strip():
+        _fail("AF-LAUNCH-INTAKE-ACTIVATION", "activation.authority.location_id",
+              "the recorded authority covers only its own location, and this launch is "
+              f"{location_id!r}")
+    return {"desired_state": desired,
+            "authority": {"ref": authority["ref"].strip(), "scope": want,
+                          "location_id": location_id.strip()},
+            "source": "supplied"}
+
+
 def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     field = f"offers[{index}]"
     if not isinstance(offer, dict):
@@ -741,6 +808,9 @@ def validate(payload: Any) -> Dict[str, Any]:
               "it records what the CLIENT chose to leave out of the launch")
     promotion = _validate_promotion(payload["promotion"]) if payload.get("promotion") is not None else None
     free = _validate_free_entry(payload["free_entry"]) if payload.get("free_entry") is not None else None
+    activation = _validate_activation(
+        payload.get("activation"), location_id=payload["location_id"].strip(),
+        test_only=payload.get("test_only", True) is not False)
 
     provenance: Dict[str, str] = {k: "supplied" for k in payload}
     provenance["entitlement_attestation"] = "attested"
@@ -766,7 +836,10 @@ def validate(payload: Any) -> Dict[str, Any]:
         "checkout_terms": checkout_terms,
         "entitlement": entitled,
         "answers_file": str(answers_path),
+        "activation": activation,
     }
+    if "activation" in payload:
+        provenance["activation"] = "supplied"
     for name, (key, value, reason) in PERMITTED_DEFAULTS.items():
         if key in payload:
             normalized[key] = payload[key]
