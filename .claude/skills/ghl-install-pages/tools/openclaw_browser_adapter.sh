@@ -25,14 +25,37 @@
 # of close-all. The 999-harness sentences above are carried over from the
 # reduction so nothing that was only on this branch is lost.
 #
-# LANE POLICY (load-bearing — read before wiring): Lane 2 is an EXPERIMENTAL
-# UPGRADE ONLY. It is NEVER selected by default. The capability probe
-# (tools/capability_probe.py) is the sole decider: this adapter runs only when
-# the probe has selected the `openclaw_managed_browser` lane, and even then it
-# REFUSES (exit 75) unless `lanes.openclaw_managed_browser.cliWorks` is `true`
-# in the capability JSON. The PRIMARY lane stays agent-browser via
-# browser_manager.sh (pin 0.27.0); do not remove that pin until Lane 2 is
-# proven equivalent on real GHL builds (plan Part 7).
+# RECONCILIATION (BFX-103): the integration-side prose — the LANE POLICY
+# paragraph, the usage() preamble and the exit-75 line — was RESTORED alongside
+# the F11 contract, not in place of it. The two are not contradictory: the F11
+# BEHAVIOUR is the newer one, and the integration prose is what this 999 harness
+# form actually does (Gate 0 refuses every verb; cliWorks is never consulted).
+# Neither replaces the other, and the contract code is untouched.
+#
+# LANE POLICY (load-bearing — read before wiring): this file has two forms and
+# the gate differs between them, so read BOTH before wiring.
+#
+# THIS form (999 harness, claude-nine): the OpenClaw managed-browser lane is NOT
+# part of the Claude Code harness. The capability probe
+# (tools/capability_probe.py) reports it structurally absent and never probes an
+# `openclaw` binary here, and GATE 0 in main() refuses EVERY verb (exit 75)
+# BEFORE any CLI or capability-JSON check. `cliWorks` is never consulted in this
+# form — no flag and no capability JSON can reach a verb — so none of the
+# contract code below is live here. The verb table is the documented mapping
+# retained for a future plan amendment; it is not a reachable lane today.
+#
+# FLEET form (a harness that DOES carry the lane): Gate 0 is the only block that
+# changes. There the capability probe is the sole decider — this adapter runs
+# only when the probe has selected the `openclaw_managed_browser` lane, and even
+# then it REFUSES (exit 75) unless `lanes.openclaw_managed_browser.cliWorks` is
+# `true` in the capability JSON. The completion contract below runs only in that
+# form.
+#
+# In BOTH forms Lane 2 is an EXPERIMENTAL UPGRADE ONLY and is NEVER selected by
+# default. The PRIMARY lane stays agent-browser via browser_manager.sh (pin
+# 0.27.0), then playwright_direct; do not remove that pin until Lane 2 is proven
+# equivalent on real GHL builds (plan Part 7), and do not force this harness and
+# the OpenClaw fleet harness onto one engine.
 #
 # COMPLETION CONTRACT (W3 connection 7 — no prerequisite rung may report done)
 # ---------------------------------------------------------------------------
@@ -93,8 +116,12 @@
 # EXIT CODES (pick + document, per the browser_manager convention):
 #   0   success (verb ran; openclaw's own exit code passes through)
 #   64  usage error (unknown verb / missing argument) OR openclaw CLI absent
-#   75  capability gate refusal — capability JSON missing/unreadable, python3
-#       missing, or lanes.openclaw_managed_browser.cliWorks is not true
+#   75  in THIS 999 harness form: harness refusal — the managed-browser lane is
+#       not part of this harness, and every verb takes this exit before any CLI
+#       or capability check. This is the normal, expected outcome for every verb
+#       here. In a harness that DOES carry the lane: a capability gate refusal
+#       (capability JSON missing/unreadable, python3 missing, or
+#       lanes.openclaw_managed_browser.cliWorks not true)
 #   (a real `timeout` kill surfaces as the timeout binary's own code)
 #
 # USAGE:
@@ -170,9 +197,16 @@ usage() {
   cat <<'USAGE'
 openclaw_browser_adapter.sh — Lane 2 adapter: Skill 6 builder verbs -> OpenClaw managed browser (`openclaw browser`).
 
-Lane 2 is an EXPERIMENTAL UPGRADE ONLY — never selected by default. The capability
-probe (tools/capability_probe.py) decides; this adapter refuses unless
-lanes.openclaw_managed_browser.cliWorks is true in the capability JSON.
+THIS harness form (999 / claude-nine) has no OpenClaw managed browser: the capability
+probe (tools/capability_probe.py) reports the lane structurally absent, and GATE 0
+refuses EVERY verb with exit 75 and the harness reason BEFORE any CLI or
+capability-JSON check. No flag, and no capability JSON — not even cliWorks:true —
+can reach a verb here. The verb table and completion contract below are the
+documented mapping that runs when this file is deployed in a harness that DOES
+carry the lane (the OpenClaw fleet form): there the capability probe decides the
+lane and cliWorks gates it, and Lane 2 is an EXPERIMENTAL UPGRADE ONLY — never
+selected by default. Skill 6's browser lanes in THIS harness are agent-browser via
+browser_manager.sh (pin 0.27.0), then playwright_direct.
 
 SYNOPSIS
   openclaw_browser_adapter.sh <verb> [adapter flags] [--] [args...]
@@ -212,7 +246,11 @@ ENV:
   GHL_SKILL6_SNAPSHOT_MODE    "efficient" (default) adds --efficient; anything else omits it
 
 EXIT CODES:
-  0 success; 64 usage error / openclaw CLI absent; 75 capability gate refusal.
+  0 success; 64 usage error / openclaw CLI absent.
+  75 in THIS 999 harness form: harness refusal for EVERY verb, before any CLI or
+     capability check (the lane is not part of this harness). In a harness that
+     carries the lane: capability gate refusal (JSON missing or unreadable,
+     python3 missing, or cliWorks not true).
 USAGE
 }
 
