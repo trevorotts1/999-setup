@@ -95,13 +95,17 @@ OPTIONAL_SPEC_IDS = {"63", "64"}
 # vendored tree so adding a runtime module cannot silently leave it unpinned;
 # only the KIE files keep an explicit source path (their onboarding homes differ).
 _SHARED_UTILS_DIRS = ("client_intake", "signature_launch", "signature_launch_contract")
-_SHARED_UTILS_TOP_LEVEL = {
+KIE_FILE_SOURCES = {
     "key_resolver.py": "shared-utils/key_resolver.py",
     "kie_prompt_enforcer.py": "shared-utils/kie_prompt_enforcer.py",
     "kie_prompt_gates.json": "shared-utils/kie_prompt_gates.json",
     "kie-prompt-enforcer-and-gates.test.py":
         "tests/unit/kie-prompt-enforcer-and-gates.test.py",
 }
+# The same four KIE entries are the base of both derived lists: the runtime-only
+# derivation (_runtime_file_sources) and the whole-tree derivation (file_sources).
+# One literal, two names — the merge of the two independent F13 fixes.
+_SHARED_UTILS_TOP_LEVEL = KIE_FILE_SOURCES
 # Test suites, fixtures and bytecode are not runtime; they stay out of the pin.
 _FILES_HELPER_SKIP_DIRS = {"__pycache__", "tests", "fixtures"}
 
@@ -137,6 +141,25 @@ def _skip(rel):
             or ".bak-" in rel
             or rel.endswith(".log")
             or parts[-1] == ".DS_Store")
+
+def file_sources(name):
+    """(vendored path, onboarding path) for one "files" helper, sorted.
+
+    Every regular file under helpers/<name>/ is pinned against the same
+    relative path in openclaw-onboarding, so the pin guard proves the whole
+    runtime this tool copies is the onboarding tree — not a subset of it.
+    """
+    root = HELPERS_DIR / name
+    found = dict(KIE_FILE_SOURCES)
+    if root.is_dir():
+        for p in sorted(root.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root).as_posix()
+            if rel in found or _skip(rel):
+                continue
+            found[rel] = "shared-utils/" + rel
+    return sorted(found.items())
 
 def sha256_file(path):
     h = hashlib.sha256()
@@ -475,14 +498,15 @@ def cmd_repin(a):
                               if (src / "SKILL.md").is_file() else None),
         }
         # A "files" helper has no skill-version.txt: its version IS its content
-        # hash, so "stale" is decided file by file by the pin guard.
+        # hash, so a carried-over version is never kept and "stale" is decided
+        # file by file by the pin guard.
         if kind == "files":
             # Its content IS its version: never keep a stale version when the
             # composition changes (the old code kept the previous stamp).
             entry["version"] = "sha256:" + entry["treeSha256"][:12]
             entry["files"] = [
                 {"path": rel, "sourcePath": onb, "sha256": sha256_file(src / rel)}
-                for rel, onb in FILE_SOURCES.get(name, [])
+                for rel, onb in file_sources(name)
             ]
             entry["skillMdSha256"] = None
         helpers.append(entry)

@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-07T19:11:48Z",
+  "generatedAt": "2026-11-07T19:35:28Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -132,16 +132,16 @@
       "id": "shared-utils",
       "name": "shared-utils",
       "skillName": "shared-utils",
-      "role": "The shared launch runtime (client_intake, signature_launch, signature_launch_contract) plus the KIE key resolver, prompt rule 12 enforcer, declared gate list and its test; merged into the installed shared-utils tree, never swapped in for it",
+      "role": "KIE key resolver, prompt rule 12 enforcer, declared gate list and its test",
       "kind": "files",
       "required": true,
-      "version": "sha256:a3b6a26a8456",
+      "version": "sha256:8033fb3d3a69",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
-      "fileCount": 95,
-      "sizeBytes": 904308,
-      "treeSha256": "a3b6a26a845605da44375ea3881b3a42d1a1ab0d4fea631d5b81285ceb699245",
+      "fileCount": 142,
+      "sizeBytes": 1177165,
+      "treeSha256": "8033fb3d3a693616bbdd09360a2ec60112062fee4d9a75fad8be23bae9f1b02c",
       "skillMdSha256": null,
       "files": [
         {
@@ -153,6 +153,16 @@
           "path": "client_intake/engine.py",
           "sourcePath": "shared-utils/client_intake/engine.py",
           "sha256": "d4421517042d6b7fab46f493a62e478a905390b2b8eb89d374e3619a98feb3e3"
+        },
+        {
+          "path": "client_intake/fixtures/answers.7fig.json",
+          "sourcePath": "shared-utils/client_intake/fixtures/answers.7fig.json",
+          "sha256": "745ac79e6a2e74923171665213725df0636c1676a2b2920d431cc6782c7a76eb"
+        },
+        {
+          "path": "client_intake/fixtures/answers.elevation.json",
+          "sourcePath": "shared-utils/client_intake/fixtures/answers.elevation.json",
+          "sha256": "eb7e9dc7d02489109f4c8425931d358e03f2c20be6a826a106ce9d19ee861b98"
         },
         {
           "path": "client_intake/launcher_intake.py",
@@ -173,6 +183,31 @@
           "path": "client_intake/question-bank.json",
           "sourcePath": "shared-utils/client_intake/question-bank.json",
           "sha256": "3eb8fda3106f639cc560ac56121f640761fc5577f0ace706b0b58571c19cc93e"
+        },
+        {
+          "path": "client_intake/tests/test_client_intake.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_client_intake.py",
+          "sha256": "f99bf0a608916316406d28a0e971e626f3b05c097aa9aa2c0582ac4692b61088"
+        },
+        {
+          "path": "client_intake/tests/test_consumers_49.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_consumers_49.py",
+          "sha256": "656aabd27dde0d35cac9b108b0855e8913b0887f2a2bde750050a760d0d170bd"
+        },
+        {
+          "path": "client_intake/tests/test_engine_money_and_levels.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_engine_money_and_levels.py",
+          "sha256": "7e1b451dbf8e7093055147519daf3a031149c89dca15f63e4f6315b557cf4d90"
+        },
+        {
+          "path": "client_intake/tests/test_launcher_intake.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_launcher_intake.py",
+          "sha256": "632cb902e29681a6cd1d52404ae1658cad863709d0a0964a5b51d0ff747abbf9"
+        },
+        {
+          "path": "client_intake/tests/test_page_profile.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_page_profile.py",
+          "sha256": "59f868a5e4cabc8b60dcfcebc3800e4da7633aa18ed4b47ea34b56cdd2a62950"
         },
         {
           "path": "key_resolver.py",
@@ -235,6 +270,16 @@
           "sha256": "50282b00cf2e53174ec01c0be557a13777071a07f08b15cdb23327a6c1dc5b2c"
         },
         {
+          "path": "signature_launch/design/brand_loader/tests/__init__.py",
+          "sourcePath": "shared-utils/signature_launch/design/brand_loader/tests/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "signature_launch/design/brand_loader/tests/test_brand_loader.py",
+          "sourcePath": "shared-utils/signature_launch/design/brand_loader/tests/test_brand_loader.py",
+          "sha256": "38e763c8fc03aaadc7631c4ba1cefeab81ca17827daefc660d5a562f0ba666d4"
+        },
+        {
           "path": "signature_launch/design/deadline_display/README.md",
           "sourcePath": "shared-utils/signature_launch/design/deadline_display/README.md",
           "sha256": "57f3af11e0501d1740354658594e1cd04a1f169c770a2d980ceb0938434b2c3d"
@@ -253,6 +298,16 @@
           "path": "signature_launch/design/deadline_display/deadline_display.py",
           "sourcePath": "shared-utils/signature_launch/design/deadline_display/deadline_display.py",
           "sha256": "dc584b5473fce7e441daa237dcc5f548b7e255b5137b50dfd4e1e6d43fe765ce"
+        },
+        {
+          "path": "signature_launch/design/deadline_display/tests/__init__.py",
+          "sourcePath": "shared-utils/signature_launch/design/deadline_display/tests/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "signature_launch/design/deadline_display/tests/test_deadline_display.py",
+          "sourcePath": "shared-utils/signature_launch/design/deadline_display/tests/test_deadline_display.py",
+          "sha256": "37b955f6f25ffc52b8af33c9bb0ca5de8220689e7c1be22f7b793d49a73f860d"
         },
         {
           "path": "signature_launch/design/design.css",
@@ -290,6 +345,46 @@
           "sha256": "ec9e4928e1a05c50e18c62f68069f1a75241283ab5a9842c0ea62fdf2f3ddc75"
         },
         {
+          "path": "signature_launch/design/interest_popup/tests/__init__.py",
+          "sourcePath": "shared-utils/signature_launch/design/interest_popup/tests/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "signature_launch/design/interest_popup/tests/js_harness.js",
+          "sourcePath": "shared-utils/signature_launch/design/interest_popup/tests/js_harness.js",
+          "sha256": "b5c9dfeba6712ba3c50d4bcd9e40918ff66b58b25a3b1f237cd4a8af1417b480"
+        },
+        {
+          "path": "signature_launch/design/interest_popup/tests/test_interest_popup.py",
+          "sourcePath": "shared-utils/signature_launch/design/interest_popup/tests/test_interest_popup.py",
+          "sha256": "cd99e6cfd32bfe0c433e5ebe983edfeea30ef48dd44d93cf43ca442c3f4218b9"
+        },
+        {
+          "path": "signature_launch/design/tests/fixtures/brand_incomplete.json",
+          "sourcePath": "shared-utils/signature_launch/design/tests/fixtures/brand_incomplete.json",
+          "sha256": "3cb5ec0f7a2afb86831ec4febd4df1f05f3c945026df16d5543f44b54b12d816"
+        },
+        {
+          "path": "signature_launch/design/tests/fixtures/brand_malformed.txt",
+          "sourcePath": "shared-utils/signature_launch/design/tests/fixtures/brand_malformed.txt",
+          "sha256": "958b4a4c0925481793e24e3d2cd392923f9a79cf2d22ff8d818c128ad43b66c7"
+        },
+        {
+          "path": "signature_launch/design/tests/fixtures/brand_missing_key.json",
+          "sourcePath": "shared-utils/signature_launch/design/tests/fixtures/brand_missing_key.json",
+          "sha256": "296859947666671e309812a1ba9cb98a1ed0c8a20ba3790616da95ce08fef340"
+        },
+        {
+          "path": "signature_launch/design/tests/fixtures/brand_test_alpha.json",
+          "sourcePath": "shared-utils/signature_launch/design/tests/fixtures/brand_test_alpha.json",
+          "sha256": "1c833f0b726c693645d46f47c2d182c35a55b32d81b133c1df1ef97a95092316"
+        },
+        {
+          "path": "signature_launch/design/tests/fixtures/brand_test_beta.json",
+          "sourcePath": "shared-utils/signature_launch/design/tests/fixtures/brand_test_beta.json",
+          "sha256": "bf34f26226f441e089294786f5f18fbe0b4cab07548183b5610902fe106ff373"
+        },
+        {
           "path": "signature_launch/design/tokens/README.md",
           "sourcePath": "shared-utils/signature_launch/design/tokens/README.md",
           "sha256": "d8c29556d26fceba07b39a1fb764b5c2e5b1095849d7917a086e6c2c3c13733a"
@@ -303,6 +398,16 @@
           "path": "signature_launch/design/tokens/component.json",
           "sourcePath": "shared-utils/signature_launch/design/tokens/component.json",
           "sha256": "9191907988f052523fa89299c8974d7128377abdd6cb8e687719cc075eddff4b"
+        },
+        {
+          "path": "signature_launch/design/tokens/tests/__init__.py",
+          "sourcePath": "shared-utils/signature_launch/design/tokens/tests/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "signature_launch/design/tokens/tests/test_tokens.py",
+          "sourcePath": "shared-utils/signature_launch/design/tokens/tests/test_tokens.py",
+          "sha256": "757619be8a03e4053c897e13ee62e207ad9f2bd2dff88c83cf875cd84c9a056d"
         },
         {
           "path": "signature_launch/design/tokens/tokens.py",
@@ -328,6 +433,16 @@
           "path": "signature_launch/design/trust_block/component.json",
           "sourcePath": "shared-utils/signature_launch/design/trust_block/component.json",
           "sha256": "db868cb1b69a13fbfab3cb40c69a1d75c433fd5a9d08038172955f68d66f7039"
+        },
+        {
+          "path": "signature_launch/design/trust_block/tests/__init__.py",
+          "sourcePath": "shared-utils/signature_launch/design/trust_block/tests/__init__.py",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "signature_launch/design/trust_block/tests/test_trust_block.py",
+          "sourcePath": "shared-utils/signature_launch/design/trust_block/tests/test_trust_block.py",
+          "sha256": "abb1de3bb343c3713e1770ee90703cdca48dd4f452bcdb8cf139d22088030e87"
         },
         {
           "path": "signature_launch/design/trust_block/trust_block.py",
@@ -462,7 +577,7 @@
         {
           "path": "signature_launch/experience/README.md",
           "sourcePath": "shared-utils/signature_launch/experience/README.md",
-          "sha256": "8b9fba85f4e7c37c83b6bc8c5abd07629cbec477c9ed1661e95c58cc5bfa871f"
+          "sha256": "bd286f64400429cc34b1888001ba4ae65ee604174e0d8196a0494c805efee0c3"
         },
         {
           "path": "signature_launch/experience/delivery_report.py",
@@ -470,14 +585,29 @@
           "sha256": "591e3aecd41ceb37457e57bcace891067dc97c6277af6907d76060d918212b98"
         },
         {
-          "path": "signature_launch/experience/guided_experience.py",
-          "sourcePath": "shared-utils/signature_launch/experience/guided_experience.py",
-          "sha256": "07b75dd4fe3e436821bb75f9c49e7b857f7aece3832c3efb938291cd5a5816e4"
+          "path": "signature_launch/experience/fixtures/answers.partial.json",
+          "sourcePath": "shared-utils/signature_launch/experience/fixtures/answers.partial.json",
+          "sha256": "5ad25f40000e51277667787e162877c645819f4e40638fd33797c56d903533f3"
+        },
+        {
+          "path": "signature_launch/experience/fixtures/ledger.sample.json",
+          "sourcePath": "shared-utils/signature_launch/experience/fixtures/ledger.sample.json",
+          "sha256": "05ee8d9c978f2dcfc85cb9913a2972da34c5c8d08e089bae5854171bdc9de0ef"
+        },
+        {
+          "path": "signature_launch/experience/fixtures/questions.sample.json",
+          "sourcePath": "shared-utils/signature_launch/experience/fixtures/questions.sample.json",
+          "sha256": "0b2be6ae3ac206520dd1327674a78f9d268fe0076d87c5c772380298e22f39fc"
+        },
+        {
+          "path": "signature_launch/experience/fixtures/rows.fullfunnel.json",
+          "sourcePath": "shared-utils/signature_launch/experience/fixtures/rows.fullfunnel.json",
+          "sha256": "e6940a09ce55235c8fa46676954e778ee3451cbb48d95145ca32273a575e24fd"
         },
         {
           "path": "signature_launch/experience/harness_profile.py",
           "sourcePath": "shared-utils/signature_launch/experience/harness_profile.py",
-          "sha256": "2d9d9be5d56e2f995bdccfacb4c701263ea750ce8e5ee34a4ffe5255a5b7aea5"
+          "sha256": "5e282431d6b7e6cc1a07eb10843b3f4573cd034342e0c82223e73e13dc97b2ac"
         },
         {
           "path": "signature_launch/experience/progress_report.py",
@@ -487,7 +617,7 @@
         {
           "path": "signature_launch/experience/render_question.py",
           "sourcePath": "shared-utils/signature_launch/experience/render_question.py",
-          "sha256": "2e4afa4cbdddc6a38fb1bc3274bb97a0f9930ea2fcb42c5aff31927c2f253fd6"
+          "sha256": "1e05c735a1d4a8d35610119b0635009658f8bab05382b0a621053fd84bb1be90"
         },
         {
           "path": "signature_launch/experience/skill-md-harness-block.md",
@@ -497,7 +627,7 @@
         {
           "path": "signature_launch/experience/test_experience.py",
           "sourcePath": "shared-utils/signature_launch/experience/test_experience.py",
-          "sha256": "71bd3a7e1f3e60d55081721d66289d63b6eef47fc2c16ec93466fdbca9f92035"
+          "sha256": "d7de2755454be4425d9576fe54aa3fc5e361e89537464d3be8af9a2f7ac63800"
         },
         {
           "path": "signature_launch/failure.py",
@@ -508,6 +638,11 @@
           "path": "signature_launch/failure_selfcheck.py",
           "sourcePath": "shared-utils/signature_launch/failure_selfcheck.py",
           "sha256": "c4c597a10b3d8995abcfee0d9ba7aadf61a3cff3f5d98704beaebaac2ad4df04"
+        },
+        {
+          "path": "signature_launch/fixtures/session_contract.complete_plan.json",
+          "sourcePath": "shared-utils/signature_launch/fixtures/session_contract.complete_plan.json",
+          "sha256": "dea2e324888fc469a9c77b389a28563058c55e4ab6f8e1feabbf5c044a19ba51"
         },
         {
           "path": "signature_launch/image_model.py",
@@ -555,6 +690,46 @@
           "sha256": "6954b3723e84fb2c3ce3d3baf41690857b05d5d63beb20a1605b9d554b692fcd"
         },
         {
+          "path": "signature_launch/scheduler/fixtures/plan_ai_off.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/plan_ai_off.json",
+          "sha256": "9dce858452f362265ee7303257091ff7e0fdee56f9f198970a3675d8952b0854"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/plan_ai_on.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/plan_ai_on.json",
+          "sha256": "8ec255c4e2ac07f2164a146eec954773c8066528e2746ec660acd925ee005ba8"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/plan_empty.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/plan_empty.json",
+          "sha256": "36b3b86f2cdb21f8f1b707d4353e8e851d5d11e644e6799019a47a340ee7b856"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/plan_stall.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/plan_stall.json",
+          "sha256": "b900df4893637c2399f70959ada724d33edeb0054b6dedf3447cc090fed3660b"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/progress/progress-ai-off.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-ai-off.json",
+          "sha256": "18dec6a4906c74586f9afc4e27049fe49a6973ab6b457218b41fa23333545873"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/progress/progress-ai-on.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-ai-on.json",
+          "sha256": "e116d3ee142686ca99c23b0c663be94f804ec7048954397401fdc0873b232109"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/progress/progress-empty.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-empty.json",
+          "sha256": "77f8f4910393a051c13f6dbd6bf2b286c1d67b18c0721556aa4381975a5f69c1"
+        },
+        {
+          "path": "signature_launch/scheduler/fixtures/progress/progress-stalled.json",
+          "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-stalled.json",
+          "sha256": "67402c7c94dfef4bfe7d399288967e9fe31ec017cc51f5be82504716135ac6ef"
+        },
+        {
           "path": "signature_launch/scheduler/make_progress_fixtures.py",
           "sourcePath": "shared-utils/signature_launch/scheduler/make_progress_fixtures.py",
           "sha256": "f58e7446024d7a7cd62168bd20ac7760c8c64d142bc5ec010cb962f9312cce97"
@@ -585,6 +760,26 @@
           "sha256": "baa19b9462cf13f85c53ff5c727115bfe9e396d28132fd87daf52d99dadc7f8c"
         },
         {
+          "path": "signature_launch/tests/test_image_slots_tokens.py",
+          "sourcePath": "shared-utils/signature_launch/tests/test_image_slots_tokens.py",
+          "sha256": "43af735652fe0c89702ee34cb41b01a7b282b0d2f772b2d53c4ea760829f4da6"
+        },
+        {
+          "path": "signature_launch/tests/test_launch_events.py",
+          "sourcePath": "shared-utils/signature_launch/tests/test_launch_events.py",
+          "sha256": "e7fad13c115543ebeecca17a581fbda2dbb645c08a5d31847d750086f9691f55"
+        },
+        {
+          "path": "signature_launch/tests/test_reports_bound_to_manifest.py",
+          "sourcePath": "shared-utils/signature_launch/tests/test_reports_bound_to_manifest.py",
+          "sha256": "5e3d0fd7ba3d3f14a38364a6212f055620872a6da9e8ea0535bd3f7ac878fa33"
+        },
+        {
+          "path": "signature_launch/tests/test_session_contract.py",
+          "sourcePath": "shared-utils/signature_launch/tests/test_session_contract.py",
+          "sha256": "a2af2054ef4df60b4856110bfec79ac3a68d0aa80a713940fa6fd9f0ad7a14ae"
+        },
+        {
           "path": "signature_launch_contract/approval-record.schema.json",
           "sourcePath": "shared-utils/signature_launch_contract/approval-record.schema.json",
           "sha256": "a707f4c4b99dd4f027a31205db77954bc87af20d72018475c45340b084c04fd5"
@@ -600,6 +795,26 @@
           "sha256": "b2dd49c4c30bd885dac65e49270177160bf0d16c3ed367b55a0abf44372c6e79"
         },
         {
+          "path": "signature_launch_contract/fixtures/7figurepreneur.json",
+          "sourcePath": "shared-utils/signature_launch_contract/fixtures/7figurepreneur.json",
+          "sha256": "266d050b9d430a3873c4b2e32a39c2c330b0252a645f6dcf6a0e5083a610c404"
+        },
+        {
+          "path": "signature_launch_contract/fixtures/black-friday.json",
+          "sourcePath": "shared-utils/signature_launch_contract/fixtures/black-friday.json",
+          "sha256": "3e2c1c057c05d0761b1f094225f55df2377be5e1ded1b4dc32b1dff4bacdfe04"
+        },
+        {
+          "path": "signature_launch_contract/fixtures/elevation.json",
+          "sourcePath": "shared-utils/signature_launch_contract/fixtures/elevation.json",
+          "sha256": "4698066bf36331110f2e08bbdfccd2744e98520a3118517999cf417f6782f2e3"
+        },
+        {
+          "path": "signature_launch_contract/fixtures/multi-option.json",
+          "sourcePath": "shared-utils/signature_launch_contract/fixtures/multi-option.json",
+          "sha256": "69397e7e55885d205dacaf2dbe2464a9dadb78d39e1c7219681443fdfef48e07"
+        },
+        {
           "path": "signature_launch_contract/launch-plan.schema.json",
           "sourcePath": "shared-utils/signature_launch_contract/launch-plan.schema.json",
           "sha256": "75111fd7bef5fb87640caf3448f0312bbc16eaad3794aca648d532fe8aea6a4a"
@@ -613,6 +828,26 @@
           "path": "signature_launch_contract/review_record.py",
           "sourcePath": "shared-utils/signature_launch_contract/review_record.py",
           "sha256": "053ec5ad2b6a354d68f82dec7dab7fa1eb4f870347324928c63a0e6a5ad3a8f7"
+        },
+        {
+          "path": "signature_launch_contract/tests/test_approval_record.py",
+          "sourcePath": "shared-utils/signature_launch_contract/tests/test_approval_record.py",
+          "sha256": "9a10d30d01b123c26d75c188b386612818296acdde7d2efcc6424ef96ab8c562"
+        },
+        {
+          "path": "signature_launch_contract/tests/test_calendar_law.py",
+          "sourcePath": "shared-utils/signature_launch_contract/tests/test_calendar_law.py",
+          "sha256": "f62e5165db7be42692657a24df3d92089516334e41e74978b36d379226b2ab62"
+        },
+        {
+          "path": "signature_launch_contract/tests/test_offer_mapper.py",
+          "sourcePath": "shared-utils/signature_launch_contract/tests/test_offer_mapper.py",
+          "sha256": "fa92bb7ec3b99abdd50367f948ae050eb9fdc5c76e27325d2f012f0682878531"
+        },
+        {
+          "path": "signature_launch_contract/tests/test_review_record.py",
+          "sourcePath": "shared-utils/signature_launch_contract/tests/test_review_record.py",
+          "sha256": "d3eeb09dcf253aceaff607b971e4c72b8c559745e4928903dbca40b11aa9e55b"
         },
         {
           "path": "signature_launch_contract/validate_launch_plan.py",
