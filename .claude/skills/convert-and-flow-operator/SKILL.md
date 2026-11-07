@@ -151,6 +151,29 @@ for lookups. See `36-ghl-mcp-setup/GHL-LOOKUP-SOP.md` for the full lookup routin
 
 `workflows build`, `workflows patch-email`, `workflows patch-trigger`, `workflows restore`
 require the `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN`. When that token is:
+
+**Launch builds use one command.** A launch automation document (the launch-c plan reader's
+`automation-builds.json`) is compiled and built with:
+
+```bash
+caf --json --experimental workflows build \
+  --from-automation-build automation-builds.json \
+  --journal workflow-build-journal.json
+```
+
+`--journal` is required on that path (the receipts that make a re-run safe), and `--dry-run`
+compiles and prints the workflows, their compiler mode, owed browser steps, incomplete channel
+actions and purchase identity while writing nothing. `--from-plan` refuses a Skill 50 plan
+carrying `_meta.profile` (exit 2) and strips `_meta` from ordinary plans. Step compilation is
+`launch_step_compiler.compile_installable()` — the one launch compiler — which installs the
+buildable template graph (tags, branches, waits, SMS, goals and the short post-sale purchase
+handler) when every `wait until` token resolves and every email slot has approved copy, and
+otherwise installs the approved email/wait sequence while recording why. `settings.marketing`
+is the promotional flag itself, a requested Allow Reentry is written and read back
+(`stats["reentry"]`), an SMS whose copy no approved source supplies stays `copy_pending` and is
+listed in `incomplete_actions`, and browser-required ledger rows are executed through the
+selected capability or recorded as pending.
+
 - **present + healthy** — Tier 0 builds/edits the workflow directly via the internal API.
 - **unread / misconfigured** (e.g. the token exists in a store the process did not resolve, or a
   key-name/env-store mismatch) — BUILD falls to **Tier 4: Skill 6's GATED, MANAGED Automations builder**
