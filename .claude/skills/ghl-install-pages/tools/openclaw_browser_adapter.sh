@@ -14,14 +14,16 @@
 # changes. Skill 6's working lane in this harness is Lane 1, agent-browser
 # via browser_manager.sh, exactly as the pack ADAPTER.md seam 1 binds.
 #
-# LANE POLICY (load-bearing — read before wiring): Lane 2 is an EXPERIMENTAL
-# UPGRADE ONLY. It is NEVER selected by default. The capability probe
-# (tools/capability_probe.py) is the sole decider: this adapter runs only when
-# the probe has selected the `openclaw_managed_browser` lane, and even then it
-# REFUSES (exit 75) unless `lanes.openclaw_managed_browser.cliWorks` is `true`
-# in the capability JSON. The PRIMARY lane stays agent-browser via
-# browser_manager.sh (pin 0.27.0); do not remove that pin until Lane 2 is
-# proven equivalent on real GHL builds (plan Part 7).
+# LANE POLICY (999 harness, load-bearing — read before wiring): the OpenClaw
+# managed-browser lane is NOT part of the Claude Code harness. The capability
+# probe (tools/capability_probe.py) reports it structurally absent and never
+# probes an `openclaw` binary here, and the harness gate in main() refuses
+# EVERY verb (exit 75) before any CLI or capability-JSON check. The verb table
+# below is retained as the documented mapping for a future plan amendment; it
+# is not a reachable lane today. Skill 6's browser lanes in this harness are
+# Lane 1 agent-browser via browser_manager.sh (pin 0.27.0), then
+# playwright_direct when agent-browser is absent. Do not remove that pin, and
+# do not force this harness and the OpenClaw fleet harness onto one engine.
 #
 # WHY AN ADAPTER: Skill 6's builder speaks a small verb vocabulary (status /
 # start / open / snapshot / click / type / frame-snapshot / stop). This file is
@@ -49,8 +51,10 @@
 # EXIT CODES (pick + document, per the browser_manager convention):
 #   0   success (verb ran; openclaw's own exit code passes through)
 #   64  usage error (unknown verb / missing argument) OR openclaw CLI absent
-#   75  capability gate refusal — capability JSON missing/unreadable, python3
-#       missing, or lanes.openclaw_managed_browser.cliWorks is not true
+#   75  harness refusal — the managed-browser lane is not part of this harness
+#       (this is the normal, expected outcome for every verb in 999); or, on a
+#       harness that does carry the lane, a capability gate refusal (capability
+#       JSON missing/unreadable, python3 missing, or cliWorks not true)
 #   (a real `timeout` kill surfaces as the timeout binary's own code)
 #
 # USAGE:
@@ -106,11 +110,13 @@ OCB_SNAPSHOT_MODE="${GHL_SKILL6_SNAPSHOT_MODE:-efficient}"
 
 usage() {
   cat <<'USAGE'
-openclaw_browser_adapter.sh — Lane 2 adapter: Skill 6 builder verbs -> OpenClaw managed browser (`openclaw browser`).
+openclaw_browser_adapter.sh — managed-browser mapping for Skill 6 builder verbs (NOT a lane in this harness).
 
-Lane 2 is an EXPERIMENTAL UPGRADE ONLY — never selected by default. The capability
-probe (tools/capability_probe.py) decides; this adapter refuses unless
-lanes.openclaw_managed_browser.cliWorks is true in the capability JSON.
+This harness (Claude Code / claude-nine) has no OpenClaw managed browser: the probe
+reports the lane structurally absent and every verb refuses with exit 75 and the
+harness reason, before any CLI or capability-JSON check. The verb table is the
+documented mapping retained for a future amendment. Skill 6's browser lanes here are
+agent-browser via browser_manager.sh (pin 0.27.0), then playwright_direct.
 
 VERBS (each carries `--browser-profile "$OCB_PROFILE"`; shown as openclaw default):
   status                     openclaw browser --browser-profile openclaw status
@@ -144,15 +150,17 @@ _ocb_usage_refuse() {
   exit 64
 }
 
-# ── GATE 0: harness gate (999) — Lane 2 is not part of this harness ──────────
+# ── GATE 0: harness gate (999) — the managed-browser lane is absent here ─────
 # Runs FIRST on every verb (after --help/--version/--selftest). Exit 75, the
-# capability-refusal code: the lane is not refused for a missing file or a
-# false flag, it is refused because the lane does not exist here.
+# same code the lane's capability gate uses: the lane is not refused for a
+# missing file or a false flag, it is refused because the lane does not exist
+# in this harness.
 require_harness_lane() {
-  echo "REFUSE: Lane 2 (openclaw_managed_browser) is not part of the Claude Code" >&2
+  echo "REFUSE: the OpenClaw managed-browser lane is not part of the Claude Code" >&2
   echo "harness (claude-nine): there is no OpenClaw managed browser here, and the" >&2
-  echo "capability probe reports the lane structurally absent. Skill 6's lane in" >&2
-  echo "this harness is agent-browser via browser_manager.sh. Aborting." >&2
+  echo "capability probe reports the lane structurally absent. Skill 6's browser" >&2
+  echo "lanes in this harness are agent-browser via browser_manager.sh (pin 0.27.0)," >&2
+  echo "then playwright_direct. Aborting." >&2
   exit 75
 }
 
@@ -160,8 +168,8 @@ require_harness_lane() {
 require_ocb_cli() {
   if ! command -v "$OCB_BIN_NAME" >/dev/null 2>&1; then
     echo "REFUSE: openclaw CLI not found on PATH (command -v $OCB_BIN_NAME failed)." >&2
-    echo "Lane 2 (openclaw_managed_browser) needs the openclaw CLI; Skill 6 PRIMARY" >&2
-    echo "(agent-browser via browser_manager.sh) does not. Aborting." >&2
+    echo "The managed-browser lane needs the openclaw CLI; the agent-browser lanes" >&2
+    echo "in this harness (browser_manager.sh / playwright_direct) do not. Aborting." >&2
     exit 64
   fi
 }
