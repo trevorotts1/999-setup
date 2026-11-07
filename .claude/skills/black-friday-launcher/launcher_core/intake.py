@@ -60,12 +60,27 @@ PERMITTED_DEFAULTS = {
 
 # Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
 # cap, provider); it is shape-checked here and resolved, with flagged defaults, only at dispatch.
-OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion")
+OPTIONAL_FIELDS = ("image_plan", "client_choices", "promotion", "free_entry")
 
 OFFER_REQUIRED = ("offer_id", "name", "role", "price", "delivery")
-OFFER_OPTIONAL = ("level", "relationships", "checkout")
+# product_id/product_role separate a product's IDENTITY from the funnel role it plays, so an offer
+# keeps its own name while the route decides where it appears.
+OFFER_OPTIONAL = ("level", "relationships", "checkout", "product_id", "product_role",
+                  "audience_problem", "promised_result", "delivery_kind", "production_status",
+                  "pages", "billing_terms")
 PRICE_REQUIRED = ("amount_minor", "currency")
 PRICE_OPTIONAL = ("bounds_confirmed", "source_ref")
+
+# The product roles the interview can name. They are NOT route roles: a low/mid/high tier still
+# has to be mapped onto a route role by the caller.
+PRODUCT_ROLES = ("free_lead", "low", "mid", "high", "bump", "upsell_1", "downsell_1", "upsell_2")
+DELIVERY_KINDS = ("generated", "human_service", "physical")
+PRODUCTION_STATUSES = ("ready_now", "being_made", "needs_creation")
+BILLING_TERMS_FIELDS = ("amount_minor", "currency", "interval", "interval_count", "installment_count",
+                        "trial", "upfront_minor", "total_commitment_minor", "billing_type", "source_ref",
+                        "state")
+FREE_ENTRY_FIELDS = ("entry_id", "role", "product_id", "display_name", "price", "deliverables",
+                     "delivery_kind", "production_status", "journey", "source_ref", "source_text")
 
 # Operational fields the intake forwards. Skill 49's dispatch knows three write targets;
 # this skill ends at approved local files, so approved_live_publication (a separate approved
@@ -81,7 +96,12 @@ PRICE_MAX_MINOR = 10_000_000
 
 # One order, one payment, one currency. Anything that implies instalments or recurring billing
 # is refused by name until the checkout contract can carry it.
-PAYMENT_PLANS_UNSUPPORTED = "payment plans are not supported in this release"
+PAYMENT_PLANS_UNSUPPORTED = ("payment plans are not supported in this release: this release's checkout "
+                             "takes one paid amount per purchase, so it cannot charge a repeating or "
+                             "split payment")
+# exactly ONE supported alternative, named with the limit. The original request stays unresolved
+# until the owner accepts it: nothing is silently flattened into a one-time payment.
+PAYMENT_PLAN_ALTERNATIVE = "one paid amount at checkout"
 _PAYMENT_PLAN_KEYS = ("installment", "installments", "payment_plan", "payment_plans",
                       "recurring", "subscription", "billing_interval", "billing_cycle")
 CHECKOUT_OPTIONAL = ("billing_type", "schedule", "native_product_id", "native_price_id",
@@ -118,14 +138,16 @@ def _refuse_payment_plans(field: str, block: Any) -> None:
     """Instalment and recurring answers are refused by name, wherever they appear."""
     if not isinstance(block, dict):
         return
+    detail = (f"{PAYMENT_PLANS_UNSUPPORTED}. The one plan this release can build is "
+              f"{PAYMENT_PLAN_ALTERNATIVE}; the original request stays open until the owner accepts that.")
+    # one specific limit, exactly one supported alternative, and the request left unresolved
     for key in block:
         if key in _PAYMENT_PLAN_KEYS and block[key] not in (None, False, [], {}, ""):
-            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", PAYMENT_PLANS_UNSUPPORTED)
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", detail)
     if block.get("billing_type") not in (None, "one_time"):
-        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
-              f"{block['billing_type']!r}: {PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type", f"{block['billing_type']!r}: {detail}")
     if block.get("schedule") not in (None, []):
-        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", PAYMENT_PLANS_UNSUPPORTED)
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", detail)
 
 
 def _level_question(offer: Dict[str, Any]) -> str:
@@ -211,7 +233,10 @@ def _validate_checkout(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
     extra = set(raw) - set(CHECKOUT_OPTIONAL)
     if extra:
         _fail("AF-LAUNCH-INTAKE-CHECKOUT", field, f"undeclared field(s) {sorted(extra)!r}")
-    clean: Dict[str, Any] = {"billing_type": "one_time", "schedule": []}
+    # the payment choice is CARRIED, not flattened: an unsupported plan has already been refused by
+    # name above, so what reaches here is the plan the owner actually chose
+    clean: Dict[str, Any] = {"billing_type": raw.get("billing_type") or "one_time",
+                             "schedule": list(raw.get("schedule") or [])}
     for key in ("native_product_id", "native_price_id", "headline", "benefit_explanation"):
         value = raw.get(key)
         if value is not None and not _nonempty_str(value):
@@ -290,6 +315,126 @@ def _validate_promotion(raw: Any) -> Dict[str, Any]:
     return {key: raw.get(key) for key in sorted(PROMOTION_KEYS)}
 
 
+def _validate_billing_terms(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
+    """The complete terms the buyer must see. A term nobody supplied stays None; a plan is never
+    rewritten into one payment and no amount is ever derived by us."""
+    field = f"offers[{index}].billing_terms"
+    raw = offer.get("billing_terms")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-BILLING", field, "must be an object")
+    extra = set(raw) - set(BILLING_TERMS_FIELDS)
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-BILLING", field, f"undeclared field(s) {sorted(extra)!r}")
+    if raw.get("billing_type") not in (None, "one_time"):
+        _fail("AF-LAUNCH-INTAKE-BILLING", f"{field}.billing_type",
+              f"{raw['billing_type']!r}: {PAYMENT_PLANS_UNSUPPORTED}. The one plan this release can "
+              f"build is {PAYMENT_PLAN_ALTERNATIVE}; the original request stays open until accepted.")
+    for key in ("amount_minor", "interval_count", "installment_count", "upfront_minor",
+                "total_commitment_minor"):
+        value = raw.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+            _fail("AF-LAUNCH-INTAKE-BILLING", f"{field}.{key}", "must be a whole number or null")
+    return {key: raw.get(key) for key in BILLING_TERMS_FIELDS if key in raw}
+
+
+def _validate_product_fields(index: int, offer: Dict[str, Any]) -> Dict[str, Any]:
+    """Product identity and the facts every real offer carries. A fact nobody supplied stays absent."""
+    field = f"offers[{index}]"
+    out: Dict[str, Any] = {}
+    product_id = offer.get("product_id")
+    if product_id is not None:
+        if not _nonempty_str(product_id):
+            _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.product_id", "must be a non-empty string or absent")
+        out["product_id"] = product_id.strip()
+    product_role = offer.get("product_role")
+    if product_role is not None:
+        if product_role not in PRODUCT_ROLES:
+            _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.product_role", f"not one of {PRODUCT_ROLES!r}")
+        out["product_role"] = product_role
+    for key in ("audience_problem", "promised_result"):
+        value = offer.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip():
+            out[key] = value.strip()
+        elif isinstance(value, list) and all(_nonempty_str(v) for v in value):
+            out[key] = [v.strip() for v in value]
+        else:
+            _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.{key}", "must be text, a list of text, or absent")
+    delivery_kind = offer.get("delivery_kind")
+    if delivery_kind is not None:
+        if delivery_kind not in DELIVERY_KINDS:
+            _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.delivery_kind", f"not one of {DELIVERY_KINDS!r}")
+        out["delivery_kind"] = delivery_kind
+    production = offer.get("production_status")
+    if production is not None:
+        if production not in PRODUCTION_STATUSES:
+            _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.production_status",
+                  f"not one of {PRODUCTION_STATUSES!r}")
+        out["production_status"] = production
+    pages = offer.get("pages")
+    if pages is not None:
+        if not (isinstance(pages, list) and pages and all(_nonempty_str(p) for p in pages)):
+            _fail("AF-LAUNCH-INTAKE-OFFER", f"{field}.pages", "must be a non-empty list of page names or absent")
+        out["pages"] = [p.strip() for p in pages]
+    terms = _validate_billing_terms(index, offer)
+    if terms:
+        out["billing_terms"] = terms
+    return out
+
+
+def _validate_free_entry(raw: Any) -> Dict[str, Any]:
+    """The free lead product is its own record with its own journey.
+
+    Zero is a valid price HERE and only here; every paid offer keeps the positive-price rule and a
+    free item is never pushed through the paid checkout."""
+    if not isinstance(raw, dict):
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry", "must be an object")
+    extra = set(raw) - set(FREE_ENTRY_FIELDS)
+    if extra:
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry", f"undeclared field(s) {sorted(extra)!r}")
+    for key in ("entry_id", "product_id", "display_name"):
+        if not _nonempty_str(raw.get(key)):
+            _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", f"free_entry.{key}", "must be a non-empty string")
+    if raw.get("role") != "free_entry":
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.role", "must be 'free_entry'")
+    price = raw.get("price")
+    if not isinstance(price, dict) or price.get("amount_minor") != 0:
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.price",
+              "the free item's price must be exactly zero minor units; anything else is a paid offer")
+    currency = price.get("currency")
+    if not _nonempty_str(currency) or len(currency) != 3 or not currency.isupper():
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.price.currency",
+              "must be a 3-letter uppercase currency code")
+    journey = raw.get("journey")
+    if not isinstance(journey, dict) or journey.get("opt_in") is not True or journey.get("thank_you") is not True:
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.journey",
+              "needs its own opt-in and thank-you pages (both true)")
+    if journey.get("checkout") not in ("none", None):
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.journey.checkout",
+              "a free item never goes through the paid checkout; it must be 'none'")
+    deliverables = raw.get("deliverables")
+    if not (isinstance(deliverables, list) and deliverables and all(_nonempty_str(d) for d in deliverables)):
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.deliverables",
+              "at least one supplied deliverable is required")
+    for key, allowed in (("delivery_kind", DELIVERY_KINDS), ("production_status", PRODUCTION_STATUSES)):
+        if raw.get(key) is not None and raw[key] not in allowed:
+            _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", f"free_entry.{key}", f"not one of {allowed!r}")
+    if not _nonempty_str(raw.get("source_ref")):
+        _fail("AF-LAUNCH-INTAKE-FREE-ENTRY", "free_entry.source_ref",
+              "must cite the answers-file entry the free item came from")
+    return {"entry_id": raw["entry_id"].strip(), "role": "free_entry",
+            "product_id": raw["product_id"].strip(), "display_name": raw["display_name"].strip(),
+            "price": {"amount_minor": 0, "currency": currency},
+            "deliverables": [d.strip() for d in deliverables],
+            "delivery_kind": raw.get("delivery_kind"),
+            "production_status": raw.get("production_status"),
+            "journey": {"opt_in": True, "thank_you": True, "checkout": "none"},
+            "source_ref": raw["source_ref"].strip(), "source_text": raw.get("source_text")}
+
+
 def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     field = f"offers[{index}]"
     if not isinstance(offer, dict):
@@ -340,7 +485,7 @@ def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
     if extra:
         _fail("AF-LAUNCH-INTAKE-UNKNOWN", field,
               f"undeclared offer field(s) {sorted(extra)!r}; add them to intake.py deliberately")
-    return {
+    clean = {
         "offer_id": offer["offer_id"].strip(),
         "name": offer["name"].strip(),
         "role": role,
@@ -350,6 +495,8 @@ def _validate_offer(index: int, offer: Any) -> Dict[str, Any]:
         "delivery": _validate_delivery(index, offer),
         "checkout": _validate_checkout(index, {**offer, "role": role}),
     }
+    clean.update(_validate_product_fields(index, offer))
+    return clean
 
 
 def _check_offer_set(offers: List[Dict[str, Any]], mode: str) -> None:
@@ -593,6 +740,7 @@ def validate(payload: Any) -> Dict[str, Any]:
               f"client_choices must be a list drawn from {sorted(SCOPE_WAIVERS)}; "
               "it records what the CLIENT chose to leave out of the launch")
     promotion = _validate_promotion(payload["promotion"]) if payload.get("promotion") is not None else None
+    free = _validate_free_entry(payload["free_entry"]) if payload.get("free_entry") is not None else None
 
     provenance: Dict[str, str] = {k: "supplied" for k in payload}
     provenance["entitlement_attestation"] = "attested"
@@ -633,6 +781,9 @@ def validate(payload: Any) -> Dict[str, Any]:
     normalized["client_choices"] = list(choices)
     if promotion is not None:
         normalized["promotion"] = promotion
+    if free is not None:
+        normalized["free_entry"] = free
+        provenance["free_entry"] = "supplied"
     normalized["provenance"] = provenance
     assert_no_commercial_defaults(normalized)
     return normalized
