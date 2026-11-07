@@ -210,6 +210,10 @@ Sometimes you need to update a page that has already been deployed, not create a
 8. Paste the NEW updated code
 9. Click Save in the code editor
 10. Click the Save button (floppy disk) in the top toolbar
+10b. Width is repaired by that same edit, not by a second manual pass: the transform sets the
+   host section's native `allowRowMaxWidth` and lifts the inner px cap, creating missing
+   `metaData`/`extra`/`general` levels instead of refusing the edit. Pass `full_width=False`
+   only when the section's width is deliberately owned somewhere else.
 11. Preview to verify the changes look correct
 12. Publish ONLY if the user approves
 
