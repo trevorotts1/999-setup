@@ -584,8 +584,16 @@ def _need(msg):
     return {"ok": False, "message": msg}
 
 
-def _normalize(doc, q, raw):
-    """(value, status, note) or a _need() dict. Free text always wins over the listed choices."""
+def _package_key(p):
+    """One package's identity while accumulating: its name and its own price. A resent package is the
+    same package, never a second copy."""
+    price = p.get("price") if isinstance(p.get("price"), dict) else {}
+    return (_norm(p.get("display_name")), price.get("amount_minor"), price.get("currency"))
+
+
+def _normalize(doc, q, raw, *, accumulate=True):
+    """(value, status, note) or a _need() dict. Free text always wins over the listed choices.
+    accumulate=False reads an answer without touching the saved partial packages (citation checks)."""
     qid, t, ch = q["id"], q["answer_type"], q["choices"]
     text = str(raw).strip() if not isinstance(raw, (dict, list)) else raw
     low = _norm(text) if isinstance(text, str) else ""
@@ -810,14 +818,12 @@ def _normalize(doc, q, raw):
         return {"community_url": url.group(0).rstrip(".,;"), "bonus": bonus, "founder_text_confirmed": True}, "provided", None
     if t == "packages":
         rows = text if isinstance(text, list) else [ln for ln in str(text).splitlines() if ln.strip()]
-        pk, bad, st = [], [], "provided"
+        pk, bad = [], []
         for row in rows:
             if isinstance(row, dict):
                 err = _bad_package(row)
                 if err:
                     return _need(err)
-                if row.get("price_status") == "recommended_unapproved":
-                    st = "suggested"
                 pk.append(row)
                 continue
             sym = re.findall(r"[$\u20ac\u00a3]\s*\d[\d,]*(?:\.\d+)?", row)
@@ -835,16 +841,35 @@ def _normalize(doc, q, raw):
             return _need("I could not read one clear price in: " + "; ".join(bad) + ". Each package needs a name and one price, like: Premium | 12 lessons; 4 live calls | $497")
         if not pk:
             return _need("I need one package to start: a name and one price, like: Premium | 12 lessons; 4 live calls | $497")
-        if len(pk) == 1:
-            # The first package is saved as a valid PARTIAL record, then the next is collected. The
-            # answer stays incomplete so nothing is invented to reach two, and the client's words are
-            # not lost while they describe the rest.
-            doc["packages_partial"] = {"packages": pk, "note": "package 1 saved; more collected next"}
+        # Successive single-package turns ACCUMULATE. The first package is a valid PARTIAL record the
+        # next turn adds to, so a client answering one package per turn still finishes; a resend of a
+        # package already saved is the same package, never a second copy. The answer stays incomplete
+        # until the client has actually described two, so nothing is invented to reach the minimum.
+        part = doc.get("packages_partial") if accumulate else None
+        if isinstance(part, dict):
+            merged = list(part.get("packages") or [])
+        else:  # a package added after the set was already recorded extends the recorded set
+            have = val(doc, "packages") if accumulate else None
+            merged = list(have) if isinstance(have, list) else []
+        seen = {_package_key(p) for p in merged}
+        for p in pk:
+            k = _package_key(p)
+            if k not in seen:
+                seen.add(k)
+                merged.append(p)
+        if len(merged) < 2:
+            if accumulate:
+                doc["packages_partial"] = {"packages": merged,
+                                           "note": f"{len(merged)} package saved; more collected next"}
             return _need("I need at least two, each with a name and a price, one per line. "
                          "I have saved the first one; send the next the same way. For example: "
                          "Premium | 12 lessons; 4 live calls | $497")
-        doc.pop("packages_partial", None)
-        return pk, st, None
+        # the completion path consumes the whole accumulated set, and with it each package's own words,
+        # price and price_status, so a saved partial can never be dropped or silently re-statused. The
+        # partial is cleared by record() only once the answer is actually saved, so a refused citation
+        # never throws the packages the client already described away.
+        st = "suggested" if any(p.get("price_status") == "recommended_unapproved" for p in merged) else "provided"
+        return merged, st, None
     if t == "list":
         items = text if isinstance(text, list) else [s.strip(" -*•") for s in re.split(r"\n|;|,(?=\s)", text) if s.strip(" -*•")]
         return (items, "provided", None) if items else _need("Please give me at least one.")
@@ -903,7 +928,7 @@ def _client_said(doc, q, raw, v, msg):
     if isinstance(raw, str):
         if _norm(raw) and _norm(raw) in nm:
             return True
-        out = _normalize(doc, q, msg)
+        out = _normalize(doc, q, msg, accumulate=False)  # a citation check never edits the partial
         return isinstance(out, tuple) and out[0] == v
     nums = _numbers(msg)
     for it in raw if isinstance(raw, list) else []:
@@ -979,6 +1004,8 @@ def record(doc, qid, value, *, source="client", status=None, note=None, source_m
             assumed = "" if re.search(r"[A-Za-z$\u20ac\u00a3]", str(value)) else " (no currency given, so I took USD)"
             return {"ok": False, "action": "confirm_price", "heard": v, "message": f"I heard {shown}{assumed}, correct? Say yes to record it, or give me the right price."}
     e = _set(doc, qid, v, st, source, note or nt)
+    if qid == "packages":
+        doc.pop("packages_partial", None)  # the accumulated set is the recorded answer now
     if qid in CITED_QUESTIONS and st == "provided":
         e["source_message_ref"] = ref_for_entry
         if confirmed:
