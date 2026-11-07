@@ -1304,63 +1304,180 @@ def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
         _handle_error(e)
 
 
-@workflows.command("build")
-@click.option("--from-plan", "plan_file", required=True, type=click.Path(exists=True),
-              help="JSON plan file describing the workflow(s) to build")
-@click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
-@click.pass_context
-def workflows_build(ctx, plan_file, folder):
-    """Build a workflow from a plan JSON file (internal API, write-gated).
+def _refuse_launch_profile(meta) -> None:
+    """Refuse a Skill 50 launch-profile plan on the plain --from-plan path.
 
-    Requires --experimental. Supports conversational and mechanical workflows.
+    A launch plan's purchase suppression, schedule suppression and unit keys
+    live in the automation-build document the launch-c reader emits. Building
+    the raw plan would drop them silently, so it is refused and pointed at
+    --from-automation-build, which compiles them (S44-03 / S44-06).
+    """
+    profile = meta.get("profile") if isinstance(meta, dict) else None
+    if profile:
+        click.echo(
+            f"REFUSED: this plan carries _meta.profile {profile!r} (a launch "
+            "profile). --from-plan would drop its stop-promotion-after-purchase "
+            "and suppression guards, schedule suppression and unit keys. Run "
+            "the launch-c plan reader and build its automation-build document "
+            "instead:\n  caf workflows build --from-automation-build "
+            "<automation-builds.json> --journal <path>",
+            err=True,
+        )
+        sys.exit(2)
+
+
+def _campaign_from_plan(plan, folder):
+    """Plan dict -> (campaign, folder_name). Pops the non-workflow keys.
+
+    Bug 2b — a top-level "folder": "<name>" key is a folder NAME, not a
+    workflow definition, and Skill 50 plans also carry a "_meta" block. Both
+    are popped before the build iterates the plan (each remaining entry is
+    treated as a workflow dict). --folder wins over the plan's folder key.
+    """
+    if not isinstance(plan, dict):
+        click.echo("Error: plan must be a JSON object.", err=True)
+        sys.exit(1)
+    plan_folder = plan.pop("folder", None)
+    _refuse_launch_profile(plan.pop("_meta", None))
+    if folder:
+        folder_name = folder
+    elif isinstance(plan_folder, str) and plan_folder.strip():
+        folder_name = plan_folder
+    else:
+        folder_name = "caf-build"
+
+    bad = [
+        f"{k!r} ({type(v).__name__})"
+        for k, v in plan.items()
+        if not isinstance(v, dict)
+    ]
+    if bad:
+        click.echo(
+            "Error: plan contains non-workflow entries — every top-level "
+            "key (other than 'folder' and '_meta') must map to a workflow "
+            "object.\n"
+            f"Offending entries: {', '.join(bad)}",
+            err=True,
+        )
+        sys.exit(1)
+    return plan, folder_name
+
+
+def _campaign_from_automation_build(doc, folder):
+    """automation-build doc -> (campaign, folder_name) via compile_launch_builds.
+
+    require_ready=True: a blocked build, a missing required output or a missing
+    suppression guard refuses the whole document, never a partial build.
+    """
+    from cli_anything.gohighlevel.utils.workflow_builder import (
+        WorkflowCompileError,
+        compile_launch_builds,
+    )
+    blocking = [
+        w for w in (doc.get("warnings") or [] if isinstance(doc, dict) else [])
+        if isinstance(w, dict) and w.get("blocking")
+    ]
+    if blocking:
+        click.echo(
+            "REFUSED: the automation-build document carries blocking "
+            "warning(s): " + ", ".join(str(w.get("code")) for w in blocking),
+            err=True,
+        )
+        sys.exit(1)
+    try:
+        campaign = compile_launch_builds(doc, require_ready=True)
+    except WorkflowCompileError as exc:
+        click.echo(f"REFUSED: {exc}", err=True)
+        sys.exit(1)
+    launch_id = doc.get("launch_id") if isinstance(doc, dict) else None
+    folder_name = folder or (f"launch-{launch_id}" if launch_id else "caf-build")
+    return campaign, folder_name
+
+
+@workflows.command("build")
+@click.option("--from-plan", "plan_file", default=None, type=click.Path(exists=True),
+              help="JSON plan file describing the workflow(s) to build")
+@click.option("--from-automation-build", "automation_file", default=None,
+              type=click.Path(exists=True),
+              help="Launch automation-build document (launch-c plan reader output); "
+                   "compiled with its guards, schedule suppression and unit keys")
+@click.option("--journal", "journal_path", default=None, type=click.Path(),
+              help="Build journal (JSONL receipts) path; required with --from-automation-build")
+@click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
+@click.option("--dry-run", "check_only", is_flag=True, default=False,
+              help="Validate and compile only; print the workflows that would be "
+                   "built and exit. No client, no network, no write.")
+@click.pass_context
+def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check_only):
+    """Build workflows from a plan or an automation-build document (internal API, write-gated).
+
+    Requires --experimental (except --dry-run). Supports conversational and
+    mechanical workflows. --from-automation-build runs
+    compile_launch_builds(require_ready=True) and journals every phase.
     NOTE: build performs NO TRINITY check. Conversational plans are gated at
     Step 9 QC via qc-built-workflow.sh <wf-id> --conversational (WF-19), which
     executes Skill 38's qc-trinity-registry.sh; a non-zero result fails QC.
     """
-    _require_experimental(ctx)
+    if bool(plan_file) == bool(automation_file):
+        click.echo("Error: pass exactly one of --from-plan or --from-automation-build.",
+                   err=True)
+        sys.exit(2)
+    if automation_file and not journal_path:
+        click.echo("Error: --from-automation-build requires --journal <path> "
+                   "(the build receipts that make a re-run safe).", err=True)
+        sys.exit(2)
+    if not check_only:
+        _require_experimental(ctx)
     try:
-        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+        from cli_anything.gohighlevel.utils.workflow_builder import (
+            CampaignBuilder,
+            _contract_errors,
+            validate_campaign,
+        )
         from cli_anything.gohighlevel.utils.write_lock import WriteLock
-        with open(plan_file) as f:
-            campaign = json.load(f)
+        with open(automation_file or plan_file) as f:
+            doc = json.load(f)
+        if automation_file:
+            campaign, folder_name = _campaign_from_automation_build(doc, folder)
+        else:
+            campaign, folder_name = _campaign_from_plan(doc, folder)
+
+        if check_only:
+            errors = validate_campaign(campaign) + _contract_errors(campaign)
+            # compile_launch_builds records blocked/refused builds on the result
+            # instead of raising; a dry run must not look clean while it hides them.
+            errors += ["%s: %s: %s" % (r.get("id"), r.get("code"), r.get("reason"))
+                       for r in getattr(campaign, "refusals", None) or []]
+            report = {
+                "dry_run": True,
+                "source": "automation-build" if automation_file else "plan",
+                "folder": folder_name,
+                "journal": journal_path,
+                "errors": errors,
+                "workflows": [
+                    {"key": k, "name": v.get("name"), "unit_key": v.get("unit_key"),
+                     "phase": v.get("phase"), "steps": len(v.get("templates") or []),
+                     # which compiler shape ran, what browser work is still
+                     # owed, and which channel actions are not complete
+                     "compile_mode": v.get("compile_mode"),
+                     "browser_steps": len(v.get("browser_steps") or []),
+                     "channel_actions": v.get("channel_actions"),
+                     "incomplete_actions": v.get("incomplete_actions") or [],
+                     "purchase_identity": v.get("purchase_identity")}
+                    for k, v in campaign.items()
+                ],
+            }
+            _output(ctx, report, "Build check (dry run, nothing written)")
+            if errors:
+                sys.exit(1)
+            return
+
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
-
-        # Bug 2b — a top-level "folder": "<name>" key in the plan is a folder
-        # NAME, not a workflow definition.  CampaignBuilder.build() iterates the
-        # dict treating every value as a workflow dict (wf_def["name"]); the
-        # bare string folder value crashed the build with
-        # `TypeError: string indices must be integers`.  POP the folder key out
-        # of the plan before iterating: use it as the folder name when --folder
-        # was not given; --folder wins when both are present.  After the pop,
-        # every remaining entry MUST be a workflow dict — fail loud with a clear
-        # message on any non-dict entry instead of a raw TypeError downstream.
-        plan_folder = campaign.pop("folder", None)
-        if folder:
-            folder_name = folder
-        elif isinstance(plan_folder, str) and plan_folder.strip():
-            folder_name = plan_folder
-        else:
-            folder_name = "caf-build"
-
-        bad = [
-            f"{k!r} ({type(v).__name__})"
-            for k, v in campaign.items()
-            if not isinstance(v, dict)
-        ]
-        if bad:
-            click.echo(
-                "Error: plan contains non-workflow entries — every top-level "
-                "key (other than 'folder') must map to a workflow object.\n"
-                f"Offending entries: {', '.join(bad)}",
-                err=True,
-            )
-            sys.exit(1)
-
         with WriteLock(location_id):
             v4, _route_reason = _get_public_v4(ctx)
             builder = CampaignBuilder(client, v4=v4)
-            stats = builder.build(campaign, folder_name)
+            stats = builder.build(campaign, folder_name, journal=journal_path)
         _emit_build_result(ctx, builder, stats)
     except Exception as e:
         _handle_error(e)
@@ -1389,6 +1506,7 @@ def workflows_precheck(ctx, plan_file):
         with open(plan_file) as f:
             campaign = json.load(f)
         campaign.pop("folder", None)
+        campaign.pop("_meta", None)  # Skill 50 plans carry _meta; it is not a workflow
         client = _get_internal_client(ctx)
         location_id = _loc(ctx)
         builder = CampaignBuilder(client)
