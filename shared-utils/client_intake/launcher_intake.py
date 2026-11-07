@@ -106,14 +106,18 @@ def _provided(doc: Dict[str, Any], qid: str) -> Any:
     return e["value"]
 
 
-def _price(value: Any, field: str) -> Dict[str, Any]:
-    ok = (isinstance(value, dict) and isinstance(value.get("amount_minor"), int)
-          and not isinstance(value.get("amount_minor"), bool) and value["amount_minor"] > 0
-          and isinstance(value.get("currency"), str) and len(value["currency"]) == 3 and value["currency"].isupper())
+def _price(value: Any, field: str, *, allow_free: bool = False) -> Dict[str, Any]:
+    """A paid offer needs a positive amount; only the dedicated free-entry record may be zero."""
+    floor_ok = (isinstance(value, dict) and isinstance(value.get("amount_minor"), int)
+                and not isinstance(value.get("amount_minor"), bool)
+                and (value["amount_minor"] > 0 or (allow_free and value["amount_minor"] == 0)))
+    ok = (floor_ok and isinstance(value.get("currency"), str)
+          and len(value["currency"]) == 3 and value["currency"].isupper())
     if not ok:
         _fail("AF-LAUNCH-ANSWERS-PRICE", field,
-              "needs a price in whole minor units above zero and a 3-letter currency; a free or unpriced "
-              "offer cannot be built and a price is never invented")
+              "needs a price in whole minor units " + ("at or above zero" if allow_free else "above zero")
+              + " and a 3-letter currency; a free or unpriced paid offer cannot be built and a price "
+              "is never invented")
     return {"amount_minor": value["amount_minor"], "currency": value["currency"]}
 
 
@@ -137,6 +141,77 @@ def _offer(offer_id: str, role: str, name: Any, price: Any, qid: str, deliverabl
 
 def _slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").upper() or "OFFER"
+
+
+# ---------------------------------------------------------------- the shared engine, one authority
+def _engine() -> Any:
+    """shared-utils/client_intake/engine.py sits beside this file: one billing and offer authority."""
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import engine  # noqa: E402
+    return engine
+
+
+# offer fields the answers can carry. Each is emitted only when Skill 83's intake declares it.
+OFFER_EXTRA_FIELDS = ("product_id", "audience_problem", "promised_result", "delivery_kind",
+                      "production_status", "pages")
+
+
+def _declares_offer_field(mod: Any, name: str) -> bool:
+    return mod is not None and name in getattr(mod, "OFFER_OPTIONAL", ())
+
+
+def _offer_extras(doc: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+    """The per-offer facts the launch model records, read from the one answers file."""
+    qid, index = src.get("question_id"), src.get("index")
+    raw = (_entry(doc, qid) or {}).get("value")
+    if isinstance(raw, list):  # one package row: its own facts, never the first package's
+        row = raw[index] if isinstance(index, int) and 0 <= index < len(raw) else {}
+        return {"product_id": _slug(str(row.get("display_name"))) if row.get("display_name") else None,
+                "audience_problem": row.get("audience_problem"), "promised_result": row.get("promised_result"),
+                "delivery_kind": row.get("delivery_kind"), "production_status": row.get("production_status"),
+                "pages": None}
+    rec = _engine().offer_record(doc, qid) or {}
+    return {k: rec.get(k) for k in OFFER_EXTRA_FIELDS}
+
+
+# ---------------------------------------------------------------- the shared proposal transition
+def accept_proposal(doc: Dict[str, Any], qid: str, **kw: Any) -> Dict[str, Any]:
+    """THE one proposal-acceptance transition (engine.accept_proposal), for Skill 83 as for Skill 49.
+
+    Skill 83 does not re-implement it: an accepted proposal becomes the answer with the
+    user_selected_recommendation class, and one that needs a capability the run lacks stays
+    unresolved by name."""
+    return _engine().accept_proposal(doc, qid, **kw)
+
+
+# ---------------------------------------------------------------- the free lead product
+def free_entry(doc: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The free lead product as its OWN record, with its own opt-in and thank-you journey.
+
+    A free item never goes through the paid checkout, and the paid offers keep the positive-price
+    rule. Absent when the client did not name one; nothing is invented."""
+    e = _entry(doc, "lead_magnet")
+    if e is None or e.get("status") == "unknown" or e.get("value") in (None, "none"):
+        return None
+    if e.get("status") in _UNAPPROVED:
+        _fail("AF-LAUNCH-ANSWERS-UNAPPROVED", "answers-file:lead_magnet",
+              f"is {e['status']}, a proposal the client has not confirmed")
+    v = e["value"]
+    if not isinstance(v, dict):
+        v = _engine().normalize_offer_prose(v, qid="lead_magnet")
+    name = v.get("display_name")
+    if not isinstance(name, str) or not name.strip():
+        _fail("AF-LAUNCH-ANSWERS-FREE-ENTRY", "answers-file:lead_magnet",
+              "the free item needs a name and what people get")
+    price = v.get("price") or {"amount_minor": 0, "currency": "USD"}
+    return {"entry_id": "FREE-" + _slug(name), "role": "free_entry", "product_id": _slug(name),
+            "display_name": name.strip(), "price": _price(price, "answers-file:lead_magnet", allow_free=True),
+            "deliverables": _deliverables(v.get("deliverables")),
+            "delivery_kind": v.get("delivery_kind") or "generated",
+            "production_status": v.get("production_status"),
+            "journey": {"opt_in": True, "thank_you": True, "checkout": "none"},
+            "source_ref": "answers-file:lead_magnet", "source_text": v.get("source_text")}
 
 
 def derive_offers(doc: Dict[str, Any]):
@@ -382,6 +457,20 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
     direction = creative_direction(doc)
     extra = system.get("extra_offer") or {}
     offers = [dict(copy.deepcopy(o), **extra.get(o["offer_id"], {})) for o in offers]
+    # role stays separate from product identity: every real offer also carries what it solves, the
+    # result it promises, how it is delivered, whether it exists, and the pages that use it.
+    by_id = {s["offer_id"]: s for s in sources}
+    for o in offers:
+        for key, value in _offer_extras(doc, by_id[o["offer_id"]]).items():
+            if value is not None and _declares_offer_field(mod, key):
+                o[key] = value
+    billing = _engine().billing_supported(doc)
+    if billing["billing_type"]:
+        for o in offers:  # the payment choice rides on the offer, never flattened to one_time
+            if _declares_offer_field(mod, "checkout"):
+                o.setdefault("checkout", {})["billing_type"] = billing["billing_type"]
+            if billing["supported"] and _declares_offer_field(mod, "billing_terms"):
+                o["billing_terms"] = billing["terms"]
     if "source_ref" in _price_keys(mod):  # the price carries the answers-file question it came from
         refs = {s["offer_id"]: s["source_ref"] for s in sources}
         for o in offers:
@@ -396,6 +485,9 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
         intake["answers_file"] = str(answers_path)
     if _declared(mod, "checkout_terms"):
         intake["checkout_terms"] = _checkout_terms(doc)
+    free = free_entry(doc)
+    if free is not None and _declared(mod, "free_entry"):
+        intake["free_entry"] = free  # its own record and journey: never a paid checkout line
     if _declared(mod, "promotion"):
         promo = _promotion(doc)
         if promo is not None:
@@ -424,6 +516,15 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
             "image_ceiling": ceiling, "warnings": warnings}
     if "checkout_terms" in intake:
         prov["checkout_terms"] = {"source_ref": "answers-file:checkout_terms"}
+    if not billing["supported"]:
+        # the request the execution path cannot serve is recorded, not flattened: the client sees the
+        # specific limit and the one supported alternative, and decides
+        prov["payment_plan_request"] = {"requested": billing["billing_type"], "limit": billing["limit"],
+                                        "alternative": billing["alternative"], "unresolved": True,
+                                        "message": billing["message"]}
+        warnings.append(billing["message"])
+    if free is not None:
+        prov["free_entry"] = {"source_ref": free["source_ref"], "checkout": "none"}
     return {"intake": intake, "provenance": prov}
 
 
@@ -466,6 +567,12 @@ def verify(intake: Any, provenance: Any, answers: Any, answers_path: Optional[Pa
     if not same:
         _fail("AF-LAUNCH-ANSWERS-HASH-MISMATCH", "offers",
               "the intake's offers, prices or journey mode do not match the answers file")
+    want_free = free_entry(answers)
+    have_free = intake.get("free_entry")
+    if (want_free is None) != (have_free is None) or (
+            want_free is not None and have_free.get("display_name") != want_free["display_name"]):
+        _fail("AF-LAUNCH-ANSWERS-HASH-MISMATCH", "free_entry",
+              "the intake's free item does not match the answers file")
 
 
 # ---------------------------------------------------------------- CLI
