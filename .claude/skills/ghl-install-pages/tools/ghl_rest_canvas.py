@@ -769,6 +769,12 @@ def autosave_body(
     page_version: int,
     integrations: dict | None = None,
     publish: bool = False,
+    *,
+    approval=None,
+    page_id: str | None = None,
+    location_id: str | None = None,
+    evidence_root: str | None = None,
+    store_dir: str | None = None,
 ) -> dict:
     """Build the autosave POST body.
 
@@ -783,13 +789,24 @@ def autosave_body(
         page_version: The numeric ``pageVersion`` read from the page record; the
             body sends ``page_version + 1``.
         integrations: Passthrough integrations object from the read (preserved).
-        publish: When True, ``pageType`` is ``published``; default draft.
+        publish: When True, ``pageType`` is ``published``; default draft. A
+            published body needs ``approval`` (a launcher approval_ref that
+            resolves to a live-publication record for ``location_id`` /
+            ``page_id``) plus a passed ``ghl_gate`` over ``evidence_root``;
+            otherwise ``ghl_publish_approval.PublishApprovalError`` is raised.
+        approval, page_id, location_id, evidence_root, store_dir: the publish
+            authorization inputs (ignored for a draft).
 
     Returns:
         The JSON-serialisable POST body.
     """
     if not isinstance(page_data, dict):
         raise TypeError("page_data must be a dict (the editable blob)")
+    if publish:
+        # Lazy: a module-level import would cycle (ghl_gate -> ghl_builder -> here).
+        import ghl_publish_approval as _pa
+        _pa.require_publish(approval, location_id=location_id, page_id=page_id,
+                            evidence_root=evidence_root, store_dir=store_dir)
     try:
         n = int(page_version)
     except (TypeError, ValueError) as exc:  # UUID / None / junk all rejected here
@@ -1365,6 +1382,12 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False,
       - a home-made card input (cc-number, cc-csc, cardnumber, cvv ... S06-10)
       - an ``<img>`` whose src is not a GHL media-storage URL (S06-11; on by
         default, ``require_ghl_media=False`` only for non-funnel callers)
+      - fixture copy: the word ``TEST`` (case-sensitive, word-bounded) in a
+        review-only draft (CHK-18)
+      - an unresolved ``<!-- INCLUDE:`` marker left by a review-only draft
+        assembly (CHK-18)
+      - an order-bump / consent checkbox input in custom code: bump and consent
+        are native order-form settings (CHK-18)
 
     enforce_unverified_strip (default ``False`` = SAFE):
         Reserved hook for strip rules a FUTURE live save round-trip proves. The
@@ -1416,6 +1439,15 @@ def lint_ghl_fragment(fragment: str, *, enforce_unverified_strip: bool = False,
     # external/temporary URLs break or expire after launch).
     if require_ghl_media:
         errors.extend(find_non_ghl_images(fragment, extra_hosts=media_hosts))
+
+    # Hard error 5 — review-only draft artefacts (Skill 79 components, CHK-18): never installable.
+    if re.search(r"\bTEST\b", fragment):
+        errors.append("fixture copy 'TEST' present: review-only draft, not installable (CHK-18)")
+    if "<!-- include:" in fragment.lower():
+        errors.append("unresolved '<!-- INCLUDE:' marker present: review-only draft assembly, not installable (CHK-18)")
+    if re.search(r"<input\b[^>]*\b(?:name|id)\s*=\s*[\"']?[\w-]*(?:order_bump|order-bump|bump|consent)", fragment, re.I):
+        errors.append("order bump / consent checkbox in custom code: bump and consent must be native order-form "
+                      "settings, a custom input adds nothing to the order and gates nothing (CHK-18)")
 
     # Transparency: which probe-confirmed-survivor constructs are present. These
     # are reported, never penalised — the lint exists partly to PROVE these are
@@ -3012,7 +3044,9 @@ def page_read(page_id: str, location_id: str | None = None, *, session: str | No
 
 def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version: int,
                   integrations: dict | None = None, publish: bool = False,
-                  session: str | None = None, token_global: str = TOKEN_JS_GLOBAL) -> dict:
+                  session: str | None = None, token_global: str = TOKEN_JS_GLOBAL,
+                  approval=None, location_id: str | None = None,
+                  evidence_root: str | None = None, store_dir: str | None = None) -> dict:
     """GAP-1 save step: emit the in-browser DRAFT autosave POST.
 
     Executed INSIDE the agent-browser eval per the Cloudflare-WAF note. Returns
@@ -3029,9 +3063,13 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
         page_version: The numeric ``pageVersion`` read from the record; the body
             sends n+1 (keyword-only).
         integrations: Passthrough integrations from the read.
-        publish: Gate via ``ghl_builder.may_publish``; default draft.
+        publish: Gate via ``ghl_builder.may_publish``; default draft. ``True``
+            needs ``approval`` + ``location_id`` (+ ``evidence_root`` with a
+            passed ``ghl_gate``) or ``PublishApprovalError`` is raised.
         session: Optional agent-browser session for an ``argv``.
         token_global: The staged-JWT window global.
+        approval, location_id, evidence_root, store_dir: publish authorization
+            (see ``autosave_body``); ignored for a draft.
 
     Returns:
         ``{method, path, url, body, eval, argv?, expect}`` — the step the agent
@@ -3039,7 +3077,9 @@ def page_autosave(page_id: str, page_data: dict, *, funnel_id: str, page_version
         contract under ``expect``.
     """
     path = page_autosave_path(page_id)
-    body = autosave_body(funnel_id, page_data, page_version, integrations, publish)
+    body = autosave_body(funnel_id, page_data, page_version, integrations, publish,
+                         approval=approval, page_id=page_id, location_id=location_id,
+                         evidence_root=evidence_root, store_dir=store_dir)
     js = build_fetch_js("POST", path, body=body, token_global=token_global)
     step: dict[str, Any] = {
         "method": "POST",

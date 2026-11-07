@@ -375,6 +375,14 @@ KIE helpers land in `~/.claude/skills`, the helper install also writes
 directories, run `~/.local/bin/sync-nine-skills.sh`, and confirm the skill names match. On
 Windows there is one root, so confirm it once.
 
+`python3 installer-registration/bundle_adapter.py --check` prints one `HARNESS` line per installed
+skills root it recognises (`claude`, `claude-nine`, `codex`, `agents`), naming the ACTIVE install
+target and reporting every real directory retained there and every installed version older than
+the shipped one. That is a report, not a repair queue: `.codex/skills` and `.agents/skills` are
+read-only here and their links are never rewritten, and an installer never replaces an
+installation it did not create. When a line reads `RETAINED` or `OLD-VERSION`, tell the client
+what it says instead of silently re-linking.
+
 ## 10. Verify plain `claude` is not routed and `claude-nine` activates the router
 
 - Plain `claude`: verify no `ANTHROPIC_BASE_URL=http://localhost:20128/v1` was persisted

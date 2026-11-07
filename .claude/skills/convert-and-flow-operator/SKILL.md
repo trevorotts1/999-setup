@@ -82,11 +82,21 @@ specific low dimension. HALLUCINATION FAIL: hard stop + redo on reasoning-model 
 2. **INSTALL.md** — autonomous setup, venv, wrapper, `caf doctor`
 3. **INSTRUCTIONS.md** — day-to-day usage, Step 0.5 PLAN MODE, natural language intents,
    TRINITY routing, Step 9 QC GATE (including hallucination escalation), rollback
-3b. **automation-templates/** — the **28-template automation library** (template-first / reuse-
-   before-reinvent) + `automation-templates/README.md`. Matched at INSTRUCTIONS Step 0.4 via
+3b. **automation-templates/** — the **49-template automation library** (28 editorial sequence
+   templates + 21 launch-family build specs; template-first / reuse-before-reinvent) +
+   `automation-templates/README.md`. Matched at INSTRUCTIONS Step 0.4 via
    `_matcher/cli.py --match` (shared core `_matcher/flex.py`, committed lexical index
    `_matcher/catalog-index.json`). `_links/funnel-to-automation.json` is the canonical funnel→
    automation map. Flexibility = guide-not-rule (honor explicit spec; CREATE_NEW only when nothing fits).
+
+   Launch mode (Skill 49/83): a Black Friday or signature-launch automation build starts from
+   `automation-templates/launch-c/plan_reader.py` and `tools/siglaunch/`, never from the editorial
+   matcher; the plan's automation units carry `build_rail` = this skill's engine and
+   `draft_only` = true. Verify the library size, never hand-edit it:
+
+   ```bash
+   python3 -I -c "import glob;print(len([p for p in glob.glob('.claude/skills/convert-and-flow-operator/automation-templates/*/*.json') if not p.split('/')[-2].startswith('_') and p.split('/')[-1] not in ('automation-build.schema.json','text-sets.json')]))"
+   ```
 4. **references/workflow-build-checklist-template.md** — canonical WF-1..WF-21 checklist
    (instantiate at PLAN MODE Step D; hand to client after QC passes)
 4b. **references/workflow-quality-rubric.md** — 8-dimension weighted quality rubric (SUPERSET
@@ -172,7 +182,15 @@ otherwise installs the approved email/wait sequence while recording why. `settin
 is the promotional flag itself, a requested Allow Reentry is written and read back
 (`stats["reentry"]`), an SMS whose copy no approved source supplies stays `copy_pending` and is
 listed in `incomplete_actions`, and browser-required ledger rows are executed through the
-selected capability or recorded as pending.
+selected capability or recorded as pending. A refusal is scoped: an invalid document refuses the
+whole build, while a blocked build, a zero-workflow build, a missing required output, a missing
+suppression guard or an upstream refusal is recorded on `refusals` for that unit and the other
+units still build — a partial campaign is reported with every refusal, never as clean.
+
+**Native products and prices are not a safe default.** `caf payments create-product` and
+`caf payments create-price` exist, but on main they are not tied to an approval record and
+`create-price` takes `--amount` in cents. Do not create a product or price for a launch without
+the owner's recorded approval of the plan, and read the created price back before use.
 
 - **present + healthy** — Tier 0 builds/edits the workflow directly via the internal API.
 - **unread / misconfigured** (e.g. the token exists in a store the process did not resolve, or a
