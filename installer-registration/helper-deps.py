@@ -193,6 +193,44 @@ def required_helpers(manifest):
 def target_of(root, name):
     return Path(root) / "skills" / name
 
+
+def install_name(h):
+    """The slug 999 itself names this helper by, or the vendored name when there is none.
+
+    999's skills are addressed by SLUG (`kie-image`, `signature-funnel`): that is what
+    CONTROL/bundled-skills.txt lists and what installer-registration/bundle_adapter.py
+    links. The vendored folder is spelled `<number>-<slug>` because it mirrors the
+    onboarding repository, so assuming that spelling is the ONLY place a helper can
+    live is wrong — a box installed by 999's own installer has the bare slug.
+    """
+    return h.get("skillName") or h.get("name")
+
+
+def candidate_targets(root, h):
+    """Every path this helper may legitimately be installed at, supported name first.
+
+    The supported (999) name comes first; the vendored `<number>-<slug>` name stays a
+    candidate so an existing install is recognised instead of being duplicated. No
+    other directory and no repository under the operator's home is consulted.
+    """
+    names = []
+    for name in (install_name(h), h.get("name")):
+        if name and name not in names:
+            names.append(name)
+    return [(name, target_of(root, name)) for name in names]
+
+
+def resolve_installed(root, h):
+    """(name, path) of the installed copy that resolves, or (None, None).
+
+    The FIRST candidate carrying a SKILL.md (or, for a `files` helper, the directory)
+    wins; the others are reported by the caller as preserved duplicates.
+    """
+    for name, path in candidate_targets(root, h):
+        if path.is_dir() and has_skill_md(h, path):
+            return name, path
+    return None, None
+
 def repair_cmd(root, roots):
     if len(roots) > 1:  # several roots on this machine: cover them all
         return f"{script_ref()} install"
@@ -200,12 +238,12 @@ def repair_cmd(root, roots):
 
 # ---------------------------------------------------------------- preflight --
 def _preflight_root(root, roots, helpers):
-    failures = []
+    """(failures, preserved) for one config root. Preserved copies never fail the check."""
+    failures, preserved = [], []
     suffix = f" @ {root}" if len(roots) > 1 else ""
     repair = repair_cmd(root, roots)
     for h in helpers:
         name, sid, ver = h.get("name"), h.get("id"), h.get("version")
-        dst = target_of(root, name)
         pin = h.get("treeSha256")
         if not pin:
             failures.append(
@@ -213,29 +251,43 @@ def _preflight_root(root, roots, helpers):
                 f"no treeSha256. Repair: rerun `{script_ref()} repin` from a "
                 f"repository checkout and commit the manifest.{suffix}")
             continue
-        if not dst.is_dir() or not has_skill_md(h, dst):
+        resolved_name, dst = resolve_installed(root, h)
+        if dst is None:
+            looked = ", ".join(str(path) for _, path in candidate_targets(root, h))
             failures.append(
-                f"MISSING helper '{name}' (Skill {sid}, {ver}): expected "
-                f"{dst} with SKILL.md. Repair: run `{repair}` "
+                f"MISSING helper '{name}' (Skill {sid}, {ver}): expected a "
+                f"directory with SKILL.md at one of {looked}. Repair: run `{repair}` "
                 f"(AGENT_INSTALL.md section 5), then rerun this preflight."
                 f"{suffix}")
             continue
+        # A second copy under the other naming convention is a PRESERVED tree: it
+        # is reported by name and never deleted, and it is never counted as the
+        # verified installation.
+        for other_name, other_path in candidate_targets(root, h):
+            if other_path != dst and other_path.is_dir():
+                preserved.append(
+                    f"PRESERVED helper copy '{other_name}' at {other_path}: kept "
+                    f"as-is; '{resolved_name}' at {dst} is the verified one.{suffix}")
         got = tree_hash(dst)
         if got != pin:
             failures.append(
                 f"HASH MISMATCH helper '{name}' (Skill {sid}, {ver}): expected "
                 f"{pin}, found {got} at {dst}. Repair: run "
                 f"`{repair}` to restore the pinned copy.{suffix}")
-    return failures
+    return failures, preserved
 
 def cmd_preflight(a):
     roots = config_roots(a.root)
     manifest = load_manifest(a.manifest)
     helpers = required_helpers(manifest)
     multi = len(roots) > 1
-    failures = []
+    failures, preserved = [], []
     for root in roots:
-        failures += _preflight_root(root, roots, helpers)
+        root_failures, root_preserved = _preflight_root(root, roots, helpers)
+        failures += root_failures
+        preserved += root_preserved
+    for line in preserved:
+        print(f"helper preflight: {line}")
     checked = len(roots) * len(helpers)
     ok = checked - len(failures)
     for f in failures:
@@ -271,7 +323,15 @@ def _install_root(root, helpers, backup_dir, multi):
         name, sid, ver = h.get("name"), h.get("id"), h.get("version")
         pin = h.get("treeSha256")
         src = HELPERS_DIR / name
-        dst = target_of(root, name)
+        # Converge the copy that is ALREADY installed, whichever naming convention
+        # this box uses; a fresh install uses the manifest name. Creating a second
+        # copy beside a real one would leave the first one stale.
+        _resolved_name, resolved_path = resolve_installed(root, h)
+        dst = resolved_path if resolved_path is not None else target_of(root, name)
+        for other_name, other_path in candidate_targets(root, h):
+            if other_path != dst and other_path.is_dir():
+                print(f"helper install: PRESERVED copy '{other_name}' at {other_path} "
+                      f"(kept as-is; {dst} is the one this run converges)")
         # 1. repository integrity: vendored copy must match its pin
         if not src.is_dir() or not has_skill_md(h, src):
             errors.append(

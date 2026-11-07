@@ -758,14 +758,25 @@ def installed_copy_rows(bundle: Bundle, claude_root):
         elif digest != skill.digest:
             rows.append(("FAIL", skill.name,
                          f"installed copy {digest} != shipped {skill.digest}{via}"))
+        elif skill.recorded_digest is None:
+            # No recorded digest: the install cannot be called current. This used to
+            # be a PASS carrying a note, which let "fully updated" be claimed while
+            # the record proved nothing about the bytes on the host.
+            rows.append(("UNDETERMINED", skill.name,
+                         f"installed copy digests to the shipped digest "
+                         f"{digest[:19]}...{via}, but {DIGESTS_PATH} records no digest for "
+                         f"it: an unrecorded installation is never verified"))
+        elif skill.recorded_digest != skill.digest:
+            # The record and the shipped tree disagree, so nothing here is proven:
+            # a divergence is a FAILURE, never a note beside a PASS.
+            rows.append(("FAIL", skill.name,
+                         f"recorded digest {skill.recorded_digest} differs from the shipped "
+                         f"digest {skill.digest}: the record and the artefact disagree, so "
+                         f"the installed copy at {target} is not verified{via}"))
         else:
-            note = ""
-            if skill.recorded_digest is not None and skill.recorded_digest != digest:
-                note = (f" (recorded {skill.recorded_digest} differs from the shipped "
-                        f"digest: hash parity on the checkout already fails)")
             rows.append(("PASS", skill.name,
                          f"installed copy digests to the shipped digest "
-                         f"{digest[:19]}...{via}{note}"))
+                         f"{digest[:19]}..., which equals the record{via}"))
     return rows, installed_digests
 
 def installed_order_row(bundle: Bundle, installed_digests):
@@ -915,6 +926,84 @@ def write_digest_record(bundle: Bundle, path=None) -> Path:
     return path
 
 
+def record_state(root) -> tuple:
+    """(state, detail) for the recorded-digest record. A stated absence is never a pass.
+
+    states: absent | unreadable | wrong-schema | empty | partial | complete
+
+    An EMPTY `skills` map and a PARTIAL one (an entry without a digest) both used to
+    read as "nothing to compare" and let the rest of a run pass, which is exactly how
+    an unrecorded installation was reported as current. They are named here instead.
+    """
+    path = Path(root) / DIGESTS_PATH
+    if not path.exists():
+        return "absent", f"no {DIGESTS_PATH}"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return "unreadable", f"{DIGESTS_PATH} is not readable JSON ({type(exc).__name__})"
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA_DIGESTS:
+        return "wrong-schema", f"{DIGESTS_PATH} schema is not {SCHEMA_DIGESTS!r}"
+    skills = data.get("skills")
+    if not isinstance(skills, dict) or not skills:
+        return "empty", f"{DIGESTS_PATH} records no skills"
+    missing = sorted(name for name, value in skills.items()
+                     if not (isinstance(value, str)
+                             or (isinstance(value, dict) and isinstance(value.get("digest"), str))))
+    if missing:
+        return "partial", (f"{DIGESTS_PATH} carries no digest for: {', '.join(missing)}")
+    return "complete", f"{DIGESTS_PATH} records {len(skills)} skill digest(s)"
+
+
+def preserved_copy_rows(bundle: Bundle, claude_root):
+    """Installed skill directories that this release's registry does not carry.
+
+    A real client install can hold trees this bundle never ships (a client-only
+    skill, a locally added one, the 999-only core files under their own name). They
+    are PRESERVED: reported by name, never deleted by any path here, and never
+    counted as updated. A release that does not carry them cannot call them current.
+    """
+    skills_dir = Path(claude_root) / _PATH_SKILLS
+    registered = set(bundle.registry)
+    rows = []
+    try:
+        entries = sorted(skills_dir.iterdir(), key=lambda p: p.name.encode("utf-8"))
+    except OSError:
+        return rows
+    for entry in entries:
+        if not entry.is_dir() or entry.name in registered:
+            continue
+        rows.append(("PRESERVED", entry.name,
+                     f"installed at {entry} but not in {REGISTRY_PATH}: kept as-is, "
+                     "never replaced and never reported as updated"))
+    return rows
+
+
+def install_report(rows, missing=(), record=None) -> dict:
+    """The explicit install verdict: preserved / conflicting / missing / blocked / updated.
+
+    Nothing is folded together: a preserved tree is not an updated one, a blocked
+    tree is not a missing one, and `fully_updated` is true only when every installed
+    skill is proven current and nothing is preserved, conflicting, missing or blocked.
+    """
+    def names(status):
+        # `order` is the distribution receipt row, not a skill installation.
+        return [row[1] for row in rows if row[0] == status and row[1] != "order"]
+    report = {
+        "preserved": names("PRESERVED"),
+        "conflicting": names("FAIL"),
+        "missing": sorted(missing),
+        "blocked": names("UNDETERMINED"),
+        "updated": names("PASS"),
+    }
+    if record:
+        report["record"] = list(record)
+    report["fully_updated"] = bool(
+        report["updated"] and not (report["preserved"] or report["conflicting"]
+                                   or report["missing"] or report["blocked"]))
+    return report
+
+
 def run_checks(bundle: Bundle):
     lines = []
     counters = {"passed": 0, "failed": 0, "undetermined": 0, "drift": 0}
@@ -941,8 +1030,11 @@ def run_checks(bundle: Bundle):
                f"components={len(bundle.components)} repo_version={bundle.repo_version}")
     else:
         undetermined("bundle-load repo_version=None - VERSION unreadable or not a version")
-    if not bundle.recorded:
-        undetermined(f"bundle-load no recorded digests in {DIGESTS_PATH} - "
+    rec_state, rec_detail = record_state(bundle.root)
+    if rec_state != "complete":
+        # Absent, empty, partial and unreadable are all NOT a pass, and each is
+        # named: an empty skill map used to read as "nothing to compare".
+        undetermined(f"bundle-load recorded digests are {rec_state} ({rec_detail}) - "
                      "content parity cannot be proven")
 
     # 2. hash-parity: recorded digest == digest built now
@@ -1149,18 +1241,31 @@ def main(argv=None) -> int:
             return RC_UNDETERMINED
         rows, installed_digests = installed_copy_rows(bundle, args.claude_root)
         rows.append(installed_order_row(bundle, installed_digests))
-        counts = {"PASS": 0, "FAIL": 0, "UNDETERMINED": 0}
-        for status, name, detail in rows:
-            counts[status] += 1
+        preserved = preserved_copy_rows(bundle, args.claude_root)
+        rows += preserved
+        missing = [skill.name for skill in bundle.skills
+                   if not _installed_target(args.claude_root, skill.name).exists()
+                   and not _installed_target(args.claude_root, skill.name).is_symlink()]
+        state, detail = record_state(bundle.root)
+        report = install_report(rows, missing=missing, record=(state, detail))
+        counts = {"PASS": 0, "FAIL": 0, "UNDETERMINED": 0, "PRESERVED": 0}
+        for status, name, extra in rows:
+            counts[status] = counts.get(status, 0) + 1
         if args.json:
             print(json.dumps({"rows": [{"status": s, "name": n, "detail": d}
                                        for s, n, d in rows],
-                              "summary": counts}, indent=2))
+                              "summary": counts,
+                              "install_report": report}, indent=2))
         else:
-            for status, name, detail in rows:
-                print(f"{status} install-copy {name} {detail}")
-            print(f"SUMMARY: {counts['PASS']} passed, {counts['FAIL']} failed, "
-                  f"{counts['UNDETERMINED']} undetermined (undetermined are NOT passes)")
+            for status, name, extra in rows:
+                print(f"{status} install-copy {name} {extra}")
+            print(f"record: {state} — {detail}")
+            print(f"SUMMARY: {len(report['updated'])} updated, {counts['FAIL']} conflicting, "
+                  f"{counts['UNDETERMINED']} blocked/undetermined, "
+                  f"{counts.get('PRESERVED', 0)} preserved, {len(missing)} missing "
+                  f"(undetermined and preserved are NOT passes; a preserved tree is "
+                  f"never reported as updated)")
+            print(f"fully_updated: {str(report['fully_updated']).lower()}")
         if counts["FAIL"]:
             return RC_FAIL
         if counts["UNDETERMINED"]:
