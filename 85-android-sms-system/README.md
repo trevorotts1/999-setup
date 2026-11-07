@@ -1,15 +1,25 @@
-# 85 — Android SMS System
+# Skill 85 — Android SMS System
 
-Answers myCRMSIM (CRM SIM) support questions from its offline documentation set — Android gateway install, SIM assignment, SMS/WhatsApp/iMessage/RCS, CRM integrations and troubleshooting.
+Answers myCRMSIM (CRM SIM) support questions from its 156-article offline documentation set: Android SMS gateway setup, SIM assignment, SMS/iMessage/WhatsApp/RCS, calling, CRM integrations and troubleshooting.
 
-Serves **claude-nine** (Claude Code routed through 9Router) and plain **Claude Code**. Optional: install it only on boxes that answer myCRMSIM questions.
+Optional — install only where myCRMSIM is used; it does nothing on boxes that do not run myCRMSIM.
 
-The documentation set is **not vendored** — fetch it per box to `~/Downloads/openclaw-master-files/mycrmsim/` (156 articles plus `00-INDEX.md`), then point `ASMS_DOCS_DIR` at it. Image link lines in the articles are expected to dangle; images are not shipped.
+The documentation set is NOT vendored here. Fetch the 156-article `mycrmsim` set
+on each box and keep it outside the repo. The skill resolves the docs root in
+this order, first match wins:
 
-Discovery runs through the Claude Code skills path, so link this directory into `~/.claude/skills/`:
+1. `$ASMS_DOCS_DIR`, when set
+2. `docs/` beside `SKILL.md`
+3. `$HOME/Downloads/openclaw-master-files/mycrmsim`
 
+On a VPS put it under `/data/.openclaw/docs/` — only that tree survives a
+rebuild — and point `$ASMS_DOCS_DIR` at it. Images are intentionally absent; the
+skill runs text-only.
+
+Install (from the onboarding repo root):
+
+```bash
+cp -R skills/85-android-sms-system ~/.openclaw/skills/
 ```
-ln -sfn ~/999-setup/85-android-sms-system ~/.claude/skills/85-android-sms-system
-```
 
-Verify with `./qc-android-sms-system.sh`.
+Verify: `bash ~/.openclaw/skills/85-android-sms-system/qc-android-sms-system.sh`
