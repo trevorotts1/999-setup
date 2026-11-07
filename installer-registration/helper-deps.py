@@ -7,7 +7,10 @@ Pinned versions and sha256 hashes live in helper-dependencies.json.
 
   install    verify the vendored helpers against the pins, copy each one into
              <config root>/skills/<name> (an existing different copy is backed
-             up externally first, never deleted), then run preflight. One run
+             up externally first, never deleted), then run preflight. A "files"
+             helper owns only its pinned files inside a shared tree it does not
+             own, so it is MERGED into that tree and never replaces it; a linked
+             destination is never written through. One run
              covers EVERY config root the machine has: with no --root and no
              CLAUDE_CONFIG_DIR that is both ~/.claude and ~/.claude-nine when
              both exist, so plain claude and claude-nine receive the same set.
@@ -220,6 +223,27 @@ def _preflight_root(root, roots, helpers):
                 f"(AGENT_INSTALL.md section 5), then rerun this preflight."
                 f"{suffix}")
             continue
+        if helper_kind(h) == "files":
+            # A "files" helper is MERGED into a shared tree it does not own, so the
+            # tree hash of that destination is not this helper's pin and extra files
+            # beside the pinned ones are expected, not damage. Each pinned file is
+            # judged on its own: presence and its own sha256.
+            for row in h.get("files") or []:
+                path = dst / row["path"]
+                if not path.is_file():
+                    failures.append(
+                        f"MISSING file '{row['path']}' of helper '{name}' "
+                        f"(Skill {sid}, {ver}): expected {path}. Repair: run "
+                        f"`{repair}`.{suffix}")
+                    continue
+                got = sha256_file(path)
+                if row.get("sha256") and got != row["sha256"]:
+                    failures.append(
+                        f"HASH MISMATCH file '{row['path']}' of helper '{name}' "
+                        f"(Skill {sid}, {ver}): expected {row['sha256']}, found "
+                        f"{got} at {path}. Repair: run `{repair}` to restore the "
+                        f"pinned copy.{suffix}")
+            continue
         got = tree_hash(dst)
         if got != pin:
             failures.append(
@@ -286,6 +310,44 @@ def _install_root(root, helpers, backup_dir, multi):
                 f"pin {pin}, vendored {src_hash}. Repair: inspect the change; if "
                 f"intended, rerun `{script_ref()} repin` and commit the "
                 f"manifest.{suffix}")
+            continue
+        # 1b. a "files" helper is MERGED into the shared tree, never swapped in for it.
+        # The destination holds the whole runtime (client_intake, signature_launch,
+        # signature_launch_contract, ...) and this helper owns only its pinned files;
+        # replacing the tree with the KIE subset deleted those modules on every box
+        # that ran an install (F13). A linked destination is never written through:
+        # the link already supplies the runtime, so the pinned files must be visible
+        # through it and that is all this tool checks.
+        if helper_kind(h) == "files":
+            rows = h.get("files") or []
+            if dst.is_symlink():
+                missing = [r["path"] for r in rows if not (dst / r["path"]).is_file()]
+                if missing:
+                    errors.append(
+                        f"LINKED DESTINATION helper '{name}' (Skill {sid}): {dst} "
+                        f"is a link and does not expose {missing}. Repair: add "
+                        f"those files to the linked tree, or point "
+                        f"{dst.parent} at a copied install; this tool never writes "
+                        f"through a link.{suffix}")
+                    continue
+                print(f"helper install: {name} {ver} -> {dst} "
+                      f"(linked; pinned files visible)")
+                continue
+            stale = [r["path"] for r in rows
+                     if not (dst / r["path"]).is_file()
+                     or (r.get("sha256")
+                         and sha256_file(dst / r["path"]) != r["sha256"])]
+            try:
+                dst.mkdir(parents=True, exist_ok=True)
+                for row in rows:
+                    target = dst / row["path"]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(src / row["path"], target)
+            except Exception as e:
+                errors.append(f"INSTALL FAILED helper '{name}': {e}{suffix}")
+                continue
+            print(f"helper install: {name} {ver} -> {dst} "
+                  f"({'merged' if stale else 'up to date'})")
             continue
         # 2. converge the install target
         try:
