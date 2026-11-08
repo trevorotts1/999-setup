@@ -15,7 +15,11 @@ Fails (exit 1) when any of these is true:
     to its own pin (the manifest and the folder drifted apart);
   * a KIE vendor skill (kie-models, kie-chat-agents) is declared in the
     manifest or shipped as a vendored folder — rule 14, they are never
-    installed.
+    installed;
+  * a file listed in NINE_DIVERGENT does not equal this repository's own
+    shared-utils/ copy, no longer carries its declared reason token, or no
+    longer exists upstream (a rename must retire the declaration). Those rows
+    are per file and do not relax any other pin.
 
 Exit 0 = every pin current and every vendored tree matching its pin.
 Exit 2 = usage or an unreadable input (never reported as "current").
@@ -166,6 +170,76 @@ def repo_rel(source_path):
 # ever carry these names.
 VENDOR_SKILLS_BANNED = ("kie-models", "kie-chat-agents")
 
+# Declared 999-edition divergences from openclaw-onboarding origin/main.
+#
+# Each entry names ONE pinned file, the owner order that makes 999 differ, and a
+# token the 999 copy must still carry. For these paths ONLY the pin is proved
+# against this repository's own copy (`shared-utils/<path>`): the vendored bytes
+# must equal what 999 actually runs, the token must still be there, and the same
+# path must still exist in onboarding (so a renamed upstream file retires the
+# declaration instead of hiding it). Every other pin is still judged against
+# onboarding, so this can never hide a stale pin — and repin still computes
+# every hash from the tree, so no expected hash is ever hand-written.
+NINE_DIVERGENT = {
+    "client_intake/engine.py": (
+        "owner order 2026-11-08 retires the client-facing account-entitlement question",
+        'CITED_QUESTIONS = ("price", "packages", "deliverables", "funnel_shape")'),
+    "client_intake/launcher_intake.py": (
+        "owner order 2026-11-08: no entitlement attestation is required from the client",
+        "AF-LAUNCH-ANSWERS-APPROVAL"),
+    "client_intake/question-bank.json": (
+        "owner order 2026-11-08: the account-entitlement question is not offered",
+        '"checkout_terms"'),
+    "client_intake/tests/test_client_intake.py": (
+        "owner order 2026-11-08: the never-default list no longer names entitlement",
+        "test_never_default_list_matches_the_rules"),
+    "client_intake/tests/test_engine_money_and_levels.py": (
+        "owner order 2026-11-08: no entitlement answer exists to cite",
+        "test_a_commercial_answer_without_a_ref_is_refused"),
+    "client_intake/tests/test_launcher_intake.py": (
+        "owner order 2026-11-08: the intake no longer takes an entitlement answer",
+        "test_missing_approval_is_refused"),
+    "signature_launch/launch_events.py": (
+        "F23 governed launch evidence: run identity and delivery-failure spooling",
+        "LAUNCH_EVENTS_INSTALLATION_ID"),
+    "signature_launch/tests/test_launch_events.py": (
+        "F23 governed launch evidence: the F23 coverage this repository authors",
+        "class LaunchEventsF23Test"),
+    "signature_launch/tests/test_reports_bound_to_manifest.py": (
+        "owner order 2026-11-08: no offline entitlement read-back to install",
+        "test_only_readback"),
+}
+
+
+def _check_declared_divergent(name, rel, vendored, onb, f):
+    """Prove one declared divergence: local copy, token, upstream path."""
+    why, token = NINE_DIVERGENT[rel]
+    local = HERE.parent / "shared-utils" / rel
+    failures = []
+    if not local.is_file():
+        return [f"{name}: DECLARED DIVERGENT {rel} is missing from this "
+                f"repository's shared-utils/{rel} ({why})"]
+    if (vendored / rel).read_bytes() != local.read_bytes():
+        failures.append(
+            f"{name}: DECLARED DIVERGENT {rel} does not match this "
+            f"repository's shared-utils/{rel}; the vendored copy must be what "
+            f"999 runs ({why})")
+        return failures
+    try:
+        onb.read(f["sourcePath"])
+    except FileNotFoundError:
+        failures.append(
+            f"{name}: DECLARED DIVERGENT {rel} no longer exists in "
+            f"openclaw-onboarding at {onb.ref}; retire this declaration")
+        return failures
+    if token not in local.read_text(encoding="utf-8", errors="replace"):
+        failures.append(
+            f"{name}: DECLARED DIVERGENT {rel} no longer carries its declared "
+            f"reason token {token!r}; the divergence is not the declared one "
+            f"({why})")
+    return failures
+
+
 
 def check_vendor_skills(manifest, helpers_dir):
     """Fail if a banned vendor skill is declared or shipped (U1-b)."""
@@ -241,6 +315,10 @@ def check(manifest_path, helpers_dir, onb):
                         f"folder: {rel} (installer-registration/helpers/"
                         f"{name}/{rel})")
             for rel, f in declared.items():
+                if rel in NINE_DIVERGENT:
+                    failures.extend(_check_declared_divergent(
+                        name, rel, vendored, onb, f))
+                    continue
                 try:
                     blob = onb.read(f["sourcePath"])
                 except FileNotFoundError:
@@ -307,7 +385,10 @@ def main(argv=None):
               f"checked against openclaw-onboarding@{a.ref}.")
         return 1
     print(f"helper pins: ok — every pin equals openclaw-onboarding@{a.ref} "
-          f"and every vendored helper folder matches its pin.")
+          f"and every vendored helper folder matches its pin"
+          + (f" ({len(NINE_DIVERGENT)} file(s) are declared 999 divergences, "
+             f"proved against this repository's shared-utils/ and their reason "
+             f"token instead)" if NINE_DIVERGENT else "") + ".")
     return 0
 
 

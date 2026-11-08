@@ -117,11 +117,20 @@ step "2. a pin older than openclaw-onboarding fails the guard (skill helper)"
 if build_fixture "$TMP/base"; then
   cp -R "$TMP/base" "$TMP/stale-skill"
   printf 'v99.0.0\n' > "$TMP/stale-skill/67-kie-video/skill-version.txt"
+  # The expectation is the pin the manifest actually carries, read from the
+  # manifest itself: a literal here goes stale on every re-mint and then this
+  # self-test fails for the wrong reason.
+  pinned_67="$("$PY" - "$MANIFEST" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+print(next(h["version"] for h in m["helpers"] if h.get("name") == "67-kie-video"))
+PY
+)"
   run_guard 1 "guard fails when 67-kie-video has moved forward upstream" \
     --onboarding "$TMP/stale-skill" --ref HEAD \
     --manifest "$MANIFEST" --helpers "$HELPERS"
   expect_line "67-kie-video: STALE PIN" "stale skill helper is named"
-  expect_line "v2.1.3" "the pinned version is reported next to the new one"
+  expect_line "$pinned_67" "the pinned version ($pinned_67) is reported next to the new one"
 else
   bad "could not build an onboarding fixture from $ONB origin/main"
 fi
