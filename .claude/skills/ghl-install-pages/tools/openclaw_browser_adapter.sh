@@ -7,23 +7,87 @@
 # harness — there is no OpenClaw managed browser here, and the capability
 # probe (tools/capability_probe.py) reports the lane structurally absent.
 # Every verb in this adapter therefore refuses with exit 75 and the harness
-# reason, BEFORE any CLI or capability check. The verb vocabulary and the
-# `openclaw browser` translation below are retained verbatim as the
-# documented mapping: if a future plan amendment lands a managed-browser
-# lane in this harness, the harness gate at main() is the only block that
-# changes. Skill 6's working lane in this harness is Lane 1, agent-browser
-# via browser_manager.sh, exactly as the pack ADAPTER.md seam 1 binds.
+# reason, BEFORE any CLI or capability check. The verb vocabulary, the
+# `openclaw browser` translation and the completion contract below are
+# retained verbatim as the documented mapping: if a future plan amendment
+# lands a managed-browser lane in this harness, the harness gate at main() is
+# the only block that changes. Skill 6's working lane in this harness is
+# Lane 1, agent-browser via browser_manager.sh, exactly as the pack
+# ADAPTER.md seam 1 binds. Do not remove that pin (0.27.0), do not reach for
+# playwright_direct before agent-browser, and do not force this harness and
+# the OpenClaw fleet harness onto one engine.
 #
-# LANE POLICY (999 harness, load-bearing — read before wiring): the OpenClaw
-# managed-browser lane is NOT part of the Claude Code harness. The capability
-# probe (tools/capability_probe.py) reports it structurally absent and never
-# probes an `openclaw` binary here, and the harness gate in main() refuses
-# EVERY verb (exit 75) before any CLI or capability-JSON check. The verb table
-# below is retained as the documented mapping for a future plan amendment; it
-# is not a reachable lane today. Skill 6's browser lanes in this harness are
-# Lane 1 agent-browser via browser_manager.sh (pin 0.27.0), then
-# playwright_direct when agent-browser is absent. Do not remove that pin, and
-# do not force this harness and the OpenClaw fleet harness onto one engine.
+# RECONCILIATION (BFX-101): this file is the F11 refinement 451d98b2b, not the
+# earlier 433-line reduction c66d87ed2. Both versions refuse every verb with
+# the SAME Gate 0 exit-75 harness guard; the later version adds the adapter
+# flags, the receipt writer (_ocb_write_receipt), the completion classifier
+# (_ocb_completion_status), the per-operation route check and stop's refusal
+# of close-all. The 999-harness sentences above are carried over from the
+# reduction so nothing that was only on this branch is lost.
+#
+# RECONCILIATION (BFX-103): the integration-side prose — the LANE POLICY
+# paragraph, the usage() preamble and the exit-75 line — was RESTORED alongside
+# the F11 contract, not in place of it. The two are not contradictory: the F11
+# BEHAVIOUR is the newer one, and the integration prose is what this 999 harness
+# form actually does (Gate 0 refuses every verb; cliWorks is never consulted).
+# Neither replaces the other, and the contract code is untouched.
+#
+# LANE POLICY (load-bearing — read before wiring): this file has two forms and
+# the gate differs between them, so read BOTH before wiring.
+#
+# THIS form (999 harness, claude-nine): the OpenClaw managed-browser lane is NOT
+# part of the Claude Code harness. The capability probe
+# (tools/capability_probe.py) reports it structurally absent and never probes an
+# `openclaw` binary here, and GATE 0 in main() refuses EVERY verb (exit 75)
+# BEFORE any CLI or capability-JSON check. `cliWorks` is never consulted in this
+# form — no flag and no capability JSON can reach a verb — so none of the
+# contract code below is live here. The verb table is the documented mapping
+# retained for a future plan amendment; it is not a reachable lane today.
+#
+# FLEET form (a harness that DOES carry the lane): Gate 0 is the only block that
+# changes. There the capability probe is the sole decider — this adapter runs
+# only when the probe has selected the `openclaw_managed_browser` lane, and even
+# then it REFUSES (exit 75) unless `lanes.openclaw_managed_browser.cliWorks` is
+# `true` in the capability JSON. The completion contract below runs only in that
+# form.
+#
+# In BOTH forms Lane 2 is an EXPERIMENTAL UPGRADE ONLY and is NEVER selected by
+# default. The PRIMARY lane stays agent-browser via browser_manager.sh (pin
+# 0.27.0), then playwright_direct; do not remove that pin until Lane 2 is proven
+# equivalent on real GHL builds (plan Part 7), and do not force this harness and
+# the OpenClaw fleet harness onto one engine.
+#
+# COMPLETION CONTRACT (W3 connection 7 — no prerequisite rung may report done)
+# ---------------------------------------------------------------------------
+# A verb running successfully is NOT the requested operation being done. This
+# adapter therefore separates the two in every receipt it writes:
+#
+#   prerequisite_ready  the verb ran (page opened, snapshot taken, element
+#                       clicked). Progress. NEVER a completion.
+#   operation_complete  the SAME operation named by --operation is COMPLETE.
+#                       Emitted only when ALL of these hold:
+#                         * --operation ID and --location ID were supplied
+#                         * the capability receipt carries a per-operation
+#                           browser route for this box
+#                           (operationCapabilities.scope ==
+#                            "per-operation+per-connected-location" with a
+#                            non-empty browser route list)
+#                         * --expect-token TOKEN was supplied and the CLI's own
+#                           output contained that token verbatim (the local,
+#                           falsifiable proof that the operation's result
+#                           appeared — not a caller assertion)
+#                         * the CLI exit code was 0
+#                         * for a verb that uses DOM refs (click/type) the refs
+#                           were refreshed for THIS invocation
+#                           (--refresh-snapshot; refs are never inherited from
+#                           a session the adapter merely assumes is shared)
+#                       Anything less writes operation_complete=false with the
+#                       reason, and status "prerequisite_ready" or "failed".
+#
+# CLEANUP: `stop` closes ONLY the current managed tab and records it as
+# released; `close --all` (which would close the user's unrelated tabs) is
+# REFUSED. Every receipt carries owned_sessions + cleanup so the caller can
+# prove nothing the task created was left running.
 #
 # WHY AN ADAPTER: Skill 6's builder speaks a small verb vocabulary (status /
 # start / open / snapshot / click / type / frame-snapshot / stop). This file is
@@ -41,26 +105,38 @@
 # browser in --selftest: every selftest invocation runs either against a
 # PATH stripped of the openclaw CLI or against a tiny argv-echoing STUB, so
 # no real browser process can ever start from a selftest. No secrets are
-# read or printed. Nothing is written outside /tmp (mktemp in selftest only).
+# read or printed. Nothing is written outside mktemp (selftest/receipt only).
 #
 # PORTABILITY: bash-3.2-safe for the Mac fleet half — no `mapfile`, no
 # `declare -A`, no `${var,,}`; POSIX grep. `set -u` is fine; `set -e` is
 # deliberately NOT used (explicit return-code checks only, matching
-# browser_manager.sh which must survive being sourced).
+# browser_manager.sh which must survive being sourced). Indexed arrays ARE
+# bash-3.2-safe and are used for the pass-through argument list.
 #
 # EXIT CODES (pick + document, per the browser_manager convention):
 #   0   success (verb ran; openclaw's own exit code passes through)
 #   64  usage error (unknown verb / missing argument) OR openclaw CLI absent
-#   75  harness refusal — the managed-browser lane is not part of this harness
-#       (this is the normal, expected outcome for every verb in 999); or, on a
-#       harness that does carry the lane, a capability gate refusal (capability
-#       JSON missing/unreadable, python3 missing, or cliWorks not true)
+#   75  in THIS 999 harness form: harness refusal — the managed-browser lane is
+#       not part of this harness, and every verb takes this exit before any CLI
+#       or capability check. This is the normal, expected outcome for every verb
+#       here. In a harness that DOES carry the lane: a capability gate refusal
+#       (capability JSON missing/unreadable, python3 missing, or
+#       lanes.openclaw_managed_browser.cliWorks not true)
 #   (a real `timeout` kill surfaces as the timeout binary's own code)
 #
 # USAGE:
-#   bash openclaw_browser_adapter.sh <verb> [args...]
+#   bash openclaw_browser_adapter.sh <verb> [adapter flags] [--] [args...]
 #   bash openclaw_browser_adapter.sh --selftest
 #   bash openclaw_browser_adapter.sh --help
+#
+# ADAPTER FLAGS (stripped before the openclaw args; safe on every verb):
+#   --operation ID       the operation this invocation serves (receipt)
+#   --location ID        the connected location for that operation (receipt)
+#   --receipt PATH       write the completion receipt JSON to PATH
+#   --expect-token TEXT  local completion proof: TEXT must appear in the CLI's
+#                        own output; without it operation_complete is never true
+#   --refresh-snapshot   take a fresh snapshot before click/type so the refs are
+#                        this invocation's, never an assumed shared session
 #
 # VERBS (mapping per plan Appendix A + live `openclaw browser --help`; EVERY
 # browser command carries `--browser-profile "$OCB_PROFILE"`, shown as the
@@ -78,7 +154,8 @@
 #                                 (closes the current managed tab, per the P1-12
 #                                 contract; the CLI's process-level `stop` is
 #                                 intentionally NOT mapped — closing the tab is
-#                                 the Skill 6 teardown unit)
+#                                 the Skill 6 teardown unit. `close --all` is
+#                                 refused: it would close unrelated tabs.)
 #
 # ENV (all optional):
 #   GHL_SKILL6_CAPABILITY_JSON  capability JSON path
@@ -92,7 +169,7 @@
 
 set -u
 
-OCB_ADAPTER_VERSION="v0.1.0"
+OCB_ADAPTER_VERSION="v0.2.0"
 
 # Resolve the skill dir (this file lives in <skill>/tools/).
 _OCB_SELF_PATH="$0"
@@ -108,15 +185,39 @@ OCB_PROFILE="${OCB_PROFILE:-openclaw}"
 OCB_CALL_TIMEOUT="${OCB_CALL_TIMEOUT:-120}"
 OCB_SNAPSHOT_MODE="${GHL_SKILL6_SNAPSHOT_MODE:-efficient}"
 
+# Adapter-flag state, filled by _ocb_parse_flags on every real verb.
+_OCB_OPERATION=""
+_OCB_LOCATION=""
+_OCB_RECEIPT=""
+_OCB_EXPECT_TOKEN=""
+_OCB_REFRESH=0
+_OCB_ARGS=()
+
 usage() {
   cat <<'USAGE'
-openclaw_browser_adapter.sh — managed-browser mapping for Skill 6 builder verbs (NOT a lane in this harness).
+openclaw_browser_adapter.sh — Lane 2 adapter: Skill 6 builder verbs -> OpenClaw managed browser (`openclaw browser`).
 
-This harness (Claude Code / claude-nine) has no OpenClaw managed browser: the probe
-reports the lane structurally absent and every verb refuses with exit 75 and the
-harness reason, before any CLI or capability-JSON check. The verb table is the
-documented mapping retained for a future amendment. Skill 6's browser lanes here are
-agent-browser via browser_manager.sh (pin 0.27.0), then playwright_direct.
+THIS harness form (999 / claude-nine) has no OpenClaw managed browser: the capability
+probe (tools/capability_probe.py) reports the lane structurally absent, and GATE 0
+refuses EVERY verb with exit 75 and the harness reason BEFORE any CLI or
+capability-JSON check. No flag, and no capability JSON — not even cliWorks:true —
+can reach a verb here. The verb table and completion contract below are the
+documented mapping that runs when this file is deployed in a harness that DOES
+carry the lane (the OpenClaw fleet form): there the capability probe decides the
+lane and cliWorks gates it, and Lane 2 is an EXPERIMENTAL UPGRADE ONLY — never
+selected by default. Skill 6's browser lanes in THIS harness are agent-browser via
+browser_manager.sh (pin 0.27.0), then playwright_direct.
+
+SYNOPSIS
+  openclaw_browser_adapter.sh <verb> [adapter flags] [--] [args...]
+
+ADAPTER FLAGS (stripped before the openclaw args)
+  --operation ID       operation this invocation serves (receipt identity)
+  --location ID        connected location for that operation (receipt identity)
+  --receipt PATH       write the completion receipt JSON to PATH
+  --expect-token TEXT  local proof the operation's result appeared; without it
+                       operation_complete is never reported true
+  --refresh-snapshot   fresh snapshot before click/type (refs are never inherited)
 
 VERBS (each carries `--browser-profile "$OCB_PROFILE"`; shown as openclaw default):
   status                     openclaw browser --browser-profile openclaw status
@@ -127,7 +228,12 @@ VERBS (each carries `--browser-profile "$OCB_PROFILE"`; shown as openclaw defaul
   frame-snapshot SEL [opts]  openclaw browser --browser-profile openclaw snapshot --interactive --frame SEL
   click REF                  openclaw browser --browser-profile openclaw click REF
   type REF TEXT              openclaw browser --browser-profile openclaw type REF TEXT
-  stop                       openclaw browser --browser-profile openclaw close  (closes the managed tab)
+  stop                       openclaw browser --browser-profile openclaw close  (closes the managed tab; --all refused)
+
+COMPLETION
+  A verb that ran is prerequisite_ready, never operation_complete. Completion needs
+  --operation + --location + a per-operation browser route in the capability receipt
+  + --expect-token found in the CLI output + exit 0 (+ refreshed refs for click/type).
 
 FLAGS:
   --selftest                 offline self-test (no openclaw CLI, no browser, no network needed)
@@ -140,7 +246,11 @@ ENV:
   GHL_SKILL6_SNAPSHOT_MODE    "efficient" (default) adds --efficient; anything else omits it
 
 EXIT CODES:
-  0 success; 64 usage error / openclaw CLI absent; 75 capability gate refusal.
+  0 success; 64 usage error / openclaw CLI absent.
+  75 in THIS 999 harness form: harness refusal for EVERY verb, before any CLI or
+     capability check (the lane is not part of this harness). In a harness that
+     carries the lane: capability gate refusal (JSON missing or unreadable,
+     python3 missing, or cliWorks not true).
 USAGE
 }
 
@@ -150,13 +260,12 @@ _ocb_usage_refuse() {
   exit 64
 }
 
-# ── GATE 0: harness gate (999) — the managed-browser lane is absent here ─────
+# ── GATE 0: harness gate (999) — Lane 2 is not part of this harness ──────────
 # Runs FIRST on every verb (after --help/--version/--selftest). Exit 75, the
-# same code the lane's capability gate uses: the lane is not refused for a
-# missing file or a false flag, it is refused because the lane does not exist
-# in this harness.
+# capability-refusal code: the lane is not refused for a missing file or a
+# false flag, it is refused because the lane does not exist here.
 require_harness_lane() {
-  echo "REFUSE: the OpenClaw managed-browser lane is not part of the Claude Code" >&2
+  echo "REFUSE: Lane 2 (openclaw_managed_browser) is not part of the Claude Code" >&2
   echo "harness (claude-nine): there is no OpenClaw managed browser here, and the" >&2
   echo "capability probe reports the lane structurally absent. Skill 6's browser" >&2
   echo "lanes in this harness are agent-browser via browser_manager.sh (pin 0.27.0)," >&2
@@ -168,8 +277,8 @@ require_harness_lane() {
 require_ocb_cli() {
   if ! command -v "$OCB_BIN_NAME" >/dev/null 2>&1; then
     echo "REFUSE: openclaw CLI not found on PATH (command -v $OCB_BIN_NAME failed)." >&2
-    echo "The managed-browser lane needs the openclaw CLI; the agent-browser lanes" >&2
-    echo "in this harness (browser_manager.sh / playwright_direct) do not. Aborting." >&2
+    echo "Lane 2 (openclaw_managed_browser) needs the openclaw CLI; Skill 6 PRIMARY" >&2
+    echo "(agent-browser via browser_manager.sh) does not. Aborting." >&2
     exit 64
   fi
 }
@@ -184,6 +293,24 @@ try:
         d = json.load(f)
     lane = d.get("lanes", {}).get("openclaw_managed_browser", {})
     print("True" if lane.get("cliWorks") is True else "False")
+except Exception:
+    print("Error")'
+
+# Per-operation route check (W3 connection 7): a box-level `cliWorks` proves a
+# LANE, not an operation. A per-operation completion also needs the probe's
+# per-operation+per-location browser route record. Fail CLOSED: absent record,
+# wrong scope, or an empty route list answers False (prerequisite only).
+_ocb_route_py='import json, sys
+try:
+    with open(sys.argv[1], "r") as f:
+        d = json.load(f)
+    caps = d.get("operationCapabilities") or {}
+    browser = (caps.get("transports") or {}).get("browser") or {}
+    routes = browser.get("routes") or []
+    scope = caps.get("scope")
+    ok = (scope == "per-operation+per-connected-location"
+          and isinstance(routes, list) and len(routes) > 0)
+    print("True" if ok else "False")
 except Exception:
     print("Error")'
 
@@ -210,6 +337,15 @@ require_capability() {
       exit 75
       ;;
   esac
+}
+
+# _ocb_route_available — True | False | Error. Never a completion by itself.
+_ocb_route_available() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s' "Error"
+    return 0
+  fi
+  python3 -c "$_ocb_route_py" "$CAPABILITY_JSON" 2>/dev/null || printf '%s' "Error"
 }
 
 # ── Runner: direct binary name (never `command` under `timeout` — see the
@@ -242,6 +378,201 @@ run_snapshot() {
   ocb_browser snapshot "$@"
 }
 
+# ── Flag parsing (bash-3.2-safe indexed array; -- separates verb args) ───────
+# Adapter flags are stripped wherever they appear so a caller can put them before
+# or after the verb's own arguments. EVERYTHING else passes through verbatim.
+_ocb_parse_flags() {
+  _OCB_OPERATION=""
+  _OCB_LOCATION=""
+  _OCB_RECEIPT=""
+  _OCB_EXPECT_TOKEN=""
+  _OCB_REFRESH=0
+  _OCB_ARGS=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --operation)
+        [ "$#" -ge 2 ] || _ocb_usage_refuse "--operation requires an operation id."
+        _OCB_OPERATION="$2"; shift 2 ;;
+      --location)
+        [ "$#" -ge 2 ] || _ocb_usage_refuse "--location requires a location id."
+        _OCB_LOCATION="$2"; shift 2 ;;
+      --receipt)
+        [ "$#" -ge 2 ] || _ocb_usage_refuse "--receipt requires a path."
+        _OCB_RECEIPT="$2"; shift 2 ;;
+      --expect-token)
+        [ "$#" -ge 2 ] || _ocb_usage_refuse "--expect-token requires a token."
+        _OCB_EXPECT_TOKEN="$2"; shift 2 ;;
+      --refresh-snapshot)
+        _OCB_REFRESH=1; shift ;;
+      --)
+        shift
+        while [ "$#" -gt 0 ]; do
+          _OCB_ARGS[${#_OCB_ARGS[@]}]="$1"; shift
+        done ;;
+      *)
+        _OCB_ARGS[${#_OCB_ARGS[@]}]="$1"; shift ;;
+    esac
+  done
+  # The stripped verb args are handed back in _OCB_ARGS. main() re-binds its
+  # OWN positional parameters from that array: `set --` here would only change
+  # this function's parameters and let the adapter flags leak to the CLI.
+}
+
+# ── Receipt (the ONLY place a completion may be claimed) ─────────────────────
+# _ocb_write_receipt VERB EXIT_CODE STATUS REASON
+#   STATUS: operation_complete | prerequisite_ready | failed
+_ocb_json_escape() {
+  printf '%s' "$1" | tr '\t\r\n' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+_ocb_write_receipt() {
+  _ocb_r_verb="$1"
+  _ocb_r_rc="$2"
+  _ocb_r_status="$3"
+  _ocb_r_reason="$4"
+  [ -n "$_OCB_RECEIPT" ] || return 0
+  _ocb_complete=0
+  [ "$_ocb_r_status" = "operation_complete" ] && _ocb_complete=1
+  _ocb_prereq=0
+  [ "$_ocb_r_status" = "prerequisite_ready" ] && _ocb_prereq=1
+  _ocb_ok=0
+  [ "$_ocb_r_rc" = "0" ] && _ocb_ok=1
+  _ocb_refs=1
+  case "$_ocb_r_verb" in
+    click|type) [ "$_OCB_REFRESH" = "1" ] && _ocb_refs=1 || _ocb_refs=0 ;;
+  esac
+  _ocb_owned="\"tab:$( _ocb_json_escape "$OCB_PROFILE" )\""
+  _ocb_cleanup="{\"released\": [], \"closed_all\": false}"
+  if [ "$_ocb_r_verb" = "stop" ]; then
+    _ocb_cleanup="{\"released\": [$_ocb_owned], \"closed_all\": false}"
+  fi
+  mkdir -p "$(dirname "$_OCB_RECEIPT")" 2>/dev/null
+  printf '{\n  "operation": "%s",\n  "locationId": "%s",\n  "verb": "%s",\n  "ok": %s,\n  "exitCode": %s,\n  "status": "%s",\n  "operation_complete": %s,\n  "prerequisite_ready": %s,\n  "partial": false,\n  "references_fresh": %s,\n  "owned_sessions": [%s],\n  "cleanup": %s,\n  "reason": "%s",\n  "adapterVersion": "%s"\n}\n' \
+    "$( _ocb_json_escape "$_OCB_OPERATION" )" \
+    "$( _ocb_json_escape "$_OCB_LOCATION" )" \
+    "$( _ocb_json_escape "$_ocb_r_verb" )" \
+    "$([ "$_ocb_ok" = "1" ] && printf true || printf false)" \
+    "$_ocb_r_rc" \
+    "$( _ocb_json_escape "$_ocb_r_status" )" \
+    "$([ "$_ocb_complete" = "1" ] && printf true || printf false)" \
+    "$([ "$_ocb_prereq" = "1" ] && printf true || printf false)" \
+    "$([ "$_ocb_refs" = "1" ] && printf true || printf false)" \
+    "$_ocb_owned" \
+    "$_ocb_cleanup" \
+    "$( _ocb_json_escape "$_ocb_r_reason" )" \
+    "$OCB_ADAPTER_VERSION" \
+    > "$_OCB_RECEIPT" 2>/dev/null || true
+}
+
+# _ocb_completion_status VERB EXIT_CODE OUT_FILE
+# Prints "<status>|<reason>". Status is operation_complete ONLY on real, local
+# proof of THIS operation; else prerequisite_ready or failed. The reason travels
+# on stdout because this runs in a command substitution (a variable set here
+# would die with the subshell).
+_ocb_completion_status() {
+  _ocb_c_verb="$1"
+  _ocb_c_rc="$2"
+  _ocb_c_out="$3"
+
+  if [ "$_ocb_c_rc" != "0" ]; then
+    printf '%s' "failed|the openclaw CLI exited $_ocb_c_rc; nothing is complete"
+    return 0
+  fi
+  # A read-only verb can never be the operation itself.
+  case "$_ocb_c_verb" in
+    status|start|snapshot|frame-snapshot|stop)
+      printf '%s' "prerequisite_ready|verb '$_ocb_c_verb' only prepares or observes; it does not complete an operation"
+      return 0 ;;
+  esac
+  if [ -z "$_OCB_OPERATION" ]; then
+    printf '%s' "prerequisite_ready|no --operation supplied; a verb cannot complete an unnamed operation"
+    return 0
+  fi
+  if [ -z "$_OCB_LOCATION" ]; then
+    printf '%s' "prerequisite_ready|no --location supplied; capability is per operation AND connected location"
+    return 0
+  fi
+  _ocb_route="$(_ocb_route_available)"
+  if [ "$_ocb_route" != "True" ]; then
+    printf '%s' "prerequisite_ready|capability receipt carries no per-operation browser route (route=${_ocb_route}); prerequisite only"
+    return 0
+  fi
+  if [ -z "$_OCB_EXPECT_TOKEN" ]; then
+    printf '%s' "prerequisite_ready|no --expect-token supplied; the adapter has no local proof the operation's result appeared"
+    return 0
+  fi
+  case "$_ocb_c_verb" in
+    click|type)
+      if [ "$_OCB_REFRESH" != "1" ]; then
+        printf '%s' "prerequisite_ready|DOM refs were not refreshed for this invocation (pass --refresh-snapshot); a stale ref is not proof"
+        return 0
+      fi ;;
+  esac
+  if [ -z "$_ocb_c_out" ] || [ ! -f "$_ocb_c_out" ]; then
+    printf '%s' "prerequisite_ready|no CLI output to check for the expected token"
+    return 0
+  fi
+  if grep -F -q -- "$_OCB_EXPECT_TOKEN" "$_ocb_c_out" 2>/dev/null; then
+    printf '%s' "operation_complete|expected token observed in the CLI output for operation $_OCB_OPERATION at $_OCB_LOCATION"
+    return 0
+  fi
+  printf '%s' "prerequisite_ready|expected token did not appear in the CLI output; the operation's result is not proven"
+}
+
+# _ocb_finish VERB EXIT_CODE OUT_FILE -> writes the receipt, echoes the status
+_ocb_finish() {
+  _ocb_f_verb="$1"
+  _ocb_f_rc="$2"
+  _ocb_f_out="$3"
+  _ocb_verdict="$(_ocb_completion_status "$_ocb_f_verb" "$_ocb_f_rc" "$_ocb_f_out")"
+  _ocb_status="${_ocb_verdict%%|*}"
+  _ocb_reason="${_ocb_verdict#*|}"
+  _ocb_write_receipt "$_ocb_f_verb" "$_ocb_f_rc" "$_ocb_status" "$_ocb_reason"
+  if [ -n "$_OCB_RECEIPT" ]; then
+    if [ "$_ocb_status" = "operation_complete" ]; then
+      echo "receipt: $_OCB_RECEIPT status=operation_complete operation_complete=true" >&2
+    else
+      echo "receipt: $_OCB_RECEIPT status=$_ocb_status operation_complete=false ($_ocb_reason)" >&2
+    fi
+  fi
+  return "$_ocb_f_rc"
+}
+
+# ── Shared action-verb body for click / type (kept in ONE place) ──────────────
+_ocb_act_verb() {
+  _ocb_a_verb="$1"
+  shift
+  if [ "$_ocb_a_verb" = "click" ] && [ "$#" -lt 1 ]; then
+    _ocb_usage_refuse "click requires a REF argument (from a snapshot)."
+  fi
+  if [ "$_ocb_a_verb" = "type" ] && [ "$#" -lt 2 ]; then
+    _ocb_usage_refuse "type requires REF and TEXT arguments."
+  fi
+  require_ocb_cli
+  require_capability
+  # Refresh FIRST so the refs acted on are this invocation's, never a stale ref
+  # from a session the adapter merely assumes is shared.
+  if [ "$_OCB_REFRESH" = "1" ]; then
+    _ocb_pre="$(mktemp "${TMPDIR:-/tmp}/ocb-refresh.XXXXXX" 2>/dev/null || printf '')"
+    if [ -n "$_ocb_pre" ]; then
+      run_snapshot >"$_ocb_pre" 2>&1 || true
+      rm -f "$_ocb_pre"
+    fi
+  fi
+  _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+  if [ -n "$_ocb_out" ]; then
+    ocb_browser "$_ocb_a_verb" "$@" >"$_ocb_out" 2>&1
+  else
+    ocb_browser "$_ocb_a_verb" "$@"
+  fi
+  _ocb_rc=$?
+  [ -n "$_ocb_out" ] && cat "$_ocb_out"
+  _ocb_finish "$_ocb_a_verb" "$_ocb_rc" "$_ocb_out"
+  _ocb_rc=$?
+  [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+  exit "$_ocb_rc"
+}
+
 # ── Verb dispatch ─────────────────────────────────────────────────────────────
 main() {
   if [ $# -lt 1 ]; then
@@ -264,66 +595,139 @@ main() {
       exit $?
       ;;
   esac
+
   # 999 harness gate: every verb refuses here (see GATE 0 above).
   require_harness_lane
-  # Strip an optional `--` separator before the verb's own args.
-  if [ "${1:-}" = "--" ]; then
-    shift
+
+  _ocb_parse_flags "$@"
+  # Strip the adapter flags before the CLI: re-bind main's positional
+  # parameters to the parsed verb args (bash-3.2-safe empty-array expansion).
+  if [ "${#_OCB_ARGS[@]}" -gt 0 ]; then
+    set -- "${_OCB_ARGS[@]}"
+  else
+    set --
   fi
+  _ocb_out=""
+  _ocb_rc=0
+
   case "$_ocb_verb" in
     status)
       require_ocb_cli
       require_capability
-      ocb_browser status "$@"
+      _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+      if [ -n "$_ocb_out" ]; then
+        ocb_browser status "$@" >"$_ocb_out" 2>&1
+      else
+        ocb_browser status "$@"
+      fi
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && cat "$_ocb_out"
+      _ocb_finish status "$_ocb_rc" "$_ocb_out"
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+      exit "$_ocb_rc"
       ;;
     start)
       require_ocb_cli
       require_capability
-      ocb_browser start "$@"
+      _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+      if [ -n "$_ocb_out" ]; then
+        ocb_browser start "$@" >"$_ocb_out" 2>&1
+      else
+        ocb_browser start "$@"
+      fi
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && cat "$_ocb_out"
+      _ocb_finish start "$_ocb_rc" "$_ocb_out"
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+      exit "$_ocb_rc"
       ;;
     open)
       require_ocb_cli
-      if [ $# -lt 1 ]; then
+      if [ "${#_OCB_ARGS[@]}" -lt 1 ]; then
         _ocb_usage_refuse "open requires a URL argument."
       fi
       require_capability
-      ocb_browser open "$@"
+      _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+      if [ -n "$_ocb_out" ]; then
+        ocb_browser open "$@" >"$_ocb_out" 2>&1
+      else
+        ocb_browser open "$@"
+      fi
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && cat "$_ocb_out"
+      _ocb_finish open "$_ocb_rc" "$_ocb_out"
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+      exit "$_ocb_rc"
       ;;
     snapshot)
       require_ocb_cli
       require_capability
-      run_snapshot "$@"
+      _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+      if [ -n "$_ocb_out" ]; then
+        run_snapshot "$@" >"$_ocb_out" 2>&1
+      else
+        run_snapshot "$@"
+      fi
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && cat "$_ocb_out"
+      _ocb_finish snapshot "$_ocb_rc" "$_ocb_out"
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+      exit "$_ocb_rc"
       ;;
     frame-snapshot)
       require_ocb_cli
-      if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
+      if [ "$#" -lt 1 ] || [ -z "${1:-}" ]; then
         _ocb_usage_refuse "frame-snapshot requires an iframe selector argument."
       fi
       _ocb_sel="$1"
       shift
       require_capability
-      run_snapshot --frame "$_ocb_sel" "$@"
+      _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+      if [ -n "$_ocb_out" ]; then
+        run_snapshot --frame "$_ocb_sel" "$@" >"$_ocb_out" 2>&1
+      else
+        run_snapshot --frame "$_ocb_sel" "$@"
+      fi
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && cat "$_ocb_out"
+      _ocb_finish frame-snapshot "$_ocb_rc" "$_ocb_out"
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+      exit "$_ocb_rc"
       ;;
     click)
-      require_ocb_cli
-      if [ $# -lt 1 ]; then
-        _ocb_usage_refuse "click requires a REF argument (from a snapshot)."
-      fi
-      require_capability
-      ocb_browser click "$@"
+      _ocb_act_verb click "$@"
       ;;
     type)
-      require_ocb_cli
-      if [ $# -lt 2 ]; then
-        _ocb_usage_refuse "type requires REF and TEXT arguments."
-      fi
-      require_capability
-      ocb_browser type "$@"
+      _ocb_act_verb type "$@"
       ;;
     stop)
       require_ocb_cli
+      # `close --all` would close the user's unrelated tabs. Refuse it here, in
+      # the adapter, so no caller can reach it through `stop`.
+      for _ocb_a in "$@"; do
+        case "$_ocb_a" in
+          --all|all|-a)
+            _ocb_usage_refuse "stop refuses '$_ocb_a': closing EVERY tab would close the user's unrelated session. The adapter closes only the managed tab." ;;
+        esac
+      done
       require_capability
-      ocb_browser close "$@"
+      _ocb_out="$(mktemp "${TMPDIR:-/tmp}/ocb-out.XXXXXX" 2>/dev/null || printf '')"
+      if [ -n "$_ocb_out" ]; then
+        ocb_browser close "$@" >"$_ocb_out" 2>&1
+      else
+        ocb_browser close "$@"
+      fi
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && cat "$_ocb_out"
+      _ocb_finish stop "$_ocb_rc" "$_ocb_out"
+      _ocb_rc=$?
+      [ -n "$_ocb_out" ] && rm -f "$_ocb_out"
+      exit "$_ocb_rc"
       ;;
     *)
       echo "REFUSE: unknown verb '$_ocb_verb'." >&2
@@ -334,11 +738,18 @@ main() {
 }
 
 # ── OFFLINE SELFTEST ──────────────────────────────────────────────────────────
+# Proves the wiring WITHOUT openclaw installed and WITHOUT ever launching a
+# browser: verb calls run either with PATH stripped to /usr/bin:/bin (where the
+# openclaw CLI does not live) or against a throwaway argv-echoing stub named
+# `openclaw`. All temp files live under mktemp (TMPDIR). No network, no secrets.
+# ── OFFLINE SELFTEST ──────────────────────────────────────────────────────────
 # Proves the 999 harness gate WITHOUT ever launching a browser: every verb
 # must refuse with exit 75 + the harness reason, both on a PATH stripped to
 # /usr/bin:/bin and against a throwaway argv-echoing stub named `openclaw`
-# with a cliWorks:true capability JSON. All temp files live under mktemp
-# (TMPDIR). No network, no secrets.
+# with a cliWorks:true capability JSON. The completion contract that would
+# apply if this harness ever landed Lane 2 is then exercised by SOURCING the
+# script (without its final `main "$@"`) and calling the classifier directly.
+# All temp files live under mktemp (TMPDIR). No network, no secrets.
 selftest() {
   _st_fails=0
   _st_pass() { echo "  ok:   $1"; }
@@ -371,6 +782,19 @@ selftest() {
       _st_fail "verb table missing arm: $_st_v"
     fi
   done
+
+  # 3b. the completion contract is carried in this harness form too
+  if grep -q 'operation_complete' "$_st_self" 2>/dev/null \
+     && grep -q '"closed_all": false' "$_st_self" 2>/dev/null; then
+    _st_pass "completion + cleanup contract is present in the harness form"
+  else
+    _st_fail "completion/cleanup contract missing from the harness form"
+  fi
+  if grep -q 'close EVERY tab' "$_st_self" 2>/dev/null; then
+    _st_pass "stop refuses a close-everything argument"
+  else
+    _st_fail "stop must refuse --all (never close an unrelated session)"
+  fi
 
   # 4. 999 harness gate: every verb refuses with exit 75 + the harness
   #    reason, on a PATH without any openclaw CLI.
@@ -406,22 +830,64 @@ selftest() {
       _st_rc=$?
       if [ "$_st_rc" = "75" ]; then
         case "$_st_out" in
-          *claude-nine*) _st_pass "harness gate precedes CLI + capability: status -> exit 75 even with cliWorks=true" ;;
-          *) _st_fail "harness gate precedence: exit 75 but message does not name the harness" ;;
+          *claude-nine*) _st_pass "harness gate wins over a stub CLI + cliWorks:true capability" ;;
+          *) _st_fail "stub run: exit 75 but message does not name the harness" ;;
         esac
       else
-        _st_fail "harness gate precedence: status expected exit 75, got $_st_rc"
+        _st_fail "stub run: expected exit 75, got $_st_rc"
       fi
+
+      # 6. completion contract, exercised by sourcing (main never runs).
+      printf '{"lanes":{"openclaw_managed_browser":{"cliWorks":true}},"operationCapabilities":{"scope":"per-operation+per-connected-location","transports":{"browser":{"routes":["openclaw_managed_browser"],"selectedLane":"openclaw_managed_browser"}}}}' \
+        > "$_st_dir/cap-op.json"
+      grep -v '^main "\$@"$' "$_st_self" > "$_st_dir/sourced.sh" 2>/dev/null
+      printf 'Saved\n' > "$_st_dir/out.txt"
+      # NOTE: a plain subshell + a file is used here on purpose — bash 3.2
+      # (every Mac half of the fleet) cannot parse nested double quotes inside
+      # a nested command substitution.
+      (
+        GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-op.json" . "$_st_dir/sourced.sh" 2>/dev/null
+        _OCB_OPERATION="form.create"; _OCB_LOCATION="loc-test"
+        _OCB_EXPECT_TOKEN="Saved"; _OCB_REFRESH=1; _OCB_RECEIPT=""
+
+        _v="$(_ocb_completion_status open 0 "$_st_dir/out.txt")"
+        case "$_v" in operation_complete\|*) echo "PASS route+token+exit0 completes the operation" ;;
+                    *) echo "FAIL completion not detected: $_v" ;; esac
+
+        _v="$(_ocb_completion_status status 0 "$_st_dir/out.txt")"
+        case "$_v" in prerequisite_ready\|*) echo "PASS read-only verb is prerequisite only" ;;
+                    *) echo "FAIL read-only verb: $_v" ;; esac
+
+        _OCB_EXPECT_TOKEN=""
+        _v="$(_ocb_completion_status open 0 "$_st_dir/out.txt")"
+        case "$_v" in prerequisite_ready\|*) echo "PASS no --expect-token is prerequisite only" ;;
+                    *) echo "FAIL missing-token case: $_v" ;; esac
+
+        _OCB_EXPECT_TOKEN="Saved"; _OCB_REFRESH=0
+        _v="$(_ocb_completion_status click 0 "$_st_dir/out.txt")"
+        case "$_v" in prerequisite_ready\|*) echo "PASS stale-ref click is prerequisite only" ;;
+                    *) echo "FAIL stale-ref case: $_v" ;; esac
+
+        _OCB_RECEIPT="$_st_dir/rec.json"
+        _ocb_write_receipt stop 0 prerequisite_ready "selftest"
+        if grep -q '"closed_all": false' "$_st_dir/rec.json" 2>/dev/null \
+           && grep -q '"released": \["tab:' "$_st_dir/rec.json" 2>/dev/null; then
+          echo "PASS stop releases only the managed tab"
+        else
+          echo "FAIL stop cleanup record wrong"
+        fi
+      ) > "$_st_dir/proof.txt" 2>/dev/null
+      while IFS= read -r _st_line; do
+        case "$_st_line" in
+          PASS\ *) _st_pass "${_st_line#PASS }" ;;
+          FAIL\ *) _st_fail "${_st_line#FAIL }" ;;
+        esac
+      done < "$_st_dir/proof.txt"
     else
       _st_fail "could not create stub openclaw — skipping stub checks"
     fi
     rm -rf "$_st_dir" 2>/dev/null || true
   fi
-
-  # NOTE (999): the verb -> `openclaw browser` mapping checks that used to
-  # run here are not exercisable in this harness — the gate refuses before
-  # any mapping can run. The mapping remains in the dispatch below as the
-  # documented translation for the amendment path.
 
   if [ "$_st_fails" -eq 0 ]; then
     echo "SELFTEST PASS"
