@@ -165,8 +165,8 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
         # no such question, so an entitlement answer can never be recorded and no launch plan can
         # ever read one. This asserts ABSENCE: a test that expects the gate would bring it back.
         self.assertNotIn("entitlement", {q["id"] for q in e.load_bank()["questions"]})
-        r = e.record(elevation(), "entitlement", "Yes, it is included")
-        self.assertFalse(r["ok"])
+        with self.assertRaises(KeyError):  # engine.question() refuses an id the bank no longer carries
+            e.record(elevation(), "entitlement", "Yes, it is included")
 
     def test_a_second_downsell_is_refused_by_name(self):  # PRD-30
         doc = elevation()
