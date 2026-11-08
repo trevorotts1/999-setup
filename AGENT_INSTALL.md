@@ -175,11 +175,14 @@ image/video/audio model selectors, the KIE paid transport, the callback relay, p
 `07-kie-setup` (the common KIE rules, `references/kie-common-rules.md`) and `shared-utils`
 (the key resolver and the prompt enforcer). Naming them does **not** install them. They
 ship in this repository under `installer-registration/helpers/`, pinned by version and
-sha256 tree hash in `installer-registration/helper-dependencies.json`. The current pins are
-the re-pinned OpenClaw versions: `74-kie-live-adapter` **v1.1.6**, `67-kie-video`
-**v2.1.3**, together with `46-kie-callback-relay`, `66-kie-image`, `68-kie-audio`,
-`07-kie-setup` and `shared-utils`. After step 5's skill copies,
-run from the repository root:
+sha256 tree hash in `installer-registration/helper-dependencies.json`. The manifest is the
+only pin record; read the versions from it rather than from this page. `shared-utils` is the
+whole launch RUNTIME — `client_intake` (the guided interview), `signature_launch` (adapters,
+events, scheduler and the experience modules, including the Codex harness profile) and
+`signature_launch_contract` (the plan and approval contract) — plus the KIE key resolver,
+prompt enforcer and gate list. A `files` helper is MERGED into the installed
+`skills/shared-utils` tree and never replaces it, so an install cannot downgrade a box to a
+KIE-only subset. After step 5's skill copies, run from the repository root:
 
 - macOS:   `python3 installer-registration/helper-deps.py install`
 - Windows: `py installer-registration\helper-deps.py install`
@@ -199,9 +202,9 @@ Then, at step 11, add this check to the test run:
 python3 installer-registration/helper-deps.py preflight
 ```
 
-It exits 0 only when every pinned helper — `74-kie-live-adapter` v1.1.6, `67-kie-video`
-v2.1.3, `46-kie-callback-relay`, `66-kie-image`, `68-kie-audio`, `07-kie-setup` and
-`shared-utils` — is present at its pinned hash in **each** config root this machine uses,
+It exits 0 only when every pinned helper in `installer-registration/helper-dependencies.json` —
+the KIE selectors and transport, `07-kie-setup` and every pinned `shared-utils` file — is
+present at its pinned hash in **each** config root this machine uses,
 and exits 1 with an actionable per-helper error otherwise (directive 2.4: a clean install
 must receive the helpers; a missing one fails preflight).
 
@@ -295,8 +298,8 @@ Because Claude Code may need a new session to discover a brand-new personal skil
 directory, **do not depend on immediate skill rediscovery.** Run the bundled orchestrator
 directly in this session:
 
-- **Windows** → `scripts/setup-windows.ps1`
-- **macOS** → `scripts/setup-macos.sh`
+- **Windows** → `.claude/skills/nine-router-setup/scripts/setup-windows.ps1`
+- **macOS** → `.claude/skills/nine-router-setup/scripts/setup-macos.sh`
 
 Run the orchestrator for the detected OS only. Pass no secrets on the command line.
 
@@ -361,6 +364,13 @@ The orchestrator installs the `claude-nine` launcher. Verify afterwards:
 - Windows: `claude-nine.cmd` is on the user PATH and callable from both CMD and PowerShell.
 - macOS: `$HOME/.local/bin/claude-nine` exists, is executable (mode 700), and a fresh login
   shell can resolve `claude-nine`.
+- macOS also installs `claude-codex`, the explicit Codex profile: it execs the installed
+  `claude-nine` with the Codex model and its own auto-compact window, exports
+  `NINE_PROFILE=codex`, and shares the same config root, skills and history. Codex has no
+  structured question tool, so the guided interview runs as one numbered chat message per
+  question over the SAME answers file and resume state (the shared `harness_profile.py`
+  question-tool detection; no second interview and no separate state). The `cx/` provider
+  itself is not wired by this setup; without it the router names the unknown route.
 
 ## 9. Verify skill visibility in both config roots
 
@@ -374,6 +384,14 @@ KIE helpers land in `~/.claude/skills`, the helper install also writes
 `~/.claude-nine/skills`, and `sync-nine-skills.sh` (step 5.3) mirrors the rest. List both
 directories, run `~/.local/bin/sync-nine-skills.sh`, and confirm the skill names match. On
 Windows there is one root, so confirm it once.
+
+`python3 installer-registration/bundle_adapter.py --check` prints one `HARNESS` line per installed
+skills root it recognises (`claude`, `claude-nine`, `codex`, `agents`), naming the ACTIVE install
+target and reporting every real directory retained there and every installed version older than
+the shipped one. That is a report, not a repair queue: `.codex/skills` and `.agents/skills` are
+read-only here and their links are never rewritten, and an installer never replaces an
+installation it did not create. When a line reads `RETAINED` or `OLD-VERSION`, tell the client
+what it says instead of silently re-linking.
 
 ## 10. Verify plain `claude` is not routed and `claude-nine` activates the router
 

@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
-  "version": "1.2.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans.",
+  "version": "1.4.0",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans. Run-mode routing lives in mode_routing: an explicit Black Friday or launch request routes into the signature launch and a deliberate legacy request keeps legacy, with an ambiguous opening asked as one plain question. Every answer also carries a provenance class (confirmed fact, AI proposal, user-selected recommendation, generated asset, unresolved capability).",
   "help_label": "I'm not sure, help me",
   "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
   "question_estimate_template": "about {n} short questions, depending on what we already know",
@@ -35,9 +35,48 @@
     "bf",
     "page"
   ],
+  "mode_routing": {
+    "rule": "Route the client's own opening words. An explicit complete Black Friday or launch request goes to the signature launch; a deliberate request for the older step-by-step funnel keeps legacy. Both markers present, or neither, is asked as one plain question and never resolved by a default.",
+    "question": "Is this a Black Friday or launch promotion, or do you want the older step-by-step funnel? Reply launch or legacy.",
+    "launch": {
+      "reason": "You asked for a launch, so this runs the signature launch interview.",
+      "phrases": [
+        "black friday",
+        "black friday launch",
+        "signature launch",
+        "signature funnel",
+        "launch my",
+        "launch this",
+        "launch the",
+        "run a launch",
+        "bfcm",
+        "cyber monday",
+        "holiday promotion",
+        "seasonal promotion"
+      ]
+    },
+    "legacy": {
+      "reason": "You asked for the older step-by-step funnel, so this keeps legacy mode.",
+      "phrases": [
+        "legacy",
+        "legacy mode",
+        "old step-by-step",
+        "old step by step",
+        "step-by-step funnel",
+        "step by step funnel",
+        "3-step funnel",
+        "5-step funnel",
+        "7-step funnel",
+        "the older funnel",
+        "classic funnel"
+      ]
+    }
+  },
   "profiles": {
     "page": {
-      "skills": [71],
+      "skills": [
+        71
+      ],
       "description": "The page-only interview for one BlackCEO Signature page, and the page run's exact ask list: ask these questions and nothing else. It asks the offer, audience, proof, story, brand, image and length questions a page needs (including the one offer-shape question that decides price versus packages), and never the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work that belongs to Skill 49. Record the page kind (sales or opt_in) before length: an opt-in landing page is long-form only and the engine refuses standard for it. Every page needs its canonical renders, so there is no no-images answer.",
       "reuse": "Confirmed answers are never re-asked: a page run opens the client's existing answers file with --mode page, every launch answer already confirmed is reused, and only the open questions of this profile are asked - the shared bank's full queue is never walked on a page run. A never_default answer stays open; it is never inferred from the earlier run.",
       "questions": [
@@ -693,8 +732,8 @@
     {
       "id": "funnel_length",
       "group": "funnel",
-      "text": "How big do you want this funnel: 3-step, 5-step or 7-step?",
-      "why": "It sets how many extra offers you build.",
+      "text": "How much should happen after someone buys: one extra offer, two extra offers, or the full set?",
+      "why": "It sets how many extra offers you build. Nothing is added unless you choose it.",
       "answer_type": "choice",
       "choices": [
         "3-step",
@@ -704,7 +743,7 @@
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "3-step: page, one upsell, thank-you. 5-step adds a smaller-yes offer and a second upsell. 7-step is the full set: checkout, two upsells, two smaller-yes offers, thank-you.",
+        "explain": "The essentials: one extra offer after the purchase. The middle choice adds a smaller yes and a second extra offer. The full set adds one more smaller yes after that.",
         "examples": []
       },
       "default": null,
@@ -719,9 +758,9 @@
       ],
       "required_by": [],
       "choice_explanations": {
-        "3-step": "The essentials: main page, checkout, thank-you.",
-        "5-step": "Adds one extra offer after the purchase, with its own page.",
-        "7-step": "Adds the full chain of extra offer pages."
+        "3-step": "The essentials: your main offer, the purchase, and a thank-you - plus one useful extra offer.",
+        "5-step": "Adds a smaller yes and a second extra offer for buyers who want more.",
+        "7-step": "The full set, including one more smaller yes for people who pass on the last offer."
       }
     },
     {
@@ -956,8 +995,8 @@
         "49:page_set"
       ],
       "choice_explanations": {
-        "Every page my funnel needs (recommended)": "The full journey is built so no buyer hits a dead end. Picture ceiling: 88 for one offer with no extras, up to 264 for several packages, every extra and both landing pages.",
-        "Only the main page and checkout": "The minimum to take a payment; extras can come later. Picture ceiling: 68 (80 with the long-form sales page).",
+        "Every page my funnel needs (recommended)": "The full journey is built so no buyer hits a dead end. It needs up to 88 pictures for one offer with no extras, and up to 264 for several packages with every extra and both landing pages.",
+        "Only the main page and checkout": "The minimum to take a payment; extras can come later. It needs 68 pictures (80 with the long-form sales page).",
         "Help me choose": "I recommend the smallest set of pages that serves your plan."
       }
     },
@@ -1127,12 +1166,12 @@
       "choices": [
         "I will send it",
         "Use my business name as text",
-        "Not sure"
+        "Create a new logo for me"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "A logo file is a PNG or SVG of your logo. If you have none, your business name is set in clean type as a text logo.",
+        "explain": "Three ways: send a logo file you already have (PNG or SVG) and it is used exactly as it is; have your business name set in clean type as a text logo; or have a new logo made from your name, colours, voice and style. The offers and copy keep moving while it is made.",
         "examples": []
       },
       "default": {
@@ -1151,7 +1190,7 @@
       "choice_explanations": {
         "I will send it": "Your real logo is reused exactly as it is.",
         "Use my business name as text": "Your business name set as clean text stands in.",
-        "Not sure": "Send whatever you have and I will sort it out."
+        "Create a new logo for me": "A new logo made from your name, colours, voice and style, then carried into the same asset map every page uses. Nothing is redrawn and nothing is invented."
       }
     },
     {
@@ -1838,7 +1877,7 @@
       "id": "a2p_ready",
       "group": "launch",
       "text": "Are you approved to send text messages to your list? (Phone carriers require a business texting registration; if you are not sure, I will help you find out.)",
-      "why": "Texts cannot send until this approval is in place; without it every text stays a draft.",
+      "why": "Texts cannot send until this approval is in place; without it every text stays a draft. Asked only when text messages are part of this launch.",
       "answer_type": "choice",
       "choices": [
         "Yes, it is approved",
@@ -1862,7 +1901,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "mode != legacy",
+      "condition": "mode != legacy and channels contains text",
       "targets": [
         "a2p_ready"
       ],
@@ -1872,6 +1911,90 @@
       "choice_explanations": {
         "Yes, it is approved": "Texting can go live.",
         "No, not yet": "Texts stay drafts until the approval lands."
+      }
+    },
+    {
+      "id": "d6_reentry",
+      "group": "launch",
+      "text": "If someone buys from you more than once — the main offer now and an upgrade or a second package later — should the after-purchase automation run again for that new purchase?",
+      "why": "It sets the after-purchase automation's reentry and enrolment. Running again delivers the new purchase's access once per purchase; running once per contact never re-delivers. The setting is applied to the workflow and read back, and if you do not answer it is recorded as not set rather than guessed.",
+      "answer_type": "choice",
+      "choices": [
+        "Run it again for each new purchase",
+        "Run it once per contact",
+        "Not sure — decide later"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The safe default for most launches is to run it again for each new purchase, so a real second purchase still gets its access.",
+        "examples": [
+          "Run it again for each new purchase.",
+          "Run it once per contact."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "launch.automation_reentry"
+      ],
+      "legacy_ids": [
+        "d6_reentry"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "Run it again for each new purchase": "A later, separate purchase gets its own access and welcome. The same purchase never repeats because delivery is deduplicated on the purchase identity.",
+        "Run it once per contact": "Each contact enters the after-purchase automation only once, even if they buy again later.",
+        "Not sure — decide later": "Nothing is set and it is recorded as not set. You can answer later and the plan updates."
+      }
+    },
+    {
+      "id": "d7_purchase_identity",
+      "group": "launch",
+      "text": "Which record from your checkout will identify one purchase, so the same purchase can never grant access twice?",
+      "why": "The after-purchase automation grants access once per purchase, so it needs the record that identifies a purchase. A transaction ID or a purchased line ID identifies one purchase; an order ID alone can carry several purchases, so it is never used as the dedupe key. If you are not sure, it is left unknown and nothing is guessed.",
+      "answer_type": "choice",
+      "choices": [
+        "Transaction ID (recommended)",
+        "Purchased line ID",
+        "Not sure — leave unknown"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose Transaction ID unless your checkout reports each purchased line separately, in which case Purchased line ID is the precise key.",
+        "examples": [
+          "Transaction ID (recommended)",
+          "Purchased line ID"
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "launch.purchase_identity"
+      ],
+      "legacy_ids": [
+        "d7_purchase_identity"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "Transaction ID (recommended)": "One settled transaction identifies one purchase. This is the safest key.",
+        "Purchased line ID": "One purchased line identifies one purchase, even when an order carries several changes.",
+        "Not sure — leave unknown": "Nothing is assumed. The plan records the identity as not declared, and the automation must not claim it can deduplicate."
       }
     },
     {
@@ -2128,6 +2251,68 @@
       "condition": "mode == bf",
       "targets": [
         "bf_followup"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "billing_detail",
+      "group": "offer",
+      "text": "How is it split, and is there a trial? For example \"3 payments, one a month, $100 today\", or \"monthly, $97 a month\", or \"7-day trial then $497\".",
+      "why": "The order form has to show the whole commitment: how many payments, how often, what is due today and the total. I never turn a plan into one payment.",
+      "answer_type": "text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Say how many payments, how often they come, what is charged today, and whether there is a trial. Rough words are fine.",
+        "examples": [
+          "3 payments of $199, one a month, first today",
+          "$97 a month, no trial",
+          "7-day trial at $1, then $497 once"
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy and billing != one_time",
+      "targets": [
+        "billing_detail",
+        "offers.main.schedule"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "lead_magnet",
+      "group": "offer",
+      "text": "Would a free item help people say yes to the paid offer? If so, what is it called and what do they get?",
+      "why": "A free item is its own record with its own opt-in and thank-you page. It never goes through the paid checkout, and the paid offer keeps its own price.",
+      "answer_type": "offer",
+      "choices": [
+        "Yes, I have a free item",
+        "No free item"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "A short guide, checklist, template or mini-lesson people can have for free in exchange for their email. Say none if you would rather send people straight to the paid offer.",
+        "examples": [
+          "The 5-Minute Morning Checklist - a one-page PDF",
+          "A 15-minute training: how to book the first client"
+        ]
+      },
+      "default": {
+        "value": "none",
+        "flag": "to confirm",
+        "reason": "No free item is built until you name one."
+      },
+      "never_default": false,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "lead_magnet",
+        "free_entry"
       ],
       "legacy_ids": [],
       "required_by": []

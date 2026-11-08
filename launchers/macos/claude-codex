@@ -79,6 +79,11 @@ echo "🧠 claude-codex — claude-nine pinned to $CODEX_MODEL (autocompact $COD
 # over settings. Set Codex's window here so the env and --autocompact agree.
 export CLAUDE_CODE_AUTO_COMPACT_WINDOW="${CODEX_AUTOCOMPACT%k}000"
 
+# The explicit harness profile: the shared guided interview reads this and runs as
+# one numbered chat message per question (Codex has no structured question tool),
+# over the same answers file and resume state as every other harness.
+export NINE_PROFILE=codex
+
 exec "$CLAUDE_NINE_BIN" \
   --model "$CODEX_MODEL" \
   --autocompact "$CODEX_AUTOCOMPACT" \

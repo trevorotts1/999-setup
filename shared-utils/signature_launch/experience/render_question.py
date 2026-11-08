@@ -305,11 +305,15 @@ def _progress(q):
 
 def render(questions, profile):
     """One question, one shape: a structured call (Claude Code, claude-nine) or one chat message.
-    An empty list means the interview has everything it needs; nothing is rendered."""
+
+    The structured shape is used only when the profile says it AND the session's question
+    tool is actually available (``question_tool`` false/absent means no tool). Codex and
+    every other plain-chat harness therefore get the same interview as one message, over
+    the same answers file and resume state. An empty list means the interview is done."""
     one = list(questions or [])[:MAX_TOOL_QUESTIONS]
     if not one:
         return []
-    if profile["question_shape"] == "structured":
+    if profile["question_shape"] == "structured" and profile.get("question_tool", True):
         return structured(one)
     q = one[0]
     index, total = _progress(q)
@@ -324,15 +328,20 @@ def main(argv=None):
     ap.add_argument("--harness")
     ap.add_argument("--mode", choices=("launch", "legacy", "bf"),
                     help="run mode when the answers file does not name one")
+    ap.add_argument("--request", help="the client's opening words: routes launch vs legacy when --mode is absent")
     a = ap.parse_args(argv)
+    mode, routed = a.mode, None
+    if mode is None and a.request:
+        mode, routed = engine_module().route_mode(a.request)
     qs = (json.loads(Path(a.questions_file).read_text(encoding="utf-8"))
           if a.questions_file else str(_CLIENT_INTAKE / "question-bank.json"))
     if isinstance(qs, str):
         qs = json.loads(Path(qs).read_text(encoding="utf-8"))
     answers = json.loads(Path(a.answers_file).read_text(encoding="utf-8")) if a.answers_file else None
     prof = harness_profile.detect(a.harness, answers)
-    one = pending(qs, answers, a.mode)
-    print(json.dumps({"profile": prof, "next_id": one[0]["id"] if one else None,
+    one = pending(qs, answers, mode)
+    print(json.dumps({"profile": prof, "mode": mode, "mode_reason": routed,
+                      "next_id": one[0]["id"] if one else None,
                       "done": not one, "render": render(one, prof)}, indent=2))
 
 
