@@ -71,7 +71,7 @@
     "note": "The client is never asked to declare a membership or a purchase, and no build is refused or deferred for want of one. The state is recorded unknown. No entitlement is created and no billing API is called.",
     "enforced_in_code": true,
     "creates_entitlements": false,
-    "calls_billing_api": false,
+    "calls_billing_api": false
   },
   "distribution": {
     "status": "open_decision",
