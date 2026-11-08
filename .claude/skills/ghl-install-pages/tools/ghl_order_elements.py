@@ -777,13 +777,13 @@ def build_order_plan(spec: dict) -> dict:
           "lead_capture": {"fields": ["email"]},  # optional native form
         }
 
-    A binding is ``{"product_ref", "source", "offer_id"?, "price_ref"?, "billing"?}``; an
-    extra offer's binding MUST carry ``price_ref`` because its native
+    A binding is ``{"product_ref", "source", "offer_id"?, "price_ref"?, "billing"?}``.
+    An extra offer's binding MUST carry ``price_ref`` because its native
     one-click action charges that price. ``billing`` carries the approved F08
     terms verbatim (``billing_type`` / ``recurring_interval`` /
     ``trial_days``); it is never flattened into ``one_time`` and an
-    installment term is refused. An approved
-    record's ``trial`` is carried as the native ``trial_then_recurring``.
+    installment term is refused. An approved record's ``trial`` is carried as
+    the native ``trial_then_recurring``.
 
     Every element carries its product binding or the plan is refused. Every
     element carries its own SLOT identity and, where the approved graph names
