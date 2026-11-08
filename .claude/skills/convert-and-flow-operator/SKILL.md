@@ -1,7 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
-version: v2.1.42
+version: v2.1.43
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -256,9 +256,19 @@ The CLI has NO media upload commands. Media NEVER routes to Tier 0 — always Ti
 
 ---
 
-## Consumers (who hands work to this skill, verified 2026-10-14)
+## Consumers (who hands work to this skill, re-checked against this 999 tree 2026-11-08)
 
-This section states, for each consumer, what that consumer actually does today, verified from the consumer's own code and docs on 2026-10-14. Trust this section over any looser description. The pattern across every consumer below: work arrives as FILES AND PLANS that an operator agent running this skill executes under this skill's own gates. No consumer calls the caf CLI in process, nothing here polls for work, and a handed-off plan is not a built object until execution receipts with read-backs exist.
+This section states, for each consumer, what that consumer does in THIS distribution, re-checked against the consumer's own folder in `.claude/skills/` on 2026-11-08. A consumer's own folder wins over this section if they disagree: read it before relying on a line here. The launch route is in **Launch mode (Skill 49/83)** above. The pattern across every consumer below: work arrives as FILES AND PLANS that an operator agent running this skill executes under this skill's own gates. No consumer calls the caf CLI in process, nothing here polls for work, and a handed-off plan is not a built object until execution receipts with read-backs exist.
+
+### Skill 49: signature-funnel (launch plan producer)
+
+- In `signature_launch` mode, `signature-funnel/scripts/launch_plan.py` writes the launch plan in the shared contract (`shared-utils/signature_launch_contract/launch-plan.schema.json`): `automations` (this skill's units), `email_sequences` (Skill 50), `text_sets`, `conversation_ai`, `launch_calendar`, every unit with `waits_for`, `draft_only` true and `build_rail` this skill's engine. A missing launch date, doors time, timezone or AI mode blocks the plan by name. See `signature-funnel/LAUNCH_MODE.md`.
+- That plan is the reader's input (`automation-templates/launch-c/plan_reader.py`). Skill 49 builds no workflows and calls no caf command; its docs name this skill's provisioning and workflow working as later steps it does not perform. Emitting a plan is not a built object.
+
+### Skill 83: black-friday-launcher (launch plan checker and package assembler)
+
+- Skill 83 validates the launch plan's calendar and completeness (`python3 -m launcher_core.cli plan --plan <launch-plan.json> [--deliveries <deliveries.json>]` from `black-friday-launcher/`, where `--deliveries` is one JSON file mapping unit id to delivery result; omit it to see what is missing, code in `launcher_core/launch_plan.py`), lists every planned unit including the automations, and fails the package when a planned unit was not delivered. It never builds a workflow and never invents a unit, date or price.
+- It does not run this skill. An agent asked to set up the Black Friday automations reaches this skill through Launch mode (Skill 49/83) above, not through Skill 83's own entry commands.
 
 ### Skill 6: 06-ghl-install-pages (P4 to P5 funnel seam)
 
@@ -299,11 +309,17 @@ Regenerate both exports after any calendar or pipeline change in GHL.
 ### Skill 50: 50-email-engine (deploy rail)
 
 - On its P4 deploy step, Skill 50 emits a DRAFT-ONLY workflow build plan (tools/emit_build_plan.py, validated against its build-plan schema) covering email plus wait steps only. Skill 50 never sends anything. The plan enters this skill's PLAN MODE (Step 0.5 boards the build), a human approves before any send, and the built draft faces this skill's QC gate (score 8.5 or better).
+- Launch use: the same build plans are the reader's `--build-plan` input in Launch mode (Skill 49/83); Skill 50's launch profiles and `tools/s49_launch_shape.py` carry the launch email shape. A build plan is not a caf campaign file: the reader binds it to its launch sequence and compiles it first, so do not feed a Skill 50 plan straight to `caf workflows build --from-plan`.
+
+### Skill 71: blackceo-signature-page (automation hand-off producer)
+
+- Skill 71 DOES have a hand-off producer: `blackceo-signature-page/scripts/automation_handoff.py`, loaded and called by `stage_gate.py` at ghl-install-test close (`_automation_handoff_module`, then `check_install_handoff`), when the run's intake records a GHL publish target and a workflow automation scope. It writes `handoff/automation-handoff.json` (ids only: location, funnel, page, form ids, trigger classes) and hash-locks it. When the run carries the launch wiring inputs it also writes `handoff/automation-request.json`, a draft-only envelope (any other deploy mode is refused). Contract: `blackceo-signature-page/references/automation-handoff.md`. The envelope is a run file; the module sends nothing.
+- This skill executes the request under its own gates. The receiving side is `tools/siglaunch/receiver/` (validates the request, drives the governed build, reads back, issues a receipt); the outcome is filed by Skill 71 as the stage receipt `private/receipts/automation-wiring.json`, carrying `build_method` (`caf-cli` or `tier4-browser-backstop`), this skill's QC evidence (`qc-built-workflow.sh` exit code and the filled checklist) and the read-back. A refusal is a receipt too and leaves the stage open.
+- Check that file before telling an owner a funnel has no automation hand-off. Skill 71 also consumes presentations page briefs, a different seam.
 
 ### Explicit non-consumers
 
 - Skill 46 (46-kie-callback-relay) does not consume this skill and does not use the GHL Firebase token. The daily token liveness check is owned here (tools/check-ghl-token-liveness.sh); Skill 46's SKILL.md cross-references it for discoverability only.
-- Skill 71 (71-blackceo-signature-page) hands nothing to this skill at this version: no automation-handoff producer exists in that folder (checked 2026-10-14). Skill 71 consumes presentations page briefs, a different seam.
 
 ---
 
