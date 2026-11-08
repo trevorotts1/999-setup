@@ -82,6 +82,16 @@ class Bank(unittest.TestCase):
         for must in ("price", "offer_name", "offer_description", "representation", "community_truth", "paid_render_approval", "plan_approval"):
             self.assertIn(must, never)
 
+    def test_the_account_entitlement_gate_is_gone(self):
+        # TIDY-002: the owner removed the client-facing account-entitlement gate, so this bank
+        # must stop shipping it. This asserts ABSENCE on purpose: a test that expects the gate
+        # would re-introduce the question a client was never meant to be asked.
+        bank = e.load_bank()
+        self.assertNotIn("entitlement", {q["id"] for q in bank["questions"]})
+        self.assertNotIn("entitlement_attestation", bank["system_fields"])
+        for q in bank["questions"]:
+            self.assertNotIn("83:entitlement_attestation", q["required_by"], q["id"])
+
     def test_coverage_every_required_field_has_a_question_or_a_system_reason(self):
         bank = e.load_bank()
         covered = set(bank["system_fields"])
