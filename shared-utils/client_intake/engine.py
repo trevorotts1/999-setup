@@ -802,10 +802,6 @@ def _normalize(doc, q, raw, *, accumulate=True):
         return value, "provided", None
     if qid == "location":
         return ("existing" if "existing" in low or low.startswith("yes") else "new" if "new" in low else None, "provided", None) if (low.startswith("yes") or "new" in low or "existing" in low) else _need("Your existing account or a new one?")
-    if qid == "entitlement":
-        if pick == "Yes, it is included" or low.startswith("yes"):
-            return "attested", "provided", None
-        return "check" if pick == "Please check for me" else "no", "unknown", "Needs verification against the account record."
     if qid == "plan_approval":
         return ({"approve this plan": "approve", "i want a change": "change", "stop here": "stop"}.get(_norm(pick or text), None) or "change"), "provided", None
     if qid == "community_truth":
@@ -883,7 +879,7 @@ def _normalize(doc, q, raw, *, accumulate=True):
 # The commercial answers a client must have said in their own words. Each one recorded as
 # 'provided' cites a source_message_ref that resolves to a CLIENT message in the transcript
 # store, so an agent-chosen price or shape can never pass as the client's answer.
-CITED_QUESTIONS = ("price", "packages", "deliverables", "funnel_shape", "entitlement")
+CITED_QUESTIONS = ("price", "packages", "deliverables", "funnel_shape")
 _CLIENT_ROLES = ("client", "user", "customer", "inbound")
 TRANSCRIPT_LOOKUP = None  # tests / a harness may set a callable(ref) -> {"role", "text"} or None
 
@@ -960,7 +956,7 @@ def _cite_error(doc, q, raw, v, source, ref):
 def record(doc, qid, value, *, source="client", status=None, note=None, source_message_ref=None):
     """Store an answer. Returns {"ok": True, ...}; {"ok": False, "message"} when the answer is incomplete;
     or the help payload when the client said they do not know. Price, packages, deliverables, funnel
-    shape and entitlement recorded as provided need source_message_ref (see CITED_QUESTIONS). A price is
+    shape recorded as provided needs source_message_ref (see CITED_QUESTIONS). A price is
     echoed back first ("I heard USD 497.00, correct?") and recorded only after the client says yes."""
     q = question(qid)
     if wants_help(q, value):

@@ -41,11 +41,8 @@ record says `teaching.state = "pending"`.
 
 ## Entitlement attestations
 
-Both fixtures carry a TEST-ONLY attestation so the fail-closed gate is
-exercised, not bypassed. Elevation attests the `purchase` basis with a test
-reference at the owner-stated amount; 7FigurePreneur attests the
-`brand_management_membership` basis, which qualifies with **no** purchase
-reference at all. Neither is a real entitlement.
+Neither fixture carries an account-entitlement attestation, because the client is never asked to
+declare one. Both build with `entitlement.state = "unknown"` and nothing blocks on it.
 
 ## Provenance — no invented prices or level contents
 
@@ -71,7 +68,7 @@ TEST ONLY. Nothing here is a product price.
 
 For each shape:
 
-1. the intake is valid and fail-closed, with a qualified entitlement attestation;
+1. the intake is valid and fail-closed, with no account declaration required;
 2. the route graph is byte-for-byte the real S49 compiler's graph;
 3. every route invariant holds (verified guards, U1/D1/U2 law, no decline edge
    at checkout, one canonical U2, no bump node);
