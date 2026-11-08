@@ -85,10 +85,17 @@ jobs:
           # verify.sh computes its repository as "$ROOT/../.." and expects
           # scripts/check-skill71-parity.py there. The onboarding skill sits
           # one level below the checkout root, so expose it one level deeper
-          # through a symlink; verify.sh then names the real root.
+          # through a symlink; verify.sh then names the real root. The checker
+          # also reads <root>/shared-utils/ (tracked files), so both of those
+          # ride along: without them verify.sh prints [FAIL] parity for want
+          # of a script, which is not a parity verdict at all.
           mkdir -p "$SKILL71_ONB_ROOT/.ci"
           ln -sfn "$SKILL71_ONB_ROOT/71-blackceo-signature-page" \
                   "$SKILL71_ONB_ROOT/.ci/71-blackceo-signature-page"
+          ln -sfn "$SKILL71_ONB_ROOT/scripts" \
+                  "$SKILL71_ONB_ROOT/.ci/scripts"
+          ln -sfn "$SKILL71_ONB_ROOT/shared-utils" \
+                  "$SKILL71_ONB_ROOT/.ci/shared-utils"
 
           log="$RUNNER_TEMP/skill71-verify.log"
           rc=0

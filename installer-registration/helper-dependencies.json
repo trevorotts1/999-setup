@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-08T22:29:56Z",
+  "generatedAt": "2026-11-08T22:33:45Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -135,13 +135,13 @@
       "role": "The shared launch runtime (client_intake, signature_launch, signature_launch_contract) plus the KIE key resolver, prompt rule 12 enforcer, declared gate list and its test; merged into the installed shared-utils tree, never swapped in for it",
       "kind": "files",
       "required": true,
-      "version": "sha256:39b5f29952e4",
+      "version": "sha256:9bb1e1ef1f22",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
       "fileCount": 148,
-      "sizeBytes": 1462152,
-      "treeSha256": "39b5f29952e4295e293e2e3b5e0a33d333f3cddc5004be96200bf270b13f8491",
+      "sizeBytes": 1463408,
+      "treeSha256": "9bb1e1ef1f22cba099c768bbfe542bd709f2c60ce8a6a88cd4fe4c8cf40f0e53",
       "skillMdSha256": null,
       "files": [
         {
@@ -197,7 +197,7 @@
         {
           "path": "client_intake/tests/test_client_intake.py",
           "sourcePath": "shared-utils/client_intake/tests/test_client_intake.py",
-          "sha256": "68f33e79b2c6311db5e1e68d52837ca8949fa6483a5f6933cf5ac3e3dac2a493"
+          "sha256": "ca6b5c6beca189216de3b170a5c7e987337de90a87ea9ef30c1bf850ee6b5cbf"
         },
         {
           "path": "client_intake/tests/test_consumers_49.py",
@@ -217,7 +217,7 @@
         {
           "path": "client_intake/tests/test_launcher_intake.py",
           "sourcePath": "shared-utils/client_intake/tests/test_launcher_intake.py",
-          "sha256": "ade22ef2ca1b75eaf89251edaf7c75572e3aa8bb0edb11ea23b3dc072b9b6645"
+          "sha256": "784ce29f46e79a5f9cf7cf7dbdf60dbfa12aabe2c8daaf7cd6103eac790ab88d"
         },
         {
           "path": "client_intake/tests/test_page_profile.py",

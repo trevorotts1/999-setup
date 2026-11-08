@@ -208,6 +208,23 @@ DIVERGENT = {
         _OWNER_ORDER, (), ("entitlement_attestation",)),
     _LAUNCHER + "verify.sh": (
         _OWNER_ORDER, ("plain discovery here",), ("test_only_transport",)),
+    # D6 continues into the wording PR #384 closed out: the last stale Brand
+    # Management gate descriptions and the attestation-boundary follow-up row.
+    _LAUNCHER + "DISPATCH.md": (
+        _OWNER_ORDER, ("Attestation boundary label — closed 2026-11-08",),
+        ("The attestation boundary label stops at this lane's edge",)),
+    _LAUNCHER + "adapters/claude-code/README.md": (
+        _OWNER_ORDER, (),
+        ("community or bonus truth, entitlement, or paid-render approval",)),
+    _LAUNCHER + "adapters/claude-nine/README.md": (
+        _OWNER_ORDER, (),
+        ("community or bonus truth, entitlement, or paid-render approval",)),
+    _LAUNCHER + "adapters/openclaw/README.md": (
+        _OWNER_ORDER, (),
+        ("community or bonus truth, entitlement, or paid-render approval",)),
+    _LAUNCHER + "repo-integration/skill-department-map-entry.json": (
+        _OWNER_ORDER, ("launch admission that never consults a membership",),
+        ("a fail-closed entitlement attestation gate",)),
     # D7: F23 governed launch evidence, authored in 999 and consumed by the
     # Command Center's launch domain. Onboarding carries the pre-F23 shape.
     _SL + "launch_events.py": (
