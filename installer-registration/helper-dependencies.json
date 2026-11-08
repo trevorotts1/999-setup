@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-07T21:51:04Z",
+  "generatedAt": "2026-11-08T19:54:51Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -135,13 +135,13 @@
       "role": "The shared launch runtime (client_intake, signature_launch, signature_launch_contract) plus the KIE key resolver, prompt rule 12 enforcer, declared gate list and its test; merged into the installed shared-utils tree, never swapped in for it",
       "kind": "files",
       "required": true,
-      "version": "sha256:1e374704bd10",
+      "version": "sha256:d75be91c668c",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
       "fileCount": 143,
-      "sizeBytes": 1266879,
-      "treeSha256": "1e374704bd1085a081ffa9997317afce7cb0d57c36940b565432a5edca95779f",
+      "sizeBytes": 1266369,
+      "treeSha256": "d75be91c668c575e88db53cd4b4ac12cf3c1a668da50f2657e8742e131471a77",
       "skillMdSha256": null,
       "files": [
         {
@@ -182,12 +182,12 @@
         {
           "path": "client_intake/question-bank.json",
           "sourcePath": "shared-utils/client_intake/question-bank.json",
-          "sha256": "3eb8fda3106f639cc560ac56121f640761fc5577f0ace706b0b58571c19cc93e"
+          "sha256": "be0a7cffefae44693ac812138a9af7cd3eb73c02c9da8a37e0429013ebcb2edf"
         },
         {
           "path": "client_intake/tests/test_client_intake.py",
           "sourcePath": "shared-utils/client_intake/tests/test_client_intake.py",
-          "sha256": "f99bf0a608916316406d28a0e971e626f3b05c097aa9aa2c0582ac4692b61088"
+          "sha256": "ca6b5c6beca189216de3b170a5c7e987337de90a87ea9ef30c1bf850ee6b5cbf"
         },
         {
           "path": "client_intake/tests/test_consumers_49.py",
@@ -197,12 +197,12 @@
         {
           "path": "client_intake/tests/test_engine_money_and_levels.py",
           "sourcePath": "shared-utils/client_intake/tests/test_engine_money_and_levels.py",
-          "sha256": "7e1b451dbf8e7093055147519daf3a031149c89dca15f63e4f6315b557cf4d90"
+          "sha256": "4d0bfa4a545230c02872f50034ab913dbcb3a67a381677a8a2fb83093b9771c8"
         },
         {
           "path": "client_intake/tests/test_launcher_intake.py",
           "sourcePath": "shared-utils/client_intake/tests/test_launcher_intake.py",
-          "sha256": "632cb902e29681a6cd1d52404ae1658cad863709d0a0964a5b51d0ff747abbf9"
+          "sha256": "784ce29f46e79a5f9cf7cf7dbdf60dbfa12aabe2c8daaf7cd6103eac790ab88d"
         },
         {
           "path": "client_intake/tests/test_page_profile.py",
