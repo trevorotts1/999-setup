@@ -106,6 +106,25 @@ def _provided(doc: Dict[str, Any], qid: str) -> Any:
     return e["value"]
 
 
+def _engine():
+    """The shared engine beside this file: it owns the canonical answer contract, so the two
+    modules cannot drift into two different definitions of a decision, a brand or a spend cap."""
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import engine  # noqa: PLC0415 - same package, imported lazily to keep module load cheap
+    return engine
+
+
+def _spend(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """The approved monetary ceiling (cap_minor + ISO currency) and the approval it binds."""
+    return _engine().spend_contract(doc)
+
+
+def _answer_contract(doc: Dict[str, Any], system: Dict[str, Any]) -> Dict[str, Any]:
+    """The F16 block: design decision, brand provenance, spend ceiling, plan binding."""
+    return _engine().answer_contract(doc, brand_file=system.get("brand_file"))
+
+
 def _price(value: Any, field: str) -> Dict[str, Any]:
     ok = (isinstance(value, dict) and isinstance(value.get("amount_minor"), int)
           and not isinstance(value.get("amount_minor"), bool) and value["amount_minor"] > 0
@@ -262,10 +281,23 @@ def _image_plan(doc: Dict[str, Any], system: Dict[str, Any], warnings: List[str]
     plan: Dict[str, Any] = {}
     ds = _entry(doc, "design_style")
     if ds and ds.get("status") == "provided" and ds.get("value") in ("A", "B", "C"):
+        # `provided` covers both a client's own choice and the recommendation they accepted;
+        # the contract block in provenance says which, and 83 never pays for a proposal.
         plan["design_style"], plan["design_style_source"] = ds["value"], "client_choice"
     cap = _entry(doc, "image_cap")
     if cap and cap.get("status") == "provided" and isinstance(cap.get("value"), int) and cap["value"] > 0:
         plan["image_cap"] = cap["value"]
+    # THE MONEY. The downstream paid resolver refuses a real run without cap_minor + currency,
+    # and a picture count is not a ceiling. Only a client-provided amount reaches here; an
+    # approval with no usable amount stays unknown rather than being invented.
+    spend = _spend(doc)
+    if spend["state"] == "provided" and spend["cap_minor"]:
+        if _plan_accepts("image_cap_minor", 1) is not False:
+            plan["image_cap_minor"] = spend["cap_minor"]
+        if _plan_accepts("image_currency", "USD") is not False:
+            plan["image_currency"] = spend["currency"]
+        if spend["approval_ref"] and _plan_accepts("paid_render_approval_ref", "a") is not False:
+            plan["paid_render_approval_ref"] = spend["approval_ref"]
     prov = _entry(doc, "image_provider")
     if prov and prov.get("status") != "unknown":
         v = str(prov.get("value") or "").strip().lower()
@@ -326,13 +358,17 @@ def _price_keys(mod: Any) -> tuple:
     return tuple(getattr(mod, "PRICE_REQUIRED", ())) + tuple(getattr(mod, "PRICE_OPTIONAL", ()))
 
 
-def _plan_accepts(key: str) -> Optional[bool]:
-    """Does 83's image_plan.validate_raw accept this key? None when Skill 83 is not beside this one."""
+def _plan_accepts(key: str, value: Any = "x") -> Optional[bool]:
+    """Does 83's image_plan.validate_raw accept this key with a VALID sample value? None when
+    Skill 83 is not beside this one.
+
+    The probe value matters: validate_raw is a shape check, so a value of the wrong type
+    (an int field probed with a string) is refused for its value, not for being undeclared."""
     ip = _load83("image_plan")
     if ip is None:
         return None
     try:
-        ip.validate_raw({key: "x"})
+        ip.validate_raw({key: value})
         return True
     except ip.ImagePlanError:
         return False
@@ -361,13 +397,13 @@ def _guard_system(system: Dict[str, Any]) -> None:
 def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_sha256: Optional[str] = None,
                        answers_path: Optional[Path] = None, intake_module: Any = None) -> Dict[str, Any]:
     """The Skill 83 intake from the answers, with provenance. `system` carries what no answer can: tenant_id,
-    location_id, launch_id, [revision], brand {ref, hash}, approval {ref, hash}, entitlement_attestation, and
+    location_id, launch_id, [revision], brand {ref, hash}, approval {ref, hash}, and
     optionally brand_file, test_only, locale, extra_root / extra_offer (fields a newer intake requires, never
     ones the answers build). A field is emitted only when Skill 83's intake (`intake_module`, default the
     sibling skill) declares it, so the result validates before and after that intake grows."""
     if (doc.get("meta") or {}).get("mode") == "legacy" or doc.get("schema") != "client-intake-answers/v1":
         _fail("AF-LAUNCH-ANSWERS-SCHEMA", "answers-file", "not a client-intake-answers/v1 launch answers file")
-    for key in ("tenant_id", "location_id", "launch_id", "brand", "approval", "entitlement_attestation"):
+    for key in ("tenant_id", "location_id", "launch_id", "brand", "approval"):
         if not system.get(key):
             _fail("AF-LAUNCH-ANSWERS-SYSTEM", f"system.{key}", "comes from verified account access, not from the interview")
     _guard_system(system)
@@ -376,8 +412,6 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
         _fail("AF-LAUNCH-ANSWERS-SYSTEM", "answers_file", "Skill 83 records the answers file path; build from the file, not from a parsed copy")
     if _provided(doc, "plan_approval") != "approve":
         _fail("AF-LAUNCH-ANSWERS-APPROVAL", "answers-file:plan_approval", "the client has not approved this plan")
-    if _provided(doc, "entitlement") != "attested":
-        _fail("AF-LAUNCH-ANSWERS-ENTITLEMENT", "answers-file:entitlement", "the right to run this launch is not confirmed")
     mode, offers, sources = derive_offers(doc)
     direction = creative_direction(doc)
     extra = system.get("extra_offer") or {}
@@ -390,7 +424,7 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
         "schema_version": "1.0", "tenant_id": system["tenant_id"], "location_id": system["location_id"],
         "launch_id": system["launch_id"], "revision": system.get("revision", 1), "journey_mode": mode,
         "brand": system["brand"], "copy_profile": _provided(doc, "copy_profile"), "approval": system["approval"],
-        "entitlement_attestation": system["entitlement_attestation"], "offers": offers,
+        "offers": offers,
     }
     if _declared(mod, "answers_file"):
         intake["answers_file"] = str(answers_path)
@@ -421,7 +455,11 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
             "intake_sha256": intake_hash(intake),
             "journey_mode": {"source_ref": "answers-file:funnel_shape"},
             "offers": sources, "creative_direction": direction, "promotion": _promotion(doc),
-            "image_ceiling": ceiling, "warnings": warnings}
+            "image_ceiling": ceiling, "warnings": warnings,
+            # F16: one canonical block beside the intake - the design decision and its state,
+            # the brand (source, version, digest, palette status), the approved money, and the
+            # exact plan revision/approval. A producer matches its own brand file to `brand`.
+            "answer_contract": _answer_contract(doc, system)}
     if "checkout_terms" in intake:
         prov["checkout_terms"] = {"source_ref": "answers-file:checkout_terms"}
     return {"intake": intake, "provenance": prov}

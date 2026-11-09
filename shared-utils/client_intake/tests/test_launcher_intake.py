@@ -160,6 +160,14 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
         refused(self, "AF-LAUNCH-ANSWERS-APPROVAL", built, doc)
         refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", li.to_launcher_intake, elevation(), {})
 
+    def test_no_account_entitlement_question_can_be_answered(self):
+        # TIDY-002: the owner removed the client-facing account-entitlement gate. The bank ships
+        # no such question, so an entitlement answer can never be recorded and no launch plan can
+        # ever read one. This asserts ABSENCE: a test that expects the gate would bring it back.
+        self.assertNotIn("entitlement", {q["id"] for q in e.load_bank()["questions"]})
+        with self.assertRaises(KeyError):  # engine.question() refuses an id the bank no longer carries
+            e.record(elevation(), "entitlement", "Yes, it is included")
+
     def test_a_second_downsell_is_refused_by_name(self):  # PRD-30
         doc = elevation()
         e._set(doc, "downsell_2", {"display_name": "Last chance", "price": {"amount_minor": 9900, "currency": "USD"}},

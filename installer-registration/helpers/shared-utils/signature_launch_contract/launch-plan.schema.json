@@ -597,6 +597,37 @@
         "waits_for": {
           "$ref": "#/definitions/waits_for"
         },
+        "variant_tag": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$",
+          "description": "AUTOMATION VARIANT (BFL-000). The contact tag that marks WHICH purchased variant an automation serves (main / upsell-N / downsell-N). Declared once on the unit that installs the post-sale purchase handler and derived from the plan's own purchased slot (offer.packages[].slot), never a second variant identity. The launch-c reader carries it verbatim and the launch compiler binds it to the buildable template's variant placeholder; absent or null means the plan declares none and the helper must stay on its approved email sequence."
+        },
+        "purchase_identity": {
+          "type": ["object", "null"],
+          "description": "AUTOMATION PURCHASE IDENTITY (BFL-000). The purchase-event identity the post-sale handler deduplicates on, as the native field the selected flow supplies. Only an event / transaction / purchased-line identity is sufficient; an order id alone groups several paid changes and is never a dedupe key. Absent means the plan declares none and the compiler records the identity as insufficient rather than guessing.",
+          "properties": {
+            "transaction_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native transaction field reference, e.g. ghl.transaction.id."
+            },
+            "event_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native purchase-event field reference, e.g. ghl.event.id."
+            },
+            "purchased_line_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native purchased-line field reference, e.g. ghl.purchased_line.id."
+            },
+            "order_id": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "The native order field reference. Grouping only: an order id alone never deduplicates a purchase."
+            }
+          }
+        },
         "filters": {
           "type": "array",
           "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The intended trigger's filters, in the selected rail's own vocabulary. Optional; empty means the trigger has no filter.",
@@ -635,17 +666,17 @@
         },
         "settings": {
           "type": "object",
-          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). Workflow settings that change behaviour, chiefly reentry and enrolment.",
+          "description": "Shared-semantics boundary: AUTOMATION (BFL-000). The workflow settings the plan REQUESTS. A value here is a declaration, never proof that the provider applied it: the launch compiler records the observed applied state separately and leaves it unknown until a native readback proves it.",
           "properties": {
             "reentry": {
               "type": ["string", "null"],
               "enum": ["allow", "block", "unknown", null],
-              "description": "unknown until the rail answers; never guessed."
+              "description": "The requested native Allow Reentry value. The compiler writes it into the workflow settings and reads it back; an absent provider value stays unknown and the record is not called applied. Never guessed."
             },
             "enrollment": {
               "type": ["string", "null"],
               "enum": ["single", "successive", "unknown", null],
-              "description": "successive keeps a second purchase's fulfilment, deduplicated by the native event/transaction/line identity."
+              "description": "The requested purchase-succession policy: successive means a later distinct purchase (for example an upsell or downsell line on the same order) must still be delivered, deduplicated by the native event/transaction/line identity rather than the order. This is a plan declaration only: no verified native enrolment payload exists yet, so the compiler records it as declared with applied=null and the exact reason, and no consumer may treat this value as an applied setting."
             },
             "stop_on_response": {
               "type": ["boolean", "null"]
