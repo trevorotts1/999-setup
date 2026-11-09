@@ -252,6 +252,22 @@ DIVERGENT = {
         _OWNER_ORDER, (), ('del doc["answers"]["entitlement"]',)),
     _N + "ghl-install-pages/tools/test_ghl_funnel_steps.py": (
         _OWNER_ORDER, (), ("def _test_only_readback",)),
+    # D9: 999 mints its own launch-path pin (sf-prover-pin-authority.yml). The pin
+    # is a per-repo digest by construction, so 999's pin cannot equal onboarding's.
+    # No present token: the mint writes a bare hash unknowable in advance. The
+    # retired token is the stale pre-mint pin: the row fails until the mint lands,
+    # and fails again if the stale pin ever returns.
+    _N + "signature-funnel/scripts/SF-PROVER-PIN.sha256": (
+        "D9 999 mints its own pin for its own tree (declared divergences included); "
+        "the pin cannot equal onboarding's by construction",
+        (), ("6c01f0b8d649e0cb95119913626ce7a13aa0692fced44983938bd8ccfd0342fe",)),
+    # D10: the funnel pin tests are adapted to 999's nested skill layout
+    # (.claude/skills vs root-level 49/83) and to the removed entitlement gate
+    # (#385: no offline read-back to install). The 999 copy must keep the
+    # layout probe and must not resurrect the removed install call.
+    _N + "signature-funnel/scripts/test_front_door.py": (
+        "D10 999 pin tests probe the nested layout and skip the removed read-back",
+        ("_s83", "getattr(r, 'install', lambda: None)"), ("r.install(); raise",)),
     # D8: this checker's own 999 copy carries the DIVERGENT / DIVERGENT_ABSENT
     # declarations and the token checks above; the onboarding copy has neither.
     # The file still rides in both repos, so it is declared rather than allowed
