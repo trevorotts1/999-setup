@@ -9,12 +9,13 @@ WHAT GOVERNS NOW:
   are present and fully expressed. A missing element is an automatic
   failure. (Counting convention, per the guide: NFC-normalized, trimmed,
   Unicode code points; the prompt's SHA-256 is recorded in telemetry.)
-- Length is governed by the STRICT production band through the ONE canonical policy
-  service (shared-utils/prompt_policy.py, F18 2026-11-07): author each prompt to 95 to
-  100 percent of the model's verified prompt-field maximum. Below 95 percent FAILS and
-  must be revised; below 80 percent is a particularly clear hard failure; above the
-  maximum FAILS; an UNKNOWN maximum REFUSES a pass. The 80-to-below-95 warning-only path
-  is removed. This validator freezes the final prompt, runs the anatomy rules against
+- Length is governed by the ONE canonical policy service (shared-utils/prompt_policy.py,
+  owner rule 2026-10-05, restored 2026-11-08): author each prompt to 95 to 100 percent of
+  the model's verified prompt-field maximum. 80 to below 95 percent PASSES with a
+  warn-and-expand warning naming the characters to ADD; below 80 percent is a particularly
+  clear hard failure; above the maximum FAILS; an UNKNOWN maximum REFUSES a pass. The
+  warning is surfaced, never swallowed: a warn is not a silent pass.
+  This validator freezes the final prompt, runs the anatomy rules against
   that same string, records the final prompt hash and the provider payload hash, and
   binds an optional review reference to the same hash. Characters, percent of the
   maximum, and the full budget block land in the prompt's telemetry, and the prompt
@@ -125,7 +126,7 @@ GRADE_BLOCK_FILE = SKILL_ROOT / "assets" / "brand" / "signature-grade-block.txt"
 POLICY_FILE = SKILL_ROOT / "references" / "prompt-budget-policy.json"
 TRAITS_DIR = SKILL_ROOT / "references" / "style-traits"
 
-IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"  # Skill 66 registry id; override with --model
+IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"  # Skill 66 registry id; override with --model
 
 # Verbatim texts mandated by Image Guide v5 (see full-read notes R1):
 NO_TEXT_SENTENCE = "No text, no letters, no words anywhere in the image."
@@ -336,6 +337,11 @@ def cap_for_model(model, policy):
                 best = entry
     if best is not None:
         return best
+    if model and "gpt-image-2-6" in model:
+        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
+        # 2.6 route at 20,000 even if the policy file lookup misses.
+        return {"max_chars": 20000, "cap_status": "OWNER_RULED", "unit": "chars",
+                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
@@ -1353,6 +1359,12 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
         if receipt["verdict"]["ok"]:
             notes.append("prompt is %d chars (%.1f%% of max %s); in band, budget exit 0."
                          % (receipt["count"], receipt["ratio"] or 0.0, receipt["max"]))
+            # The canonical policy (shared-utils/prompt_policy.py) PASSES the 80-to-below-95
+            # percent band WITH a warn-and-expand warning: the owner rule of 2026-10-05
+            # ("80 to 95 percent: warn and expand") outranks the stricter F18 band that briefly
+            # rejected 94 percent. A passing verdict is therefore not a silent verdict - the
+            # warning and its ADD count must reach the operator, so surface them here.
+            warnings.extend(receipt["verdict"].get("warnings") or [])
         elif status == "REVIEW_STALE":
             for item in problems:
                 errors.append(item.rstrip(".") + ".")
