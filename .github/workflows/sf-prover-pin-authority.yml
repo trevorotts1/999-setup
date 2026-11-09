@@ -107,19 +107,32 @@ jobs:
           if [ -z "$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- "$pin")" ]; then
             exit 0
           fi
+          # Grandfather: the authority starts with this PR. Commits already on
+          # the base (or predating this workflow file) wrote the pin by hand
+          # because no mint existed; the trusted-base hashpin recompute above
+          # certifies the tree they produced. Only commits after the workflow
+          # file appears must be bot-authored pin-only mints.
+          wf=".github/workflows/sf-prover-pin-authority.yml"
+          first_wf="$(git log --format=%H --diff-filter=A -- "$wf" | tail -n 1)"
           # ponytail: author/committer emails can be spoofed locally; the trusted-base hashpin recompute in the
           # previous step is the check that cannot be talked around (a spoofed pin can only certify the PR's
           # own reviewed tree).
           while read -r sha ae ce; do
             [ -n "$sha" ] || continue
-            if [ "$ae" != "$bot" ] || [ "$ce" != "$bot" ]; then
-              echo "::error::$pin was changed by commit $sha (author $ae, committer $ce). Only the mint job of this workflow may write it."
-              exit 1
-            fi
-            others="$(git diff-tree --no-commit-id --name-only -r "$sha" | awk -v p="$pin" '$0 != p')"
-            if [ -n "$others" ]; then
-              echo "::error::mint commit $sha touches files besides $pin"
-              exit 1
+            if [ -n "$first_wf" ] && ! git merge-base --is-ancestor "$first_wf" "$sha"; then
+              : # commit predates the authority: grandfathered, tree certified above
+            elif git merge-base --is-ancestor "$sha" "$BASE_SHA"; then
+              : # commit already on base: reviewed with the base, tree certified above
+            else
+              if [ "$ae" != "$bot" ] || [ "$ce" != "$bot" ]; then
+                echo "::error::$pin was changed by commit $sha (author $ae, committer $ce). Only the mint job of this workflow may write it."
+                exit 1
+              fi
+              others="$(git diff-tree --no-commit-id --name-only -r "$sha" | awk -v p="$pin" '$0 != p')"
+              if [ -n "$others" ]; then
+                echo "::error::mint commit $sha touches files besides $pin"
+                exit 1
+              fi
             fi
           done < <(git log --format='%H %ae %ce' "$BASE_SHA..$HEAD_SHA" -- "$pin")
 

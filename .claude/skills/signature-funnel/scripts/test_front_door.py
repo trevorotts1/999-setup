@@ -424,6 +424,21 @@ class PinIsMintedOnlyByTheAuthority(Trees):
                 p = subprocess.run(["bash", "-c", script], cwd=td, text=True, capture_output=True,
                                    env=dict(os.environ, BASE_SHA=base, HEAD_SHA=cases[label]))
                 self.assertEqual(p.returncode == 0, ok, f"{label}: {p.stdout}{p.stderr}")
+            # Grandfather: a human pin commit already on the base passes — the
+            # trusted recompute certifies the tree, not the commit author.
+            # (Covers the pre-authority era: the workflow file is new in the PR.)
+            git(tree, "checkout", "-q", "-B", "grandfather_base", base)
+            pre = commit(tree, {pin: "prehuman\n"}, human)
+            git(tree, "checkout", "-q", "-B", "grandfather_head", pre)
+            wf_rel = ".github/workflows/sf-prover-pin-authority.yml"
+            (tree / wf_rel).parent.mkdir(parents=True, exist_ok=True)
+            (tree / wf_rel).write_text("name: authority\n")
+            git(tree, "add", "-A")
+            git(tree, "commit", "-q", "-m", "add authority")
+            post = git(tree, "rev-parse", "HEAD")
+            p = subprocess.run(["bash", "-c", script], cwd=td, text=True, capture_output=True,
+                               env=dict(os.environ, BASE_SHA=pre, HEAD_SHA=post))
+            self.assertEqual(p.returncode, 0, f"grandfather: {p.stdout}{p.stderr}")
 
     def test_the_shell_entry_has_no_pin_writer_of_its_own(self):
         text = (SKILL / "signature-funnel-entry.sh").read_text(encoding="utf-8")
