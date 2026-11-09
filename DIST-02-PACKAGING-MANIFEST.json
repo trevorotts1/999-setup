@@ -43,11 +43,11 @@
       "source_path": "49-signature-funnel",
       "source_commit": "a89a789a2d36199956f42c64aa78e94bf1ac3525",
       "source_version": "v2.1.38",
-      "files": 155,
+      "files": 150,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:6fcc629f37bd7d24f26680126777367591e267f089b4df68ca26ae5d3044296f",
+      "sha256": "sha256:86a800f38c00e6e263a154718b3337a18093624b9b99c3a3a9c6e68536e763d1",
       "999_version": "v2.1.38",
-      "source_sha256": "sha256:8122f066f0d5f313cc28ec4b89c2f73163ac76d5397086266c9542acce7c46e1"
+      "source_sha256": "sha256:73101bf54db5e8c14cec7aef0a5abca5cbcbce8f4cc85a17539c6b481a7f93d2"
     },
     {
       "id": "tree-78-signature-product-selection",
