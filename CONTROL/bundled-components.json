@@ -131,7 +131,7 @@
     ],
     "signature-downsell": [
       {
-        "version": "0.1.7",
+        "version": "0.1.8",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-downsell",
@@ -140,7 +140,7 @@
     ],
     "signature-thank-you": [
       {
-        "version": "0.3.3",
+        "version": "0.3.4",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-thank-you",
@@ -149,7 +149,7 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.16",
+        "version": "0.2.20",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
@@ -158,7 +158,7 @@
     ],
     "ghl-install-pages": [
       {
-        "version": "v27.1.81",
+        "version": "v27.1.84",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/ghl-install-pages",
@@ -167,7 +167,7 @@
     ],
     "convert-and-flow-operator": [
       {
-        "version": "v2.1.42",
+        "version": "v2.1.43",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/convert-and-flow-operator",
@@ -176,7 +176,7 @@
     ],
     "signature-funnel": [
       {
-        "version": "v2.1.31",
+        "version": "v2.1.37",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-funnel",
@@ -203,7 +203,7 @@
     ],
     "signature-upsell": [
       {
-        "version": "0.2.6",
+        "version": "0.2.7",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-upsell",
