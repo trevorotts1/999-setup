@@ -151,7 +151,7 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
         del doc["answers"]["upsell_1"]["value"]["price"]
         refused(self, "AF-LAUNCH-ANSWERS-PRICE", built, doc)
 
-    def test_missing_approval_is_refused(self):
+    def test_missing_approval_and_entitlement_are_refused(self):
         doc = elevation()
         del doc["answers"]["plan_approval"]
         refused(self, "AF-LAUNCH-ANSWERS-MISSING", built, doc)

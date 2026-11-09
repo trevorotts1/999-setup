@@ -33,7 +33,8 @@ if str(_ROUTES_DIR) not in sys.path:
 
 import substrate  # noqa: E402
 
-from . import delivery, image_plan, intake as intake_module, page_designs, route  # noqa: E402
+from . import (capability_check, delivery, image_plan, intake as intake_module,
+               linked_delivery, page_designs, route)  # noqa: E402
 
 LAUNCH_SCHEMA_VERSION = "1.2"
 FIRST_ROLE = "landing"  # first when pages are built one at a time (side by side, Skill 49 starts every page together)
@@ -213,6 +214,38 @@ def to_launch_record(normalized: Dict[str, Any], graph: Dict[str, Any],
 def check_launch_record(launch: Dict[str, Any]) -> List[str]:
     """Skill 49's own validator's verdict on the record. Empty list means schema- and domain-valid."""
     return list(substrate.dispatch().vlp.validate_launch(launch))
+
+
+def plan_document_hash(launch: Dict[str, Any]) -> str:
+    """Skill 49's own hash of the record: the one value an approval binds."""
+    return substrate.dispatch().vlp.plan_document_hash(launch)
+
+
+def resolve_launch(normalized: Dict[str, Any], graph: Dict[str, Any], *,
+                   landing_pages: Optional[Sequence[str]] = None,
+                   extra_pages: Sequence[str] = ()) -> tuple:
+    """(image inputs, to_confirm, launch record) with the paid budget verified against the plan's OWN hash.
+
+    F20: the paid image resolver needs the plan hash, and the plan hash is computed from the record that
+    carries the resolved style and provider, so resolving the paid plan first is circular. The record is
+    therefore built from the plan-shape inputs (style and provider only), hashed, and the spend is then
+    verified against that hash. The final record is rebuilt from the verified inputs and must hash
+    identically: a resolution that moved the hash would mean the client approved a different plan.
+    """
+    test_only = bool(normalized.get("test_only", True))
+    shape = image_plan.plan_shape(normalized.get("image_plan"), test_only=test_only)
+    provisional = to_launch_record(normalized, graph, shape,
+                                  landing_pages=landing_pages, extra_pages=extra_pages)
+    approved_hash = plan_document_hash(provisional)
+    inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"), test_only=test_only,
+                                            plan_hash=approved_hash)
+    launch = to_launch_record(normalized, graph, inputs,
+                              landing_pages=landing_pages, extra_pages=extra_pages)
+    if plan_document_hash(launch) != approved_hash:
+        raise BridgeError("AF-LAUNCH-PLAN-HASH-UNSTABLE",
+                          "resolving the picture plan changed the plan hash, so an approval would bind a "
+                          "plan the client never saw. Nothing was dispatched and nothing was spent.")
+    return inputs, to_confirm, launch
 
 
 def lane_plan(graph: Dict[str, Any], workers: Optional[int] = None,
@@ -412,7 +445,8 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         parallel: Optional[int] = None,
         scoped_approvals: Optional[List[Dict[str, Any]]] = None,
         extra_pages: Sequence[str] = (),
-        landing_pages: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+        landing_pages: Optional[Sequence[str]] = None,
+        observed_capabilities: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Validate, bridge, dispatch, and write one result per page. Returns the dispatch report.
 
     landing_pages is the client's landing page choice ("landing", "sales" or both). Without it the set
@@ -424,10 +458,26 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     """
     out_dir = Path(out_dir)
     normalized = intake_module.validate(payload)
-    inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"),
-                                            test_only=bool(normalized.get("test_only", True)))
+    # F22: BEFORE any design work or paid render, prove the capabilities this dispatch
+    # needs. Fail closed: a required capability that cannot be proved stops the run by
+    # name; nothing is spent and no page is built. Capabilities the approved feature set
+    # did not select are reported as advisories, never silently treated as satisfied.
+    capabilities = capability_check.run(
+        normalized, require=("journey_mapping",),
+        observed=observed_capabilities or {})
+    try:
+        capability_check.assert_ready(capabilities)
+    except capability_check.CapabilityError as exc:
+        raise BridgeError(exc.code,
+                          f"{exc.detail}. Nothing was dispatched and nothing was spent.") from exc
+    resources = linked_delivery.resolve(normalized)
+    # F20: the image plan is resolved ONCE, below, by resolve_launch — it verifies the paid budget
+    # against the plan hash the record itself produces and rebuilds the record from the verified inputs.
     graph = route.compile_route(normalized)
-    launch = to_launch_record(normalized, graph, inputs, landing_pages=landing_pages, extra_pages=extra_pages)
+    # F20: the paid budget is verified against the plan hash the record itself produces (no circular
+    # dependency), and the record is rebuilt from the verified inputs.
+    inputs, to_confirm, launch = resolve_launch(normalized, graph, landing_pages=landing_pages,
+                                                extra_pages=extra_pages)
     _bind_approval(launch, normalized, approval)
     fails = check_launch_record(launch)
     if fails:
@@ -451,6 +501,12 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
             encoding="utf-8")
     (out_dir / "intake-at-dispatch.json").write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
                                                      encoding="utf-8")  # the dispatch-time intake package.assemble binds to (package.INTAKE_SNAPSHOT_REL)
+    # F22: the launch's linked delivery/access destinations, recorded before any page is
+    # built. Same inputs give the same ordered inventory and the same fingerprint.
+    resources_path = linked_delivery.write_record(resources, out_dir)
+    capabilities_path = out_dir / capability_check.RECORD_REL
+    capabilities_path.write_text(json.dumps(capabilities, indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
     inputs_path.write_text(json.dumps(image_plan.image_inputs_file(inputs), indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
     order_inputs_path.write_text(json.dumps(image_plan.order_page_inputs_file(
@@ -550,6 +606,25 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         "executor_provider": inputs["executor_provider"],
         "paid_calls_allowed": inputs["allow_paid"],
         "to_confirm": to_confirm + landing_to_confirm,
+        # F22: what this launch depends on and where its buyers are sent, recorded with the
+        # page build so the package check re-verifies the same facts rather than new ones.
+        "capabilities": {
+            "path": capability_check.RECORD_REL,
+            "state": capabilities["state"],
+            "required": capabilities["required"],
+            "blocked": capabilities["blocked"],
+            "advisories": [name for name, row in capabilities["capabilities"].items()
+                           if row["state"] == "unproven" and not row["required"]],
+        },
+        "linked_delivery": {
+            "path": str(resources_path.name),
+            "fingerprint": resources["fingerprint"],
+            "counts": resources["summary"]["counts"],
+            "state": resources["summary"]["state"],
+            "pages": resources["pages"],
+            "client_blockers": resources["summary"]["client_blockers"],
+            "next_steps": resources["summary"]["next_steps"],
+        },
         "delivery": {
             "record": delivered["record_path"],
             "kind": delivered["plan"]["kind"],
@@ -588,6 +663,12 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
         lines += [f"  - {line}" for line in to_confirm_lines(report["to_confirm"])]
     else:
         lines.append("Every choice came from you. Nothing is waiting for confirmation.")
+    # F22 item 8: a real blocker is stated in plain words with the practical next step,
+    # and the work that does not depend on it keeps going. It is never hidden.
+    linked = report.get("linked_delivery") or {}
+    for message, step in zip(linked.get("client_blockers") or [],
+                             linked.get("next_steps") or []):
+        lines.append(f"Still to sort out: {message} Next step: {step}")
     readbacks = report.get("skill06_readbacks") or {}
     for role, label in (("downsell_1", "Downsell (D1)"), ("thank_you", "Thank-you page")):
         if role in report["pages"] and not readbacks.get(role):

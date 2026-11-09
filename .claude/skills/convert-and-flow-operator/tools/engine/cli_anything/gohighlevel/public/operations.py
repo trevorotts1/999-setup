@@ -240,6 +240,7 @@ def _R(
     readback: str | None = None,
     required_query: tuple[str, ...] = (),
     query_enums: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    fetch_date: str | None = None,
 ) -> OperationRow:
     return OperationRow(
         operation_id=operation_id,
@@ -255,7 +256,7 @@ def _R(
         approval_required=approval,
         scopes_candidate=scopes,
         doc_url=doc_url,
-        doc_fetch_date=DOC_FETCH_DATE if doc_url else None,
+        doc_fetch_date=(fetch_date or DOC_FETCH_DATE) if doc_url else None,
         blocker=blocker,
         readback_plan=readback,
         required_query=required_query,
@@ -432,6 +433,13 @@ _CONVERSATIONS_CALENDARS: tuple[OperationRow, ...] = (
     _R("calendars.get", "GET", "/calendars/{calendarId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "path.calendarId", False, False, "A-UNVERIFIED",
        DOCS + "/ghl/calendars/get-calendar"),
+    # Skill 6 permanent Meeting Room link integration, official contract checked
+    # 2026-11-08. Enablement remains per-tenant/default-deny; a write still needs
+    # idempotency, a nonvacuous calendars.get readback and verified capability.
+    _R("calendars.update", "PUT", "/calendars/{calendarId}", "v3", "D", PUB,
+       PIT_OR_OAUTH, "path.calendarId", True, False, None,
+       DOCS + "/ghl/calendars/update-calendar", scopes=("calendars.write",),
+       readback="calendars.get", fetch_date="2026-11-08"),
     _R("calendars.create", "POST", "/calendars/", "v3", "D", PUB, PIT_OR_OAUTH,
        "body.locationId", True, False, "B-TEAMMEMBERS",
        DOCS + "/ghl/calendars/create-calendar"),
@@ -480,8 +488,13 @@ _PAYMENTS_ALT: tuple[str, ...] = ("2021-07-28",)
 # (ISO-4217 exponent aware) plus the read-first / read-back / approval discipline,
 # and the Skill 44 CLI product/price commands route through it.
 _PAYMENTS: tuple[OperationRow, ...] = (
+    # F11 correction: products.list carried blocker ``B-COMMUNITY-RAIL``, a
+    # retired-community-transport code that serves no product route and that no
+    # other row in this family carries. The row is a public REST read with no
+    # recorded verification, so ``A-UNVERIFIED`` states what is actually known.
+    # No other field on the row changed.
     _R("products.list", "GET", "/products/", "v3", "D", PUB, PIT_OR_OAUTH,
-       "query.locationId", False, False, "B-COMMUNITY-RAIL",
+       "query.locationId", False, False, "A-UNVERIFIED",
        DOCS + "/2021-07-28/ghl/products/list-invoices",
        alternates=_PAYMENTS_ALT),
     _R("products.get", "GET", "/products/{productId}", "v3", "D", PUB,
@@ -756,9 +769,25 @@ _SOCIAL: tuple[OperationRow, ...] = (
 _PRIVATE_VERSION = "2021-07-28"  # internal rail header, recorded by GU-003
 
 _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
+    # F11 version reconciliation (2026-11-07). Production contract re-read at
+    # https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow/:
+    # GET /workflows/ documents Version v3, which is the literal this row
+    # already carries (the page is titled "Get Workflow (deprecated)" yet still
+    # publishes the operation at v3). The recorded live 200 for the same route
+    # used 2021-07-28 (GHL_UPDATES_live-ledger.md line 759), and GHL accepts
+    # more than one supported Version on several routes, so that literal is a
+    # permitted rollback for this row and is recorded as such rather than
+    # replacing the documented value. F6 / B-WORKFLOWS-LIST-VERSION stays open
+    # until one authorized v3 call is recorded (see
+    # evidence/W23/f6-workflows-list-version.md); this row still declares v3.
     _R("workflows.list", "GET", "/workflows/", "v3", "D", PUB, PIT_OR_OAUTH,
        "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/workflows/get-workflow/", scopes=("workflows.readonly",)),
+       DOCS + "/ghl/workflows/get-workflow/", scopes=("workflows.readonly",),
+       alternates=("2021-07-28",)),
+    # F11: production pages re-read 2026-11-07 — add-contact-to-workflow is
+    # POST /contacts/{contactId}/workflow/{workflowId} at Version v3 and
+    # delete-contact-from-workflow is the same path at Version v3. The rows
+    # below match both.
     _R("workflows.enroll", "POST",
        "/contacts/{contactId}/workflow/{workflowId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", True, False, "A-UNVERIFIED",
@@ -767,6 +796,23 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
        "/contacts/{contactId}/workflow/{workflowId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", True, True, "A-UNVERIFIED",
        DOCS + "/ghl/contacts/delete-contact-from-workflow/"),
+    # F11 reconciliation (2026-11-07), recorded WITHOUT re-freezing the rows.
+    # Re-read against the production contract (all five pages fetched
+    # 2026-11-07; each documents Version v3):
+    #   get-workflow-definition    GET  /workflows/{workflowId}/definition  v3
+    #   create-workflow            POST /workflows                          v3
+    #   update-workflow-definition PUT  /workflows/{workflowId}/definition  v3
+    #   update-workflow-status     PUT  /workflows/{workflowId}/status      v3
+    #   delete-workflow            DELETE /workflows/{workflowId}           v3
+    # All five now publish on the PRODUCTION marketplace and each documents
+    # Version v3; the freeze below still records staging-only v4 (level S,
+    # B-V4-S). The literals are left exactly as frozen on purpose: re-freezing
+    # a contract row is a ledger decision, not a build-lane edit, and six
+    # pinned contract tests plus evidence/W18 assert the frozen values. What
+    # this comment fixes is the claim a caller reads: these operations are not
+    # "staging-only" any more, they are production-documented at v3 and remain
+    # default-deny through the capability gate. Named blocker B-V4-S covers the
+    # re-freeze; the capability gate still admits nothing from this comment.
     _R("workflows.definition.read", "GET",
        "/workflows/{workflowId}/definition", "v4", "S", PUB, PIT_OR_OAUTH,
        "query.locationId", False, False, "B-V4-S",

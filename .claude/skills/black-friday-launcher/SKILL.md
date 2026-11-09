@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.19
+version: 0.2.29
 priority: HIGH
 ---
 
@@ -160,6 +160,7 @@ I need a moment to get something ready on my side — I'll be right back with yo
 | Never say to the client | Say this instead |
 | --- | --- |
 | "Black Friday Launcher is installed and ready (with a version number)" | "Yes, I'm ready to help you with your Black Friday sale." |
+| "validates the intake fail-closed" | "First I'll make sure I have everything I need from you." |
 | "builds the route graph", "maps the checkout contract" | "the steps your customers go through, from your sales page to your order form to your thank-you page" |
 | "dispatches the page builds" | "I'll put your pages together." |
 | "the manifest and the receipt" | "a complete folder with everything we made" |
@@ -225,7 +226,7 @@ a numbered directory, so the same code runs in both layouts.
    never duplicated.
 6. **Completeness checks** (`launcher_core/checks.py`). Fail when a required
    piece is missing or blocked, when an artifact is absent or its hash drifted,
-   when a bound path does not resolve or is placeholder-shaped, when a price,
+   when a bound path does not resolve or is placeholder-shaped, when a price or
    level was defaulted, when Council advice is recorded as blocking, or when
    checkout is not the native contract. Nothing is refused for want of an
    account-entitlement declaration; there is none to make.
@@ -244,6 +245,26 @@ a numbered directory, so the same code runs in both layouts.
    read-back and the construction receipts; the manifest and receipt carry that record and its
    digest. The achieved stage comes from evidence only, so a local/draft package is never
    labelled installed or live, and a read-back past the authorized stage is refused.
+
+9. **Linked delivery destinations and the early capability check (F22).**
+   `launcher_core/linked_delivery.py` inventories every destination this launch depends on —
+   the pages it builds, the client-owned destinations it already has, and third-party
+   destinations — from the intake's optional `linked_destinations` list plus each offer's
+   owner-confirmed delivery destination. A `new_build` entry needs a registered page role
+   (Skill 49's `structure/page_types.json`) or a documented adapter to one, plus explicit
+   brand, design, copy, review and approval evidence; an existing or third-party entry needs
+   ownership/reference, access, link, product, entitlement and fulfillment evidence. A bump is
+   a checkout component, never a page, and a second downsell stays design-only until its
+   purchase route exists. Resolution is deterministic: the same inputs produce the same ordered
+   inventory and the same fingerprint (`launch-resources.json`), which `package.assemble`
+   records and the F22 check rule re-verifies, refusing a changed inventory or a delivery claim
+   with an unaccounted-for destination. `launcher_core/capability_check.py` runs the real
+   current checks (journey mapping, billing type, native checkout family, output destination,
+   installed runtime, conversational workflows, workflow authorization) BEFORE any design work
+   in `launch_bridge.run`, and again at assembly; a capability the approved feature set needs
+   but cannot be proved refuses by name, while unselected ones are recorded as advisories and
+   independent work continues. Folded levels are reported from the per-offer checkout instances
+   (`combined_single_offer` per main price choice), not from the obsolete contract-gap claim.
 
 ## Read order
 

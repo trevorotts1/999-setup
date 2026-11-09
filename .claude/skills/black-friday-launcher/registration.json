@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.19",
+    "version": "0.2.29",
     "status": "enabled-in-999"
   },
   "number_assignment": {
@@ -104,7 +104,7 @@
   "offer_facts": {
     "status": "decided",
     "decision": "verified_offer_facts_only",
-    "rule": "a defaulted price or level fails the build"
+    "rule": "a defaulted price, level or entitlement fails the build"
   },
   "journey_modes": {
     "status": "decided",
