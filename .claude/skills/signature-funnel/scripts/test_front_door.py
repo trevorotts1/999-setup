@@ -11,6 +11,7 @@ import ast
 import contextlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,7 +21,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent
-REPO = SKILL.parent
+# Repo root: walk up until .github/workflows exists (999 nests skills under
+# .claude/skills; onboarding keeps 49 at the root). Ponytail: hardcodes nothing;
+# stops at the first ancestor that owns the authority workflow's directory.
+REPO = next((q for q in (SKILL, *SKILL.parents) if (q / ".github" / "workflows").is_dir()), SKILL.parent)
 sys.path.insert(0, str(HERE))
 import front_door as fd  # noqa: E402
 
@@ -41,9 +45,16 @@ class Trees(unittest.TestCase):
         root = Path(cls._td.name)
         cls.t49, cls.t83 = root / "49-signature-funnel", root / "83-black-friday-launcher"
         shutil.copytree(SKILL, cls.t49, ignore=SKIP)
-        shutil.copytree(REPO / "83-black-friday-launcher", cls.t83, ignore=SKIP)
+        # 83 lives at the repo root on onboarding, under .claude/skills on 999.
+        _s83 = REPO / "83-black-friday-launcher"
+        if not _s83.is_dir():
+            _s83 = REPO / ".claude" / "skills" / "black-friday-launcher"
+        shutil.copytree(_s83, cls.t83, ignore=SKIP)
+        _shared = REPO / "shared-utils"
+        if not _shared.is_dir():
+            _shared = REPO / ".claude" / "skills" / "shared-utils"
         for name in ("signature_launch", "signature_launch_contract"):
-            shutil.copytree(REPO / "shared-utils" / name, root / "shared-utils" / name, ignore=_top_files_only)
+            shutil.copytree(_shared / name, root / "shared-utils" / name, ignore=_top_files_only)
         # 83's `cli dispatch` runs its dependency preflight (every sibling skill tree, client_intake, the registry
         # map) BEFORE the front door, so the fixture links the real siblings in; the pinned trees stay the copies.
         for src in REPO.iterdir():
@@ -88,18 +99,23 @@ class Trees(unittest.TestCase):
         return rd
 
     def cli_dispatch(self, td):
-        intake = json.loads((REPO / "83-black-friday-launcher/fixtures/elevation/intake.json").read_text())
+        # 83 lives at the repo root on onboarding, under .claude/skills on 999.
+        _fx = REPO / "83-black-friday-launcher/fixtures"
+        if not _fx.is_dir():
+            _fx = REPO / ".claude" / "skills" / "black-friday-launcher/fixtures"
+        intake = json.loads((_fx / "elevation/intake.json").read_text())
         # the copied 83 tree has no fixtures/, so the intake names the real answers file by absolute path
-        intake["answers_file"] = str(REPO / "83-black-friday-launcher/fixtures/elevation/answers.json")
+        intake["answers_file"] = str(_fx / "elevation/answers.json")
         intake["image_plan"] = {"brand_file": str(Path(td) / "brand.json"), "brand_owner": "TEST-ONLY Client"}
         files = {"intake.json": intake, "approval.json": {}}
         for name, doc in files.items():
             (Path(td) / name).write_text(json.dumps(doc), encoding="utf-8")
-        # 83 reads the entitlement back from GHL before it reaches the front door; the launcher's own offline
-        # TEST-ONLY transport stands in for that read (imported after the copied launcher_core is cached).
+        # 999 removed the entitlement gate (#385), so its fixture has no offline
+        # read-back to install; onboarding still does. Install only when present.
         boot = ("import sys; sys.path.insert(0, '.'); import launcher_core.cli as c; "
-                f"sys.path.insert(0, {str(REPO / '83-black-friday-launcher/fixtures')!r}); "
-                "import test_only_readback as r; r.install(); raise SystemExit(c.main(sys.argv[1:]))")
+                f"sys.path.insert(0, {str(_fx)!r}); "
+                "import test_only_readback as r; "
+                "getattr(r, 'install', lambda: None)(); raise SystemExit(c.main(sys.argv[1:]))")
         return subprocess.run(
             [sys.executable, "-c", boot, "dispatch", "--intake", str(Path(td) / "intake.json"),
              "--out", str(Path(td) / "out"), "--approval", str(Path(td) / "approval.json"),
@@ -324,8 +340,11 @@ class PinIsMintedOnlyByTheAuthority(Trees):
         doc = yaml.safe_load((wf_dir / "sf-prover-pin-authority.yml").read_text(encoding="utf-8"))
         triggers = doc.get("on", doc.get(True))
         self.assertIn("pull_request", triggers)
-        self.assertTrue(any(p.startswith("49-signature-funnel") for p in triggers["pull_request"]["paths"]))
-        self.assertTrue(any(p.startswith("83-black-friday-launcher") for p in triggers["pull_request"]["paths"]))
+        # 999 nests skills under .claude/skills; onboarding keeps 49/83 at the root.
+        _s49 = "49-signature-funnel" if (REPO / "49-signature-funnel").is_dir() else ".claude/skills/signature-funnel"
+        _s83 = "83-black-friday-launcher" if (REPO / "83-black-friday-launcher").is_dir() else ".claude/skills/black-friday-launcher"
+        self.assertTrue(any(p.startswith(_s49) for p in triggers["pull_request"]["paths"]))
+        self.assertTrue(any(p.startswith(_s83) for p in triggers["pull_request"]["paths"]))
         self.assertIn("tags", triggers["push"])  # the pin is re-checked against the tagged tree
         verify, mint = doc["jobs"]["verify"], doc["jobs"]["mint"]
         verify_text = json.dumps(verify)
@@ -359,7 +378,10 @@ class PinIsMintedOnlyByTheAuthority(Trees):
         import yaml
         doc = yaml.safe_load((REPO / ".github/workflows/sf-prover-pin-authority.yml").read_text(encoding="utf-8"))
         script = next(s["run"] for s in doc["jobs"]["verify"]["steps"] if s.get("name") == "Refuse a hand-edited pin file")
-        pin, bot = "49-signature-funnel/scripts/SF-PROVER-PIN.sha256", "41898282+github-actions[bot]@users.noreply.github.com"
+        # Pin path follows the repo layout (onboarding: 49 at root; 999: under .claude/skills).
+        _m = re.search(r'^\s*pin="([^"]+)"', script, re.M)
+        pin = _m.group(1) if _m else "49-signature-funnel/scripts/SF-PROVER-PIN.sha256"
+        bot = "41898282+github-actions[bot]@users.noreply.github.com"
 
         def git(tree, *a, who=("Human", "human@example.com")):
             env = dict(os.environ, GIT_AUTHOR_NAME=who[0], GIT_AUTHOR_EMAIL=who[1],
@@ -378,7 +400,7 @@ class PinIsMintedOnlyByTheAuthority(Trees):
         cases = {}  # label -> (expected rc == 0, head sha)
         with tempfile.TemporaryDirectory() as td:
             tree = Path(td) / "tree"
-            (tree / "49-signature-funnel/scripts").mkdir(parents=True)
+            (tree / pin).parent.mkdir(parents=True, exist_ok=True)
             git(tree, "init", "-q")
             git(tree, "config", "user.name", "x")
             git(tree, "config", "user.email", "x@example.com")
