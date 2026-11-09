@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-08T22:33:45Z",
+  "generatedAt": "2026-11-09T02:39:16Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -39,14 +39,14 @@
       "role": "KIE image model selection, prompt constraints, domain QC",
       "kind": "skill",
       "required": true,
-      "version": "v2.2.4",
+      "version": "v2.2.5",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/66-kie-image",
       "installPath": "skills/66-kie-image",
       "fileCount": 21,
-      "sizeBytes": 342477,
-      "treeSha256": "2ecaedc9f5dd2c09f559a2199e55c37e480d9df29edb560ada73322804e59e99",
-      "skillMdSha256": "9ba7eda52d143dd308c99932d4c544232bedec247822086085717ae6c9e1e603"
+      "sizeBytes": 342614,
+      "treeSha256": "143bd4ff535b3721a7e14310be43735b34afc6b0f12118b3fd2b9862be8a83e9",
+      "skillMdSha256": "85c940961a779732eac4ef43ae83a99ad8602d029d98daa73e2664671586cd37"
     },
     {
       "id": "67",
@@ -135,13 +135,13 @@
       "role": "The shared launch runtime (client_intake, signature_launch, signature_launch_contract) plus the KIE key resolver, prompt rule 12 enforcer, declared gate list and its test; merged into the installed shared-utils tree, never swapped in for it",
       "kind": "files",
       "required": true,
-      "version": "sha256:9bb1e1ef1f22",
+      "version": "sha256:a7a9e675ad78",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
-      "fileCount": 148,
-      "sizeBytes": 1463408,
-      "treeSha256": "9bb1e1ef1f22cba099c768bbfe542bd709f2c60ce8a6a88cd4fe4c8cf40f0e53",
+      "fileCount": 150,
+      "sizeBytes": 1490876,
+      "treeSha256": "a7a9e675ad7800a1ebb178a8b69d805953c713de4ebbf7f79f87cdda1fd1b721",
       "skillMdSha256": null,
       "files": [
         {
@@ -232,12 +232,12 @@
         {
           "path": "kie-prompt-enforcer-and-gates.test.py",
           "sourcePath": "tests/unit/kie-prompt-enforcer-and-gates.test.py",
-          "sha256": "56aac4f510504c5f5fd6564d512007452b7a4141adbe03d3648bf684e210fb01"
+          "sha256": "88249706944f0829b309ab87890678373bcc235a366e046cdc97ea1f48a73fe1"
         },
         {
           "path": "kie_prompt_enforcer.py",
           "sourcePath": "shared-utils/kie_prompt_enforcer.py",
-          "sha256": "59a3f2090b4c07c0d09222b2a71b9acf126b2e847f3f1e8a85affd0bd65de592"
+          "sha256": "9379313172c793062f74fbb6a8b76f25273c865ce98d93188e3c317dceb8d752"
         },
         {
           "path": "kie_prompt_gates.json",
@@ -597,7 +597,7 @@
         {
           "path": "signature_launch/experience/README.md",
           "sourcePath": "shared-utils/signature_launch/experience/README.md",
-          "sha256": "d7453ca560352455f7f7c343e05218425183ee0c7bb0787404b3e3594c0adc68"
+          "sha256": "2600792e1776500952de5418095b6b2669585d613c56fc4baaa1affb0145f440"
         },
         {
           "path": "signature_launch/experience/delivery_report.py",
@@ -633,6 +633,11 @@
           "path": "signature_launch/experience/harness_profile.py",
           "sourcePath": "shared-utils/signature_launch/experience/harness_profile.py",
           "sha256": "2d9d9be5d56e2f995bdccfacb4c701263ea750ce8e5ee34a4ffe5255a5b7aea5"
+        },
+        {
+          "path": "signature_launch/experience/launch_progress_report.py",
+          "sourcePath": "shared-utils/signature_launch/experience/launch_progress_report.py",
+          "sha256": "4fb093cb5230cdaeec3c3959448129ceb5a117021d24b7549146249eaf956077"
         },
         {
           "path": "signature_launch/experience/progress_report.py",
@@ -697,7 +702,7 @@
         {
           "path": "signature_launch/progress.py",
           "sourcePath": "shared-utils/signature_launch/progress.py",
-          "sha256": "ccfc2769b632246ff78b4c55a14f9fdd116ea9c540748ef357f16e3dd024acbd"
+          "sha256": "3934ed24e2ebdd8210594076a738947f968b0520545de97b205579394894fccb"
         },
         {
           "path": "signature_launch/progress_file.schema.json",
@@ -737,22 +742,22 @@
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-ai-off.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-ai-off.json",
-          "sha256": "822a6faee421124581f750b81c9f75a7cd4c7f89c178d0cddcead0188c26dfd0"
+          "sha256": "7cdcde66df711c62e4bfc7e9e2478ed9a504131e25f16e9b32517bf00d9ffcdd"
         },
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-ai-on.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-ai-on.json",
-          "sha256": "d6e39b91965dda86439f53e1f17a51a38755458cbdd0c53bfc03f056c2cc22bd"
+          "sha256": "bece8630551372cdf2180b31898c355126ef34019a4ba1928e81fbbd1d52ce30"
         },
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-empty.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-empty.json",
-          "sha256": "4cfceb6149ba2e5d51e0413504fed30109f4163852f132733f83c23ade46df05"
+          "sha256": "ddd948963b584fa0a57e6d0f3775ce674bf25a2eb3deff6c12b2c7747ae7ecce"
         },
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-stalled.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-stalled.json",
-          "sha256": "6bbcb47f1d201ded6cba482cd7bf80c6235020fd223b41694af54194d8384ec8"
+          "sha256": "a88fd6604a6e3ff8c8ebfcd5828641a3caf94f9803549211143a93fb191ebbff"
         },
         {
           "path": "signature_launch/scheduler/make_progress_fixtures.py",
@@ -773,6 +778,11 @@
           "path": "signature_launch/scheduler/test_model.py",
           "sourcePath": "shared-utils/signature_launch/scheduler/test_model.py",
           "sha256": "ace0c1b863aea4bc9611933ac3e78f3345766861464af1e784702c28f02bead5"
+        },
+        {
+          "path": "signature_launch/scheduler/test_progress_evidence.py",
+          "sourcePath": "shared-utils/signature_launch/scheduler/test_progress_evidence.py",
+          "sha256": "73ea787f550b199f6becf3a8a53d1afd10cb72de0af8972803cb6a36f145a2bf"
         },
         {
           "path": "signature_launch/scheduler/test_scheduler.py",
