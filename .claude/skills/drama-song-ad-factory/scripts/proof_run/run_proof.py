@@ -481,6 +481,18 @@ def stage_style_menu():
     banned = ("strings", "gospel", "choir", "harmonies", "cinematic",
               "spacious", "prayerful", "atmospheric", "ethereal", "ambient",
               "airy", "wet", "shimmer", "hall", "room")
+    # The proof also fails if the code under test dropped any of the 15 from its
+    # own banned list (the list is read only to compare, never to define the pass).
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_proof_no_echo", str(CORE_DIR / "audio_c3" / "no_echo" / "no_echo.py"))
+    ne = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ne)
+    missing = [w for w in banned
+               if w not in {x.lower() for x in ne.SONG_BANNED_STYLE_WORDS}]
+    if missing:
+        return False, ("no_echo.SONG_BANNED_STYLE_WORDS is missing owner F13 "
+                       "words: %s" % ", ".join(missing))
     hits = []
     for sid in ids:
         text = ms.style_prompt(sid)
