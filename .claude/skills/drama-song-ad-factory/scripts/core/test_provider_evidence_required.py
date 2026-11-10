@@ -154,7 +154,7 @@ def test_b_resubmission_refused():
           p["outcome"], "rejected")
     check("b2: typed refusal code", p["reason_code"], "PROVIDER_LOOKUP_REQUIRED")
     check("b3: the refusal names the remedy",
-          "--provider-ref" in p["next_action"], True)
+          "record_provider_lookup" in p["next_action"], True)
     check("b4: no second job was minted",
           q(db, "SELECT COUNT(*) FROM jobs")[0], 1)
 
@@ -202,7 +202,7 @@ def test_e_succeeded_needs_no_ref():
           L.reconcile(db, RUN, "video/v1", aid, "succeeded", 100)["outcome"],
           "ok")
     check("e2: succeeded does not permit a new paid attempt",
-          _retry(db, "video/v1", d)["reason_code"], "RETRY_NOT_FAILED")
+          _retry(db, "video/v1", d)["reason_code"], "MISSING_AUTH_REF")
 
 
 def test_f_abandon_path():
@@ -210,7 +210,7 @@ def test_f_abandon_path():
     d = L.digest_request({"k": 6})
     _to_unknown(db, "video/v1", d)
     check("f1: an unknown attempt forbids a paid retry",
-          _retry(db, "video/v1", d)["reason_code"], "DUPLICATE_LOGICAL_JOB")
+          _retry(db, "video/v1", d)["reason_code"], "RECONCILE_FIRST")
 
     db2 = fresh("pev-cancel-")
     d2 = L.digest_request({"k": 7})
@@ -225,7 +225,7 @@ def test_f_abandon_path():
           "unknown")
     check("f4: and a paid retry is still refused",
           L.plan(db2, RUN, "video/v2", "", d2, 100)["reason_code"],
-          "DUPLICATE_LOGICAL_JOB")
+          "RECONCILE_FIRST")
     check("f5: operator parking stays available",
           L.park_run(db, RUN, "OPERATOR_PARK")["outcome"], "parked")
 
@@ -276,6 +276,9 @@ def test_k_existing_ledger_migrates():
     con = sqlite3.connect(db)
     try:
         con.execute("ALTER TABLE jobs DROP COLUMN uncertain")
+        # the 1.1.0 ledger migrates only from a ledger that declares 1.0.0
+        con.execute("UPDATE schema_info SET value='1.0.0' "
+                    "WHERE key='schema_version'")
         con.commit()
     finally:
         con.close()
@@ -302,6 +305,9 @@ def test_l_migration_backfills_hanging_attempt():
     con = sqlite3.connect(db)
     try:
         con.execute("ALTER TABLE jobs DROP COLUMN uncertain")
+        # the 1.1.0 ledger migrates only from a ledger that declares 1.0.0
+        con.execute("UPDATE schema_info SET value='1.0.0' "
+                    "WHERE key='schema_version'")
         con.commit()
     finally:
         con.close()
