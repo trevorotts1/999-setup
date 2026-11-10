@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-10T15:32:26Z",
+  "generatedAt": "2026-11-10T14:12:16Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -124,8 +124,8 @@
       "sourcePath": "openclaw-onboarding/07-kie-setup",
       "installPath": "skills/07-kie-setup",
       "fileCount": 16,
-      "sizeBytes": 380413,
-      "treeSha256": "1ea53b56894fcfe1825e223aeaca235b8d909a45d35d66d781c92ca8b2727b0b",
+      "sizeBytes": 380597,
+      "treeSha256": "aa5d2db873c31dfd7582ec346c7ff0c06dd1a307e11458a751f036615d7d6b08",
       "skillMdSha256": "68e70562ceaf767ec330713f22f19144dad203e76dc82001234a142543053c0d"
     },
     {
@@ -933,8 +933,8 @@
       "sourcePath": "openclaw-onboarding/63-agnes-image",
       "installPath": "skills/63-agnes-image",
       "fileCount": 28,
-      "sizeBytes": 249852,
-      "treeSha256": "892d11f80e830c74d1d149adf690202800839110741228a706240fdc506e0f7b",
+      "sizeBytes": 247074,
+      "treeSha256": "913bd29777dbb37de48f98f5e92047e2d5a122d0dd73a2ce87423bb4b17a0268",
       "skillMdSha256": "d81001ecc50d9bbeae737726ab7f7b5203fe3350bd8c70e2d9f945c657173c14"
     },
     {
