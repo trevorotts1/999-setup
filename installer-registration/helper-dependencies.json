@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-10T06:39:34Z",
+  "generatedAt": "2026-11-10T12:06:49Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -39,14 +39,14 @@
       "role": "KIE image model selection, prompt constraints, domain QC",
       "kind": "skill",
       "required": true,
-      "version": "v2.2.14",
+      "version": "v2.2.15",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/66-kie-image",
       "installPath": "skills/66-kie-image",
-      "fileCount": 21,
-      "sizeBytes": 362731,
-      "treeSha256": "edaa4cdab77f1480fc7a0d5fda6edb640b958508bfe9d21e8255e51c0e4450b3",
-      "skillMdSha256": "6a59263ae8b3ceeee290de42eeb78ed1659bdd41cbc84974e07b44c071eb2432"
+      "fileCount": 22,
+      "sizeBytes": 370330,
+      "treeSha256": "b3de24ae33481e107a7ebb965cf4a01fb6c959ec48573d39ae3de5208f6b73b4",
+      "skillMdSha256": "adb375ee0fd181cb9344e297dfe42f49060f49c81980dd5e1f05b754e59cca01"
     },
     {
       "id": "67",
@@ -55,14 +55,14 @@
       "role": "KIE video routing (no hardcoded model registry)",
       "kind": "skill",
       "required": true,
-      "version": "v2.1.6",
+      "version": "v2.1.7",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/67-kie-video",
       "installPath": "skills/67-kie-video",
       "fileCount": 21,
-      "sizeBytes": 323896,
-      "treeSha256": "55677caadbc19e8a1f35ac1cd15ba01e2e061efa1961b005903572f5bbdb477b",
-      "skillMdSha256": "036ac869604dbf7f929795326c5bfb9f4352b035e81466f0a67e4a32da9d9526"
+      "sizeBytes": 324233,
+      "treeSha256": "2bfeb854782bcf440e3518bf4b8ae8ecd492053a1fe8320a48991e77396a6b94",
+      "skillMdSha256": "73980e5bd775ebfa5fc4e2185fd51d24588658b9e364f9f5d65dff09072daa21"
     },
     {
       "id": "68",
@@ -87,14 +87,14 @@
       "role": "KIE paid transport: discovery, schemas, upload, submit, poll, credits",
       "kind": "skill",
       "required": true,
-      "version": "v1.1.16",
+      "version": "v1.1.17",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/74-kie-live-adapter",
       "installPath": "skills/74-kie-live-adapter",
-      "fileCount": 38,
-      "sizeBytes": 818874,
-      "treeSha256": "d2eb59f529d7a2af68d38ff9861766a9735c58fc95c01ec83a8c04c22a4fe042",
-      "skillMdSha256": "82835070198845982eb528e83e6608d29fd5b52de80427049a62a29271ce5b9a"
+      "fileCount": 39,
+      "sizeBytes": 822492,
+      "treeSha256": "2b8bc54bc8ab4d8abe7cc7d687a079675bdc8516e0e09165576b2339ee625404",
+      "skillMdSha256": "1eee03e3f2f35ef74efaf3b349075cd0e28e602dd8c480da08fb3f7949d0ef2e"
     },
     {
       "id": "46",
@@ -119,14 +119,14 @@
       "role": "KIE setup: credentials, router and the common rules 1 through 13 (references/kie-common-rules.md)",
       "kind": "skill",
       "required": true,
-      "version": "v7.2.9",
+      "version": "v7.2.10",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/07-kie-setup",
       "installPath": "skills/07-kie-setup",
       "fileCount": 16,
-      "sizeBytes": 379750,
-      "treeSha256": "e5a8d1fd23bf043551b245e437e272ed280962598bac8d594f28758b122c4deb",
-      "skillMdSha256": "6cbd32a06cd6207f88a08219a34c23e28eb947bffdf78ecd7e691a2a2b3aea97"
+      "sizeBytes": 380165,
+      "treeSha256": "55984d34d0a60f28c979b90cdc562e9a720845130fc329e787053d78f857c645",
+      "skillMdSha256": "b3c41b21d5681b91c047db163fd63772c12599d3937fe17486754bcfad610cc7"
     },
     {
       "id": "shared-utils",
@@ -944,14 +944,14 @@
       "role": "Agnes video: approved model router plus the create-task/poll-result workflow",
       "kind": "skill",
       "required": false,
-      "version": "v2.0.6",
+      "version": "v2.0.7",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/64-agnes-video",
       "installPath": "skills/64-agnes-video",
       "fileCount": 15,
-      "sizeBytes": 171499,
-      "treeSha256": "f75f0b61d6fb0134adeb6dfa3e5c3749386a782150b8a4d7a24a796ac2534abe",
-      "skillMdSha256": "80fe1fb35f5b5b0ac33a2aa420acc27b8cf6cf6c715644d85b2c76fcbcacbc42"
+      "sizeBytes": 171830,
+      "treeSha256": "f4cc20d03d9f0b8b2c8609ea1639381f9ca0e6fb93bc832dafeb892a17e09ac7",
+      "skillMdSha256": "da47c9424e3b2dda5b409de1b0b007a9da6ae99a0fa01bf8529f7a7ad139497e"
     }
   ]
 }
