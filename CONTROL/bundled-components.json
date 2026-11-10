@@ -1,6 +1,6 @@
 {
   "schema": "bundled-components@1",
-  "generatedBy": "CONTROL/bundled-skills.txt — surviving bundled skills registry (21; reconciled from the shipped tree)",
+  "generatedBy": "CONTROL/bundled-skills.txt \u2014 surviving bundled skills registry (21; reconciled from the shipped tree)",
   "generatedAt": "2026-11-01T00:00:00.000Z",
   "channel": {
     "default": "github-releases",
@@ -149,7 +149,7 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.31",
+        "version": "0.2.32",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
@@ -158,7 +158,7 @@
     ],
     "ghl-install-pages": [
       {
-        "version": "v27.1.102",
+        "version": "v27.1.105",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/ghl-install-pages",
@@ -176,7 +176,7 @@
     ],
     "signature-funnel": [
       {
-        "version": "v2.1.51",
+        "version": "v2.1.53",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-funnel",
