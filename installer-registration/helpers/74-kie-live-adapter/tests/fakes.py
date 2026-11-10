@@ -56,7 +56,11 @@ class FakeTransport:
 def make(tmp, routes=(), mode="active", extra_env=None, clock=None):
     clock = clock or Clock()
     env = {"KIE_API_KEY": KEY, "KIE_LIVE_ADAPTER_MODE": mode, "HOME": tmp,
-           "KIE_LIVE_CACHE_DIR": os.path.join(tmp, "cache"), "KIE_LIVE_POLL_INITIAL": "3"}
+           "KIE_LIVE_CACHE_DIR": os.path.join(tmp, "cache"), "KIE_LIVE_POLL_INITIAL": "3",
+           # Hermetic TRANSPORT tests use placeholder prompts; the strict prompt band is
+           # exercised by test_prompt_band_u15c and by the real run path (which never sets
+           # this hook). Without it every transport test would need a 19,200-char prompt.
+           "KIE_PROMPT_POLICY_TEST_OFF": "1"}
     env.update(extra_env or {})
     tr = FakeTransport(routes)
     return K.Adapter(env=env, transport=tr, sleep=clock.sleep, now=clock.now), tr, clock
@@ -64,14 +68,14 @@ def make(tmp, routes=(), mode="active", extra_env=None, clock=None):
 
 def std_routes():
     return [
-        ["GET", "/api/v1/models/gpt-image-2-5-sunburst-text-to-image/schema", [(200, fx("schema_image.json"))]],
+        ["GET", "/api/v1/models/gpt-image-2-6/sunburst-text-to-image/schema", [(200, fx("schema_image.json"))]],
         ["GET", "/api/v1/models", [(200, fx("catalog.json"))]],
         ["GET", "/api/v1/chat/credit", [(200, {"code": 200, "msg": "success", "data": 2450})]],
         ["POST", "/api/v1/jobs/createTask", [(200, {"code": 200, "msg": "success", "data": {"taskId": "T1", "recordId": "R1"}})]],
     ]
 
 
-MODEL = "gpt-image-2-5-sunburst-text-to-image"
+MODEL = "gpt-image-2-6/sunburst-text-to-image"
 
 
 def slurp(path, mode="r"):

@@ -72,11 +72,23 @@ In callback mode, also generate a 256-bit (64-hex) per-task secret:
 perTaskSecret = crypto.randomBytes(32).toString('hex')
 ```
 
-Write the registry row to `.kie/registry/<submitId>.json` BEFORE sending the
+> **WHERE THIS STATE LIVES (F21 item 11).** Registry, index, done markers and receipts are
+> paid-work evidence, so they are NOT written under a working folder or a skill tree. One
+> resolver owns the location -- `shared-utils/durable-data-root.sh` -- and both Skill 46 and
+> Skill 74 execute it:
+>
+> `root` = `$OPENCLAW_DATA_ROOT`, else `$OPENCLAW_ROOT`/`$OC_ROOT`, else `/data/.openclaw`,
+> else `$HOME/.openclaw`; `state` = `<root>/data/kie-jobs/<clientSlug>`.
+>
+> Do not compute a second path. `require('./data-root').resolveDataRoot({scope})` returns the
+> whole layout, and the submitter passes that same layout to its poller.
+
+Write the registry row to `<durable root>/data/kie-jobs/<clientSlug>/registry/<submitId>.json`
+BEFORE sending the
 createTask request. The human-readable `deckId`/`slideId` live in a `label` field
 for resume; the KV key is the random `submitId`, not the label.
 
-> **MODEL NOTE:** The model in these examples is `gpt-image-2-5-sunburst-text-to-image` -- the canonical primary for all client presentations. The producing role ALWAYS sources the model from the client's pinned config (intake.json / MODEL MANIFEST), NEVER copies it from example code. `nano-banana-pro` is a FALLBACK-ONLY model and may only appear in a registry row after a logged hard API failure of the primary.
+> **MODEL NOTE:** The model in these examples is `gpt-image-2-6/sunburst-text-to-image` -- the canonical primary for all client presentations. The producing role ALWAYS sources the model from the client's pinned config (intake.json / MODEL MANIFEST), NEVER copies it from example code. `nano-banana-pro` is a FALLBACK-ONLY model and may only appear in a registry row after a logged hard API failure of the primary.
 
 Callback-mode registry row:
 
@@ -87,7 +99,7 @@ Callback-mode registry row:
   "clientSlug": "<clientSlug>",
   "deckId": "<deckId>",
   "slideId": "<slideId>",
-  "model": "gpt-image-2-5-sunburst-text-to-image",
+  "model": "gpt-image-2-6/sunburst-text-to-image",
   "targetPath": "/abs/path/to/output.png",
   "perTaskSecret": "<64 hex chars, local only>",
   "callBackUrl": "https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
@@ -115,7 +127,7 @@ callback mode:
 
 ```json
 {
-  "model": "gpt-image-2-5-sunburst-text-to-image",
+  "model": "gpt-image-2-6/sunburst-text-to-image",
   "callBackUrl": "https://kie-callback.<your-cf-zone>/cb?c=<clientSlug>&j=<submitId>&s=<callbackValidator>&h=<perTaskSecretHmac>",
   "input": {
     "prompt": "<slide image prompt>",
@@ -127,7 +139,7 @@ callback mode:
 ```
 
 > **LEGACY ROUTE (operator ruling 2026-09-09):** aspect ratios 3:1, 1:3, and
-> 9:21 are not served by GPT Image 2.5 Sunburst. For those three ratios only,
+> 9:21 are not served by GPT Image 2.6 Sunburst. For those three ratios only,
 > submit with `"model": "gpt-image-2-text-to-image"` (or
 > `gpt-image-2-image-to-image` for a reference-bearing render) instead --
 > GPT Image 2 is retained specifically for this case, not retired.
@@ -141,7 +153,7 @@ Source: https://docs.kie.ai/ (verified 2026-06-14).
 Use a token bucket (see kie-slide-submitter.js `_throttle()`). If you hit 429,
 wait and retry. After each successful createTask response, record the returned
 `taskId` in the registry row and write a taskId index:
-`.kie/index/<taskId>.json = { taskId, submitId }`.
+`<state>/index/<taskId>.json = { taskId, submitId }`.
 
 Do NOT wait for results during this phase. Submit all slides, then proceed.
 
@@ -169,7 +181,7 @@ For each taskId, poll the Worker KV in parallel:
    d. Download the first valid URL to `targetPath`.
    e. A slide counts as `done` ONLY when the file exists on disk (fix 35). A
       `done` status with no downloaded file is downgraded to `failed`.
-   f. Write `.kie/done/<taskId>.json` (create-if-absent, idempotent).
+   f. Write `<state>/done/<taskId>.json` (create-if-absent, idempotent).
 
 This polling does NOT consume Kie's 10-req/s query budget (it hits the Worker).
 
@@ -196,8 +208,8 @@ Per-model callback timeouts (ms), from `kie-slide-submitter.js` MODEL_TIMEOUTS:
 
 | Model | Timeout |
 |-------|---------|
-| `gpt-image-2-5-sunburst-text-to-image` (default) | 300000 (5 min) |
-| `gpt-image-2-5-sunburst-image-to-image` (default, reference images) | 300000 (5 min) |
+| `gpt-image-2-6/sunburst-text-to-image` (default) | 300000 (5 min) |
+| `gpt-image-2-6/sunburst-image-to-image` (default, reference images) | 300000 (5 min) |
 | `gpt-image-2-text-to-image` (legacy, 3:1/1:3/9:21 only) | 300000 (5 min) |
 | `gpt-image-2-image-to-image` (legacy, reference images, 3:1/1:3/9:21 only) | 300000 (5 min) |
 | `nano-banana-pro` (FALLBACK-ONLY) | 120000 (2 min) |
@@ -220,7 +232,7 @@ skip them. Return a result array where each entry has
 
 ### Step 7: Crash-Safe Resume
 
-On restart the submitter scans `.kie/registry/` by `label` (fix 37i):
+On restart the submitter scans `<state>/registry/` by `label` (fix 37i):
 
 - A crash between the createTask POST and its response can leave TWO rows for one
   label: an orphan with `taskId: null` and, if Kie actually accepted the task, a
@@ -228,10 +240,12 @@ On restart the submitter scans `.kie/registry/` by `label` (fix 37i):
   newest `submittedAt`) and marks every other row `superseded` so it is never
   re-submitted -- this is what prevents paying for a task twice.
 - If the winning row has a `taskId`:
-  - If `.kie/done/<taskId>.json` exists: slide is done. Skip.
+  - If `<state>/done/<taskId>.json` exists: slide is done. Skip.
   - Else: re-enter the wait queue (no re-submit).
-- If the winning row has no `taskId`: re-submit (the prior submit crashed before
-  Kie returned a taskId).
+- If the winning row has no `taskId`: the row is an UNCERTAIN submission (F21 item 10).
+  Reconcile it against the provider before issuing another paid job; a `taskId: null`
+  row is not proof that resubmitting is free or safe. `prepareCallback` therefore
+  returns that same identity with `state: 'uncertain'` and `resubmit: false`.
 - If no registry row: first-time submit.
 
 ---
@@ -245,10 +259,16 @@ already run `validate` and `preflight` and the batch is large enough for callbac
 
 Per task, in order:
 
-1. **Prepare.** `submitter.prepareCallback({deckId, slideId, targetPath, model})` generates the
-   128-bit `submitId` and per-task secret, writes the registry row (status `submitting`, `via`
-   `skill-74`) BEFORE any submit, and returns `{submitId, callBackUrl}`. The URL has the same
-   hardened shape as above. Requires `callbackHmacKey` and `kvReadToken`.
+1. **Prepare.** `submitter.prepareCallback({deckId, slideId, targetPath, model})` writes the
+   registry row (status `submitting`, `via` `skill-74`) BEFORE any submit and returns
+   `{submitId, callBackUrl, taskId, state, reused, resubmit}`. The URL has the same hardened shape
+   as above. Requires `callbackHmacKey` and `kvReadToken`.
+   **One job, one identity (F21 item 10):** a second call for the same client + deck + slide +
+   model returns the SAME `submitId` and the SAME `callBackUrl` instead of minting another one.
+   `state` is `new` (nothing existed), `uncertain` (prepared, no provider task id yet -- reconcile,
+   do not resubmit) or `accepted` (a provider task id is on record). Only `state: 'new'` carries
+   `resubmit: true`. A changed model is a different job: the earlier row is marked `superseded`
+   and a new identity is minted.
 2. **Submit via Skill 74.** Write `req.json` as `{"model": "<id>", "input": {...}}` and run
    `python3 ../74-kie-live-adapter/scripts/kie_live_adapter.py submit --request req.json --callback-url "<callBackUrl>" --mode active --json`.
    The adapter validates against the live schema, sends the URL as `callBackUrl` on createTask,
@@ -259,8 +279,12 @@ Per task, in order:
    `{task_id, model_id, callback_url}`):
    - the `callback_url` must carry a `j=` submitId whose registry row stores exactly that URL for
      this client; otherwise it throws and nothing is polled (confused-deputy guard);
-   - no `task_id`, or state `skipped` or `fail`: the row becomes `failed-submit` and a `failed`
-     result is returned without waiting;
+   - a `task_id` that DIFFERS from one already recorded for this identity is refused (a job id is
+     never rebound to another job, so a late or second submit cannot overwrite the current one);
+   - no `task_id` for a job that ALREADY has one: the recorded identity is kept, the row becomes
+     `uncertain`, and the result is `failed` with code `identity-missing`;
+   - state `skipped` or `fail`: the row becomes `failed-submit` and a `failed` result is returned
+     without waiting;
    - otherwise the taskId is recorded in the registry and the `taskId -> submitId` index, then the
      task waits through the KV poller (callback first, single reconciling Kie poll as fallback),
      downloads, and reports `done` only when the file exists on disk (same rule as Step 4a).

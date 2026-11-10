@@ -1,6 +1,32 @@
+## [v7.2.9] - 2026-11-09 - official-docs port test reads Skill 66 at v2.2.11 (test-pin only, no behaviour change)
+
+- `tests/test_official_docs_port.py` `SKILL_VERSIONS` still pinned 66 at 2.2.9 after Skill 66 moved to 2.2.11 (merge #2985 landed one second after the FAST-001 pin fix #2976), so `test_skill_version_files` and `test_skill_md_frontmatter` failed on main. It now reads 07 7.2.9 / 74 1.1.14 / 66 2.2.11 / 68 2.3.7, the versions main ships. Test-only change; the skill-version bump is the G3 lockstep for touching a file inside this skill directory.
+
+## [v7.2.8] - 2026-11-09 - official-docs port test reads the shipped versions (no behaviour change)
+
+- `tests/test_official_docs_port.py` `SKILL_VERSIONS` pinned 07 7.2.4 / 74 1.1.12 / 66 2.2.6 / 68 2.3.6, so two version tests failed on main. It now reads 07 7.2.8 / 74 1.1.14 / 66 2.2.9 / 68 2.3.7, the versions main ships. Test-only change.
+
+## [v7.2.7] - 2026-11-09 - GPT Image 2.6 named as the Presentations pin (2.5 claim corrected)
+
+- `SKILL.md` line 90 named GPT-Image-2.5 as the Presentations-pinned model; Presentations pins `gpt-image-2-6/sunburst-*`, so the sentence now names GPT-Image-2.6. Text only, no behaviour change.
+
+## [v7.2.6] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
+## [v7.2.5] - 2026-11-08 - batch merge: W26 fold content landed; version stamped above main for G3
+
+Version stamped above `main` (v7.2.4) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
+
 # Changelog - kie-setup
 
 All notable changes to this skill wrapper are documented here.
+
+---
+
+## [v7.2.4] - 2026-11-08 - pin moves with Skill 74 v1.1.11
+
+- `tests/test_official_docs_port.py`: `SKILL_VERSIONS["74-kie-live-adapter"]` follows Skill 74's durable-data-root patch from 1.1.9 to 1.1.11. The pin was already stale at 1.1.9 against the shipped 1.1.10, so this removes a pre-existing red gate rather than adding one. The skill's own pin moves to 7.2.4 with this version roll. No setup step changes.
 
 ---
 

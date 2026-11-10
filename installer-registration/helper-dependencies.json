@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-07T21:51:04Z",
+  "generatedAt": "2026-11-10T06:19:18Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -39,14 +39,14 @@
       "role": "KIE image model selection, prompt constraints, domain QC",
       "kind": "skill",
       "required": true,
-      "version": "v2.2.2",
+      "version": "v2.2.14",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/66-kie-image",
       "installPath": "skills/66-kie-image",
       "fileCount": 21,
-      "sizeBytes": 341395,
-      "treeSha256": "f22b99ce18322705434b324019d9275fc9ea3c3f7801d06ddc60c490abbfd348",
-      "skillMdSha256": "738ad9a8fc8750f0ee994d5398a66cabe50bd6b3e509f31d80c30a44223369d4"
+      "sizeBytes": 362731,
+      "treeSha256": "edaa4cdab77f1480fc7a0d5fda6edb640b958508bfe9d21e8255e51c0e4450b3",
+      "skillMdSha256": "6a59263ae8b3ceeee290de42eeb78ed1659bdd41cbc84974e07b44c071eb2432"
     },
     {
       "id": "67",
@@ -55,14 +55,14 @@
       "role": "KIE video routing (no hardcoded model registry)",
       "kind": "skill",
       "required": true,
-      "version": "v2.1.3",
+      "version": "v2.1.6",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/67-kie-video",
       "installPath": "skills/67-kie-video",
       "fileCount": 21,
-      "sizeBytes": 323265,
-      "treeSha256": "e0b23290b3858ab4506a16105f1551c4b2a0b8afdc3b1e3943aba012cf4e309d",
-      "skillMdSha256": "119b80e5d4c5c8c9b626a488ae5fc87f2c2d1bb76c68effd0b8db4fe9fec602f"
+      "sizeBytes": 323896,
+      "treeSha256": "55677caadbc19e8a1f35ac1cd15ba01e2e061efa1961b005903572f5bbdb477b",
+      "skillMdSha256": "036ac869604dbf7f929795326c5bfb9f4352b035e81466f0a67e4a32da9d9526"
     },
     {
       "id": "68",
@@ -71,14 +71,14 @@
       "role": "KIE/Suno audio request contract, model selection, domain QC",
       "kind": "skill",
       "required": true,
-      "version": "v2.3.3",
+      "version": "v2.3.8",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/68-kie-audio",
       "installPath": "skills/68-kie-audio",
       "fileCount": 21,
-      "sizeBytes": 254058,
-      "treeSha256": "05626208a68b2e4ada9cff60169b82ffd8bcf64e66c75e29d581963534bc3a35",
-      "skillMdSha256": "29f6a524847a6879ac59827c1b71a408c4bb5fe6473a9e950b8c5339789037b7"
+      "sizeBytes": 255842,
+      "treeSha256": "7f521d8c4978bf53fb434ed6649e675e61e62929a555d1eb045a27c40357c42c",
+      "skillMdSha256": "0c839aacd9e69de3c88fe4c904f3507f5b251a7cf7d098613f4193b902647f9e"
     },
     {
       "id": "74",
@@ -87,14 +87,14 @@
       "role": "KIE paid transport: discovery, schemas, upload, submit, poll, credits",
       "kind": "skill",
       "required": true,
-      "version": "v1.1.9",
+      "version": "v1.1.16",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/74-kie-live-adapter",
       "installPath": "skills/74-kie-live-adapter",
-      "fileCount": 36,
-      "sizeBytes": 784453,
-      "treeSha256": "8d3a27cd290dc23d7f611d60daa04b5773fa316e8bc89c77191cb6d85527e602",
-      "skillMdSha256": "73ff312878219de9bd59d29a62e259e1b2261a853ccca7c9d980a8578b96ce5f"
+      "fileCount": 38,
+      "sizeBytes": 818874,
+      "treeSha256": "d2eb59f529d7a2af68d38ff9861766a9735c58fc95c01ec83a8c04c22a4fe042",
+      "skillMdSha256": "82835070198845982eb528e83e6608d29fd5b52de80427049a62a29271ce5b9a"
     },
     {
       "id": "46",
@@ -103,14 +103,14 @@
       "role": "Callback relay (webhook-primary result path for paid generations)",
       "kind": "skill",
       "required": true,
-      "version": "v2.1.0",
+      "version": "v2.1.3",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/46-kie-callback-relay",
       "installPath": "skills/46-kie-callback-relay",
-      "fileCount": 12,
-      "sizeBytes": 169310,
-      "treeSha256": "249badb74629aca0c11da58348f8357fe3a47637431bc39780071f73db1c9ee5",
-      "skillMdSha256": "20b19e814c778b6f0832b34533854d9c788f8d3680b4c769968e6bbb9688d50f"
+      "fileCount": 13,
+      "sizeBytes": 200069,
+      "treeSha256": "7cc7f5fd54d7809a95cca011dc5b54d26514b3a9f5cbfef64ae5c980edbf9e9f",
+      "skillMdSha256": "5aa2ac812342d38fd703e95c4db619540f18faa3ec02ff8bc3173ce260f8f2f7"
     },
     {
       "id": "07",
@@ -119,14 +119,14 @@
       "role": "KIE setup: credentials, router and the common rules 1 through 13 (references/kie-common-rules.md)",
       "kind": "skill",
       "required": true,
-      "version": "v7.2.3",
+      "version": "v7.2.9",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/07-kie-setup",
       "installPath": "skills/07-kie-setup",
       "fileCount": 16,
-      "sizeBytes": 377657,
-      "treeSha256": "234e4eedfb4ab30db7eb06d9e3e93cab848897658a5bf6272f3860b561400881",
-      "skillMdSha256": "9ce5474c5aa1fd78b598b15897547c538f99e66415d94803acdb6b686f30e9f5"
+      "sizeBytes": 379750,
+      "treeSha256": "e5a8d1fd23bf043551b245e437e272ed280962598bac8d594f28758b122c4deb",
+      "skillMdSha256": "6cbd32a06cd6207f88a08219a34c23e28eb947bffdf78ecd7e691a2a2b3aea97"
     },
     {
       "id": "shared-utils",
@@ -135,24 +135,34 @@
       "role": "The shared launch runtime (client_intake, signature_launch, signature_launch_contract) plus the KIE key resolver, prompt rule 12 enforcer, declared gate list and its test; merged into the installed shared-utils tree, never swapped in for it",
       "kind": "files",
       "required": true,
-      "version": "sha256:1e374704bd10",
+      "version": "sha256:a2d34f014695",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
-      "fileCount": 143,
-      "sizeBytes": 1266879,
-      "treeSha256": "1e374704bd1085a081ffa9997317afce7cb0d57c36940b565432a5edca95779f",
+      "fileCount": 155,
+      "sizeBytes": 1602035,
+      "treeSha256": "a2d34f01469598d3bccc8f59d81a4d43adc9a47bb09e14a68f6fe40daee645d9",
       "skillMdSha256": null,
       "files": [
         {
+          "path": "client_intake/answers.provenance.schema.json",
+          "sourcePath": "shared-utils/client_intake/answers.provenance.schema.json",
+          "sha256": "7b3ad3dbad27caa38b8fd3c1aeac3305a485b7fb701cfcc5da0a2358c2635927"
+        },
+        {
           "path": "client_intake/answers.schema.json",
           "sourcePath": "shared-utils/client_intake/answers.schema.json",
-          "sha256": "63b218a1c3c2ffaa3bfd38ae48bde80557c6052175d267d1397d8bcdd76313f5"
+          "sha256": "1582a544a9bbc89b1e727ffd7c7f31b59432afbc287ae8076fa639a86edc1d14"
+        },
+        {
+          "path": "client_intake/brand_record.py",
+          "sourcePath": "shared-utils/client_intake/brand_record.py",
+          "sha256": "0814d7bc35b08e772dee9ca7c521512b7f09ae9336d09c3bb72d786c7cae0ba9"
         },
         {
           "path": "client_intake/engine.py",
           "sourcePath": "shared-utils/client_intake/engine.py",
-          "sha256": "6e2ebede6fc79e4570b34814d642d155e0c6d977ce5768aaa684bb2ca9bb582d"
+          "sha256": "82b5a81339ce6b0430c31af23566bcf64ceb962955d90c9bc0198e99be065982"
         },
         {
           "path": "client_intake/fixtures/answers.7fig.json",
@@ -167,7 +177,7 @@
         {
           "path": "client_intake/launcher_intake.py",
           "sourcePath": "shared-utils/client_intake/launcher_intake.py",
-          "sha256": "e001aedfa5b6c7d175aeed710e7e64a294e900aa32fa0537a28c242b7d51a132"
+          "sha256": "89cc10d1dd0b023501c76cc3645d515fbe31073a7a822dc5735501990c2dadc4"
         },
         {
           "path": "client_intake/palette-defaults.json",
@@ -182,12 +192,22 @@
         {
           "path": "client_intake/question-bank.json",
           "sourcePath": "shared-utils/client_intake/question-bank.json",
-          "sha256": "3eb8fda3106f639cc560ac56121f640761fc5577f0ace706b0b58571c19cc93e"
+          "sha256": "c4eb18496e7ceb30b5e15581813923a489d3c73f955a49ff7d3d676c720aca70"
+        },
+        {
+          "path": "client_intake/revision.py",
+          "sourcePath": "shared-utils/client_intake/revision.py",
+          "sha256": "ea023ed3e347d43e0c8175141cfd0e4213b0b7129ee67dede89a4b01dc43bb2a"
+        },
+        {
+          "path": "client_intake/tests/test_brand_record.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_brand_record.py",
+          "sha256": "e003962d9437ecae44a13f21e6438a170595eb54b3c8442ec7e1a0d3ba22ad88"
         },
         {
           "path": "client_intake/tests/test_client_intake.py",
           "sourcePath": "shared-utils/client_intake/tests/test_client_intake.py",
-          "sha256": "f99bf0a608916316406d28a0e971e626f3b05c097aa9aa2c0582ac4692b61088"
+          "sha256": "68f33e79b2c6311db5e1e68d52837ca8949fa6483a5f6933cf5ac3e3dac2a493"
         },
         {
           "path": "client_intake/tests/test_consumers_49.py",
@@ -197,12 +217,17 @@
         {
           "path": "client_intake/tests/test_engine_money_and_levels.py",
           "sourcePath": "shared-utils/client_intake/tests/test_engine_money_and_levels.py",
-          "sha256": "7e1b451dbf8e7093055147519daf3a031149c89dca15f63e4f6315b557cf4d90"
+          "sha256": "75c4ceb1eaa1671c5209f986f808f21686ae87d8fe4e749583023d8a17cb1356"
+        },
+        {
+          "path": "client_intake/tests/test_guided_alignment.py",
+          "sourcePath": "shared-utils/client_intake/tests/test_guided_alignment.py",
+          "sha256": "bd4f5bf10ec2a9f5a69eb24b8a63cfc54e42f78b9d462a8b43013f20dfe264da"
         },
         {
           "path": "client_intake/tests/test_launcher_intake.py",
           "sourcePath": "shared-utils/client_intake/tests/test_launcher_intake.py",
-          "sha256": "632cb902e29681a6cd1d52404ae1658cad863709d0a0964a5b51d0ff747abbf9"
+          "sha256": "2d56c22988a15dca18d6d5e7faf6e81615a7056568ad5d9b1876ee3ea2f81b4b"
         },
         {
           "path": "client_intake/tests/test_page_profile.py",
@@ -217,22 +242,32 @@
         {
           "path": "kie-prompt-enforcer-and-gates.test.py",
           "sourcePath": "tests/unit/kie-prompt-enforcer-and-gates.test.py",
-          "sha256": "a6d53cc5a375c1f0c744e0167021ca656733a58407fb584cae0ee93ab2bc9112"
+          "sha256": "09f1cc75605d67c33d55e1583ad313efc5603dfd5a2483088348120b430cb547"
         },
         {
           "path": "kie_prompt_enforcer.py",
           "sourcePath": "shared-utils/kie_prompt_enforcer.py",
-          "sha256": "2f5bb67aee7e7f4784741b9af1fe4d6e2ec6f51325045cd9a1acc44988936e01"
+          "sha256": "f3508fd5955db62ebe84fe37d6cd96da7ce39b4d05ef8f699b707685cc6c42bc"
         },
         {
           "path": "kie_prompt_gates.json",
           "sourcePath": "shared-utils/kie_prompt_gates.json",
-          "sha256": "9a440da22241ab323498183d71e60aa052fd4066849f14e274b79097566ef37f"
+          "sha256": "e404b84d0adb899c3b1c4aa12a891bf6e37f14816aaea4271f9d51dcb8783dd5"
+        },
+        {
+          "path": "prompt_policy.py",
+          "sourcePath": "shared-utils/prompt_policy.py",
+          "sha256": "a95bf74539325fefcc15dfdb50003c2b470cc1e363876c8c3501de37eef20520"
         },
         {
           "path": "signature_launch/__init__.py",
           "sourcePath": "shared-utils/signature_launch/__init__.py",
           "sha256": "c634e3e7016d1fafad959e90444a39fd8809cef7e65a452df4d70d916d2b67fc"
+        },
+        {
+          "path": "signature_launch/admission.py",
+          "sourcePath": "shared-utils/signature_launch/admission.py",
+          "sha256": "4c85c4ddca5a4434812100bb73d95ac12f01f3732bdda011d2f259473f94b5ac"
         },
         {
           "path": "signature_launch/components/order-bump/order-bump.html",
@@ -317,7 +352,7 @@
         {
           "path": "signature_launch/design/image_slots.py",
           "sourcePath": "shared-utils/signature_launch/design/image_slots.py",
-          "sha256": "22b235aaa63e977033b9aafa0d53c1124cd26854fc2b6fd3d32c631984be9896"
+          "sha256": "b68a7b8e6c4c632bb5b6306089e1f022ce6236a00c6bfb1f74a9568de32ce402"
         },
         {
           "path": "signature_launch/design/interest_popup/README.md",
@@ -507,7 +542,7 @@
         {
           "path": "signature_launch/domain/prompt-policy-registry.json",
           "sourcePath": "shared-utils/signature_launch/domain/prompt-policy-registry.json",
-          "sha256": "797fe5f92885ea5be7cda6a46a63c749de8982087ad948c6fe3f5eefce87c752"
+          "sha256": "de75c95b7bf9b6e546e58a30d2c86ce67e0d6734e2dd797800023a1bea348434"
         },
         {
           "path": "signature_launch/domain/prompt-policy-registry.schema.json",
@@ -577,7 +612,7 @@
         {
           "path": "signature_launch/experience/README.md",
           "sourcePath": "shared-utils/signature_launch/experience/README.md",
-          "sha256": "d7453ca560352455f7f7c343e05218425183ee0c7bb0787404b3e3594c0adc68"
+          "sha256": "2600792e1776500952de5418095b6b2669585d613c56fc4baaa1affb0145f440"
         },
         {
           "path": "signature_launch/experience/delivery_report.py",
@@ -613,6 +648,11 @@
           "path": "signature_launch/experience/harness_profile.py",
           "sourcePath": "shared-utils/signature_launch/experience/harness_profile.py",
           "sha256": "2d9d9be5d56e2f995bdccfacb4c701263ea750ce8e5ee34a4ffe5255a5b7aea5"
+        },
+        {
+          "path": "signature_launch/experience/launch_progress_report.py",
+          "sourcePath": "shared-utils/signature_launch/experience/launch_progress_report.py",
+          "sha256": "4fb093cb5230cdaeec3c3959448129ceb5a117021d24b7549146249eaf956077"
         },
         {
           "path": "signature_launch/experience/progress_report.py",
@@ -677,12 +717,12 @@
         {
           "path": "signature_launch/progress.py",
           "sourcePath": "shared-utils/signature_launch/progress.py",
-          "sha256": "469b21adfe9ca1081f7526518b4a16dc95ae0e2a96dbf7e7aec40bdae2d772f1"
+          "sha256": "3934ed24e2ebdd8210594076a738947f968b0520545de97b205579394894fccb"
         },
         {
           "path": "signature_launch/progress_file.schema.json",
           "sourcePath": "shared-utils/signature_launch/progress_file.schema.json",
-          "sha256": "c07b4ed6e1c945d75f2ed98b2b0159e2ec8e6df883e5c94456c74b22234a905f"
+          "sha256": "cc89911adf26e66d58018dd40ce37daae460451b21ac2d373cac85c9d94ffde2"
         },
         {
           "path": "signature_launch/route_adapters.py",
@@ -717,32 +757,32 @@
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-ai-off.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-ai-off.json",
-          "sha256": "18dec6a4906c74586f9afc4e27049fe49a6973ab6b457218b41fa23333545873"
+          "sha256": "7cdcde66df711c62e4bfc7e9e2478ed9a504131e25f16e9b32517bf00d9ffcdd"
         },
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-ai-on.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-ai-on.json",
-          "sha256": "e116d3ee142686ca99c23b0c663be94f804ec7048954397401fdc0873b232109"
+          "sha256": "bece8630551372cdf2180b31898c355126ef34019a4ba1928e81fbbd1d52ce30"
         },
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-empty.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-empty.json",
-          "sha256": "77f8f4910393a051c13f6dbd6bf2b286c1d67b18c0721556aa4381975a5f69c1"
+          "sha256": "ddd948963b584fa0a57e6d0f3775ce674bf25a2eb3deff6c12b2c7747ae7ecce"
         },
         {
           "path": "signature_launch/scheduler/fixtures/progress/progress-stalled.json",
           "sourcePath": "shared-utils/signature_launch/scheduler/fixtures/progress/progress-stalled.json",
-          "sha256": "67402c7c94dfef4bfe7d399288967e9fe31ec017cc51f5be82504716135ac6ef"
+          "sha256": "a88fd6604a6e3ff8c8ebfcd5828641a3caf94f9803549211143a93fb191ebbff"
         },
         {
           "path": "signature_launch/scheduler/make_progress_fixtures.py",
           "sourcePath": "shared-utils/signature_launch/scheduler/make_progress_fixtures.py",
-          "sha256": "f58e7446024d7a7cd62168bd20ac7760c8c64d142bc5ec010cb962f9312cce97"
+          "sha256": "24d6f209ce8042aab776149588b38ae454f64c108f7acee9784551eead57eda6"
         },
         {
           "path": "signature_launch/scheduler/model.py",
           "sourcePath": "shared-utils/signature_launch/scheduler/model.py",
-          "sha256": "2d80af225c4beb438ef89323792087cb16eecc888974f9de0cface2964b16beb"
+          "sha256": "f939ed35d3a97ee71cb2c3d6009bfb2e5e7e0bef4e67953af7661aea115ee77d"
         },
         {
           "path": "signature_launch/scheduler/scheduler.py",
@@ -752,12 +792,17 @@
         {
           "path": "signature_launch/scheduler/test_model.py",
           "sourcePath": "shared-utils/signature_launch/scheduler/test_model.py",
-          "sha256": "97e40eba4736fdfe9185b31f8744fa736012a22d4ef12bfe4c4ae72b14f3f3aa"
+          "sha256": "ace0c1b863aea4bc9611933ac3e78f3345766861464af1e784702c28f02bead5"
+        },
+        {
+          "path": "signature_launch/scheduler/test_progress_evidence.py",
+          "sourcePath": "shared-utils/signature_launch/scheduler/test_progress_evidence.py",
+          "sha256": "73ea787f550b199f6becf3a8a53d1afd10cb72de0af8972803cb6a36f145a2bf"
         },
         {
           "path": "signature_launch/scheduler/test_scheduler.py",
           "sourcePath": "shared-utils/signature_launch/scheduler/test_scheduler.py",
-          "sha256": "a63124f06fee780fb6330a840ee80ce2a5fc8ee14b0da5fc7f871d7a42d1c917"
+          "sha256": "b85108206824f275e1ba476478fc5f867022b7bed71c548c93b6f4818d1963e3"
         },
         {
           "path": "signature_launch/session_contract.json",
@@ -767,7 +812,7 @@
         {
           "path": "signature_launch/tests/test_image_slots_tokens.py",
           "sourcePath": "shared-utils/signature_launch/tests/test_image_slots_tokens.py",
-          "sha256": "43af735652fe0c89702ee34cb41b01a7b282b0d2f772b2d53c4ea760829f4da6"
+          "sha256": "1cbc8fb7f9b83e932b8360b00d5b6d14722145ea4b5ecf48d9e8f45efdd1d014"
         },
         {
           "path": "signature_launch/tests/test_launch_events.py",
@@ -777,7 +822,7 @@
         {
           "path": "signature_launch/tests/test_reports_bound_to_manifest.py",
           "sourcePath": "shared-utils/signature_launch/tests/test_reports_bound_to_manifest.py",
-          "sha256": "5e3d0fd7ba3d3f14a38364a6212f055620872a6da9e8ea0535bd3f7ac878fa33"
+          "sha256": "4a2e3b45844e6afb5f5b9ef089cc469cd429fb160f95c73ac6ef60b882ab475f"
         },
         {
           "path": "signature_launch/tests/test_session_contract.py",
@@ -787,17 +832,27 @@
         {
           "path": "signature_launch_contract/approval-record.schema.json",
           "sourcePath": "shared-utils/signature_launch_contract/approval-record.schema.json",
-          "sha256": "a707f4c4b99dd4f027a31205db77954bc87af20d72018475c45340b084c04fd5"
+          "sha256": "e671f8fc1fcbc85a47c7a7186da44fc7daeb8879882a4e1e667b9bc9d5f4917d"
         },
         {
           "path": "signature_launch_contract/approval_record.py",
           "sourcePath": "shared-utils/signature_launch_contract/approval_record.py",
-          "sha256": "6b083b19483c9ecadc222611e8bde00da339a19fb88ece74e1cd37346678a846"
+          "sha256": "26cbfa794072fda40cadf44435a83da141b0fcd020bfd2dcff14a66f775b28a7"
         },
         {
           "path": "signature_launch_contract/calendar_law.py",
           "sourcePath": "shared-utils/signature_launch_contract/calendar_law.py",
           "sha256": "b2dd49c4c30bd885dac65e49270177160bf0d16c3ed367b55a0abf44372c6e79"
+        },
+        {
+          "path": "signature_launch_contract/client_rules.py",
+          "sourcePath": "shared-utils/signature_launch_contract/client_rules.py",
+          "sha256": "14b92d86079630edd03c38c4362df706301d08c8734c8d2c17a7f3ae12213584"
+        },
+        {
+          "path": "signature_launch_contract/command-center-launch-contract.v2.json",
+          "sourcePath": "shared-utils/signature_launch_contract/command-center-launch-contract.v2.json",
+          "sha256": "7a38c6c4c6c5c0c4c7a432acb9df3fb3cdff6e4c65991b1c6be11916cf86e8c9"
         },
         {
           "path": "signature_launch_contract/fixtures/7figurepreneur.json",
@@ -822,7 +877,7 @@
         {
           "path": "signature_launch_contract/launch-plan.schema.json",
           "sourcePath": "shared-utils/signature_launch_contract/launch-plan.schema.json",
-          "sha256": "737d0ae0ef4efd59c97b1deb6d85a1db0ea23276797401cd9bdaa03bc422945f"
+          "sha256": "9356010933f9f882ddca725b0fdd925204477574abebf29480a1de291cacd7c6"
         },
         {
           "path": "signature_launch_contract/offer_mapper.py",
@@ -832,12 +887,12 @@
         {
           "path": "signature_launch_contract/review_record.py",
           "sourcePath": "shared-utils/signature_launch_contract/review_record.py",
-          "sha256": "053ec5ad2b6a354d68f82dec7dab7fa1eb4f870347324928c63a0e6a5ad3a8f7"
+          "sha256": "b39f5792513542273a3621ab0ee5fc9b3f1590e4597259d6a6586a42cf1b718b"
         },
         {
           "path": "signature_launch_contract/tests/test_approval_record.py",
           "sourcePath": "shared-utils/signature_launch_contract/tests/test_approval_record.py",
-          "sha256": "9a10d30d01b123c26d75c188b386612818296acdde7d2efcc6424ef96ab8c562"
+          "sha256": "b518d1b1a8510707aa9e3bea1173057b40d95060c03804c3222787090bbaea35"
         },
         {
           "path": "signature_launch_contract/tests/test_calendar_law.py",
@@ -852,12 +907,17 @@
         {
           "path": "signature_launch_contract/tests/test_review_record.py",
           "sourcePath": "shared-utils/signature_launch_contract/tests/test_review_record.py",
-          "sha256": "d3eeb09dcf253aceaff607b971e4c72b8c559745e4928903dbca40b11aa9e55b"
+          "sha256": "4822fe9272a6f4cfc66f2e7b4db2c10a31e802ca42a957b52d6d88243b2108e5"
         },
         {
           "path": "signature_launch_contract/validate_launch_plan.py",
           "sourcePath": "shared-utils/signature_launch_contract/validate_launch_plan.py",
           "sha256": "5d607ca29ef896a1237fa8e35616ebe4582ed0984f3c11ef665770fffb1f38ee"
+        },
+        {
+          "path": "social_prompt_policy.json",
+          "sourcePath": "shared-utils/social_prompt_policy.json",
+          "sha256": "a8f6532df2a1e5ca1d4387842e7d763c18b86d538851475689b849fb5b861359"
         }
       ]
     },
@@ -868,13 +928,13 @@
       "role": "Agnes image: one POST synchronous text/image generation, prompt policy, domain QC",
       "kind": "skill",
       "required": false,
-      "version": "v2.1.6",
+      "version": "v2.1.8",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/63-agnes-image",
       "installPath": "skills/63-agnes-image",
       "fileCount": 28,
-      "sizeBytes": 246884,
-      "treeSha256": "3ef83407a6c7db51b5eb3e6fbbf47700bc1b31ed911aa2fad22fcc4808fc20b7",
+      "sizeBytes": 247074,
+      "treeSha256": "913bd29777dbb37de48f98f5e92047e2d5a122d0dd73a2ce87423bb4b17a0268",
       "skillMdSha256": "d81001ecc50d9bbeae737726ab7f7b5203fe3350bd8c70e2d9f945c657173c14"
     },
     {
@@ -884,14 +944,14 @@
       "role": "Agnes video: approved model router plus the create-task/poll-result workflow",
       "kind": "skill",
       "required": false,
-      "version": "v2.0.4",
+      "version": "v2.0.6",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/64-agnes-video",
       "installPath": "skills/64-agnes-video",
       "fileCount": 15,
-      "sizeBytes": 171309,
-      "treeSha256": "9406d18de19c7d76ad6845ef3a49c58c536d4efddada3b8c4a7229810e375824",
-      "skillMdSha256": "447e9b61c2b0ca1a03c7bc6511eab4050d023bfd1cf1b98cabe3f92f5164c4e8"
+      "sizeBytes": 171499,
+      "treeSha256": "f75f0b61d6fb0134adeb6dfa3e5c3749386a782150b8a4d7a24a796ac2534abe",
+      "skillMdSha256": "80fe1fb35f5b5b0ac33a2aa420acc27b8cf6cf6c715644d85b2c76fcbcacbc42"
     }
   ]
 }
