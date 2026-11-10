@@ -2,14 +2,14 @@
 name: kie-image
 description: >
   KIE Image generation via the KIE.ai Market API. Owns model selection across
-  14 image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+  14 image families (GPT Image 2.6, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
   Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.2
+version: v2.2.3
 metadata:
-  version: "2.2.2"
+  version: "2.2.3"
   priority: HIGH
 ---
 
