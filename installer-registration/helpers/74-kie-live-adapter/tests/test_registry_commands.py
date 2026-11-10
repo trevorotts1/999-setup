@@ -31,7 +31,7 @@ def cat(*rows):
 
 
 T2I, I2I = ["Text to Image"], ["Image to Image"]
-G25S, G25S_I = "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"
+G25S, G25S_I = "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"
 G3A, G3A_I = "gpt-image-3-aurora-text-to-image", "gpt-image-3-aurora-image-to-image"
 G3B, G3B_I = "gpt-image-3-borealis-text-to-image", "gpt-image-3-borealis-image-to-image"
 
@@ -76,13 +76,16 @@ class Base(unittest.TestCase):
 
 class Helpers(unittest.TestCase):
     def test_budget_integer_math(self):
-        self.assertEqual(K.budget(20000), {"max": 20000, "floor": 16000, "target_min": 19000, "target_max": 20000})
-        self.assertEqual(K.budget(5000)["floor"], 4000)
-        self.assertEqual(K.budget(3072)["floor"], 2458)  # ceil(2457.6)
-        self.assertEqual(K.budget(3072)["target_min"], 2919)  # ceil(2918.4)
+        b = K.budget(20000)
+        self.assertEqual((b["max"], b["floor"], b["target_min"], b["target_max"]),
+                         (20000, 19000, 19000, 20000))
+        self.assertEqual(b["hard_floor"], 16000)
+        self.assertEqual(K.budget(5000)["floor"], 4750)   # ceil(0.95 x 5000)
+        self.assertEqual(K.budget(3072)["floor"], 2919)   # ceil(2918.4)
+        self.assertEqual(K.budget(3072)["target_min"], 2919)
 
     def test_family_version_variant(self):
-        self.assertEqual((K.family_of(G25S), K.version_of(G25S), K.variant_of(G25S)), ("gpt-image", [2, 5], "sunburst"))
+        self.assertEqual((K.family_of(G25S), K.version_of(G25S), K.variant_of(G25S)), ("gpt-image", [2, 6], "sunburst"))
         self.assertEqual((K.version_of("gpt-image-2-text-to-image"), K.variant_of("gpt-image-2-text-to-image")), ([2], None))
         self.assertEqual(K.version_of("gpt-image/1.5-text-to-image"), [1, 5])
         self.assertIsNone(K.version_of("4o-image-api"))
@@ -141,16 +144,20 @@ class PromptBudget(Base):
     def test_check_exit_codes(self):
         a, tr, c = self.adapter(self.routes(schema(1000)))
         f = os.path.join(self.tmp, "p.txt")
-        for n, rc, status in ((500, 3, "BELOW_FLOOR"), (799, 3, "BELOW_FLOOR"), (800, 0, "BELOW_TARGET"),
-                              (950, 0, "OK"), (1000, 0, "OK"), (1001, 4, "ABOVE_MAX")):
+        for n, rc, status in ((500, 3, "BELOW_FLOOR"), (799, 3, "BELOW_FLOOR"),
+                              (800, 5, "BELOW_TARGET"), (940, 5, "BELOW_TARGET"),
+                              (950, 0, "PASS"), (1000, 0, "PASS"), (1001, 4, "ABOVE_MAX")):
             with open(f, "w") as fh:
                 fh.write("a" * n + "\n")
             got, r = self.cli(a, ["prompt-budget", "--model", MODEL, "--check", "--prompt-file", f])
             self.assertEqual((got, r["data"]["status"]), (rc, status), n)
         with open(f, "w") as fh:
-            fh.write("a" * 799)
+            fh.write("a" * 820)
         r = self.cli(a, ["prompt-budget", "--model", MODEL, "--check", "--prompt-file", f])[1]
-        self.assertIn("ADD at least 1 chars (151 to reach the 95% target of 950)", r["error"]["msg"])
+        # 82 percent: owner rule 12 (2026-10-05) says warn and expand, so it passes with the ADD named
+        self.assertEqual(r["state"], "validated")
+        self.assertIsNone(r["error"])
+        self.assertTrue(any("ADD 130 chars" in w and "950 target" in w for w in r["warnings"]), r["warnings"])
         with open(f, "w") as fh:
             fh.write("a" * 1004)
         self.assertIn("CUT exactly 4 chars", self.cli(a, ["prompt-budget", "--model", MODEL, "--check", "--prompt-file", f])[1]["error"]["msg"])
@@ -158,7 +165,8 @@ class PromptBudget(Base):
     def test_budget_fields_without_check(self):
         a, tr, c = self.adapter(self.routes(schema(20000)))
         d = a.cmd_prompt_budget(MODEL)["data"]
-        self.assertEqual((d["field"], d["max"], d["floor"], d["target_min"], d["target_max"]), ("prompt", 20000, 16000, 19000, 20000))
+        self.assertEqual((d["field"], d["max"], d["floor"], d["target_min"], d["target_max"]),
+                         ("prompt", 20000, 19000, 19000, 20000))
 
     def test_described_limit_used_with_note(self):
         a, tr, c = self.adapter(self.routes(schema(None, "Text prompts, up to 20,000 characters.")))
@@ -166,10 +174,11 @@ class PromptBudget(Base):
         self.assertEqual(r["data"]["max"], 20000)
         self.assertIn("description", r["data"]["limit_source"])
 
-    def test_unknown_limit_exit_0_with_warning(self):
+    def test_unknown_limit_refuses_a_pass(self):
         a, tr, c = self.adapter(self.routes(schema(None, "A prompt.")))
         rc, r = self.cli(a, ["prompt-budget", "--model", MODEL, "--check", "--prompt-file", self._pf("x" * 10)])
-        self.assertEqual((rc, r["data"]["status"]), (0, "UNKNOWN"))
+        self.assertEqual((rc, r["data"]["status"]), (5, "UNKNOWN_MAX"))
+        self.assertEqual(r["state"], "fail")
         self.assertTrue(any("UNKNOWN" in w for w in r["warnings"]))
 
     def _pf(self, text):
@@ -208,7 +217,8 @@ class PromptBudget(Base):
                 "text": {"type": "string", "maxLength": 5000}}}}}}}}}}}}
         a, tr, c = self.adapter([["GET", "/schema", [(200, {"code": 200, "data": {"openapi": doc}})]]])
         r = a.cmd_prompt_budget(tts, True, "hello")
-        self.assertEqual((r["state"], r["data"]["status"], r["data"]["verbatim"]), ("validated", "VERBATIM", True))
+        self.assertEqual((r["state"], r["data"]["status"], r["data"]["verbatim"]),
+                         ("validated", "VERBATIM_EXEMPT", True))
         self.assertEqual(a.cmd_prompt_budget(tts, True, "x" * 5001)["data"]["exit_code"], 4)
 
     def test_registry_fallback_when_live_down(self):
@@ -302,7 +312,7 @@ class LatestFamily(Base):
                             ("gpt-image-2-text-to-image", T2I, "6"), ("gpt-image-2-image-to-image", I2I, "6"),
                             ("4o-image-api", T2I + I2I, "6")]
         a, tr, c = self.adapter(self.routes(rows))
-        self.assertEqual(a.cmd_latest_family("gpt-image")["data"]["version"], [2, 5])
+        self.assertEqual(a.cmd_latest_family("gpt-image")["data"]["version"], [2, 6])
 
     def test_registry_fallback_when_catalog_unreachable(self):
         def row(i, tt, ok=True):
@@ -403,7 +413,7 @@ class RegistryBuild(Base):
         self.assertEqual((reg["source"], reg["counts"]["models"], reg["counts"]["schema_readable"], reg["counts"]["kind_sync"]), ("live-api", 3, 2, 1))
         by = {m["id"]: m for m in json.loads(slurp(out))["models"]}
         g = by[G25S]
-        self.assertEqual((g["family"], g["version"], g["variant"], g["prompt_field"]["maxLength"], g["pricing"]["credits_max"]), ("gpt-image", [2, 5], "sunburst", 20000, 6.0))
+        self.assertEqual((g["family"], g["version"], g["variant"], g["prompt_field"]["maxLength"], g["pricing"]["credits_max"]), ("gpt-image", [2, 6], "sunburst", 20000, 6.0))
         self.assertEqual(g["input_fields"]["seed"]["minimum"], 0)
         self.assertEqual(g["input_fields"]["resolution"]["enum"], ["1K", "2K"])
         self.assertEqual(by["claude-x"]["schema"]["kind"], "sync")
@@ -504,7 +514,7 @@ class RealPricing(Base):
             "wan/2-2-a14b-speech-to-video-turbo", "wan/2-2-animate-move", "grok-imagine/text-to-video",
             "kling/ai-avatar-pro", "hailuo/02-image-to-video-pro", "wan/2-7-text-to-video", "infinitalk/from-audio"}
         per_job_ids = {"kling/v2-1-pro", "kling/v2-1-master-text-to-video", "wan/2-6-text-to-video", "runway",
-                       "kling/v2-5-turbo-text-to-video-pro", "veo-3-1", "gpt-image-2-5-sunburst-text-to-image"}
+                       "kling/v2-5-turbo-text-to-video-pro", "veo-3-1", "gpt-image-2-6/sunburst-text-to-image"}
         by = {m["id"]: m for m in reg["models"]}
         for i in per_second_ids:
             self.assertEqual(by[i]["pricing"]["unit"], "per-second", i)

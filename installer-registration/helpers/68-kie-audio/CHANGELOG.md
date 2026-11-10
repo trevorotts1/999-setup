@@ -3,6 +3,25 @@
 All notable changes to this skill are documented here.
 
 ---
+## [2.3.8] - 2026-11-09 - fix: retired image house band no longer governs audio prose (INST-001 #21)
+
+- `SKILL.md` Prompt sizing + `references/tts.md` house-band section: the 5,000/9,000/19,000 image band is retired for audio; sizing states KIE prompt rule 12 (95-100% target, 80% floor, model cap wins). Per-route safe ceilings unchanged. Self-test 58 green.
+
+## [2.3.7] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
+## [2.3.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.5 -> 2.3.6 so the changelog entries added to this skill carry the required version bump. No behavior change; audio-request validation is unchanged.
+
+## [2.3.5] - 2026-11-08 - G3 lockstep roll (CI clear)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.4 -> 2.3.5 by the PR 2864 CI-clear roll (2026-11-08): audio-request validation carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
+## [2.3.4] - 2026-11-07 - G3 lockstep roll (F18 touch)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.3 -> 2.3.4 by the F18 version bump: audio-request validation carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
 
 ## [2.3.3] - 2026-10-11 - DOC68-EX: EXAMPLES.md music examples point at createTask; the legacy /api/v1/generate music-generation route is marked RETIRED everywhere
 
