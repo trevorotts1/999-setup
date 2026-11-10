@@ -23,8 +23,9 @@ name: SF prover pin authority
 #                                     PR to main carrying it as ONE github-actions[bot] commit touching ONLY
 #                                     the pin file (never a direct push to main). `mint-pin --ci` refuses to
 #                                     run anywhere else, and the local `--write-pin` needs a signed pin_rotation
-#                                     approval record held by the operator. 999 receives the pin only through
-#                                     the sync script, never by minting its own.
+#                                     approval record held by the operator. 999 mints its own pin with this
+#                                     workflow; the launch-family check declares the pin file a per-repo
+#                                     divergence (D6).
 #
 # A batch that changes pinned files is therefore red on `verify` until the operator dispatches `mint` for
 # the batch branch (Actions > SF prover pin authority > Run workflow > the branch). That is intended.
