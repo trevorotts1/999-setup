@@ -229,10 +229,10 @@ Two commands cannot be run as written, and neither is this unit's doing:
   nearest suite is `python3 -m pytest -q 75-drama-song-ad-factory/tests`, which here reports
   `1 failed, 193 passed`: the one failure is `test_model_choice.py::test_no_model_pin_in_skill_docs`,
   failing on **`references/studio-e2e-receipt.md`**, which is on the base and mentions
-  `sonnet-chain` (`git show 1e1c12dcc:…/studio-e2e-receipt.md | grep -c sonnet-chain` → 1).
-  It is pre-existing, unrelated to lip-sync, and owned elsewhere. This receipt carries no
-  model-pin word (`grep -ciE 'fable|opus-chain|sonnet-chain|haiku-chain|ANTHROPIC_DEFAULT_'`
-  on it → 0), so it adds no second failure.
+  a model-pin word (the base copy of that file matches the model-pin pattern in
+  `tests/test_model_choice.py` once). It is pre-existing, unrelated to lip-sync, and owned
+  elsewhere. This receipt carries no model-pin word (the same pattern on it → 0 matches),
+  so it adds no second failure.
 
 ## 7. Nothing was written into the trial folders
 

@@ -3544,21 +3544,21 @@
   "files": {
    "approvals_bridge.py": {
     "canonical": "75-drama-song-ad-factory/shared-bridge/approvals_bridge.py",
-    "canonical_sha256": "1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3",
+    "canonical_sha256": "760286841fa15d4d01cdc4d693bad3c3bb8ff01741c64c6e132ca4c3e924485c",
     "packaged": ".claude/skills/drama-studio/approvals_bridge.py",
-    "packaged_sha256": "1061783b7dc9685802e527d0c7995204aa4a8af9fb32dfba6b88ff450d227bc3"
+    "packaged_sha256": "760286841fa15d4d01cdc4d693bad3c3bb8ff01741c64c6e132ca4c3e924485c"
    },
    "studio_bridge.py": {
     "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
-    "canonical_sha256": "4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5",
+    "canonical_sha256": "eaba7ac1273b09863cd73a4b3f05c011ae19495fbd751434789daab1487b7009",
     "packaged": ".claude/skills/drama-studio/studio_bridge.py",
-    "packaged_sha256": "4ea9f8f306d355e8b234deabe408a3bdf6419f0148215c5fb9f9cfc393b4baa5"
+    "packaged_sha256": "eaba7ac1273b09863cd73a4b3f05c011ae19495fbd751434789daab1487b7009"
    },
    "studio_claim.py": {
     "canonical": "75-drama-song-ad-factory/shared-bridge/studio_claim.py",
-    "canonical_sha256": "b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42",
+    "canonical_sha256": "ccea7a5276ac6c22861db7d5f609c30a5bc07516b8c35e861fb989e7905551da",
     "packaged": ".claude/skills/drama-studio/studio_claim.py",
-    "packaged_sha256": "b2d8367116552b906f7d1c14ee1f4d884b6a03b1434a44517686cb237bccbb42"
+    "packaged_sha256": "ccea7a5276ac6c22861db7d5f609c30a5bc07516b8c35e861fb989e7905551da"
    }
   },
   "normalisation": "none - raw file bytes are hashed with sha256",
