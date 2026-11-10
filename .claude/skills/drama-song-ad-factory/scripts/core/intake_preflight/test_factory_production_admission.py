@@ -1,8 +1,9 @@
 """Factory CLI production admission, using real intake/Store/approval protocols.
 
-No provider, model, media or client-send calls. Explicit local dependency checks and client/stage authority are real.
+No provider, model, media or client-send calls. Dependency availability alone
+is mocked for paid-stage dependency checks; client/stage authority is real.
 """
-from contextlib import nullcontext, redirect_stdout
+from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -37,9 +38,8 @@ class FactoryProductionAdmission(unittest.TestCase):
         return self.cli("preflight", "--storage-dir", self.tmp.name, *extra)
 
     def paid_dependencies(self):
-        # This distribution checks explicitly requested dependency names.
-        # These CLI cases request none, so use its real storage/disk checks.
-        return nullcontext()
+        return patch.object(factory._preflight, "check_requirement",
+                            return_value={"ok": True, "detail": "offline dependency availability"})
 
     def ready_for_music(self, **preferences):
         confirmed_run(self.run, **preferences)
@@ -183,6 +183,15 @@ class FactoryProductionAdmission(unittest.TestCase):
             code, video = self.preflight("--run-dir", str(self.run), "--stage", "video-generation")
         self.assertEqual(code, 2)
         self.assertFalse(video["data"]["production_admitted"])
+
+    def test_public_next_surfaces_an_order_violation_by_name(self):
+        confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        (self.run / "research" / "receipt.json").unlink()
+        code, nxt = self.cli("next", "--run-dir", str(self.run))
+        self.assertEqual(code, 2, nxt)
+        self.assertFalse(nxt["data"]["production_admitted"], nxt)
+        self.assertEqual(nxt["reason_code"], "PRODUCTION_ORDER_VIOLATION")
 
 
 if __name__ == "__main__":

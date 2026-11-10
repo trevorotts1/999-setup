@@ -23,6 +23,7 @@ agnes_quota admission record the box does not carry yet.
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -171,13 +172,36 @@ def storyboard_fixture(run, *, shots=None, contracts=None, stills=None, count=3,
     return shots
 
 
+#: tmp dir -> one confirmed R1 run.  The confirmation walk is the same
+#: client turns every time and dominated this file's runtime (35 identical
+#: walks), so it runs once per tmp dir and every run starts from a byte copy.
+#: The copy holds no absolute path (checked), and the locked-model assertion
+#: confirmed_fixture makes is re-made on every copy.
+_CONFIRMED = {}
+
+
+def _confirmed_copy(tmp, run):
+    from kie_dispatch import model_lock
+    template = _CONFIRMED.get(str(tmp))
+    if template is None or not template.is_dir():
+        template = Path(tmp) / ("confirmed-%s" % uuid.uuid4().hex[:8]) / "R1"
+        (template / "control").mkdir(parents=True)
+        confirmed_fixture(template)
+        _CONFIRMED[str(tmp)] = template
+    shutil.copytree(template, run)
+    # confirmed_fixture already asserted the template's lock is the expected one.
+    locked = model_lock.read_locked_model(template / "control/state.sqlite3",
+                                          template.name)
+    assert locked and model_lock.read_locked_model(
+        run / "control/state.sqlite3", run.name) == locked, run
+
+
 def make_run(tmp, stage, method=None, agnes=None, progress=None,
              storyboard=None):
     """A governed run whose first unfinished canonical stage is `stage`."""
     from test_production_process import approve_script
     run = Path(tmp) / ("run-%s" % uuid.uuid4().hex[:8]) / "R1"
-    (run / "control").mkdir(parents=True)
-    confirmed_fixture(run)
+    _confirmed_copy(tmp, run)
     # Model the supported historical absence of these optional projections;
     # authoritative raw answers and the explicit recap remain intact.
     receipt = run / "control/card-receipt.json"
@@ -195,14 +219,38 @@ def make_run(tmp, stage, method=None, agnes=None, progress=None,
     for sid in STAGES[:idx]:
         if sid == "video-generation":
             storyboard_fixture(run, count=6, duration=60, approve=True)
-
+            _seed_recap(run)
         complete_fixture_stage(run, sid)
         if sid == "script-lyrics":
             approve_script(run)
     if stage == "video-generation" and storyboard == "approved":
         storyboard_fixture(run, count=6, duration=60, approve=True)
-
+        _seed_recap(run)
     return run
+
+
+def _seed_recap(run):
+    """The Gate 4 sources a real run carries, plus one recap and one Go."""
+    import hashlib
+    core = str(HERE.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    import final_recap as FR
+    import spend_ledger as SL
+    (run / "music").mkdir(exist_ok=True)
+    master = run / "music" / "picked-song.mp3"
+    master.write_bytes(b"the picked master")
+    (run / "song-choices").mkdir(exist_ok=True)
+    (run / "song-choices" / "pick.json").write_text(json.dumps({
+        "pick": 1, "label": "warm-live-band",
+        "sha256": hashlib.sha256(master.read_bytes()).hexdigest()}), "utf-8")
+    SL.init_run(str(run / "spend.sqlite3"), run.name, ceiling=50000,
+                currency="USD")
+    doc = FR.build(str(run))
+    FR.record_go(str(run), {"schema": FR.GO_SCHEMA, "decision": "GO",
+                            "operator": "Test Operator",
+                            "at_utc": "2026-10-22T00:00:00Z",
+                            "recap_digest": doc["recap_digest"]})
 
 
 def next_env(run, extra_env=None):

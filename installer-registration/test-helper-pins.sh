@@ -121,7 +121,7 @@ if build_fixture "$TMP/base"; then
     --onboarding "$TMP/stale-skill" --ref HEAD \
     --manifest "$MANIFEST" --helpers "$HELPERS"
   expect_line "67-kie-video: STALE PIN" "stale skill helper is named"
-  expect_line "v2.1.3" "the pinned version is reported next to the new one"
+  expect_line "v2.1.6" "the pinned version is reported next to the new one"
 else
   bad "could not build an onboarding fixture from $ONB origin/main"
 fi

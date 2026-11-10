@@ -9,12 +9,13 @@ WHAT GOVERNS NOW:
   are present and fully expressed. A missing element is an automatic
   failure. (Counting convention, per the guide: NFC-normalized, trimmed,
   Unicode code points; the prompt's SHA-256 is recorded in telemetry.)
-- Length is governed by the STRICT production band through the ONE canonical policy
-  service (shared-utils/prompt_policy.py, F18 2026-11-07): author each prompt to 95 to
-  100 percent of the model's verified prompt-field maximum. Below 95 percent FAILS and
-  must be revised; below 80 percent is a particularly clear hard failure; above the
-  maximum FAILS; an UNKNOWN maximum REFUSES a pass. The 80-to-below-95 warning-only path
-  is removed. This validator freezes the final prompt, runs the anatomy rules against
+- Length is governed by the ONE canonical policy service (shared-utils/prompt_policy.py,
+  owner rule 2026-10-05, restored 2026-11-08): author each prompt to 95 to 100 percent of
+  the model's verified prompt-field maximum. 80 to below 95 percent PASSES with a
+  warn-and-expand warning naming the characters to ADD; below 80 percent is a particularly
+  clear hard failure; above the maximum FAILS; an UNKNOWN maximum REFUSES a pass. The
+  warning is surfaced, never swallowed: a warn is not a silent pass.
+  This validator freezes the final prompt, runs the anatomy rules against
   that same string, records the final prompt hash and the provider payload hash, and
   binds an optional review reference to the same hash. Characters, percent of the
   maximum, and the full budget block land in the prompt's telemetry, and the prompt
@@ -125,7 +126,7 @@ GRADE_BLOCK_FILE = SKILL_ROOT / "assets" / "brand" / "signature-grade-block.txt"
 POLICY_FILE = SKILL_ROOT / "references" / "prompt-budget-policy.json"
 TRAITS_DIR = SKILL_ROOT / "references" / "style-traits"
 
-IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"  # Skill 66 registry id; override with --model
+IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"  # Skill 66 registry id; override with --model
 
 # Verbatim texts mandated by Image Guide v5 (see full-read notes R1):
 NO_TEXT_SENTENCE = "No text, no letters, no words anywhere in the image."
@@ -326,6 +327,41 @@ def load_policy(path=None):
                 "tripwire_chars": 2000}
 
 
+def _image_owner_registry_path():
+    """Locate Skill 66's canonical curated owner-policy registry."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    roots = list(Path(__file__).resolve().parents)
+    if envd:
+        roots.append(Path(envd))
+    roots += [Path.home() / ".openclaw" / "skills",
+              Path("/data/.openclaw/skills")]
+    for root in roots:
+        candidate = root / "66-kie-image" / "models.json"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _owner_image_cap(model):
+    """Read an exact model's owner cap; never invent a second numeric limit."""
+    path = _image_owner_registry_path()
+    if path is None:
+        return None
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        entries = [entry for entry in document.get("models", [])
+                   if isinstance(entry, dict) and entry.get("canonical_model_id") == model]
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    if len(entries) != 1:
+        return None
+    maximum = entries[0].get("owner_prompt_cap_chars")
+    if type(maximum) is not int or maximum <= 0:
+        return None
+    return {"max_chars": maximum, "cap_status": "OWNER_RULED", "unit": "chars",
+            "source": str(path) + " owner_prompt_cap_chars for " + model}
+
+
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
     best = None
@@ -336,6 +372,14 @@ def cap_for_model(model, policy):
                 best = entry
     if best is not None:
         return best
+    if model and "gpt-image-2-6" in model:
+        # A missing local policy entry falls back to the same owner registry,
+        # not a duplicated literal or the vendor's larger schema maximum.
+        owner_cap = _owner_image_cap(model)
+        if owner_cap is not None:
+            return owner_cap
+        return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
+                "source": "Exact owner-policy registry cap unavailable for " + model}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
@@ -1353,6 +1397,12 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
         if receipt["verdict"]["ok"]:
             notes.append("prompt is %d chars (%.1f%% of max %s); in band, budget exit 0."
                          % (receipt["count"], receipt["ratio"] or 0.0, receipt["max"]))
+            # The canonical policy (shared-utils/prompt_policy.py) PASSES the 80-to-below-95
+            # percent band WITH a warn-and-expand warning: the owner rule of 2026-10-05
+            # ("80 to 95 percent: warn and expand") outranks the stricter F18 band that briefly
+            # rejected 94 percent. A passing verdict is therefore not a silent verdict - the
+            # warning and its ADD count must reach the operator, so surface them here.
+            warnings.extend(receipt["verdict"].get("warnings") or [])
         elif status == "REVIEW_STALE":
             for item in problems:
                 errors.append(item.rstrip(".") + ".")

@@ -55,7 +55,7 @@ Your drama song ad
   Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
                 Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
-  Price:        computed by Skill 74 `price`   (+ the 50% retake allowance)
+  Price:        computed by Skill 74 `price`   (+ the measured planning allowance)
   Includes:     all video shots, the song (song mp3 included), one image per shot
   Not included: the AI writing, planning and checking (runs on your own AI plan)
   [Approve]   [Change options]
@@ -609,7 +609,7 @@ Decision 34, plan 6.14:
 - **Never mix books or authors.** Characters, lyrics, assets and files stay
   inside that book's campaign.
 - The approval card shows the **batch total**, computed from Skill 74
-  `price` for every book in the list, plus the 50% retake allowance.
+  `price` for every book in the list, plus the measured planning allowance.
 - One Kanban card per ad and one parent card per batch.
 
 ### 3.11 Social Media Planner card (Skill 35, plan 6.15)
@@ -672,8 +672,8 @@ numbers `references/price-menu.md` documents:
    repository.
 2. `preflight --model ID --units N` runs before approval; a shortfall is
    shown on the card and no paid call starts.
-3. Approval records the spending limit: the chosen price **plus the 50%
-   retake allowance**, in USD, with the KIE credit equivalent. No paid call
+3. Approval records the spending limit: the chosen price **plus the measured
+   planning allowance**, in USD, with the KIE credit equivalent. No paid call
    happens before that record exists.
 4. If a live rate cannot be read, the card says the price is unavailable and
    does not start paid work.

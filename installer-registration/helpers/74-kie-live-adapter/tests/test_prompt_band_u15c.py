@@ -36,7 +36,7 @@ H3 = "minimax-h3/image-to-video"
 H3_ROWS = ("text-to-video", "image-to-video", "reference-to-video")
 SUNO = "ai-music-api/generate"
 AVATAR = "kling/ai-avatar-standard"
-PLAIN = "gpt-image-2-5-sunburst-text-to-image"
+PLAIN = "gpt-image-2-6/sunburst-text-to-image"
 
 BAND = {"floor": 5000, "target_min": 5000, "target_max": 6800, "hard_max": 7000,
         "owner": "Trevor 2026-10-08", "below_floor": "FLAG_AND_EXPAND",
@@ -120,7 +120,7 @@ class H3Band(Base):
         self.policy(POLICY_ROOT)
         a, tr, c = self.adapter(self.routes())
         rc, r = self.check(a, H3, "a" * 5200)
-        self.assertEqual((rc, r["data"]["status"]), (0, "OK"), r["warnings"])
+        self.assertEqual((rc, r["data"]["status"]), (0, "PASS"), r["warnings"])
         self.assertEqual((r["data"]["floor"], r["data"]["target_min"],
                           r["data"]["target_max"], r["data"]["max"]),
                          (5000, 5000, 6800, 7000))
@@ -146,7 +146,7 @@ class H3Band(Base):
         self.assertIn("FLAG_AND_EXPAND", r["error"]["msg"])
         # the band's own floor is the target minimum: 5,000 chars is in band
         rc, r = self.check(a, H3, "a" * 5000)
-        self.assertEqual((rc, r["data"]["status"]), (0, "OK"))
+        self.assertEqual((rc, r["data"]["status"]), (0, "PASS"))
 
     def test_hard_max_still_refuses(self):
         self.policy(POLICY_ROOT)
@@ -157,18 +157,22 @@ class H3Band(Base):
         self.assertEqual(r["data"]["cut"], 1)
 
     def test_band_is_per_model_never_global(self):
-        """A model without a band keeps the 80/95 rule (control)."""
+        """A model without an owner band keeps the strict 95-100 house band (control)."""
         a, tr, c = self.adapter([["GET", "/schema", [schema({"prompt": {"type": "string",
                                                                        "maxLength": 1000}})]]])
         rc, r = self.check(a, PLAIN, "a" * 800)
-        self.assertEqual((rc, r["data"]["status"]), (0, "BELOW_TARGET"))
+        self.assertEqual((rc, r["data"]["status"]), (5, "BELOW_TARGET"))
+        self.assertFalse(r["data"].get("max_known") is False)
         rc, r = self.check(a, PLAIN, "a" * 799)
         self.assertEqual((rc, r["data"]["status"]), (3, "BELOW_FLOOR"))
+        # 96 percent passes
+        rc, r = self.check(a, PLAIN, "a" * 960)
+        self.assertEqual((rc, r["data"]["status"]), (0, "PASS"))
         # ...while H3 in the same test uses the band
         self.policy(POLICY_ROOT)
         a, tr, c = self.adapter(self.routes())
         rc, r = self.check(a, H3, "a" * 5200)
-        self.assertEqual((rc, r["data"]["status"]), (0, "OK"))
+        self.assertEqual((rc, r["data"]["status"]), (0, "PASS"))
 
 
 class CeilingOnly(Base):

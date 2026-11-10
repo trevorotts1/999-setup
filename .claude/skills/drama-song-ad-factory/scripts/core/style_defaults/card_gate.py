@@ -254,7 +254,7 @@ def audio_style_picks():
     e.g. Soul Rise = starts slow and soulful through the pain, lifts into
     an upbeat groove at the turning point."""
     lines = []
-    for sid in D.MUSIC_STYLES.style_ids():
+    for sid in D.MUSIC_STYLES.STYLES:      # the D18 three the card offers
         style = D.MUSIC_STYLES.style(sid)
         label = style["label"]
         desc = style.get("sound") or style.get("notes") or ""
@@ -373,7 +373,7 @@ def _model_sentence(row, rates):
     cell = rate.get(_res_class(row["resolution"])) or "rate not in menu"
     parts = ["one shape $%.2f" % row["one_shape"],
              "both shapes $%.2f" % row["both_shapes"],
-             "+50%% retakes +$%.2f on one shape" % row["retakes"],
+             "+20%% retakes +$%.2f on one shape" % row["retakes"],
              "rate %s" % cell,
              "max clip %s" % rate.get("max_clip", "n/a")]
     marks = "".join(" %s" % row["note"] for m in (row["note"],) if m)

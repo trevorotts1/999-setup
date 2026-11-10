@@ -14,6 +14,7 @@ Covers the acceptance rows:
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -150,9 +151,17 @@ def test_expired_lease_fenced_reclaim():
         st = ss.Store(db)
         st.init_run("run-B", [F.MUSIC])
         st.transition("run-B", F.MUSIC, "READY", "old", expected_version=None)
-        row = st.claim("run-B", F.MUSIC, "old", lease_s=1, expected_version=None)
+        row = st.claim("run-B", F.MUSIC, "old", lease_s=-1, expected_version=None)
         old_version = row["version"]
-        time.sleep(1.2)  # let the old lease expire
+        # Carried fix (batch-2 discipline, same defect class as
+        # unit/S75-W05-U1-carryfix / test_approval_events.py): the old lease is
+        # born EXPIRED instead of sleeping 1.2 s for it to expire. time.sleep is
+        # a global that another suite (test_load_governor.py, on main) rebinds to
+        # a no-op at import time, so under pytest's full-suite run the sleep was
+        # a no-op, the 1 s lease never expired, and this test failed with
+        # NOT_OWNER ("lease held by old") only when run together with it.
+        # lease_s=-1 exercises the identical _lease_live=False reclaim path
+        # deterministically, with no clock dependency.
 
         # resume via the fenced claim path (music_stage action=resume -> RUNNING)
         res = F.music_stage(str(run), "new", "resume", run_id="run-B", lease_s=60)
@@ -180,16 +189,14 @@ def test_expired_lease_fenced_reclaim():
 def _make_full_run(run, stages=F.CANONICAL_STAGES):
     """Current intake, legal stage history and real artifact decision writers."""
     from test_factory_method_agnes import make_run
+    from storyboard_director.test_registry_advancement import qc_record
     import qc_gate
 
-    # Keep the generated root: its decisions and Store bind its run ID.
+    # Keep the generated root: its decisions, Store and recap bind its run ID.
     run = make_run(run, None, agnes="no")
     (run / "control" / "plan-revision.json").write_text(json.dumps({"revision": "r7"}))
-    record = {"schema_version": "1.0.0", "check_id": "continuity-dna-1",
-              "run_id": run.name, "stage": "final-qc", "check": "continuity",
-              "verdict": "PASS", "evidence": {"summary": "Character DNA, product DNA and style "
-                  "bible records agree across every shot."}, "checker_version": "1.0.0",
-              "reviewer": {"identity": "qc-reviewer-1", "session": "s1", "authority": "qc"}}
+    record = qc_record(run.name)
+    record["stage"] = "final-qc"
     verdict = qc_gate.evaluate(run.name, "final-qc", [record],
                                {record["check_id"]: "fixture-build-worker"}, ["continuity"])
     (run / "final-qc" / "record.json").write_text(json.dumps({
@@ -280,6 +287,56 @@ def test_qc_records_list_reader():
         ok("QC-record lists read by the real reader; dict-only never coerces")
 
 
+# ── 7. a WAL state db with no sidecars still yields the right next action ───
+def test_wal_db_without_sidecars_reads():
+    import sqlite3
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td) / "run-W"
+        confirmed_run(run, song=False)
+        db = run / "control" / "state.sqlite3"
+        complete_stage(run, "research")
+        # Reproduce the real fleet failure: a WAL db that still carries frames,
+        # handed to a reader whose directory it cannot write (no -shm can be
+        # attached). Plain mode=ro then raises SQLITE_CANTOPEN "unable to open
+        # database file"; a WAL db with the sidecars simply deleted does NOT
+        # reproduce it on this SQLite, so this fixture keeps the -wal.
+        con = sqlite3.connect(str(db))
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute("UPDATE stages SET state='COMPLETE' "
+                    "WHERE run_id='run-W' AND stage='research'")
+        con.commit()
+        sealed = Path(td) / "run-S"
+        shutil.copytree(run, sealed, ignore=shutil.ignore_patterns(
+            "state.sqlite3", "state.sqlite3-wal", "state.sqlite3-shm"))
+        sdb = sealed / "control" / "state.sqlite3"
+        for suf in ("", "-wal"):
+            if Path(str(db) + suf).exists():
+                shutil.copy2(str(db) + suf, str(sdb) + suf)
+        con.close()
+        os.chmod(sealed / "control", 0o555)
+        try:
+            try:
+                sqlite3.connect("file:%s?mode=ro" % sdb, uri=True,
+                                timeout=5).execute(
+                    "PRAGMA schema_version").fetchone()
+                raise AssertionError("fixture does not reproduce the failure")
+            except sqlite3.Error:
+                pass                       # the control: raw open really fails
+
+            assert F._ro_connect(sdb).execute(
+                "SELECT state FROM stages WHERE stage='research'"
+            ).fetchone() == ("COMPLETE",)
+
+            # the blind spot itself: continuation_enqueue silently used got={}
+            # and answered from nothing whenever the store was unreadable.
+            a = F.continuation_enqueue(sealed, "approval", run_id="run-W")
+            assert a["verdict"] == "runnable", a
+            assert a["next_stage"] == "creative-strategy", a
+        finally:
+            os.chmod(sealed / "control", 0o755)
+        ok("WAL db in a read-only dir still reads the real stages")
+
+
 def main():
     test_false_completion_never_delivered()
     test_mixed_terminal_keeps_reasons()
@@ -288,6 +345,7 @@ def main():
     test_expired_lease_fenced_reclaim()
     test_registry_traversal_and_completion()
     test_qc_records_list_reader()
+    test_wal_db_without_sidecars_reads()
     print("\nALL %d CHECKS PASSED" % len(PASS))
     return 0
 

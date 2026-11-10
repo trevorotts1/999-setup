@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""prompt_policy.py - THE canonical prompt-policy service (F18, 2026-11-07).
+"""prompt_policy.py - THE canonical prompt-policy service (owner rule 12, 2026-10-05;
+Decision 1, 2026-10-15; Q1, 2026-10-17).
 
 Every gate that measures a prompt, freezes a provider payload, or enforces a copy
 profile calls THIS module. No gate keeps a second band, a second counter or a second
-freeze. The band is the strict production band:
+freeze. The band is owner rule 12:
 
     ratio = counted_code_points / verified_provider_max
     95 <= ratio*100 <= 100      PASS
-    below 95 percent            FAIL, revise (BELOW_TARGET)
+    80 <= ratio*100 < 95        PASS with a WARN: warn and expand (BELOW_TARGET names the ADD)
     below 80 percent            FAIL, particularly clear hard failure (BELOW_FLOOR)
     above the documented max    FAIL (ABOVE_MAX)
     maximum UNKNOWN             FAIL, never a silent PASS (UNKNOWN_MAX)
 
-The old 80-to-below-95 WARNING-ONLY path is deliberately gone.
+The 80-to-below-95 band is the OWNER RULE's warn-and-expand middle band, restored from the
+owner order of 2026-10-05 (07-kie-setup/references/kie-common-rules.md section 12): "Hard floor:
+80 percent (below it, reject and rewrite). Hard ceiling: 100 percent (above it, reject).
+80 to 95 percent: warn and expand." The order outranks the later code that made 94 percent fail,
+and that code never amended the order.
 
 COUNTING (Image Guide v5 convention, one implementation)
   * strip a surrounding document fence (```lang ... ```) and leading YAML front matter
@@ -59,7 +64,7 @@ import unicodedata
 
 POLICY_VERSION = "prompt-policy/2.0.0"
 
-# The strict production band. Percentages only: never a model maximum.
+# Owner rule 12 band. Percentages only: never a model maximum.
 FLOOR_PERCENT = 95          # integral lower bound: ceil(0.95 * verified maximum)
 TARGET_PERCENT = 95         # the target range starts at the same bound
 CEILING_PERCENT = 100
@@ -73,7 +78,7 @@ _FRONT_MATTER = re.compile(r"\A---[ \t]*\n.*?\n---[ \t]*(?:\n|\Z)", re.S)
 
 
 class PromptPolicyError(ValueError):
-    """The prompt is outside the strict production band."""
+    """The prompt is outside the owner rule 12 band."""
 
     def __init__(self, verdict):
         self.verdict = verdict
@@ -224,7 +229,7 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
              limit=None, fallback_max=None, adapter_path=None, band_override=None,
              separate_limit=None, token_count=None, anatomy=None, review_ref=None,
              schema_version=None):
-    """Judge one prompt against the strict production band.
+    """Judge one prompt against the owner rule 12 band.
 
     kind: "descriptive" (band) or "verbatim"/ceiling_only (ceiling only).
     limit: a pre-resolved dict from resolve_limit(); else one is resolved.
@@ -329,27 +334,35 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
         return _finish_anatomy(_verdict("ABOVE_MAX", False, n, unit, message=msg, **kw), counted, anatomy)
 
     if not verbatim and not ceiling_only and n < band["floor"]:
-        kw["add"] = band["floor"] - n
+        kw["add"] = band["floor"] - n   # characters to add to reach the 95 percent target
         action = band_override.get("below_floor") if isinstance(band_override, dict) else None
-        status = "BELOW_FLOOR" if n < band["hard_floor"] else "BELOW_TARGET"
         if action:
+            # An owner band's own recorded below-floor action is still a rejection, never a warning.
             msg = ("prompt is %d %s (%.1f%% of max %d), below the owner band floor %d: ADD at least %d "
                    "%s of genuine specification (%s); a warning is not a pass" % (
                        n, unit, ratio, band["max"], band["floor"], kw["add"], unit, action))
-        elif n < band["hard_floor"]:
-            # 80 percent is a SEVERITY note, never a target: the gap named must be the band floor's
-            # (ceil(0.95 x max), F18.4), not the 80 percent mark's.
-            msg = ("prompt is %d %s (%.1f%% of max %d), below the %d%% hard floor; ADD at least %d "
-                   "%s of genuine specification to reach the %d%% band floor of %d (revise, never pad)" % (
-                       n, unit, ratio, band["max"], HARD_FLOOR_PERCENT, kw["add"], unit,
-                       FLOOR_PERCENT, band["floor"]))
-        else:
-            msg = ("prompt is %d %s (%.1f%% of max %d), below the strict %d%% band; ADD %d %s of "
-                   "genuine specification to reach %d (a warning is not a pass)" % (
-                       n, unit, ratio, band["max"], FLOOR_PERCENT, kw["add"], unit,
-                       band["target_min"]))
-        problems.append(msg)
-        return _finish_anatomy(_verdict(status, False, n, unit, message=msg, **kw), counted, anatomy)
+            problems.append(msg)
+            return _finish_anatomy(_verdict("BELOW_FLOOR", False, n, unit, message=msg, **kw),
+                                   counted, anatomy)
+        if n < band["hard_floor"]:
+            # Owner rule section 12: below 80 percent is the hard reject. Name the clearance of the
+            # 80 percent floor AND the 95 percent target, so the rewrite has one destination.
+            floor_gap = band["hard_floor"] - n
+            msg = ("prompt is %d %s (%.1f%% of max %d), below the %d percent floor: ADD at least %d %s "
+                   "of genuine specification to reach %d, and ADD at least %d %s to reach the %d "
+                   "target (reject and rewrite, never pad)" % (
+                       n, unit, ratio, band["max"], HARD_FLOOR_PERCENT, floor_gap, unit,
+                       band["hard_floor"], kw["add"], unit, band["floor"]))
+            problems.append(msg)
+            return _finish_anatomy(_verdict("BELOW_FLOOR", False, n, unit, message=msg, **kw),
+                                   counted, anatomy)
+        # 80 <= n < 95: the owner rule's warn-and-expand band. It PASSES with the warning and the
+        # characters to add; only below 80 and above the documented maximum are rejections.
+        msg = ("prompt is %d %s (%.1f%% of max %d), in the %d to %d percent band: ADD %d %s of genuine "
+               "specification to reach the %d target (warn and expand)" % (
+                   n, unit, ratio, band["max"], HARD_FLOOR_PERCENT, FLOOR_PERCENT, kw["add"], unit,
+                   band["floor"]))
+        warnings.append(msg)
 
     if not verbatim and not ceiling_only and n > band["target_max"]:
         kw["cut"] = n - band["target_max"]
@@ -370,7 +383,8 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
         return _finish_anatomy(_verdict("SEPARATE_LIMIT_FAIL", False, n, unit, message=msg, **kw),
                                counted, anatomy)
 
-    status = "VERBATIM_EXEMPT" if verbatim else "CEILING_ONLY" if ceiling_only else "PASS"
+    status = ("VERBATIM_EXEMPT" if verbatim else "CEILING_ONLY" if ceiling_only
+              else "BELOW_TARGET" if n < band["floor"] else "PASS")
     v = _verdict(status, True, n, unit, message="", **kw)
     if review_ref is not None:
         v = _bind_review(v, sha)
@@ -749,7 +763,8 @@ def _self_check():
     assert b["floor"] == 19000, b
     assert b["hard_floor"] == 16000, b
     cases = [
-        ("94%", "x" * 18800, False, "BELOW_TARGET"),
+        ("94%", "x" * 18800, True, "BELOW_TARGET"),
+        ("80%", "x" * 16000, True, "BELOW_TARGET"),
         ("96%", "x" * 19200, True, "PASS"),
         ("100%", "x" * 20000, True, "PASS"),
         ("101%", "x" * 20001, False, "ABOVE_MAX"),
@@ -758,6 +773,8 @@ def _self_check():
     for name, text, ok, status in cases:
         v = evaluate(text, model="self-check", max_chars=m, max_source="self-check")
         assert v["ok"] is ok and v["status"] == status, (name, v)
+    warn = evaluate("x" * 18800, model="self-check", max_chars=m, max_source="self-check")
+    assert warn["ok"] and warn["add"] == 200 and "ADD 200 chars" in warn["warnings"][0], warn
     assert evaluate("x" * 19000, model="x", max_chars=None, max_source=None,
                     adapter_path="")["status"] == "UNKNOWN_MAX"
     counted = normalize_text("﻿  café\n interior  ")
@@ -772,7 +789,8 @@ def _self_check():
     override = apply_input_extra({"prompt": "x" * 19200}, {"prompt": "y" * 19200},
                                  model="self-check", max_chars=m)
     assert override["ok"] is False and override["status"] == "PROMPT_OVERRIDE_REJECTED", override
-    print("prompt_policy self-check: PASS (94% fails, 96% passes, over-max fails, unknown refuses, override rejected)")
+    print("prompt_policy self-check: PASS (80-94% warns and expands, 96% passes, over-max fails, "
+          "unknown refuses, override rejected)")
     return 0
 
 

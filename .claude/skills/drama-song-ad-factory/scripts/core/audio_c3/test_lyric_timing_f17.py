@@ -87,6 +87,8 @@ def test_tier1_returns_suno_alignment_no_local_loads():
           "no dispatch call recorded")
     check("tier1 provider suno",
           t["transcription_provider"] == "suno (KIE timeStamped-lyrics)")
+    check("tier1 fallback_used is False", t["fallback_used"] is False,
+          t.get("fallback_used"))
 
 
 def test_tier1_hint_skips_dispatch():
@@ -99,6 +101,9 @@ def test_tier1_hint_skips_dispatch():
           "suno-timestamped-lyrics")
     check("tier1 hint zero loads",
           got["timings"]["local_model_loads"] == 0)
+    check("tier1 hint fallback_used is False",
+          got["timings"]["fallback_used"] is False,
+          got["timings"].get("fallback_used"))
 
 
 def test_tier1_words_shape_exact():
@@ -174,6 +179,8 @@ def test_tier2_forced_failure_exactly_one_load_multi_track():
     check("tier2 words present",
           [w["word"] for w in t["words"]] == ["power", "in", "the", "climb"])
     check("tier2 local_model_loads receipt = 1", t["local_model_loads"] == 1)
+    check("tier2 fallback_used is True", t["fallback_used"] is True,
+          t.get("fallback_used"))
     check("tier2 small default",
           counter["sizes"] == [("small", "int8")], counter["sizes"])
     check("tier2 provider faster-whisper",
@@ -242,6 +249,8 @@ def test_tier3_fires_only_after_both_fail_and_cites_client_key():
     check("tier3 cites the CLIENT key env",
           got["timings"]["evidence"]["stt_key_env"] ==
           "DRAMA75_CLOUD_STT_API_KEY")
+    check("tier3 fallback_used is True", got["timings"]["fallback_used"] is True,
+          got["timings"].get("fallback_used"))
 
 
 def test_tier3_no_cloud_wired_reports_chain():
@@ -292,6 +301,8 @@ def test_tier3_word_timestamps_from_provider():
     check("tier3 provider words", got["words"] ==
           [{"word": "cloud", "start": 1.0, "end": 1.5}])
     check("tier3 receipt zero local loads", got["local_model_loads"] == 0)
+    check("tier3 fallback_used is True", got["fallback_used"] is True,
+          got.get("fallback_used"))
 
 
 # ── 4. Part D load guard ─────────────────────────────────────────────────────
@@ -383,6 +394,30 @@ def test_scan_detects_planted_whisper_script():
           "rc=%s out=%s err=%s" % (r.returncode, r.stdout[-200:],
                                    r.stderr[-300:]))
     check("planted offender named in output", "asr1.py" in r.stderr)
+
+
+def test_scan_run_dirs_spaced_path_and_colon_list():
+    """A run folder whose path holds a space is ONE folder, and the
+    documented colon list scans every entry. Both used to scan clean: the
+    script word-split the list, so any TMPDIR holding a space skipped the
+    planted script above. A named folder that does not exist is a usage
+    error, never a silent skip."""
+    tmp = make_tmp()
+    clean = os.path.join(tmp, "run-clean")
+    spaced = os.path.join(tmp, "run with space")
+    for d in (clean, spaced):
+        os.makedirs(d, exist_ok=True)
+    with open(os.path.join(spaced, "asr2.py"), "w", encoding="utf-8") as f:
+        f.write('import whisper\nmodel = whisper.load("medium.en")\n')
+    r = run_scan({"DRAMA75_CORE": CORE,
+                  "DRAMA75_RUN_DIRS": clean + ":" + spaced})
+    check("spaced run folder in colon list -> exit 2", r.returncode == 2,
+          "rc=%s err=%s" % (r.returncode, r.stderr[-300:]))
+    check("spaced-folder offender named", "asr2.py" in r.stderr)
+    r = run_scan({"DRAMA75_CORE": CORE,
+                  "DRAMA75_RUN_DIRS": os.path.join(tmp, "no-such-run")})
+    check("missing named run folder -> exit 1, never clean",
+          r.returncode == 1, "rc=%s err=%s" % (r.returncode, r.stderr[-300:]))
 
 
 def test_scan_permits_faster_whisper_only_in_module():
@@ -884,6 +919,7 @@ def main():
     test_guard_reads_live_lane_size()
     test_tier2_blocked_when_guard_refuses()
     test_scan_detects_planted_whisper_script()
+    test_scan_run_dirs_spaced_path_and_colon_list()
     test_scan_permits_faster_whisper_only_in_module()
     test_scan_banned_surface_in_core()
     test_no_loader_counterexample_production_api()

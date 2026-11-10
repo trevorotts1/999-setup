@@ -19,6 +19,7 @@ import importlib
 import os
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))          # core/
@@ -42,7 +43,16 @@ def _forbid_make_runner(*_a, **_k):
     raise AssertionError("real Skill 74 runner disabled in tests")
 
 
-MODULE.make_runner = _forbid_make_runner
+_NO_REAL_RUNNER = mock.patch.object(MODULE, "make_runner", _forbid_make_runner)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
 
 
 class Fake74:
@@ -74,8 +84,13 @@ class Fake74:
                         "result_urls": ["https://example.invalid/a.png"],
                         "credits_consumed": self.credits})
         if sub == "save":
-            path = os.path.join(tmp, "f5-%d.png" % len(self.calls))
-            open(path, "w").close()
+            # Unique per call: each job drives its own Fake74 from its own
+            # thread, so a shared name let a concurrent writer truncate the
+            # file after another job's save returned (0 bytes ->
+            # KIE_SAVE_OUTPUT_EMPTY, a flaky 16/17).
+            fd, path = tempfile.mkstemp(prefix="f5-", suffix=".png", dir=tmp)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(b"f5-bytes")
             return (0, {"state": "success", "task_id": "t-x",
                         "saved_paths": [path],
                         "credits_consumed": self.credits})
@@ -254,4 +269,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_module()
     sys.exit(main())

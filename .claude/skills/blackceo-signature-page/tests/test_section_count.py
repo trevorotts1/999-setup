@@ -166,17 +166,19 @@ class SectionCountTests(unittest.TestCase):
         prompt = exe.stage_prompt("visual-mockup", {"section_id": "1", "copy": copy}, 1, 1440, request, "3:4")
         self.assertEqual(prompt.count("Second paragraph here."), 1)
 
-    def test_under_floor_is_refused_when_strict_and_warned_otherwise(self):
-        request = {"model": "gpt-image-2-5-sunburst", "stage_prompts": {"visual-mockup": "{copy}"},
+    def test_under_the_80_percent_floor_is_refused_on_the_paid_path(self):
+        # Owner rule 12 / Decision 1: the paid path refuses below the 80 percent floor and
+        # warns (never refuses) below the 95 percent target.
+        request = {"model": "gpt-image-2-6/sunburst", "stage_prompts": {"visual-mockup": "{copy}"},
                    "_hypersat": exe.hypersaturation.roles_for_run(self.run)}
         section = {"section_id": "1", "copy": "A finished sentence."}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4", strict_floor=True)
-        self.assertIn("below the 19000-char strict floor", str(ctx.exception))
+        self.assertIn("below the 16000-char 80 percent floor", str(ctx.exception))
         self.assertTrue(exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4"))
 
     def test_preflight_exits_1_on_a_prompt_under_the_floor(self):
-        request = {"model": "gpt-image-2-5-sunburst", "copy_version": "standard",
+        request = {"model": "gpt-image-2-6/sunburst", "copy_version": "standard",
                    "stage_prompts": {"visual-mockup": "{copy}"},
                    "sections": sections([str(i) for i in range(1, 13)])}
         (self.run / "production-request.json").write_text(json.dumps(request))
@@ -228,7 +230,7 @@ class BuilderTests(unittest.TestCase):
         self.assertIn("missing ['2A']", str(ctx.exception))
 
 
-REAL_MODEL = "gpt-image-2-5-sunburst-image-to-image"
+REAL_MODEL = "gpt-image-2-6/sunburst-image-to-image"
 
 
 def design_prose(chars=14500):
@@ -282,7 +284,7 @@ class BandTests(unittest.TestCase):
     def test_no_design_prose_means_a_named_refusal_not_a_short_prompt(self):
         with self.assertRaises(builder.BuildError) as ctx:
             self.build("standard", {})
-        self.assertIn("below the 19000-char strict floor", str(ctx.exception))
+        self.assertIn("below the 16000-char 80 percent floor", str(ctx.exception))
         self.assertIn("--design-prose", str(ctx.exception))
 
     def test_private_framework_labels_never_reach_a_prompt(self):
@@ -299,13 +301,24 @@ class BandTests(unittest.TestCase):
         self.assertNotRegex(template, r"(?i)\bpain \d")
         self.assertIn("| the first cost | 394", template)
 
-    def test_slot_canon_only_where_the_run_plans_slots(self):
-        bare = " ".join(s["layout"] for s in self.build("standard", design_prose())["sections"])
-        self.assertNotIn("SLOT CANON", bare)
+    def test_slot_canon_only_where_the_spec_plans_slots(self):
+        # MOCK-001: the spec itself now plans its image slots (default_slots from the
+        # section-image-prompt.md skeleton table), so the canon prints for those
+        # sections without the caller passing --slots, and never for the type-only
+        # sections (6 persona cards, 7 icon cards, 11 numbered steps).
+        built = self.build("standard", design_prose())["sections"]
+        canon = {s["section_id"] for s in built if "SLOT CANON" in s["layout"]}
+        self.assertEqual(canon, {"1", "2", "3", "4", "5", "8", "9", "10", "12"})
+        # the canon names the section's own planned slot and ratio, not a vague canon
+        self.assertIn("SLOT CANON: IMG-001 (16:9) hero image", built[0]["layout"])
+        self.assertIn("SLOT CANON: IMG-009 (3:4) founder portrait", built[-1]["layout"])
+        for sid in ("6", "7", "11"):
+            self.assertNotIn("SLOT CANON",
+                             next(s for s in built if s["section_id"] == sid)["layout"])
         slots = {"2": [{"slot_id": "hero", "aspect_ratio": "16:9", "art_direction": "x"}]}
         planned = self.build("standard", design_prose(), slots=slots)["sections"]
         self.assertIn("SLOT CANON", planned[1]["layout"])
-        self.assertEqual(sum("SLOT CANON" in s["layout"] for s in planned), 1)
+        self.assertEqual(sum("SLOT CANON" in s["layout"] for s in planned), 9)
 
     def test_signature_is_a_label_and_the_founder_letter_still_builds(self):
         request = self.build("standard", design_prose())

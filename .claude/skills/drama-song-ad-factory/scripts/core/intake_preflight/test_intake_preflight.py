@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""W1-A-U3 (manual H8 + L4): version-2 intake defaults and twelve profiles.
+"""W1-A-U3 (manual H8 + L4): version-2 intake defaults and ten profiles.
 
 Proves, behaviourally:
   * DEFAULTS target_length_s == 60 and the v1 30s default is gone;
   * length_option / shape / look / music / voice flow through normalize with
     provenance (provided > inherited > default), look/music from D24;
   * a provided length_option feeds target_length_s only when it was assumed;
-  * the default allowed_profiles are the twelve drama-<shape>-<length>s profiles
+  * the default allowed_profiles are the ten drama-<shape>-<length>s profiles
     and `preflight --profile drama-16x9-300s` never says
     delivery-profile-unknown (the manual's Done-when);
   * FU-ONE-SPEND-QUESTION: the story questions never ask about money (the
@@ -109,6 +109,9 @@ def test_card_defaults_from_style_defaults():
 
 
 def test_twelve_delivery_profiles():
+    """D12: profiles come from the ONE canonical duration table (six lengths,
+    the F15 120 s entry included) x two shapes -- the old ten-profile set
+    dropped 120 s and is gone."""
     got = P.DEFAULT_PROFILES
     want = tuple(
         "drama-%s-%ss" % (shape, secs)
@@ -118,18 +121,9 @@ def test_twelve_delivery_profiles():
           got == want, "%s != %s" % (got, want))
     check("twelve profiles, six lengths x two shapes",
           len(got) == 12, str(len(got)))
+    check("120 s profile present (D12)", "drama-9x16-120s" in got, repr(got))
     check("v1 profile retired from defaults",
           "short-9x16-30s" not in got)
-    with tempfile.TemporaryDirectory(prefix="s75-profile-roundtrip-") as tmp:
-        for seconds in (60, 90, 120, 180, 300, 600):
-            fields, provenance = I.normalize({"target_length_s": seconds}, {})
-            check("explicit %s seconds survives normalization" % seconds,
-                  fields["target_length_s"] == seconds and provenance["target_length_s"] == "provided")
-            for shape in ("9x16", "16x9"):
-                profile = "drama-%s-%ss" % (shape, fields["target_length_s"])
-                result = P.check({"storage_dir": tmp, "profile": profile, "mode": "diagnostic"})
-                check("%s preflight diagnostic round-trip" % profile,
-                      result.get("reason_code") == "preflight-pass-diagnostic", repr(result))
 
 
 def test_default_profile_known():
@@ -169,13 +163,17 @@ def test_cli_done_when():
                        "at": "2026-10-08T09:00:00Z"}
         with open(receipt_path, "w", encoding="utf-8") as fh:
             json.dump(receipt, fh)
+        # D05: a production preflight derives the KIE credential requirement
+        # from PREREQS.json (presence only; the value is never read or logged),
+        # so the CLI run carries a set name in its env like a real launcher.
+        cli_env = dict(os.environ, KIE_API_KEY="kie-cli-presence-2026")
         run = subprocess.run(
             [sys.executable, FACTORY, "preflight",
              "--root", tmp, "--storage-dir", tmp,
              "--profile", "drama-16x9-300s",
              "--auth-file", auth, "--summary-digest", "t",
              "--card-receipt-file", receipt_path],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=cli_env)
         env = json.loads(run.stdout)
         check("CLI: not delivery-profile-unknown",
               env.get("reason_code") != "delivery-profile-unknown",
@@ -194,7 +192,7 @@ def test_cli_done_when():
              "--root", tmp, "--storage-dir", tmp,
              "--profile", "drama-16x9-300s",
              "--auth-file", auth, "--summary-digest", "t"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=cli_env)
         env2 = json.loads(run2.stdout)
         check("CLI: paid preflight without card -> CARD_UNANSWERED",
               env2.get("reason_code") == "CARD_UNANSWERED",

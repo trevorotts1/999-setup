@@ -21,6 +21,7 @@ import math
 import mimetypes
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -31,7 +32,11 @@ import uuid
 ADAPTER = "74-kie-live-adapter"
 API = "https://api.kie.ai"
 UPLOAD = "https://kieai.redpandaai.co"
-DATA_OC_ROOT = "/data/.openclaw"  # Docker/VPS OpenClaw home; wire.sh resolves it the same way (M8)
+# F21 item 11: the durable data root is NOT computed here. It comes from the ONE
+# shared resolver below, which Skill 46's data-root.js executes too, so both
+# modules of the callback route see the same root.
+DURABLE_ROOT_SCRIPT = "durable-data-root.sh"
+DURABLE_SCOPE = "kie-live-adapter"
 CATALOG_TTL = 6 * 3600
 SCHEMA_TTL = 24 * 3600
 B64_LIMIT = 10 * 1024 * 1024
@@ -229,9 +234,12 @@ def extract_results(resp):
 
 
 # ------------------------------------------------- registry / limits helpers
-FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 80, 95, 1.30
-# Owner order 2026-10-05: prompts use 95-100% of a model's max, never below 80%.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-5-sunburst-text-to-image"}  # last-resort default (N43 today)
+FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
+# Owner order 2026-10-05, section 12 of 07-kie-setup/references/kie-common-rules.md: 95 to 100
+# percent of a model's verified max passes; 80 to below 95 percent warns and expands (it PASSES
+# and names the characters to add); below 80 percent is the hard reject; above the max is the
+# ceiling reject. The arithmetic itself lives in shared-utils/prompt_policy.py only.
+KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30
@@ -329,10 +337,40 @@ def preflight_amount(credits):
     return None if credits is None else math.ceil(round(credits * PREFLIGHT_MULT * 100, 6)) / 100.0
 
 
+def _policy():
+    """The ONE canonical prompt policy (shared-utils/prompt_policy.py).
+
+    Never a second band: when the module is missing this returns None and every prompt
+    verdict fails closed instead of inventing numbers.
+    """
+    global _POLICY
+    try:
+        return _POLICY
+    except NameError:
+        pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [os.path.join(here, "..", "..", "shared-utils"),
+             os.path.join(os.environ.get("OPENCLAW_SKILLS_DIR", ""), "shared-utils"),
+             os.path.join(os.path.expanduser("~"), ".openclaw", "skills", "shared-utils"),
+             "/data/.openclaw/skills/shared-utils"]
+    _POLICY = None
+    for d in roots:
+        if d and os.path.isfile(os.path.join(d, "prompt_policy.py")):
+            if os.path.abspath(d) not in sys.path:
+                sys.path.insert(0, os.path.abspath(d))
+            import prompt_policy
+            _POLICY = prompt_policy
+            break
+    return _POLICY
+
+
 def budget(max_chars):
-    """Prompt budget from a model max. Integer math: no float rounding surprises."""
-    m = int(max_chars)
-    return {"max": m, "floor": -(-m * FLOOR_PCT // 100), "target_min": -(-m * TARGET_PCT // 100), "target_max": m}
+    """Prompt budget from a verified model max. The policy owns the arithmetic."""
+    p = _policy()
+    if p is None:
+        raise KieError("policy_unavailable",
+                       "shared-utils/prompt_policy.py is missing; refusing to invent a prompt band")
+    return p.band_numbers(max_chars)
 
 
 _LIMIT_RE = re.compile(
@@ -447,12 +485,14 @@ def registry_input_schema(entry):
     return s
 
 
-def _policy_rows(model_id, here=None):
+def _policy_rows(model_id, here=None, prefix=False):
     """Yield (owner, entry) for model_id from the policy-owner catalogs 66/67/68.
 
     Owner order first, then roots; per root the first existing file of the pair
     (owner, alt) wins. One walker so the limit and the band never disagree
-    about which row they read (U15c).
+    about which row they read (U15c). With ``prefix`` the walker yields every row
+    whose canonical id is model_id or sits under it (``<model_id>/...``), which is
+    how a family-level owner ruling reaches its individual routes.
     """
     here = here or os.path.dirname(os.path.abspath(__file__))
     roots = [os.path.join(here, "..", ".."), os.environ.get("OPENCLAW_SKILLS_DIR") or "",
@@ -471,7 +511,8 @@ def _policy_rows(model_id, here=None):
                 except (OSError, ValueError):
                     continue
                 for e in d.get("models") or d.get("entries") or []:
-                    if e.get("canonical_model_id") == model_id:
+                    cid = e.get("canonical_model_id") or ""
+                    if (cid.startswith(model_id + "/") if prefix else cid == model_id):
                         yield owner, e
                 break
 
@@ -490,6 +531,38 @@ def policy_limit(model_id, here=None):
                 return caps[k], owner, False, None
         return None, None, False, None
     return None, None, False, None
+
+def policy_owner_cap(model_id, here=None):
+    """Owner-declared prompt cap from the policy rows -> (cap|None, owner|None).
+
+    Owner ruling 2026-11-08: a declared ``owner_prompt_cap_chars`` is the HIGHEST precedence
+    for a prompt-length limit. The vendor's published schema figure is a fact and stays on
+    record, but it never grants permission the owner withheld.
+    """
+    for owner, e in _policy_rows(model_id, here):
+        cap = e.get("owner_prompt_cap_chars")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+            return cap, owner
+        return None, None
+    return None, None
+
+def policy_owner_cap_family(model_id, here=None):
+    """Owner-declared cap for a route: its exact row first, then its family prefix.
+
+    The owner ruling is recorded once (Skill 66, 2026-11-08): 20,000 for the
+    gpt-image-2-6 family. A route id that has no row of its own still inherits
+    the family cap, so a sibling route can never quietly fall back to the
+    vendor figure merely because it was added after the ruling.
+    """
+    cap, owner = policy_owner_cap(model_id, here)
+    if cap is not None:
+        return cap, owner
+    family = model_id.rsplit("/", 1)[0]
+    for owner, e in _policy_rows(family, here, prefix=True):
+        cap = e.get("owner_prompt_cap_chars")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+            return cap, owner
+    return None, None
 
 def policy_band(model_id, here=None):
     """Owner prompt band from the policy rows (U15c) -> (band|None, owner|None).
@@ -522,6 +595,58 @@ def ceiling_only_field(model_id, field):
 
 
 # ------------------------------------------------------------------ adapter
+def _locate_durable_root_script(env):
+    """Locate shared-utils/durable-data-root.sh (repo checkout or installed skills tree).
+
+    Same lookup shape as _repo_resolver(): a skill may be read from the repository
+    checkout or from an installed skills tree, so both are tried by name.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    home = env.get("HOME") or os.path.expanduser("~")
+    cands = [os.path.join(here, "..", "..", "shared-utils", DURABLE_ROOT_SCRIPT)]
+    skills = env.get("OPENCLAW_SKILLS_DIR")
+    if skills:
+        cands.append(os.path.join(skills, "shared-utils", DURABLE_ROOT_SCRIPT))
+    cands.append(os.path.join(home, ".openclaw", "skills", "shared-utils", DURABLE_ROOT_SCRIPT))
+    cands.append(os.path.join("/data/.openclaw/skills/shared-utils", DURABLE_ROOT_SCRIPT))
+    for c in cands:
+        if os.path.isfile(c):
+            return os.path.abspath(c)
+    return None
+
+def resolve_durable_layout(env=None, scope=DURABLE_SCOPE):
+    """The ONE durable layout for run data, resolved by shared-utils/durable-data-root.sh.
+
+    Returns {root, scope, state_dir, registry, index, done, receipts, cache, resolver}.
+    Raises KieError("data_root_unresolved") when the resolver cannot answer: a guessed
+    path is how evidence lands in a transient directory, so there is no silent default.
+    """
+    env = dict(os.environ if env is None else env)
+    script = _locate_durable_root_script(env)
+    if not script:
+        raise KieError("data_root_unresolved",
+                       "%s was not found (looked in the repo checkout, $OPENCLAW_SKILLS_DIR, "
+                       "~/.openclaw/skills/shared-utils and /data/.openclaw/skills/shared-utils)"
+                       % DURABLE_ROOT_SCRIPT)
+    try:
+        out = subprocess.run(["bash", script, "--json", "--scope", scope],
+                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             universal_newlines=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise KieError("data_root_unresolved", "%s could not run: %s" % (DURABLE_ROOT_SCRIPT, e))
+    if out.returncode != 0:
+        raise KieError("data_root_unresolved", "%s: %s"
+                       % (DURABLE_ROOT_SCRIPT, (out.stderr or "").strip()[:300]))
+    try:
+        layout = json.loads((out.stdout or "").strip())
+    except ValueError:
+        raise KieError("data_root_unresolved", "%s printed no JSON layout" % DURABLE_ROOT_SCRIPT)
+    for key in ("root", "state_dir", "registry", "index", "done", "receipts", "cache"):
+        if not isinstance(layout.get(key), str) or not layout[key]:
+            raise KieError("data_root_unresolved", "resolver layout is missing %r" % key)
+    layout["resolver"] = script
+    return layout
+
 def _repo_resolver():
     """Locate shared-utils/key_resolver.py (repo checkout or installed skills tree)."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -546,6 +671,27 @@ class Adapter:
         self.sleep, self.now = sleep, now
         self.warnings = []
         home = self.env.get("HOME") or os.path.expanduser("~")
+        # F21 item 11 -- ONE durable root, resolved once here, before anything else needs a
+        # durable path (the mode file is looked up in it too). Before this, the cache and
+        # receipts were built from `$HOME/.openclaw` while a separate DATA_OC_ROOT constant
+        # named /data/.openclaw: two computations that disagree on a Docker/VPS box, where
+        # HOME is the image's temporary layer and the real root is /data/.openclaw.
+        self.layout, self.layout_error, self.data_root_warning = None, None, None
+        try:
+            self.layout = resolve_durable_layout(self.env)
+        except KieError as e:
+            self.layout_error = e
+        if self.layout:
+            self.data_root = self.layout["root"]
+        else:
+            # No resolvable root: a hermetic test HOME, or a box without the shared resolver.
+            # Named once on the instance and reported by `health`; NOT injected into every
+            # result's warnings, which would make an unrelated command's answer look wrong.
+            self.data_root = None
+            self.data_root_warning = (
+                "durable data root unresolved (%s); receipts fall back to %s"
+                % (getattr(self.layout_error, "code", "unknown"),
+                   os.path.join(home, ".openclaw", "cache", "kie-live-adapter", "receipts")))
         # Key: the live environment first, then the repo's shared resolver (secret_names.json canon,
         # placeholder rejection). Aliases are never restated here. Injected env dicts (tests) skip it.
         self.key = self.env.get("KIE_API_KEY", "")
@@ -572,8 +718,21 @@ class Adapter:
             self.warnings.append("unknown adapter mode %r; using shadow" % m)
             m = "shadow"
         self.mode = m
-        self.cache = self.env.get("KIE_LIVE_CACHE_DIR") or os.path.join(home, ".openclaw", "cache", "kie-live-adapter")
-        self.rdir = self.env.get("KIE_LIVE_RECEIPT_DIR") or os.path.join(self.cache, "receipts")
+        # F21 item 11: the cache (re-fetchable) and receipts (evidence) both derive from the
+        # ONE resolved root. With no resolvable root, each keeps its previous default and the
+        # condition is named by `health`, not silently absorbed.
+        default_cache = (self.layout["cache"] if self.layout
+                         else os.path.join(home, ".openclaw", "cache", "kie-live-adapter"))
+        self.cache = self.env.get("KIE_LIVE_CACHE_DIR") or default_cache
+        self.rdir = (self.env.get("KIE_LIVE_RECEIPT_DIR")
+                     or (self.layout["receipts"] if self.layout else os.path.join(self.cache, "receipts")))
+        if self.layout and self._legacy_receipts_present(home):
+            # A migration is OWNED BY F24 and is NOT performed here: existing receipts
+            # stay exactly where they are, and this line is the only trace of it.
+            self.migration_note = (
+                "legacy receipts remain at %s; new receipts go to %s. Existing data was "
+                "NOT moved (preserving migration is F24's)"
+                % (self._legacy_receipts_dir(home), self.rdir))
         self.spacing = float(self.env.get("KIE_LIVE_MIN_SPACING", "1.1"))
         self.poll0 = float(self.env.get("KIE_LIVE_POLL_INITIAL", "3"))
         self.api = self._base("KIE_LIVE_API_BASE", API)
@@ -587,8 +746,9 @@ class Adapter:
         """Ordered candidate directories for kie-live-adapter-mode.conf (first existing file wins).
 
         1. $OC_CONFIG when set (its parent when it names openclaw.json).
-        2. /data/.openclaw when it exists -- Docker/VPS boxes keep OpenClaw there while the
-           agent process's HOME is elsewhere (M8).
+        2. the resolved durable root when it exists -- Docker/VPS boxes keep OpenClaw
+           at /data/.openclaw while the agent process's HOME is elsewhere (M8). The
+           root comes from shared-utils/durable-data-root.sh, never a second constant.
         3. ${CLAUDE_CONFIG_DIR:-~/.claude} -- the Claude Code place to switch the adapter on (H7).
         4. ~/.openclaw, the plain OpenClaw default.
         """
@@ -596,8 +756,8 @@ class Adapter:
         oc = self.env.get("OC_CONFIG")
         if oc:
             dirs.append(os.path.dirname(oc) if oc.endswith(".json") else oc)
-        if os.path.isdir(DATA_OC_ROOT):
-            dirs.append(DATA_OC_ROOT)
+        if self.layout and os.path.isdir(self.layout["root"]):
+            dirs.append(self.layout["root"])
         dirs.append(self.env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude"))
         dirs.append(os.path.join(home, ".openclaw"))
         seen, out = set(), []
@@ -617,6 +777,15 @@ class Adapter:
         return v.rstrip("/")
 
     # -- redaction / results
+    def _legacy_receipts_dir(self, home):
+        """Where receipts were written before F21 item 11 (a cache dir under $HOME)."""
+        return os.path.join(home, ".openclaw", "cache", "kie-live-adapter", "receipts")
+
+    def _legacy_receipts_present(self, home):
+        """True when earlier receipts exist at the old path. Never moved, never read twice."""
+        legacy = self._legacy_receipts_dir(home)
+        return legacy != self.rdir and os.path.isdir(legacy)
+
     def redact(self, s):
         s = s if isinstance(s, str) else str(s)
         if self.key:
@@ -913,7 +1082,60 @@ class Adapter:
         except KieError as e:
             return self.fail(e, **base)
 
+    def _prompt_gate(self, model, inp):
+        """THE LAST PAID-SUBMIT BOUNDARY: house minimum AND provider maximum, on the
+        exact prompt this call will send. A separate `prompt-budget` command is not the
+        run path; a run that omits it is gated here instead.
+
+        -> a result envelope, or None when the model exposes no prompt field, the payload
+        does not carry it (schema validation owns a missing required field), or a
+        hermetic TRANSPORT TEST set KIE_PROMPT_POLICY_TEST_OFF=1 (test hook only; a real
+        run never sets it, so the band is enforced by default).
+        """
+        if self.env.get("KIE_PROMPT_POLICY_TEST_OFF") == "1":
+            return None
+        lim = self._limits(model)
+        name = lim.get("field")
+        if name is None or name not in inp:
+            return None
+        text = inp.get(name)
+        if not isinstance(text, str):
+            return self.result(state="fail", model_id=model, error={
+                "code": "prompt_missing", "msg": "input.%s must be a string" % name},
+                data={"prompt_policy": {"ok": False, "status": "PROMPT_MISSING", "field": name}})
+        gate = self.cmd_prompt_budget(model, check=True, prompt_text=text)
+        data = dict(gate.get("data") or {}, ok=gate["state"] != "fail")
+        if data["ok"]:
+            # FREEZE: the counted, hashed string is the string that is sent. Without this the
+            # provider received the raw text (fence, surrounding whitespace, NFD) while the
+            # receipt named a hash of the normalized text.
+            pol = _policy()
+            if pol is None:
+                return self.result(state="fail", model_id=model, error={
+                    "code": "policy_unavailable",
+                    "msg": "the canonical prompt policy is unavailable; refusing to send an "
+                           "unmeasured prompt"},
+                    data={"prompt_policy": {"ok": False, "status": "POLICY_UNAVAILABLE",
+                                            "field": name}})
+            inp[name] = pol.normalize_text(text)
+            data["prompt_sha256"] = pol.text_sha256(inp[name])
+        self.receipt("prompt_policy", model=model, status=data.get("status"),
+                     chars=data.get("chars"), max=data.get("max"),
+                     ratio=data.get("ratio"), prompt_sha256=data.get("prompt_sha256"),
+                     policy_version=data.get("policy_version"))
+        return self.result(state="validated" if data["ok"] else "fail", model_id=model,
+                           warnings=gate.get("warnings") or [], error=gate.get("error"),
+                           data={"prompt_policy": data})
+
     def _dispatch(self, req, model, inp, path, method, base):
+        gate = self._prompt_gate(model, inp)
+        if gate is not None and gate["state"] == "fail":
+            return self.result(
+                state="fail",
+                error=gate.get("error") or {"code": "prompt_out_of_band",
+                                            "msg": "prompt is outside the strict band"},
+                warnings=gate.get("warnings") or [], data=gate.get("data"), **base)
+        policy = ((gate or {}).get("data") or {}).get("prompt_policy")
         if path == JOB_PATH:
             body = {"model": model, "input": inp}
             if req.get("callBackUrl"):
@@ -931,13 +1153,21 @@ class Adapter:
                 inner = data.get("data")
                 if data and (inner is not None or data.get("code") is not None
                              or data.get("msg") is not None):
+                    self.receipt("prompt_policy_submit", model=model, task_id="sync",
+                                 prompt_sha256=(policy or {}).get("prompt_sha256"),
+                                 status=(policy or {}).get("status"))
                     return self.result(state="success",
-                                       data={"response": data, "sync": True},
+                                       data={"response": data, "sync": True,
+                                             "prompt_policy": policy},
                                        warnings=["sync response on createTask: "
                                                  "payload in data.response; no job to poll"],
                                        **base)
                 raise KieError("bad_response", "createTask returned no taskId")
-            return self.result(state="queued", task_id=tid, **base)
+            self.receipt("prompt_policy_submit", model=model, task_id=tid,
+                         prompt_sha256=(policy or {}).get("prompt_sha256"),
+                         status=(policy or {}).get("status"))
+            return self.result(state="queued", task_id=tid,
+                               data={"prompt_policy": policy}, **base)
         body = dict(inp)  # sync path: schema-declared path and body; model added only if absent
         body.setdefault("model", model)
         j = self.call("POST", self.api + path, body, timeout=300)
@@ -945,7 +1175,11 @@ class Adapter:
         urls, _ = extract_results(resp)  # dedicated endpoints (Runway, Veo) can return the result link directly
         if not urls and isinstance(resp, dict):
             urls, _ = extract_results(resp.get("response"))
-        return self.result(state="success", result_urls=urls, data={"response": resp},
+        self.receipt("prompt_policy_submit", model=model, task_id="sync",
+                     prompt_sha256=(policy or {}).get("prompt_sha256"),
+                     status=(policy or {}).get("status"))
+        return self.result(state="success", result_urls=urls,
+                           data={"response": resp, "prompt_policy": policy},
                            warnings=["sync endpoint: result is in data.response; no task to poll"], **base)
 
     # -- polling
@@ -1235,7 +1469,9 @@ class Adapter:
 
     # -- prompt budget (owner order 2026-10-05: 95-100 percent of max, never below 80 percent)
     def _limits(self, model):
-        """Live schema first, registry fallback, policy owner (66/67/68) for what the schema does not state."""
+        """Limit resolution order: (1) an owner-declared cap, (2) the live schema, (3) the registry
+        snapshot, (4) the policy owner's vendor-confirmed figure. The owner cap outranks the
+        vendor schema; the vendor number remains recorded and is named in the warning."""
         notes, pf = [], {"name": None, "maxLength": None, "verbatim": False, "max_source": None, "limits_listed": []}
         src = "none"
         try:
@@ -1251,7 +1487,19 @@ class Adapter:
                 notes += self._reg_note()
         mx, how = pf.get("maxLength"), pf.get("max_source")
         pol, owner, confirmed, n43 = policy_limit(model)
-        if pf.get("name") is not None and pol:
+        # OWNER CAP PRECEDENCE (Trevor 2026-11-08): an owner-declared cap outranks the live
+        # vendor schema for prompt length. The vendor figure is kept in the note for provenance
+        # and in models.json; it is never rewritten or deleted. The family fallback is what makes
+        # a sibling route (flare vs sunburst) inherit the one family ruling instead of falling
+        # back to the vendor figure.
+        ocap, oowner = policy_owner_cap_family(model)
+        if ocap is not None:
+            if mx is not None and mx != ocap:
+                notes.append("OWNER RULING (2026-11-08): %s declares owner_prompt_cap_chars %d; %s publishes %d; "
+                             "the owner cap governs and the vendor figure is retained for provenance" % (
+                                 oowner, ocap, src, mx))
+            mx, src = ocap, "owner-ruling:%s" % oowner
+        elif pf.get("name") is not None and pol:
             if confirmed and how != "schema":
                 notes.append("owner-confirmed limit %s from %s used over %s" % (pol, owner, how or "no stated limit"))
                 mx, src = pol, "policy-owner:%s (owner-confirmed)" % owner
@@ -1259,7 +1507,7 @@ class Adapter:
                 mx, src = pol, "policy-owner:%s" % owner
             elif pol != mx:
                 notes.append("policy owner %s records %s; %s says %s; using %s" % (owner, pol, src, mx, mx))
-        if n43 and mx is not None and n43 != mx:
+        if ocap is None and n43 and mx is not None and n43 != mx:
             notes.append("N43's recorded %s (owner-confirmed 2026-08-27) is superseded by KIE's live schema as of 2026-10-05: "
                          "%s is the hard limit (KIE rejects longer prompts)" % (n43, mx))
         if how == "description" and src.startswith(("live", "registry")):
@@ -1284,82 +1532,101 @@ class Adapter:
         return (ent or {}).get("taskType") or []
 
     def cmd_prompt_budget(self, model, check=False, prompt_text=None):
+        """Prompt band for one model. The policy owns the band, the count and the hash.
+
+        Exit codes (CLI): 0 pass; 3 below the 80 percent hard floor (ADD named); 4 above the
+        documented maximum (CUT named); 5 in the 80-to-below-95 percent band, which PASSES with
+        a warn-and-expand ADD, or out of band otherwise (above the target ceiling, or an UNKNOWN
+        maximum, which never passes).
+        """
         lim = self._limits(model)
-        mx, verb = lim["max"], lim["verbatim"]
-        band = lim["band"]
-        ceiling = lim["ceiling_only"] or verb
-        d = {"field": lim["field"], "max": mx, "verbatim": verb, "limit_source": lim["source"],
-             "floor": None, "target_min": None, "target_max": mx, "status": "OK", "exit_code": 0}
+        p = _policy()
+        d = {"field": lim["field"], "max": lim["max"], "verbatim": lim["verbatim"],
+             "limit_source": lim["source"], "floor": None, "target_min": None,
+             "target_max": lim["max"], "status": "OK", "exit_code": 0,
+             "max_known": lim["max"] is not None, "provider": "kie",
+             "policy_version": getattr(p, "POLICY_VERSION", None), "schema_version": None}
         w = list(lim["notes"])
+        if p is None:
+            d.update(status="POLICY_UNAVAILABLE", exit_code=5, max_known=False)
+            w.append("shared-utils/prompt_policy.py is missing: refusing (fail closed)")
+            return self.result(state="fail", model_id=model, warnings=w, data=d, error={
+                "code": "policy_unavailable",
+                "msg": "the canonical prompt policy is unavailable; no band was invented"})
         if lim["field"] is None:
             d["status"] = "NO_PROMPT_FIELD"
             w.append("no prompt field found for %s; nothing to budget" % model)
-        elif band and mx is not None:
-            # Owner band (U15c): the band's own floor and target hold over the 80/95 rule.
+            return self.result(state="validated", model_id=model, warnings=w, data=d)
+
+        mx, band = lim["max"], lim["band"]
+        ceiling = lim["ceiling_only"] or lim["verbatim"]
+        override = None
+        if band and mx is not None:
+            # Owner band (U15c): an explicit, recorded per-model band still governs.
             if band["hard_max"] != mx:
                 w.append("owner band %s raises the max to %d from %s" % (
                     lim["band_owner"], band["hard_max"], mx))
             mx = band["hard_max"]
-            d.update(max=mx, floor=band["floor"], target_min=band["target_min"], target_max=band["target_max"],
-                     band_owner=band["owner"], below_floor_action=band.get("below_floor"),
+            override = band
+            d.update(max=mx, floor=band["floor"], target_min=band["target_min"],
+                     target_max=band["target_max"], band_owner=band["owner"],
+                     below_floor_action=band.get("below_floor"),
                      above_target_action=band.get("above_target"))
-            w.append("owner band from %s: floor %d, target %d-%d, hard max %d (%s) - the 80/95 house rule does not apply here" % (
-                lim["band_owner"], band["floor"], band["target_min"], band["target_max"], mx, band["owner"]))
+            w.append("owner band from %s: floor %d, target %d-%d, hard max %d (%s) - the house "
+                     "band does not apply here" % (lim["band_owner"], band["floor"],
+                                                   band["target_min"], band["target_max"], mx,
+                                                   band["owner"]))
         elif mx is None:
-            d["status"] = "UNKNOWN"
-            w.append("prompt limit UNKNOWN for %s: no schema maxLength and no policy-owner limit; floor not enforced" % model)
-        elif verb:
-            d["status"] = "VERBATIM"
-            w.append("%s is verbatim content (spoken or sung exactly): no floor, ceiling %d applies" % (lim["field"], mx))
-        elif ceiling:
-            d["status"] = "CEILING_ONLY"
-            w.append("%s is ceiling-only (no floor): %d <= %d applies, no minimum" % (lim["field"], 0, mx))
-        else:
-            d.update(budget(mx))
-        if check and mx is not None:
-            n = len((prompt_text or "").strip())
-            pct = round(100.0 * n / mx, 1)
-            d.update(chars=n, percent_of_max=pct)
-            if n > mx:
-                d.update(status="ABOVE_MAX", exit_code=4, cut=n - mx)
-                if band:
-                    w.append("over the hard max: %s (cut %d chars)" % (band.get("above_hard_max", "REFUSE"), n - mx))
-            elif band and n < d["floor"]:
-                d.update(status="BELOW_FLOOR", exit_code=3, add_to_floor=d["floor"] - n, add_to_target=d["target_min"] - n)
-                w.append("below the owner floor %d: %s (add %d chars; %d to reach the %d target)" % (
-                    d["floor"], band.get("below_floor", "FLAG_AND_EXPAND"), d["add_to_floor"],
-                    d["add_to_target"], d["target_min"]))
-            elif band and n > band["target_max"]:
-                d["status"] = "TRIM"
-                d["trim_to_target"] = n - band["target_max"]
-                w.append("prompt is %d chars (target %d-%d): TRIM %d chars - %s; never accept it as at-target" % (
-                    n, band["target_min"], band["target_max"], d["trim_to_target"],
-                    band.get("above_target", "TRIM")))
-            elif not verb and not ceiling and n < d["floor"]:
-                d.update(status="BELOW_FLOOR", exit_code=3, add_to_floor=d["floor"] - n, add_to_target=d["target_min"] - n)
-            elif not verb and not ceiling and n < d["target_min"]:
-                d["status"] = "BELOW_TARGET"
-                w.append("prompt is %d chars (%s%% of max); target is 95-100%%: add %d chars to reach %d" % (
-                    n, pct, d["target_min"] - n, d["target_min"]))
-        d["max_known"] = mx is not None
-        if d["exit_code"] == 4:
+            d.update(status="UNKNOWN_MAX", exit_code=5)
+            w.append("prompt maximum UNKNOWN for %s: no schema maxLength and no policy-owner limit; "
+                     "an unknown maximum cannot pass" % model)
             return self.result(state="fail", model_id=model, warnings=w, data=d, error={
-                "code": "prompt_above_max", "msg": "prompt is %d chars; max is %d; CUT exactly %d chars" % (
-                    d["chars"], mx, d["cut"])})
-        if d["exit_code"] == 3:
-            if band:
-                err = {"code": "prompt_below_floor",
-                       "msg": "prompt is %d chars; band floor is %d: ADD at least %d chars (%s); %d to reach the %d target" % (
-                           d["chars"], d["floor"], d["add_to_floor"],
-                           band.get("below_floor", "FLAG_AND_EXPAND"), d["add_to_target"], d["target_min"])}
-            else:
-                err = {"code": "prompt_below_floor",
-                       "msg": "prompt is %d chars (%s%% of max %d); floor is %d: ADD at least %d chars "
-                              "(%d to reach the 95%% target of %d)" % (
-                                  d["chars"], d["percent_of_max"], mx, d["floor"],
-                                  d["add_to_floor"], d["add_to_target"], d["target_min"])}
-            return self.result(state="fail", model_id=model, warnings=w, data=d, error=err)
-        return self.result(state="validated", model_id=model, warnings=w, data=d)
+                "code": "prompt_max_unknown",
+                "msg": "prompt maximum UNKNOWN for %s; refusing to pass a prompt with no verified maximum"
+                       % model})
+        elif ceiling:
+            d.update(floor=None, target_min=None, target_max=mx)
+            d["status"] = "VERBATIM" if lim["verbatim"] else "CEILING_ONLY"
+            w.append("%s is %s: no floor, ceiling %d applies" % (
+                lim["field"], "verbatim content (spoken or sung exactly)" if lim["verbatim"]
+                else "ceiling-only (no floor)", mx))
+        else:
+            b = p.band_numbers(mx)
+            d.update(floor=b["floor"], target_min=b["target_min"], target_max=b["target_max"])
+
+        if not check:
+            return self.result(state="validated", model_id=model, warnings=w, data=d)
+
+        verdict = p.evaluate(
+            prompt_text or "", model=model, max_chars=mx, max_source=lim["source"],
+            kind="verbatim" if lim["verbatim"] else "descriptive",
+            ceiling_only=bool(lim["ceiling_only"]), band_override=override,
+            limit={"max": mx})
+        d.update(chars=verdict["count"], percent_of_max=verdict["ratio"], ratio=verdict["ratio"],
+                 floor=verdict["floor"], target_min=verdict["target_min"],
+                 target_max=verdict["target_max"], status=verdict["status"],
+                 prompt_sha256=verdict["prompt_sha256"],
+                 policy_version=verdict["policy_version"],
+                 schema_version=verdict["schema_version"])
+        w = w + list(verdict["warnings"])
+        code = {"PASS": 0, "VERBATIM_EXEMPT": 0, "CEILING_ONLY": 0, "TRIM": 0,
+                "BELOW_FLOOR": 3, "ABOVE_MAX": 4}.get(verdict["status"], 5)
+        d["exit_code"] = code
+        if verdict["ok"]:
+            return self.result(state="validated", model_id=model, warnings=w, data=d)
+        if verdict["status"] == "ABOVE_MAX":
+            d["cut"] = verdict["cut"]
+            err = {"code": "prompt_above_max",
+                   "msg": "prompt is %d chars; max is %d; CUT exactly %d chars" % (
+                       verdict["count"], mx, verdict["cut"])}
+        elif verdict["status"] == "BELOW_FLOOR":
+            d.update(add_to_floor=verdict["add"],
+                     add_to_target=(verdict["target_min"] - verdict["count"])
+                     if verdict["target_min"] is not None else verdict["add"])
+            err = {"code": "prompt_below_floor", "msg": verdict["message"]}
+        else:
+            err = {"code": "prompt_out_of_band", "msg": verdict["message"]}
+        return self.result(state="fail", model_id=model, warnings=w, data=d, error=err)
 
     # -- latest generation of a family (owner order 2026-10-05: GPT Image follows the newest generation)
     def _promo_state(self):
@@ -1494,7 +1761,13 @@ class Adapter:
         return self.result(data={"credits": j.get("data")})
 
     def cmd_health(self):
-        d = {"key": "SET" if self.key else "NOT-SET", "mode": self.mode, "cache_dir": self.cache}
+        d = {"key": "SET" if self.key else "NOT-SET", "mode": self.mode, "cache_dir": self.cache,
+             # F21 item 11: the durable root and the evidence directory this adapter writes,
+             # printed so an operator can see WHICH root answered (path only, never a secret).
+             "data_root": self.data_root, "receipts_dir": self.rdir,
+             "data_root_resolver": (self.layout or {}).get("resolver"),
+             "data_root_warning": self.data_root_warning,
+             "data_migration_note": getattr(self, "migration_note", None)}
         if not self.key:
             return self.result(state="fail", error={"code": "no_key", "msg": "KIE_API_KEY is not set"}, data=d)
         try:
@@ -1615,7 +1888,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
     except (KieError, OSError, ValueError) as e:
         r = ad.result(state="fail", error={"code": getattr(e, "code", "error"), "msg": ad.redact(getattr(e, "msg", str(e)))})
     out.write(ad.redact(json.dumps(r, indent=2)) + "\n")
-    if exit_code:  # prompt-budget --check: 3 below the floor, 4 above the max
+    if exit_code:  # prompt-budget --check: 3 below the 80 percent floor, 4 above the max, 5 warn-and-expand or out of band
         return exit_code
     return 1 if r["state"] == "fail" else 0
 

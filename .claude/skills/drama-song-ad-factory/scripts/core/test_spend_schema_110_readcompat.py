@@ -3,8 +3,8 @@
 
 The canonical Skill 75 build writes SCHEMA_VERSION 1.1.0, which only widens
 1.0.0 (columns, two tables, one index -- nothing removed or reshaped). This
-build must read such a ledger without losing the 1.1.0-only fields, must keep
-writing 1.0.0 itself, and must still refuse a genuinely unsupported version.
+build must read such a ledger without losing the 1.1.0-only fields, must write
+the canonical 1.1.0 itself, and must still refuse a genuinely unsupported version.
 
 Run: python3 core/test_spend_schema_110_readcompat.py
 """
@@ -93,10 +93,10 @@ def test_reads_canonical_110():
     check("file still declares 1.1.0", schema_version(db) == "1.1.0",
           schema_version(db))
 
-def test_own_new_ledger_still_writes_100():
+def test_own_new_ledger_writes_110():
     db = tmp_db()
     L.init_run(db, "run1", 1000)
-    check("new ledger still writes 1.0.0", schema_version(db) == "1.0.0",
+    check("new ledger writes 1.1.0 (the canonical version)", schema_version(db) == "1.1.0",
           schema_version(db))
 
 def test_write_into_110_preserves_fields():
@@ -131,7 +131,7 @@ def test_unknown_version_still_refused():
 
 TESTS = [
     test_reads_canonical_110,
-    test_own_new_ledger_still_writes_100,
+    test_own_new_ledger_writes_110,
     test_write_into_110_preserves_fields,
     test_unknown_version_still_refused,
 ]

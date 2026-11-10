@@ -10,10 +10,9 @@ Generic vocal separation does not prove speaker isolation; its runner must retur
 speaker/isolation metadata from the existing audio preparation/QC process.
 """
 from pathlib import Path
-import hashlib
+from datetime import datetime, timezone
 import json
 import uuid
-from datetime import datetime, timezone
 
 from lipsync_evidence import _approved, _binding, _need, _num, _path, _read, _sha
 from lip_sync.narrator_rule import check_stems
@@ -182,10 +181,12 @@ def _approval_context(root, run_id):
 
     kie_dispatch reads ``request["card_receipt"]`` (or
     ``request["run_state"]["card_receipt"]``) and refuses any paid job when
-    the card gate fails. Read the receipt the run already recorded -- the
-    stamped block, the per-question record, or run-state's own copy -- and
-    never synthesize one. Absent, incomplete, unstamped, mismatched or
-    disagreeing context is a hold before any paid operation.
+    the card gate fails. Read the receipt this run already recorded -- the
+    stamped block at ``control/card-receipt-block.json``, the per-question
+    record at ``control/card-receipt.json``, or the run state's own copy at
+    ``control/run-state.json`` -- and never synthesize one. Absent,
+    incomplete, unstamped, mismatched or disagreeing context is a hold
+    before any paid operation, on every dispatch path.
     """
     found = []
     for rel in ("control/card-receipt-block.json", "control/card-receipt.json"):
@@ -194,8 +195,7 @@ def _approval_context(root, run_id):
         except (OSError, ValueError):
             continue
         if isinstance(doc, dict) and isinstance(doc.get("answers"), dict):
-            found.append((rel, doc))
-    state = None
+            found.append(doc)
     try:
         state = json.loads((root / "control/run-state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -207,41 +207,40 @@ def _approval_context(root, run_id):
             if isinstance(inner, dict) and isinstance(inner.get("answers"), dict):
                 state_block = inner
                 break
-    _need(bool(found) or state_block is not None, "LIPSYNC_APPROVAL_MISSING",
+    _need(bool(found) or state_block is not None, "LIPSYNC_CARD_APPROVAL_MISSING",
           "the run's recorded card approval is required before the paid separation job")
+    block = found[0] if found else state_block
     if found:
-        source, block = found[0]
-        _need(all(doc == block for _, doc in found), "LIPSYNC_APPROVAL_STALE",
+        _need(all(doc == block for doc in found), "LIPSYNC_CARD_APPROVAL_STALE",
               "recorded card approvals disagree; re-approve the card before spending")
-    else:
-        source, block = "control/run-state.json#card_receipt", state_block
     if state_block is not None and state_block != block:
-        _need(False, "LIPSYNC_APPROVAL_STALE",
+        _need(False, "LIPSYNC_CARD_APPROVAL_STALE",
               "recorded card approvals disagree; re-approve the card before spending")
     ok, refusal = gate_run_state(block)
-    _need(ok, "LIPSYNC_APPROVAL_MISSING", "card approval is incomplete: %s"
+    _need(ok, "LIPSYNC_CARD_APPROVAL_INVALID", "card approval is incomplete: %s"
           % (", ".join((refusal or {}).get("missing") or []) or "no answers"))
     who, at = block.get("who"), block.get("at")
-    _need(isinstance(who, str) and bool(who.strip()), "LIPSYNC_APPROVAL_STALE",
+    _need(isinstance(who, str) and bool(who.strip()), "LIPSYNC_CARD_APPROVAL_STALE",
           "card approval must name who answered")
     try:
         stamp = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
     except (TypeError, ValueError):
-        _need(False, "LIPSYNC_APPROVAL_STALE", "card approval needs an ISO 'at' stamp")
+        _need(False, "LIPSYNC_CARD_APPROVAL_STALE", "card approval needs an ISO 'at' stamp")
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
-    _need(stamp <= datetime.now(timezone.utc), "LIPSYNC_APPROVAL_STALE",
+    _need(stamp <= datetime.now(timezone.utc), "LIPSYNC_CARD_APPROVAL_STALE",
           "card approval stamp is in the future")
     if block.get("run_id") not in (None, "") and str(block["run_id"]) != str(run_id):
-        _need(False, "LIPSYNC_APPROVAL_MISMATCH",
+        _need(False, "LIPSYNC_CARD_APPROVAL_MISMATCH",
               "card approval belongs to run %r, not %r" % (block["run_id"], run_id))
     if isinstance(state, dict):
         for key in ("project", "project_id"):
             want, got = state.get(key), block.get(key)
             if want not in (None, "") and got not in (None, "") and str(got) != str(want):
-                _need(False, "LIPSYNC_APPROVAL_MISMATCH",
+                _need(False, "LIPSYNC_CARD_APPROVAL_MISMATCH",
                       "card approval belongs to %s %r, not %r" % (key, got, want))
-    return block, source
+    return block
+
 
 def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_reader,
                    dispatch_fn=None):
@@ -267,7 +266,10 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
             _need(production_stage in ("video-generation", "qc-retakes"),
                   "LIPSYNC_PRODUCTION_STAGE_REQUIRED",
                   "name the actual video-generation or qc-retakes stage before vocal separation")
-        approval, approval_source = _approval_context(root, request["run_id"])
+        # F15: this run's own recorded card approval is required on EVERY
+        # dispatch path, injected dispatcher or not -- the gate never depends
+        # on which callable is handed in.
+        approval = _approval_context(root, request["run_id"])
         source = _path(root, request["source_path"])
         digest = _sha(source)
         _need(digest == request["source_sha256"], "LIPSYNC_SOURCE_CHANGED", "selected source changed")
@@ -300,10 +302,6 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
             return result
         evidence = result.setdefault("evidence", {})
         evidence["separation_input"] = inp
-        evidence["approval_context"] = {
-            "source": approval_source, "who": approval.get("who"),
-            "at": approval.get("at"),
-            "sha256": hashlib.sha256(json.dumps(approval, sort_keys=True).encode("utf-8")).hexdigest()}
         evidence["separation_source"] = {"path": str(source), "sha256": digest,
                                           "url": url, "upload_receipt_path": str(upload)}
         evidence["isolated_stem"] = isolated_stem_reader(result)

@@ -163,7 +163,8 @@ class Fake74:
                         "credits_consumed": self.credits})
         if sub == "save":
             path = os.path.join(CTX["tmp"], "proof-%d.out" % len(self.calls))
-            open(path, "w").close()
+            with open(path, "wb") as fh:     # kie_dispatch refuses a zero-byte save
+                fh.write(b"proof-run synthetic output")
             return (0, {"state": "success", "task_id": "t-x",
                         "saved_paths": [path],
                         "credits_consumed": self.credits})
@@ -473,12 +474,20 @@ def stage_style_menu():
     ids = ms.style_ids()
     nonempty = all(isinstance(ms.style_prompt(sid), str)
                    and ms.style_prompt(sid).strip() for sid in ids)
-    banned = ("strings", "gospel", "choir", "cinematic", "orchestral",
-              "sweeping", "epic")
+    # The F13 banned list is the core's own (no_echo.SONG_BANNED_STYLE_WORDS),
+    # matched as whole words exactly as music_styles/test_dry_style_f13.py does.
+    import re
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_proof_no_echo", str(CORE_DIR / "audio_c3" / "no_echo" / "no_echo.py"))
+    ne = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ne)
+    banned = tuple(ne.SONG_BANNED_STYLE_WORDS)
     hits = []
     for sid in ids:
-        low = ms.style_prompt(sid).lower()
-        hits += ["%s:%s" % (sid, w) for w in banned if w in low]
+        text = ms.style_prompt(sid)
+        hits += ["%s:%s" % (sid, w) for w in banned
+                 if re.search(r"\b%s\b" % re.escape(w), text, re.IGNORECASE)]
     if hits:
         return False, ("PENDING %s — banned words still in default style "
                        "prompts (F13 dry song style): %s"

@@ -1,4 +1,69 @@
+## [2.2.12] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum (merge of main's 2.2.11 entry)
+
+- `models.json`: both `gpt-image-2-6/sunburst` rows' `aspect_ratios` set to the vendor live schema
+  (`auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3` -- 16 members,
+  verified against `74-kie-live-adapter/references/kie-model-registry.json` ->
+  `gpt-image-2-6/sunburst-text-to-image` `input_fields.aspect_ratio.enum`) and
+  `ratio_resolution_exclusions` set to `[]`. The old 27:16/16:27/9:8/8:9 entries were 2.5-era and are
+  not in the 2.6 schema. The superseded Ruling 6 ratio prose in both rows now records that it does not
+  apply to 2.6. (Owner cap 20,000 from main carried unchanged on both rows.)
+- `scripts/validate_payload.py`: the 2.5 per-resolution exclusion branch no longer matches 2-6 ids;
+  2.6 is validated by enum membership alone. Self-test cases added for 2.6 (3:1, 1:3, 5:4, 2:1 and
+  9:21-at-4K accepted; 27:16 rejected; legacy-2 and 2.5 rules not applied to 2.6).
+- `scripts/select_image_model.py`: the 2.5-only ratio constants (`GPT_2_5_LEGACY_ONLY_RATIOS`,
+  `GPT_2_5_RATIO_SUBSTITUTIONS`) are gated to the 2.5 family, so 3:1/1:3/9:21 stay on 2.6 and
+  5:4/4:5/2:1/1:2 are passed through unsubstituted. Self-test cases updated; 2.5 behaviour re-tested
+  under an explicit 2.5 pin.
+
+## [2.2.11] - 2026-11-09 - fix: restore the PENDING_ACCEPTANCE_TEST status clause dropped from models.json notes (INST-001 #23)
+
+- `models.json` notes: the `hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only` clause the gapfill dropped is restored on the legacy GPT Image 2 entries (with the owner-confirmed 25,000 cap band restated) and on the 2.5 entries. No cap, band, id, alias, ratio or ordering changed.
+
+## [2.2.10] - 2026-11-09 - GPT Image 2.6 owner cap 20,000 recorded in models.json
+
+- `models.json`: `owner_prompt_cap_chars: 20000` on both 2.6 sunburst entries (t2i + i2i). The existing `policy_owner_cap` precedence in the 74 adapter and 66 validator now resolves max 20000 with `limit_source` owner-ruling.
+
+## [2.2.9] - 2026-11-09 - 2.6 named as the ratio-rule default; remaining 2.5 default claims corrected
+
+- `models.json` `owner_preferred_default` / `_note`: 2.6 Sunburst is the current default since #2860; Ruling 6 is retained as history and 2.5 is retained by operator ruling 2026-09-09. `SKILL.md`: the `(default)` ratio-rule label moved to 2.6, with the 2.5 ratio facts kept attached to 2.5. Two stale comments in `normalize_alias.py` and `select_image_model.py` corrected. No executable logic changed; both self-tests pass.
+- Second pass (same version): the legacy GPT Image 2 `status_note`/`notes` rows no longer call 2.5 the default, and five more comments (`normalize_alias.py:64`, `:144-145`, `select_image_model.py:41`, `:204-208`, `validate_payload.py:335`) no longer describe 2.5 as the default. Comments and JSON prose only; no executable line, mapping, assertion, ratio table or test changed; a third pass relabelled the two 2.5 rows' own `status_note`/`notes` as RETAINED and no longer the default.
+- Fourth pass (same version): the two 2.5 rows are marked `status: legacy` in data as well as prose; the 2.6 rows keep `status: default`. No key, id, alias, cap, ratio, note or ordering changed.
+
 # Changelog - kie-image
+## [2.2.8] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
+## [2.2.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.5 -> 2.2.6 so this skill's changelog entry carries the version bump G3 requires above main. No behavior change; main's one prompt-band rule (owner rule 12) is carried unchanged.
+
+## [2.2.5] - 2026-11-08 - G3 lockstep roll (PR 2868)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.4 -> 2.2.5 so the changelog entries added to this skill carry the required version bump. No behavior change; the prompt gate is unchanged.
+
+## [2.2.4] - 2026-11-08 - G3 lockstep rolls (F18 touch, CI clear)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.4 by the F18 version bump (2026-11-07) and the PR 2864 CI-clear roll (2026-11-08): prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
+## [2.2.3] - 2026-11-07 - G3 lockstep roll (F18 touch)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.3 by the F18 version bump: prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
+
+- `scripts/validate_prompt.py` carries the merged rule-12 band arithmetic beside the GPT Image 2.6
+  slash ids and the owner cap of 20,000 characters (`owner_prompt_cap_chars` outranks the vendor
+  schema at limit resolution).
+- Version bumped to v2.2.6: main's W19 fold already reached v2.2.5.
+- Risk: LOW. Band arithmetic and model ids only; no route or credential changed.
+
+
+- Every 2.5 reference in this skill now names `gpt-image-2-6/sunburst-text-to-image` (T2I) and
+  `gpt-image-2-6/sunburst-image-to-image` (I2I). Skill 88 explicitly calls models.json for
+  capability data, the adapter for dispatch.
+- `models.json` 2.6 rows carry the real 16-value `aspect_ratio` enum and the owner prompt cap.
+- No credential, endpoint or payload shape changed.
+
 
 ## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
 
@@ -110,6 +175,5 @@ All notable changes to this skill are documented here.
   INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, CHANGELOG.md, QC.md,
   PREREQS.json, models.json, references/, scripts/, skill-version.txt).
 
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

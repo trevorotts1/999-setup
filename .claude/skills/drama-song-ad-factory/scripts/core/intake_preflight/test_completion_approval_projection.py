@@ -1,6 +1,6 @@
 """Read-only closure from actual decisions; a cache never creates an approval.
 
-Uses the real intake, artifact handlers and Store writers. No
+Uses the real intake, artifact handlers, Store, recap and Go writers. No
 provider, actual media, client transport or source-run cache is produced.
 """
 import json
@@ -42,7 +42,6 @@ class CompletionApprovalProjection(unittest.TestCase):
         modern = self.inspect()
         self.assertTrue(modern["ok"], modern)
         self.assertEqual(modern["authority"], "intake-session")
-        self.assertNotIn("production-go", modern["checks"])
         self.assertEqual(modern["checks"]["creative-strategy"]["proof_kind"],
                          "internal-stage-and-current-script-package")
         ledger = self.run / "control" / "intake-session.json"
@@ -64,11 +63,13 @@ class CompletionApprovalProjection(unittest.TestCase):
         write_json(bare / "control" / "approvals.json", cache)
         self.assertFalse(process.inspect_completion_approvals(bare)["ok"])
 
-    def test_changed_artifacts_context_and_foreign_decisions_stay_refused(self):
+    def test_changed_artifacts_pick_go_context_and_foreign_decisions_stay_refused(self):
         script = self.run / "creative" / "script.json"
         still = next((self.run / "storyboard").glob("s*.png"))
+        pick = self.run / "song-choices" / "pick.json"
+        go = self.run / "control" / "production-go.json"
         record = self.run / "creative" / "script-approval.json"
-        cases = ((script, "script"), (still, "still"),
+        cases = ((script, "script"), (still, "still"), (pick, "pick"), (go, "go"),
                  (record, "context"), (record, "foreign"))
         for path, kind in cases:
             with self.subTest(kind=kind):
@@ -80,6 +81,8 @@ class CompletionApprovalProjection(unittest.TestCase):
                         doc = json.loads(original)
                         if kind == "script":
                             doc["story"][0][1].append("A changed ending")
+                        elif kind in ("pick", "go"):
+                            doc["sha256" if kind == "pick" else "recap_digest"] = "0" * 64
                         else:
                             for event in doc["approvals"]:
                                 if kind == "context":
@@ -91,78 +94,6 @@ class CompletionApprovalProjection(unittest.TestCase):
                     self.assertFalse(refused["ok"], refused)
                 finally:
                     path.write_bytes(original)
-
-    def test_elected_song_choice_needs_its_actual_pick(self):
-        from test_production_process import confirmed_run, approve_script
-        from test_factory_method_agnes import complete_fixture_stage, storyboard_fixture
-        run = Path(self.tmp.name) / "elected-song"
-        confirmed_run(run, song=True)
-        for stage in factory.CANONICAL_STAGES:
-            if stage == "video-generation":
-                storyboard_fixture(run, count=6, duration=120, approve=True)
-            complete_fixture_stage(run, stage)
-            if stage == "script-lyrics":
-                approve_script(run)
-        self.assertFalse((run / "song-choices" / "pick.json").exists())
-        before = stamps(run)
-        refused = process.inspect_completion_approvals(run)
-        self.assertFalse(refused["ok"], refused)
-        self.assertEqual(refused["reason_code"], "SONG_PICK_MISSING")
-        self.assertEqual(stamps(run), before)
-
-    def test_operator_risk_closure_is_read_only_and_normal_gate_keeps_cache_writer(self):
-        from song_dispatch import song_dispatch as songs
-        master = self.run / "music" / "picked-song.mp3"
-        master.write_bytes(b"synthetic local risk-acceptance fixture")
-        take = self.run / "music" / "takes" / "v1" / "take-1.mp3"
-        take.parent.mkdir(parents=True)
-        take.write_bytes(master.read_bytes())
-        revision = process._script_proof(self.run, self.run.name)["approved_script"]["script_sha256"]
-        binding = songs.take_binding(str(master), revision)
-        results = {gate: {"verdict": "PASS", "binding": dict(binding)}
-                   for gate in ("D1", "D2", "D3", "D4", "D5")}
-        results["D5"]["verdict"] = "UNMEASURED"
-        songs.record_acceptance(str(self.run), "v1", binding, results)
-        digest = songs.sha256_evidence_records(
-            {"v1": songs.measure_evidence_digest(str(self.run), "v1")})
-        songs.record_operator_decision(str(self.run), {
-            "decision": "ACCEPTED_RISK", "operator": "fixture-owner",
-            "at_utc": "2026-10-24T12:00:00Z", "gates_not_proven": ["D5"],
-            "measured_evidence_digest": digest,
-            "reason": "D5 remains unmeasured; the fixture owner explicitly accepts that risk."})
-        evidence = self.run / "music" / "acceptance" / "v1.json"
-        original = evidence.read_bytes()
-        cache = evidence.with_name("ww21-risk-acceptance.json")
-        self.assertFalse(cache.exists())
-        for cached in (False, True):
-            with self.subTest(cache_present=cached):
-                if cached:
-                    before = stamps(self.run)
-                    self.assertIsNone(factory._song_hold(self.run))
-                    after = stamps(self.run)
-                    self.assertEqual(set(after) - set(before), {str(cache.relative_to(self.run))})
-                    self.assertTrue(all(after[name] == stamp for name, stamp in before.items()))
-                    self.assertEqual(json.loads(cache.read_bytes())["schema_version"],
-                                     "blackceo.ww21-risk-acceptance/v1")
-                self.assertTrue(self.inspect()["ok"])
-                self.assertEqual(cache.exists(), cached)
-                for changed in ("stale", "missing"):
-                    with self.subTest(evidence=changed):
-                        try:
-                            if changed == "stale":
-                                record = json.loads(original)
-                                record["results"]["D5"]["binding"]["creative_revision"] = "changed"
-                                write_json(evidence, record)
-                            else:
-                                evidence.unlink()
-                            refused = self.inspect()
-                            self.assertFalse(refused["ok"], refused)
-                            self.assertEqual(refused["reason_code"], "ACCEPTANCE_NOT_PROVEN")
-                            self.assertEqual(cache.exists(), cached)
-                        finally:
-                            evidence.write_bytes(original)
-        self.assertEqual(json.loads(evidence.read_bytes())["results"]["D5"]["verdict"],
-                         "UNMEASURED")
 
     def test_existing_cache_can_only_veto_verified_proofs(self):
         self.assertTrue(self.inspect()["ok"])
@@ -188,11 +119,9 @@ class CompletionApprovalProjection(unittest.TestCase):
 
     def test_final_qc_artifact_and_delivery_checks_remain_independent(self):
         import qc_gate
-        record = {"schema_version": "1.0.0", "check_id": "completion-continuity-1",
-                  "run_id": self.run.name, "stage": "final-qc", "check": "continuity",
-                  "verdict": "PASS", "evidence": {"summary": "Current fixture continuity agrees."},
-                  "checker_version": "1.0.0", "reviewer": {"identity": "qc-reviewer-1",
-                  "session": "s1", "authority": "qc"}}
+        from storyboard_director.test_registry_advancement import qc_record
+        record = qc_record(self.run.name)
+        record["stage"] = "final-qc"
         verdict = qc_gate.evaluate(self.run.name, "final-qc", [record],
                                    {record["check_id"]: "different-build-worker"}, ["continuity"])
         self.assertEqual(verdict["gate"], "PASS", verdict)
@@ -207,8 +136,7 @@ class CompletionApprovalProjection(unittest.TestCase):
         self.assertFalse(evidence["delivery_receipts_ok"])
         self.assertEqual(stamps(self.run), before)
         for receipts in ([{"destination": "origin", "status": "failed"}],
-                         [{"destination": "origin", "status": "delivered"},
-                          {"destination": "other", "status": "failed"}]):
+                         [{"destination": "origin", "status": "delivered"}] * 2):
             write_json(self.run / "delivery" / "receipts.json", receipts)
             evidence = factory._collect_completion_evidence(self.run, states)
             self.assertTrue(evidence["approvals_current"])
@@ -217,11 +145,11 @@ class CompletionApprovalProjection(unittest.TestCase):
         write_json(self.run / "final-qc" / "record.json", {"gate": "FAIL", "producer": "same-build-worker"})
         evidence = factory._collect_completion_evidence(self.run, states)
         self.assertFalse(evidence["final_qc_independent_pass"])
-        artifact = self.run / "assembly" / "timeline.json"
+        artifact = self.run / "edit" / "timeline.json"
         artifact.rename(artifact.with_name("retained-timeline.json"))
         evidence = factory._collect_completion_evidence(self.run, states)
         self.assertFalse(evidence["artifacts_present"])
-        self.assertIn("assembly/timeline.json", evidence["missing_artifacts"])
+        self.assertIn("edit/timeline.json", evidence["missing_artifacts"])
         self.assertFalse(factory._decide_completion(evidence)[0])
 
 

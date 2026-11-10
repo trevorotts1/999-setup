@@ -50,7 +50,6 @@ except ImportError:
     from music_styles import music_styles as MS           # type: ignore
     from clip_cutdown import clips_for                    # type: ignore
 
-
 UNIT_NAME = "catalog-calculator.card-render"
 
 #: The card rows, in INSTRUCTIONS.md 213-221 order.
