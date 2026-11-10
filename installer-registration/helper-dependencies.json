@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-10T14:12:16Z",
+  "generatedAt": "2026-11-10T18:33:35Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -119,14 +119,14 @@
       "role": "KIE setup: credentials, router and the common rules 1 through 13 (references/kie-common-rules.md)",
       "kind": "skill",
       "required": true,
-      "version": "v7.2.11",
+      "version": "v7.2.12",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/07-kie-setup",
       "installPath": "skills/07-kie-setup",
       "fileCount": 16,
-      "sizeBytes": 380597,
-      "treeSha256": "aa5d2db873c31dfd7582ec346c7ff0c06dd1a307e11458a751f036615d7d6b08",
-      "skillMdSha256": "68e70562ceaf767ec330713f22f19144dad203e76dc82001234a142543053c0d"
+      "sizeBytes": 380832,
+      "treeSha256": "478b7f1e2080b3d93759fcae1066a704afcf978e7ca19462a414dd558f9b1a37",
+      "skillMdSha256": "52640426abe0b5a0804c643bc807045afaf8d912d859a04a3a8879b2d702d792"
     },
     {
       "id": "shared-utils",
@@ -928,14 +928,14 @@
       "role": "Agnes image: one POST synchronous text/image generation, prompt policy, domain QC",
       "kind": "skill",
       "required": false,
-      "version": "v2.1.8",
+      "version": "v2.1.9",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/63-agnes-image",
       "installPath": "skills/63-agnes-image",
       "fileCount": 28,
-      "sizeBytes": 247074,
-      "treeSha256": "913bd29777dbb37de48f98f5e92047e2d5a122d0dd73a2ce87423bb4b17a0268",
-      "skillMdSha256": "d81001ecc50d9bbeae737726ab7f7b5203fe3350bd8c70e2d9f945c657173c14"
+      "sizeBytes": 250094,
+      "treeSha256": "01e43ec0dd9a6151029503424fdcf18eec9690e458a28b2f002c7e0583e7a60a",
+      "skillMdSha256": "956f9ba2881d8a621397edb30365cbc9757663aea5c10214c762935b6cbc0087"
     },
     {
       "id": "64",
