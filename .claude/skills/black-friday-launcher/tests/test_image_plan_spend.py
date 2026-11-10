@@ -49,7 +49,8 @@ class PaidSpendTests(unittest.TestCase):
         return str(path)
 
     def raw(self, **over):
-        raw = {"brand_file": self.brand, "brand_owner": "TEST-ONLY Client", "design_style": "B", "image_provider": "kie",
+        raw = {"brand_file": self.brand, "brand_owner": "TEST-ONLY Client", "design_style": "B",
+               "design_style_source": "client_choice", "image_provider": "kie",
                "image_cap_minor": 4000, "image_currency": "USD", "paid_render_approval_ref": APPROVAL_ID}
         raw.update(over)
         return raw
@@ -81,7 +82,11 @@ class PaidSpendTests(unittest.TestCase):
         self.assertIn("nothing has been spent", err.detail.lower())
 
     def test_with_no_approval_checker_installed_a_paid_run_fails_closed(self):
-        with mock.patch.object(image_plan.Path, "is_file", return_value=False):
+        # The seam is the approval checker itself: when it is not installed, a paid run cannot be
+        # approved and stops. (A brand path is loaded the same way, so patching every is_file()
+        # would test the brand record instead of the approval gate.)
+        missing = ImagePlanError("AF-LAUNCH-IMAGE-PLAN-APPROVAL", "x", "the approval checker is not installed")
+        with mock.patch.object(image_plan, "_approval_verify", side_effect=missing):
             with self.assertRaises(ImagePlanError) as ctx:
                 resolve(self.raw(), test_only=False, plan_hash=PLAN_HASH)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-APPROVAL")
@@ -107,7 +112,7 @@ class PaidSpendTests(unittest.TestCase):
 
     def test_a_verified_budget_allows_paid_and_reports_the_derived_picture_ceiling(self):
         (inputs, to_confirm), verifier = self.paid()
-        price = image_plan.IMAGE_PRICE_MINOR["kie"]["USD"]
+        price = image_plan.live_price("kie", "USD")["per_picture_minor"]
         self.assertTrue(inputs["allow_paid"])
         self.assertEqual(inputs["executor_provider"], "kie")
         self.assertEqual(inputs["paid_approval_id"], APPROVAL_ID)
@@ -120,13 +125,29 @@ class PaidSpendTests(unittest.TestCase):
         self.assertEqual(kwargs["cap"], {"cap_minor": 4000, "currency": "USD"})
         self.assertIs(kwargs["test_only"], False)
 
+    def test_the_picture_ceiling_is_priced_live_not_from_a_table(self):
+        (inputs, _), _v = self.paid()
+        quote = image_plan.live_price("kie", "USD")
+        self.assertEqual(inputs["image_price_minor"], quote["per_picture_minor"])
+        self.assertEqual(inputs["image_price_credits"], quote["credits"])
+        self.assertIn("74-kie-live-adapter", inputs["image_price_source"])
+        self.assertFalse(hasattr(image_plan, "IMAGE_PRICE_MINOR"), "a static table cannot price a paid run")
+        for currency in ("EUR", "GBP"):
+            self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_currency=currency))
+
+    def test_a_named_resolution_selects_the_live_tier(self):
+        (inputs, _), _v = self.paid(self.raw(image_resolution="1K"))
+        self.assertEqual(inputs["image_resolution"], "1K")
+        self.assertLessEqual(inputs["image_price_minor"],
+                             image_plan.live_price("kie", "USD")["per_picture_minor"])
+
     def test_the_spend_is_money_not_a_picture_count(self):
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", {k: v for k, v in self.raw().items()
                                                   if k not in ("image_cap_minor", "image_currency")} | {"image_cap": 50})
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_cap_minor=None))
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_currency="XYZ"))  # no price row: never guessed
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_cap_minor=3))     # not even one picture
-        ceiling = 4000 // image_plan.IMAGE_PRICE_MINOR["kie"]["USD"]
+        ceiling = 4000 // image_plan.live_price("kie", "USD")["per_picture_minor"]
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_cap=ceiling + 1))
         (inputs, _), _v = self.paid(self.raw(image_cap=ceiling - 1))
         self.assertEqual(inputs["image_cap"], ceiling - 1)
@@ -197,8 +218,8 @@ class PaidSpendTests(unittest.TestCase):
         self.write_brand([], "list.json")
         self.refused("AF-LAUNCH-IMAGE-PLAN-BRAND", self.raw(brand_file=str(self.tmp / "list.json")))
 
-    def test_a_confirmed_or_legacy_palette_passes_and_a_practice_run_is_not_checked(self):
-        for doc in ({"palette_status": "provided"}, {"palette_status": "client-confirmed"}, {}):
+    def test_a_confirmed_palette_passes_and_a_practice_run_is_not_checked(self):
+        for doc in ({"palette_status": "provided"}, {"palette_status": "client-confirmed"}):
             brand = self.write_brand(doc, "ok.json")
             (inputs, _), _v = self.paid(self.raw(brand_file=brand))
             self.assertTrue(inputs["allow_paid"])
@@ -206,15 +227,22 @@ class PaidSpendTests(unittest.TestCase):
         inputs, _ = resolve(self.raw(brand_file=bad), test_only=True)
         self.assertFalse(inputs["allow_paid"])
 
+    def test_a_brand_file_with_no_palette_status_is_unknown_and_never_paid(self):
+        # F16 item 8: a missing status is unknown, not "provided" for files made before the field.
+        brand = self.write_brand({}, "legacy.json")
+        err = self.refused("AF-LAUNCH-IMAGE-PLAN-BRAND", self.raw(brand_file=brand))
+        self.assertIn("no palette status", err.detail)
+
     # ---- the shared file carries the style source and the creative direction -------------------
     def test_design_style_source_and_creative_direction_travel_in_the_shared_file(self):
-        inputs, _ = resolve(self.raw(creative_direction="like the Acme homepage"), test_only=True)
+        inputs, _ = resolve(self.raw(creative_direction="like the Acme homepage",
+                                     design_style_source="recommended_accepted"), test_only=True)
         self.assertEqual(inputs["creative_direction"], "like the Acme homepage")
         takes_all = SimpleNamespace(dispatch=lambda: SimpleNamespace(pset=SimpleNamespace(
             IMAGE_INPUT_KEYS=image_plan.C3_KEYS + image_plan.C3_CARRIED_KEYS)))
         with mock.patch.dict(sys.modules, {"substrate": takes_all}):
             doc = image_plan.image_inputs_file(inputs)
-        self.assertEqual(doc["design_style_source"], "client_choice")
+        self.assertEqual(doc["design_style_source"], "recommended_accepted")
         self.assertEqual(doc["creative_direction"], "like the Acme homepage")
         takes_base = SimpleNamespace(dispatch=lambda: SimpleNamespace(pset=SimpleNamespace(
             IMAGE_INPUT_KEYS=image_plan.C3_KEYS)))

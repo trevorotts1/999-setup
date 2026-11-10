@@ -263,36 +263,46 @@ open(fake, "w").write(CHILD_GUARD + "import sys, os\nc = os.path.join(os.environ
 os.environ["FAKE_DIR"] = tempfile.mkdtemp(dir=TMP)
 os.environ["DSAF_GOVERNOR_DIR"] = tempfile.mkdtemp(dir=TMP)
 os.environ[LG.load_governor.POLL_ENV] = "0"
-_governor_sleep = LG.load_governor.time.sleep
 LG.load_governor.time.sleep = lambda s: None          # skip the real 2 s / 4 s backoff
-# The 999 suite retains its existing finally restoration when run by pytest.
+# Admission is an explicitly isolated dependency in this RETRY unit. The
+# real make_runner, digest check, limiter, retries and guarded local fake CLI
+# still run. This fixture is not evidence of production admission.
 request_path = os.path.join(TMP, "retry-request.json")
 request = {"model": "governor-fixture", "input": {"prompt": "local retry fixture"}}
 with open(request_path, "w") as stream:
     json.dump(request, stream)
 context = {"arguments": {"fixture": "governor-retry-only"},
            "request_digest": KD.L.digest_request(request)}
+# The line above cannot reach kie_request's own backoff: its `sleep=time.sleep`
+# default was bound at import, so the 429 retries below really slept 2 s + 4 s.
+# Inject the no-op sleep through kie_request's own parameter instead; the
+# retry count and token assertions below are unchanged.
+_real_kie_request = LG.kie_request
+
+
+def _no_backoff_kie_request(*args, **kwargs):
+    kwargs.setdefault("sleep", lambda s: None)
+    return _real_kie_request(*args, **kwargs)
+
+
+with patch.object(KD, "production_process_admission", return_value={"ok": True, "fixture_only": True}) as admission, \
+        patch.object(LG, "kie_request", _no_backoff_kie_request):
+    run = KD.make_runner(30, process_context=context)
+    for cmd in ("health", "wait", "save"):
+        run([fake, cmd, "--json"])
+    check("make_runner: polls/health/save leave the generation bucket untouched",
+          not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
+    rc, out = run([fake, "submit", "--request", request_path])
+    check("make_runner: submit 429 resubmitted until it runs",
+          '"ok"' in out and open(os.path.join(os.environ["FAKE_DIR"], "n")).read() == "3")
+    check("make_runner: 3 submit attempts drew 3 generation tokens", len(json.load(open(os.path.join(
+        os.environ["DSAF_GOVERNOR_DIR"], "kie-rate", LG.key_tag(), "stamps.json")))) == 3)
+    check("retry unit explicitly exercised admission dependency", admission.call_count == 1)
 try:
-    with patch.object(KD, "production_process_admission", return_value={"ok": True, "fixture_only": True}) as admission:
-        run = KD.make_runner(30, process_context=context)
-        for cmd in ("health", "wait", "save"):
-            run([fake, cmd, "--json"])
-        check("make_runner: polls/health/save leave the generation bucket untouched",
-              not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
-        rc, out = run([fake, "submit", "--request", request_path])
-        check("make_runner: submit 429 resubmitted until it runs",
-              '\"ok\"' in out and open(os.path.join(os.environ["FAKE_DIR"], "n")).read() == "3")
-        check("make_runner: 3 submit attempts drew 3 generation tokens", len(json.load(open(os.path.join(
-            os.environ["DSAF_GOVERNOR_DIR"], "kie-rate", LG.key_tag(), "stamps.json")))) == 3)
-        check("retry unit explicitly exercised admission dependency", admission.call_count == 1)
-    try:
-        KD.make_runner(30)([fake, "submit", "--request", request_path])
-        check("unbound real runner still refuses production", False)
-    except KD.DispatchError as exc:
-        check("unbound real runner still refuses production", "PRODUCTION_CONTEXT_REQUIRED" in str(exc))
-finally:
-    # Never leak a patched stdlib into other modules sharing a pytest process.
-    LG.load_governor.time.sleep = _governor_sleep
+    KD.make_runner(30)([fake, "submit", "--request", request_path])
+    check("unbound real runner still refuses production", False)
+except KD.DispatchError as exc:
+    check("unbound real runner still refuses production", "PRODUCTION_CONTEXT_REQUIRED" in str(exc))
 
 # docs agree with references/kie-rate-limit.md
 SK = os.path.join(CORE, "..", "..")

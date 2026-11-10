@@ -129,12 +129,12 @@ SHAPE_ALIASES = {
     "16:9 widescreen": "16:9",
 }
 
-#: The card's length label -> planned seconds (the registry is the one table).
-_SECONDS_BY_LABEL = {label: secs for secs, label in DURATION_LABELS_S.items()}
-
 DEFAULT_VOICE = "all-suno"
 DEFAULT_LENGTH = "60 seconds"
 DEFAULT_SHAPE = "9:16"
+
+#: The card's length label -> planned seconds (the registry is the one table).
+_SECONDS_BY_LABEL = {label: secs for secs, label in DURATION_LABELS_S.items()}
 
 # Plan 10.3 board, transcribed: plan_103.py lives under tests/ and core does
 # not import tests. Titles are what the Command Center renders.
@@ -644,7 +644,7 @@ def materialize(card, root, price_fn=None, outbox=None,
             raise BatchError("PRICE_UNAVAILABLE",
                              "no ceiling for %s" % book["title"])
         init = L.init_run(str(ledger_db), book["run_id"],
-                          int(round(ceiling * 100)))  # Ledger budgets are cents; card prices are USD.
+                          int(round(ceiling * 100)))  # ponytail: batch.py money stays float USD; ledger contract is integer cents. Deeper unify (integer cents through _cents/manifests) would break USD float assertions — convert only at this boundary until that lands.
         if init.get("outcome") != "ok":
             raise BatchError("LEDGER_RUN_FAILED",
                              "%s: %s" % (book["run_id"], init.get("reason")))

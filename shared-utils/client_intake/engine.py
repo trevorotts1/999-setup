@@ -1207,7 +1207,7 @@ def _cite_error(doc, q, raw, v, source, ref):
 def record(doc, qid, value, *, source="client", status=None, note=None, source_message_ref=None):
     """Store an answer. Returns {"ok": True, ...}; {"ok": False, "message"} when the answer is incomplete;
     or the help payload when the client said they do not know. Price, packages, deliverables, funnel
-    shape recorded as provided needs source_message_ref (see CITED_QUESTIONS). A price is
+    shape and entitlement recorded as provided need source_message_ref (see CITED_QUESTIONS). A price is
     echoed back first ("I heard USD 497.00, correct?") and recorded only after the client says yes."""
     q = question(qid)
     if wants_help(q, value):

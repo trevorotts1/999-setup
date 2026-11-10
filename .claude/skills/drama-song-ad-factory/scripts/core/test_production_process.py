@@ -349,51 +349,72 @@ class ProductionProcessTest(unittest.TestCase):
     def test_planning_uses_reduced_dependencies_but_still_requires_governed_intake(self):
         confirmed_run(self.run)
         payload = {"storage_dir": self.temp.name, "run_dir": str(self.run), "env": {}}
-        # Claude-Nine retains its explicit dependency API; there is no D05
-        # derived capability list to stub. Exercise the real local checks.
-        planned = preflight.check(payload)
-        self.assertEqual(planned["reason_code"], "preflight-pass-planning")
-        self.assertEqual(planned["checks"]["mode"], "planning")
-        self.assertTrue(planned["checks"]["card_recorded"])
-        self.assertFalse(planned["checks"]["generating"])
-        for key in ("tools", "modules", "credentials_present"):
-            self.assertEqual(planned["checks"][key], {})
-        self.assertTrue(planned["checks"]["storage_writable"])
-        self.assertTrue(planned["checks"]["disk"]["ok"])
-        payload["tools"] = ["missing-s75-offline-tool"]
-        with patch.object(preflight.shutil, "which", return_value=None):
-            self.assertEqual(preflight.check(payload)["reason_code"], "tool-unavailable")
-        payload.pop("tools")
-        payload["stage"] = "research"
-        self.assertEqual(preflight.check(payload)["reason_code"], "preflight-pass")
-        (self.run / "control" / "intake-session.json").unlink()
-        blocked = preflight.check(payload)
-        self.assertFalse(blocked["production_admitted"])
-        self.assertEqual(blocked["reason_code"], "PRODUCTION_LEGACY_AUTHORITY_UNVERIFIED")
-        payload["mode"] = "diagnostic"
-        diagnostic = preflight.check(payload)
-        self.assertEqual(diagnostic["reason_code"], "preflight-pass-diagnostic")
-        self.assertFalse(diagnostic["production_admitted"])
+        with patch.object(preflight, "check_requirement", return_value={"ok": True, "detail": "offline dependency probe"}):
+            planned = preflight.check(payload)
+            self.assertEqual(planned["reason_code"], "preflight-pass-planning")
+            self.assertEqual(planned["checks"]["mode"], "planning")
+            self.assertTrue(planned["checks"]["card_recorded"])
+            self.assertFalse(planned["checks"]["generating"])
+            self.assertEqual({r["id"] for r in planned["checks"]["requirements"]},
+                             {"platform-arch", "python-interpreter", "storage-capacity", "temp-capacity"})
+            payload["stage"] = "research"
+            self.assertEqual(preflight.check(payload)["reason_code"], "preflight-pass")
+            (self.run / "control" / "intake-session.json").unlink()
+            blocked = preflight.check(payload)
+            self.assertFalse(blocked["production_admitted"])
+            self.assertEqual(blocked["reason_code"], "PRODUCTION_LEGACY_AUTHORITY_UNVERIFIED")
+            payload["mode"] = "diagnostic"
+            diagnostic = preflight.check(payload)
+            self.assertEqual(diagnostic["reason_code"], "preflight-pass-diagnostic")
+            self.assertFalse(diagnostic["production_admitted"])
 
     def test_preflight_bare_files_are_dependencies_only_and_confirmed_run_is_planning_only(self):
         receipt = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad", "length": 120,
                                "video_model": "MiniMax H3"}, "who": "client", "at": "2026-10-24T00:00:00Z"}
         payload = {"storage_dir": self.temp.name, "mode": "quick", "card_receipt": receipt,
                    "auth": {"scope": "campaign"}, "summary_digest": "manual"}
-        r = preflight.check(payload)
-        self.assertEqual(r["reason_code"], "preflight-pass-dependencies")
-        self.assertEqual(r["readiness"], "dependencies-only")
-        self.assertFalse(r["production_admitted"])
-        confirmed_run(self.run)
-        payload["run_dir"] = str(self.run)
-        payload.pop("auth")
-        r = preflight.check(payload)
-        self.assertEqual(r["reason_code"], "preflight-pass-planning")
-        self.assertFalse(r["production_admitted"])
-        payload["stage"] = "music"
-        r = preflight.check(payload)
-        self.assertEqual(r["reason_code"], "PRODUCTION_PREDECESSOR_INCOMPLETE")
-        self.assertFalse(r["production_admitted"])
+        patches = (patch.object(preflight, "derive_requirements", return_value=[{"id": "fixture", "kind": "tool", "severity": "hard",
+                    "manifest_id": "fixture", "manifest_severity": "hard", "why": "offline test"}]),
+                   patch.object(preflight, "check_requirement", return_value={"ok": True, "detail": "offline check"}))
+        with patches[0], patches[1]:
+            r = preflight.check(payload)
+            self.assertEqual(r["reason_code"], "preflight-pass-dependencies")
+            self.assertFalse(r["production_admitted"])
+            confirmed_run(self.run)
+            payload["run_dir"] = str(self.run)
+            payload.pop("auth")
+            r = preflight.check(payload)
+            self.assertEqual(r["reason_code"], "preflight-pass-planning")
+            self.assertFalse(r["production_admitted"])
+            payload["stage"] = "music"
+            r = preflight.check(payload)
+            self.assertEqual(r["reason_code"], "PRODUCTION_PREDECESSOR_INCOMPLETE")
+            self.assertFalse(r["production_admitted"])
+
+    def test_complete_predecessor_with_current_artifact_admits_the_next_stage(self):
+        rid = confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        r = process.admit_production(self.run, "creative-strategy", run_id=rid)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["reason_code"], "PRODUCTION_STAGE_ADMITTED")
+
+    def test_complete_predecessor_with_deleted_artifact_is_an_order_violation(self):
+        rid = confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        (self.run / "research" / "receipt.json").unlink()
+        r = process.admit_production(self.run, "creative-strategy", run_id=rid)
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["reason_code"], "PRODUCTION_ORDER_VIOLATION")
+        self.assertEqual(r["predecessor"], "research")
+        self.assertEqual(r["governed_reason_code"], "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING")
+
+    def test_empty_predecessor_artifact_keeps_the_governed_evidence_code(self):
+        rid = confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        (self.run / "research" / "receipt.json").write_text("", encoding="utf-8")
+        r = process.admit_production(self.run, "creative-strategy", run_id=rid)
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["reason_code"], "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING")
 
 
 if __name__ == "__main__":

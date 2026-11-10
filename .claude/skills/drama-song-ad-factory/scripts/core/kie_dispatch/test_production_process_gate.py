@@ -17,7 +17,7 @@ import spend_ledger as ledger
 from audio_c3 import lipsync_producer as producer
 from lip_sync.lip_gate import picture_gate as picture
 
-MODEL = "gpt-image-2-5-sunburst-text-to-image"
+MODEL = "gpt-image-2-6/sunburst-text-to-image"
 CARD = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
                     "length": 120, "video_model": "MiniMax H3 768P"},
         "who": "owner", "at": "2026-10-24T00:00:00Z"}
@@ -189,7 +189,7 @@ class ProcessGateTest(unittest.TestCase):
                 return {"outcome": "ok", "evidence": {}}
             runner = producer.skill74_runner(self.run, lambda p: "https://example.invalid/source",
                                              {"stage": stage}, lambda result: {}, dispatch_fn=fake_dispatch)
-            with patch.object(producer, "_approval_context", return_value=(copy.deepcopy(CARD), "offline-twin-receipt")):
+            with patch.object(producer, "_approval_context", return_value=copy.deepcopy(CARD)):
                 runner(dict(request, output_dir=str(out)))
             self.assertEqual(captured[0]["stage"], stage)
             self.assertEqual(captured[0]["request"]["production_stage"], stage)
@@ -338,8 +338,31 @@ class ProcessGateTest(unittest.TestCase):
         self.assertEqual(transport.call_count, 0)
         governor.assert_not_called()
 
+    def test_real_runner_submits_the_admitted_snapshot_not_the_caller_path(self):
+        save_dir = self.run / "images"
+        req_path = self.run / "request.json"
+        req_path.write_text(json.dumps(self.request))
+        live = D.make_runner(process_context={"request_digest": D.L.digest_request(self.request),
+                                              "arguments": {"save_dir": str(save_dir)}})
+        seen = {}
+        def fake_run(argv, **kw):
+            path = argv[argv.index("--request") + 1]
+            seen["path"] = path
+            seen["body"] = json.loads(Path(path).read_text())
+            req_path.write_text(json.dumps(dict(self.request, changed=True)))  # post-admission writer
+            return type("R", (), {"returncode": 0, "stdout": "{}"})()
+        with patch.object(D, "production_process_admission", return_value={"ok": True}), \
+                patch.object(D.subprocess, "run", side_effect=fake_run), \
+                patch.object(D._LG, "kie_request", side_effect=lambda once, **k: once()):
+            live([str(Path(__file__)), "submit", "--request", str(req_path)])
+        self.assertNotEqual(seen["path"], str(req_path))
+        self.assertEqual(Path(seen["path"]).parent, save_dir)
+        self.assertEqual(D.L.digest_request(seen["body"]), D.L.digest_request(self.request))
+        self.assertEqual(list(save_dir.glob("*.partial")), [])
+
     def test_injected_simulation_never_becomes_production_evidence(self):
         ledger.init_run(self.kwargs["ledger_db"], "run", 1000)
+        (self.run / "fake.png").write_bytes(b"offline-bytes")  # F11: real bytes
         commands = []
         def fake(argv):
             command = argv[1]

@@ -13,13 +13,12 @@ The rules (verbatim in SKILL.md):
      named at most once in the style text, and the style says the full band
      keeps playing under the spoken lines.
   2. Sung lines are short and metered inside the policy's preferred syllable
-     band (4-12, lyric_writer W-G-002 G5), rhymed, with hyphen-held vowels.
-     hard max None: there is NO hard syllable bound, so a 9-11 syllable line the
-     writer accepted is never refused here. A preferred-band miss is an
-     accept-with-warning finding, never a failure; only a policy hard bound
-     carrying a clear mode-specific reason can refuse a line. A wordless sung
-     vocalise is OPTIONAL (WW-29): it is never a forced lead-in, and where a
-     sheet carries one it asks for a short note only, never long held notes.
+     band (4-12, lyric_writer W-G-002 G5), rhymed, with hyphen-held vowels. A
+     preferred-band miss is an accept-with-warning finding, never a failure;
+     only a policy hard bound carrying a clear mode-specific reason can refuse
+     a line. A wordless sung vocalise is OPTIONAL (WW-29): it is never a forced
+     lead-in, and where a sheet carries one it asks for a short note only,
+     never long held notes.
   3. The hook is the payoff, never the opener (FU-HOOK-PLACEMENT, Trevor
      2026-10-09): it comes after the build-up the style's own structure
      calls for (a verse, plus a pre-chorus/build where the style and the
@@ -285,6 +284,14 @@ DEFAULT_CALLBACK_URL = "https://example.invalid/cb"
 #: The directions the createTask envelope must carry inside ``input``.
 REQUIRED_MUSIC_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics",
                              "style", "negative_tags", "duration")
+#: EVERY key ``input`` may lawfully carry: the required directions, the lyrics
+#: alternative, the model value, the brief fields and the KIE param block.
+#: Allowed by LIST, so a key nobody named -- a display-metadata spelling the
+#: guard's shape rule never learned -- cannot legally ride out of the envelope.
+ENVELOPE_INPUT_KEYS = frozenset(REQUIRED_MUSIC_DIRECTIONS) | frozenset({
+    "model", "prompt", "vocal_gender", "style_weight", "weirdness_constraint",
+    "variety",
+})
 #: Keys that only ever existed on the retired FLAT contract: seeing one at the
 #: top level of an envelope proves a legacy payload, not a createTask one.
 LEGACY_FLAT_KEYS = ("lyrics", "custom_mode", "instrumental", "style",
@@ -295,6 +302,11 @@ MISPLACED_CALLBACK_KEYS = ("callback_url", "callbackUrl", "callback",
                            "call_back_url", "CallBackUrl")
 
 _SPOKEN_WORD_RE = re.compile(r"\b(spoken|speaks?|speaking|speech|talk\w*|narrat\w*)\b", re.I)
+#: C05-CUE-RATES: the one instrument name the delivery-word scan false-positives
+#: on. A "talking drum" is percussion, not a spoken-delivery direction, so it is
+#: removed before the at-most-once count. Nothing else is excused: "spoken",
+#: "speaks", "speech", "narrated" and any other "talk*" still count.
+_INSTRUMENT_TALK_RE = re.compile(r"\btalking\s+drum\b", re.I)
 
 
 class RecipeError(ValueError):
@@ -602,6 +614,21 @@ def is_exempt(style_id):
 def suno_style_ids():
     """Every style that must use the recipe (the music_styles menu)."""
     return tuple(_MS.style_ids())
+
+
+def recipe_style_ids():
+    """Every id the recipe ACCEPTS: the D18 menu plus registered extra styles.
+
+    S75-T22 repair r3: ``music_styles.register_styles`` adopts an offered style
+    outside the three D18 records, and every id-based route (style_prompt,
+    spoken_target, section_hint, style) already resolves a registered id. The
+    recipe gates below must accept the same ids or a style can dispatch on the
+    catalogue seam and still be refused with UNKNOWN_STYLE. A registered style
+    is not thereby buildable: ``style_text`` still needs its own
+    ``references/prompt-templates/music/<id>.json`` (that data gap is a
+    separate, class-wide one).
+    """
+    return tuple(_MS.style_ids()) + tuple(_MS.extra_style_ids())
 
 
 def is_no_voice_tag(tag):
@@ -1119,6 +1146,43 @@ def _too_long_note(text, carried=None):
                carried or ("the delivery map, the band wording, the one clean ending, "
                            "the hook-placement clause and the approved pace clause")))
 
+def compose_style_block(block, sheet=None, vocal_gender="f", pace_plan=None,
+                        style_id=None, deliveries=None):
+    """THE one style-text composer, for any style data block.
+
+    ``style_text`` passes the live catalog's music/<style>.json block. A
+    recipe owned by another unit, not yet registered in the menu, passes its
+    own block, so one clean ending, the FU-HOOK-PLACEMENT order clause, the
+    G1 delivery map, the approved pace clause and the 1000-char cap are all
+    composed and checked HERE -- never a second copy in a recipe loader.
+
+    ``deliveries`` is the block's own delivery set when the sheet names none.
+    """
+    word = vocal_gender_word(vocal_gender)
+    parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
+             for p in block["style_parts"]]
+    # The clean-ending clause is ending_qc's, appended the way ending_qc
+    # appends it (comma, no double period). It is here so the measured
+    # style counts equal the design's (623/699/707, 733/809/817 with the
+    # FU-HOOK-PLACEMENT order clause) and so the final
+    # payload is the same whether or not with_clean_ending has run.
+    text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
+    # FU-HOOK-PLACEMENT rule 5: the section order is the sheet's, and the
+    # song never opens with the hook (Suno added a hook at 13.6 s in v2).
+    text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
+    # G1 delivery map: the map sentence must name the sheet's deliveries.
+    text = _MS.assert_delivery_map(
+        style_id, text, _sheet_deliveries(sheet, style_id, block, deliveries))
+    # WW-07: the approved pace direction goes LAST, after the ending, the
+    # hook-placement order clause and the delivery map, and the 1000-char
+    # cap is measured on the FINAL text (a raise, never a truncation).
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        raise RecipeError("STYLE_TOO_LONG", _too_long_note(text))
+    return text
+
 def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     """Suno style field: the style's OWN parts, in order, one clean ending.
 
@@ -1129,34 +1193,14 @@ def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     brief (``vocal_gender``), never hard-coded female.
 
     The style's data owns the negatives; the ending clause is ending_qc's
-    (composed there, never restated here).
+    (composed there, never restated here). S75-T21 moved the composition into
+    ``compose_style_block`` so a recipe this menu does not carry yet composes
+    through the same code.
     """
     if style_id is not None and not is_exempt(style_id):
         sid = _style_key(style_id)
-        block = music_block(sid)
-        word = vocal_gender_word(vocal_gender)
-        parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
-                 for p in block["style_parts"]]
-        # The clean-ending clause is ending_qc's, appended the way ending_qc
-        # appends it (comma, no double period). It is here so the measured
-        # style counts equal the design's (623/699/707, 733/809/817 with the
-        # FU-HOOK-PLACEMENT order clause) and so the final
-        # payload is the same whether or not with_clean_ending has run.
-        text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
-        # FU-HOOK-PLACEMENT rule 5: the section order is the sheet's, and the
-        # song never opens with the hook (Suno added a hook at 13.6 s in v2).
-        text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
-        # G1 delivery map: the map sentence must name the sheet's deliveries.
-        text = _MS.assert_delivery_map(sid, text, _sheet_deliveries(sheet, sid))
-        # WW-07: the approved pace direction goes LAST, after the ending, the
-        # hook-placement order clause and the delivery map, and the 1000-char
-        # cap is measured on the FINAL text (a raise, never a truncation).
-        pace = pace_clause(pace_plan)
-        if pace:
-            text = "%s %s" % (text.rstrip(), pace)
-        if len(text) > SUNO_STYLE_FIELD_MAX:
-            raise RecipeError("STYLE_TOO_LONG", _too_long_note(text))
-        return text
+        return compose_style_block(music_block(sid), sheet, vocal_gender,
+                                   pace_plan, sid)
     text = "%s. Only the short intro and the final outro are spoken; %s." % (
         _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
     pace = pace_clause(pace_plan)
@@ -1169,12 +1213,20 @@ def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     return text
 
 
-def _sheet_deliveries(sheet, style_id):
-    """The deliveries a sheet names, or the style's own when it names none."""
+def _sheet_deliveries(sheet, style_id, block=None, deliveries=None):
+    """The deliveries a sheet names, or the style's own when it names none.
+
+    ``block``/``deliveries`` let a recipe outside the live menu answer without
+    a catalog lookup; the catalog path is unchanged.
+    """
     if sheet:
         names = {s["delivery"] for s in sheet if s.get("delivery") and s.get("lines")}
         if names:
             return names
+    if deliveries:
+        return set(deliveries)
+    if block is not None:
+        return set(block["deliveries"])
     return set(music_block(style_id)["deliveries"])
 
 
@@ -1189,8 +1241,16 @@ def _sheet_deliveries(sheet, style_id):
 BRIEF_STYLE_NOTE = ("WW-26: compliance trailer first, the variant's own complete "
                     "brief next, the approved pace clause LAST, cap on the final text")
 
+#: C2 repair: the lead's presence direction ("close dry upfront vocal" /
+#: "dry upfront vocal") lives in ``style_parts[0]``, which the WW-26 brief
+#: replaces. A variant that harmonises or stacks the lead must still ship it
+#: (variants.json marks those ``revoices_lead``), so the phrase is lifted from the
+#: style's OWN data -- never restated here -- and joins the compliance trailer.
+#: A style whose data carries no such rule gains nothing.
+_LEAD_PRESENCE_RE = re.compile(r"(?:close\s+)?dry\s+upfront\s+vocal", re.IGNORECASE)
+
 def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
-                     pace_plan=None, tail_clause=None):
+                     pace_plan=None, tail_clause=None, revoices_lead=False):
     """WW-26: the FINAL provider style for ONE complete variant brief.
 
     ``brief_text`` is the variant's whole, independently authored core (groove,
@@ -1200,17 +1260,24 @@ def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
     a shared core. ``tail_clause`` (the variant's own arrangement sentence) is
     the LAST content before the pace clause, so the assembled style still ends
     with that variant's arrangement exactly as the base asserted. The mandated
-    compliance wording (delivery map, band wording, one clean ending, hook-order
-    clause) sits BETWEEN them -- it is the only shared text, because no variant
-    may vary it. The approved pace clause is appended LAST and the 1000-char cap
-    is measured on the FINAL text (a raise, never a truncation).
+    compliance wording (the delivery map, band wording, one clean ending,
+    hook-order clause) sits BETWEEN them -- it is the only shared text, because
+    no variant may vary it. ``revoices_lead`` restores the base lead-presence
+    direction, taken from the style's own ``style_parts[0]``, for a variant that
+    harmonises or stacks the lead: the WW-26 brief replaces that line, and a
+    harmonised lead must still reach Suno dry and upfront. The approved pace
+    clause is appended LAST and the 1000-char cap is measured on the FINAL text
+    (a raise, never a truncation).
     """
     sid = _style_key(style_id)
     block = music_block(sid)
     parts = [str(p).rstrip(".") for p in (block.get("style_parts") or [])]
     if len(parts) < 2:
         raise RecipeError("NO_STYLE_PARTS", "%r carries no compliance parts" % (style_id,))
-    compliance = parts[2:] if len(parts) >= 4 else parts[-2:]
+    compliance = list(parts[2:] if len(parts) >= 4 else parts[-2:])
+    presence = _LEAD_PRESENCE_RE.search(parts[0]) if revoices_lead else None
+    if presence:
+        compliance.insert(0, "%s." % presence.group(0))
     mid = _gender_variant(" ".join(compliance), vocal_gender_word(vocal_gender)).rstrip(".")
     mid = "%s, %s." % (mid, _EQ.STYLE_ENDING)
     mid = "%s %s." % (mid.rstrip(), _HP.PROMPT_CLAUSE)
@@ -1234,6 +1301,7 @@ def check_style_text(text):
     # not counted against the at-most-once rule.
     own = text.replace(_MS.DELIVERY_MAP_CLAUSES[0][1], "")
     own = own.replace(_MS.DELIVERY_MAP_CLAUSES[1][1], "").replace(_MS.DELIVERY_MAP_CLAUSES[2][1], "")
+    own = _INSTRUMENT_TALK_RE.sub("", own)   # "talking drum" is percussion, not a delivery
     n = len(_SPOKEN_WORD_RE.findall(own))
     if n > 1:
         errs.append("style text names spoken delivery %d times, at most once" % n)
@@ -1269,7 +1337,7 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
     """
     if is_exempt(style_id):
         return {"exempt": True}
-    if style_id not in suno_style_ids():
+    if style_id not in recipe_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
     warnings = []
@@ -1377,6 +1445,14 @@ def check_envelope(req):
     elif not lyrics and not prompt:
         errs.append("MISSING_DIRECTION: no lyrics source at all; input.lyrics "
                     "must carry the one approved sheet")
+    # -- every input key is one this contract names -------------------------
+    unknown = sorted(str(k) for k in inp if k not in ENVELOPE_INPUT_KEYS)
+    if unknown:
+        errs.append("UNKNOWN_INPUT_KEY: input carries %s outside the accepted "
+                    "createTask directions (%s); an unrecognised key is refused "
+                    "rather than sent"
+                    % (", ".join(unknown),
+                       ", ".join(sorted(ENVELOPE_INPUT_KEYS))))
     # -- required directions ------------------------------------------------
     missing = [f for f in REQUIRED_MUSIC_DIRECTIONS if f not in inp]
     if missing:
@@ -1508,7 +1584,7 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
         return
     if is_exempt(style_id):
         return
-    if style_id not in suno_style_ids():
+    if style_id not in recipe_style_ids():
         raise RecipeError("UNKNOWN_STYLE", repr(style_id))
     # FU-RNBFLOW-SONG: the style's own contract (real sung lyrics, rap tagged
     # as rap on the beat, plain spoken outro). No length -> "UNMEASURED:

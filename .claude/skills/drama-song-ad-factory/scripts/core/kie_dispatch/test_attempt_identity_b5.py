@@ -26,6 +26,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -42,7 +43,16 @@ def _forbid(*_a, **_k):
     raise AssertionError("real Skill 74 runner disabled in tests")
 
 
-D.make_runner = _forbid
+_NO_REAL_RUNNER = mock.patch.object(D, "make_runner", _forbid)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
 
 
 def check(name, got, want):
@@ -117,7 +127,7 @@ def test_dispatch_carries_it():
     tmp = tempfile.mkdtemp(prefix="b5-attempt-")
     db = os.path.join(tmp, "spend.db")
     L.init_run(db, "run-b5", 10000)
-    env = D.dispatch(model="gpt-image-2-5-sunburst-text-to-image",
+    env = D.dispatch(model="gpt-image-2-6/sunburst-text-to-image",
                      request=REQ, save_dir=os.path.join(tmp, "out"),
                      ledger_db=db, run_id="run-b5", logical_key="song/v1",
                      attempt_id="", estimated_cost=100, prompt="q" * 200,
@@ -129,7 +139,7 @@ def test_dispatch_carries_it():
     check("12: the job row is that identity", [r[0] for r in rows], [aid])
 
     # control: an explicit id is honoured verbatim, and reuse is still refused
-    e3 = D.dispatch(model="gpt-image-2-5-sunburst-text-to-image",
+    e3 = D.dispatch(model="gpt-image-2-6/sunburst-text-to-image",
                     request=REQ, save_dir=os.path.join(tmp, "out2"),
                     ledger_db=db, run_id="run-b5", logical_key="song/v2",
                     attempt_id="explicit-1", estimated_cost=100,
@@ -137,7 +147,7 @@ def test_dispatch_carries_it():
                     adapter_path=os.path.abspath(__file__), runner=Fake74())
     check("13: an explicit id is used verbatim",
           e3.get("attempt_id"), "explicit-1")
-    e4 = D.dispatch(model="gpt-image-2-5-sunburst-text-to-image",
+    e4 = D.dispatch(model="gpt-image-2-6/sunburst-text-to-image",
                     request=REQ, save_dir=os.path.join(tmp, "out3"),
                     ledger_db=db, run_id="run-b5", logical_key="song/v2",
                     attempt_id="explicit-1", estimated_cost=100,
@@ -177,4 +187,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_module()
     sys.exit(main())

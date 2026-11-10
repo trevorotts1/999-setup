@@ -40,6 +40,7 @@ DEFAULT_VOICE = "all-suno"
 DEFAULT_LOOK_FALLBACK = "Lifelike 3D"
 DEFAULT_MUSIC_FALLBACK = "Soul Ballad"
 
+# Batch card length labels -> seconds (batch_mode.LENGTH_VALUES).
 # S75-W05-U3: the scattered map is derived from THE one table
 # (suno_recipe.duration_registry DURATION_LABELS_S), which restores the
 # 2-minute / 120 s entry the old map dropped (D12); the extra alias spellings
@@ -689,3 +690,10 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                 "digest": digest, "provenance": prov, "auth_status": status,
                 "approval_invalidated": False, "changes": [],
                 "next_action": "Record summary digest + auth scope, then run preflight before paid work."}
+    return {"outcome": "waiting", "reason_code": "missing-essentials",
+            "questions": qs,
+            "question_message": _fmt([q["question"] for q in qs]),
+            "summary": summary, "digest": digest, "provenance": prov,
+            "auth_status": status, "approval_invalidated": False, "changes": [],
+            "next_action": ("Ask this ONE question and wait for the client's answer; "
+                            "run intake again with that answer to get the next question.")}

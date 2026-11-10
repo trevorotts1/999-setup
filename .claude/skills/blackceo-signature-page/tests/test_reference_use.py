@@ -47,7 +47,7 @@ BOARD = next(e for e in LIB["references"] if e["kind"] == "design-board")
 SECTION = {"section_id": "S01", "section_name": "Hero",
            "copy": "Everything your client needs. CTA: BOOK NOW.",
            "slots": [{"slot_id": "IMG-001", "aspect_ratio": "3:4", "art_direction": "Desk."}]}
-REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image", "style": "warm editorial",
+REQUEST = {"model": "gpt-image-2-6/sunburst-image-to-image", "style": "warm editorial",
            "stage_prompts": {"visual-mockup": "Mockup {section_name} at {width}px. {copy}"}}
 
 
@@ -221,6 +221,22 @@ class BleedCheckTests(unittest.TestCase):
         prompts = self.dir / "image-inventory-prompts"
         prompts.mkdir()
         (prompts / "IMG-001.txt").write_text("A desk.", encoding="utf-8")
+        # run_item now consults stage_gate.py before any read (a paid stage may not start on a run
+        # that has not reached it), so this fixture supplies the gate's own inputs rather than
+        # bypassing it: the wireframe inventory that defines the item universe, the upstream stage's
+        # structural manifest, and a closed upstream prompt item for IMG-001.
+        wireframe = self.dir / "desktop-wireframe"
+        wireframe.mkdir()
+        (wireframe / "image-inventory.json").write_text(
+            json.dumps({"images": [{"id": "IMG-001"}]}), encoding="utf-8")
+        (prompts / "prompt-manifest.json").write_text(
+            json.dumps({"items": ["IMG-001"]}), encoding="utf-8")
+        private = self.dir / "private"
+        private.mkdir()
+        (private / "state.json").write_text(json.dumps({
+            "stages": {}, "receipts": {},
+            "items": {"image-inventory-prompts": {"IMG-001": {"status": "closed"}}},
+        }), encoding="utf-8")
         req = {"references": [BOARD["url"]]}
         with contextlib.redirect_stdout(io.StringIO()):
             bad = exe.run_item(self.dir, "image-generation-qc", "IMG-001", req,

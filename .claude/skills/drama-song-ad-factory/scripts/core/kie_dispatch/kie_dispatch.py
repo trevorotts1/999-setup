@@ -567,6 +567,68 @@ def prompt_templated_refusal(model, request, prompt):
     return None
 
 
+def native_audio_refusal(model, request, prompt=""):
+    """-> None unless the H3 request's native-audio decision is unusable.
+
+    minimax-h3 always returns a stereo track and cannot be asked for silence,
+    so the mixing decision travels on the request/receipt as
+    ``native_audio`` (prompt_templates.native_audio_block). This gate refuses
+    a decision that is present but not one of retain/reduce_music/strip, and
+    refuses DOUBLE_MUSIC when the request declares that an approved soundtrack
+    is layered over the take (``request["soundtrack_layering"]``) and the
+    decision/observed audio makes that double music.
+
+    A request with no decision at all is not refused here: the receipt gate
+    (prompt_templated_refusal) already demands a receipt, and receipts written
+    before this policy stay dispatchable. The layering boundary fails closed.
+    """
+    if not str(model or "").startswith(TEMPLATED_VIDEO_PREFIXES):
+        return None
+    try:
+        import prompt_templates as _PT
+    except ImportError:                                 # pragma: no cover
+        return {"reason_code": "NATIVE_AUDIO_UNAVAILABLE",
+                "detail": "prompt_templates is not importable; the native-audio "
+                          "decision cannot be validated"}
+    req = request if isinstance(request, dict) else {}
+    block = req.get("native_audio")
+    if isinstance(block, str):
+        block = {"decision": block}
+    if not isinstance(block, dict):
+        rec = req.get("prompt_receipt")
+        if rec is None:
+            rec = req.get("prompt_receipts")
+        if rec is None:
+            rs = req.get("run_state")
+            if isinstance(rs, dict):
+                rec = rs.get("prompt_receipt") or rs.get("prompt_receipts")
+        recs = [r for r in (rec if isinstance(rec, list) else [rec])
+                if isinstance(r, dict)]
+        block = None
+        # the decision must belong to the prompt being paid for, so a matching
+        # prompt_sha256 receipt is read first and the rest only as a fallback.
+        if isinstance(prompt, str) and prompt:
+            import hashlib as _hashlib
+            sha = _hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            recs = ([r for r in recs if r.get("prompt_sha256") == sha]
+                    + [r for r in recs if r.get("prompt_sha256") != sha])
+        for r in recs:
+            if isinstance(r.get("native_audio"), dict):
+                block = r["native_audio"]
+                break
+    if isinstance(block, dict) and block.get("decision") is not None \
+            and block["decision"] not in _PT.H3_NATIVE_AUDIO_DECISIONS:
+        return {"reason_code": "H3_NATIVE_AUDIO_UNKNOWN",
+                "detail": "%r is not one of %s; nothing was sent"
+                          % (block.get("decision"),
+                             ", ".join(_PT.H3_NATIVE_AUDIO_DECISIONS))}
+    if req.get("soundtrack_layering"):
+        snd = _PT.layering_refusal(block, soundtrack=True)
+        if snd:
+            return snd
+    return None
+
+
 def final_payload_cap_refusal(model, request, is_video):
     """U15b/U6: measure the FINAL payload just before spend. -> None or dict.
 
@@ -974,9 +1036,8 @@ def _bind_verified_request(args, request, request_digest, save_dir):
         except OSError:
             pass
         raise DispatchError("PRODUCTION_REQUEST_NOT_BINDABLE: %s" % exc) from exc
-    bound = list(args)
-    bound[index] = snap
-    return bound
+    args[index] = snap
+    return args
 
 
 def make_runner(timeout=300, *, process_context=None):
@@ -1221,7 +1282,8 @@ def check_script_approval_gate(model, request, save_dir=None):
     if rec is None:
         rec = _SA.record_near(req.get("run_dir"), save_dir)
     return _SA.check_script_approval(rec,
-                                     req.get("lyrics") or inp.get("lyrics") or "")
+                                     req.get("lyrics") or inp.get("lyrics") or "",
+                                     _SA.script_sha_near(req.get("run_dir"), save_dir))
 
 
 def _retain_sync_info(save_dir, task_id, payload):
@@ -1826,6 +1888,16 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
                         evidence={"generated": False, "gate": "U15b"})
+    # H3 native audio: H3 cannot be asked for silence, so the mixing decision
+    # must be a recorded one (and never a double-music layer) before spend.
+    na_refusal = native_audio_refusal(model, request, prompt)
+    if na_refusal:
+        return envelope("dispatch", "rejected", na_refusal["reason_code"],
+                        na_refusal["detail"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False,
+                                  "gate": "native-audio"})
     cap_refusal = final_payload_cap_refusal(model, request, is_video)
     if cap_refusal:
         return envelope("dispatch", "rejected", cap_refusal["reason_code"],
@@ -2214,10 +2286,7 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
         # is not a list, or listed bytes that are missing or zero-byte did NOT
         # materialize a deliverable. The provider task still succeeded and
         # charged, so the ledger settles exactly as before -- but the envelope
-        # is a HOLD, never "files saved". The on-disk check applies to
-        # production runs only: an injected offline runner exercises the
-        # protocol without producing files, and its answers never become
-        # production evidence, so offline keeps the pre-F11 pass-through.
+        # is a HOLD, never "files saved".
         if isinstance(v, dict):
             save_error = ""
             save_state = v.get("state") if isinstance(v.get("state"), str) else ""
@@ -2226,17 +2295,12 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
         else:
             save_error = str(v_raw or "")[-240:] or "save did not answer JSON"
             save_state, save_err_block = "", None
-        if (_execution or {}).get("mode") == "production":
-            hold = _materialization_hold(saved_raw, save_error, save_state,
-                                         save_err_block)
-            verified = ([o["path"] for o in hold["outputs"]
-                         if o["status"] == "OK"] if hold else list(saved_raw))
-            if hold:
-                warn.append(hold["reason_code"])
-        else:
-            hold = None
-            verified = ((v.get("saved_paths") or [])
-                        if isinstance(v, dict) else [])
+        hold = _materialization_hold(saved_raw, save_error, save_state,
+                                     save_err_block)
+        verified = ([o["path"] for o in hold["outputs"]
+                     if o["status"] == "OK"] if hold else list(saved_raw))
+        if hold:
+            warn.append(hold["reason_code"])
 
         rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
                       job_state, "succeeded", actual, task_id=task_id,

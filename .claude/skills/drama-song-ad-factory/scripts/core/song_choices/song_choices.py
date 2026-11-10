@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -79,6 +80,239 @@ class ChoiceError(ValueError):
     """A loud refusal: nothing was spent or delivered on the broken path."""
 
 
+# ---- S75-W02-U3: the complete typed result envelope per attempt ----------
+#
+# The dispatch path used to save ONLY the provider evidence
+# (dispatch-envelope.json = {"variant_id", "evidence"}): the refusal reason and
+# its next action died at the generate() boundary, the lifecycle stages were
+# conflated into one "dispatched" number, and an empty take list walked out of
+# the CLI as exit 0 -- narrated as a successful dispatch. The typed envelope
+# below is preserved per attempt INSTEAD: the refusal triple (reason_code,
+# detail, next_action), the causal chain across every wrapper boundary, and
+# the lifecycle counts reported SEPARATELY.
+
+#: The envelope schema this module produces and consumes.
+ENVELOPE_SCHEMA_VERSION = "1.0.0"
+#: The seven lifecycle counts. SEVEN separate facts -- planned work, provider
+#: submission, provider acknowledgment, the settled bill, files materialized
+#: on disk, takes evaluated by the judge, takes delivered. No key stands in
+#: for another and no single total replaces them.
+COUNT_KEYS = ("planned", "submitted", "acknowledged", "billed",
+              "materialized", "evaluated", "delivered")
+#: The outcome vocabulary (the kie_dispatch envelope vocabulary, so a provider
+#: refusal keeps its own words as it crosses this module).
+ENVELOPE_OUTCOMES = ("ok", "rejected", "waiting", "error")
+#: Run narration: "ok" ONLY when every attempt actually dispatched. An empty
+#: take list or a refused dispatch is never "ok".
+RUN_OUTCOMES = ("ok", "partial", "error")
+#: What an attempt with no take and no refusal detail must tell the operator.
+_EMPTY_NEXT_ACTION = ("reconcile the provider job before any retry; an empty "
+                      "take list is never a successful dispatch")
+
+
+def make_counts(**kw):
+    """The seven lifecycle counts as ONE typed object: every key present, each
+    a non-negative integer. Counts are never conflated -- a caller fills the
+    stages it measured and leaves the rest at 0, never invented."""
+    unknown = sorted(set(kw) - set(COUNT_KEYS))
+    if unknown:
+        raise ChoiceError("unknown attempt counts %r (the counts are exactly %s)"
+                          % (unknown, list(COUNT_KEYS)))
+    out = {}
+    for k in COUNT_KEYS:
+        v = kw.get(k, 0)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ChoiceError("count %r must be a non-negative integer; got %r" % (k, v))
+        out[k] = v
+    return out
+
+
+def add_counts(*rows):
+    """Per-key sum over attempt count objects. The keys never merge: planned
+    stays planned, delivered stays delivered."""
+    out = make_counts()
+    for row in rows or ():
+        if not isinstance(row, dict):
+            raise ChoiceError("counts must be an object; got %r" % (type(row).__name__,))
+        add = make_counts(**{k: row[k] for k in COUNT_KEYS
+                             if row.get(k) is not None})
+        out = make_counts(**{k: out[k] + add[k] for k in COUNT_KEYS})
+    return out
+
+
+def causal_link(stage, reason_code="", detail=""):
+    """ONE boundary hop in a refusal's causal chain."""
+    return {"stage": str(stage), "reason_code": str(reason_code or ""),
+            "detail": str(detail or "")}
+
+
+def attempt_envelope(variant_id, attempt_id, outcome, counts,
+                     reason_code="", detail="", next_action="",
+                     evidence=None, causal_chain=()):
+    """THE typed result envelope preserved per attempt (schema
+    ENVELOPE_SCHEMA_VERSION): outcome, refusal reason, next action, the seven
+    counts reported separately and the causal chain. ``ok`` is the ONLY
+    successful-dispatch narration; every other outcome must carry its refusal
+    reason and next action forward. Counts are required and complete: an
+    envelope never carries a partial count object."""
+    if not _nonempty_str(variant_id):
+        raise ChoiceError("variant_id must be a non-empty string")
+    if not _nonempty_str(attempt_id):
+        raise ChoiceError("attempt_id must be a non-empty string")
+    if outcome not in ENVELOPE_OUTCOMES:
+        raise ChoiceError("outcome must be one of %s; got %r"
+                          % (list(ENVELOPE_OUTCOMES), outcome))
+    if outcome != "ok":
+        if not _nonempty_str(reason_code):
+            raise ChoiceError("a refused attempt envelope must carry its refusal reason_code")
+        if not _nonempty_str(next_action):
+            raise ChoiceError("a refused attempt envelope must carry its next_action")
+    chain = []
+    for link in causal_chain or ():
+        if not isinstance(link, dict) or not link.get("stage"):
+            raise ChoiceError("causal_chain entries need a stage; got %r" % (link,))
+        chain.append(causal_link(link.get("stage"), link.get("reason_code", ""),
+                                 link.get("detail", "")))
+    return {"schema_version": ENVELOPE_SCHEMA_VERSION, "tool": TOOL_NAME,
+            "variant_id": str(variant_id), "attempt_id": str(attempt_id),
+            "outcome": outcome,
+            "reason_code": str(reason_code or ""),
+            "detail": str(detail or ""),
+            "next_action": str(next_action or ""),
+            "counts": make_counts(**(counts or {})),
+            "causal_chain": chain,
+            "evidence": dict(evidence or {}),
+            "dispatch_ok": outcome == "ok"}
+
+
+def carry(envelope, stage, detail=""):
+    """Cross a wrapper boundary WITHOUT losing the envelope: the refusal triple
+    is preserved verbatim (the first cause is never rewritten) and this
+    boundary is appended to the causal chain. Returns a NEW envelope."""
+    if not isinstance(envelope, dict) or "counts" not in envelope:
+        raise ChoiceError("carry() needs a typed attempt envelope; got %r"
+                          % (type(envelope).__name__,))
+    return attempt_envelope(
+        envelope.get("variant_id"), envelope.get("attempt_id"),
+        envelope.get("outcome"), envelope.get("counts"),
+        reason_code=envelope.get("reason_code", ""),
+        detail=envelope.get("detail", ""),
+        next_action=envelope.get("next_action", ""),
+        evidence=envelope.get("evidence"),
+        causal_chain=list(envelope.get("causal_chain") or [])
+        + [causal_link(stage, envelope.get("reason_code", ""), detail)])
+
+
+def _nonempty_str(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
+#: X05: the dispatcher's materialization holds. A provider task that succeeded
+#: and charged but whose save produced no verified file is a HOLD, not a
+#: failure: it is resumed by RE-SAVING this same task id, never by generating
+#: again.
+SAVE_HOLD_PREFIX = "KIE_SAVE_"
+
+
+def _save_hold(env):
+    """X05: the dispatcher's save hold, read from the preserved attempt
+    envelope. None unless the attempt carries a resumable save-only recovery --
+    a hold nobody can resume by saving is not accepted as one."""
+    if not isinstance(env, dict):
+        return None
+    code = env.get("reason_code")
+    if not (isinstance(code, str) and code.startswith(SAVE_HOLD_PREFIX)):
+        return None
+    ev = env.get("evidence") if isinstance(env.get("evidence"), dict) else {}
+    resume = ev.get("resume") if isinstance(ev.get("resume"), dict) else {}
+    if resume.get("command") != "save" or not _nonempty_str(resume.get("task_id")):
+        return None
+    return {"reason_code": code, "detail": env.get("detail") or "",
+            "next_action": env.get("next_action") or "",
+            "task_id": resume["task_id"],
+            "save_dir": resume.get("save_dir"),
+            "info": resume.get("info"),
+            "counts": env.get("counts") or {},
+            "credits": ev.get("credits_consumed"),
+            "actual_cost": ev.get("actual_cost")}
+
+
+def _held_result(n, variant, env, hold):
+    """X05: ONE held attempt reported as itself -- never ``ok``, never
+    ``FAILED``. The paid task and its charge are retained, delivery is not
+    claimed, and ``recovery`` names the save-only resume: no resubmit."""
+    return {"n": n, "variant": variant, "status": "HELD", "take": None,
+            "heard": None, "concerns": [], "receipt": None,
+            "attempt": 1, "attempts": 1, "receipts": [],
+            "delivery": False, "resubmit": False,
+            "recovery": {"command": "save", "task_id": hold["task_id"],
+                         "save_dir": hold["save_dir"], "info": hold["info"]},
+            "hold": hold, "envelope": env, "counts": env["counts"]}
+
+
+def save_only_plan(env):
+    """X05: the exact adapter ``save`` command for a held attempt, or [] when
+    the envelope is not a resumable save hold. Generation is never in it."""
+    hold = _save_hold(env)
+    if not hold:
+        return []
+    argv = ["save", "--task-id", hold["task_id"], "--json"]
+    if hold["save_dir"]:
+        argv += ["--save-dir", str(hold["save_dir"])]
+    if hold["info"]:
+        argv += ["--info", str(hold["info"])]
+    return argv
+
+
+def resume_save_only(env, call):
+    """X05: resume ONE held attempt by RE-SAVING its existing task id.
+
+    ``call`` is the dispatcher's adapter call (``_call(runner, adapter, argv)``
+    shape): it takes argv and returns ``(rc, json_or_None, raw)``. Nothing here
+    can submit or generate, so a recovery adds ZERO provider submissions. The
+    re-saved files are verified (present, regular, non-empty) before any is
+    reported; a recovery that yields nothing usable stays a hold."""
+    argv = save_only_plan(env)
+    if not argv:
+        return {"ok": False, "reason_code": "NOT_A_SAVE_HOLD",
+                "detail": "the envelope carries no resumable save recovery",
+                "argv": [], "saved_paths": []}
+    try:
+        rc, v, raw = call(argv)
+    except Exception as exc:                     # noqa: BLE001 - reported, never raised
+        return {"ok": False, "reason_code": "KIE_SAVE_FAILED",
+                "detail": "the save command raised: %s" % exc,
+                "argv": argv, "saved_paths": []}
+    listed = v.get("saved_paths") if isinstance(v, dict) else None
+    if not isinstance(listed, list):
+        return {"ok": False, "reason_code": "KIE_SAVE_PATHS_UNSUPPORTED",
+                "detail": "saved_paths answered %s, not a list"
+                          % type(listed).__name__,
+                "argv": argv, "saved_paths": []}
+    good, missing, empty = [], [], []
+    for p in listed:
+        try:
+            if isinstance(p, str) and os.path.isfile(p):
+                if os.path.getsize(p) > 0:
+                    good.append(p)
+                else:
+                    empty.append(p)
+                continue
+        except OSError:
+            pass
+        missing.append(repr(p)[:80])
+    if listed and not (missing or empty):
+        return {"ok": True, "reason_code": "", "detail": "",
+                "argv": argv, "saved_paths": good, "rc": rc}
+    return {"ok": False,
+            "reason_code": ("KIE_SAVE_OUTPUT_MISSING" if missing else
+                            "KIE_SAVE_OUTPUT_EMPTY" if empty else "KIE_SAVE_EMPTY"),
+            "detail": ("no verified file: %s" % ", ".join(missing[:5])) if missing
+                      else ("zero-byte: %s" % ", ".join(empty[:5])) if empty
+                      else "the save command listed no output file",
+            "argv": argv, "saved_paths": good, "rc": rc}
+
+
 def _brief_refusals(variant):
     """WW-26: the ten-direction completeness of ONE variant brief. [] = complete.
 
@@ -103,10 +337,17 @@ def _banned_words(style_id):
     _sr = getattr(_R, "suno_recipe", _R)
     try:
         sid = _sr._style_key(style_id)
+    except Exception:   # noqa: BLE001  the catalog owns the fifteen additions
+        sid = str(style_id)
+    try:
         raps = sid in getattr(_sr, "RAP_STYLE_IDS", ()) or bool(
             _sr.music_block(sid).get("rap_allowed"))
-    except Exception:   # noqa: BLE001  unknown style -> the stricter set
-        raps = False
+    except Exception:   # noqa: BLE001  no music template yet -> ask the catalog
+        try:
+            from music_styles import catalog as _CAT
+            raps = "rap" in _CAT.CATALOG[_CAT._style_key(sid)]["deliveries"]
+        except Exception:   # noqa: BLE001  unknown style -> the stricter set
+            raps = False
     words = list(_BANNED_ALWAYS) + list(_BANNED_SHARED)
     if not raps:
         words += ["rap", "rapping"]
@@ -237,7 +478,8 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
         # level except the route model and the callBackUrl.
         style = _sr.brief_style_text(style_id, _brief_text(v, vocal_gender),
                                      sheet, vocal_gender, pace_plan,
-                                     tail_clause=v["brief"]["arrangement"])
+                                     tail_clause=v["brief"]["arrangement"],
+                                     revoices_lead=bool(v.get("revoices_lead")))
         req = dict(req, input=dict(req["input"], style=style))
         # FU-HOOK-PLACEMENT: the hook plan must ride the request BEFORE the
         # pre-spend validation so the hook-count gate judges it with the same
@@ -512,7 +754,6 @@ def _operation_failed_envelope(generate, variant, failure, operation, judged,
         causal_chain=list(env["causal_chain"])
         + [causal_link(operation, code, detail)])
 
-
 def one_variant(n, variant, request, plan, generate, measure, save, script_words, hook_text,
                 spoken_range_pct=None, **kw):
     """THE single-variant worker path. Every caller (the umbrella three-up
@@ -527,7 +768,9 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
 
     WW-18: `run_takes` delivers only a take whose REQUIRED gate set all PASSed
     (its constituent receipt is current), so `status` is never a take that a
-    required gate blocked; the receipt rides the result to the delivery gate."""
+    required gate blocked; the receipt rides the result to the delivery gate.
+
+    S75-W02-U3: every result carries the COMPLETE typed attempt envelope    (``envelope``) and its seven counts (``counts``) -- refusal reason, next    action and the causal chain survive this wrapper boundary, and the counts    are never conflated. An attempt that ended with no take can never be    narrated as a successful dispatch."""
     opts = dict(kw)
     opts.setdefault("style_id", request.get("_style_id"))
     # S75-W02-U3: where the FINALIZED envelope is written. run_takes never    # sees this key.
@@ -599,12 +842,24 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             ev["persistence_path"] = path or _envelope_path(str(envelope_run_dir),
                                                             variant["id"])
             env = dict(env, evidence=ev)
+        # X05: a save hold crossed this boundary too. It is still a hold.
+        hold = _save_hold(env)
+        if hold:
+            return _held_result(n, variant, env, hold)
         return {"n": n, "variant": variant, "status": status, "take": None,
                 "heard": held, "concerns": [], "receipt": held_rcpt,
                 "attempt": 1, "attempts": 1, "receipts": list(judged),
                 "envelope": env, "counts": env["counts"],
                 "persistence_error": persist_error or None}
     got = None if r["verdict"] == "FAIL" else r
+    env = _finish_envelope(generate, variant, r, got, heard)
+    if envelope_run_dir:
+        _write_envelope(envelope_run_dir, variant["id"], env)
+    # X05: provider success + save failure is a named HOLD with a retained task
+    # id and charge -- never a failure that invites a resubmit.
+    hold = _save_hold(env)
+    if hold:
+        return _held_result(n, variant, env, hold)
     return {"n": n, "variant": variant,
             "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
@@ -613,7 +868,8 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             "heard": None if got else (heard[-1] if heard else None),
             "concerns": [] if got else failure_concerns(r),
             "receipt": got.get("receipt") if got else (r.get("receipt")),
-            "attempt": 1, "attempts": 1, "receipts": r["receipts"]}
+            "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            "envelope": env, "counts": env["counts"]}
 
 
 def run_unit(requests, unit_id=None, variant_id=None, **kw):
@@ -783,12 +1039,10 @@ def acceptance_from_run(run_dir):
     return _SD.acceptance_from_run(run_dir)
 
 
-def _acceptance_refusal(run_dir, action, *, write_cache=True):
+def _acceptance_refusal(run_dir, action):
     """None when the boundary is not applicable or has passed; else the
     refusal that holds the offer, the pick and every paid job."""
-    if write_cache:
-        return _SD.acceptance_refusal(run_dir, action)
-    return _SD.acceptance_refusal(run_dir, action, write_cache=False)
+    return _SD.acceptance_refusal(run_dir, action)
 
 
 def fan_in(results, run_dir, delivery_dir, **kw):
@@ -1154,18 +1408,15 @@ def failure_concerns(result):
 def failure_fork_message(results):
     """The one client message when any take failed the judge: the concerns in
     plain words, the client's freedom to say a take is fine, and the ONE
-    question. No jargon, no second question. A FAILED take with NO audio was
-    never presented for listening, so it never reaches the fork and the message
-    names no such version at all (designed absence)."""
-    presented = [r for r in results or [] if (r.get("take") or r.get("heard"))]
-    failed = [r for r in presented if str(r.get("status") or "").upper() == "FAILED"]
+    question. No jargon, no second question."""
+    failed = [r for r in results or [] if str(r.get("status") or "").upper() == "FAILED"]
     msg = ["I listened through your song options and checked them carefully.", ""]
     for r in failed:
         concerns = r.get("concerns") or failure_concerns(r)
         msg.append("Version %d needs work: %s."
                    % (r.get("n"), "; ".join(concerns) if concerns else "it did not pass my check"))
-    if len(failed) < len(presented):
-        passed = [r for r in presented if r not in failed]
+    if len(failed) < len(results or []):
+        passed = [r for r in results or [] if r not in failed]
         msg += ["", "Version %s came through cleanly, and you can still pick one of those."
                 % ", ".join(str(r.get("n")) for r in passed)]
     msg += ["", "These are my notes, not the final word: you may listen and decide one of "
@@ -1356,14 +1607,13 @@ def record_pick(run_dir, reply):
     return o["label"]
 
 
-def refusal(run_dir, *, write_cache=True):
+def refusal(run_dir):
     """None when work may go on; else the refusal. No state file = answered No.
 
     WW-21 first: a take whose required gate set is not all PASS holds EVERY
     later stage (picture timing, paid video, image, lip-sync) before the pick
     check is even consulted."""
-    ahold = (_acceptance_refusal(run_dir, "every later stage") if write_cache else
-             _acceptance_refusal(run_dir, "every later stage", write_cache=False))
+    ahold = _acceptance_refusal(run_dir, "every later stage")
     if ahold:
         return ahold
     try:
@@ -1386,13 +1636,18 @@ def refusal(run_dir, *, write_cache=True):
 def _refuse(why, code="SONG_PICK_MISSING"):
     return {"reason_code": code, "detail": why,
             "next_action": "Send the client the three songs and wait for their pick (1, 2 or 3). "
-                           "No picture timing, video, image or lip-sync job starts before it."}
+                           "No picture timing, video, image or lip-sync job starts before it.",
+            # S75-W02-U3: the refusal travels as an envelope with its causal
+            # chain, so a wrapper boundary can never flatten it to a bare "no".
+            "causal_chain": [causal_link("song_choices", code, why)]}
 
 
 def _refuse_constituent(why):
     return {"reason_code": "SONG_CONSTITUENT_EVIDENCE_MISSING", "detail": why,
             "next_action": "Re-record the take's constituent-evidence receipt (every required "
-                           "gate PASS) before any picture, image or video spend."}
+                           "gate PASS) before any picture, image or video spend.",
+            "causal_chain": [causal_link("song_choices",
+                                         "SONG_CONSTITUENT_EVIDENCE_MISSING", why)]}
 
 
 def constituent_hold(run_dir):
@@ -1472,6 +1727,34 @@ def _mode_family(mode):
     return "unit" if str(mode or "").startswith("unit:") else "umbrella"
 
 
+def mode_refusal(run_dir, mode):
+    """Read-only: None when ``mode`` may run on this run dir, else the refusal.
+
+    No record yet = nothing chosen. A record that exists but cannot be read is
+    a refusal too -- a damaged record must never reopen the other family."""
+    path = os.path.join(run_dir, "music", "dispatch-mode.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        current = doc.get("family") or (_mode_family(doc["mode"])
+                                        if "mode" in doc else None)
+    except (OSError, ValueError, AttributeError, KeyError):
+        current = None
+    if current not in ("unit", "umbrella"):
+        return ("REFUSED: the run's dispatch-mode record is unreadable; "
+                "refusing to choose a mode over it")
+    family = _mode_family(mode)
+    if current != family:
+        return ("REFUSED: this run already dispatches in the %r mode family; it "
+                "cannot also dispatch %r (%r family). Pick exactly ONE of umbrella "
+                "or orchestrated-unit per run -- mixing them is how nine paid "
+                "generations are bought for a three-variant run."
+                % (current, mode, family))
+    return None
+
+
 def _record_mode(run_dir, mode):
     """X07: persist the ONE chosen dispatch mode FAMILY before any paid call.
 
@@ -1481,37 +1764,45 @@ def _record_mode(run_dir, mode):
     sequential DISTINCT units on one run dir are the documented three-unit
     flow and are ALLOWED. A same-family restart is left to the
     ledger/acknowledged-task resume path, never a second family.
+
+    First selection is create-once (private temp file + fsync + ``os.link``):
+    two racing opposite-family first selections yield exactly one winner, the
+    loser is refused, and the record is never torn.
     """
     path = os.path.join(run_dir, "music", "dispatch-mode.json")
-    current = None
-    try:
-        with open(path, encoding="utf-8") as f:
-            doc = json.load(f) or {}
-        current = doc.get("family") or _mode_family(doc.get("mode"))
-    except (OSError, ValueError):
-        current = None
-    family = _mode_family(mode)
-    if current and current != family:
-        raise ChoiceError(
-            "REFUSED: this run already dispatches in the %r mode family; it "
-            "cannot also dispatch %r (%r family). Pick exactly ONE of umbrella "
-            "or orchestrated-unit per run -- mixing them is how nine paid "
-            "generations are bought for a three-variant run."
-            % (current, mode, family))
-    if current == family:
+    existed = os.path.exists(path)      # BEFORE the check: a record that appears
+    why = mode_refusal(run_dir, mode)   # after this is still judged by the check
+    if why:
+        raise ChoiceError(why)
+    if existed:
         return mode
-    partial = path + ".partial"
+    tmp = None
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(partial, "w", encoding="utf-8") as f:
-            json.dump({"mode": mode, "family": family}, f, sort_keys=True)
-        os.replace(partial, path)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path),
+                                   prefix="dispatch-mode.", suffix=".partial")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"mode": mode, "family": _mode_family(mode)}, f,
+                      sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:   # lost the race: the winner's record decides
+            why = mode_refusal(run_dir, mode)
+            if why:
+                raise ChoiceError(why)
     except OSError as exc:
         raise ChoiceError(
             "REFUSED: the dispatch mode could not be persisted before any paid "
             "call: %s" % exc) from exc
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
     return mode
-
 
 def _load_request(path, cli_run_dir=None):
     """Read the music request and pull the pieces build_requests needs.
@@ -1532,6 +1823,10 @@ def _load_request(path, cli_run_dir=None):
             "vocal_gender": inp.get("vocal_gender", doc.get("vocal_gender", "f")),
             "hook_plan": doc.get("hook_plan") or doc.get("_hook_plan"),
             "pace_plan": doc.get("pace_plan") or doc.get("_pace_plan"),
+            # S75-T41: the run's DISPLAY references (artists, aliases,
+            # reference songs).  They ride to the dispatch seam, which sweeps
+            # every outbound payload for them; never a provider field.
+            "client_references": doc.get("client_references"),
             "run_authorities": _run_dir_authorities(doc, cli_run_dir)}
 
 
@@ -1555,11 +1850,34 @@ def _hook_text(spec):
 def _envelope_path(run_dir, variant_id):
     return os.path.join(run_dir, "music", "takes", variant_id, "dispatch-envelope.json")
 
-def _write_envelope(run_dir, variant_id, evidence):
+def _write_envelope(run_dir, variant_id, payload):
+    """Persist ONE attempt's envelope under music/takes/<variant>/.
+
+    S75-W02-U3: the COMPLETE typed envelope is preserved per attempt --    outcome, refusal reason, next action, the seven counts and the causal
+    chain -- never only the provider evidence. A legacy raw-evidence payload    (pre-contract callers) is still accepted and wrapped, never saved alone.
+    """
+    env, ev = None, {}
+    if isinstance(payload, dict) and \
+            payload.get("schema_version") == ENVELOPE_SCHEMA_VERSION and \
+            isinstance(payload.get("counts"), dict):
+        env = attempt_envelope(payload.get("variant_id") or variant_id,
+                               payload.get("attempt_id"), payload.get("outcome"),
+                               payload.get("counts"),
+                               reason_code=payload.get("reason_code", ""),
+                               detail=payload.get("detail", ""),
+                               next_action=payload.get("next_action", ""),
+                               evidence=payload.get("evidence"),
+                               causal_chain=payload.get("causal_chain") or ())
+        ev = env["evidence"]
+    elif isinstance(payload, dict):
+        ev = payload                      # legacy raw evidence write
     p = _envelope_path(run_dir, variant_id)
     os.makedirs(os.path.dirname(p), exist_ok=True)
+    doc = {"variant_id": variant_id, "evidence": ev}
+    if env is not None:
+        doc["envelope"] = env
     with open(p, "w", encoding="utf-8") as f:
-        json.dump({"variant_id": variant_id, "evidence": evidence}, f, indent=2, sort_keys=True)
+        json.dump(doc, f, indent=2, sort_keys=True)
     return p
 
 
@@ -1669,14 +1987,32 @@ def _real_generate(run_dir, ledger, run_id):
                            attempt_id="", estimated_cost=_SD.GEN_COST_CENTS,
                            prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
-        _write_envelope(run_dir, variant["id"], ev)
+        # S75-W02-U3: the COMPLETE typed envelope per attempt is preserved           # here -- outcome, refusal reason, next action and the dispatch-boundary           # counts (evaluated/delivered are folded in at the judge boundary) --           # never only the evidence above. The refusal triple of a rejected or           # waiting dispatch survives this boundary verbatim.
+        _raw_outcome = env.get("outcome") if isinstance(env, dict) else "error"
+        _outcome = _raw_outcome if _raw_outcome in ENVELOPE_OUTCOMES else "error"
+        _reason = (env.get("reason_code") or "") if isinstance(env, dict) else ""
+        _next = (env.get("next_action") or "") if isinstance(env, dict) else ""
+        if _outcome != "ok":
+            _reason = _reason or "DISPATCH_NOT_OK"
+            _next = _next or _EMPTY_NEXT_ACTION
+        # The ledger's committed attempt id, never a locally-minted suffix.
+        _aid = (env.get("attempt_id") if isinstance(env, dict) else None) or ""
+        _aenv = attempt_envelope(
+            variant["id"], _aid or "a1",
+            _outcome, _counts_from_dispatch(env, ev),
+            reason_code=_reason,
+            detail=str(ev.get("detail") or ""),
+            next_action=_next, evidence=ev,
+            causal_chain=[causal_link("kie_dispatch",
+                                      _reason or "KIE_DISPATCH_OK",
+                                      str(ev.get("detail") or ""))])
+        generate.attempt_envelopes[variant["id"]] = _aenv
+        _write_envelope(run_dir, variant["id"], _aenv)
         # D2 item 3: the overlap receipt, built from the PROVIDER lifecycle
         # stamps only. accepted_submit_at is stamped after a valid task-id
         # acknowledgment; terminal_at at the first terminal provider response.
         # No receipt when the provider never acknowledged or never terminated:
         # the gate then reports UNAVAILABLE, which is never a pass.
-        # The ledger's committed attempt id, never the caller's literal.
-        _aid = (env.get("attempt_id") if isinstance(env, dict) else None) or ""
         if _aid and ev.get("accepted_submit_at") and ev.get("terminal_at"):
             receipt_for(run_dir, variant, request, _aid, ev.get("task_id"),
                         ev["accepted_submit_at"], ev["terminal_at"])
@@ -1693,6 +2029,10 @@ def _real_generate(run_dir, ledger, run_id):
             for p in ev.get("saved_paths", []) or []:
                 takes.append(dict(prov, audio_path=p))
         return takes
+
+    # S75-W02-U3: the per-attempt envelopes this transport preserved, keyed by
+    # variant id -- one_variant reads them to fold in the judge-boundary counts.
+    generate.attempt_envelopes = {}
     return generate
 
 
@@ -1723,13 +2063,6 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     if not str(hook_text).strip():
         raise ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
                           "sung hook); the hook gate cannot be skipped")
-    # X07: the ONE three-variant mode FAMILY is persisted before any paid
-    # effect, and only after the run itself has passed its local refusals.
-    # The label is the CANONICAL variant id, resolved through the SAME
-    # selector the dispatch uses, so --variant polished-modern and
-    # --unit-id WW-001 name the SAME key (labeling the raw flag spelling made
-    # the two spellings of one variant differ, and a redispatch under the
-    # other spelling was falsely refused).
     reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
                           spec["title"], spec["length_s"], spec["vocal_gender"],
                           hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
@@ -1746,7 +2079,10 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     gen = generate or _real_generate(run_dir, a.ledger, a.run_id)
     kw = dict(plan=plan, generate=gen, measure=measure, save=save,
               script_words=_sheet_lyric_words(spec), hook_text=hook_text,
-              envelope_run_dir=run_dir, run_dir=run_dir)
+              envelope_run_dir=run_dir, run_dir=run_dir,
+              # S75-T41: the run's display references, swept at the dispatch
+              # seam before anything reaches the provider.
+              alias_catalog=spec.get("client_references") or {})
     # WWFIXGAPS U1 (defect 3): the reported count is MEASURED from the run that
     # actually happened, never a literal -- and S75-W02-U3 reports the seven
     # lifecycle counts SEPARATELY. ``dispatched`` is the submitted count (the
@@ -1757,11 +2093,21 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
         results = run_unit(reqs, unit_id=a.unit_id or None, variant_id=a.variant or None, **kw)
     else:
         results = generate_choices(reqs, **kw)
-    dispatched = sum(int(r.get("attempts") or 0) for r in results)
+    counts = add_counts(*[r.get("counts") or {} for r in results])
+    outcomes = [(r.get("envelope") or {}).get("outcome") for r in results]
+    run_outcome = (RUN_OUTCOMES[0] if outcomes and all(o == "ok" for o in outcomes)
+                   else RUN_OUTCOMES[1] if any(o == "ok" for o in outcomes)
+                   else RUN_OUTCOMES[2])
+    # C11 port: 999-era callers report attempts only; the product tree reports
+    # submitted counts. Prefer the measured count; fall back to attempts.
+    dispatched = (counts["submitted"] if any(r.get("counts") for r in results)
+                else sum(int(r.get("attempts") or 0) for r in results))
     if a.variant or a.unit_id:
-        out = {"mode": "orchestrated", "dispatched": dispatched, "results": results}
+        out = {"mode": "orchestrated", "outcome": run_outcome,
+               "dispatched": dispatched, "counts": counts, "results": results}
     else:
-        out = {"mode": "umbrella", "dispatched": dispatched, "results": results,
+        out = {"mode": "umbrella", "outcome": run_outcome,
+               "dispatched": dispatched, "counts": counts, "results": results,
                "media_concurrency": 3, "builder_agent_units": 1,
                "note": "3 provider jobs in 3 THREADS inside ONE agent unit; "
                        "threads are not visible agents"}
@@ -1840,6 +2186,12 @@ def main(argv=None):
                 save=_ST.make_save(_run_dir))
             json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
             sys.stdout.write("\n")
+            if out.get("outcome") != "ok":
+                # S75-W02-U3: exit 0 is reserved for a run whose every attempt
+                # actually dispatched. An empty take list or a refused dispatch
+                # prints its typed envelope above and exits NONZERO -- it can
+                # never be narrated as a successful dispatch.
+                return 5
         else:
             r = refusal(a.run_dir)
             if r:
