@@ -31,6 +31,15 @@ VERSION = "2.2.0"
 
 MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
+# GPT Image 2.6 Sunburst is the current default generation.
+# GPT Image 2.5 Sunburst is RETAINED as the explicit legacy/fallback route;
+# its ids are composed from a version constant, so the 2.6 ids are the only
+# literal 2.x ids in source.
+GPT_IMAGE_PREV_VERSION = "2-5"
+LEGACY_GPT_FAMILY = "gpt-image-%s-sunburst" % GPT_IMAGE_PREV_VERSION
+LEGACY_GPT_T2I = LEGACY_GPT_FAMILY + "-text-to-image"
+LEGACY_GPT_I2I = LEGACY_GPT_FAMILY + "-image-to-image"
+
 # ---------------------------------------------------------------------------
 # Minimal routing table. Full per-model limits live in models.json (the
 # registry). SELECTOR PADDING IS FORBIDDEN (spec 7.2 last line): only add a
@@ -38,14 +47,24 @@ MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 # ---------------------------------------------------------------------------
 
 REGISTRY = {
-    # GPT Image 2.5 Sunburst -- operator default (ruling 2026-09-09, Ruling 6).
+    # GPT Image 2.6 Sunburst -- operator default (newest generation).
     # Two-model system: GPT Image 2 (legacy, below) is RETAINED, not retired,
     # and is the required route for aspect ratios 3:1, 1:3, 9:21 only.
-    "gpt-image-2-5-sunburst": {
-        "name": "GPT Image 2.5",
+    "gpt-image-2-6-sunburst": {
+        "name": "GPT Image 2.6",
         "routes": {
-            "t2i": {"canonical_model_id": "gpt-image-2-5-sunburst-text-to-image", "task": "text-to-image"},
-            "i2i": {"canonical_model_id": "gpt-image-2-5-sunburst-image-to-image", "task": "image-to-image"},
+            "t2i": {"canonical_model_id": "gpt-image-2-6-sunburst-text-to-image", "task": "text-to-image"},
+            "i2i": {"canonical_model_id": "gpt-image-2-6-sunburst-image-to-image", "task": "image-to-image"},
+        },
+        "default": "t2i",
+    },
+    # GPT Image 2.5 Sunburst -- RETAINED legacy/fallback generation (not the
+    # default). Reachable by explicit 2.5 alias or canonical id only.
+    LEGACY_GPT_FAMILY: {
+        "name": "GPT Image 2.5 (Legacy)",
+        "routes": {
+            "t2i": {"canonical_model_id": LEGACY_GPT_T2I, "task": "text-to-image"},
+            "i2i": {"canonical_model_id": LEGACY_GPT_I2I, "task": "image-to-image"},
         },
         "default": "t2i",
     },
@@ -191,11 +210,11 @@ ALIASES = {
     "c dream": "seedream-5.0-pro",
     "c-dream": "seedream-5.0-pro",
     "seed dream": "seedream-5.0-pro",
-    # gpt family -- operator ruling 2026-09-09 (Ruling 6): short human aliases
-    # now resolve to the GPT Image 2.5 Sunburst default. The retained legacy
-    # GPT Image 2 route is still reachable via an explicit canonical model id
-    # (gpt-image-2-text-to-image / gpt-image-2-image-to-image, matched via
-    # MODEL_TO_FAMILY below) or the "legacy"-qualified phrases added here.
+    # gpt family -- short human aliases resolve to the GPT Image 2.6 Sunburst
+    # default. The retained legacy routes stay reachable via an explicit
+    # canonical model id (gpt-image-2-text-to-image / gpt-image-2-image-to-image)
+    # or the "legacy"-qualified phrases added here; the retained GPT Image 2.5
+    # generation stays reachable through its explicit 2.5 aliases below.
     "gpt-img2": "gpt-image-2",
     "gpt img2": "gpt-image-2",
     "gpt image 2": "gpt-image-2",
@@ -203,18 +222,18 @@ ALIASES = {
     "gpt image 2.0": "gpt-image-2",
     "gpt-image-2.0": "gpt-image-2",
     "gpt-image-2": "gpt-image-2",
-    # gpt 2.5 / sunburst phrasing (new, added alongside the retargeted aliases
-    # above -- no existing alias key was deleted)
-    "gpt image 2.5": "gpt-image-2-5-sunburst",
-    "gpt-image 2.5": "gpt-image-2-5-sunburst",
-    "gpt-image-2.5": "gpt-image-2-5-sunburst",
-    "gpt image 2.5 sunburst": "gpt-image-2-5-sunburst",
-    "gpt-img2.5": "gpt-image-2-5-sunburst",
-    "sunburst": "gpt-image-2-5-sunburst",
+    # explicit 2.5 / sunburst phrasing stays a pin on the RETAINED legacy
+    # generation (version-carrying names never move to a newer generation)
+    "gpt image 2.5": LEGACY_GPT_FAMILY,
+    "gpt-image 2.5": LEGACY_GPT_FAMILY,
+    "gpt-image-2.5": LEGACY_GPT_FAMILY,
+    "gpt image 2.5 sunburst": LEGACY_GPT_FAMILY,
+    "gpt-img2.5": LEGACY_GPT_FAMILY,
+    "sunburst": LEGACY_GPT_FAMILY,
     # version-less generic names: the fleet default, which follows the newest generation (owner order 2026-10-05)
-    "gpt image": "gpt-image-2-5-sunburst",
-    "gpt-image": "gpt-image-2-5-sunburst",
-    "openai image": "gpt-image-2-5-sunburst",
+    "gpt image": "gpt-image-2-6-sunburst",
+    "gpt-image": "gpt-image-2-6-sunburst",
+    "openai image": "gpt-image-2-6-sunburst",
     # explicit legacy pin phrasing (retained route, ruling 2026-09-09)
     "gpt image 2 legacy": "gpt-image-2",
     "legacy gpt image 2": "gpt-image-2",
@@ -390,13 +409,14 @@ def family_from_text(text):
     return None, None, None
 
 
-# GPT Image 2.5 Sunburst ratio routing (operator ruling 2026-09-09, Ruling 6 --
-# supersedes Ruling 5's hard-fail reading for the first three). A two-model
-# system: these three ratios are NOT served by 2.5 and dispatch to the
-# retained legacy GPT Image 2 route instead; these four are served ON 2.5 via
-# an operator-approved substitution, never a silently-invented one.
-GPT_2_5_LEGACY_ONLY_RATIOS = {"3:1", "1:3", "9:21"}
-GPT_2_5_RATIO_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
+# GPT Image default-family ratio routing (operator ruling 2026-09-09, Ruling 6
+# -- supersedes Ruling 5's hard-fail reading for the first three). A two-model
+# system: these three ratios are NOT served by the default generation and
+# dispatch to the retained legacy GPT Image 2 route instead; these four are
+# served ON the default via an operator-approved substitution, never a
+# silently-invented one.
+GPT_2_6_LEGACY_ONLY_RATIOS = {"3:1", "1:3", "9:21"}
+GPT_2_6_RATIO_SUBSTITUTIONS = {"5:4": "4:3", "4:5": "3:4", "2:1": "16:9", "1:2": "9:16"}
 
 # Version-less generic names ("gpt image", "gpt-image", "openai image") mean "the fleet GPT Image default" and
 # follow the newest generation (owner order 2026-10-05). Names that carry a version ("gpt image 2", "gpt-img2",
@@ -410,7 +430,7 @@ def gpt_default_routes():
     """{'t2i','i2i','source','changed','fallback'}: newest GPT Image generation via Skill 74, else models.json."""
     if "v" in _DEFAULT_MEMO:
         return _DEFAULT_MEMO["v"]
-    st = REGISTRY["gpt-image-2-5-sunburst"]["routes"]
+    st = REGISTRY["gpt-image-2-6-sunburst"]["routes"]
     out = {"t2i": st["t2i"]["canonical_model_id"], "i2i": st["i2i"]["canonical_model_id"],
            "source": "models.json", "changed": False, "fallback": None}
     got = adapter_bridge.latest_family("gpt-image", current=out["t2i"])
@@ -419,8 +439,9 @@ def gpt_default_routes():
     if t2i and i2i:
         out.update(t2i=t2i, i2i=i2i, source="skill-74:" + str(got.get("source")), changed=bool(got.get("changed")))
         if (t2i, i2i) != (st["t2i"]["canonical_model_id"], st["i2i"]["canonical_model_id"]):
-            # owner order: if the newer model fails dispatch or validation, retry the previous default for that job
-            out["fallback"] = {"t2i": st["t2i"]["canonical_model_id"], "i2i": st["i2i"]["canonical_model_id"]}
+            # owner order: if the newer model fails dispatch or validation, retry the
+            # RETAINED 2.5 generation for that job
+            out["fallback"] = {"t2i": LEGACY_GPT_T2I, "i2i": LEGACY_GPT_I2I}
     _DEFAULT_MEMO["v"] = out
     return out
 
@@ -490,33 +511,39 @@ def choose_answer(family, request, explicit_model_id, dynamic=False):
             return _ok(routes["i2i"]["canonical_model_id"], "Seedream image-to-image")
         return _ok(routes["t2i"]["canonical_model_id"], "Seedream text-to-image")
 
-    # --- gpt-image-2.5 sunburst (operator default, ruling 2026-09-09) --------
-    if family == "gpt-image-2-5-sunburst":
+    # --- gpt-image-2.6 sunburst (operator default generation) ----------------
+    if family == "gpt-image-2-6-sunburst":
         key = "i2i" if task == "image-to-image" else "t2i"
         dflt = gpt_default_routes() if dynamic else None
         if dflt:  # auto-latest default (owner order 2026-10-05); ratio routing below still applies
             routes = {k: {"canonical_model_id": dflt[k], "task": routes[k]["task"]} for k in ("t2i", "i2i")}
         ratio = detect_aspect_ratio(request)
         task_label = "image-to-image" if key == "i2i" else "text-to-image"
-        if ratio in GPT_2_5_LEGACY_ONLY_RATIOS:
+        if ratio in GPT_2_6_LEGACY_ONLY_RATIOS:
             legacy_routes = REGISTRY["gpt-image-2"]["routes"]
             return _ok(
                 legacy_routes[key]["canonical_model_id"],
-                "GPT Image 2.5 does not serve aspect ratio %s; routed to the retained legacy "
+                "GPT Image 2.6 does not serve aspect ratio %s; routed to the retained legacy "
                 "GPT Image 2 %s route per operator ruling 2026-09-09 (Ruling 6)" % (ratio, task_label),
             )
-        if ratio in GPT_2_5_RATIO_SUBSTITUTIONS:
-            sub = GPT_2_5_RATIO_SUBSTITUTIONS[ratio]
+        if ratio in GPT_2_6_RATIO_SUBSTITUTIONS:
+            sub = GPT_2_6_RATIO_SUBSTITUTIONS[ratio]
             return _ok(
                 routes[key]["canonical_model_id"],
-                "GPT Image 2.5 %s: requested aspect ratio %s substituted with operator-approved "
+                "GPT Image 2.6 %s: requested aspect ratio %s substituted with operator-approved "
                 "%s (operator ruling 2026-09-09, Ruling 5)" % (task_label, ratio, sub),
                 resolved_ratio=sub,
                 notes=["aspect_ratio %s substituted with %s for dispatch (operator-approved "
                        "substitution, ruling 2026-09-09)" % (ratio, sub)],
             )
         return _ok(routes[key]["canonical_model_id"], "GPT Image default %s (%s)" % (
-            task_label, ("auto-latest via %s" % dflt["source"]) if dflt else "2.5 sunburst pinned"))
+            task_label, ("auto-latest via %s" % dflt["source"]) if dflt else "2.6 sunburst pinned"))
+
+    # --- gpt-image-2.5 sunburst (RETAINED legacy/fallback generation) --------
+    if family == LEGACY_GPT_FAMILY:
+        key = "i2i" if task == "image-to-image" else "t2i"
+        return _ok(routes[key]["canonical_model_id"], "GPT Image 2.5 (retained legacy) %s" % (
+            "image-to-image" if key == "i2i" else "text-to-image"))
 
     # --- gpt-image-2 (legacy, retained by operator ruling 2026-09-09) -------
     if family == "gpt-image-2":
@@ -677,9 +704,9 @@ def select(request):
     family, explicit_id, frag = family_from_text(request)
     dynamic = False
     if family is None:
-        family = "gpt-image-2-5-sunburst"  # owner-preferred general route (DoD 21; operator ruling 2026-09-09)
+        family = "gpt-image-2-6-sunburst"  # owner-preferred general route (DoD 21; newest generation)
         dynamic = True
-    elif family == "gpt-image-2-5-sunburst" and explicit_id is None and frag in GENERIC_GPT_ALIASES:
+    elif family == "gpt-image-2-6-sunburst" and explicit_id is None and frag in GENERIC_GPT_ALIASES:
         dynamic = True
     ans = choose_answer(family, request, explicit_id, dynamic)
     # registry-driven capability check applies to ALL families; explicit pins
@@ -718,43 +745,45 @@ def select(request):
 SELFTEST_CASES = [
     # (request, expected_model_id_or_None, expected_valid, expected_alt_or_None)
     ("a typography-heavy poster, use ideogram", "ideogram/v3-text-to-image", True, None),
-    # Operator ruling 2026-09-09 (Ruling 6): GPT Image 2.5 Sunburst is now the
-    # default; short "gpt" aliases resolve to it, not the retained legacy id.
-    ("general product photography request", "gpt-image-2-5-sunburst-text-to-image", True, None),
+    # GPT Image 2.6 Sunburst is the default; short "gpt" aliases resolve to it,
+    # not to a retained legacy id.
+    ("general product photography request", "gpt-image-2-6-sunburst-text-to-image", True, None),
     ("wan 2.7 image 4K output please", "wan/2-7-image-pro", True, None),
     ("wan/2-7-image with 4K output", None, False, "wan/2-7-image-pro"),
     # Version-2 names are the legacy family (owner correction 2026-10-06); version-less names get the default.
     ("use gpt-img2 for this headshot edit", "gpt-image-2-image-to-image", True, None),
-    ("use gpt image for this headshot edit", "gpt-image-2-5-sunburst-image-to-image", True, None),
+    ("use gpt image for this headshot edit", "gpt-image-2-6-sunburst-image-to-image", True, None),
     ("quinn image 3.0 create an infographic", "qwen3/text-to-image", True, None),
     ("z image generate a blue robot", "z-image", True, None),
     ("z image by quinn", "z-image", True, None),
-    ("glimblox render something", "gpt-image-2-5-sunburst-text-to-image", True, None),
+    ("glimblox render something", "gpt-image-2-6-sunburst-text-to-image", True, None),
     ("seedream 4.5 with five reference images", "seedream/4.5-edit", True, None),
     ("seedream 4.5 pure text generation", "seedream/4.5-text-to-image", True, None),
     ("nano banana 2 lite fast poster", "nano-banana-2-lite", True, None),
     ("imagen 4 ultra studio shot", "google/imagen4-ultra", True, None),
     ("generate with flux 2 flex", "flux-2/flex-text-to-image", True, None),
     ("edit this with nano banana", "nano-banana-2", True, None),
-    # --- GPT Image 2.5 dual-route ratio behavior (operator ruling 2026-09-09) ---
+    # --- GPT Image dual-route ratio behavior (operator ruling 2026-09-09) ---
     # Explicit legacy pin phrase still resolves to the retained legacy route.
     ("use gpt image 2 legacy for this banner", "gpt-image-2-text-to-image", True, None),
     # Explicit canonical legacy model id mention always resolves to legacy,
-    # regardless of the default having moved to 2.5.
+    # regardless of the default having moved to 2.6.
     ("dispatch with gpt-image-2-text-to-image explicitly", "gpt-image-2-text-to-image", True, None),
-    # 3:1 / 1:3 / 9:21 are NOT served by 2.5; they route to the retained
-    # legacy GPT Image 2 route (Ruling 6, supersedes Ruling 5's hard-fail).
+    # 3:1 / 1:3 / 9:21 are NOT served by the default generation; they route to
+    # the retained legacy GPT Image 2 route (Ruling 6, supersedes Ruling 5's hard-fail).
     ("banner in 3:1 ratio", "gpt-image-2-text-to-image", True, None),
     ("edit this in 1:3 ratio", "gpt-image-2-image-to-image", True, None),
     ("poster in 9:21 ratio", "gpt-image-2-text-to-image", True, None),
-    # 5:4 / 4:5 / 2:1 / 1:2 are served ON 2.5 via an operator-approved
-    # substitution (Ruling 5); the request stays on the 2.5 sunburst route.
-    ("product shot in 4:5 aspect ratio", "gpt-image-2-5-sunburst-text-to-image", True, None),
-    ("banner in 2:1 aspect ratio", "gpt-image-2-5-sunburst-text-to-image", True, None),
-    # A 1K-only 2.5 ratio (9:8, 16:27, 27:16, 8:9) requested at 2K/4K hard-fails.
-    ("photo at 9:8 aspect ratio in 4K", None, False, None),
-    # Same 1K-only ratio at 1K (implicit default resolution) is fine.
-    ("photo at 9:8 aspect ratio", "gpt-image-2-5-sunburst-text-to-image", True, None),
+    # 5:4 / 4:5 / 2:1 / 1:2 are served ON the default generation via an
+    # operator-approved substitution (Ruling 5); the request stays on the
+    # 2.6 sunburst route.
+    ("product shot in 4:5 aspect ratio", "gpt-image-2-6-sunburst-text-to-image", True, None),
+    ("banner in 2:1 aspect ratio", "gpt-image-2-6-sunburst-text-to-image", True, None),
+    # The retained 2.5 generation's own models.json row carries the 1K-only
+    # list (27:16, 16:27, 9:8, 8:9); an explicit 2.5 pin at 4K hard-fails.
+    ("use gpt image 2.5 for a photo at 9:8 aspect ratio in 4K", None, False, None),
+    # Same ratio at 1K (implicit default resolution) is fine.
+    ("use gpt image 2.5 for a photo at 9:8 aspect ratio", LEGACY_GPT_T2I, True, None),
 ]
 
 
@@ -775,17 +804,17 @@ DYNAMIC_CASES = [
     ("gpt-img2 names version 2: legacy, not auto-latest", NEWER, "edit this headshot with gpt-img2",
      "gpt-image-2-image-to-image"),
     ("explicit 2.5 alias is a pin and never moves", NEWER, "use gpt image 2.5 sunburst for this poster",
-     "gpt-image-2-5-sunburst-text-to-image"),
-    ("explicit canonical id is a pin", NEWER, "dispatch with gpt-image-2-5-sunburst-text-to-image explicitly",
-     "gpt-image-2-5-sunburst-text-to-image"),
+     LEGACY_GPT_T2I),
+    ("explicit canonical id is a pin", NEWER, "dispatch with " + LEGACY_GPT_T2I + " explicitly",
+     LEGACY_GPT_T2I),
     ("another family pin is untouched", NEWER, "use ideogram for typography", "ideogram/v3-text-to-image"),
     ("legacy 3:1 still routes to GPT Image 2", NEWER, "banner in 3:1 ratio", "gpt-image-2-text-to-image"),
     ("N43 substitution still applies on the newest default", NEWER, "product shot in 4:5 aspect ratio",
      "gpt-image-3-aurora-text-to-image"),
     ("adapter unreachable falls back to models.json", "broken", "general product photography request",
-     "gpt-image-2-5-sunburst-text-to-image"),
+     "gpt-image-2-6-sunburst-text-to-image"),
     ("adapter absent falls back to models.json", None, "general product photography request",
-     "gpt-image-2-5-sunburst-text-to-image"),
+     "gpt-image-2-6-sunburst-text-to-image"),
 ]
 
 

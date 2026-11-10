@@ -52,6 +52,12 @@ VERSION = "2.2.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
+# The retained 2.5 generation is the GPT Image registry row these limit
+# fixtures exercise; its id is composed so the current default generation stays
+# the only literal 2.x id. GPT Image 2.6 is the default (selector + registry).
+GPT_IMAGE_PREV_VERSION = "2-5"
+LEGACY_GPT_PROMPT_T2I = "gpt-image-%s-sunburst-text-to-image" % GPT_IMAGE_PREV_VERSION
+
 
 def load_registry():
     with open(REGISTRY_PATH, "r", encoding="utf-8") as fh:
@@ -147,15 +153,15 @@ STATIC_CASES = [
     ("wan 4800 in target ok", 4800, "wan/2-7-image", True, "OK", False),
     ("wan 3999 below 80% floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
     ("wan 4000 = floor ok (warn expand)", 4000, "wan/2-7-image", True, "BELOW_TARGET", False),
-    ("gpt-2.5 20000 = max ok", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "OK", False),
-    ("gpt-2.5 19000 = 95% ok", 19000, "gpt-image-2-5-sunburst-text-to-image", True, "OK", False),
-    ("gpt-2.5 20001 above max rejected", 20001, "gpt-image-2-5-sunburst-text-to-image", False, "ABOVE_MAX", True),
-    ("gpt-2.5 16000 = 80% floor ok (warn expand)", 16000, "gpt-image-2-5-sunburst-text-to-image", True,
+    ("gpt-2.5 20000 = max ok", 20000, LEGACY_GPT_PROMPT_T2I, True, "OK", False),
+    ("gpt-2.5 19000 = 95% ok", 19000, LEGACY_GPT_PROMPT_T2I, True, "OK", False),
+    ("gpt-2.5 20001 above max rejected", 20001, LEGACY_GPT_PROMPT_T2I, False, "ABOVE_MAX", True),
+    ("gpt-2.5 16000 = 80% floor ok (warn expand)", 16000, LEGACY_GPT_PROMPT_T2I, True,
      "BELOW_TARGET", False),
-    ("gpt-2.5 15999 under 80% rejected", 15999, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
-    ("gpt-2.5 9500 (old house target) now rejected", 9500, "gpt-image-2-5-sunburst-text-to-image", False,
+    ("gpt-2.5 15999 under 80% rejected", 15999, LEGACY_GPT_PROMPT_T2I, False, "BELOW_FLOOR", False),
+    ("gpt-2.5 9500 (old house target) now rejected", 9500, LEGACY_GPT_PROMPT_T2I, False,
      "BELOW_FLOOR", False),
-    ("gpt-2.5 300 chars rejected", 300, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
+    ("gpt-2.5 300 chars rejected", 300, LEGACY_GPT_PROMPT_T2I, False, "BELOW_FLOOR", False),
     ("legacy gpt-image-2 20000 = live schema max ok", 20000, "gpt-image-2-text-to-image", True, "OK", False),
     ("legacy gpt-image-2 15999 below its 16000 floor", 15999, "gpt-image-2-text-to-image", False, "BELOW_FLOOR", False),
     ("legacy gpt-image-2 20001 above max (N43 25,000 superseded)", 20001, "gpt-image-2-text-to-image", False,
@@ -189,7 +195,7 @@ ADAPTER_CASES = [
     ("new model 29000 ok via adapter", 29000, "gpt-image-3-aurora-text-to-image", True, "OK", False),
     ("new model 23999 under 80% rejected", 23999, "gpt-image-3-aurora-text-to-image", False, "BELOW_FLOOR", False),
     ("new model 30001 above max rejected", 30001, "gpt-image-3-aurora-text-to-image", False, "ABOVE_MAX", True),
-    ("adapter limit beats models.json (gpt-2.5 now 30000)", 20000, "gpt-image-2-5-sunburst-text-to-image", False,
+    ("adapter limit beats models.json (gpt-2.5 now 30000)", 20000, LEGACY_GPT_PROMPT_T2I, False,
      "BELOW_FLOOR", False),
 ]
 
@@ -227,7 +233,7 @@ def selftest():
         os.environ["KIE_LIVE_ADAPTER_PATH"] = script
         _run_cases(ADAPTER_CASES, failures)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json
-        _run_cases([("adapter unreachable: models.json limit", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "OK",
+        _run_cases([("adapter unreachable: models.json limit", 20000, LEGACY_GPT_PROMPT_T2I, True, "OK",
                      False)], failures)
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
