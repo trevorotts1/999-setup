@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-10T12:06:49Z",
+  "generatedAt": "2026-11-10T14:12:16Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -39,14 +39,14 @@
       "role": "KIE image model selection, prompt constraints, domain QC",
       "kind": "skill",
       "required": true,
-      "version": "v2.2.15",
+      "version": "v2.2.16",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/66-kie-image",
       "installPath": "skills/66-kie-image",
       "fileCount": 22,
-      "sizeBytes": 370330,
-      "treeSha256": "b3de24ae33481e107a7ebb965cf4a01fb6c959ec48573d39ae3de5208f6b73b4",
-      "skillMdSha256": "adb375ee0fd181cb9344e297dfe42f49060f49c81980dd5e1f05b754e59cca01"
+      "sizeBytes": 371100,
+      "treeSha256": "6339350fd75ded5a3f5bf2f368693c0ad4112a7025c0b590e043bdbba677b119",
+      "skillMdSha256": "0f3c63a917196a8469b3faabe1926f1fafbfe4272f7f5bbe86447caa68dd7590"
     },
     {
       "id": "67",
@@ -55,14 +55,14 @@
       "role": "KIE video routing (no hardcoded model registry)",
       "kind": "skill",
       "required": true,
-      "version": "v2.1.7",
+      "version": "v2.1.8",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/67-kie-video",
       "installPath": "skills/67-kie-video",
-      "fileCount": 21,
-      "sizeBytes": 324233,
-      "treeSha256": "2bfeb854782bcf440e3518bf4b8ae8ecd492053a1fe8320a48991e77396a6b94",
-      "skillMdSha256": "73980e5bd775ebfa5fc4e2185fd51d24588658b9e364f9f5d65dff09072daa21"
+      "fileCount": 22,
+      "sizeBytes": 327144,
+      "treeSha256": "4a378f7ae0145881e3518a2b8c49e660a6b4cca0675be737f4c94ed700239959",
+      "skillMdSha256": "58948529dc1292060aa2664a6082f50b7afdb26e7b1c29840291cd04352d2bf5"
     },
     {
       "id": "68",
@@ -119,14 +119,14 @@
       "role": "KIE setup: credentials, router and the common rules 1 through 13 (references/kie-common-rules.md)",
       "kind": "skill",
       "required": true,
-      "version": "v7.2.10",
+      "version": "v7.2.11",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/07-kie-setup",
       "installPath": "skills/07-kie-setup",
       "fileCount": 16,
-      "sizeBytes": 380165,
-      "treeSha256": "55984d34d0a60f28c979b90cdc562e9a720845130fc329e787053d78f857c645",
-      "skillMdSha256": "b3c41b21d5681b91c047db163fd63772c12599d3937fe17486754bcfad610cc7"
+      "sizeBytes": 380597,
+      "treeSha256": "aa5d2db873c31dfd7582ec346c7ff0c06dd1a307e11458a751f036615d7d6b08",
+      "skillMdSha256": "68e70562ceaf767ec330713f22f19144dad203e76dc82001234a142543053c0d"
     },
     {
       "id": "shared-utils",
