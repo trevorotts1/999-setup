@@ -158,7 +158,7 @@
     ],
     "ghl-install-pages": [
       {
-        "version": "v27.1.102",
+        "version": "v27.1.105",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/ghl-install-pages",
