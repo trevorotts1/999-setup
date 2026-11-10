@@ -474,15 +474,13 @@ def stage_style_menu():
     ids = ms.style_ids()
     nonempty = all(isinstance(ms.style_prompt(sid), str)
                    and ms.style_prompt(sid).strip() for sid in ids)
-    # The F13 banned list is the core's own (no_echo.SONG_BANNED_STYLE_WORDS),
-    # matched as whole words exactly as music_styles/test_dry_style_f13.py does.
+    # Proof-local literal copy of the owner's 15 F13 words (NOT read from the
+    # code under test, so the proof cannot pass by emptying that list).
+    # Matched as whole words, case-insensitive.
     import re
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "_proof_no_echo", str(CORE_DIR / "audio_c3" / "no_echo" / "no_echo.py"))
-    ne = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(ne)
-    banned = tuple(ne.SONG_BANNED_STYLE_WORDS)
+    banned = ("strings", "gospel", "choir", "harmonies", "cinematic",
+              "spacious", "prayerful", "atmospheric", "ethereal", "ambient",
+              "airy", "wet", "shimmer", "hall", "room")
     hits = []
     for sid in ids:
         text = ms.style_prompt(sid)
