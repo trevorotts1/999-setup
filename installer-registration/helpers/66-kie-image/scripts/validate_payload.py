@@ -36,8 +36,8 @@ REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 GPT_IMAGE_PREV_VERSION = "2-5"
 LEGACY_GPT_T2I = "gpt-image-%s-sunburst-text-to-image" % GPT_IMAGE_PREV_VERSION
 LEGACY_GPT_I2I = "gpt-image-%s-sunburst-image-to-image" % GPT_IMAGE_PREV_VERSION
-DEFAULT_GPT_T2I = "gpt-image-2-6-sunburst-text-to-image"
-DEFAULT_GPT_I2I = "gpt-image-2-6-sunburst-image-to-image"
+DEFAULT_GPT_T2I = "gpt-image-2-6/sunburst-text-to-image"
+DEFAULT_GPT_I2I = "gpt-image-2-6/sunburst-image-to-image"
 
 TASK_ENDPOINT = "/api/v1/jobs/createTask"
 

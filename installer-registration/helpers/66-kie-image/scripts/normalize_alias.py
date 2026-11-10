@@ -57,8 +57,8 @@ ALIAS_MAP = {
 FAMILY_OF = {
     # GPT Image 2.6 Sunburst -- current default generation.
     "gpt image 2.6": [
-        "gpt-image-2-6-sunburst-text-to-image",
-        "gpt-image-2-6-sunburst-image-to-image",
+        "gpt-image-2-6/sunburst-text-to-image",
+        "gpt-image-2-6/sunburst-image-to-image",
     ],
     # GPT Image 2.5 Sunburst -- RETAINED legacy/fallback generation.
     "gpt image 2.5": LEGACY_GPT_IDS,
@@ -150,7 +150,7 @@ def main(argv=None) -> int:
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"]
         assert FAMILY_OF["gpt image 2.5"] == LEGACY_GPT_IDS
         assert FAMILY_OF["gpt image 2.6"] == [
-            "gpt-image-2-6-sunburst-text-to-image", "gpt-image-2-6-sunburst-image-to-image"]
+            "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"]
         assert normalize_alias("nano banana light") == "nano banana 2 lite"
         # Z-Image guard: "z image" must NOT resolve into qwen.
         assert normalize_alias("z image") == "z image"

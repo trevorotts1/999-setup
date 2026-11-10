@@ -231,7 +231,7 @@ def extract_results(resp):
 # ------------------------------------------------- registry / limits helpers
 FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 80, 95, 1.30
 # Owner order 2026-10-05: prompts use 95-100% of a model's max, never below 80%.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6-sunburst-text-to-image"}  # last-resort default (N43 today)
+KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30

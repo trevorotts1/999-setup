@@ -53,8 +53,8 @@ REGISTRY = {
     "gpt-image-2-6-sunburst": {
         "name": "GPT Image 2.6",
         "routes": {
-            "t2i": {"canonical_model_id": "gpt-image-2-6-sunburst-text-to-image", "task": "text-to-image"},
-            "i2i": {"canonical_model_id": "gpt-image-2-6-sunburst-image-to-image", "task": "image-to-image"},
+            "t2i": {"canonical_model_id": "gpt-image-2-6/sunburst-text-to-image", "task": "text-to-image"},
+            "i2i": {"canonical_model_id": "gpt-image-2-6/sunburst-image-to-image", "task": "image-to-image"},
         },
         "default": "t2i",
     },
@@ -747,16 +747,16 @@ SELFTEST_CASES = [
     ("a typography-heavy poster, use ideogram", "ideogram/v3-text-to-image", True, None),
     # GPT Image 2.6 Sunburst is the default; short "gpt" aliases resolve to it,
     # not to a retained legacy id.
-    ("general product photography request", "gpt-image-2-6-sunburst-text-to-image", True, None),
+    ("general product photography request", "gpt-image-2-6/sunburst-text-to-image", True, None),
     ("wan 2.7 image 4K output please", "wan/2-7-image-pro", True, None),
     ("wan/2-7-image with 4K output", None, False, "wan/2-7-image-pro"),
     # Version-2 names are the legacy family (owner correction 2026-10-06); version-less names get the default.
     ("use gpt-img2 for this headshot edit", "gpt-image-2-image-to-image", True, None),
-    ("use gpt image for this headshot edit", "gpt-image-2-6-sunburst-image-to-image", True, None),
+    ("use gpt image for this headshot edit", "gpt-image-2-6/sunburst-image-to-image", True, None),
     ("quinn image 3.0 create an infographic", "qwen3/text-to-image", True, None),
     ("z image generate a blue robot", "z-image", True, None),
     ("z image by quinn", "z-image", True, None),
-    ("glimblox render something", "gpt-image-2-6-sunburst-text-to-image", True, None),
+    ("glimblox render something", "gpt-image-2-6/sunburst-text-to-image", True, None),
     ("seedream 4.5 with five reference images", "seedream/4.5-edit", True, None),
     ("seedream 4.5 pure text generation", "seedream/4.5-text-to-image", True, None),
     ("nano banana 2 lite fast poster", "nano-banana-2-lite", True, None),
@@ -777,8 +777,8 @@ SELFTEST_CASES = [
     # 5:4 / 4:5 / 2:1 / 1:2 are served ON the default generation via an
     # operator-approved substitution (Ruling 5); the request stays on the
     # 2.6 sunburst route.
-    ("product shot in 4:5 aspect ratio", "gpt-image-2-6-sunburst-text-to-image", True, None),
-    ("banner in 2:1 aspect ratio", "gpt-image-2-6-sunburst-text-to-image", True, None),
+    ("product shot in 4:5 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
+    ("banner in 2:1 aspect ratio", "gpt-image-2-6/sunburst-text-to-image", True, None),
     # The retained 2.5 generation's own models.json row carries the 1K-only
     # list (27:16, 16:27, 9:8, 8:9); an explicit 2.5 pin at 4K hard-fails.
     ("use gpt image 2.5 for a photo at 9:8 aspect ratio in 4K", None, False, None),
@@ -812,9 +812,9 @@ DYNAMIC_CASES = [
     ("N43 substitution still applies on the newest default", NEWER, "product shot in 4:5 aspect ratio",
      "gpt-image-3-aurora-text-to-image"),
     ("adapter unreachable falls back to models.json", "broken", "general product photography request",
-     "gpt-image-2-6-sunburst-text-to-image"),
+     "gpt-image-2-6/sunburst-text-to-image"),
     ("adapter absent falls back to models.json", None, "general product photography request",
-     "gpt-image-2-6-sunburst-text-to-image"),
+     "gpt-image-2-6/sunburst-text-to-image"),
 ]
 
 
