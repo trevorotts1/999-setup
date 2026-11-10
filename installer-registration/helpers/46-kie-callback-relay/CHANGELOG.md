@@ -4,6 +4,12 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.1] - 2026-11-10 - fix: default to GPT Image 2.6 Sunburst
+
+- `kie-slide-submitter.js`: default and reference-bearing gate model move to `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`; 2.5 ids stay accepted as legacy.
+
+---
+
 ## [v2.1.0] - 2026-10-06 - feat: Skill 74 handoff for production batches
 
 - `kie-slide-submitter.js`: `prepareCallback()` mints the per-task secret and signed `/cb` URL and writes the registry row before submit; `adoptAdapterTask()` accepts Skill 74's normalized task metadata (`task_id`, `model_id`, `callback_url`, via `data.callback_url` or flat), records the taskId and index, and waits through the same KV poller, download and file-on-disk rule as `submitDeck`. A callback URL not minted on this box (j= has no registry row, URL differs, other client) is refused with no wait; a skipped or failed submit returns `failed` without waiting. New export `normalizeAdapterTask`. URL building moved into `_makeCallback()` shared with `submitDeck` (same output).

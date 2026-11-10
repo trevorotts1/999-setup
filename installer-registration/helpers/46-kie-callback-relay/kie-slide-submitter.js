@@ -52,14 +52,17 @@ const RATE_LIMIT_WINDOW = 10000; // ms
 // use efficient batch polling (Candidate C from DESIGN.md) for smaller decks.
 const DEFAULT_CALLBACK_THRESHOLD = 5;
 
-// MODEL TIMEOUTS -- primary model is GPT Image 2.5 Sunburst (operator ruling 2026-09-09,
+// MODEL TIMEOUTS -- primary model is GPT Image 2.6 Sunburst (2.5 retained as legacy; operator ruling 2026-09-09,
 // supersedes GPT Image 2 as the default). GPT Image 2 (legacy) is RETAINED, not retired --
 // it is still the required route for aspect ratios 3:1, 1:3, 9:21, so its timeout keys stay
 // live below. nano-banana-pro is FALLBACK-ONLY.
 // Per-model callback timeout defaults (ms) before falling back to Kie poll
 const MODEL_TIMEOUTS = {
-  'gpt-image-2-5-sunburst-text-to-image':  300000,  // 5 minutes (default model for all client presentations)
-  'gpt-image-2-5-sunburst-image-to-image': 300000,  // 5 minutes (default model with reference images)
+  'gpt-image-2-6/sunburst-text-to-image':  300000,  // 5 minutes (default model for all client presentations)
+  'gpt-image-2-6/sunburst-image-to-image': 300000,  // 5 minutes (default model with reference images)
+  // LEGACY 2.5 ids retained so in-flight 2.5 rows keep their timeout.
+  'gpt-image-2-5-sunburst-text-to-image':  300000,
+  'gpt-image-2-5-sunburst-image-to-image': 300000,
   // LEGACY -- retained by operator ruling 2026-09-09 for aspect ratios 3:1, 1:3, 9:21 only.
   'gpt-image-2-text-to-image':  300000,  // 5 minutes (legacy route, 3:1/1:3/9:21 only)
   'gpt-image-2-image-to-image': 300000,  // 5 minutes (legacy route with reference images, 3:1/1:3/9:21 only)
@@ -86,9 +89,10 @@ const PROMPT_CHAR_CEILING = 18000;  // HARD ceiling (AF-P2)— mirror of prompt_
 // route (operator ruling 2026-09-09 -- 3:1/1:3/9:21 requests are routed there
 // upstream by the selector and must not be flagged as a mode-consistency
 // violation here).
-const GATE_MODEL_I2I        = 'gpt-image-2-5-sunburst-image-to-image';
+const GATE_MODEL_I2I        = 'gpt-image-2-6/sunburst-image-to-image';
+const GATE_MODEL_I2I_25     = 'gpt-image-2-5-sunburst-image-to-image';  // legacy 2.5, still accepted
 const GATE_MODEL_I2I_LEGACY = 'gpt-image-2-image-to-image';
-const GATE_MODELS_I2I       = new Set([GATE_MODEL_I2I, GATE_MODEL_I2I_LEGACY]);
+const GATE_MODELS_I2I       = new Set([GATE_MODEL_I2I, GATE_MODEL_I2I_25, GATE_MODEL_I2I_LEGACY]);
 const DEAD_ENDPOINT_FRAGMENT = '/api/v1/image/gpt-image';
 const ENGLISH_PIN =
   'All text rendered in the image MUST be in English, Latin alphabet ONLY. ' +
@@ -281,7 +285,7 @@ class KieSlideSubmitter {
     for (const slide of pending.filter(s => !s.existing)) {
       await this._throttle();
 
-      const model    = slide.model || opts.model || 'gpt-image-2-5-sunburst-text-to-image';
+      const model    = slide.model || opts.model || 'gpt-image-2-6/sunburst-text-to-image';
       const submitId = slide.submitId; // already a 128-bit random hex (fix A)
 
       // Fix 33: the per-task secret + callback URL only exist on the callback path.
