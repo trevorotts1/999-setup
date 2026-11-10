@@ -131,7 +131,7 @@ def test_unknown_version_still_refused():
 
 TESTS = [
     test_reads_canonical_110,
-    test_own_new_ledger_still_writes_100,
+    test_own_new_ledger_writes_110,
     test_write_into_110_preserves_fields,
     test_unknown_version_still_refused,
 ]
