@@ -47,11 +47,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
+import tempfile
 
 _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+import budget_contingency as BC      # the one planning-allowance policy
 
 #: Telegram's hard limit is 4096 characters per message; stay under it.
 TELEGRAM_LIMIT = 4000
@@ -97,6 +100,9 @@ _LOOK_SENTENCE = {
     "canvas-to-life": "painted cartoon that turns into real footage.",
     "canvas-to-3d": "painted cartoon that turns into lifelike 3D.",
 }
+#: Shown under a look whose source registry has no verified sample (Canvas to Life).
+#: Never substitute another look's link; the choice stays usable and explained.
+SAMPLE_MISSING = "Sample not available yet."
 #: Client-facing names. "Hybrid" is the official name of the sketch-and-real-footage
 #: look (its bible and id are still `hybrid`); the card label stays Sketch to Life.
 _LOOK_NAME = {"sketch-to-life": "Sketch to Life (Hybrid)"}
@@ -104,14 +110,22 @@ _MUSIC_SENTENCE = {
     "soul-ballad": "slow, heartfelt singing; builds to a big emotional chorus.",
     "rnb-flow": "rhythmic rap verses, then a smooth sung hook you remember.",
     "soul-rise": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
+    # The card's own short line (4-12 words) for the five styles whose owner
+    # catalog description is longer than the card allows. The catalog text is
+    # unchanged and still feeds help; every other style shows it as-is.
+    "trap-rap": "punchy rap over deep bass and rolling hi-hats.",
+    "cinematic-orchestral-song": "sweeping strings and a powerful, film-style chorus.",
+    "contemporary-gospel": "faith-centered singing with piano, organ, and a powerful choir.",
+    "urban-gospel": "faith-centered singing with R&B and hip-hop grooves, plus choir.",
+    "country-rap": "country storytelling meets rock power and hip-hop rhythm.",
 }
 
 
 def _sample_links():
-    """look id -> https sample-video link (style_samples.json); missing or null = no link."""
+    """look id -> https sample-video link (style_samples.json); None = no verified sample."""
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "style_samples.json"), encoding="utf-8") as f:
-        return {k: v for k, v in json.load(f).items() if v}
+        return json.load(f)
 
 
 def _menu(ids, labels, sentences):
@@ -125,16 +139,17 @@ def _looks():
 
 
 def _look_links():
-    """Sample link per look option, by option number (1-based); none = no entry."""
+    """Sample link per look option (1-based); an option with no verified sample is absent."""
     from choice_card.looks import looks as L
     links = _sample_links()
-    return {n: links[i] for n, i in enumerate(L.LOOK_ORDER, 1) if i in links}
+    return {n: links[i] for n, i in enumerate(L.LOOK_ORDER, 1) if links.get(i)}
 
 
 def _musics():
-    from music_styles import music_styles as MS
-    return _menu(list(_MUSIC_SENTENCE), {k: MS.STYLES[k]["label"] for k in _MUSIC_SENTENCE},
-                 _MUSIC_SENTENCE)
+    """The eighteen canonical styles, from the catalog owner of record."""
+    from music_styles import catalog as CAT
+    return [(row["label"], _MUSIC_SENTENCE.get(row["style_id"], row["description"]))
+            for row in CAT.choice_rows()]
 
 
 def _usd(x):
@@ -143,7 +158,7 @@ def _usd(x):
 
 def spend_question(price=None, limit=None, from_brief=False):
     """The ONE money question, asked here and nowhere else (FU-ONE-SPEND-QUESTION).
-    price: the card's total in dollars (50% redo allowance included). limit: a
+    price: the card's total in dollars (planning allowance included). limit: a
     maximum already known. from_brief: that maximum came from the brief (not a --limit
     override). Neither is ever defaulted: the client must reply."""
     opts, vals = [], {}
@@ -151,7 +166,8 @@ def spend_question(price=None, limit=None, from_brief=False):
         opts.append(("Your max: " + _usd(limit), "from your brief" if from_brief else None))
         vals[len(opts)] = str(limit).lstrip("$")
     if price is not None:
-        opts.append((_usd(price), "the estimated price for your video, including a 50% allowance for redoing shots"))
+        opts.append((_usd(price), "the estimated price for your video, including a "
+                     "%s allowance for redoing shots" % BC.label()))
         vals[len(opts)] = str(price).lstrip("$")
     opts.append(("A different maximum", "reply with a dollar amount, like $25"))
     return {"id": "spend", "why": "This keeps you in control of the cost.",
@@ -244,8 +260,9 @@ def _model_price_line(length_label):
     client chose. The card's ask and the studio-json export both read it here,
     so the two price surfaces cannot drift apart."""
     from choice_card.video_models import video_models as VM
-    return ("Prices are for your %s ad, with the song, pictures and a 50%% "
-            "redo allowance." % VM.length_phrase(VM.length_seconds(length_label)))
+    return ("Prices are for your %s ad, with the song, pictures and a %s "
+            "redo allowance." % (VM.length_phrase(VM.length_seconds(length_label)),
+                                 BC.label()))
 
 
 def _vm():
@@ -804,13 +821,17 @@ def song_required(answers):
 
 
 def _option_lines(q):
-    """Numbered option lines; an option with a sample link gets an indented line under it."""
+    """Numbered option lines; an option with a sample link gets an indented line under it.
+
+    A look with no verified sample says so plainly instead of borrowing a link."""
     out = []
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + q.get("rec_mark", REC)) if n - 1 == q.get("recommended") else ""
         out.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
         if n in q.get("links", {}):
             out.append("   Watch: " + q["links"][n])
+        elif q["id"] == "look":
+            out.append("   " + SAMPLE_MISSING)
     return out
 
 
@@ -873,6 +894,10 @@ def render_step(i, questions=None):
     lines.append("")
     if q.get("reason"):                     # a question may only mark its pick
         lines.append("I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]))
+    if q.get("id") == "music":
+        # S75-T23: the plain help for every offered style is one word away; the
+        # question, its options and its recommendation are unchanged.
+        lines.append('Say "help me choose" to hear what each style sounds like.')
     lines.append(q.get("closing") or "Reply with a number, or say \"recommended\".")
     return "\n".join(lines)
 
@@ -933,7 +958,8 @@ def _parse(reply, q):
 
 
 def conversation(replies, questions=None, state_store=None, run_id=None,
-                 run_dir=None, target=None, client_dir=None, purpose_flow=None):
+                 run_dir=None, target=None, client_dir=None, purpose_flow=None,
+                 run_state_file=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
@@ -956,12 +982,13 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     replayed with the SAME list it used -- purpose flow when it recorded
     control/method.json or a studio order, the old list otherwise -- so a
     resumed project and its approved artifacts are preserved exactly and are
-    never migrated or rewritten. True/False still force either list.
+    never migrated or rewritten. ``run_state_file`` is the same run state the
+    launcher reads: a chat run already past its intro is a resume and keeps the
+    card it started with. The decision itself lives in ``new_run_flow`` so the
+    API and the launcher can never disagree. True/False still force either list.
     """
     if purpose_flow is None:
-        history = _run_history(run_dir)
-        purpose_flow = history is True or (history is None and bool(run_dir)
-                                           and os.path.isdir(run_dir))
+        purpose_flow = new_run_flow(run_dir, run_state_file)
     qs = questions or QUESTIONS
     #: The list every rebuild starts from. Shaping a SHAPED list again would
     #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
@@ -1097,16 +1124,22 @@ def format_questions(texts):
 
 
 def _split_long(block, limit):
-    """A block over the limit splits on line boundaries, never mid-line."""
-    out, cur = [], ""
-    for line in block.split("\n"):
-        cand = cur + "\n" + line if cur else line
-        if len(cand) > limit and cur:
-            out.append(cur)
-            cur = line
+    """A block over the limit splits on line boundaries, never mid-line.
+
+    A question that does not fit one message (the eighteen-style MUSIC STYLE
+    menu) continues in the next message under its own header plus
+    "(continued)", so no message opens with option lines and no context.
+    """
+    lines = block.split("\n")
+    cont = lines[0] + " (continued)" if lines[0].startswith("Question ") else None
+    out, cur = [], []
+    for line in lines:
+        if cur and len("\n".join(cur + [line])) > limit:
+            out.append("\n".join(cur))
+            cur = ([cont] if cont else []) + [line]
         else:
-            cur = cand
-    return out + ([cur] if cur else [])
+            cur.append(line)
+    return out + (["\n".join(cur)] if cur else [])
 
 
 def render_messages(questions=None, limit=TELEGRAM_LIMIT, book_plan=None,
@@ -1140,49 +1173,80 @@ def telegram_payload(chat_id, text):
 
 
 def _staged_media(media):
-    """Copy outbound attachments into the platform's own delivery media root.
+    """Media paths the channel will actually accept.
 
-    `openclaw message send` refuses a local media path outside its allowed
-    roots with LocalMediaAccessError, and a run folder is not one of those
-    roots -- so every client delivery from a run used to fail. The
-    delivery-queue media dir (<state>/delivery-queue-media) is the root the
-    platform reserves for delivery, so attachments are staged there and the
-    caller's file is never moved or edited.
+    OpenClaw only sends files inside its own state roots (media, workspace,
+    delivery-queue-media, canvas, sandboxes) or tmp; a run-folder attachment
+    is refused with LocalMediaAccessError. Anything else is COPIED into
+    <state>/delivery-queue-media first -- the copy is what gets sent, the
+    original is never moved or rewritten.
     """
-    import shutil
-    roots = []
-    state = os.environ.get("OPENCLAW_STATE_DIR") or os.path.expanduser("~/.openclaw")
-    for cand in (state, os.path.expanduser("~/.openclaw")):
-        d = os.path.join(cand, "delivery-queue-media")
-        try:
-            os.makedirs(d, exist_ok=True)
-            roots.append(d)
-            break
-        except OSError:
-            continue
-    out = []
+    root = os.path.join(os.path.expanduser("~"), ".openclaw")
+    allowed = tuple(os.path.join(root, d) for d in
+                    ("media", "workspace", "delivery-queue-media", "canvas",
+                     "sandboxes")) + (tempfile.gettempdir(),)
+    staged = []
     for m in media or ():
-        p = str(m)
-        if not roots or not os.path.isfile(p):
-            out.append(p)
+        path = os.path.abspath(str(m))
+        if path.startswith(allowed) and os.path.isfile(path):
+            staged.append(path)
             continue
-        dst = os.path.join(roots[0], os.path.basename(p))
-        try:
-            if os.path.abspath(p) != os.path.abspath(dst):
-                shutil.copy2(p, dst)
-            out.append(dst)
-        except OSError:
-            out.append(p)
-    return out
+        dest_dir = os.path.join(root, "delivery-queue-media")
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, os.path.basename(path))
+        if not os.path.isfile(path):
+            staged.append(path)      # let the sender name the real error
+            continue
+        if not (os.path.isfile(dest)
+                and os.path.getsize(dest) == os.path.getsize(path)):
+            shutil.copy2(path, dest)
+        staged.append(dest)
+    return staged
 
-
-def openclaw_send_argv(target, text, media=()):
-    """Exact argv for ``openclaw message send`` on Telegram. A list, not a
-    shell string: run it with subprocess (shell=False) and the newlines in
-    ``text`` reach the sender untouched."""
-    return (["openclaw", "message", "send", "--channel", "telegram",
+def channel_send_argv(channel, target, text, media=(), account=None, thread_id=None):
+    """THE command builder (W03-U1, finding D06): one ``openclaw message send``
+    argv for the RESOLVED channel. ``channel`` arrives as data -- from the run's
+    origin record (``delivery_outbox.resolve_origin``) or an explicit caller --
+    and this builder never picks one. Telegram resolves the correct
+    authenticated bot/account, chat and thread through ``--account`` /
+    ``--target`` / ``--thread-id``; an OpenClaw-app conversation is addressed by
+    its own conversation id. A list, not a shell string: run it with subprocess
+    (shell=False) and the newlines in ``text`` reach the sender untouched. The
+    argv is the STABLE identity of one piece (message text last); the transport
+    executor adds ``--json`` when it runs the command, so the channel's receipt
+    (a message id) can be recorded -- that receipt is what allows a delivery to
+    be claimed sent."""
+    channel = (channel or "").strip()
+    if not channel:
+        raise ValueError("channel_send_argv needs the RESOLVED channel; "
+                         "refusing to guess a default channel")
+    return (["openclaw", "message", "send", "--channel", channel,
              "--target", str(target), "--message", text]
-            + [x for m in _staged_media(media) for x in ("--media", str(m))])
+            + [x for m in _staged_media(media) for x in ("--media", str(m))]
+            + (["--account", str(account)] if account else [])
+            + (["--thread-id", str(thread_id)] if thread_id else []))
+
+
+def openclaw_send_argv(target, text, media=(), channel=None, account=None,
+                       thread_id=None, run_dir=None):
+    """Backward-compatible entry for legacy callers that pass a bare chat id.
+
+    Resolution order: an explicit ``channel``; else the run's canonical origin
+    record (``run_dir``); else the DEPRECATED legacy contract -- a caller that
+    hands in a bare chat id addressed Telegram explicitly (the storyboard
+    approval runner and the song-choice sender document exactly that). New code
+    must route through ``channel_send.send`` / ``channel_send_argv`` with a
+    resolved channel so no path hardcodes Telegram."""
+    if channel is None and run_dir:
+        from choice_card.intake_card import delivery_outbox as _DO   # noqa: PLC0415
+        rec = _DO.resolve_origin(run_dir)
+        channel = (rec or {}).get("channel") or None
+        account = account or (rec or {}).get("account_id") or None
+        thread_id = thread_id or (rec or {}).get("thread_id") or None
+    if channel is None:
+        channel = "telegram"     # deprecated legacy default (caller-explicit)
+    return channel_send_argv(channel, target, text, media=media,
+                             account=account, thread_id=thread_id)
 
 
 # --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------
@@ -1550,7 +1614,7 @@ def main(argv=None):
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
     ap.add_argument("--price", default=None,
-                    help="the card total in dollars (50%% redo allowance included); "
+                    help="the card total in dollars (planning allowance included); "
                          "shown as spend option 1 or 2")
     ap.add_argument("--limit", default=None,
                     help="a spend limit the brief already gave, in dollars; "

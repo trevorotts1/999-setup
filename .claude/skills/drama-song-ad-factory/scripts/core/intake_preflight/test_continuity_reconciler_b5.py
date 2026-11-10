@@ -32,12 +32,8 @@ F = importlib.import_module("intake_preflight.factory")
 ST = importlib.import_module("character_continuity.stage")
 SS = importlib.import_module("state_store")
 
-#: This distribution's canonical stage list (factory does not export one).
-STAGES = ("research", "creative-strategy", "script-lyrics", "music",
-          "continuity-bible", "storyboard", "image-keyframes",
-          "video-generation", "qc-retakes", "assembly", "final-qc", "delivery")
-
 FAILS = []
+
 
 def check(name, got, want):
     if got == want:
@@ -45,6 +41,7 @@ def check(name, got, want):
     else:
         print("FAIL %s: got %r want %r" % (name, got, want))
         FAILS.append(name)
+
 
 REC = {"schema_version": "1.0.0", "check_id": "continuity-dna-1",
        "run_id": "run-b5", "stage": "continuity-bible", "check": "continuity",
@@ -54,6 +51,7 @@ REC = {"schema_version": "1.0.0", "check_id": "continuity-dna-1",
        "checker_version": "1.0.0",
        "reviewer": {"identity": "qc-reviewer-1", "session": "s1",
                     "authority": "qc"}}
+
 
 def _run(with_records=True):
     run = tempfile.mkdtemp(prefix="b5-cont-")
@@ -65,9 +63,11 @@ def _run(with_records=True):
         with open(os.path.join(run, "continuity", "makers.json"), "w") as f:
             json.dump({"continuity-dna-1": "agent-writer-1"}, f)
     db = os.path.join(run, "control", "state.sqlite3")
+    ids = list(F.CANONICAL_STAGES)
     with SS.Store(db) as st:
-        st.init_run("run-b5", list(STAGES))
+        st.init_run("run-b5", ids)
     return run
+
 
 def main():
     check("1: continuity-bible is in the reconciler registry",
@@ -100,6 +100,7 @@ def main():
         return 1
     print("ALL PASS")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

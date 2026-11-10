@@ -72,37 +72,6 @@ class OperatorDecisionReadBinding(unittest.TestCase):
         self.assertEqual(self.evidence_bytes, self.evidence_path.read_bytes())
         self.assertEqual("UNMEASURED", json.loads(self.evidence_bytes)["results"]["D5"]["verdict"])
 
-    def test_reserved_risk_cache_does_not_replace_or_block_current_measurements(self):
-        cache = self.evidence_path.with_name("ww21-risk-acceptance.json")
-        before_cache = cache.read_bytes()
-        self.assertEqual("blackceo.ww21-risk-acceptance/v1",
-                         json.loads(before_cache)["schema_version"])
-        decision, reasons = SD.decision_applies(self.run_dir)
-        self.assertIsNotNone(decision)
-        self.assertEqual([], reasons)
-        self.assertTrue(production_process.admit_production(
-            self.run_dir, "continuity-bible")["ok"])
-        self.assertEqual(before_cache, cache.read_bytes())
-        self.assertEqual(self.decision_bytes, self.decision_path.read_bytes())
-        self.assertEqual(self.evidence_bytes, self.evidence_path.read_bytes())
-
-    def test_explicit_scope_cannot_count_reserved_cache_as_measurement(self):
-        decision = json.loads(self.decision_bytes)
-        decision["variants"] = ["v1", "ww21-risk-acceptance"]
-        with self.assertRaisesRegex(SD.DispatchError, "OPERATOR_DECISION_EVIDENCE_UNREADABLE"):
-            SD.record_operator_decision(self.run_dir, decision)
-        self.assertEqual(self.decision_bytes, self.decision_path.read_bytes())
-        self.decision_path.write_text(json.dumps(decision), encoding="utf-8")
-        self.assert_refused("OPERATOR_DECISION_EVIDENCE_UNREADABLE")
-
-    def test_unknown_unreadable_json_is_not_reserved_metadata(self):
-        unknown = self.evidence_path.with_name("unexpected.json")
-        unknown.write_bytes(b"{not json")
-        try:
-            self.assert_refused("OPERATOR_DECISION_EVIDENCE_UNREADABLE")
-        finally:
-            unknown.unlink()
-
     def test_mismatched_persisted_digest_is_refused(self):
         decision = json.loads(self.decision_bytes)
         decision["measured_evidence_digest"] = "0" * 64

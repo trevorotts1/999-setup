@@ -39,7 +39,7 @@ The fixture also carries one offer relationship (`BUMP.included_in =
 exercised. No cross-sale teaching content exists and none is invented: the
 record says `teaching.state = "pending"`.
 
-## Entitlement attestations
+## No account declaration
 
 Neither fixture carries an account-entitlement attestation, because the client is never asked to
 declare one. Both build with `entitlement.state = "unknown"` and nothing blocks on it.
@@ -68,7 +68,7 @@ TEST ONLY. Nothing here is a product price.
 
 For each shape:
 
-1. the intake is valid and fail-closed, with no account declaration required;
+1. the intake is valid and fail-closed, with a qualified entitlement attestation;
 2. the route graph is byte-for-byte the real S49 compiler's graph;
 3. every route invariant holds (verified guards, U1/D1/U2 law, no decline edge
    at checkout, one canonical U2, no bump node);

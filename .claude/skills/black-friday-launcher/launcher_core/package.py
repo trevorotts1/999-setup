@@ -34,12 +34,14 @@ from .constants import (
     SKILL_VERSION,
     skill_path,
 )
+from . import capability_check
 from . import checkout as checkout_module
 from . import council as council_module
 from . import image_plan as image_plan_module
 from . import intake as intake_module
 from . import launch_bridge
 from . import launch_plan as launch_plan_module
+from . import linked_delivery
 from . import page_designs
 from . import route as route_module
 from .check_rules import delivery_units
@@ -619,6 +621,10 @@ def _drift_detail(launch: Dict[str, Any], expected: Dict[str, Any]) -> str:
     return ", ".join(parts) or "the records differ"
 
 
+# Roots whose drift is proven by a code of its own below: the approval hash has APPROVAL-HASH,
+# and answers_file is the authority the commercial facts are read from, not the intake identity.
+_OWN_CODES_ELSEWHERE = ("approval", "answers_file")
+
 def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
                    strict: bool) -> Dict[str, Any]:
     """Load the dispatch run and prove the intake, the route and the request ids are its own.
@@ -651,23 +657,13 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
             and isinstance(report.get("landing_pages"), list)):
         raise PackageError("AF-LAUNCH-PKG-DISPATCH-REPORT",
                            "the dispatch report must carry to_confirm and landing_pages lists")
-    expected = _expected_launch(intake, launch)
-    if _canonical(expected) != _canonical(launch):
-        raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
-                           "the intake no longer produces the launch record that was dispatched and "
-                           f"approved: {_drift_detail(launch, expected)}")
-    plan_hash_matches = intake["approval"]["hash"] == plan_hash
-    if strict and not plan_hash_matches:
-        raise PackageError("AF-LAUNCH-PKG-APPROVAL-HASH",
-                           "the intake's approval hash is not the recomputed plan hash "
-                           f"({plan_hash}); approved_plan_hash is computed, never a free string")
-
     snapshot_state = "absent"
     snapshot_path = root / INTAKE_SNAPSHOT_REL
     if strict and not snapshot_path.is_file():
         raise PackageError("AF-LAUNCH-PKG-INTAKE-MISSING",
                            "the dispatch run carries no intake-at-dispatch.json, so the intake "
                            "it was dispatched with cannot be proven; re-dispatch the run")
+    changed: List[str] = []
     if snapshot_path.is_file():
         try:
             snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
@@ -681,11 +677,33 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
         except intake_module.IntakeError:
             pass  # already normalized: the comparison below catches any difference
         changed = sorted(k for k in set(snapshot) | set(intake) if snapshot.get(k) != intake.get(k))
-        if changed:
+        # Prove WHICH intake this is before comparing the plan it would produce. Approval and the
+        # commercial roots have their own codes below, so a difference anywhere else means the caller
+        # is holding another intake than the one dispatched: report that, not the plan drift it implies.
+        identity = [k for k in changed
+                    if k not in _OWN_CODES_ELSEWHERE
+                    and k not in intake_module.COMMERCIAL_ROOTS]
+        if identity:
             raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT",
                                "the intake differs from the one the run was dispatched with in: "
                                + ", ".join(changed))
-        snapshot_state = "verified"
+        if not changed:
+            snapshot_state = "verified"
+
+    expected = _expected_launch(intake, launch)
+    if _canonical(expected) != _canonical(launch):
+        raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
+                           "the intake no longer produces the launch record that was dispatched and "
+                           f"approved: {_drift_detail(launch, expected)}")
+    plan_hash_matches = intake["approval"]["hash"] == plan_hash
+    if strict and not plan_hash_matches:
+        raise PackageError("AF-LAUNCH-PKG-APPROVAL-HASH",
+                           "the intake's approval hash is not the recomputed plan hash "
+                           f"({plan_hash}); approved_plan_hash is computed, never a free string")
+    if changed:  # a commercial difference that did not move the plan at all
+        raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT",
+                           "the intake differs from the one the run was dispatched with in: "
+                           + ", ".join(changed))
 
     requests: Dict[str, Dict[str, Any]] = {}
     for entry in manifest.get("requests") or []:
@@ -1293,6 +1311,40 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         council = council_module.planning_step(intake, runner=council_runner)
     checkout = checkout_module.order_form_mapping(
         intake, route, **({"readback": checkout_readback} if checkout_readback is not None else {}))
+    # F22: the linked delivery/access inventory and the capability record are recomputed
+    # from the same intake the dispatch used. A required capability that cannot be proved,
+    # or an unaccounted-for destination in a package that claims delivery, refuses here —
+    # the claim boundary — and the files are written only after both hold.
+    resources = linked_delivery.resolve(intake)
+    capabilities = capability_check.run(intake, route=route, plan=launch_plan)
+    try:
+        capability_check.assert_ready(capabilities)
+    except capability_check.CapabilityError as exc:
+        raise PackageError(exc.code,
+                           f"{exc.detail}; this package cannot claim readiness") from exc
+    if resources["blockers"] and (scope == DELIVERY_SCOPE_FULL or not test_only):
+        first = resources["blockers"][0]
+        raise PackageError(first["code"],
+                           f"{first['operator_detail']}; this package cannot claim delivery")
+    resources_path = linked_delivery.write_record(resources, run_dir)
+    capabilities_path = run_dir / capability_check.RECORD_REL
+    capabilities_path.write_text(json.dumps(capabilities, indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
+    resources_ref = {"path": resources_path.name, "sha256": _sha256_file(resources_path),
+                     "fingerprint": resources["fingerprint"],
+                     "counts": resources["summary"]["counts"],
+                     "state": resources["summary"]["state"],
+                     "pages": resources["pages"],
+                     "fulfillment": resources["fulfillment"],
+                     "client_blockers": resources["summary"]["client_blockers"],
+                     "next_steps": resources["summary"]["next_steps"]}
+    capabilities_ref = {"path": capability_check.RECORD_REL,
+                        "sha256": _sha256_file(capabilities_path),
+                        "state": capabilities["state"],
+                        "required": capabilities["required"],
+                        "blocked": capabilities["blocked"],
+                        "advisories": [name for name, row in capabilities["capabilities"].items()
+                                       if row["state"] == "unproven" and not row["required"]]}
     if launch_plan is not None and launch_plan.get("launch_id") != intake["launch_id"]:
         raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
                            f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
@@ -1486,6 +1538,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                     "advice_sha256": _sha256_file(council_path)},
         "checkout": {**checkout, "mapping_path": "checkout-mapping.json",
                      "mapping_sha256": _sha256_file(checkout_path)},
+        "linked_delivery": resources_ref,
+        "capabilities": capabilities_ref,
         "cross_sales": cross_sales,
         "live_effects": live_effects,
         "test_only": test_only,
@@ -1572,6 +1626,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "mapping_path": "checkout-mapping.json",
             "mapping_sha256": _sha256_file(checkout_path),
         },
+        "linked_delivery": resources_ref,
+        "capabilities": capabilities_ref,
         "offer_facts": offer_facts(intake),
         "cross_sales": cross_sales,
         "seams": seams,

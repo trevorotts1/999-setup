@@ -50,8 +50,6 @@ for _p in (str(CORE), str(HERE)):
 import factory as F   # noqa: E402
 from test_production_process import (confirmed_run, complete_stage, approve_script,
                                     run_hashes)  # noqa: E402
-import production_process  # current WAL-aware read-only stage projection
-from collections import Counter
 
 STAGES = ("research", "creative-strategy", "script-lyrics", "music",
           "continuity-bible", "storyboard", "image-keyframes",
@@ -111,31 +109,6 @@ def make_state_run(tmp, upto):
     for stage in STAGES[:STAGES.index(upto)]:
         complete_stage(run, stage)
     return run
-
-
-def logical_stages(run):
-    _run_id, states, _events, _model = production_process._snapshot(run)
-    return states, dict(Counter(states.values()))
-
-
-def assert_contextless_refusal_preserves_run(run, before, before_stages):
-    after = run_hashes(run)
-    shm = "control/state.sqlite3-shm"
-    # SQLite's -shm contains volatile reader bookkeeping, even for read-only
-    # APIs. Only these two refusal checks exclude that file; the database,
-    # current WAL data, answers, approval artifacts and every other file stay
-    # byte-for-byte protected. The global provenance hash helper is unchanged.
-    assert after.get("control/state.sqlite3") == before.get("control/state.sqlite3")
-    assert after.get("control/state.sqlite3-wal") == before.get("control/state.sqlite3-wal")
-    assert {k: v for k, v in after.items() if k != shm} == {k: v for k, v in before.items() if k != shm}
-    after_stages = logical_stages(run)
-    assert after_stages[0] == before_stages[0]
-    assert after_stages[1] == before_stages[1]
-    print("STUDIO_REFUSAL_READONLY_EVIDENCE=" + json.dumps({
-        "shm_changed": before.get(shm) != after.get(shm),
-        "shm_before": before.get(shm), "shm_after": after.get(shm),
-        "database_unchanged": True, "wal_unchanged": True,
-        "logical_stage_counts_unchanged": True, "stage_counts": after_stages[1]}, sort_keys=True))
 
 
 class FakeBridge:
@@ -254,7 +227,7 @@ def test_storyboard_studio_run_publishes_once():
         pub = fb.published[0]
         assert pub["stage"] == "storyboard" and pub["version"] == 1
         assert pub["order_id"] == "o-1" and pub["base_url"] == "https://studio.example"
-        assert pub["key"] == "test-key" and pub["choices"] == ["GO"]
+        assert pub["key"] == "test-key" and pub["choices"] == [{"n": 1, "label": "GO"}]
         assert "Storyboard: 3 shots" in pub["text"]
         assert [os.path.basename(f) for f in pub["files"]] == ["s1.png", "s2.png", "s3.png"]
         assert all(os.path.isfile(f) for f in pub["files"])
@@ -284,19 +257,35 @@ def test_next_storyboard_answer_becomes_storyboard_reply():
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
         before = run_hashes(run)
-        before_stages = logical_stages(run)
         public = F.cmd_next(ns(run_dir=str(run)))
         assert public["outcome"] == "waiting" and not public["data"]["production_admitted"], public
         assert public["reason_code"] == "PRODUCTION_PROCESS_UNVERIFIED", public
         assert "storyboard/approval.json" in public["data"]["production_process"]["detail"], public
-        assert public["data"]["command"] is None
-        assert_contextless_refusal_preserves_run(run, before, before_stages)
+        assert public["data"]["command"] is None and run_hashes(run) == before
         env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "storyboard", env
         cmd = env["data"]["command"]
         assert "factory.py storyboard" in cmd and "--reply GO" in cmd
         assert fb.answered[-1]["stage"] == "storyboard" and \
             fb.answered[-1]["order_id"] == "o-1"
+
+
+def test_next_storyboard_answer_routes_when_planner_is_waiting_approval():
+    """ST6: after `storyboard` presents the package the row is WAITING_APPROVAL;
+    `next` must route a verified studio GO, not report awaiting-approval."""
+    with tmpdir("ds-state-") as tmp:
+        run = make_state_run(tmp, "video-generation")
+        (run / "control" / "studio-order.json").write_text(json.dumps(
+            {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
+        with bridge():
+            F.cmd_storyboard(ns(run_dir=str(run)))
+        with bridge(), observed_studio_apply() as routed:
+            F.cmd_next(ns(run_dir=str(run)))
+            assert routed == []                           # no answer: still waits
+        with bridge(answer="GO"), observed_studio_apply() as routed:
+            F.cmd_next(ns(run_dir=str(run)))
+        assert len(routed) == 1 and routed[0]["data"]["approval"] == "storyboard", routed
+        assert "--reply GO" in routed[0]["data"]["command"], routed
 
 
 def test_next_storyboard_gate_still_waits_without_an_answer():
@@ -317,11 +306,9 @@ def test_next_song_pick_answer_becomes_song_pick():
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
         before = run_hashes(run)
-        before_stages = logical_stages(run)
         public = F.cmd_next(ns(run_dir=str(run)))
         assert public["outcome"] == "waiting" and public["reason_code"] == "SONG_PICK_MISSING", public
-        assert public["data"]["command"] is None
-        assert_contextless_refusal_preserves_run(run, before, before_stages)
+        assert public["data"]["command"] is None and run_hashes(run) == before
         env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "song", env
         assert "song_choices.py pick" in env["data"]["command"]
@@ -388,6 +375,7 @@ TESTS = [
     test_storyboard_studio_run_publishes_once,
     test_storyboard_second_send_is_a_new_version,
     test_next_storyboard_answer_becomes_storyboard_reply,
+    test_next_storyboard_answer_routes_when_planner_is_waiting_approval,
     test_next_storyboard_gate_still_waits_without_an_answer,
     test_next_song_pick_answer_becomes_song_pick,
     test_next_song_gate_still_refuses_without_an_answer,
