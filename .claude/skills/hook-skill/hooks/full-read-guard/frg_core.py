@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Full-read guard core (stdlib only). Shared by frg_hook.py (the Claude Code hook) and read_skill.py.
 
-Two classes of file inside a skill folder (or the universal-sops folder):
-  instruction - must be read WHOLE (SKILL.md, SOPs, procedures, rules, ...). Partial reads are blocked.
-  lookup      - may be searched or read in part (code, data, tests, templates, catalogs). Named by the central
-                manifest (manifest.d/*.json) or by nature (anything that is not a markdown document).
+Three classes of file inside a skill folder (or the universal-sops folder):
+  instruction - required up front: SKILL.md, root-level instruction documents, named SOPs. Read WHOLE.
+  open        - read-on-open: markdown in step folders (prompts, protocols, templates, steps, playbooks, ...). Not
+                required before work starts, but when opened it must be read whole (partial reads and grep blocked).
+  lookup      - may be searched or read in part (code, data, tests, catalogs). Named by the central manifest
+                (manifest.d/*.json) or by nature (anything that is not a markdown document).
 The agent never decides what is lookup. Nothing is exempt by size.
 """
 import fnmatch, glob as _glob, hashlib, json, os, re, shlex, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INSTR_EXT = (".md", ".markdown", ".mdx")
-# Always instruction, whatever any manifest says.
+# Required up front at the skill root, whatever any manifest says (every other root document is read-on-open).
+UPFRONT_ROOT = {"skill.md", "instructions.md"}
+# Never lookup, whatever any manifest says.
 HARD_NAMES = {"skill.md", "instructions.md", "install.md", "qc.md", "core_updates.md", "readme.md"}
 SKIP_DIRS = {"node_modules", ".git", "__pycache__"}
 SOPS = "universal-sops"
@@ -151,26 +155,30 @@ def locate(path, entries=None):
     return None
 
 
+WHOLE = ("instruction", "open")  # classes that must be read whole when opened
+
+
 def classify_rel(sid, rel):
-    """'instruction' or 'lookup' for a file at rel inside skill sid."""
+    """'instruction' (required up front), 'open' (read-on-open: not required up front, but whole when opened) or
+    'lookup' (searchable) for a file at rel inside skill sid.
+    Up front = SKILL.md and INSTRUCTIONS.md at the skill root, every universal-sops document (named SOPs), and manifest
+    `instruction` globs. All other markdown (INSTALL.md, QC.md, CORE_UPDATES.md, *-full.md, other root documents, and
+    step folders: prompts, protocols, templates, steps, playbooks, references, ...) is read-on-open."""
     base = rel.rsplit("/", 1)[-1]
     low = base.lower()
-    if low in HARD_NAMES and ("/" not in rel or low != "readme.md") or low.endswith("-full.md"):
+    root = "/" not in rel
+    if any(p in SKIP_DIRS for p in rel.split("/")) or not low.endswith(INSTR_EXT):
+        return "lookup"
+    if root and low in UPFRONT_ROOT:
         return "instruction"
-    if any(p in SKIP_DIRS for p in rel.split("/")):
-        return "lookup"
-    if not low.endswith(INSTR_EXT):
-        return "lookup"
+    if (root and low in HARD_NAMES) or low.endswith("-full.md"):
+        return "open"
     m = load_manifest().get(sid)
-    if sid == SOPS:
-        return "instruction" if not (m and any(r.match(rel) for r in m["_lookup_re"])) else "lookup"
-    if m is None:
-        return "instruction" if "/" not in rel else "lookup"
-    if any(r.match(rel) for r in m["_instr_re"]):
+    if m and any(r.match(rel) for r in m["_instr_re"]):
         return "instruction"
-    if any(r.match(rel) for r in m["_lookup_re"]):
+    if m and any(r.match(rel) for r in m["_lookup_re"]):
         return "lookup"
-    return "instruction"  # default until the manifest says otherwise: nothing is exempted by guess
+    return "instruction" if sid == SOPS else "open"
 
 
 def classify(path, entries=None):
@@ -215,7 +223,7 @@ def dir_has_instruction(info):
         dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
         for f in files:
             rel = os.path.relpath(os.path.join(d, f), info["real_dir"]).replace(os.sep, "/")
-            if classify_rel(info["skill"], rel) == "instruction":
+            if classify_rel(info["skill"], rel) in WHOLE:
                 return True
     return False
 
@@ -273,8 +281,17 @@ def resolve_target(target, entries=None):
     return ("skill", f[0], f[1]) if f else None
 
 
+def dependency_files(sid, real_dir):
+    """What a direct dependency requires up front: its SKILL.md and any manifest-named SOP. Its other documents
+    (INSTRUCTIONS.md and step folders) are read-on-open."""
+    return [p for p in instruction_files(sid, real_dir)
+            if os.path.basename(p).lower() == "skill.md" or sid == SOPS
+            or any(r.match(os.path.relpath(p, real_dir).replace(os.sep, "/")) for r in (load_manifest().get(sid) or {}).get("_instr_re", []))]
+
+
 def closure(sid, real_dir, entries=None):
-    """One level: the skill's own instruction files, then each direct dependency's. -> (files, missing_names)."""
+    """One level: the skill's own up-front files (SKILL.md, INSTRUCTIONS.md, named SOPs), then each direct
+    dependency's SKILL.md and named SOPs. -> (files, missing_names)."""
     entries = skill_entries() if entries is None else entries
     files, missing = [], []
     for p in instruction_files(sid, real_dir):
@@ -296,7 +313,7 @@ def closure(sid, real_dir, entries=None):
         if not f:
             missing.append(d)
             continue
-        for p in instruction_files(f[0], f[1]):
+        for p in dependency_files(f[0], f[1]):
             if p not in files:
                 files.append(p)
     return files, missing
@@ -498,7 +515,7 @@ def analyze_bash(cmd, cwd, entries):
                 info = classify(p, entries)
                 if info:
                     infos.append((p, info))
-        files = [(p, i) for p, i in infos if os.path.isfile(p) and i["cls"] == "instruction"]
+        files = [(p, i) for p, i in infos if os.path.isfile(p) and i["cls"] in WHOLE]
         dirs = [(p, i) for p, i in infos if os.path.isdir(p)]
         # interpreter one-liners that name an instruction file
         if verb in INTERP and any(a in ("-c", "-e", "-p") or a.startswith("-c") for a in args):
@@ -506,7 +523,7 @@ def analyze_bash(cmd, cwd, entries):
                 for m in re.finditer(r"[\w~$.\-]*/[\w./\-]+", a):
                     for p in _paths_of(m.group(0), cwd):
                         i = classify(p, entries)
-                        if i and os.path.isfile(p) and i["cls"] == "instruction":
+                        if i and os.path.isfile(p) and i["cls"] in WHOLE:
                             res["partial"].append((verb + " one-liner", i))
             continue
         partial = verb in PARTIAL or (verb == "sed" and _is_sed_partial(toks[1:]))
@@ -547,7 +564,7 @@ def grep_tool_hits(ti, cwd, entries):
     if not info:
         return []
     if os.path.isfile(p):
-        return [info] if info["cls"] == "instruction" else []
+        return [info] if info["cls"] in WHOLE else []
     g = (ti.get("glob") or "")
     ty = (ti.get("type") or "")
     if ty and ty not in ("md", "markdown"):

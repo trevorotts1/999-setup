@@ -7,10 +7,7 @@
    "depends_on": [
     "convert-and-flow-operator",
     "signature-funnel",
-    "blackceo-signature-page",
-    "email-engine",
-    "ghl-install-pages",
-    "signature-order-form"
+    "email-engine"
    ],
    "lookup": [
     "adapters/**",
@@ -19,10 +16,7 @@
   },
   {
    "skill": "blackceo-signature-page",
-   "depends_on": [
-    "signature-funnel",
-    "kie-image"
-   ],
+   "depends_on": [],
    "lookup": [
     "CHANGELOG.md",
     "adapters/**",
@@ -37,48 +31,27 @@
    "skill": "bro",
    "depends_on": [],
    "lookup": [
-    "THIRD_PARTY_LICENSE.md",
-    "examples/**"
+    "THIRD_PARTY_LICENSE.md"
    ]
   },
   {
    "skill": "conversational-ai-system",
    "depends_on": [
-    "convert-and-flow-operator",
-    "kie-image"
+    "convert-and-flow-operator"
    ],
    "lookup": [
     "CHANGELOG.md",
-    "EXAMPLES.md",
     "protocols/persona-registry-protocol.md",
-    "templates/client-reference-sheet-template.md",
-    "templates/journey-templates/coach/journey.md",
-    "templates/journey-templates/consulting/journey.md",
-    "templates/journey-templates/course-creator/journey.md",
-    "templates/journey-templates/e-commerce/journey.md",
-    "templates/journey-templates/real-estate/journey.md",
     "templates/journey-templates/registry.md",
-    "templates/journey-templates/saas/journey.md",
-    "templates/journey-templates/service-provider/journey.md",
-    "templates/journey-templates/wellness/journey.md",
     "templates/registry.md",
-    "templates/run-manifest-template.md",
-    "templates/sms-workflow-ai-prompt-template.md",
     "tools/**"
    ]
   },
   {
    "skill": "convert-and-flow-operator",
-   "depends_on": [
-    "conversational-ai-system",
-    "signature-funnel",
-    "ghl-install-pages",
-    "email-engine",
-    "blackceo-signature-page"
-   ],
+   "depends_on": [],
    "lookup": [
     "CHANGELOG.md",
-    "automation-templates/**",
     "platform/mac/recipes/firebase-token-auto-regrab.md",
     "tools/engine/README.md",
     "tools/engine/cli_anything/gohighlevel/internal/fixtures/README.md",
@@ -97,7 +70,6 @@
    "depends_on": [],
    "lookup": [
     "CHANGELOG.md",
-    "EXAMPLES.md",
     "advisors/**",
     "assets/**",
     "evidence/**",
@@ -110,13 +82,9 @@
   },
   {
    "skill": "drama-song-ad-factory",
-   "depends_on": [
-    "kie-image",
-    "kie-audio"
-   ],
+   "depends_on": [],
    "lookup": [
     "CHANGELOG.md",
-    "EXAMPLES.md",
     "adapters/**",
     "references/prompt-templates/README.md",
     "scripts/**"
@@ -141,8 +109,7 @@
    ],
    "lookup": [
     "CHANGELOG.md",
-    "email-library/**",
-    "examples/**"
+    "email-library/**"
    ]
   },
   {
@@ -152,10 +119,7 @@
    ],
    "lookup": [
     "CHANGELOG.md",
-    "EXAMPLES.md",
     "evidence/**",
-    "exemplars/**",
-    "funnel-templates/**",
     "references/golden/README.md",
     "tests/**",
     "tools/README.md",
@@ -252,13 +216,7 @@
   {
    "skill": "kaizen",
    "depends_on": [],
-   "lookup": [
-    "templates/BACKLOG.template.md",
-    "templates/CYCLE.template.md",
-    "templates/DECISIONS.template.md",
-    "templates/KAIZEN_MEMORY.template.md",
-    "templates/RESUME.template.md"
-   ]
+   "lookup": []
   },
   {
    "skill": "kie",
@@ -269,8 +227,7 @@
    "skill": "kie-audio",
    "depends_on": [],
    "lookup": [
-    "CHANGELOG.md",
-    "EXAMPLES.md"
+    "CHANGELOG.md"
    ]
   },
   {
@@ -278,7 +235,6 @@
    "depends_on": [],
    "lookup": [
     "CHANGELOG.md",
-    "EXAMPLES.md",
     "references/api-patterns.md",
     "references/models.md"
    ]
@@ -307,9 +263,7 @@
   },
   {
    "skill": "signature-downsell",
-   "depends_on": [
-    "blackceo-signature-page"
-   ],
+   "depends_on": [],
    "lookup": [
     "adapters/**",
     "fixtures/**"
@@ -318,20 +272,17 @@
   {
    "skill": "signature-funnel",
    "depends_on": [
-    "kie-image",
     "blackceo-signature-page"
    ],
    "lookup": [
     "CHANGELOG.md",
-    "adapters/**",
-    "examples/**"
+    "adapters/**"
    ]
   },
   {
    "skill": "signature-order-form",
    "depends_on": [
-    "blackceo-signature-page",
-    "ghl-install-pages"
+    "blackceo-signature-page"
    ],
    "lookup": []
   },
@@ -339,16 +290,13 @@
    "skill": "signature-product-selection",
    "depends_on": [
     "signature-order-form",
-    "blackceo-signature-page",
-    "black-friday-launcher"
+    "blackceo-signature-page"
    ],
    "lookup": []
   },
   {
    "skill": "signature-thank-you",
-   "depends_on": [
-    "blackceo-signature-page"
-   ],
+   "depends_on": [],
    "lookup": []
   },
   {
@@ -364,25 +312,7 @@
   {
    "skill": "spec-protocol",
    "depends_on": [],
-   "lookup": [
-    "templates/apparatus/01-MASTER-SPEC.md",
-    "templates/apparatus/03-TODO.md",
-    "templates/apparatus/04-SESSION-LOG.md",
-    "templates/apparatus/05-CHANGELOG.md",
-    "templates/apparatus/06-LEDGER.md",
-    "templates/apparatus/07-QUALITY-CONTROL-RULEBOOK.md",
-    "templates/apparatus/08-GOAL.md",
-    "templates/apparatus/09-LOOP.md",
-    "templates/apparatus/10-DECISIONS.md",
-    "templates/apparatus/11-LAUNCH-COMMAND.md",
-    "templates/apparatus/12-dispatch-log.md",
-    "templates/apparatus/13-HEARTBEAT.md",
-    "templates/apparatus/14-MORNING-REPORT.md",
-    "templates/apparatus/15-CURRENT-STATE.md",
-    "templates/apparatus/16-EXECUTION-PLAN.md",
-    "templates/apparatus/17-PROJECT-MANIFEST.md",
-    "templates/scaffolding/FILE-STRUCTURE.md"
-   ]
+   "lookup": []
   }
  ]
 }

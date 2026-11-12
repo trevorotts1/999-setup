@@ -30,7 +30,7 @@ def decide(d, sess, entries):
     tool, ti, cwd = d.get("tool_name", ""), d.get("tool_input") or {}, d.get("cwd") or os.getcwd()
     if tool == "Read":
         info = C.classify(C._expand(ti.get("file_path") or "", cwd), entries)
-        if info and info["cls"] == "instruction" and (ti.get("offset") or ti.get("limit")):
+        if info and info["cls"] in C.WHOLE and (ti.get("offset") or ti.get("limit")):
             return ("R2-partial-read", "Full-read guard: %s (%s) is an instruction file and must be read whole. Read it "
                     "again without offset or limit. If it is too large for one Read, %s (it prints every part)."
                     % (info["rel"], info["skill"], how(info["skill"])))

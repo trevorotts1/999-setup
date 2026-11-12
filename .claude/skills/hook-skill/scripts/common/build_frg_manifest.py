@@ -7,22 +7,24 @@ Rules (the same everywhere; no size rule exists):
   * Only markdown documents can be instruction files. Code, data, json, html, archives are lookup by nature.
   * SKILL.md, INSTRUCTIONS.md, INSTALL.md, QC.md, CORE_UPDATES.md, root README.md and *-full.md are never lookup.
   * A markdown file is lookup when it sits in a lookup folder (tests, scripts, tools, assets, evidence, fixtures,
-    templates, examples, runtime, schemas, config, data, adapters, hooks, ...) and its name is not an instruction
+    runtime, schemas, config, data, adapters, hooks, ...) and its name is not an instruction
     name (sop, protocol, rubric, checklist, contract, runbook, playbook, standard, rules), or when its name marks
     it as release metadata or a catalog (changelog, examples, models, model-routing, nine-router-api, api-patterns).
-  * Every other markdown file is an instruction file. Ambiguous names stay instruction until Trevor rules otherwise.
+  * Every other markdown file is NOT listed here: at the skill root it is an up-front instruction document; below the
+    root (prompts, protocols, templates, steps, playbooks, examples, references, ...) it is read-on-open (not required
+    up front, but whole when opened).
 depends_on lists are kept from the existing shard (one level, decided by Trevor); this script never invents them.
 """
 import argparse, json, os, re, sys
 
 LOOKUP_DIRS = {"tests", "scripts", "tools", "assets", "evidence", "fixtures", "test-fixtures", "runtime", "schemas",
-               "config", "data", "templates", "exemplars", "funnel-templates", "automation-templates", "extensions",
-               "examples", "adapters", "advisors", "email-library", "platform", "timer-artifacts", "hooks", "monitors",
+               "config", "data", "extensions",
+               "adapters", "advisors", "email-library", "platform", "timer-artifacts", "hooks", "monitors",
                "prove", "receipts", "launcher_core", "repo-integration", "launchd", "agents", "schema", "validators",
                "golden", "prompt-templates"}
 STRICT_LOOKUP_DIRS = {"tests", "fixtures", "test-fixtures", "evidence", "golden"}  # never overridden by a name
 INSTR_NAME = re.compile(r"(sop|protocol|rubric|checklist|contract|runbook|playbook|standard|rules)", re.I)
-LOOKUP_NAME = re.compile(r"^(changelog|examples|models|model-routing|nine-router-api|api-patterns|third_party_license)\.md$|catalog|registry|glossary", re.I)
+LOOKUP_NAME = re.compile(r"^(changelog|models|model-routing|nine-router-api|api-patterns|third_party_license)\.md$|catalog|registry|glossary", re.I)
 HARD = {"skill.md", "instructions.md", "install.md", "qc.md", "core_updates.md"}
 SKIP = {"node_modules", ".git", "__pycache__"}
 

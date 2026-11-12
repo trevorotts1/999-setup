@@ -72,11 +72,18 @@ class Classify(Base):
         S = self.root + "/skills/"
         cls = lambda p: C.classify(S + p)["cls"]
         self.assertEqual(cls("alpha/SKILL.md"), "instruction")
-        self.assertEqual(cls("alpha/references/rules.md"), "instruction")  # default until the manifest says otherwise
+        self.assertEqual(cls("alpha/references/rules.md"), "open")  # step folder: whole when opened, not required up front
+        self.assertEqual(cls("alpha/INSTALL.md"), "open") if os.path.exists(S + "alpha/INSTALL.md") else None
         self.assertEqual(cls("alpha/references/models.md"), "lookup")
         self.assertEqual(cls("alpha/data/notes.md"), "lookup")
         self.assertEqual(cls("alpha/scripts/run.py"), "lookup")  # not a markdown document
         self.assertEqual(cls("universal-sops/SOP-ONE.md"), "instruction")
+        w(S + "alpha/INSTRUCTIONS.md", "x\n")
+        w(S + "alpha/INSTALL.md", "x\n")
+        w(S + "alpha/prompts/p1.md", "x\n")
+        self.assertEqual(cls("alpha/INSTRUCTIONS.md"), "instruction")
+        self.assertEqual(cls("alpha/INSTALL.md"), "open")
+        self.assertEqual(cls("alpha/prompts/p1.md"), "open")
         self.assertIsNone(C.classify(self.root + "/outside.md"))
 
     def test_skill_md_never_lookup_even_if_manifest_says_so(self):
@@ -106,6 +113,22 @@ class Classify(Base):
         p = subprocess.run([sys.executable, os.path.join(SKILL, "scripts", "common", "build_frg_manifest.py"), "--repo", repo, "--check"])
         self.assertEqual(p.returncode, 0, "manifest.d/999.json is stale: run scripts/common/build_frg_manifest.py")
 
+    def test_upfront_set_stays_small_for_every_shipped_skill(self):
+        repo = os.path.abspath(os.path.join(SKILL, "..", "..", ".."))
+        base = os.path.join(repo, ".claude", "skills")
+        if not os.path.isdir(base):
+            self.skipTest("not inside the repository tree")
+        env = dict(os.environ, FRG_SKILLS_ROOTS=base, FRG_STATE_DIR=self.root + "/state")
+        code = ("import sys,os,json; sys.path.insert(0, %r); import frg_core as C\n"
+                "out={}\n"
+                "for sid,lex,real in C.skill_entries():\n"
+                "    cl,_=C.closure(sid,real); out[sid]=sum(os.path.getsize(f) for f in cl)\n"
+                "print(json.dumps(out))" % FRG)
+        sizes = json.loads(subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env).stdout)
+        self.assertTrue(sizes)
+        for sid, n in sizes.items():
+            self.assertLess(n, 150 * 1024, "%s needs %d bytes read up front" % (sid, n))
+
     def test_shipped_manifest_deps_and_globs_resolve(self):
         repo = os.path.abspath(os.path.join(SKILL, "..", "..", ".."))
         if not os.path.isdir(os.path.join(repo, ".claude", "skills")):
@@ -128,6 +151,24 @@ class HookRules(Base):
     def test_partial_read_denied_whole_read_allowed(self):
         self.assertTrue(self.blocked(self.hook("pre_read_partial.json")))
         self.assertIsNone(self.hook("pre_read_whole.json"))
+
+    def test_read_on_open_files_need_whole_read_but_not_up_front(self):
+        S = self.root + "/skills/alpha/"
+        w(S + "prompts/p1.md", "step one\nstep two\n")
+        self.assertTrue(self.blocked(self.pre("Read", {"file_path": S + "prompts/p1.md", "limit": 1})))
+        self.assertIsNone(self.pre("Read", {"file_path": S + "prompts/p1.md"}))
+        self.assertTrue(self.blocked(self.bash("grep -n step %sprompts/p1.md" % S, sid="oo1")))
+        self.assertTrue(self.blocked(self.bash("head -1 %sreferences/rules.md" % S, sid="oo2")))
+        self.assertTrue(self.blocked(self.pre("Grep", {"pattern": "step", "path": S + "prompts"})))
+        # not required before acting, and read-skill does not print it but names the folder
+        run = "python3 %sscripts/run.py" % S
+        for f in ("alpha/SKILL.md", "beta/SKILL.md", "universal-sops/SOP-ONE.md"):
+            self.hook({"tool_name": "Read", "tool_input": {"file_path": self.root + "/skills/" + f}, "cwd": self.root}, "PostToolUse", "oo")
+        self.assertFalse(self.blocked(self.bash(run, sid="oo")))
+        out = self.read_skill("alpha").stdout
+        self.assertNotIn("step one", out)
+        self.assertIn("READ-ON-OPEN", out)
+        self.assertIn("prompts/", out)
 
     def test_partial_read_of_lookup_allowed(self):
         self.assertIsNone(self.pre("Read", {"file_path": self.root + "/skills/alpha/data/notes.md", "limit": 1}))
@@ -199,7 +240,7 @@ class HookRules(Base):
 
     def test_dependency_gap_blocks_until_deps_read(self):
         run = "python3 %s/skills/alpha/scripts/run.py" % self.root
-        for f in ("alpha/SKILL.md", "alpha/references/rules.md"):  # the skill alone, normal whole reads
+        for f in ("alpha/SKILL.md",):  # the skill alone, normal whole reads
             self.hook({"tool_name": "Read", "tool_input": {"file_path": self.root + "/skills/" + f}, "cwd": self.root}, "PostToolUse", "dep")
         self.assertTrue(self.blocked(self.bash(run, sid="dep")))  # beta and the SOP are still unread
         for f in ("beta/SKILL.md", "universal-sops/SOP-ONE.md"):
@@ -211,8 +252,9 @@ class HookRules(Base):
         json.dump({"skills": [{"skill": "alpha", "depends_on": ["beta"]}, {"skill": "beta", "depends_on": ["gamma"]}]},
                   open(self.root + "/manifest.d/t.json", "w"))
         p = self.read_skill("alpha")
-        self.assertIn("deep", p.stdout)        # a dependency is read in full (all its instruction files)
-        self.assertNotIn("Gamma", p.stdout)    # but ITS dependency is not pulled in
+        self.assertIn("Beta body", p.stdout)   # a dependency's SKILL.md is read in full
+        self.assertNotIn("deep", p.stdout)     # its step folders are read-on-open
+        self.assertNotIn("Gamma", p.stdout)    # and ITS dependency is not pulled in
 
     def test_partial_receipt_does_not_unlock(self):
         env = dict(self.env, FRG_PART_CHARS="120")
@@ -277,7 +319,7 @@ class HookRules(Base):
 class ReadSkill(Base):
     def test_parts_concatenate_to_source(self):
         big = "".join("line %d of a long instruction file\n" % i for i in range(400))
-        w(self.root + "/skills/alpha/references/big.md", big)
+        w(self.root + "/skills/alpha/INSTRUCTIONS.md", big)
         env = dict(self.env, FRG_PART_CHARS="1500")
         first = self.read_skill("alpha", env=env)
         import re
@@ -303,8 +345,9 @@ class ReadSkill(Base):
         p2 = self.read_skill("07")
         self.assertEqual(p2.returncode, 0)
         out = self.read_skill("alpha").stdout
-        self.assertLess(out.index("Alpha steps"), out.index("rule one"))
-        self.assertLess(out.index("rule two"), out.index("Beta body"))
+        self.assertLess(out.index("Alpha steps"), out.index("Beta body"))
+        self.assertLess(out.index("Beta body"), out.index("sop line 1"))
+        self.assertNotIn("rule one", out)  # references/ is read-on-open
 
     def test_sop_file_target(self):
         p = self.read_skill("universal-sops/SOP-ONE.md")

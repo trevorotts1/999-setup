@@ -51,6 +51,18 @@ def names():
     return seen
 
 
+def open_summary(sid, real):
+    """Read-on-open folders: not printed here, but any file opened there must be read whole."""
+    out = {}
+    for d, dirs, files in os.walk(real):
+        dirs[:] = sorted(x for x in dirs if x not in C.SKIP_DIRS)
+        for f in files:
+            rel = os.path.relpath(os.path.join(d, f), real).replace(os.sep, "/")
+            if "/" in rel and C.classify_rel(sid, rel) == "open":
+                out[rel.split("/")[0] + "/"] = out.get(rel.split("/")[0] + "/", 0) + 1
+    return sorted("%s (%d files)" % kv for kv in out.items())
+
+
 def lookup_summary(real):
     dirs = set()
     try:
@@ -107,6 +119,9 @@ def main(argv):
     if part == 1:
         print("Files in order: " + "; ".join(files))
         if t[0] == "skill":
+            oo = open_summary(t[1], t[2])
+            if oo:
+                print("READ-ON-OPEN (not required up front; open the one you need with read-skill <path> or the Read tool, whole): " + " ".join(oo))
             lk = lookup_summary(t[2])
             if lk:
                 print("Folders not required reading (searchable, may be read in part): " + " ".join(lk))
