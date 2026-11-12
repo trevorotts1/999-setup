@@ -76,6 +76,14 @@ jobs:
           repository: trevorotts1/openclaw-onboarding
           ref: main
           path: onboarding-checkout
+      # The Skill 49 entry self-test drives Skill 71's page builder, whose circle_image module imports
+      # Pillow at load time (synced from onboarding, which installs the same pin for these suites).
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Install Pillow for the Skill 71 page builder
+        run: python3 -m pip install --quiet pillow==10.4.0
       - name: Skill 71 parity reports PASS or FAIL, never SKIP
         run: |
           set -uo pipefail
