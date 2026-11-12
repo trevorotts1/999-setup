@@ -1,7 +1,7 @@
 ---
 name: signature-thank-you
 description: Builds the terminal Signature Launch thank-you / confirmation page — the final purchase-confirmation and access experience that shows exactly what the customer actually purchased (verified against the normalized purchase snapshot and S44 entitlement state), its actual charges and terms, and what happens next. This is NOT an upsell page and carries NO new pitch, new offer, or new-charge CTA; a page that says "thank you" while selling something is an upsell page owned by Skill 80. Purchased product names, amounts, totals, order numbers, and billing schedules are allowed and required here because they identify completed purchases. Fulfillment authority is S44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching this page.
-version: 0.3.4
+version: 0.3.6
 ---
 
 # Signature Thank-You and Fulfillment (Skill 82)
@@ -164,6 +164,10 @@ Fixtures use TEST ONLY dummy identities. Receipt data must not leak
 through URL parameters, analytics, cached HTML, or screenshots; a shared
 computer's next visitor must not see a previous buyer's receipt.
 
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The thank-you page's design stages follow the same direction; the live page stays purchase truth only. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
+
 ## Running the validators
 
 ```bash
@@ -188,6 +192,13 @@ Exit 0 = pass, 1 = validation errors (printed one per line).
   open with "thank you" and then sell). Skill 49 keeps its legacy
   no-name/no-price thank-you behavior in legacy mode only — see
   `references/no-pitch-policy.md`.
+- Runtime host: Skill 82 ships the resolver, not a process that runs it.
+  Skill 44 hosts it: `44-convert-and-flow-operator/tools/siglaunch/thank_you_host.py
+  --snapshot <normalizer purchase event> --map <fulfillment-map envelope>
+  --out-dir <work_dir>` runs this skill's adapter, resolver, validators and
+  no-pitch scan, refuses (writing nothing) on any failure, and writes
+  `thank-you-result.json` and `thank-you-run-manifest.json`, the two files
+  Skill 49's `translate_thank_you_result.py` reads in its non-design mode.
 - Native order-summary integration (S82-05): the offline half is
   built — the event-to-snapshot adapter and the integration contract
   in `references/native-order-summary-integration.md`. The live half

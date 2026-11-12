@@ -4,8 +4,8 @@ Captured 2026-11-10: Single Line0 drag handle, empty slide canvas, TEXT input,
 General Settings and saved/reopened label, placeholder, short label and Query Key.
 Each invocation journals intent before its single insertion; uncertain writes are
 never retried. Populated append uses its captured positive blank-tail pointer path.
-Multi Line uses its separately captured LARGE_TEXT textarea and initially empty
-owner only; populated Multi Line append and other widgets need separate captures.
+Multi Line uses its separately captured LARGE_TEXT textarea. Mixed/populated
+append binds every prior TEXT/LARGE_TEXT wrapper and its complete properties.
 """
 from copy import deepcopy
 import hashlib
@@ -74,16 +74,45 @@ def _frame(page,plan):
     return frame
 
 
-def snapshot(frame,plan):
-    """Stable semantic canvas inventory, excluding transient selection controls."""
-    owners=_owners(frame,plan)
-    return [owners.nth(index).locator('.form-field-wrapper').evaluate_all('''items => items.map(item => ({
+_SNAPSHOT_PROJECTION = '''items => items.map(item => ({
         types:Array.from(item.querySelectorAll('[data-field-type]')).map(e=>e.getAttribute('data-field-type')),
         labels:Array.from(item.querySelectorAll('[data-field-type]')).map(e=>e.textContent.trim()),
         short_labels:Array.from(item.querySelectorAll('.short-label')).map(e=>e.textContent),
-        controls:Array.from(item.querySelectorAll('input,textarea,select')).map(e=>
-            [e.tagName,e.getAttribute('type'),e.getAttribute('name'),e.getAttribute('placeholder'),e.value])
-    }))''') for index in range(owners.count())]
+        controls:Array.from(item.querySelectorAll('input,textarea,select')).filter(e=>
+            !(item.querySelectorAll('[data-field-type]').length===1
+              && ['SINGLE_OPTIONS','MULTIPLE_OPTIONS'].includes(item.querySelector('[data-field-type]').getAttribute('data-field-type'))
+              && e.closest('#options-card'))).map(e=>
+            [e.tagName,e.getAttribute('type'),e.getAttribute('name'),e.getAttribute('placeholder'),
+             (item.querySelectorAll('[data-field-type]').length===1
+               && ['SINGLE_OPTIONS','MULTIPLE_OPTIONS'].includes(item.querySelector('[data-field-type]').getAttribute('data-field-type'))
+               && e.matches('input.dropdown-input.form-placeholder') && !e.hasAttribute('id') && !e.hasAttribute('name')
+               ? '' : e.value)])
+    }))'''
+
+
+def snapshot(frame,plan):
+    """Stable semantic inventory; dropdowns compare selected to selected.
+
+    Captured survey dropdown previews switch between an inactive anchor and a
+    selected input with transient choice editors. Bind only their real field
+    input; complete options are separately verified by the family reader.
+    """
+    owners=_owners(frame,plan);result=[]
+    for index in range(owners.count()):
+        items=owners.nth(index).locator('.form-field-wrapper')
+        records=items.evaluate_all(_SNAPSHOT_PROJECTION)
+        for position,record in enumerate(records):
+            if record['types'] not in (['SINGLE_OPTIONS'],['MULTIPLE_OPTIONS']):continue
+            if items.count()!=len(records):raise Stop('Survey dropdown owner changed during selected inventory')
+            item=items.nth(position);label=item.locator('[data-field-type]')
+            if label.count()!=1:raise Stop('Survey dropdown selected owner is ambiguous')
+            click(label)
+            selected=item.evaluate('(item)=> ('+_SNAPSHOT_PROJECTION+')([item])[0]')
+            if selected['types']!=record['types']:
+                raise Stop('Survey dropdown family changed during selected inventory')
+            records[position]=selected
+        result.append(records)
+    return result
 
 
 def _item(frame,plan):
@@ -190,6 +219,32 @@ def _append_populated(page,handle,canvas,last):
     finally:page.mouse.up()
 
 
+def _prior_questions(frame,plan,owner):
+    """Bind the complete ordered prior canvas, not only one family count."""
+    if 'expected_prior_widgets' in plan:
+        if 'expected_prior' in plan:raise Stop('Survey append prior inventory has conflicting encodings')
+        prior=plan['expected_prior_widgets']
+    else:
+        legacy=plan.get('expected_prior',[])
+        if not isinstance(legacy,list):raise Stop('Survey append prior inventory must be an explicit list')
+        prior=[{'kind':'text','question':question} for question in legacy]
+    if not isinstance(prior,list) or owner.locator('.form-field-wrapper').count()!=len(prior):
+        raise Stop('Survey append owner differs from the complete prior widget inventory')
+    positions={'text':0,'multiline':0};bound=[]
+    for index,row in enumerate(prior):
+        if not isinstance(row,dict) or set(row)!={'kind','question'} or row['kind'] not in positions:
+            raise Stop('Survey append requires exact captured prior text families')
+        kind=row['kind'];positions[kind]+=1;question=validate_question(row['question'])
+        family='TEXT' if kind=='text' else 'LARGE_TEXT'
+        wrapper=owner.locator('.form-field-wrapper').nth(index)
+        if wrapper.locator('[data-field-type]').count()!=1 or wrapper.locator('[data-field-type="'+family+'"]').count()!=1:
+            raise Stop('Survey append prior canvas family/order changed')
+        target={**plan,'_native_field_type':family,'text_index':positions[kind]}
+        if read_question(frame,target)!=question:raise Stop('Survey append prior question properties changed')
+        bound.append((target,question))
+    return bound
+
+
 def configure(page,plan,evidence_root):
     validate_question(plan['question'])
     profile=_creation_profile(plan)
@@ -205,15 +260,7 @@ def configure(page,plan,evidence_root):
             raise Stop('Completed Survey Single Line saved owner changed')
         return done
     owners=_owners(frame,plan);owner=owners.nth(plan['target_slide']-1)
-    prior=plan.get('expected_prior',[])
-    if plan.get('_native_field_type')=='LARGE_TEXT' and prior:
-        raise Stop('Multi Line creation requires its captured initially empty slide; populated append needs a separate capture')
-    if not isinstance(prior,list) or owner.locator('.form-field-wrapper').count()!=len(prior):
-        raise Stop('Survey Single Line populated owner differs from the complete prior question inventory')
-    for index,question in enumerate(prior,1):
-        validate_question(question)
-        if read_question(frame,{**plan,'text_index':index})!=question:
-            raise Stop('Survey Single Line prior question properties changed before append')
+    prior=_prior_questions(frame,plan,owner)
     if not prior and owner.get_by_text('Drag and drop components',exact=True).count()!=1:
         raise Stop('Survey Single Line insertion lacks its positively empty captured owner')
     before=snapshot(frame,plan)
@@ -237,8 +284,8 @@ def configure(page,plan,evidence_root):
         if (any(row!=before[index] for index,row in enumerate(after) if index!=plan['target_slide']-1)
                 or after[plan['target_slide']-1][:-1]!=before[plan['target_slide']-1]):
             raise Stop('Survey Single Line insertion changed an unrequested owner')
-        for index,question in enumerate(prior,1):
-            if read_question(frame,{**plan,'text_index':index})!=question:
+        for target,question in prior:
+            if read_question(frame,target)!=question:
                 raise Stop('Survey Single Line append changed an existing question property')
         previous=read_question(frame,plan)
         if (not re.fullmatch(re.escape(profile[1])+r' [a-z0-9]{6}',previous['label'])

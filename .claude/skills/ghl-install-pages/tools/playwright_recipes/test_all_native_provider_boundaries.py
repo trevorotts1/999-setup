@@ -35,8 +35,25 @@ def native_cases(root):
  yield 'address_parent','forms.configure',address_parent()
  from test_survey_text_populated import configuration as survey_text_properties
  yield 'survey_text_properties','surveys.configure',survey_text_properties()
+ from test_survey_widget_families import inputs as survey_number_properties
+ yield 'survey_number_properties','surveys.configure',survey_number_properties()
  from test_survey_creation import inputs as whole_survey
  yield 'whole_survey_creation','surveys.create',whole_survey()
+ from test_survey_number_creation import inputs as number_survey
+ yield 'number_survey_creation','surveys.create',number_survey()
+ from test_survey_checkbox_creation import inputs as checkbox_survey, configuration as checkbox_properties
+ yield 'checkbox_survey_creation','surveys.create',checkbox_survey()
+ yield 'checkbox_survey_properties','surveys.configure',checkbox_properties()
+ from test_survey_condition_outcomes import step as survey_outcomes
+ outcome=survey_outcomes()['payload'];common={key:outcome.pop(key) for key in ('location_id','location_name','start_url')}
+ yield 'survey_condition_outcomes','surveys.configure',{**common,'configuration':outcome}
+ from test_survey_submission import inputs as survey_submission
+ for mode in ('Message','Redirect to URL'):
+  yield 'survey_submission_'+mode,'surveys.configure',survey_submission(mode)
+ from test_survey_dropdown_creation import inputs as dropdown_survey, configuration as dropdown_properties
+ for family in ('single_dropdown','multi_dropdown'):
+  yield family+'_survey_creation','surveys.create',dropdown_survey(family)
+  yield family+'_survey_properties','surveys.configure',dropdown_properties(family)
  from test_survey_radio_creation import inputs as survey_radio
  yield 'survey_radio_creation','surveys.create',survey_radio()
  from test_quiz_picture_questions import request as picture_choice
@@ -44,6 +61,9 @@ def native_cases(root):
  from test_field_placement_integration import inputs
  base=inputs();base.pop('add_fields')
  for k,extra in [('builtin',{'add_fields':['Website']}),('field_properties',{'fields':[{'field':'Last Name','required':True}]}),('address',{'address_fields':[{'field':'Street Address','current_query_key':'address','query_key':'street_address'}]}),('consent',{'consent':{'expected_query_key':'terms_and_conditions','required':True,'expected_required':False}})]:yield k,'forms.configure',{**base,**extra}
+ from test_form_widget_families import inputs as form_widgets
+ for family in ('number','checkbox','file_upload','signature','single_dropdown','multi_dropdown','url'):
+  yield 'form_widget_'+family,'forms.configure',form_widgets(family)
  yield 'settings','forms.settings',{**base,'settings':{'save_progress':True}}
  from test_form_schedule import spec
  yield 'schedule','forms.settings',{**base,'schedule':spec()['schedule']}
@@ -53,8 +73,15 @@ def native_cases(root):
  yield 'singlecondition','forms.conditions',{**base,'condition':{'if_field':'Last Name','operator':'Is Filled','target':'First Name'}}
  from test_form_condition_groups import plan as group
  yield 'compoundcondition','forms.conditions',{**base,'condition':{k:v for k,v in group().items() if k!='action'}}
+ from test_meeting_first_cohosts import inputs as first_cohosts
+ first=first_cohosts();common={key:first.pop(key) for key in ('location_id','location_name','start_url')}
+ yield 'first_meeting_cohosts','meetings.setup',{**common,'meeting':first}
  from test_next_control_integration import NativeDynamicIntegrationTests
  yield 'dynamic_calendar','meetings.integrate',NativeDynamicIntegrationTests().data()
+ from test_native_course_live_session import valid as course_live_session
+ yield 'course_live_session','meetings.integrate',{**course_live_session(),'integration_mode':'course_live_session'}
+ from test_meeting_oauth_handoff import inputs as provider_oauth_handoff
+ yield 'provider_oauth_handoff','meetings.integrate',provider_oauth_handoff()
  from test_community_event_host import inputs as event
  yield 'community_event','meetings.integrate',event()
  from test_quiz_ui import configuration
@@ -139,8 +166,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),66,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),80)
+        self.assertEqual(len(covered),72,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),101)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

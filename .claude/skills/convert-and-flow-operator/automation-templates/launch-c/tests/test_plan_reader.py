@@ -45,10 +45,14 @@ def buildable_plan(source=PLAN_FIXTURE):
 
 BUILDABLE_PLAN = buildable_plan()
 
+# Fixed clock before every fixture date (doors_close_at is 2026-11-10): the reader's
+# default is wall-clock now, which silently suppresses every send once the fixture passes.
+FIXED_NOW = "2026-11-01T00:00:00-05:00"
+
 
 def run_reader(build_plans, plan_path=BUILDABLE_PLAN, sequence_map=None):
     out = Path(tempfile.mkdtemp()) / "automation-builds.json"
-    argv = ["--launch-plan", str(plan_path), "--out", str(out)]
+    argv = ["--launch-plan", str(plan_path), "--out", str(out), "--now", FIXED_NOW]
     for path in build_plans:
         argv += ["--build-plan", str(path)]
     if sequence_map:
@@ -110,7 +114,11 @@ class PlanReaderTests(unittest.TestCase):
                                 "html": "<p>b</p>", "fromName": "n"}}
                 for index in range(count)
             ]
-            doc = {"folder": "F", "_meta": {"sequence_id": seq_id},
+            doc = {"folder": "F", "_meta": {
+                       "sequence_id": seq_id,
+                       "enrollment_conditions": plan_reader.DEFAULT_ENROLLMENT_CONDITIONS,
+                       "lifecycle": plan_reader.DEFAULT_LIFECYCLE,
+                       "sender_config_refs": plan_reader.DEFAULT_SENDER},
                    seq_id: {"name": seq_id, "status": "draft", "templates": templates}}
             path = temp / ("%s.json" % seq_id)
             path.write_text(json.dumps(doc))
@@ -178,6 +186,26 @@ class PlanReaderTests(unittest.TestCase):
         rc, result = run_reader([PRE], plan_path=cyclic)
         self.assertEqual(rc, 2)
         self.assertIsNone(result)
+
+    def test_text_set_without_approved_copy_blocks_the_build_that_elected_it(self):
+        # Issue 3: the reader never builds an electing automation without Skill 50's SMS copy.
+        # (Full text-set coverage: test_plan_reader_text_sets.py.)
+        plan = json.loads(BUILDABLE_PLAN.read_text())
+        plan["text_sets"] = [{
+            "id": "text_abandoned_checkout", "kind": "abandoned_checkout", "messages": 2,
+            "promotional": True, "draft_only": True, "opt_out_keyword": "STOP",
+            "includes_reply_invitation": True,
+            "send_window": {"start": "08:00", "end": "21:00", "timezone": "recipient_local"},
+            "waits_for": ["page_checkout"]}]
+        electing = next(a for a in plan["automations"] if a["id"] == "auto_abandoned_checkout")
+        electing["waits_for"].append("text_abandoned_checkout")
+        path = Path(tempfile.mkdtemp()) / "plan.json"
+        path.write_text(json.dumps(plan))
+        rc, doc = run_reader([ABANDONED, WELCOME], plan_path=path)
+        build = next(b for b in doc["builds"] if b["id"] == "auto_abandoned_checkout")
+        self.assertEqual(build["state"], "blocked")
+        self.assertIn("text_set:text_abandoned_checkout copy", build["blocked_by"])
+        self.assertEqual(rc, 4)
 
     def test_selftest(self):
         self.assertEqual(plan_reader.main(["--selftest"]), 0)

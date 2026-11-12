@@ -23,12 +23,17 @@ No paid API is called anywhere in this module.
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# AF-71-UNGATED (issue 10): stage_executor runs a stub on a run with no gate state only when a test harness
+# sets this marker. This module starts stub runs on bare folders, so it is a harness; no product script sets it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -278,6 +283,16 @@ class PromptTests(RunCase):
         request["_brand_block"] = exe.require_brand_colors(self.run)
         request["_hypersat"] = exe.hypersaturation.roles_for_run(self.run)
         return exe.stage_prompt(stage, request["sections"][index - 1], index, width, request, "16:9")
+
+    def test_order_summary_and_access_never_invent_purchase_data(self):
+        # the rows and cards come from the verified order at render time; a wireframe drawn from
+        # "one row per purchased item" invented items, amounts, a failed line and a monthly product
+        for stage, width in (("desktop-wireframe", 1440), ("mobile-tablet", 390), ("visual-mockup", 1440)):
+            request = self.build(stage=stage)
+            summary = self.prompt(stage, 2, width, request)
+            self.assertIn("never as a name, a figure or a currency sign", summary, stage)
+            access = self.prompt(stage, 3, width, request)
+            self.assertIn("never an invented product, bonus or membership", access, stage)
 
     def test_every_stage_and_platform_carries_the_pages_own_structure(self):
         for stage, widths in (("desktop-wireframe", (1440,)), ("mobile-tablet", (390,)),

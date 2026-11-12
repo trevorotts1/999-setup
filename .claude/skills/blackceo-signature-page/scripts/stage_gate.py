@@ -68,7 +68,8 @@ WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
 GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:intake_page_kind", "gate:noop",
-                 "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
+                 "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff",
+                 "gate:no_pitch_receipt"}
 
 
 def fail_exit(lines):
@@ -233,6 +234,19 @@ def model_substitutions(run_dir, stage=None):
     return {"{model}": model or "", "{max_chars}": str(cap) if cap else ""}
 
 
+def copy_spec_for_role(role):
+    """The page role's own copy spec, relative to the skill root, or '' for a role with none.
+
+    references/copy-specs/roles/<role>.json first (checkout), then a copy form registered for the
+    role (copy_forms.form_for_role: upsell_1/upsell_2 -> upsell, downsell_1 -> downsell). The
+    thank-you page records its own copy_version, so its spec is already selected."""
+    if (SKILL_ROOT / "references" / "copy-specs" / "roles" / f"{role}.json").is_file():
+        return f"references/copy-specs/roles/{role}.json"
+    import copy_forms
+    form = copy_forms.form_for_role(role)
+    return f"references/copy-specs/{copy_forms.SPEC_FILES[form]}" if form else ""
+
+
 def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     """Substitute {run_dir}/{brand}/{file}/{sauce} in a validator command.
 
@@ -271,6 +285,12 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
                           "(Amendment 6, Items 18/19); none is recorded"]
         substitutions["{copy_version}"] = cv
         substitutions["{copy_spec}"] = page_role.spec_ref(cv)
+        # A priced page (checkout, upsell, downsell) records the landing form its images are drawn
+        # from as copy_version, but its copy has the page role's own sections: validate against them.
+        role = page_role.declared_role(run_dir)
+        role_ref = copy_spec_for_role(role) if role != page_role.LANDING_ROLE else ""
+        if role_ref:
+            substitutions["{copy_spec}"] = role_ref
     files = []
     per_file = spec.get("per_file_glob")
     if per_file:
@@ -948,6 +968,12 @@ def run_builtin(name, args, run_dir):
         if manifest is None or public is None:
             return "gate:copy_handoff: missing --manifest or --public-copy"
         return copy_handoff_failure(manifest, public, manuscript)
+    if name == "gate:no_pitch_receipt":
+        # AF-71-THANK-YOU-PITCH: a thank_you run's copy stage closes only on
+        # private/receipts/no-pitch-scan.json (zero findings, manuscript sha still
+        # matching). Any other page role is not asked for one. See no_pitch_scan.py.
+        import no_pitch_scan
+        return no_pitch_scan.receipt_failure(run_dir)
     return f"unknown builtin validator {name}"
 
 
@@ -1484,7 +1510,11 @@ NO_OFFER_PRICING_FLAG = "--no-offer-pricing"
 
 
 def launch_profile_active(run_dir):
-    return intake_data(run_dir).get("launch_profile") == LAUNCH_PROFILE_NAME
+    """The no-price rule is the LANDING page's (packet doc 07 section 3). The launch import stamps
+    the profile on every page of the launch, but the checkout, upsell, downsell and thank-you pages
+    must state the exact price (Skill 79 CHK-13, the role specs), so only the landing role engages it."""
+    return (intake_data(run_dir).get("launch_profile") == LAUNCH_PROFILE_NAME
+            and page_role.declared_role(run_dir) == page_role.LANDING_ROLE)
 
 
 def apply_launch_profile(cmd, run_dir):
@@ -1704,6 +1734,46 @@ def style_selection_problems(run_dir):
         if image_id not in governed:
             problems.append(f"stage {stage}: inventory image {image_id} "
                             "has no governing style selection record")
+    return problems
+
+
+def _design_intelligence():
+    """shared-utils/signature_launch/design_intelligence.py, loaded by path (repo and installed layouts)."""
+    import importlib.util
+    path = SKILL_ROOT.parent / "shared-utils" / "signature_launch" / "design_intelligence.py"
+    spec = importlib.util.spec_from_file_location("signature_launch_design_intelligence", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def design_intelligence_problems(run_dir):
+    """Fix spec M4 (issues 8, 39): image-inventory-prompts cannot close without the receipt that
+    proves the run read Skill 45 (prompt bands, negative-prompting rules, funnel page rules and,
+    when the intake names one, the style card). The receipt is written by
+    scripts/build_production_request.py (or `design_intelligence.py receipt`); it is re-hashed
+    against the live design library here, so a receipt written against different rules, or by hand,
+    does not count. The intake's style_card_id must be the card the receipt names."""
+    stage = "image-inventory-prompts"
+    rel = "private/receipts/design-intelligence.json"
+    try:
+        di = _design_intelligence()
+    except Exception as exc:  # the shared module is part of the skill's contract: fail closed
+        return [f"stage {stage}: AF-DI-ABSENT: shared-utils/signature_launch/design_intelligence.py "
+                f"cannot be loaded ({type(exc).__name__}); Skill 45 consumption cannot be proven"]
+    try:
+        receipt = json.loads((run_dir / rel).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [f"stage {stage}: AF-DI-ABSENT: no readable design-intelligence receipt at {rel}; "
+                "build the run's requests with scripts/build_production_request.py, or write it with "
+                "`python3 shared-utils/signature_launch/design_intelligence.py receipt --run-dir <run_dir>`. "
+                "A run that never read Skill 45's rules cannot close its prompts"]
+    problems = [f"stage {stage}: {line}" for line in di.verify_receipt(receipt)]
+    wanted = di.run_style_card_id(run_dir)
+    named = receipt.get("card_id") if isinstance(receipt, dict) else None
+    if wanted and named != wanted:
+        problems.append(f"stage {stage}: AF-DI-ABSENT: intake.json asks for style card {wanted!r} but the "
+                        f"design-intelligence receipt names {named!r}; rebuild the requests with the card")
     return problems
 
 
@@ -3323,6 +3393,8 @@ def cmd_close(run_dir, stage):
         # property.
         if stage == "image-inventory-prompts":
             failures.extend(style_selection_problems(run_dir))
+            # Fix spec M4: the run must have read Skill 45 (receipt re-hashed against the library).
+            failures.extend(design_intelligence_problems(run_dir))
 
     if failures:
         # Item 25 (S6 emission spec 6.4): a refused close is a state

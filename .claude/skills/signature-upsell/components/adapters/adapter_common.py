@@ -119,6 +119,11 @@ LEDGER_REF_RE = re.compile(
 )
 # UPS-02: what a build-time eligibility verdict may honestly say.
 DESIGN_ONLY_VERDICT = "design_only/unverified_at_build"
+# Issue 72: at the DESIGN stage no purchase has happened, so the original purchase (and a U2 qualifying
+# purchase) is a marker, never verified proof. The marker is accepted only when the request says
+# stage == "design"; the runtime guard (Skill 6/44, from the native purchase ledger) is what verifies it.
+DESIGN_MARKER = "design_marker"
+STAGES = ("design", "install")
 COPY_PROFILE_ID = "signature-upsell-eight-section"
 COPY_VALIDATOR = "scripts/validate_upsell_copy.py"
 
@@ -130,6 +135,11 @@ MINOR_UNIT_EXPONENTS = {
     "JPY": 0, "KRW": 0, "VND": 0, "CLP": 0, "ISK": 0,
     "BHD": 3, "KWD": 3, "OMR": 3, "JOD": 3, "TND": 3,
 }
+
+# Image providers an artifact may name (Skill 49's wrapper passes
+# --image-provider stub|kie). Skill 83's stub rule reads `provider` from each
+# artifact; a result that names none says nothing about its pictures.
+IMAGE_PROVIDERS = ("stub", "kie")
 
 # Journey slot vocabulary (verified purchases recorded by trusted adapters).
 JOURNEY_SLOT_BY_INSTANCE_SLOT = {"upsell_1": "upsell_1", "downsell_1": "downsell_1"}
@@ -463,6 +473,23 @@ def validate_request(request: Mapping, instance: str) -> None:
         )
     if request.get("assigned_skill") != 80:
         raise AdapterError("Request is not assigned to Skill 80.")
+    stage = request.get("stage")
+    if stage is not None and stage not in STAGES:
+        raise AdapterError("Request stage %r is not one of %s." % (stage, list(STAGES)))
+    markers = [
+        label
+        for label, block in (
+            ("original_purchase", (request.get("eligibility") or {}).get("original_purchase")),
+            ("qualifying_purchase", (request.get("eligibility") or {}).get("qualifying_purchase")),
+        )
+        if isinstance(block, Mapping) and block.get("status") == DESIGN_MARKER
+    ]
+    if markers and stage != "design":
+        raise AdapterError(
+            "eligibility.%s is a %r marker, which is accepted only when the request's stage is "
+            "'design' (got %r); a marker is never purchase proof at any other stage."
+            % (markers[0], DESIGN_MARKER, stage)
+        )
     if request.get("instance") != instance or request.get("page_role") != instance:
         raise AdapterError(
             "Request instance/page_role must both be %r." % (instance,)
@@ -654,10 +681,29 @@ def journey_record_for(journey: Optional[Mapping], slot: str) -> Optional[Mappin
     return None
 
 
+def is_design_marker(request: Mapping) -> bool:
+    """True when this request is a DESIGN-stage request whose original purchase is the design marker
+    (issue 72). validate_request has already refused the marker at any other stage."""
+    orig = (request.get("eligibility") or {}).get("original_purchase") or {}
+    return request.get("stage") == "design" and orig.get("status") == DESIGN_MARKER
+
+
 def original_purchase_check(request: Mapping, journey: Optional[Mapping]) -> Dict:
     """Cross-check the request's original-purchase claim against journey
     evidence recorded by a trusted adapter. Both must agree, and the
-    verification source must be an adapter source - never client-side."""
+    verification source must be an adapter source - never client-side.
+
+    At the design stage (issue 72) the original purchase is a marker: nothing was bought, nothing is
+    verified, and the answer says so (``design_marker`` True, no record). The page is designed to be
+    presented; whether a buyer sees it is decided at runtime from the native purchase ledger."""
+    if is_design_marker(request):
+        elig_problems = [
+            p for p in eligibility_schema_problems(request)
+            if "$.eligibility.original_purchase" not in p
+            and "$.eligibility.qualifying_purchase" not in p
+        ]
+        return {"verified": not elig_problems, "problems": elig_problems,
+                "record": None, "design_marker": True}
     orig = (request.get("eligibility") or {}).get("original_purchase") or {}
     problems: List[str] = []
     if orig.get("status") != "verified_succeeded":
@@ -823,6 +869,21 @@ def run_copy_validation(
 # ---------------------------------------------------------------------------
 
 
+def _review_fails(record, ledger, artifacts, request_id) -> List[str]:
+    """Refusals from the shared review_record validator; fail closed if absent."""
+    for parent in ADAPTERS_DIR.parents:
+        path = parent / "shared-utils" / "signature_launch_contract" / "review_record.py"
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("review_record", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod.validate_review_record(
+                record, ledger=ledger, author_session=AUTHOR_SESSION,
+                artifacts=artifacts, request_id=request_id,
+            )
+    return ["review_record validator not found; cannot accept a review"]
+
+
 def build_result(
     *,
     request: Mapping,
@@ -834,7 +895,13 @@ def build_result(
     test_outcomes: Sequence[Mapping],
     extra_blockers: Sequence[str] = (),
     copy_validation: Optional[Mapping] = None,
+    review: Optional[Mapping] = None,
+    image_provider: Optional[str] = None,
 ) -> Dict[str, object]:
+    if image_provider is not None and image_provider not in IMAGE_PROVIDERS:
+        raise AdapterError(
+            "image_provider %r is not one of %s." % (image_provider, list(IMAGE_PROVIDERS))
+        )
     disclosure = request["disclosure"]
     offer = request["offer"]
     test_only = bool(request.get("test_only", False))
@@ -850,7 +917,7 @@ def build_result(
     # "eligible" verdict can only come from the staged journey this result
     # was built from, so it is stamped design_only/unverified_at_build.
     eligibility = dict(eligibility_check)
-    if not test_only and eligibility.get("verdict") == "eligible":
+    if (not test_only or is_design_marker(request)) and eligibility.get("verdict") == "eligible":
         eligibility["verdict"] = DESIGN_ONLY_VERDICT
     blocked = disposition["action"] != "present_offer" or copy_failed
     blockers: List[str] = [
@@ -888,6 +955,24 @@ def build_result(
             "emitted, no duplicate charge."
             % (disposition["action"], disposition["reason"])
         )
+    # Issue 30: independent_review is true ONLY when a valid review record
+    # (review_record.validate_review_record) accepts this artifact set;
+    # otherwise it stays false and the REVIEW-PENDING blocker says why.
+    reviewer_session, review_fails = None, ["no review record supplied (--review)"]
+    if review is not None:
+        record = review.get("record")
+        review_fails = _review_fails(
+            record, review.get("ledger"),
+            [{"path": copy_artifact_path, "sha256": copy_sha256}],
+            request["request_id"],
+        )
+        if not review_fails:
+            reviewer_session = record["reviewer_session"]
+    if review_fails:
+        blockers.append(
+            "REVIEW-PENDING: no valid independent review record; %s"
+            % "; ".join(review_fails)
+        )
     disclosure_text = render_disclosure(disclosure)
     result = {
         "schema_version": "1.0",
@@ -899,10 +984,17 @@ def build_result(
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
         "status": "blocked" if blocked else "authored",
-        "artifacts": [{"path": copy_artifact_path, "sha256": copy_sha256}],
+        # Harmony issue 16: every artifact names the image provider of the run
+        # (Skill 83's stub rule reads it); none named -> the key is absent.
+        "artifacts": [
+            dict(
+                {"path": copy_artifact_path, "sha256": copy_sha256},
+                **({"provider": image_provider} if image_provider else {})
+            )
+        ],
         "author_session": AUTHOR_SESSION,
-        "reviewer_session": None,
-        "independent_review": False,
+        "reviewer_session": reviewer_session,
+        "independent_review": not review_fails,
         "proof_class": "L1",
         "blockers": blockers,
         "native_bindings_ref": None,

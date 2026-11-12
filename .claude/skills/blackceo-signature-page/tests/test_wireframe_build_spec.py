@@ -22,12 +22,17 @@ No paid API is called anywhere in this module.
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# AF-71-UNGATED (issue 10): stage_executor runs a stub on a run with no gate state only when a test harness
+# sets this marker. This module starts stub runs on bare folders, so it is a harness; no product script sets it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -181,6 +186,27 @@ class PromptBlockTests(unittest.TestCase):
         self.assertIn("one continuous reading column", self.block(index=5))
         self.assertIn("Never six cards", self.block(index=5))
         self.assertIn("1, 2, 3, 4, 5, 6, 7 once each", self.block(index=4))
+
+    def test_type_specs_list_only_the_elements_the_section_carries(self):
+        # a steps or letter section whose copy has no headline must not be offered a headline caption:
+        # the full house list made the model invent "HOW IT WORKS" and "A PERSONAL MESSAGE" headlines
+        steps = {"section_id": "11", "section_name": "Steps",
+                 "copy": "1. Use any button on this page to hold your seat today.\n2. Open the access message we send you."}
+        listed = w._type_specs("desktop-wireframe", steps)
+        self.assertEqual(listed, "BODY / 18-20 px")
+        letter = {"section_id": "12", "section_name": "Founder letter",
+                  "copy": "I spent years collecting proof that I belonged in rooms I had already earned.",
+                  "labels": ["Dana, Your Coach"]}
+        self.assertEqual(w._type_specs("desktop-wireframe", letter, closing="Join Now"),
+                         "BODY / 18-20 px; CTA / 18-20 px; CTA MICROCOPY / 12-14 px")
+        hero = {"section_id": "1", "section_name": "Hero", "cta": "SAVE MY SEAT",
+                "copy": "YOU BELONG IN THE ROOM.\nOne day to close the distance between what you earned and what you believe."}
+        self.assertEqual(w._type_specs("desktop-wireframe", hero),
+                         "H1 / 56-72 px; BODY / 18-20 px; CTA / 18-20 px; CTA MICROCOPY / 12-14 px")
+        for text in (listed,):
+            self.assertNotIn("EYEBROW", text)
+            self.assertNotIn("H2", text)
+        self.assertIn("never add an eyebrow, headline, subhead or button", self.block(index=4))
 
     def test_invalid_ratio_and_colourless_prose_are_refused(self):
         sections = request()["sections"]
