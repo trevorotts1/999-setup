@@ -65,6 +65,9 @@ jobs:
     env:
       SKILL71_999_ROOT: ${{ github.workspace }}/999-checkout
       SKILL71_ONB_ROOT: ${{ github.workspace }}/onboarding-checkout
+      # Skill 71's page builder reads Skill 45's design library; on a box it is installed by onboarding
+      # (~/.openclaw/skills/45-design-intelligence-library). On the runner, read it from the onboarding checkout.
+      DIU_LIBRARY_DIR: ${{ github.workspace }}/onboarding-checkout/45-design-intelligence-library/library
     steps:
       - name: Checkout 999-setup (this repository)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
