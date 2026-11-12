@@ -282,16 +282,14 @@ def resolve_target(target, entries=None):
 
 
 def dependency_files(sid, real_dir):
-    """What a direct dependency requires up front: its SKILL.md and any manifest-named SOP. Its other documents
-    (INSTRUCTIONS.md and step folders) are read-on-open."""
-    return [p for p in instruction_files(sid, real_dir)
-            if os.path.basename(p).lower() == "skill.md" or sid == SOPS
-            or any(r.match(os.path.relpath(p, real_dir).replace(os.sep, "/")) for r in (load_manifest().get(sid) or {}).get("_instr_re", []))]
+    """What a direct dependency requires up front: only its SKILL.md (a universal-sops dependency is the file itself).
+    Everything else of it is read-on-open."""
+    return [p for p in instruction_files(sid, real_dir) if os.path.basename(p).lower() == "skill.md" or sid == SOPS]
 
 
 def closure(sid, real_dir, entries=None):
     """One level: the skill's own up-front files (SKILL.md, INSTRUCTIONS.md, named SOPs), then each direct
-    dependency's SKILL.md and named SOPs. -> (files, missing_names)."""
+    dependency's SKILL.md only. -> (files, missing_names)."""
     entries = skill_entries() if entries is None else entries
     files, missing = [], []
     for p in instruction_files(sid, real_dir):
