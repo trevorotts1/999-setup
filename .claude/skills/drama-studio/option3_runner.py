@@ -58,6 +58,7 @@ APPROVAL_FILE = "option3-approval.json"
 LOCK_FILE = "option3.lock.json"
 RUNS_DIR = "option3-runs"
 LOCK_STALE_S = 6 * 3600          # a lock older than six hours is reclaimed
+LOCK_CLAIM_STALE_S = 60          # a reclaim claim older than a minute is ignored
 DEFAULT_EVERY_S = 120            # the plan's two-minute check
 PERMISSION_MODE = "dontAsk"
 PERMISSION_PROMPTS = "none"
@@ -202,25 +203,108 @@ def lock_status(sd, now=None):
     return "held" if (now - started) < LOCK_STALE_S else "stale"
 
 
+def _record_is_stale(rec, now):
+    """A record with no readable start time, or one older than LOCK_STALE_S, is stale."""
+    if not isinstance(rec, dict):
+        return True
+    try:
+        started = float(rec.get("started_epoch"))
+    except (TypeError, ValueError):
+        return True
+    return (now - started) >= LOCK_STALE_S
+
+
+def _reclaim_claim(path):
+    """The short-lived reclaim claim, or None when another caller holds it.
+
+    Reclaiming is a read-then-rename, and a rename moves whatever is at the lock path
+    at that instant. Only one caller may reach that rename, so that caller takes this
+    claim first; the exclusive create below stays the final arbiter. A claim left behind
+    by a dead reclaimer is ignored once it is older than LOCK_CLAIM_STALE_S.
+    """
+    claim = path + ".reclaim"
+    for _ in (0, 1):
+        try:
+            os.close(os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+            return claim
+        except FileExistsError:
+            try:
+                age = time.time() - os.stat(claim).st_mtime
+            except OSError:
+                continue                    # the claim just went away: try once more
+            if age <= LOCK_CLAIM_STALE_S:
+                return None
+            try:
+                os.remove(claim)
+            except OSError:
+                return None
+    return None
+
+
+def _reclaim_stale(path, now):
+    """Move a stale lock aside. True means: retry the exclusive create once."""
+    if not _record_is_stale(read_json(path), now):
+        return False
+    claim = _reclaim_claim(path)
+    if claim is None:
+        return False
+    try:
+        if not _record_is_stale(read_json(path), now):
+            return False                    # a run started while the claim was taken
+        # ponytail: the record re-read above is a microsecond old; a run starting inside
+        # that gap could be moved aside. Upgrade path: hold an fd on the lock and compare
+        # inode identity across the read and the rename.
+        try:
+            os.rename(path, "%s.stale.%d" % (path, os.getpid()))
+        except FileNotFoundError:
+            pass                            # already gone; the retried create stays exclusive
+        except OSError:
+            return False
+        return True
+    finally:
+        try:
+            os.remove(claim)
+        except OSError:
+            pass
+
+
 def acquire_lock(sd, who, now=None):
-    """(True, 'acquired') or (False, 'held'). A stale lock is reclaimed."""
+    """(True, 'acquired') or (False, 'held'). One caller at a time, even eight at once.
+
+    The lock is created with O_CREAT|O_EXCL, so the create itself decides the race; the
+    old check-then-write let several callers through together. A stale lock is moved
+    aside and the create retried once.
+    """
     now = time.time() if now is None else now
-    if lock_status(sd, now) == "held":
-        return False, "held"
     os.makedirs(sd, mode=0o700, exist_ok=True)
-    tmp = lock_path(sd) + ".tmp.%d" % os.getpid()
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"pid": os.getpid(), "client": who, "started_epoch": now,
-                   "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))},
-                  fh, sort_keys=True)
-        fh.write("\n")
-    os.replace(tmp, lock_path(sd))
-    return True, "acquired"
+    path = lock_path(sd)
+    record = {"pid": os.getpid(), "client": who, "started_epoch": now,
+              "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))}
+    payload = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+    for attempt in (0, 1):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            if attempt or not _reclaim_stale(path, now):
+                return False, "held"
+            continue
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return True, "acquired"
+    return False, "held"
 
 
 def release_lock(sd):
+    """Remove the lock only when this process owns it."""
+    path = lock_path(sd)
+    rec = read_json(path)
+    if not isinstance(rec, dict) or rec.get("pid") != os.getpid():
+        return
     try:
-        os.remove(lock_path(sd))
+        os.remove(path)
     except OSError:
         pass
 
