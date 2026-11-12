@@ -176,7 +176,7 @@
     ],
     "signature-funnel": [
       {
-        "version": "v2.1.56",
+        "version": "v2.1.57",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-funnel",
