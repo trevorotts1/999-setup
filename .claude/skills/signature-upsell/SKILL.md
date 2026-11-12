@@ -1,8 +1,8 @@
 ---
 name: signature-upsell
 assigned_skill: 80
-description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, and a TEST ONLY local page renderer (U1 and U2 are design deliverables: there is no production HTML builder). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
-version: 0.2.7
+description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, a TEST ONLY local page renderer, and ONE production page builder (`components/pages/build_production_pages.py`, which builds the U1, D1 and U2 pages from the approved launch record and route graph and refuses copy marked test_only on a launch that is not a test launch). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
+version: 0.2.9
 ---
 
 # Signature Upsell 1 + Upsell 2 (Skill 80, slug signature-upsell)
@@ -29,9 +29,10 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 > copy documents and the brand tokens. It refuses - writing nothing - when
 > the route graph is missing or diverges from the launch record's
 > `route_graph_hash`, when the checkout family is not identified, when an
-> enabled slot has no native product/price, when any CTA ref diverges, or
-> when a purchase control navigates instead of carrying the native one-click
-> action. Every purchase CTA is a `<button>` bound to the slot's native
+> enabled slot has no native product/price, when any CTA ref diverges, when a
+> copy document is marked `test_only` on a launch record that is not a test
+> launch, or when a purchase control navigates instead of carrying the native
+> one-click action. Every purchase CTA is a `<button>` bound to the slot's native
 > product/price inside the native payment session with NO href; the only
 > navigation on a page is the explicit-decline control
 > (`data-charges="false"`), and each page carries its own slot identity so
@@ -215,15 +216,23 @@ agent can follow the chain by hand. Commands are run from the repo root; file pa
    (`--slot upsell_1|upsell_2`)
    enriches the S49 page-request, calls this skill's
    `components/adapters/produce.py`, and projects the page-result. It takes
-   `--request`, `--result`, `--launch`, `--copy`, `--journey`, `--produce`, and
-   optionally `--route-graph`, `--enrichment`, `--bridge-config`.
-   `python3 49-signature-funnel/scripts/upsell_wrapper.py --slot upsell_1 --request <request.json> --result <result.json> --launch <launch.json> --copy <copy.json> --journey <journey.json> --produce 80-signature-upsell/components/adapters/produce.py`
+   `--request`, `--result`, `--launch`, `--copy`, `--journey`, `--produce` and
+   `--enrichment` (required: the landing-copy reference comes only from that sidecar, so a run without
+   it can never pass), and optionally `--route-graph`, `--bridge-config` and `--stage design|install`
+   (default `design`).
+   `python3 49-signature-funnel/scripts/upsell_wrapper.py --slot upsell_1 --request <request.json> --result <result.json> --launch <launch.json> --copy <copy.json> --journey <journey.json> --enrichment <enrichment.json> --produce 80-signature-upsell/components/adapters/produce.py`
 4. **Journey source.** The `--journey` file is the verified journey state
    (trusted-adapter purchase records with an adapter-enum
    `verification_source`). It comes from the native purchase ledger, provider
    event read-back or the S44 event adapter, never from a client claim and never
    typed in by hand. At design time the real guard is not evaluated: record
-   that fact, do not assert a verified purchase.
+   that fact, do not assert a verified purchase. At `--stage design` the wrapper evaluates the eligibility
+   block over the design marker (`original_purchase.status = design_marker`, and for U2 a
+   `design_marker` qualifying purchase), this skill accepts the marker only when the request says
+   `stage: design`, and the result carries `U1-ELIGIBILITY-RUNTIME-ONLY` (`U2-...` for the second upsell):
+   eligibility is enforced at runtime from the native purchase ledger. A launch that is not `test_only`
+   whose staged journey asserts verified purchases is refused at design. `--stage install` keeps the
+   strict path: adapter-verified journey records only.
 5. **Wireframes and mockups.** With `--bridge-config`, the wrapper hands the
    page to Skill 71's page-type runner
    (`71-blackceo-signature-page/scripts/run_page_type.py`, spec
@@ -238,6 +247,10 @@ agent can follow the chain by hand. Commands are run from the repo root; file pa
 The chain ends at an approved design and a result bundle. Publishing is a
 separate, approved step handled by Skill 6 (native install) and the page build
 that consumes these designs; this skill does not do it.
+
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The U1 and U2 wireframes and mockups follow the same direction. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
 
 ## How to run
 
@@ -263,8 +276,12 @@ Adapters (run from the skill root):
 ```bash
 python3 components/adapters/produce.py --instance upsell_1 \
     --request <request.json> --copy <copy.json> --journey <journey.json> \
-    --out <bundle.json>
+    [--image-provider stub|kie] --out <bundle.json>
 ```
+
+`--image-provider` is stamped as `provider` on every artifact of the result so
+Skill 83's placeholder-picture rule can read it. Left out, no provider is
+recorded; it is never defaulted.
 
 The adapters test suite runs staged by `verify.py` (below): its routing
 differential cross-check resolves the Signature Launch packet by path, and

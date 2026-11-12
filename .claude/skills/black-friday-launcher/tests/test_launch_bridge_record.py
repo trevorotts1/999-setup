@@ -265,6 +265,39 @@ class RunGateTests(unittest.TestCase):
                 self.run_bridge(payload(), {})
         self.assertEqual(self.calls, [])
 
+    def stamped_pieces(self, doc, approval):
+        """Run the bridge past a dispatch that hands back one built page, stopping right after the pieces are
+        written: returns the piece file the run left (issue 16: it must name the run's image provider)."""
+        real = substrate.dispatch()
+
+        def finished(launch, approval_, **kw):
+            out = Path(kw["out_dir"])
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "result-thank_you.json").write_text(json.dumps({"page_id": "p-ty", "artifacts": []}))
+            return {"results": [{"request_id": "r1"}], "requests": [{"request_id": "r1", "page_role": "thank_you"}]}
+
+        class Done(self.spy()):
+            dispatch = staticmethod(finished)
+        with mock.patch.object(launch_bridge, "_validate_supplied_adapters", lambda *a, **k: None), \
+                mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Done), \
+                mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=object()), \
+                mock.patch.object(launch_bridge.delivery, "run", side_effect=RuntimeError("stopped after the pieces")):
+            with self.assertRaises(RuntimeError):
+                launch_bridge.run(doc, self.out, approval=approval, client_identity_ref="client-1",
+                                  worker_identity_ref="worker-9", adapters_config={"adapters": {}})
+        return json.loads((self.out / "pieces" / "thank_you.json").read_text())
+
+    def test_a_practice_run_stamps_the_pieces_it_wrote_with_the_practice_provider(self):
+        piece = self.stamped_pieces(payload(), {"approval_id": "APPR-TEST-1", "plan_hash": plan_hash(record(payload()))})
+        self.assertEqual(piece["image_provider"], "stub")
+
+    def test_a_paid_run_stamps_the_pieces_it_wrote_with_the_paid_provider(self):
+        doc = self.live()
+        digest = plan_hash(record(doc))
+        doc["approval"] = {"ref": "APPR-LIVE-1", "hash": digest}
+        piece = self.stamped_pieces(doc, {"approval_id": "APPR-LIVE-1", "plan_hash": digest})
+        self.assertEqual(piece["image_provider"], "kie")
+
     def bridge_config(self, version, **landing):
         path = Path(self.tmp.name) / f"bridge-{version}.json"
         path.write_text(json.dumps({"landing": {"page_version": version, **landing}}), encoding="utf-8")
@@ -449,6 +482,34 @@ class LandingBridgeConfigTests(unittest.TestCase):  # STR-16
         self.assertIs(landing["draft"], False)
         landing_bridge = substrate.load("49-signature-funnel/scripts/landing_bridge.py", "launcher_s49_landing_bridge")
         landing_bridge.load_bridge_config(Path(seen[0]["bridge_config"]))  # Skill 49 accepts the file
+
+    def test_a_symlinked_spelling_of_the_approved_inputs_file_is_not_a_disagreement(self):
+        # macOS /tmp is a symlink to /private/tmp: the same file, spelled through a link, must pass
+        link = self.root.parent / (self.root.name + "-link")
+        link.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(link.unlink)
+        spelled = str(link / "run" / "image_inputs.json")
+        self.assertNotEqual(spelled, str((self.out / "image_inputs.json").resolve()))
+        # the plan's own fields are the run's fixed answers; only the inputs path is spelled through the link
+        inputs = image_plan.resolve(payload()["image_plan"], test_only=True)[0]
+        plan = {**image_plan.image_inputs_file(inputs), "image_inputs": spelled}
+        plan = {k: plan[k] for k in ("image_inputs", "image_cap", "brand_owner", "design_style", "image_provider")}
+        error, seen = self.run_to_adapter_builder(self.config(image_inputs=spelled, image_plan=plan))
+        self.assertEqual(error.detail, "spy: stopped at the adapter builder")
+        landing = json.loads(Path(seen[0]["bridge_config"]).read_text(encoding="utf-8"))["landing"]
+        self.assertEqual(landing["image_inputs"], str((self.out / "image_inputs.json").resolve()))
+
+    def test_a_different_inputs_file_through_a_symlink_is_still_refused(self):
+        link = self.root.parent / (self.root.name + "-link")
+        link.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(link.unlink)
+        with mock.patch.object(launch_bridge, "_build_adapters") as build:
+            with self.assertRaises(launch_bridge.BridgeError) as ctx:
+                launch_bridge.run(payload(), self.out, approval={}, client_identity_ref="c", worker_identity_ref="w",
+                                  adapter_inputs={"bridge_config": self.config(
+                                      image_inputs=str(link / "run" / "other.json"))})
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-IMAGE-PLAN")
+        build.assert_not_called()
 
     def test_a_config_that_disagrees_with_the_approved_plan_is_refused_before_any_adapter_is_built(self):
         wrong = self.config(image_cap=self.cap + 1)

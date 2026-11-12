@@ -1,7 +1,7 @@
 ---
 name: signature-downsell
 description: Build the Signature Downsell page (D1) - the reshaped alternative offer shown only after an explicit Upsell 1 decline. Derives an exact eight-section page from the 12-section landing format (keep sections 1-7, remove 8-11, replace section 12 with a renumbered section 8, "When Time Runs Out", listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, a guarded native one-click action shared with the checkout system, and routes: D1 paid goes to the SAME Upsell 2 when enabled else the final thank-you; D1 declined goes to the final thank-you with the original order untouched.
-version: 0.1.9
+version: 0.1.11
 ---
 
 # Signature Downsell Page (Skill 81)
@@ -27,6 +27,10 @@ stays false until a real install read-back exists, and `install_d1_page`
 still refuses by name (S06-02 / UPS-08). Self-check:
 `python3 adapters/s06_install_wrapper.py --selftest`.
 
+## Runtime
+
+This package ships no command of its own: its validators and adapters are libraries. The runtime composition is Skill 49's `49-signature-funnel/scripts/downsell_wrapper.py`, which enriches the Skill 49 page-request into this package's `downsell-request`, runs the validators here and writes the page-result. It copies the pinned validator and two schemas and refuses any byte that differs from its compiled-in sha256 (see `VALIDATOR-CONSUMERS.json`; `tests/test_validator_pin_lockstep.py` proves the three-way agreement). `tests/test_skill_md_names_runtime.py` fails if this paragraph stops naming the wrapper.
+
 ## Route responsibility (packet 02 section 4, binding)
 
 - D1 is reached ONLY when U1 is explicitly declined AND D1 is enabled. A failed or pending U1 payment is neither acceptance nor decline and never routes to D1 as a decline.
@@ -46,6 +50,10 @@ Eight sections: 1 alternative clear immediately; 2-4 three distinct pains/object
 ## Native action (see `references/native-action-states.md`)
 
 Reuse the shared transactional action component owned by the shared page/checkout system (packet 16). Do not copy a second charge implementation into this folder. Exact terms adjacent to the action; pending state blocks repeat attempts; unknown outcomes reconcile from native records before retry; decline never charges and never removes existing access.
+
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The D1 wireframes and mockups follow the same direction. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
 
 ## Package contents
 

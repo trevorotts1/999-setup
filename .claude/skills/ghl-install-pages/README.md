@@ -10,20 +10,16 @@ then the current OpenClaw Chrome extension, managed Agent Browser and enabled
 computer use. The new [recipe guide](references/PLAYWRIGHT-RECIPES.md) lists
 all entry points, commands and remaining live verification work.
 
-## Current build checkpoint - November 10, 2026
+## Current build checkpoint : November 12, 2026 UTC
 
-The next reviewed source candidate has **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
-across 33 named operations, with **66 dynamic actions / 80 bounded jobs**.
-The finite inactive NeoClassic course contract now includes background/Custom Block
-image removal and Video Block lifecycle. Owned Multi Line survey creation and captured Address parent controls are built.
-Final native upload/removal/playback, respondent and learner proof remain pending.
+**v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
+All original ten partial areas now have integrated executable source within their recorded boundaries. Compiler coverage is **72 concrete actions / 101 bounded jobs**. The final merged source smoke passed **45 focused tests**.
 
-This continuation is local only. Frozen v27.1.104 [#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102)
-carries the prior ten reviewed additions and is not modified by this candidate.
-Publish the continuation only after that PR's actual main landing and a fresh
-single-parent integration. The old 21/11/1 audit remains archived history.
-See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
-[the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
+The generated `ghl-install-pages.skill` archive contains the six current source documents; its Skill metadata is v27.1.109.
+
+This candidate is **OWNER_APPROVED_PREPARED_RELEASE**. Trevor approved publishing and batch merging this build on November11,2026. This is a release preparation snapshot; verify actual delivery through its merged batch/main receipt. The verified preparation baseline remains v27.1.108 through batch PR3125.
+
+Final maintained-script, respondent, member and notification acceptance remains **NOT_RUN / PENDING**. OAuth requires external user authorization. See the [progress ledger](references/PLAYWRIGHT-PROGRESS.md) and [machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json) for exact contracts and limits.
 
 ## Start here
 
