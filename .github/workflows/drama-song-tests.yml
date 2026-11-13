@@ -6,7 +6,7 @@ name: drama-song-tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '.claude/skills/drama-song-ad-factory/**'
       - '.github/workflows/drama-song-tests.yml'

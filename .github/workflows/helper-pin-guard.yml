@@ -21,7 +21,7 @@ name: helper-pin-guard
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - 'installer-registration/**'
       - '.github/workflows/helper-pin-guard.yml'

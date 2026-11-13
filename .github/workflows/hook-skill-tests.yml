@@ -2,7 +2,7 @@ name: hook-skill-tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '.claude/skills/hook-skill/**'
       - '.github/workflows/hook-skill-tests.yml'

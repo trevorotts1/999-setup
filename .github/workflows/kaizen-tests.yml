@@ -2,7 +2,7 @@ name: kaizen-tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '.claude/skills/kaizen/**'
       - '.claude/skills/eli5/**'
