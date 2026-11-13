@@ -33,6 +33,18 @@ class Merge(unittest.TestCase):
         self.assertEqual(len(doc["hooks"]["PreToolUse"]), 2)
         self.assertEqual(n, 7)  # 6 workflow-guard events + 1 hygiene
 
+    def test_full_read_guard_four_entries_once_per_file(self):
+        self.write({"hooks": {"PreToolUse": [FOREIGN]}})
+        self.assertEqual(sm.register(self.f, sys.executable, self.hd, ["full-read-guard"]), 4)
+        doc = self.read()
+        self.assertEqual(sorted(e for e in doc["hooks"] if any("frg_hook.py" in h["command"] for g in doc["hooks"][e] for h in g["hooks"])),
+                         ["PostToolUse", "PreCompact", "PreToolUse", "SessionStart"])
+        # a registration that points at another hooks folder counts: the file never gets a second copy
+        self.assertEqual(sm.register(self.f, sys.executable, os.path.join(self.d, "other-hooks"), ["full-read-guard"]), 0)
+        self.assertEqual(sm.unregister(self.f, self.hd), 4)
+        self.assertEqual(self.read()["hooks"], {"PreToolUse": [FOREIGN]})
+
+
     def test_register_is_idempotent(self):
         sm.register(self.f, sys.executable, self.hd, ["workflow-guard"])
         first = self.read()

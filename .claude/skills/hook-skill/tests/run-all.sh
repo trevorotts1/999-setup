@@ -27,7 +27,7 @@ python3 -c 'import pytest' 2>/dev/null || python3 -m pip install -q pytest 2>/de
 (cd "$HOOKS/workflow-guard" && run python3 -m pytest -q test_stop_omission.py test_enforcement.py test_enforcement_v22.py test_final_pass.py test_final_staffing.py test_validate_hardening.py test_wiring_check.py)
 (cd "$HOOKS/workflow-guard" && run python3 staffing.py --selftest)
 (cd "$HOOKS/workflow-guard" && run python3 capacity_probe.py --selftest)
-for t in test_hygiene.py test_disk_cleanup.py test_gates.py test_settings_merge.py test_settings_lock.py test_capacity.py; do run python3 "$HERE/$t"; done
+for t in test_hygiene.py test_disk_cleanup.py test_gates.py test_settings_merge.py test_settings_lock.py test_capacity.py test_full_read_guard.py; do run python3 "$HERE/$t"; done
 run bash "$HERE/smoke-install.sh"
 find "$HOOKS" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null
 [ -s "$RCF" ] && rc=1
