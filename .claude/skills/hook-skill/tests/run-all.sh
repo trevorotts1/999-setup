@@ -5,6 +5,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; HOOKS="$HERE/../hooks"
 command -v python3 >/dev/null || { echo "FAIL: python3 not found" >&2; exit 1; }
 command -v node >/dev/null || { echo "FAIL: node not found (workflow-guard tests need Node.js 18+)" >&2; exit 1; }
 rc=0
+# A CI runner measures 2-4 cores / small RAM, so the live probe would cap generated windows at 3-4 while these suites assert the
+# operator-box cap of 10. Pin a fixed fake host (capacity_probe.fixture_host) so every suite is identical on any machine.
+export WORKFLOW_GUARD_TEST_HOST="${WORKFLOW_GUARD_TEST_HOST:-32,10}"
 # workflow-guard's validate.mjs imports bare acorn (live operator guard); node_modules/ is
 # gitignored, so a fresh checkout — local or CI — has none. Install it BEFORE the first suite:
 # node-dependent suites must not run against a checkout that has never been installed.
