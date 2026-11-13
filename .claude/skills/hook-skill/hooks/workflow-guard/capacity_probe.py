@@ -89,7 +89,21 @@ def compute(ram_gb, cores, source):
             "measured_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
+def fixture_host():
+    """Test-only: WORKFLOW_GUARD_TEST_HOST="<ram_gb>,<cores>" stands in for the measured host so suites are identical on a
+    2-core CI runner and a 12-core Mac. It replaces the MEASUREMENT only; compute() still derives the cap, and the
+    container limits are skipped because the fixture already describes the whole box. Unset in production."""
+    raw = os.environ.get("WORKFLOW_GUARD_TEST_HOST", "").strip()
+    try:
+        ram, cores = (float(x) for x in raw.split(","))
+        return (ram, cores, "test-fixture") if ram > 0 and cores > 0 else None
+    except ValueError:
+        return None
+
+
 def probe(system=None, host=None, read=_read):
+    if host is None and (fx := fixture_host()):
+        return compute(*fx)
     system = system or platform.system()
     ram, cores, src = (host or {"Darwin": host_darwin, "Linux": host_linux, "Windows": host_windows}[system])()
     cr, cc, label = container_limits(read) if system == "Linux" else (None, None, "")
