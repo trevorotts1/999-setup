@@ -2,7 +2,7 @@ name: check-docs-fresh
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     tags: ['v*', 'nine-router-setup-v*']
     paths:
       - 'README.md'

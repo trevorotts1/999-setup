@@ -26,7 +26,7 @@ name: skill71-parity
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '.claude/skills/blackceo-signature-page/**'
       - '.claude/skills/black-friday-launcher/**'
