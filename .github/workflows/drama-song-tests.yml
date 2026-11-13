@@ -6,21 +6,23 @@ name: drama-song-tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - '.claude/skills/drama-song-ad-factory/**'
       - '.github/workflows/drama-song-tests.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.claude/skills/drama-song-ad-factory/**'
       - '.github/workflows/drama-song-tests.yml'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   drama-song:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     env:
       SKILL: .claude/skills/drama-song-ad-factory
