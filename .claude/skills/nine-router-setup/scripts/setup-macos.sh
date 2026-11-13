@@ -727,6 +727,11 @@ so_print_paths() {
     "    claude-nine: ~/.local/bin/claude-nine, claude-codex, claude-code-lib.sh, get-9router-key.sh," \
     "      fix-9router-*.mjs; ~/.claude-nine/settings.json and ~/.claude-nine/.last-effort" \
     "    other config: any settings.json (hooks, Agent Teams, auto-compact, ultracode override), operator.env" \
+    "      ONE NARROW EXCEPTION, and it is NOT part of --skills-only: after a skills-only run, the roll path may run" \
+    "      'hook-skill/scripts/macos/install.sh --only full-read-guard --root ~/.claude-nine' as its own command. That command" \
+    "      copies only <root>/hooks/full-read-guard/** and merges only the four full-read-guard hook entries into an" \
+    "      EXISTING <root>/settings.json (no other key, no other hook, no env value, no job, no file created elsewhere)." \
+    "      --skills-only itself still never writes any settings.json." \
     "    state: Keychain token, ~/Library/Application Support/BlackCEO/999, ~/.local/share/999," \
     "      ~/Library/Logs/BlackCEO-999, API docs.md" \
     "    skipped: nine-router-setup (the installer itself - reported UPDATER_STALE when the installed copy differs, and the run still exits 0 when the skill content landed); source and destination are the same directory" \
@@ -1881,6 +1886,33 @@ main() {
   fi
   log "spec-protocol hooks: $HOOKS_STATUS"
 
+  #     (a2) Full-read guard: the Claude Code hook that makes an agent read a
+  #     skill and its direct dependencies whole (hook-skill component
+  #     `full-read-guard`, default ON). Installed with the SAME narrow command
+  #     a fleet roll uses (`--only full-read-guard --root <config dir>`): it
+  #     copies its own files under <config dir>/hooks/full-read-guard and merges
+  #     only its four hook entries into that root's existing settings.json.
+  #     Set FULL_READ_GUARD=0 to skip. Never fatal.
+  FRG_STATUS="OK"
+  FRG_SRC="$(resolve_skill_source hook-skill)"
+  if [ "${FULL_READ_GUARD:-1}" = "0" ]; then
+    FRG_STATUS="SKIPPED (FULL_READ_GUARD=0)"
+  elif [ -z "$FRG_SRC" ] || [ ! -f "$FRG_SRC/scripts/macos/install.sh" ]; then
+    FRG_STATUS="NOT INSTALLED - hook-skill scripts/macos/install.sh not found"
+  else
+    while IFS= read -r root; do
+      [ -n "$root" ] || continue
+      set +e
+      FRG_OUT="$(bash "$FRG_SRC/scripts/macos/install.sh" --only full-read-guard --root "$root" 2>&1)"
+      FRG_RC=$?
+      set -e
+      HOOKS_DETAIL="${HOOKS_DETAIL}$(printf '%s\n' "$FRG_OUT" | sed 's/^/  /')
+"
+      [ "$FRG_RC" -eq 0 ] || FRG_STATUS="WARNING: full-read-guard install exited $FRG_RC for at least one root - see below"
+    done < <(printf '%s\n' "$CLAUDE_SKILLS_ROOT" ${CLAUDE_SKILLS_ROOT_ALT:+"$CLAUDE_SKILLS_ROOT_ALT"} "$NINE_ROOT" | awk '!seen[$0]++')
+  fi
+  log "full-read-guard hook: $FRG_STATUS"
+
   #     (b) Operator keys (fix #6, A6): each recorded ONLY when the operator
   #     supplied it; a key not supplied on this run keeps whatever an earlier
   #     run wrote. operator.env is mode 600; values are never printed.
@@ -2059,6 +2091,7 @@ claude-nine cold start (router stopped, launcher restarted it): $COLD_START_LINE
 claude-codex launcher: $CODEX_LINE
 Ultracode default: $ULTRACODE_DEFAULT_LINE
 spec-protocol hooks: $HOOKS_STATUS
+full-read-guard hook: $FRG_STATUS
 $HOOKS_DETAIL
 GitHub sign-in: $GH_AUTH_LINE
 Hosting login (operator note; publishing needs it): $HOSTING_LOGIN_LINE
