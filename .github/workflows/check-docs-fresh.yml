@@ -2,7 +2,7 @@ name: check-docs-fresh
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     tags: ['v*', 'nine-router-setup-v*']
     paths:
       - 'README.md'
@@ -12,6 +12,7 @@ on:
       - 'scripts/check-docs-fresh.sh'
       - 'scripts/test-check-docs-fresh.sh'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'README.md'
       - 'CHANGELOG.md'
@@ -21,11 +22,12 @@ on:
       - 'scripts/test-check-docs-fresh.sh'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docs-fresh:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
