@@ -39,6 +39,11 @@ def install(a):
             old = json.load(f)
         if isinstance(old, dict) and old.get("env_prior"):
             manifest["env_prior"] = old["env_prior"]
+        if isinstance(old, dict):  # an install of one component (--only) must not forget what an earlier install wrote
+            manifest["components"] = sorted(set(old.get("components", [])) | set(comps), key=lambda c: (c not in old.get("components", []), c))
+            manifest["files"] = list(old.get("files", []))
+            if old.get("created_config"):
+                manifest["created_config"] = True
     except (OSError, ValueError):
         pass
     for c in comps:
@@ -48,13 +53,14 @@ def install(a):
             return 2
         for rel in files_of(src):
             dst = os.path.join(a.dest, c, rel)
-            manifest["files"].append(os.path.join(c, rel))
+            if os.path.join(c, rel) not in manifest["files"]:
+                manifest["files"].append(os.path.join(c, rel))
             print("%s %s" % ("would copy" if a.dry_run else "copy", dst))
             if not a.dry_run:
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(os.path.join(src, rel), dst)
     cfg = os.path.join(a.dest, "hook-skill.json")
-    if not os.path.exists(cfg):
+    if not os.path.exists(cfg) and not a.no_config:
         print("%s %s" % ("would create" if a.dry_run else "create", cfg))
         if not a.dry_run:
             with open(cfg, "w") as f:
@@ -114,6 +120,7 @@ def main():
     p.add_argument("--components", default="")
     p.add_argument("--version", default="")
     p.add_argument("--purge", action="store_true")
+    p.add_argument("--no-config", action="store_true", help="do not create hook-skill.json (used by the roll-path --only install)")
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
     return install(a) if a.action == "install" else uninstall(a)
