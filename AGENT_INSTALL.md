@@ -120,7 +120,7 @@ hand-picked subset. The manifest currently bundles:
 - `bro` — direct, blunt developer talk
 - `blackceo-signature-page` — BlackCEO Signature landing pages, end to end
 - `hook-skill` — Claude Code hooks package (workflow guard, hygiene, disk cleanup)
-  (opt-in `--lock-settings` / `-LockSettings` hard-locks the claude and claude-nine settings files; default is no lock; every settings writer in this repo unlocks, writes, validates and re-locks a locked file; a SessionStart wiring self-check warns when hook registrations go missing)
+  (opt-in `--lock-settings` / `-LockSettings` hard-locks the claude and claude-nine settings files; default is no lock; every settings writer in this repo unlocks, writes, validates and re-locks a locked file; a SessionStart wiring self-check warns when hook registrations go missing; the default-on `full-read-guard` component makes an agent read a skill and its direct dependencies whole: it blocks grep, partial reads and head/tail/sed-n on skill and SOP instruction files and points to `read-skill <name>`)
 - `kiss` — one-message double answer: friendly version, then a plain short version
 - `council-of-wise-elders`: Council of Wise Elders (Skill 77): nine-seat source-grounded
   advisory council. This copy is VENDORED from the canonical onboarding package

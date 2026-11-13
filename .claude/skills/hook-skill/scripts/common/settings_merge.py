@@ -30,6 +30,11 @@ COMPONENTS = {
     "ask-before-backup": ("ask-before-backup/ask_before_backup.py", [
         ("PreToolUse", "Bash|Write|Edit|MultiEdit|NotebookEdit", 10, "")]),
     "question-gate": ("question-gate/gate_actions.py", [("PreToolUse", TOOLS_BIG, 10, "")]),
+    "full-read-guard": ("full-read-guard/frg_hook.py", [
+        ("PreToolUse", "Read|Grep|Bash|Skill|Edit|Write|MultiEdit|NotebookEdit", 120, ""),
+        ("PostToolUse", "Read|Bash", 120, ""),
+        ("SessionStart", None, 120, ""),
+        ("PreCompact", None, 120, "")]),
     "question-gate-classify": ("question-gate/classify_prompt.py", [("UserPromptSubmit", None, 10, "")]),
 }
 EXPAND = {"question-gate": ["question-gate", "question-gate-classify"]}
@@ -109,6 +114,10 @@ def register(settings, py, hooks_dir, wanted):
             if not isinstance(groups, list):
                 raise ValueError("settings.hooks.%s is not a list" % event)
             cmd = command(py, hooks_dir, rel, args)
+            if comp == "full-read-guard" and any(  # one registration per settings file, whichever hooks folder it points at
+                    rel in str(h.get("command", "")).replace("\\", "/").replace("'", "").replace('"', "")
+                    for g in groups if isinstance(g, dict) for h in g.get("hooks", []) if isinstance(h, dict)):
+                continue
             if any(h.get("command") == cmd for g in groups if isinstance(g, dict) for h in g.get("hooks", []) if isinstance(h, dict)):
                 continue  # already registered: idempotent
             group = {"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}

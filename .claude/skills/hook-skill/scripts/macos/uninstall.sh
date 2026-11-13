@@ -22,6 +22,12 @@ for label in com.hookskill.workflow-watchdog com.hookskill.hygiene-sweep com.hoo
   [ "${HOOK_SKILL_NO_LAUNCHD:-0}" = "1" ] || launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
   rm -f "$f"; echo "removed $f"
 done
+# the roll-path install (--only full-read-guard) keeps its files and manifest under ~/.claude-nine/hooks
+if [ -f "$HOME/.claude-nine/hooks/hook-skill-install.json" ]; then
+  [ -f "$HOME/.claude-nine/settings.json" ] && "$PY" "$COMMON/settings_merge.py" unregister --settings "$HOME/.claude-nine/settings.json" --hooks-dir "$HOME/.claude-nine/hooks" ${DRYARG[@]+"${DRYARG[@]}"}
+  PA=(); [ $PURGE = 1 ] && PA=(--purge)
+  "$PY" "$COMMON/hookskill_files.py" uninstall --dest "$HOME/.claude-nine/hooks" ${PA[@]+"${PA[@]}"} ${DRYARG[@]+"${DRYARG[@]}"}
+fi
 "$PY" "$COMMON/apply_capacity.py" --restore --manifest "$HOOKS/hook-skill-install.json" ${DRYARG[@]+"${DRYARG[@]}"}
 PURGEARG=(); [ $PURGE = 1 ] && PURGEARG=(--purge)
 "$PY" "$COMMON/hookskill_files.py" uninstall --dest "$HOOKS" ${PURGEARG[@]+"${PURGEARG[@]}"} ${DRYARG[@]+"${DRYARG[@]}"}

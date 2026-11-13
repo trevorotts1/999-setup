@@ -1,0 +1,8 @@
+#!/bin/sh
+# read-skill <skill name | number | universal-sops/path.md> [--part N]
+# Prints the skill and its direct dependencies in full (every part), with a receipt line per part.
+d="$(cd "$(dirname "$0")" && pwd)"
+for py in "${PYTHON:-}" python3 python; do
+  [ -n "$py" ] && command -v "$py" >/dev/null 2>&1 && exec "$py" "$d/read_skill.py" "$@"
+done
+echo "read-skill: python3 not found" >&2; exit 1
