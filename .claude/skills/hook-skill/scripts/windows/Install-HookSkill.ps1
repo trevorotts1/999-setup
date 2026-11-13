@@ -13,6 +13,9 @@ param(
   [switch]$WithAskBeforeBackup, [switch]$WithQuestionGate,
   [switch]$NoWorkflowGuard, [switch]$NoHygiene, [switch]$NoDiskCleanup,
   [switch]$NoSchedule, [switch]$DryRun,
+  [switch]$NoFullReadGuard,
+  [string]$Only = '',       # 'full-read-guard': the roll-path contract (only that hook, only into -Root, nothing else)
+  [string]$Root = '',       # config folder for -Only (default ~\.claude-nine)
   [switch]$LockSettings,    # opt-in: read-only attribute (attrib +R) on the settings files. WEAKER than macOS: the owner can clear it.
   [switch]$UnlockSettings   # undo that and exit (installs nothing)
 )
@@ -20,6 +23,9 @@ $ErrorActionPreference = 'Stop'
 $Skill   = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Common  = Join-Path $Skill 'scripts\common'
 $Hooks   = Join-Path $HOME '.claude\hooks'
+if ($Only -and $Only -ne 'full-read-guard') { Write-Error '-Only supports full-read-guard only'; exit 64 }
+if ($Only -and $NoFullReadGuard) { Write-Error '-Only full-read-guard conflicts with -NoFullReadGuard'; exit 64 }
+if ($Only) { if (-not $Root) { $Root = Join-Path $HOME '.claude-nine' }; $Hooks = Join-Path $Root 'hooks' }
 $Version = (Get-Content (Join-Path $Skill 'VERSION') -Raw).Trim()
 
 # Python is required: every hook is a Python script.
@@ -41,12 +47,14 @@ if ($UnlockSettings) {
 }
 $HaveNode = [bool](Get-Command node -ErrorAction SilentlyContinue)
 
-$WG = -not $NoWorkflowGuard; $HY = -not $NoHygiene; $DC = -not $NoDiskCleanup
+$WG = -not $NoWorkflowGuard; $HY = -not $NoHygiene; $DC = -not $NoDiskCleanup; $FR = -not $NoFullReadGuard
+if ($Only) { $WG = $false; $HY = $false; $DC = $false; $WithAskBeforeBackup = $false; $WithQuestionGate = $false; $NoSchedule = $true; $LockSettings = $false }
 $comps = @()
 if ($WG) { $comps += 'workflow-guard' }
 if ($HY) { $comps += 'hygiene' }
 if ($WithAskBeforeBackup) { $comps += 'ask-before-backup' }
 if ($WithQuestionGate) { $comps += 'question-gate' }
+if ($FR) { $comps += 'full-read-guard' }
 $files = @($comps); if ($DC) { $files += 'disk-cleanup' }
 if ($files.Count -eq 0) { Write-Error 'nothing selected to install'; exit 64 }
 $dry = @(); if ($DryRun) { $dry = @('--dry-run') }
@@ -54,11 +62,14 @@ $dry = @(); if ($DryRun) { $dry = @('--dry-run') }
 Write-Host "Hook Skill $Version: installing [$($files -join ',')] into $Hooks (python: $Py)"
 if ($WG -and -not $HaveNode) { Write-Host 'note: Node.js not found; workflow-guard will not validate Workflow launches until Node.js 18+ is installed (it never blocks them).' }
 
-& $Py (Join-Path $Common 'hookskill_files.py') install --src (Join-Path $Skill 'hooks') --dest $Hooks --components ($files -join ',') --version $Version @dry
+$nocfg = @(); if ($Only) { $nocfg = @('--no-config') }
+if ($Only -and -not (Test-Path (Join-Path $Root 'settings.json'))) { Write-Host "full-read-guard: $Root\settings.json does not exist; nothing installed (this narrow mode never creates a settings file)."; exit 0 }
+& $Py (Join-Path $Common 'hookskill_files.py') install --src (Join-Path $Skill 'hooks') --dest $Hooks --components ($files -join ',') --version $Version @nocfg @dry
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $settings = @((Join-Path $HOME '.claude\settings.json'))
 if (Test-Path (Join-Path $HOME '.claude-nine')) { $settings += (Join-Path $HOME '.claude-nine\settings.json') }
+if ($Only) { $settings = @((Join-Path $Root 'settings.json')) }
 if ($comps.Count -gt 0) {
   foreach ($s in ($settings | Select-Object -Unique)) {
     & $Py (Join-Path $Common 'settings_merge.py') register --settings $s --python $Py --hooks-dir $Hooks --components ($comps -join ',') @dry

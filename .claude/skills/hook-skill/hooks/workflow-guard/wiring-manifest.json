@@ -15,6 +15,12 @@
      "tools": ["Workflow", "Agent", "Task", "Bash"]},
     {"event": "PreToolUse", "script": "dispatch-gate.py",
      "tools": ["Workflow", "Agent", "Task", "SendMessage"],
-     "only_if_installed": "hooks/dispatch-gate.py"}
+     "only_if_installed": "hooks/dispatch-gate.py"},
+    {"event": "PreToolUse", "script": "full-read-guard/frg_hook.py",
+     "tools": ["Read", "Grep", "Bash", "Skill", "Edit", "Write"],
+     "only_if_installed": "hooks/full-read-guard/frg_hook.py"},
+    {"event": "PostToolUse", "script": "full-read-guard/frg_hook.py",
+     "tools": ["Read", "Bash"],
+     "only_if_installed": "hooks/full-read-guard/frg_hook.py"}
   ]
 }

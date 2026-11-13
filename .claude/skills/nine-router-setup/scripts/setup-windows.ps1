@@ -993,6 +993,27 @@ else {
     }
     Write-Log "spec-protocol hooks: $hooksStatus"
 
+    #  (a2) Full-read guard (hook-skill component `full-read-guard`, default ON): the same narrow command a
+    #       fleet roll uses. Copies only <root>\hooks\full-read-guard and merges only its four hook entries
+    #       into that root's existing settings.json. Set FULL_READ_GUARD=0 to skip. Never fatal.
+    $frgStatus = 'OK'
+    $frgInstall = Join-Path $skillRoot 'skills\hook-skill\scripts\windows\Install-HookSkill.ps1'
+    if ($env:FULL_READ_GUARD -eq '0') {
+        $frgStatus = 'SKIPPED (FULL_READ_GUARD=0)'
+    } elseif (-not (Test-Path $frgInstall)) {
+        $frgStatus = 'NOT INSTALLED - hook-skill scripts\windows\Install-HookSkill.ps1 not found'
+    } else {
+        foreach ($root in $hookRoots) {
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $hooksDetail += (& $frgInstall -Only full-read-guard -Root $root 2>&1 | Out-String).Trim()
+            $frgRc = $LASTEXITCODE
+            $ErrorActionPreference = $prevEap
+            if ($frgRc -ne 0) { $frgStatus = "WARNING: full-read-guard install exited $frgRc for at least one root - see below" }
+        }
+    }
+    Write-Log "full-read-guard hook: $frgStatus"
+
     #  (b) Operator keys (fix #6, A6): each written ONLY when supplied; a key
     #      not supplied on this run keeps whatever an earlier run wrote.
     #        SPEC_PROTOCOL_OPERATOR_REMOTE_OWNER  backup org (repo-anchor)
@@ -1177,6 +1198,7 @@ claude-nine launcher: OK
 claude-nine cold start (router stopped, launcher restarted it): $coldStartLine
 Ultracode default: $ultracodeDefaultLine
 spec-protocol hooks: $hooksStatus
+full-read-guard hook: $frgStatus
 $($hooksDetail -join "`n")
 GitHub sign-in: $ghAuthLine
 Operator backup owner: $operatorRemoteLine

@@ -3,16 +3,26 @@
 #   install.sh [--with-ask-before-backup] [--with-question-gate]
 #              [--no-workflow-guard] [--no-hygiene] [--no-disk-cleanup]
 #              [--no-schedule] [--dry-run]
+#              [--no-full-read-guard]
+#              [--only full-read-guard] [--root CONFIG_DIR]   narrow mode, see below
 #              [--lock-settings]    opt-in: hard-lock the claude/claude-nine settings files after install
 #              [--unlock-settings]  undo that lock and exit (installs nothing)
-# Defaults ON: workflow-guard, hygiene (with test cleanup), disk-cleanup.
+# Defaults ON: workflow-guard, hygiene (with test cleanup), disk-cleanup, full-read-guard.
+# --only full-read-guard [--root DIR]: the roll-path contract. Installs ONLY the full-read-guard hook files into
+#   <DIR>/hooks (default ~/.claude-nine) and merges ONLY its four hook entries into <DIR>/settings.json, which must
+#   already exist. No other hook, no env value, no scheduled job, no hook-skill.json, no lock, no other settings key.
 # Opt-in (they prompt you): ask-before-backup, question-gate.
 # Never removes existing hook entries; appends ours. Validates JSON after every settings write.
 set -euo pipefail
 
-WG=1 HY=1 DC=1 AB=0 QG=0 SCHED=1 DRY=0 LOCK=0 UNLOCK=0
-for arg in "$@"; do
+WG=1 HY=1 DC=1 AB=0 QG=0 FR=1 SCHED=1 DRY=0 LOCK=0 UNLOCK=0 ONLY="" ROOT=""
+ARGS=("$@"); i=0
+while [ $i -lt ${#ARGS[@]} ]; do
+  arg="${ARGS[$i]}"; i=$((i+1))
   case "$arg" in
+    --only) ONLY="${ARGS[$i]:-}"; i=$((i+1)) ;;
+    --root) ROOT="${ARGS[$i]:-}"; i=$((i+1)) ;;
+    --no-full-read-guard) FR=0 ;;
     --with-ask-before-backup) AB=1 ;;
     --with-question-gate) QG=1 ;;
     --no-workflow-guard) WG=0 ;;
@@ -31,6 +41,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SKILL="$(cd "$HERE/../.." && pwd)"
 COMMON="$SKILL/scripts/common"
 HOOKS="$HOME/.claude/hooks"
+if [ -n "$ONLY" ] && [ "$ONLY" != "full-read-guard" ]; then echo "--only supports full-read-guard only" >&2; exit 64; fi
+if [ -n "$ONLY" ] && [ "$FR" = 0 ]; then echo "--only full-read-guard conflicts with --no-full-read-guard" >&2; exit 64; fi
+if [ -n "$ONLY" ]; then
+  ROOT="${ROOT:-$HOME/.claude-nine}"
+  case "$ROOT" in /*) ;; *) echo "--root must be an absolute path" >&2; exit 64 ;; esac
+  HOOKS="$ROOT/hooks"
+fi
 VERSION="$(tr -d '[:space:]' < "$SKILL/VERSION")"
 
 # ---- Python (required: every hook is a Python script) ----
@@ -44,6 +61,7 @@ done
 [ -n "$PY" ] || { echo "Hook Skill needs Python 3.8+ on PATH (python3). Install it and re-run." >&2; exit 1; }
 SETTINGS=("$HOME/.claude/settings.json")
 [ -d "$HOME/.claude-nine" ] && SETTINGS+=("$HOME/.claude-nine/settings.json")
+[ -n "$ONLY" ] && SETTINGS=("$ROOT/settings.json")
 if [ $UNLOCK = 1 ]; then  # standalone action: remove the opt-in hard lock, install nothing
   for s in "${SETTINGS[@]}"; do if [ -f "$s" ]; then "$PY" "$COMMON/settings_lock.py" unlock "$s"; fi; done
   exit 0
@@ -51,11 +69,13 @@ fi
 HAVE_NODE=0; command -v node >/dev/null 2>&1 && HAVE_NODE=1
 
 COMPONENTS=""
+if [ -n "$ONLY" ]; then WG=0 HY=0 DC=0 AB=0 QG=0 SCHED=0 LOCK=0; fi
 add() { COMPONENTS="${COMPONENTS:+$COMPONENTS,}$1"; }
 [ $WG = 1 ] && add workflow-guard
 [ $HY = 1 ] && add hygiene
 [ $AB = 1 ] && add ask-before-backup
 [ $QG = 1 ] && add question-gate
+[ $FR = 1 ] && add full-read-guard
 FILES="$COMPONENTS"; [ $DC = 1 ] && FILES="${FILES:+$FILES,}disk-cleanup"
 [ -n "$FILES" ] || { echo "nothing selected to install" >&2; exit 64; }
 
@@ -64,7 +84,12 @@ echo "Hook Skill $VERSION: installing [$FILES] into $HOOKS (python: $PY)"
 [ $WG = 1 ] && [ $HAVE_NODE = 0 ] && echo "note: Node.js not found; workflow-guard will not validate Workflow launches until Node.js 18+ is installed (it never blocks them)."
 
 # ---- 1. files ----
-"$PY" "$COMMON/hookskill_files.py" install --src "$SKILL/hooks" --dest "$HOOKS" --components "$FILES" --version "$VERSION" ${DRYARG[@]+"${DRYARG[@]}"}
+NOCFG=(); [ -n "$ONLY" ] && NOCFG=(--no-config)
+if [ -n "$ONLY" ] && [ ! -f "$ROOT/settings.json" ]; then
+  echo "full-read-guard: $ROOT/settings.json does not exist; nothing installed (this narrow mode never creates a settings file)."; exit 0
+fi
+"$PY" "$COMMON/hookskill_files.py" install --src "$SKILL/hooks" --dest "$HOOKS" --components "$FILES" --version "$VERSION" ${NOCFG[@]+"${NOCFG[@]}"} ${DRYARG[@]+"${DRYARG[@]}"}
+[ -n "$ONLY" ] && chmod +x "$HOOKS/full-read-guard/read-skill" 2>/dev/null || true
 
 # ---- 2. register in settings (claude, and claude-nine when its folder exists) ----
 seen=""
