@@ -202,7 +202,7 @@
       "registry_line": 16,
       "999_path": "CONTROL/bundled-skills.txt",
       "files": 1,
-      "sha256": "sha256:9298b48f4c8e41fda9d3ba70f76a5959e446ea081642aa66353a3db490d0a395",
+      "sha256": "sha256:04714d45fb1b1bd6563dcd430922e742a4614e3ad1fe46cd2c676342541c6936",
       "999_version": null
     },
     {
@@ -217,7 +217,7 @@
       "registry_line": 17,
       "999_path": "CONTROL/bundled-skills.txt",
       "files": 1,
-      "sha256": "sha256:9298b48f4c8e41fda9d3ba70f76a5959e446ea081642aa66353a3db490d0a395",
+      "sha256": "sha256:04714d45fb1b1bd6563dcd430922e742a4614e3ad1fe46cd2c676342541c6936",
       "999_version": null
     },
     {
@@ -233,7 +233,7 @@
       "why": "the Launcher ships as a bare slug; the installer resolves registry names verbatim and accepts either convention",
       "999_path": "CONTROL/bundled-skills.txt",
       "files": 1,
-      "sha256": "sha256:9298b48f4c8e41fda9d3ba70f76a5959e446ea081642aa66353a3db490d0a395",
+      "sha256": "sha256:04714d45fb1b1bd6563dcd430922e742a4614e3ad1fe46cd2c676342541c6936",
       "999_version": null
     },
     {
