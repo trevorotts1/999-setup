@@ -2,7 +2,7 @@ name: kaizen-tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - '.claude/skills/kaizen/**'
       - '.claude/skills/eli5/**'
@@ -12,6 +12,7 @@ on:
       - 'CONTROL/bundled-skills.txt'
       - 'THIRD_PARTY_NOTICES.md'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.claude/skills/kaizen/**'
       - '.claude/skills/eli5/**'
@@ -22,11 +23,12 @@ on:
       - 'THIRD_PARTY_NOTICES.md'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   unix-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +47,7 @@ jobs:
         run: bash .claude/skills/nine-router-setup/tests/test-launcher-safe.sh
 
   windows-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
