@@ -77,22 +77,22 @@ cmp -s "$FAKE/.claude/settings.json" "$FAKE/after1.json" || fail "re-install cha
 ok "re-install is idempotent"
 
 # 3b. no hard lock by default; --lock-settings is opt-in; installers write through a lock and re-lock; --unlock-settings undoes it
-LK="$PY $SKILL/scripts/common/settings_lock.py"
-$LK status "$FAKE/.claude/settings.json" | grep -q ': unlocked' || fail "settings were locked without --lock-settings"
+LK() { "$PY" "$SKILL/scripts/common/settings_lock.py" "$@"; }  # a function: the checkout path may contain spaces
+LK status "$FAKE/.claude/settings.json" | grep -q ': unlocked' || fail "settings were locked without --lock-settings"
 "$SKILL/scripts/macos/install.sh" --with-ask-before-backup --with-question-gate --lock-settings >"$FAKE/lock.out" 2>&1 || { cat "$FAKE/lock.out"; fail "install --lock-settings failed"; }
 for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
-  $LK status "$s" | grep -q ': locked' || fail "--lock-settings did not lock $s"
+  LK status "$s" | grep -q ': locked' || fail "--lock-settings did not lock $s"
 done
 cp "$FAKE/.claude/settings.json" "$FAKE/locked-before.json"
 "$SKILL/scripts/macos/install.sh" --with-ask-before-backup --with-question-gate >"$FAKE/relock.out" 2>&1 || { cat "$FAKE/relock.out"; fail "install over a locked file failed"; }
 grep -q 'settings-lock: .* was locked' "$FAKE/relock.out" || fail "install did not report unlocking the locked file"
 for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
-  $LK status "$s" | grep -q ': locked' || fail "installer left $s unlocked"
+  LK status "$s" | grep -q ': locked' || fail "installer left $s unlocked"
 done
 cmp -s "$FAKE/.claude/settings.json" "$FAKE/locked-before.json" || fail "idempotent install over a lock changed settings"
 "$SKILL/scripts/macos/install.sh" --unlock-settings >/dev/null 2>&1 || fail "--unlock-settings failed"
 for s in "$FAKE/.claude/settings.json" "$FAKE/.claude-nine/settings.json"; do
-  $LK status "$s" | grep -q ': unlocked' || fail "--unlock-settings left $s locked"
+  LK status "$s" | grep -q ': unlocked' || fail "--unlock-settings left $s locked"
 done
 ok "lock is opt-in, installer writes through a lock and re-locks, --unlock-settings undoes it"
 
@@ -106,4 +106,37 @@ for f in workflow-guard/guard.py hygiene/post_merge_hygiene.py disk-cleanup/disk
   [ ! -e "$FAKE/.claude/hooks/$f" ] || fail "file remains after uninstall: $f"
 done
 ok "uninstall removed only what was added (settings restored exactly)"
+
+# 5. roll-path contract: --only full-read-guard registers ONLY this hook in the given root and touches nothing else
+R="$FAKE/.claude-nine"; rm -rf "$FAKE/.claude" "$R/hooks"
+mkdir -p "$R/skills/demo"
+echo '{"canary": true, "env": {"KEEP": "1"}, "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "foreign-hook --x"}]}]}}' > "$R/settings.json"
+cp "$R/settings.json" "$FAKE/roll-before.json"
+printf -- '---\nname: demo\n---\nDemo skill\n' > "$R/skills/demo/SKILL.md"
+"$SKILL/scripts/macos/install.sh" --only full-read-guard --root "$R" >"$FAKE/roll.out" 2>&1 || { cat "$FAKE/roll.out"; fail "--only full-read-guard failed"; }
+json_check "$R/settings.json" '
+b = json.load(open(sys.argv[1].rsplit("/", 1)[0] + "/../roll-before.json"))
+assert d["canary"] is True and d["env"] == {"KEEP": "1"}, d
+assert d["hooks"]["PreToolUse"][0] == b["hooks"]["PreToolUse"][0]
+mine = [(e, x["command"]) for e, gs in d["hooks"].items() for g in gs for x in g["hooks"] if "full-read-guard/frg_hook.py" in x["command"]]
+assert sorted(e for e, _ in mine) == ["PostToolUse", "PreCompact", "PreToolUse", "SessionStart"], mine
+others = [(e, x["command"]) for e, gs in d["hooks"].items() for g in gs for x in g["hooks"] if "full-read-guard" not in x["command"]]
+assert others == [("PreToolUse", "foreign-hook --x")], others
+' || fail "roll-path install changed more than the four full-read-guard entries"
+[ -f "$R/hooks/full-read-guard/frg_hook.py" ] && [ -x "$R/hooks/full-read-guard/read-skill" ] || fail "roll-path install: files missing"
+[ "$(ls "$R/hooks" | sort | tr '\n' ' ')" = "full-read-guard hook-skill-install.json " ] || fail "roll-path install wrote extra files: $(ls "$R/hooks")"
+[ ! -e "$FAKE/.claude" ] && [ -z "$(ls "$FAKE/Library/LaunchAgents" 2>/dev/null)" ] || fail "roll-path install touched ~/.claude or launchd"
+cp "$R/settings.json" "$FAKE/roll-after1.json"
+"$SKILL/scripts/macos/install.sh" --only full-read-guard --root "$R" >/dev/null 2>&1 || fail "roll-path re-run failed"
+cmp -s "$R/settings.json" "$FAKE/roll-after1.json" || fail "roll-path re-run is not idempotent"
+mkdir -p "$FAKE/empty-root"
+"$SKILL/scripts/macos/install.sh" --only full-read-guard --root "$FAKE/empty-root" >/dev/null 2>&1 || fail "roll-path with no settings.json should exit 0"
+[ ! -e "$FAKE/empty-root/settings.json" ] && [ ! -e "$FAKE/empty-root/hooks" ] || fail "roll-path created files where no settings.json existed"
+OUT="$(printf '%s' '{"hook_event_name":"PreToolUse","session_id":"r1","cwd":"'"$FAKE"'","tool_name":"Bash","tool_input":{"command":"head -3 '"$R"'/skills/demo/SKILL.md"}}' | "$PY" "$R/hooks/full-read-guard/frg_hook.py")"
+case "$OUT" in *'"deny"'*read-skill*) ;; *) fail "installed hook did not block a partial read: $OUT" ;; esac
+"$SKILL/scripts/macos/install.sh" --only nope >/dev/null 2>&1 && fail "--only accepted an unknown component"
+ok "roll path: --only full-read-guard registers exactly four entries, idempotent, nothing else touched, hook blocks"
+"$SKILL/scripts/macos/uninstall.sh" >/dev/null 2>&1 || fail "uninstall after roll-path failed"
+json_check "$R/settings.json" 'b = json.load(open(sys.argv[1].rsplit("/", 1)[0] + "/../roll-before.json")); assert d == b, d' || fail "uninstall did not restore roll-path settings"
+ok "uninstall removes the roll-path registration"
 echo "SMOKE PASS"
