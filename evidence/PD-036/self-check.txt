@@ -1,0 +1,12 @@
+test_dependency_gate_names_missing_tool (__main__.HostProfileTests.test_dependency_gate_names_missing_tool) ... ok
+test_env_sets_file_queue_and_owner_identity (__main__.HostProfileTests.test_env_sets_file_queue_and_owner_identity) ... ok
+test_env_uses_api_docs_key_without_printing (__main__.HostProfileTests.test_env_uses_api_docs_key_without_printing) ... ok
+test_image_key_read_by_name_never_in_plan (__main__.HostProfileTests.test_image_key_read_by_name_never_in_plan) ... ok
+test_owner_persists_across_turns (__main__.HostProfileTests.test_owner_persists_across_turns) ... ok
+test_plan_contract_and_run_dir_under_project (__main__.HostProfileTests.test_plan_contract_and_run_dir_under_project) ... ok
+test_workspace_link_satisfies_exit_61_paths (__main__.HostProfileTests.test_workspace_link_satisfies_exit_61_paths) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.041s
+
+OK
