@@ -5,11 +5,12 @@ rest of `23-ai-workforce-blueprint`.
 
 - Source repo: `trevorotts1/openclaw-onboarding`
 - Source ref: `origin/main` of onboarding, the merge of pull request 2809
-- Source commit: `7c21e86ba848f1c1f953d98451ee538d63057de2` (this map replaces the one from `96866c532`: the
+- Source commit: `354ac5a7432fde2c9eabca5059dcd374ea863b5d` (this map replaces the one from `96866c532`: the
   `black-friday-launcher` entry now carries the plain-English client line the synced
   `repo-integration/skill-department-map-entry.json` carries, and skill 84 is listed)
-- Git blob: `e10745e4e0079773aa8d45af9e7980ba3fa4e044`
-- SHA-256: `40cb461724f88e76230f27dd830b2a7192b224ab4dbf5b0d02956ac01c632e20`
+- Git blob: `b2486431642359bdac3e3d94dc1ad86f7ce604f2`
+- SHA-256: `7f3e71f0ef47fe001eaf4ac7dacc6399fcedfdac31a1b829ee97bda6ae252c96`
+- Divergence: 999 diverged from onboarding main at `99b493aeb0fb260907b056cdfd93e11439627e04` on 2026-11-11 in the Skill 83 description line, so its blob and SHA-256 differ from onboarding main.
 - Entries: 79 (skill numbers 01 through 84; the archived skills are no longer
   shipped, as in the source), including `signature-downsell`,
   `signature-thank-you` and `black-friday-launcher`
