@@ -1,0 +1,84 @@
+{
+  "schema": "process-certificate-v1",
+  "deck_slug": "golden-quest",
+  "declared_at": "2026-08-24T09:00:00+00:00",
+  "certified_at": "2026-10-14T02:13:06+00:00",
+  "declared_steps": 7,
+  "verified_steps": 6,
+  "skipped_with_approval": 0,
+  "delivery_phase_in_flight": 1,
+  "all_steps_pass": true,
+  "steps": [
+    {
+      "order": 0.1,
+      "phase_id": "P0A-INTAKE",
+      "name": "Intake / Interview Confirm",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 0.14,
+      "phase_id": "P-SP-CLAIM",
+      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 0.15,
+      "phase_id": "P-SP-INTAKE",
+      "name": "Signature-Presentation Intake Gate (8 Questions one at a time, ONE atomic record + frame)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 0.16,
+      "phase_id": "P-SP-INTAKE-TRACE",
+      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 4.0,
+      "phase_id": "P4-COPY",
+      "name": "Slide Copy",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 4.1,
+      "phase_id": "P-SP-STRUCTURE",
+      "name": "Signature-Presentation Structure Gate (sacred structure contract)",
+      "disposition": "attested",
+      "ok": true,
+      "findings": [
+        "substance_verified=True; start+done client reports confirmed; attested in order."
+      ]
+    },
+    {
+      "order": 4.15,
+      "phase_id": "P-SP-P3-HYGIENE",
+      "name": "Signature-Presentation Phase-3 No-Pitch Hygiene Gate",
+      "disposition": "in-flight",
+      "ok": true,
+      "findings": [
+        "Delivery phase 'P-SP-P3-HYGIENE' is in flight — its attestation and done-report are written after this proof passes (FIX #10); exempted from (a)/(c)."
+      ]
+    }
+  ],
+  "certificate_sha": "0d70df1a757140ed9ee16abdaefd1cf9e3016d37726e2123c021c7b1faf999b9"
+}
