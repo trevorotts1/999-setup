@@ -19,21 +19,23 @@ name: drama-studio-tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - '.claude/skills/drama-studio/**'
       - '.github/workflows/drama-studio-tests.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.claude/skills/drama-studio/**'
       - '.github/workflows/drama-studio-tests.yml'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   drama-studio:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # RUNS ON macOS. prove_heartbeat.py drives heartbeat.py's `install`, which builds a
     # NATIVE timer and refuses every OS but darwin/win32 ("unsupported OS for a native
     # timer: linux"), so its two install checks (install-writes, refuses-temp-install)
