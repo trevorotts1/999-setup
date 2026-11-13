@@ -1,6 +1,6 @@
 ---
 name: signature-presentation
-description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
+description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban. In the trevorotts1/999-setup repository this tree is the vendored 999 host profile: `bin/presentation-999` is the front door and no OpenClaw installation is required.
 version: v2.1.9
 ---
 
@@ -15,6 +15,60 @@ Skill 53 (Book Writer) and consumed here as the offer-deck data source.
 
 > The method captured in `MASTERDOC.md` is **SACRED** — never floored, reordered, or
 > reinterpreted. Every rule below is machine-enforced by a fail-closed prover, never advisory.
+
+## 999 host profile (this tree)
+
+This copy ships inside `trevorotts1/999-setup` at
+`.claude/skills/signature-presentation/`. The tree is vendored byte-for-byte from the
+onboarding Presentations department (`VENDORED.md` records the source commit, 564 files
+and the tree digest). Three things are 999-only and are not vendored copies: this
+`SKILL.md` front door, `host/999_paths.py`, and `bin/presentation-999`.
+
+**One entry:** `bin/presentation-999`.
+
+```
+python3 .claude/skills/signature-presentation/bin/presentation-999 --plan
+python3 .claude/skills/signature-presentation/bin/presentation-999 --deps
+python3 .claude/skills/signature-presentation/bin/presentation-999 \
+    --interview --run-dir <RUN_DIR> --next
+python3 .claude/skills/signature-presentation/bin/presentation-999 \
+    --interview --run-dir <RUN_DIR> --answer <ID> "<text>"
+python3 .claude/skills/signature-presentation/bin/presentation-999 \
+    --interview --run-dir <RUN_DIR> --complete
+python3 .claude/skills/signature-presentation/bin/presentation-999 \
+    --build --run-dir <RUN_DIR> --slides <slides.json> --out <out.pptx>
+```
+
+- **Department root** is this vendored tree. `host/999_paths.py` creates a workspace shim
+  under the user's chosen project folder so the vendored `bin/presentation` exit-61
+  materialization check is satisfied without `~/.openclaw`.
+- **Run folders** live under the user's chosen project folder
+  (`--project-dir`, default the current directory): `<project>/presentation-runs/<stamp>`
+  unless `--run-dir` is stated.
+- **Notify transport** is the file queue: the wrapper always exports
+  `PRESENTATION_NOTIFY_CMD` to this tree's `bin/presentation-outbox-queue`, and rows land
+  in `<RUN_DIR>/working/outbox.jsonl`. This Claude Code session reads that file and shows
+  the rows to the user. The OpenClaw gateway is never required.
+- **Command Center board mirror** is OFF unless the caller has configured
+  `COMMAND_CENTER_URL` or `MISSION_CONTROL_URL`; the wrapper never invents a board address.
+- **Image key** is read by name (`KIE_API_KEY`, `KIE_AI_API_KEY`, `KIE_APIKEY`) from the
+  user's own `API docs.md` (searched in the project folder, `<project>/docs`,
+  `~/Downloads`, then `~`; or pass `--api-docs`). The value goes only into the child
+  environment and is never printed; `--plan` reports name, presence and length.
+- **Delivery** is the run folder (`<RUN_DIR>/delivery/`) plus the user's `Downloads`
+  folder; `--plan` prints both.
+- **The interview runs in this Claude Code chat through the same driver**
+  (`scripts/deck-intake-driver.py`). Pass `--owner-msg-id <the session's own user message
+  id>` once; it is recorded as the run's requester identity and owner message id.
+- **Dependency gate:** `--deps` names exactly the missing tools, using
+  `scripts/presentation-deps.json` as the one canon; it exits 1 when a required tool is
+  missing.
+- **Teleprompter:** no waiver is recorded. When the operator Cloudflare credential pair is
+  absent, `build_deck.publish_teleprompter` records `warned_no_credentials` (WARN, not a
+  stop) and the teleprompter is delivered as a local file with no web link; do not claim a
+  public URL was made.
+
+Everything below documents the vendored Skill 51 methodology and engine; it is unchanged.
 
 ## What this skill produces / owns
 
