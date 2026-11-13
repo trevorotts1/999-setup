@@ -3,26 +3,28 @@ name: cohort-integration-tests
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "batch/**"]
     paths:
       - 'tools/cohort_integration.py'
       - 'tools/tests/test_cohort_integration.py'
       - '.github/workflows/cohort-integration-tests.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'tools/cohort_integration.py'
       - 'tools/tests/test_cohort_integration.py'
       - '.github/workflows/cohort-integration-tests.yml'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
 jobs:
   cohort-integration:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
