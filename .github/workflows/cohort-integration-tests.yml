@@ -3,7 +3,7 @@ name: cohort-integration-tests
 on:
   workflow_dispatch:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - 'tools/cohort_integration.py'
       - 'tools/tests/test_cohort_integration.py'

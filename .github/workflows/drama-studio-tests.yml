@@ -19,7 +19,7 @@ name: drama-studio-tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '.claude/skills/drama-studio/**'
       - '.github/workflows/drama-studio-tests.yml'

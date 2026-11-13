@@ -2,7 +2,7 @@ name: spec-protocol-tests
 
 on:
   push:
-    branches: [main, "batch/**"]
+    branches: [main]
     paths:
       - '.claude/skills/spec-protocol/**'
       - '.claude/skills/hook-skill/hooks/workflow-guard/**'
