@@ -1,0 +1,102 @@
+== normal PATH ==
+{
+  "manifest": "<WORKTREE>/.claude/skills/signature-presentation/scripts/presentation-deps.json",
+  "manifest_found": true,
+  "present": [
+    "soffice",
+    "pdftoppm",
+    "python:reportlab+pptx",
+    "python:pypdf",
+    "ffmpeg",
+    "ffprobe",
+    "tesseract",
+    "python:pytesseract"
+  ],
+  "missing": [],
+  "required_missing": []
+}
+rc=0
+
+== minimal PATH (all tools removed) ==
+$ PATH=/usr/bin:/bin presentation-999 --deps
+{
+  "manifest": "<WORKTREE>/.claude/skills/signature-presentation/scripts/presentation-deps.json",
+  "manifest_found": true,
+  "present": [],
+  "missing": [
+    "soffice",
+    "pdftoppm",
+    "python:reportlab+pptx",
+    "python:pypdf",
+    "ffmpeg",
+    "ffprobe",
+    "tesseract",
+    "python:pytesseract"
+  ],
+  "required_missing": [
+    "soffice",
+    "pdftoppm",
+    "python:reportlab+pptx",
+    "python:pypdf",
+    "tesseract",
+    "python:pytesseract"
+  ]
+}
+rc=1
+
+== mutation: two probe deps appended to a scratch copy ==
+mut_baseline_rc=0
+after_removing_host_module_rc=1
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1335, in _find_and_load_unlocked
+ModuleNotFoundError: No module named '999_paths'
+after_restore_rc=0
+--- deps mutation ---
+deps_mutated_rc=1
+present_has_python3 True
+missing_has_fake True
+required_missing_has_fake True
+fake_in_present False
+deps_restored_rc=0
+fake_names_after_restore []
+
+probe split:
+{
+  "manifest": "<SCRATCH>/mut.gH0y8l/skill/scripts/presentation-deps.json",
+  "manifest_found": true,
+  "present": [
+    "soffice",
+    "pdftoppm",
+    "python:reportlab+pptx",
+    "python:pypdf",
+    "ffmpeg",
+    "ffprobe",
+    "tesseract",
+    "python:pytesseract",
+    "probe-python3-present"
+  ],
+  "missing": [
+    "probe-fake-tool-missing"
+  ],
+  "required_missing": [
+    "probe-fake-tool-missing"
+  ]
+}
+
+== restore ==
+{
+  "manifest": "<SCRATCH>/mut.gH0y8l/skill/scripts/presentation-deps.json",
+  "manifest_found": true,
+  "present": [
+    "soffice",
+    "pdftoppm",
+    "python:reportlab+pptx",
+    "python:pypdf",
+    "ffmpeg",
+    "ffprobe",
+    "tesseract",
+    "python:pytesseract"
+  ],
+  "missing": [],
+  "required_missing": []
+}

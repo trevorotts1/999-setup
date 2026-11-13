@@ -1,0 +1,14 @@
+mut_baseline_rc=0
+after_removing_host_module_rc=1
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1335, in _find_and_load_unlocked
+ModuleNotFoundError: No module named '999_paths'
+after_restore_rc=0
+--- deps mutation ---
+deps_mutated_rc=1
+present_has_python3 True
+missing_has_fake True
+required_missing_has_fake True
+fake_in_present False
+deps_restored_rc=0
+fake_names_after_restore []

@@ -1,0 +1,10 @@
+$ cd <WORKTREE>
+$ git cat-file -e 91883d8c:.claude/skills/signature-presentation/bin/presentation-999
+fatal: path '.claude/skills/signature-presentation/bin/presentation-999' exists on disk, but not in '91883d8c'
+rc=128
+$ git cat-file -e 462e9786:.claude/skills/signature-presentation/bin/presentation-999
+fatal: path '.claude/skills/signature-presentation/bin/presentation-999' exists on disk, but not in '462e9786'
+rc=128
+$ <BASE_CHECKOUT>/.claude/skills/signature-presentation/bin/presentation-999 --plan
+(eval):1: no such file or directory: <SCRATCH>/base918b/.claude/skills/signature-presentation/bin/presentation-999
+rc=127
