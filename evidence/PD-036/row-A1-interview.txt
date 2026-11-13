@@ -1,0 +1,60 @@
+0 presentation_type -> from_scratch
+1 pitch_included -> no
+2 audience -> small business owners
+3 audience_composition_note -> mostly owners
+4 representation_mix -> mixed
+5 grounded_content -> A test brief with deliberate but modest claims.
+6 goal -> sell a coaching program
+7 cta_action -> Book a call
+8 target_feeling -> confident
+9 transformation_promise -> clarity in 30 days
+10 primary_objection -> time
+11 hook_seed -> the one question
+12 tone -> warm
+13 duration_min -> 20
+14 deadline -> 2026-12-01
+15 client_notes -> none
+16 standard_mode -> QUICK
+17 provider_plan -> use conservative default
+18 workhorse_model -> 
+19 reasoning_model -> 
+20 qc_model -> 
+21 thinking_mode -> medium
+22 run_mode -> standard
+23 deepseek_variant -> 
+24 openrouter_model -> 
+25 ollama_plan -> $20/month
+26 style_source -> brand
+27 style_prefs -> clean
+28 brand_primary -> #112233
+29 dark_ok -> yes
+30 style_pick_auto -> no
+31 visual_mix -> photographic
+32 logo_on_slides -> no
+33 want_teleprompter -> yes
+34 want_speech_script -> yes
+35 want_audio_deliverable -> no
+36 delivery_destinations -> downloads
+37 want_ghl_upload -> no
+38 want_sales_checkout -> no
+39 want_vsl_page -> no
+40 want_email_sequences -> no
+41 want_motion_graphics -> no
+42 ghl_upload_declined_reason -> yes
+43 audio_declined_reason -> yes
+44 sales_checkout_declined_reason -> yes
+45 vsl_page_declined_reason -> yes
+46 email_sequences_declined_reason -> yes
+47 motion_graphics_declined_reason -> yes
+NEXT COMPLETE at turn 48
+COMPLETE rc 0
+{
+  "status": "complete",
+  "deck_type": "webinar",
+  "creation_mode": "from_scratch",
+  "presentation_type": "from_scratch",
+  "intake_path": "<SCRATCH>/proj.intfinal.V7rAdg/run-int/working/copy/intake.json",
+  "intake_transcript_signed": true
+}
+
+
