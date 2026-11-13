@@ -1,0 +1,1794 @@
+#!/usr/bin/env python3
+"""
+vsl_builder.py — the VSL (video sales letter) page executor (Wave C, C3).
+
+TEMPLATES the Loop 2C flow (proven by hand 2026-08-07, render-verified):
+    kie.ai design  ->  agent copy  ->  HTML+gate  ->  GHL funnel install (Skill 6, via P-U-GHL-VSL)
+See GAUNTLET-LOOP-WORK/LOOP2C-VSL-SALES-CHECKOUT-WEBSITE.md and this department's own
+sops/VSL-BUILDER-SOP.md (written concurrently by C5 — read in full before this module
+was written; every section reference below is to that SOP). This module templates the
+FLOW ONLY — it carries no client name, no client copy, no funnel id, no branding. Every
+client-specific value is resolved at runtime from the run's own intake.json, exactly
+like sales_checkout_builder.py (C2, the closest sibling — this module deliberately
+mirrors its architecture line for line wherever the two executors overlap. The one
+deliberate divergence is the install: the VSL page's funnel install belongs to
+P-U-GHL-VSL (see THE FUNNEL INSTALL below), not to this module.
+
+THE GATE — WANT_VSL_PAGE (upsell-questions.json v1.0.0, U026 waiver mechanic)
+-------------------------------------------------------------------------------------
+TWO INTAKE PATHS WRITE THIS FLAG TO TWO DIFFERENT SHAPES, and this gate reads BOTH
+(identical discipline to sales_checkout_builder.resolve_sales_checkout_gate):
+  1. NESTED (preferred): working/copy/intake.json's `pre_presentation_capture.WANT_VSL_PAGE`
+     — the documented contract (intake_writer.py's ID_TO_FIELD/PRE_CAPTURE_FIELDS mapping),
+     written by the hosted interview-app bridge path.
+  2. FLAT (fallback): working/copy/intake.json's top-level `WANT_VSL_PAGE` — written by
+     deck-intake-driver.py, THE sanctioned chat intake conversation, whose cmd_complete()
+     merges every ledger entry straight onto the intake dict (`intake[store_key] = val`)
+     with no `pre_presentation_capture` wrapper at all, because upsell-questions.json's own
+     `storeOn` for these two questions is the bare field name, not a dotted path.
+The same order applies to the waiver-reason field, VSL_PAGE_DECLINED_REASON. NESTED is
+preferred only when it carries a real (non-blank) value; a present-but-blank nested value
+still falls through to FLAT. This widens WHERE the value is read from — it changes nothing
+about what counts as an answer (see resolve_vsl_gate()/_resolve_capture_field()).
+Per upsell-questions.json's `waiver_field_mapping.vsl_page` (toggle=
+want_vsl_page, reason=vsl_page_declined_reason): unlike WANT_SALES_CHECKOUT (default
+YES), **this question defaults to NO** — "Default 'no' (video must exist for a VSL
+page)." A "no" is still a CLIENT WAIVER and REQUIRES the client's own verbatim
+declined-reason — "it is never inferred from silence and never written by the
+assistant." Four outcomes, never conflated (identical shape to
+sales_checkout_builder.resolve_sales_checkout_gate — the SAME waiver discipline, an
+inverted default):
+    ABSENT / BLANK           -> DEFER   (never treated as a decline; the question was
+                                          never asked/answered in this run)
+    "yes"                    -> BUILD (subject to the hard video dependency below)
+    "no" + real quote        -> WAIVED  (legitimately gated OUT; not a failure — the
+                                          SAME externally observable behaviour as DEFER:
+                                          exit 0, nothing built)
+    "no" + missing/blank quote,
+    or any unrecognized value -> FAIL CLOSED (a self-authored "no" is refused, mirrors
+                                          presentation_job/waivers.py's own
+                                          client_request_quote >= 3-char floor)
+
+THE HARD VIDEO DEPENDENCY — MUST run after P9.6-WEBINAR-VIDEO (VSL-BUILDER-SOP.md §2)
+-------------------------------------------------------------------------------------
+The VSL page embeds/links the produced webinar video. `P9.6-WEBINAR-VIDEO`
+(build_webinar_video.py, order 8.92) is what produces the artifact and uploads it to
+GHL. This module NEVER guesses the artifact's filename or location: it imports
+build_webinar_video.py's own `WEBINAR_FILENAME_TEMPLATE` + `resolve_deck_slug` (the
+canonical symbols) rather than re-deriving them, so the two executors can never drift.
+The dependency check runs BEFORE any copy/design/HTML/push work:
+    1. resolve <run_dir>/working/delivery/{deck_slug}-WEBINAR.mp4 via the imported
+       template (never a literal string in this file).
+    2. the file must EXIST (AF-VSL-NO-VIDEO if not).
+    3. the file must pass ghl_media.verify_video() — the department's own canonical,
+       already-proven local probe (exists, non-empty, <=500MB v3 ceiling, real MP4
+       `ftyp` box) — reused here verbatim, never reimplemented (AF-VSL-NO-VIDEO if it
+       fails the probe).
+A "yes" that fails this dependency FAILS LOUD (exit 5) — it never silently builds a
+page with a missing/broken video embed and never falls back to a placeholder video
+(VSL-BUILDER-SOP.md §2, §5).
+
+THE FUNNEL INSTALL — NOT THIS MODULE (single install path, PRES-011)
+-------------------------------------------------------------------------------------
+This module builds the page; it does NOT install it into a GHL funnel. The one
+install path for the VSL page is P-U-GHL-VSL, executed by
+ghl_external_installer.py (PRES-011): it emits the install plan, a delegated
+Skill 6 execution lands it, and the phase completes only on the installer's own
+validate_receipt() (adapter funnel/page IDs + matching-location readback +
+ops-ledger provenance). The one-funnel rule lives there too: the installer
+reuses this run's verified sales funnel_id when one exists, so one client never
+gets a second funnel for the same run. This builder's hero image is hosted
+through ghl_media (a media upload, not a page install) so the built page can
+reference it.
+
+RETIRED 2026-10-14 (FIX-PLAN Item 23, VSL single-design resolution): this module
+used to ALSO emit its own delegated push plan (working/vsl/ghl_push_plan.json)
+and verify a second receipt (working/vsl/build_receipt.json) -- two install
+paths and two receipts for one page, the second enforced by no registered
+verifier. That path is removed; do not re-introduce it. The sales/checkout
+sibling keeps its own plan + receipt contract (its phases' verifiers bind it);
+the VSL page's install proof is the installer's receipt only.
+
+THE VIEWER GATE (VSL-BUILDER-SOP.md §4)
+-------------------------------------------------------------------------------------
+Loop 2C's proven design: a gate at roughly 3-8 minutes into the video (the
+window-midpoint rule stated in VSL-BUILDER-SOP.md §4) that pauses playback and
+blocks further seeking until the viewer submits first name / email / cell. The SOP requires the timestamp be DERIVED
+from the run's own `working/checkpoints/webinar_timing.json` track, never hardcoded —
+`resolve_gate_timestamp()` below picks the real slide-boundary inside the [180s, 480s]
+window closest to its midpoint, falling back to a clamped/derived value when the
+track is thin or absent. LEAD-CAPTURE MECHANISM DECISION (the SOP asks C3 to record
+this explicitly, §4): this module ships a lightweight NATIVE HTML form embedded in the
+gate overlay (not the heavier universal-sops/form-craft/ engine) — the gate is a
+client-side JS mechanic (pause + seek-block + reveal-on-submit) that a governed agent
+wires to the client's real GHL contact/workflow endpoint at deployment time; a fleet
+template cannot carry a client's live endpoint (documented TODO left in the emitted
+HTML, never fabricated as if wired).
+CONSENT ON THE GATE FORM (owner ruling 2026-10-13, superseding the 2026-09-27 D3
+optional posture): the gate form also carries Trevor's standing two consent
+statements (email; SMS + voice AI combined) as checkboxes whose text IS the consent
+sentence -- unchecked by default, ALL required: the gate's submit handler refuses to
+unlock playback until every box is checked, with a branded error + "Check here" tags
+on the unchecked boxes. The boxes are named form fields (consent_email /
+consent_sms_voice), so the deployment-time GHL wiring captures them with the rest of
+the submit (see resolve_gate_consent_copy()).
+
+NO CLIENT NAMES OR CLIENT-SPECIFIC CONTENT — this is a fleet-wide template. Loop 2C's
+real pages were built for one client and deliberately kept out of this repo.
+
+USAGE
+    python3 scripts/vsl_builder.py --run-dir <run_dir> [--skip-design] [--no-push]
+    python3 scripts/vsl_builder.py --selftest
+
+    --run-dir     The governed pipeline run dir (reads working/copy/intake.json +
+                  working/delivery/{deck_slug}-WEBINAR.mp4 + working/checkpoints/
+                  webinar_timing.json + working/checkpoints/media_library.json).
+    --skip-design Reuse an already-downloaded hero render (working/vsl/renders/)
+                  without a fresh kie.ai run. Copy + HTML only.
+    --no-push     Skip the front-door-nonce requirement and the hero-image GHL
+                  hosting (offline smoke build: copy + design + HTML only, no client
+                  GHL write of any kind). The video dependency check still runs — a
+                  video-less page is never built. (The flag name is historical: this
+                  module no longer pushes anything; the funnel install is P-U-GHL-VSL.)
+    --selftest    Deterministic offline self-test (no network, no kie.ai spend, no GHL
+                  call of any kind, no real video/audio — every ghl_rest_canvas call
+                  below is made WITHOUT a session, which is pure/local by
+                  construction).
+
+FRONT-DOOR NONCE (mirrors build_deck.py / workbook_builder.py / build_webinar_video.py
+/ sales_checkout_builder.py)
+    presentation-canonical-entry.sh mints OC_DECK_ENTRY_NONCE + the run-scoped 0600
+    file <run-dir>/working/checkpoints/.canonical-entry-nonce. A hand-rolled invocation
+    that would spend kie.ai money or write to a client's GHL media library is refused (exit 2,
+    AF-CANONICAL-RENDER-BYPASS) unless --no-push. --no-push offline smoke builds are
+    exempt (no client GHL write is possible on that path).
+
+RUN-DIR / ARTIFACT / STATE CONVENTIONS
+    This executor deliberately does NOT touch presentation_job's engine-internal
+    StateStore/RunLock (presentation_job/state.py) — mirroring build_webinar_video.py,
+    workbook_builder.py and sales_checkout_builder.py, none of which do either; all
+    four are standalone phase executors dispatched BY the engine, not engine-state
+    manipulators. Its own artifact-validity discipline (existence -> non-empty ->
+    shape/magic check, fail with a named reason) mirrors presentation_job/artifacts.py's
+    validate_* predicate ORDER exactly (see verify_video_dependency below), and its
+    working set is intentionally phase-scoped under working/vsl/ + a single
+    working/checkpoints/vsl.json ledger (FIX-20 discipline, presentation_job/
+    workingset.py), so a compaction mid-build never loses more than one phase's state.
+
+EXIT CODES
+    0  — DEFERRED (flag absent -- nothing to do this run), or WAIVED (client declined
+         with a recorded reason -- correctly gated out), or BUILT (copy+design+HTML
+         built and the phase ledger recorded; the funnel install is P-U-GHL-VSL's
+         own phase, proven by its own PRES-011 receipt)
+    1  — kie.ai design/render failure
+    2  — fatal configuration error (no API key, missing run-dir, refused nonce)
+    3  — GATE BLOCKED: a bare "no" with no verbatim client reason, or an unrecognized
+         WANT_VSL_PAGE value (AF-VSL-WAIVER-MISSING / AF-VSL-VALUE-UNRECOGNIZED)
+    4  — VERIFY FAILED: an assembled artifact failed its content gate
+    5  — AF-VSL-NO-VIDEO: elected ("yes") but the P9.6 webinar video artifact is
+         missing or fails ghl_media.verify_video()'s local probe -- fail-closed, never
+         a placeholder video
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Exit codes
+# ---------------------------------------------------------------------------
+EXIT_OK = 0
+EXIT_BUILD_FAILED = 1
+EXIT_USAGE = 2
+EXIT_GATE_BLOCKED = 3
+EXIT_VERIFY_FAILED = 4
+EXIT_VIDEO_MISSING = 5
+
+# ---------------------------------------------------------------------------
+# Waiver mechanic constants (mirrors sales_checkout_builder.py's own floor, which
+# mirrors presentation_job/waivers.py's: `if len(quote) < 3: raise WaiverError(...
+# "a waiver the agent wrote for itself is not a waiver")`) and upsell-questions.json's
+# storeTarget field names for THIS question (want_vsl_page, not want_sales_checkout).
+# ---------------------------------------------------------------------------
+MIN_WAIVER_QUOTE_CHARS = 3
+WANT_FIELD = "WANT_VSL_PAGE"
+REASON_FIELD = "VSL_PAGE_DECLINED_REASON"
+AF_WAIVER_MISSING = "AF-VSL-WAIVER-MISSING"
+AF_VALUE_UNRECOGNIZED = "AF-VSL-VALUE-UNRECOGNIZED"
+AF_PROMPT_NO_CONTENT = "AF-VSL-PROMPT-NO-CONTENT"
+AF_NO_VIDEO = "AF-VSL-NO-VIDEO"
+
+# ---------------------------------------------------------------------------
+# Design-prompt band (mirrors workbook_builder.py / sales_checkout_builder.py's
+# Presentations rich-prompt gate: 9,000-18,000 stripped chars — VSL-BUILDER-SOP.md
+# §3 step 2, explicitly NOT Loop 2C's looser 5,000-19,000 research band).
+# ---------------------------------------------------------------------------
+# Prompt length is KIE rule 12 (owner order 2026-10-05) through prompt_gate and the shared enforcer; no band lives here.
+
+ASPECT_RATIO = "16:9"
+RESOLUTION = "2K"
+
+# The viewer-gate window (VSL-BUILDER-SOP.md §4: "roughly 3-8 minutes ... after the
+# first big revelation"). resolve_gate_timestamp() derives the REAL timestamp inside
+# this window from webinar_timing.json; these are the window bounds, never the
+# timestamp itself.
+VSL_GATE_MIN_SEC = 180.0
+VSL_GATE_MAX_SEC = 480.0
+
+# Front-door nonce (identical contract to workbook_builder.py / build_deck.py /
+# build_webinar_video.py / sales_checkout_builder.py).
+ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
+
+# Brand defaults when intake carries no palette (mirrors workbook_builder.py's /
+# sales_checkout_builder.py's fallback).
+DEFAULT_PRIMARY = "#212748"
+DEFAULT_SECONDARY = "#B38456"
+DEFAULT_ACCENT = "#C49A70"
+DEFAULT_BASE = "#F2E6D7"
+DEFAULT_INK = "#1A1A1A"
+
+WIREFRAME_BAN_PHRASES = (
+    "background only", "background-only", "no text", "wireframe", "blank template",
+    "blank page background",
+)
+
+
+class VslBuildError(RuntimeError):
+    """Raised on a hard, fail-closed build failure (message names the failing gate)."""
+
+
+# ---------------------------------------------------------------------------
+# Optional shared prompt-gate (degrade gracefully -- mirrors workbook_builder.py /
+# sales_checkout_builder.py).
+# ---------------------------------------------------------------------------
+def _load_prompt_gate():
+    try:
+        import prompt_gate  # noqa: F401
+        return prompt_gate
+    except Exception:  # noqa: BLE001
+        return None
+
+
+prompt_gate = _load_prompt_gate()
+
+
+# ---------------------------------------------------------------------------
+# Sibling-module resolution (never a hardcoded operator path -- HOME/repo-relative,
+# same discipline kie_generate.py's HIGH-3 fix, sales_checkout_builder.py's
+# _find_ghl_rest_canvas_dir, and _import_prompt_gate all use).
+# ---------------------------------------------------------------------------
+def _here() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def _find_ghl_rest_canvas_dir() -> Optional[Path]:
+    """Walk every ancestor of this file looking for the sibling Skill-6 tools dir
+    that ships ghl_rest_canvas.py. Identical to sales_checkout_builder.py's own
+    resolver — no absolute path is ever assumed."""
+    for parent in _here().parents:
+        cand = parent / "06-ghl-install-pages" / "tools"
+        if (cand / "ghl_rest_canvas.py").is_file():
+            return cand
+    return None
+
+
+def _import_ghl_rest_canvas():
+    cand = _find_ghl_rest_canvas_dir()
+    if cand is None:
+        raise RuntimeError(
+            "ghl_rest_canvas.py not found under any ancestor's 06-ghl-install-pages/tools -- "
+            "cannot build the GHL push plan. This module refuses to reimplement GHL REST; "
+            "it only reuses the real ghl_rest_canvas.py helpers."
+        )
+    if str(cand) not in sys.path:
+        sys.path.insert(0, str(cand))
+    import ghl_rest_canvas  # noqa: E402
+    return ghl_rest_canvas
+
+
+def _import_ghl_media():
+    """The sibling department module (co-located with this script). Used to (a) host
+    the kie-rendered hero PNG in the GHL media library before it can be referenced by
+    a GHL-media-storage <img src>, and (b) reuse its canonical verify_video() local
+    probe for the hard video dependency -- never reimplemented here."""
+    here = _here()
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    import ghl_media  # noqa: E402
+    return ghl_media
+
+
+def _import_build_webinar_video():
+    """The sibling P9.6 executor -- imported ONLY to reuse its real, canonical
+    WEBINAR_FILENAME_TEMPLATE + resolve_deck_slug. This module never re-derives the
+    webinar filename convention (the task rule: 'do not guess the filename')."""
+    here = _here()
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    import build_webinar_video  # noqa: E402
+    return build_webinar_video
+
+
+# ---------------------------------------------------------------------------
+# intake.json helpers (mirror sales_checkout_builder.py)
+# ---------------------------------------------------------------------------
+def _read_json(p: Path) -> dict:
+    try:
+        return json.loads(p.read_text(encoding="utf-8", errors="replace"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def load_intake(run_dir: Path) -> dict:
+    return _read_json(run_dir / "working" / "copy" / "intake.json")
+
+
+def resolve_brief(intake: dict) -> Dict[str, Any]:
+    brief = intake.get("deck_brief")
+    return brief if isinstance(brief, dict) else {}
+
+
+def _hex_color(value: Any, default: str) -> str:
+    if not isinstance(value, str):
+        return default
+    v = value.strip().lower()
+    if re.fullmatch(r"#[0-9a-f]{6}", v):
+        return v
+    m = re.fullmatch(r"([0-9a-f]{6})", v)
+    if m:
+        return "#" + m.group(1)
+    return default
+
+
+def resolve_brand(run_dir: Path, intake: dict) -> Dict[str, str]:
+    brief = resolve_brief(intake)
+    primary = _hex_color(brief.get("BRAND_PRIMARY"), DEFAULT_PRIMARY)
+    return {
+        "primary": primary,
+        "secondary": DEFAULT_SECONDARY,
+        "accent": DEFAULT_ACCENT,
+        "base": DEFAULT_BASE,
+        "ink": DEFAULT_INK,
+    }
+
+
+def resolve_deck_slug(run_dir: Path) -> str:
+    """THE canonical deck_slug for this entire module -- delegates to
+    build_webinar_video.resolve_deck_slug() (single source of truth, so the video
+    filename this module checks and the slug it uses to name its own artifacts can
+    never disagree)."""
+    bwv = _import_build_webinar_video()
+    return bwv.resolve_deck_slug(run_dir)
+
+
+def resolve_client_name(run_dir: Path, intake: dict) -> str:
+    brief = resolve_brief(intake)
+    for key in ("OFFER_NAME",):
+        v = brief.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    for key in ("client_name", "company", "business_name", "name"):
+        v = intake.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return resolve_deck_slug(run_dir).replace("-", " ").title()
+
+
+# ---------------------------------------------------------------------------
+# THE GATE — resolve_vsl_gate()
+# ---------------------------------------------------------------------------
+def _resolve_capture_field(intake: dict, pre: dict, field: str) -> Any:
+    """Resolve one pre_presentation_capture field from whichever of the two live
+    intake shapes actually carries it.
+
+    Prefers the NESTED `pre_presentation_capture.<field>` shape (the documented
+    contract; the hosted interview-app bridge / intake_writer.py writes this).
+    Falls through to the FLAT top-level `intake[<field>]` shape when the nested
+    value is absent or blank -- deck-intake-driver.py (THE sanctioned chat intake
+    path) writes every upsell answer flat, with no pre_presentation_capture
+    wrapper at all (its cmd_complete(): `intake[store_key] = val`), because
+    upsell-questions.json's own `storeOn` for WANT_VSL_PAGE and
+    VSL_PAGE_DECLINED_REASON is the bare field name. Identical helper to
+    sales_checkout_builder.py's -- this module deliberately mirrors that one line
+    for line wherever the two executors overlap (see module docstring).
+
+    A present-but-blank NESTED value is treated the same as absent and still
+    falls through to FLAT -- this only widens WHERE a real answer is read from;
+    it never changes what counts as an answer. Silence is still never consent:
+    if BOTH shapes are absent/blank this returns None/blank exactly as before,
+    and the caller's existing absent/blank handling (DEFER) is unchanged."""
+    raw = pre.get(field)
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if raw is not None and str(raw).strip():
+        return raw
+    flat = intake.get(field)
+    if isinstance(flat, dict):
+        flat = flat.get("value")
+    return flat
+
+
+def resolve_vsl_gate(intake: dict) -> Dict[str, Any]:
+    """Resolve WANT_VSL_PAGE against upsell-questions.json's waiver_field_mapping
+    (U026), inverted-default variant. Returns
+    {"decision": "defer"|"build"|"waived"|"fail_closed", "detail": str, ...}.
+
+    Reads BOTH live intake shapes via _resolve_capture_field(): the NESTED
+    `pre_presentation_capture.WANT_VSL_PAGE` (documented contract, app-bridge path)
+    preferred, falling back to the FLAT top-level `WANT_VSL_PAGE` (deck-intake-driver.py,
+    the sanctioned chat intake path -- see module docstring). The SAME resolution
+    order applies to VSL_PAGE_DECLINED_REASON.
+
+    Never conflates "absent" with "declined" -- silence is NOT consent (upsell-
+    questions.json's own words, verbatim, for BOTH upsell questions -- only the
+    DEFAULT differs). A "no" ALWAYS requires a real, non-empty verbatim client reason
+    at VSL_PAGE_DECLINED_REASON or the gate fails closed."""
+    pre = intake.get("pre_presentation_capture")
+    pre = pre if isinstance(pre, dict) else {}
+
+    raw = _resolve_capture_field(intake, pre, WANT_FIELD)
+    if raw is None or not str(raw).strip():
+        return {
+            "decision": "defer",
+            "detail": (
+                f"pre_presentation_capture.{WANT_FIELD} is absent/blank -- this run's "
+                "intake never asked/answered the upsell question (this question's own "
+                "default is 'no' unless the client explicitly opts in). DEFERRING: an "
+                "absent answer is NEVER treated as a decline (silence is not consent)."
+            ),
+            "want_raw": raw,
+        }
+
+    norm = str(raw).strip().lower()
+    if norm == "yes":
+        return {"decision": "build", "detail": "client answered yes.", "want_raw": raw}
+
+    if norm != "no":
+        return {
+            "decision": "fail_closed",
+            "detail": (
+                f"{AF_VALUE_UNRECOGNIZED}: {WANT_FIELD}={raw!r} is neither 'yes' nor 'no' "
+                "-- refusing to guess (mirrors intake_writer.py's UngroundedDeckTypeError "
+                "fail-closed discipline: an unrecognized answer is never defaulted)."
+            ),
+            "want_raw": raw,
+        }
+
+    # norm == "no": a decline REQUIRES the client's own verbatim reason.
+    reason_raw = _resolve_capture_field(intake, pre, REASON_FIELD)
+    reason = str(reason_raw or "").strip()
+    if len(reason) < MIN_WAIVER_QUOTE_CHARS:
+        return {
+            "decision": "fail_closed",
+            "detail": (
+                f"{AF_WAIVER_MISSING}: {WANT_FIELD}=no but {REASON_FIELD} is missing/blank "
+                "-- a decline with no verbatim client reason is not a waiver "
+                "(upsell-questions.json waiver_field_mapping.vsl_page; "
+                "'silence is NOT consent'). Refusing to silently skip the build."
+            ),
+            "want_raw": raw,
+            "reason_raw": reason_raw,
+        }
+
+    return {
+        "decision": "waived",
+        "detail": "client declined with a recorded verbatim reason -- gated OUT (not a failure).",
+        "want_raw": raw,
+        "quote": reason,
+    }
+
+
+# ---------------------------------------------------------------------------
+# THE HARD VIDEO DEPENDENCY — verify_video_dependency() (AF-VSL-NO-VIDEO)
+# ---------------------------------------------------------------------------
+def resolve_video_artifact(run_dir: Path, deck_slug: str) -> Path:
+    """The REAL P9.6 webinar video path -- resolved via build_webinar_video.py's own
+    WEBINAR_FILENAME_TEMPLATE, never a literal string in this file."""
+    bwv = _import_build_webinar_video()
+    name = bwv.WEBINAR_FILENAME_TEMPLATE.format(deck_slug=deck_slug)
+    return run_dir / "working" / "delivery" / name
+
+
+def verify_video_dependency(run_dir: Path, deck_slug: str) -> Path:
+    """AF-VSL-NO-VIDEO: verify the P9.6 webinar video artifact exists AND is non-empty
+    (and passes ghl_media's own canonical local MP4 probe) BEFORE any VSL work starts.
+    Fails closed (VslBuildError) with the exact path checked -- never a placeholder
+    video, never a silent degrade (VSL-BUILDER-SOP.md §2, §5)."""
+    video_path = resolve_video_artifact(run_dir, deck_slug)
+    if not video_path.is_file():
+        raise VslBuildError(
+            f"{AF_NO_VIDEO}: webinar video artifact not found at {video_path!r}. "
+            "The VSL page embeds/links the P9.6 webinar video -- P-U-VSL-BUILD MUST run "
+            "AFTER P9.6-WEBINAR-VIDEO (build_webinar_video.py), never before. Run the "
+            "webinar phase first, then re-run this builder."
+        )
+    ghl_media = _import_ghl_media()
+    if not ghl_media.verify_video(video_path):
+        size = video_path.stat().st_size if video_path.exists() else 0
+        raise VslBuildError(
+            f"{AF_NO_VIDEO}: webinar video artifact {video_path!r} exists ({size} bytes) "
+            "but failed ghl_media.verify_video()'s local probe (empty / over the 500MB "
+            "v3 ceiling / missing the MP4 'ftyp' box) -- refusing to build a VSL page "
+            "around a broken video artifact (fail-closed)."
+        )
+    return video_path
+
+
+def resolve_video_ghl_url(run_dir: Path, deck_slug: str) -> Tuple[Optional[str], Optional[str]]:
+    """Read the P9.6 webinar's hosted GHL url from working/checkpoints/media_library.json
+    (build_webinar_video._record_webinar_in_ledger's own `webinar_mp4.ghl_url`). Returns
+    (url_or_None, cross_check_warning_or_None) -- the warning fires when the ledger's
+    own recorded deck_slug does not match THIS run's deck_slug (VSL-BUILDER-SOP.md §8:
+    "cross-referenced ... so a QC pass can confirm the VSL page embeds THIS run's
+    video, not a stale one")."""
+    ledger = _read_json(run_dir / "working" / "checkpoints" / "media_library.json")
+    rec = ledger.get("webinar_mp4") if isinstance(ledger.get("webinar_mp4"), dict) else {}
+    url = rec.get("ghl_url")
+    url = url.strip() if isinstance(url, str) and url.strip() else None
+    warning = None
+    rec_slug = rec.get("deck_slug")
+    if rec_slug and str(rec_slug) != deck_slug:
+        warning = (
+            f"media_library.json webinar_mp4.deck_slug={rec_slug!r} != this run's "
+            f"deck_slug={deck_slug!r} -- verify this is THIS run's video, not a stale one."
+        )
+    return url, warning
+
+
+# ---------------------------------------------------------------------------
+# THE VIEWER GATE TIMESTAMP — resolve_gate_timestamp() (VSL-BUILDER-SOP.md §4)
+# ---------------------------------------------------------------------------
+def resolve_gate_timestamp(run_dir: Path, *, min_sec: float = VSL_GATE_MIN_SEC,
+                           max_sec: float = VSL_GATE_MAX_SEC) -> Dict[str, Any]:
+    """Derive the VSL viewer-gate timestamp from the run's OWN webinar_timing.json
+    track (P9.6's step 1 output) -- never a fixed hardcoded second count. Picks the
+    slide-boundary (`audio_start`) closest to the window midpoint that falls inside
+    [min_sec, max_sec] (the single gate rule, VSL-BUILDER-SOP.md §4; the retired
+    Gauntlet R+20 rule survives only as a spec note and is never executed). Falls
+    back to a clamped/derived value when the track is absent or the talk is shorter
+    than the window, and to the window midpoint when nothing at all is known."""
+    timing = _read_json(run_dir / "working" / "checkpoints" / "webinar_timing.json")
+    entries = timing.get("timing") if isinstance(timing.get("timing"), list) else []
+    midpoint = (min_sec + max_sec) / 2.0
+    candidates = [
+        e for e in entries
+        if isinstance(e, dict) and isinstance(e.get("audio_start"), (int, float))
+        and min_sec <= float(e["audio_start"]) <= max_sec
+    ]
+    if candidates:
+        best = min(candidates, key=lambda e: abs(float(e["audio_start"]) - midpoint))
+        return {
+            "seconds": round(float(best["audio_start"]), 3),
+            "source": f"webinar_timing.json slide {best.get('slide')} audio_start",
+            "window": [min_sec, max_sec],
+        }
+    total = timing.get("total_audio_sec")
+    if isinstance(total, (int, float)) and total > 0:
+        lo = min_sec
+        hi = max(min_sec, min(max_sec, float(total) - 1.0))
+        clamped = min(max(lo, float(total) * 0.5), hi) if hi >= lo else lo
+        return {
+            "seconds": round(clamped, 3),
+            "source": (
+                "webinar_timing.json present but no slide boundary fell inside the "
+                f"{min_sec:.0f}-{max_sec:.0f}s window (total_audio_sec={total}) -- clamped"
+            ),
+            "window": [min_sec, max_sec],
+        }
+    return {
+        "seconds": midpoint,
+        "source": "no webinar_timing.json track found -- window midpoint default",
+        "window": [min_sec, max_sec],
+    }
+
+
+# ---------------------------------------------------------------------------
+# COPY — deterministic, offline, template-driven from the run's own intake brief.
+# No fabricated specifics: every field falls back to a generic, honest placeholder
+# phrase (mirrors sales_checkout_builder.py's own build_sales_copy idiom) rather than
+# inventing a client claim.
+# ---------------------------------------------------------------------------
+def build_vsl_copy(brief: Dict[str, Any], client_name: str) -> str:
+    offer = brief.get("OFFER_NAME") or "this offer"
+    promise = brief.get("TRANSFORMATION_PROMISE") or "a clear, stated transformation"
+    audience = brief.get("AUDIENCE") or "the stated audience"
+    cta = brief.get("CTA_ACTION") or "Watch The Full Training"
+    hook = brief.get("HOOK_SEED") or promise
+    objection = brief.get("PRIMARY_OBJECTION") or "the audience's most common hesitation"
+    proof = brief.get("PROOF_ASSETS") or "the client's real results and proof assets"
+    return "\n".join([
+        f"# {client_name} — VSL (Video Sales Letter) Page Copy",
+        "",
+        "## Hero Headline",
+        str(hook),
+        "",
+        "## Subheadline",
+        f"{offer} for {audience}.",
+        "",
+        "## The Video",
+        f"This page presents the department's own webinar video ({offer}) as the "
+        "centerpiece; the copy below frames it, it does not replace it.",
+        "",
+        "## Why Keep Watching (pre-gate teaser)",
+        str(promise),
+        "",
+        "## The Viewer Gate",
+        "A lead-capture gate appears partway through the video, after the first big "
+        "revelation, requesting first name / email / cell and the two required "
+        "consent statements (email; SMS + voice AI) before playback continues.",
+        "",
+        "## Objection Handled",
+        str(objection),
+        "",
+        "## Proof",
+        str(proof),
+        "",
+        "## Call To Action",
+        str(cta),
+    ]) + "\n"
+
+
+def _vsl_content_fields(brief: Dict[str, Any], client_name: str) -> Dict[str, str]:
+    """The verbatim content strings the design prompt must bake into the image --
+    mirrors sales_checkout_builder.py's _content_fields_for_page content-in-image
+    discipline."""
+    return {
+        "headline": str(brief.get("HOOK_SEED") or brief.get("TRANSFORMATION_PROMISE") or client_name),
+        "subhead": f"{brief.get('OFFER_NAME') or 'This training'} for {brief.get('AUDIENCE') or 'you'}.",
+        "cta": str(brief.get("CTA_ACTION") or "Watch The Full Training"),
+    }
+
+
+def _norm_ws(s: str) -> str:
+    return re.sub(r"\s+", " ", str(s).strip().lower())
+
+
+def _page_content_strings(fields: Dict[str, str]) -> List[str]:
+    return [v.strip() for v in fields.values() if isinstance(v, str) and len(v.strip()) >= 3]
+
+
+def assert_content_in_prompt(page_id: str, fields: Dict[str, str], prompt: str) -> None:
+    """AF-VSL-PROMPT-NO-CONTENT -- fail-closed PRE-SUBMIT content gate. Mirrors
+    sales_checkout_builder.py's assert_content_in_prompt exactly: a wireframe/
+    background-only directive, or a page carrying zero content strings, or content not
+    baked verbatim, is refused before any paid kie.ai render."""
+    low = prompt.lower()
+    for phrase in WIREFRAME_BAN_PHRASES:
+        if phrase in low:
+            raise RuntimeError(
+                f"{page_id}: {AF_PROMPT_NO_CONTENT} -- wireframe directive {phrase!r} "
+                "present in the prompt; refusing to submit a content-empty page."
+            )
+    strings = _page_content_strings(fields)
+    if not strings:
+        raise RuntimeError(
+            f"{page_id}: {AF_PROMPT_NO_CONTENT} -- page carries ZERO content strings; "
+            "a background-only prompt is refused before any paid render."
+        )
+    norm_prompt = _norm_ws(prompt)
+    missing = [s for s in strings if _norm_ws(s) not in norm_prompt]
+    if missing:
+        raise RuntimeError(
+            f"{page_id}: {AF_PROMPT_NO_CONTENT} -- {len(missing)} content string(s) not "
+            f"baked verbatim into the prompt: {missing[:3]}"
+        )
+
+
+def _assert_prompt_band(prompt: str, page_id: str) -> None:
+    if prompt_gate is None:
+        raise RuntimeError(f"{page_id}: the shared prompt gate (prompt_gate.py) is not loadable, so the rule 12 length "
+                           "band cannot be measured; the prompt is not submitted.")
+    probs = prompt_gate.length_problems(prompt.strip())
+    if probs:
+        raise RuntimeError(f"{page_id}: " + "; ".join(probs))
+    if prompt_gate is not None:
+        try:
+            prompt_gate.verify_prompt_minimal(prompt, slide_id=page_id)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"{page_id}: shared prompt gate rejected the design prompt: {exc}")
+
+
+def _deepen(prompt: str, client_name: str) -> str:
+    """Bring the prompt into the KIE rule 12 band with the shared page-design clauses (no-op when the shared gate
+    is not loadable; the submit gate then refuses the prompt)."""
+    if prompt_gate is None:
+        return prompt
+    return prompt_gate.deepen_to_band(prompt, ctx={"role": "video sales letter", "client": client_name})
+
+
+def build_design_prompt(*, brand: Dict[str, str], client_name: str,
+                        fields: Dict[str, str]) -> str:
+    """Compose a content-in-image VSL hero design prompt (KIE rule 12 length band,
+    deepened with real page-design direction), templating workbook_builder.py's / sales_checkout_builder.py's proven
+    content-in-image technique for a video-player-centric marketing hero."""
+    prim, sec, acc = brand["primary"], brand["secondary"], brand["accent"]
+    base, ink = brand["base"], brand["ink"]
+    headline = fields.get("headline", "")
+    subhead = fields.get("subhead", "")
+    cta = fields.get("cta", "")
+    prompt = f"""[ARCHETYPE ZHC-VSL-PAGE-HERO]
+DESIGN A SINGLE FULL-BLEED WEB PAGE HERO DESIGN, LANDSCAPE, {ASPECT_RATIO} ASPECT, {RESOLUTION}.
+This is a DESIGNED, CONTENT-RICH video-sales-letter (VSL) page hero for {client_name}.
+Render the page's REAL content (headline, subheadline, call-to-action label) baked into
+the image by the text-to-image engine, in the brand system below. Every quoted string
+must be rendered VERBATIM, letter-for-letter.
+
+=== PAGE ROLE & WHAT THIS PAGE IS FOR ===
+This page is: VSL PAGE HERO. Its job is to frame the department's own webinar video as
+the centerpiece of a long-form video sales letter, earning the click to press play and
+setting up the promise the video itself delivers on. The visitor reads top-to-bottom:
+headline, subheadline, a large centered video-player mockup, then the call-to-action.
+The page must stand alone as a finished, premium marketing surface, not a placeholder
+shell, and must read clearly at a glance on both desktop and mobile crops.
+
+=== BRAND LOCKUP ===
+Client: {client_name}. Grade: premium, confident, story-driven, editorial.
+Brand palette (use these EXACT hex values, no substitutions):
+  Primary {prim} — header band, CTA button fill, play-button ring.
+  Secondary {sec} — accent bands, supporting text highlights.
+  Accent {acc} — one geometric motif + the emphasis color for key words.
+  Base {base} — page background.
+  Ink {ink} — body text ink.
+Typography character: a geometric editorial sans, weight ladder BLACK hero (48-64pt),
+ExtraBold subhead (22-28pt), Bold CTA label (18-22pt), Medium supporting copy (13-15pt).
+
+=== PAGE CONTENT (the real content — bake verbatim) ===
+HEADLINE (render large, upper content band, {ink} on {base} or white on {prim} band):
+  {headline!r}
+SUBHEADLINE (directly beneath the headline, ExtraBold):
+  {subhead!r}
+CALL-TO-ACTION BUTTON (a solid {prim}-filled pill/rectangle button, white label text,
+centered beneath the video-player mockup):
+  {cta!r}
+
+=== VERBATIM + SPELLING-LOCK ===
+Render EVERY quoted string above letter-for-letter, exactly as written, spelled exactly,
+no paraphrasing, no substitution, no reordering, no typo, no garble, no truncation, no
+ellipsis unless it is in the source string. The quoted strings above are the ONLY text on
+this page beyond the {client_name} wordmark and a single centered PLAY glyph inside the
+video-player mockup. Text must read exactly as quoted — this is the spelling-lock for
+every baked string above.
+
+=== LAYOUT GRID (fixed, landscape {ASPECT_RATIO}) ===
+HEADER BAND (top 0-12%): solid {prim} band carrying the {client_name} wordmark, small,
+top-left, in white; a thin {acc} rule at the band's bottom edge.
+HERO BAND (12-30%): on {base}. The headline sits centered, the subheadline directly
+beneath it in the {sec}-accented weight. Generous negative space around both; nothing
+else competes with them in this band.
+VIDEO-PLAYER BAND (30-80%): the single dominant element of the page — a large, centered,
+rounded-rectangle video-player mockup on a soft {ink}-tinted frame, with a clean circular
+PLAY glyph centered inside it (a simple triangle-in-circle, {prim} fill, white triangle,
+no other iconography), and a thin progress-bar mockup along its bottom edge suggesting a
+long-form video is waiting to be watched. No literal photograph of people is specified —
+see the DO-NOT BLOCK anatomical-artifacts rule below.
+CTA BAND (80-100%): the solid {prim} call-to-action button, centered beneath the
+video-player mockup, with the CTA label in white, large enough to read at a glance; a
+hairline {sec} rule above the band.
+Safe margins 0.5in-equivalent on all sides; nothing touches the edges.
+
+=== CONTENT ZONE PLACEMENT ===
+On a strict horizontal grid: the HEADER band anchors identity, the HERO band carries the
+headline+subheadline pair as the first focal point (largest type on the page, highest
+contrast against {base}), the VIDEO-PLAYER band is the single largest visual element on
+the page (the eye's ultimate destination — the player mockup, not the type, is the
+biggest shape here), and the CTA band closes with one unmissable button beneath it. The
+bands and their relative heights read as one designed system with the department's other
+upsell pages (sales/checkout), sharing the SAME brand lockup, palette and typography
+ladder, so a visitor arriving from either surface recognizes the same brand.
+
+=== DO-NOT BLOCK (the 8 defect classes, named — for a CONTENT-BEARING page) ===
+1. GARBLED/MISSPELLED TEXT — misspell, garble, phonetic drift, or truncation of any quoted
+   string; render every quoted string letter-for-letter, exactly as written. If a word is
+   hard to set, do not omit it and do not swap a synonym — set the exact string.
+2. LOGO MUTATION — do not fabricate a logo; render only the {client_name} wordmark as a
+   clean typographic lockup (no invented icon/mark) unless a real logo is later composited.
+3. PLACEHOLDER/BRACKET TOKENS — no bracketed token, no square brackets around the quoted
+   content, no "owner to confirm", no TBD, no "insert here", no build note, no "to supply",
+   no pending marker anywhere on the page.
+4. IMAGE NARRATION/PRESENTER/META — no narrator line, no stage direction, no "this is a
+   VSL page" meta text, no design-brief fragment leaking onto the canvas.
+5. ANATOMICAL ARTIFACTS — no people are specified for this composition, so none may appear:
+   no people, no fused hands, no fingers, no malformed anatomy, no distorted facial
+   features, no mismatched eyes, no asymmetric eyes, no distorted teeth.
+6. BACKGROUND COMPETING WITH TEXT — no busy or cluttered background, no pattern or texture
+   under the text zones; keep generous negative space and high contrast on every quoted
+   line; add a soft scrim behind text where needed so every letter reads clearly.
+7. DEMOGRAPHIC/SKIN-TONE FIDELITY — no demographic default, no skin-tone drift (this
+   composition has no people; the rule carries forward as a universal baseline).
+8. CARRIED-FORWARD UNIVERSAL BASELINE — no watermark over content, no emoji, no clipart,
+   no default font (Calibri/Arial/Times New Roman), no em dash, no system UI artifact, no
+   pure-black fill. All text in the geometric editorial sans family at the sizes above.
+
+=== COMPOSITION / TYPE SPEC ===
+Vertical-thirds grid; the video-player mockup is the hero shape; reading order = header
+wordmark -> headline -> subheadline -> video-player mockup with PLAY glyph -> CTA button.
+Brand hex: {prim}, {sec}, {acc}, {base}, {ink}. Headline 48-64pt BLACK, subheadline 22-28pt
+ExtraBold, CTA label 18-22pt Bold. 8th-row readability: the headline, the PLAY glyph and
+the CTA button must still read when the page is shrunk to 25%. The video-player mockup
+must be the single highest-contrast, largest shape on the page.
+
+=== VIDEO-PLAYER MOCKUP DETAIL ===
+The video-player mockup is a designed UI element, not a photograph and not a literal
+screen-capture of any real application: a rounded-rectangle frame in a deep {ink}-tinted
+near-black fill, a subtle inner border in {acc} at low opacity, and a soft drop shadow
+lifting it off the {base} page background. Inside the frame: the single circular PLAY
+glyph is dead-center, large enough to read as the page's second-highest-contrast element
+after the CTA button (the video-player band's own highest-contrast element). Beneath the
+glyph, a thin horizontal progress-bar mockup spans roughly 80% of the frame's width near
+the bottom edge, a muted {sec}-toned track with a short {prim}-filled leading segment
+suggesting the video is cued up and ready, not mid-play and not finished. Do not render
+any timestamp digits, any volume icon, any fullscreen icon, or any other player chrome
+beyond the PLAY glyph and the single progress-bar mockup described here — the frame stays
+clean and uncluttered so it reads instantly as "press play" at a glance, even at 25% scale.
+No screen content is depicted inside the frame beyond this described chrome; the frame
+itself, not an imagined video still, is what carries the invitation to watch.
+
+=== MOBILE CROP GUIDANCE ===
+This same {ASPECT_RATIO} landscape composition must also read cleanly when center-cropped
+to a taller mobile aspect: keep the headline, subheadline, video-player mockup and CTA
+button horizontally centered within the middle 70% of the frame width, and keep all four
+elements (headline, subheadline, video-player mockup, CTA button) vertically stacked in
+that same top-to-bottom reading order, each legible on its own without depending on being
+seen alongside the others. Nothing essential to the page's meaning may sit in the outer
+15% margins on either side, since a mobile crop trims those margins first.
+
+=== QUALITY ===
+Crisp {RESOLUTION} edges, flat clean editorial-conversion aesthetic, professional VSL
+landing-page design, high information density of DESIGN (brand + hierarchy), soft even
+tone, uniform lighting, no competing visual firsts, no crop, no letterbox. The page reads
+as a premium, finished marketing surface — not a blank shell, not an unfinished mockup.
+
+=== DETERMINISTIC VARIANT ===
+This is a single-page VSL hero, the third surface in the department's optional upsell set
+(sales + checkout + VSL), sharing one brand lockup with the other two when they exist:
+identical header band, identical palette, identical typography ladder. Only the
+headline/subheadline/CTA copy and the video-player-mockup emphasis are unique to this
+page, so the full set reads as one designed system end to end.
+"""
+    return _deepen(prompt, client_name)
+
+
+# ---------------------------------------------------------------------------
+# GATE-FORM CONSENT: resolve_gate_consent_copy() (owner ruling 2026-10-13)
+# ---------------------------------------------------------------------------
+def resolve_gate_consent_copy(client_name: str) -> List[dict]:
+    """The viewer gate form's two consent statements: Trevor's standing
+    two-statement pattern (1: email; 2: SMS + voice AI combined), adapted to
+    the brand name this builder already resolves for the page. Benefit-first
+    copy; the checkbox text IS the consent sentence (no separate label); at
+    most two uses of "AI" per statement. Both boxes render unchecked by
+    default and are REQUIRED -- owner ruling 2026-10-13 (his standing
+    client-delivery pattern; it supersedes the 2026-09-27 D3 optional
+    posture, which never applied here: this form previously carried NO
+    consent at all). The gate's submit handler refuses to unlock playback
+    until every box is checked."""
+    who = str(client_name or "").strip() or "this business"
+    return [
+        {
+            "kind": "email",
+            "name": "consent_email",
+            "text": (
+                f"Yes, keep me in the loop: {who} and its partners may use "
+                "AI to enhance service quality, and may send me follow-up "
+                "emails and marketing follow-up by email and other "
+                "platforms, so I never miss an update about this training."
+            ),
+        },
+        {
+            "kind": "sms_voice",
+            "name": "consent_sms_voice",
+            "text": (
+                f"Yes, reach me directly: {who} and its approved partners "
+                "may use AI to serve me excellently, including voice AI "
+                "calls and text messages with follow-up and marketing "
+                "about this training. Message frequency varies. Message "
+                "and data rates may apply. Reply STOP to opt out, HELP "
+                "for help."
+            ),
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# HTML — body-level fragment (ghl_rest_canvas.html_fragment-compatible: no
+# <!DOCTYPE>/<html>/<head>/<body> wrapper). Inline <style>/<script> are fine inside a
+# bare fragment (mirrors sales_checkout_builder.py's build_page_html; lint_ghl_fragment
+# explicitly allows inline <style>, confirmed render-surviving).
+# ---------------------------------------------------------------------------
+def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str, str],
+                   hero_image_src: Optional[str], video_src: str, video_hosted: bool,
+                   gate_seconds: float, deck_slug: str, marker: str) -> str:
+    prim, sec, acc, base, ink = (
+        brand["primary"], brand["secondary"], brand["accent"], brand["base"], brand["ink"]
+    )
+    headline = fields.get("headline", "")
+    subhead = fields.get("subhead", "")
+    cta = fields.get("cta", "")
+    hero_img_tag = (
+        f'<img src="{hero_image_src}" alt="{client_name} VSL hero" '
+        f'style="width:100%;max-width:100%;display:block;border-radius:12px;margin:0 0 24px;">'
+        if hero_image_src else
+        '<!-- hero image not yet hosted in GHL media (offline/no-push build) -->'
+    )
+    video_tag = (
+        f'<video id="zhc-vsl-video-{deck_slug}" controls playsinline '
+        f'style="width:100%;max-width:100%;display:block;border-radius:12px;background:#000;">'
+        f'<source src="{video_src}" type="video/mp4"></video>'
+        if video_hosted else
+        f'<video id="zhc-vsl-video-{deck_slug}" controls playsinline '
+        f'style="width:100%;max-width:100%;display:block;border-radius:12px;background:#000;">'
+        f'<source src="{video_src}" type="video/mp4">'
+        f'<!-- ZHC-VSL: local file reference, not yet GHL-hosted -- re-run P9.6 with its '
+        f'upload step, or this src will not resolve once pushed. --></video>'
+    )
+    gate_id = f"zhc-vsl-gate-{deck_slug}"
+    form_id = f"zhc-vsl-gate-form-{deck_slug}"
+    # Gate-form consent (owner ruling 2026-10-13): the two statements render
+    # as checkboxes whose text IS the consent sentence, unchecked by default,
+    # each carrying a hidden "Check here" tag the gate JS reveals on a submit
+    # attempt that leaves the box unchecked.
+    consent_html = "".join(
+        f'<label class="zhc-vsl-consent"><input type="checkbox" '
+        f'name="{c["name"]}" value="yes" required />'
+        f'{c["text"]}'
+        f'<span class="zhc-consent-check-tag" hidden>Check here</span>'
+        f"</label>"
+        for c in resolve_gate_consent_copy(client_name)
+    )
+    return f"""<!-- ZHC-VSL-BUILDER marker={marker} deck_slug={deck_slug} -->
+<style>
+  .zhc-vsl-page {{ font-family: 'Montserrat', Arial, sans-serif; background:{base}; color:{ink}; padding:32px 24px; }}
+  .zhc-vsl-page h1 {{ color:{ink}; font-size:2.4em; font-weight:800; margin:0 0 12px; text-align:center; }}
+  .zhc-vsl-page h2 {{ color:{sec}; font-size:1.3em; font-weight:600; margin:0 0 24px; text-align:center; }}
+  .zhc-vsl-page .cta-button {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; padding:16px 32px; border-radius:8px; text-decoration:none; font-size:1.1em; margin-top:24px; }}
+  .zhc-vsl-page .cta-row {{ text-align:center; }}
+  .zhc-vsl-video-wrap {{ position:relative; max-width:900px; margin:0 auto; }}
+  .zhc-vsl-gate-overlay {{ position:absolute; inset:0; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; z-index:50; border-radius:12px; }}
+  .zhc-vsl-gate-overlay.zhc-vsl-gate-active {{ display:flex; }}
+  .zhc-vsl-gate-form {{ background:{base}; border:1px solid {sec}; border-radius:10px; padding:24px; width:90%; max-width:360px; }}
+  .zhc-vsl-gate-form h3 {{ color:{ink}; margin:0 0 16px; font-size:1.1em; }}
+  .zhc-vsl-gate-form input {{ display:block; width:100%; box-sizing:border-box; margin:0 0 12px; padding:10px; border:1px solid {sec}; border-radius:6px; }}
+  .zhc-vsl-gate-form label.zhc-vsl-consent {{ display:block; margin:0 0 12px; font-size:0.85em; line-height:1.5; color:{ink}; text-align:left; }}
+  .zhc-vsl-gate-form label.zhc-vsl-consent input {{ display:inline-block; width:auto; margin:0 6px 0 0; padding:0; border:0; }}
+  .zhc-vsl-gate-form label.zhc-consent-missing {{ outline:2px solid {prim}; outline-offset:2px; border-radius:6px; }}
+  .zhc-vsl-gate-form .zhc-consent-check-tag {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; font-size:0.85em; border-radius:4px; padding:1px 6px; margin-left:6px; }}
+  .zhc-vsl-gate-form .zhc-consent-check-tag[hidden] {{ display:none; }}
+  .zhc-vsl-gate-form .zhc-vsl-gate-consent-error {{ background:#fff; border:2px solid {prim}; color:{ink}; border-radius:6px; padding:10px; font-size:0.9em; font-weight:600; margin:0 0 12px; text-align:left; }}
+  .zhc-vsl-gate-form .zhc-vsl-gate-consent-error[hidden] {{ display:none; }}
+  .zhc-vsl-gate-form button {{ display:block; width:100%; background:{prim}; color:#fff; font-weight:700; padding:12px; border:0; border-radius:6px; cursor:pointer; }}
+</style>
+<div class="zhc-vsl-page" id="zhc-vsl-{deck_slug}">
+  {hero_img_tag}
+  <h1>{headline}</h1>
+  <h2>{subhead}</h2>
+  <div class="zhc-vsl-video-wrap">
+    {video_tag}
+    <div class="zhc-vsl-gate-overlay" id="{gate_id}">
+      <form class="zhc-vsl-gate-form" id="{form_id}">
+        <h3>Enter your info to keep watching</h3>
+        <input type="text" name="first_name" placeholder="First Name" required>
+        <input type="email" name="email" placeholder="Email Address" required>
+        <input type="tel" name="phone" placeholder="Cell Phone" required>
+        {consent_html}
+        <p class="zhc-vsl-gate-consent-error" id="{form_id}-consent-error" role="alert" hidden>Please check each box marked "Check here" above so we can keep you posted about this training, then tap Continue Watching.</p>
+        <button type="submit">Continue Watching</button>
+      </form>
+    </div>
+  </div>
+  <div class="cta-row"><a class="cta-button" href="#">{cta}</a></div>
+</div>
+<script>
+(function() {{
+  var GATE_SEC = {gate_seconds};
+  var video = document.getElementById('zhc-vsl-video-{deck_slug}');
+  var overlay = document.getElementById('{gate_id}');
+  var form = document.getElementById('{form_id}');
+  var unlocked = false;
+  if (video && overlay && form) {{
+    video.addEventListener('timeupdate', function() {{
+      if (!unlocked && video.currentTime >= GATE_SEC) {{
+        video.pause();
+        overlay.classList.add('zhc-vsl-gate-active');
+      }}
+    }});
+    video.addEventListener('seeking', function() {{
+      if (!unlocked && video.currentTime > GATE_SEC) {{
+        video.currentTime = GATE_SEC;
+      }}
+    }});
+    /* Consent gate (owner ruling 2026-10-13): both consent boxes are
+       required. refreshConsentGate() tags each unchecked box "Check here",
+       shows the branded error, and reports whether the form may proceed;
+       the submit handler below refuses to unlock while any box is
+       unchecked. */
+    var consentBoxes = form.querySelectorAll('input[type="checkbox"][required]');
+    var consentError = document.getElementById('{form_id}-consent-error');
+    function refreshConsentGate() {{
+      var firstMissing = null;
+      var missing = 0;
+      for (var i = 0; i < consentBoxes.length; i++) {{
+        var box = consentBoxes[i];
+        var label = box.closest ? box.closest('label') : null;
+        var tag = label ? label.querySelector('.zhc-consent-check-tag') : null;
+        if (!box.checked) {{
+          missing++;
+          if (!firstMissing) {{ firstMissing = label || box; }}
+          if (label) {{ label.classList.add('zhc-consent-missing'); }}
+          if (tag) {{ tag.hidden = false; }}
+        }} else {{
+          if (label) {{ label.classList.remove('zhc-consent-missing'); }}
+          if (tag) {{ tag.hidden = true; }}
+        }}
+      }}
+      if (consentError) {{ consentError.hidden = missing === 0; }}
+      return {{ ok: missing === 0, firstMissing: firstMissing }};
+    }}
+    form.addEventListener('invalid', function(ev) {{
+      if (ev.target && ev.target.type === 'checkbox') {{
+        ev.preventDefault();
+        var res = refreshConsentGate();
+        if (res.firstMissing && res.firstMissing.scrollIntoView) {{
+          res.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+        }}
+      }}
+    }}, true);
+    for (var ci = 0; ci < consentBoxes.length; ci++) {{
+      consentBoxes[ci].addEventListener('change', function() {{ refreshConsentGate(); }});
+    }}
+    form.addEventListener('submit', function(ev) {{
+      ev.preventDefault();
+      var consent = refreshConsentGate();
+      if (!consent.ok) {{
+        if (consent.firstMissing && consent.firstMissing.scrollIntoView) {{
+          consent.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+        }}
+        return;
+      }}
+      /* ZHC-VSL: wire this submit to the client's real GHL contact-upsert endpoint or
+         native GHL form embed at deployment time -- a fleet template does not carry a
+         client's live endpoint. This gate mechanic (pause + seek-block + reveal-on-
+         submit) is fully functional client-side; only the lead-delivery wiring is a
+         deployment-time step, intentionally left unfabricated here. The consent
+         boxes are named fields (consent_email / consent_sms_voice) on this same
+         form, so the deployment-time wiring captures them with the submit. */
+      unlocked = true;
+      overlay.classList.remove('zhc-vsl-gate-active');
+      video.play();
+    }});
+  }}
+}})();
+</script>
+"""
+
+
+def _html_content_strings_present(html: str, fields: Dict[str, str]) -> List[str]:
+    """Offline verification twin of workbook_builder.py's OCR content gate: HTML is
+    text, not a rendered image, so a plain substring check IS the content proof (no
+    OCR needed). Returns the list of missing strings (empty == all present)."""
+    norm_html = _norm_ws(re.sub(r"<[^>]+>", " ", html))
+    missing = []
+    for s in _page_content_strings(fields):
+        if _norm_ws(s) not in norm_html:
+            missing.append(s)
+    return missing
+
+
+# ---------------------------------------------------------------------------
+# kie.ai design — reuse kie_generate.py verbatim (subprocess), never a new
+# implementation of the KIE call (task rule: reuse the canonical helper).
+# ---------------------------------------------------------------------------
+def _kie_tasks_module():
+    """Import the shared PRES-032 lifecycle (kie_tasks.py beside this file)."""
+    here = _here()
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    import kie_tasks  # noqa: E402
+    return kie_tasks
+
+
+def _kie_spec_for(kie_tasks, prompt_entry: Dict[str, Any]) -> dict:
+    return kie_tasks.build_spec(
+        prompt=prompt_entry.get("prompt", ""),
+        mode=prompt_entry.get("mode", "t2i"),
+        model=None,  # builders pin model via kie_generate catalog, not here
+        aspect_ratio=prompt_entry.get("aspect_ratio", ASPECT_RATIO),
+        resolution=prompt_entry.get("resolution", RESOLUTION),
+        copy=prompt_entry.get("copy"),
+        input_urls=(prompt_entry.get("input_urls", [])
+                    if str(prompt_entry.get("mode", "t2i")).lower() == "i2i" else []),
+    )
+
+
+def run_kie_generate(prompts: List[Dict[str, Any]], renders_dir: Path) -> Tuple[bool, str]:
+    kie_script = _here() / "kie_generate.py"
+    if not kie_script.is_file():
+        return False, f"kie_generate.py not found beside this script at {kie_script}"
+    renders_dir.mkdir(parents=True, exist_ok=True)
+    prompts_path = renders_dir.parent / "vsl_prompts.json"
+    prompts_path.write_text(json.dumps(prompts, indent=2), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(kie_script), str(prompts_path), str(renders_dir)],
+        capture_output=True, text=True,
+    )
+    sys.stdout.write(proc.stdout)
+    sys.stderr.write(proc.stderr)
+    if proc.returncode != 0:
+        # PRES-032: reuse is bound to the CURRENT prompt revision. The
+        # lifecycle sidecar (.qc.json) records the exact spec hash + sha256,
+        # so a changed hero prompt NEVER accepts the old PNG merely because
+        # it exists — only a byte-current render with matching QC counts.
+        try:
+            kie_tasks = _kie_tasks_module()
+        except Exception as exc:  # noqa: BLE001 — no lifecycle, no reuse claim
+            return False, f"kie_generate.py exited {proc.returncode} ({exc})"
+        reused = [p.get("slide") for p in prompts
+                  if kie_tasks.render_reuse_ok(
+                      renders_dir / f"{p.get('slide')}.png",
+                      kie_tasks.spec_hash(_kie_spec_for(kie_tasks, p)))]
+        if reused and len(reused) == len(prompts):
+            return True, ("kie_generate.py: reused spec-matched verified "
+                          f"hero renders ({', '.join(str(r) for r in reused)})")
+        return False, f"kie_generate.py exited {proc.returncode}"
+    return True, "kie_generate.py: all slides downloaded"
+
+
+# ---------------------------------------------------------------------------
+
+# Front-door nonce (identical contract to workbook_builder.py / build_deck.py /
+# build_webinar_video.py / sales_checkout_builder.py)
+# ---------------------------------------------------------------------------
+def _entry_nonce_phase_file(run_dir: Path, phase_id: str) -> Path:
+    """FIX 25: run-scoped PER-PHASE nonce file
+    <run_dir>/working/checkpoints/.nonce-<sanitized phase id>. The sanitizer mirrors
+    phases._nonce_phase_token / build_deck._entry_nonce_phase_file byte-for-byte."""
+    import re as _re
+    safe = ""
+    try:
+        safe = _re.sub(r"[^A-Za-z0-9_.-]", "_", str(phase_id or ""))
+    except Exception:  # noqa: BLE001
+        safe = ""
+    if not safe:
+        return run_dir / ENTRY_NONCE_REL
+    return run_dir / ENTRY_NONCE_REL.parent / f".nonce-{safe}"
+
+
+def _verify_entry_nonce(run_dir: Path) -> bool:
+    """True iff OC_DECK_ENTRY_NONCE is set AND equals the content of the nonce file
+    for this admission. FIX 25 (per-phase nonce): when OC_DECK_ENTRY_NONCE_FILE is
+    set, that value selects the per-phase compare target -- script phases run
+    CONCURRENTLY in one wave, each with its own minted file. The value is either a
+    phase id (path derived as <run-dir>/working/checkpoints/.nonce-<sanitized id>)
+    or a filesystem path accepted ONLY when it resolves inside this run's
+    checkpoints dir with a `.nonce-` basename. Without OC_DECK_ENTRY_NONCE_FILE the
+    legacy run-scoped .canonical-entry-nonce handshake applies (standalone
+    canonical entry). A missing env var, a missing file, or any mismatch -> False
+    (fail-closed). Port of build_deck._verify_entry_nonce (consumer side of the
+    engine's per-phase mint).
+
+    PD-TEST-115: this function used to read ONLY the legacy run-scoped file, while
+    `phases._run_script_phase` (phases.py:2298-2323) mints and exports a PER-PHASE
+    nonce and names it in OC_DECK_ENTRY_NONCE_FILE. The env var therefore carried
+    the per-phase secret and the comparison target was the run-scoped file, so the
+    two could never match and this phase could never pass its own front door --
+    measured live on run pres-operator-1d269693-ff54-4b1f-b45a-61dc7d8ca4d4, where
+    P-U-CHECKOUT-BUILD was quarantined with AF-CANONICAL-RENDER-BYPASS."""
+    import hmac
+    env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
+    if len(env_nonce) < 16:
+        return False
+    nonce_ref = (os.environ.get("OC_DECK_ENTRY_NONCE_FILE") or "").strip()
+    if nonce_ref:
+        if "/" in nonce_ref or "\\" in nonce_ref:
+            # Path-form value: confine it to THIS run's checkpoints dir with a
+            # .nonce-* basename; anything else (traversal, foreign dir) fails closed
+            ck_dir = (run_dir / ENTRY_NONCE_REL.parent).resolve()
+            cand = Path(nonce_ref)
+            if not cand.is_absolute():
+                cand = Path.cwd() / cand
+            try:
+                cand = cand.resolve()
+            except OSError:
+                return False
+            if cand.parent != ck_dir or not cand.name.startswith(".nonce-"):
+                return False
+            nf = cand
+        else:
+            nf = _entry_nonce_phase_file(run_dir, nonce_ref)
+    else:
+        nf = run_dir / ENTRY_NONCE_REL
+    try:
+        if not nf.is_file():
+            return False
+        file_nonce = nf.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return False
+    if len(file_nonce) < 16:
+        return False
+    return hmac.compare_digest(env_nonce, file_nonce)
+
+
+# ---------------------------------------------------------------------------
+# Ledger (mirrors sales_checkout_builder.py's _record_ledger -- merged, never
+# clobbered). Its own file, working/checkpoints/vsl.json -- NOT the shared
+# sales_checkout.json, which this module never reads or writes.
+# ---------------------------------------------------------------------------
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _record_ledger(run_dir: Path, record: dict) -> None:
+    ledger = run_dir / "working" / "checkpoints" / "vsl.json"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        existing = json.loads(ledger.read_text()) if ledger.exists() else {}
+    except Exception:  # noqa: BLE001
+        existing = {}
+    existing.update(record)
+    ledger.write_text(json.dumps(existing, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="Build the VSL (video sales letter) page (kie.ai design -> copy -> "
+                    "HTML+gate; funnel install is P-U-GHL-VSL), gated on WANT_VSL_PAGE, "
+                    "hard-gated on the P9.6 webinar video artifact."
+    )
+    ap.add_argument("--run-dir", default=None)
+    ap.add_argument("--skip-design", action="store_true",
+                    help="reuse working/vsl/renders/ PNGs; skip a fresh kie.ai run")
+    ap.add_argument("--no-push", action="store_true",
+                    help="offline smoke build: copy+design+HTML only, no nonce required, "
+                         "no hero-image GHL hosting (the video dependency check "
+                         "still runs)")
+    ap.add_argument("--selftest", action="store_true", help="offline deterministic self-test")
+    args = ap.parse_args(argv)
+
+    if args.selftest:
+        return _selftest()
+
+    if not args.run_dir:
+        ap.error("--run-dir is required (or --selftest)")
+    run_dir = Path(args.run_dir).resolve()
+
+    intake = load_intake(run_dir)
+
+    # --- THE GATE ---
+    gate = resolve_vsl_gate(intake)
+    print(f"\n=== WANT_VSL_PAGE gate: {gate['decision'].upper()} ===")
+    print(gate["detail"])
+    if gate["decision"] == "defer":
+        _record_ledger(run_dir, {"status": "deferred", "gate": gate, "checked_at": _now_iso()})
+        return EXIT_OK
+    if gate["decision"] == "fail_closed":
+        _record_ledger(run_dir, {"status": "fail_closed", "gate": gate, "checked_at": _now_iso()})
+        print(f"FATAL: {gate['detail']}", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
+    if gate["decision"] == "waived":
+        _record_ledger(run_dir, {"status": "waived", "gate": gate, "checked_at": _now_iso()})
+        print(f"Waived with quote: {gate['quote']!r} -- nothing to build.")
+        return EXIT_OK
+
+    # decision == "build" from here down.
+    deck_slug = resolve_deck_slug(run_dir)
+
+    # --- THE HARD VIDEO DEPENDENCY (must run after P9.6) ---
+    try:
+        video_path = verify_video_dependency(run_dir, deck_slug)
+    except VslBuildError as exc:
+        _record_ledger(run_dir, {"status": "video_missing", "gate": gate,
+                                 "error": str(exc), "checked_at": _now_iso()})
+        print(f"FATAL: {exc}", file=sys.stderr)
+        return EXIT_VIDEO_MISSING
+    print(f"\n=== P9.6 video dependency verified: {video_path} "
+          f"({video_path.stat().st_size:,} bytes) ===")
+
+    if not args.no_push:
+        if not _verify_entry_nonce(run_dir):
+            print(
+                "FATAL [AF-CANONICAL-RENDER-BYPASS]: vsl_builder.py must run via "
+                "presentation-canonical-entry.sh, which mints the per-run front-door "
+                "nonce. Direct invocation is refused (a hand-rolled build cannot spend "
+                "kie.ai money or write to a client's GHL media library). Use --no-push ONLY for "
+                "an operator offline smoke build (no client GHL write).",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+
+    brand = resolve_brand(run_dir, intake)
+    client_name = resolve_client_name(run_dir, intake)
+    brief = resolve_brief(intake)
+
+    vsl_dir = run_dir / "working" / "vsl"
+    copy_dir = vsl_dir / "copy"
+    renders_dir = vsl_dir / "renders"
+    html_dir = vsl_dir / "html"
+    for d in (copy_dir, renders_dir, html_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    # --- COPY ---
+    vsl_copy = build_vsl_copy(brief, client_name)
+    (copy_dir / "vsl.md").write_text(vsl_copy, encoding="utf-8")
+    print(f"\n=== Copy written -> {copy_dir}/vsl.md ===")
+
+    # --- GATE TIMESTAMP (derived from THIS run's own webinar_timing.json) ---
+    gate_ts = resolve_gate_timestamp(run_dir)
+    print(f"\n=== VSL viewer gate: {gate_ts['seconds']}s ({gate_ts['source']}) ===")
+
+    # --- DESIGN (kie.ai, unless --skip-design) ---
+    fields = _vsl_content_fields(brief, client_name)
+    prompt = build_design_prompt(brand=brand, client_name=client_name, fields=fields)
+    assert_content_in_prompt("vsl-hero", fields, prompt)
+    _assert_prompt_band(prompt, "vsl-hero")
+
+    vsl_png = renders_dir / "vsl-hero.png"
+    if args.skip_design:
+        if not vsl_png.exists():
+            print(f"FATAL: --skip-design but missing render: {vsl_png}", file=sys.stderr)
+            return EXIT_USAGE
+    else:
+        prompts = [{"slide": "vsl-hero", "prompt": prompt, "mode": "t2i",
+                   "aspect_ratio": ASPECT_RATIO, "resolution": RESOLUTION}]
+        ok, detail = run_kie_generate(prompts, renders_dir)
+        print(f"\n=== kie.ai design: {detail} ===")
+        if not ok:
+            _record_ledger(run_dir, {"status": "design_failed", "detail": detail, "built_at": _now_iso()})
+            return EXIT_BUILD_FAILED
+
+    # --- resolve the video's hosted GHL url (VSL-BUILDER-SOP.md §8 cross-check) ---
+    video_url, video_warning = resolve_video_ghl_url(run_dir, deck_slug)
+    if video_warning:
+        print(f"WARNING: {video_warning}", file=sys.stderr)
+    if video_url:
+        video_src, video_hosted = video_url, True
+    else:
+        video_src, video_hosted = video_path.name, False
+
+    # --- HOST the hero render (governed path only; --no-push stays fully offline) ---
+    vsl_img_src = None
+    if not args.no_push:
+        try:
+            ghl_media = _import_ghl_media()
+            pit = ghl_media.resolve_location_pit()
+            location_id = ghl_media.resolve_location_id()
+            up_vsl = ghl_media.upload_media(str(vsl_png), location_id, vsl_png.name, pit,
+                                            require_png=False, run_dir=run_dir)
+            vsl_img_src = up_vsl["url"]
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING: hero image GHL hosting failed ({exc}); HTML will be built "
+                  "without a hosted hero image; the page will reference the local render "
+                  "file until a governed re-run hosts it.", file=sys.stderr)
+
+    # --- HTML (with the gate) ---
+    marker = f"ZHC-VSL-{deck_slug}"
+    html = build_vsl_html(
+        brand=brand, client_name=client_name, fields=fields, hero_image_src=vsl_img_src,
+        video_src=video_src, video_hosted=video_hosted, gate_seconds=gate_ts["seconds"],
+        deck_slug=deck_slug, marker=marker,
+    )
+    (html_dir / "vsl.html").write_text(html, encoding="utf-8")
+    print(f"\n=== HTML written -> {html_dir}/vsl.html ===")
+
+    missing = _html_content_strings_present(html, fields)
+    if missing:
+        print(f"FATAL: content strings missing from assembled HTML: {missing}", file=sys.stderr)
+        _record_ledger(run_dir, {"status": "html_content_gate_failed", "built_at": _now_iso()})
+        return EXIT_VERIFY_FAILED
+
+    if not video_hosted and not args.no_push:
+        print("WARNING: the P9.6 webinar video has no GHL ghl_url on record (P9.6 likely ran "
+              "with --no-upload) -- the VSL page embeds a LOCAL file reference that will not "
+              "resolve once installed. The build proceeds (the video EXISTS -- that is the "
+              "hard gate; hosting is a separate concern), but re-run P9.6 with its upload "
+              "step before going live.", file=sys.stderr)
+
+    record: Dict[str, Any] = {
+        "deck_slug": deck_slug,
+        "gate": gate,
+        "video_path": str(video_path),
+        "video_hosted": video_hosted,
+        "gate_timestamp": gate_ts,
+        "vsl_copy": str(copy_dir / "vsl.md"),
+        "vsl_render": str(vsl_png),
+        "vsl_html": str(html_dir / "vsl.html"),
+        "built_at": _now_iso(),
+    }
+
+    if args.no_push:
+        record["status"] = "built_offline_no_push"
+        _record_ledger(run_dir, record)
+        print("\nVSL BUILD (offline, --no-push): DONE")
+        return EXIT_OK
+
+    record["status"] = "built"
+    _record_ledger(run_dir, record)
+    print("\nVSL BUILD: DONE (page built; the funnel install is P-U-GHL-VSL, run by "
+          "ghl_external_installer.py and proven by its PRES-011 receipt)")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# Offline deterministic self-test (no network, no kie.ai spend, no GHL call, no real
+# video/audio -- every ghl_rest_canvas call below is made WITHOUT a session, which is
+# pure/local by construction).
+# ---------------------------------------------------------------------------
+def _selftest() -> int:
+    import tempfile
+
+    fails: List[str] = []
+
+    # 1) THE GATE — every branch, matching upsell-questions.json's inverted-default
+    #    waiver semantics for want_vsl_page.
+    def _gate(pre: dict) -> dict:
+        return resolve_vsl_gate({"pre_presentation_capture": pre})
+
+    g = _gate({})
+    if g["decision"] != "defer":
+        fails.append(f"gate(absent) expected defer, got {g['decision']}")
+    g = _gate({"WANT_VSL_PAGE": ""})
+    if g["decision"] != "defer":
+        fails.append(f"gate(blank) expected defer, got {g['decision']}")
+    g = _gate({"WANT_VSL_PAGE": "yes"})
+    if g["decision"] != "build":
+        fails.append(f"gate(yes) expected build, got {g['decision']}")
+    g = _gate({"WANT_VSL_PAGE": "YES"})
+    if g["decision"] != "build":
+        fails.append(f"gate(YES, case-insensitive) expected build, got {g['decision']}")
+    g = _gate({"WANT_VSL_PAGE": "no"})
+    if g["decision"] != "fail_closed" or AF_WAIVER_MISSING not in g["detail"]:
+        fails.append(f"gate(no, no reason) expected fail_closed/{AF_WAIVER_MISSING}, got {g}")
+    g = _gate({"WANT_VSL_PAGE": "no", "VSL_PAGE_DECLINED_REASON": "  "})
+    if g["decision"] != "fail_closed":
+        fails.append(f"gate(no, blank reason) expected fail_closed, got {g['decision']}")
+    g = _gate({"WANT_VSL_PAGE": "no", "VSL_PAGE_DECLINED_REASON": "ok"})
+    if g["decision"] != "fail_closed":
+        fails.append(f"gate(no, 2-char reason) expected fail_closed (< {MIN_WAIVER_QUOTE_CHARS} chars), got {g['decision']}")
+    g = _gate({"WANT_VSL_PAGE": "no",
+              "VSL_PAGE_DECLINED_REASON": "We don't have a video yet and don't want one."})
+    if g["decision"] != "waived" or g.get("quote") != "We don't have a video yet and don't want one.":
+        fails.append(f"gate(no, real reason) expected waived with quote preserved, got {g}")
+    g = _gate({"WANT_VSL_PAGE": "maybe"})
+    if g["decision"] != "fail_closed" or AF_VALUE_UNRECOGNIZED not in g["detail"]:
+        fails.append(f"gate(maybe) expected fail_closed/{AF_VALUE_UNRECOGNIZED}, got {g}")
+
+    # 1b) THE GATE — FLAT top-level shape (deck-intake-driver.py, the sanctioned
+    #     chat intake path -- no pre_presentation_capture wrapper at all). Reproduces
+    #     the live Wave E defect: a driver-produced intake.json that would previously
+    #     be silently DEFERRED must now resolve exactly like the nested shape does.
+    def _gate_flat(flat: dict) -> dict:
+        return resolve_vsl_gate(dict(flat))
+
+    g = _gate_flat({})
+    if g["decision"] != "defer":
+        fails.append(f"gate(flat absent, no pre_presentation_capture key at all) expected defer, got {g['decision']}")
+    g = _gate_flat({"WANT_VSL_PAGE": "yes"})
+    if g["decision"] != "build":
+        fails.append(f"gate(flat yes) expected build, got {g['decision']}")
+    g = _gate_flat({"WANT_VSL_PAGE": "no"})
+    if g["decision"] != "fail_closed" or AF_WAIVER_MISSING not in g["detail"]:
+        fails.append(f"gate(flat no, no reason) expected fail_closed/{AF_WAIVER_MISSING}, got {g}")
+    g = _gate_flat({"WANT_VSL_PAGE": "no",
+                    "VSL_PAGE_DECLINED_REASON": "We don't have a video yet and don't want one."})
+    if g["decision"] != "waived" or g.get("quote") != "We don't have a video yet and don't want one.":
+        fails.append(f"gate(flat no, real reason) expected waived with quote preserved, got {g}")
+
+    # 1c) NESTED takes priority over FLAT when both are present (documented contract wins).
+    g = resolve_vsl_gate({"pre_presentation_capture": {"WANT_VSL_PAGE": "yes"},
+                          "WANT_VSL_PAGE": "no"})
+    if g["decision"] != "build":
+        fails.append(f"gate(nested=yes, flat=no) expected NESTED to win (build), got {g['decision']}")
+    # a BLANK nested value must still fall through to a real flat value, not stop there.
+    g = resolve_vsl_gate({"pre_presentation_capture": {"WANT_VSL_PAGE": ""},
+                          "WANT_VSL_PAGE": "yes"})
+    if g["decision"] != "build":
+        fails.append(f"gate(nested=blank, flat=yes) expected fallthrough to FLAT (build), got {g['decision']}")
+
+    # 1d) THE DECISIVE PROOF — the actual live Wave E intake.json shape (flat
+    #     WANT_VSL_PAGE='yes', no pre_presentation_capture key at all) must
+    #     resolve to build, not defer.
+    g = resolve_vsl_gate({"WANT_VSL_PAGE": "yes", "OFFER_NAME": "x"})
+    if g["decision"] != "build":
+        fails.append(f"gate(live-shape fixture: flat yes, no pre_presentation_capture) expected build, got {g}")
+
+    # 2) THE HARD VIDEO DEPENDENCY — missing / empty / bad-magic / valid, all offline.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        deck_slug = "acme-q1"
+        # 2a) no file at all -> VslBuildError naming AF-VSL-NO-VIDEO.
+        try:
+            verify_video_dependency(rd, deck_slug)
+            fails.append("verify_video_dependency: missing video did not raise")
+        except VslBuildError as exc:
+            if AF_NO_VIDEO not in str(exc):
+                fails.append(f"missing-video error did not name {AF_NO_VIDEO}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"missing-video raised the wrong exception type: {exc!r}")
+
+        video_path = resolve_video_artifact(rd, deck_slug)
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        expected_name = f"{deck_slug}-WEBINAR.mp4"
+        if video_path.name != expected_name:
+            fails.append(f"resolve_video_artifact: expected filename {expected_name!r}, "
+                        f"got {video_path.name!r} (must reuse build_webinar_video.py's "
+                        "own WEBINAR_FILENAME_TEMPLATE)")
+
+        # 2b) zero-byte file -> VslBuildError (fails ghl_media.verify_video()).
+        video_path.write_bytes(b"")
+        try:
+            verify_video_dependency(rd, deck_slug)
+            fails.append("verify_video_dependency: empty video did not raise")
+        except VslBuildError as exc:
+            if AF_NO_VIDEO not in str(exc):
+                fails.append(f"empty-video error did not name {AF_NO_VIDEO}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"empty-video raised the wrong exception type: {exc!r}")
+
+        # 2c) non-empty but not a real mp4 (bad magic) -> VslBuildError.
+        video_path.write_bytes(b"NOT AN MP4 FILE" * 100)
+        try:
+            verify_video_dependency(rd, deck_slug)
+            fails.append("verify_video_dependency: bad-magic video did not raise")
+        except VslBuildError as exc:
+            if AF_NO_VIDEO not in str(exc):
+                fails.append(f"bad-magic error did not name {AF_NO_VIDEO}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"bad-magic raised the wrong exception type: {exc!r}")
+
+        # 2d) a genuine minimal mp4 (ftyp box) -> PASSES, returns the path.
+        _valid_mp4 = (b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isommp42"
+                     b"\x00\x00\x00\x08free")
+        video_path.write_bytes(_valid_mp4)
+        try:
+            got = verify_video_dependency(rd, deck_slug)
+            if got != video_path:
+                fails.append(f"verify_video_dependency(valid): returned {got}, expected {video_path}")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"verify_video_dependency: a genuine mp4 fixture was REJECTED: {exc}")
+
+        # video-url resolution + deck_slug cross-check warning.
+        ck = rd / "working" / "checkpoints"
+        ck.mkdir(parents=True, exist_ok=True)
+        (ck / "media_library.json").write_text(json.dumps({
+            "webinar_mp4": {"ghl_url": "https://storage.googleapis.com/msgsndr/loc/x.mp4",
+                            "deck_slug": deck_slug},
+        }))
+        url, warn = resolve_video_ghl_url(rd, deck_slug)
+        if url != "https://storage.googleapis.com/msgsndr/loc/x.mp4" or warn is not None:
+            fails.append(f"resolve_video_ghl_url(matching slug): got url={url!r} warn={warn!r}")
+        url, warn = resolve_video_ghl_url(rd, "some-other-deck")
+        if warn is None:
+            fails.append("resolve_video_ghl_url: mismatched deck_slug did not warn")
+
+    # 3) GATE TIMESTAMP — with/without a timing track, inside/outside the window.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        # no track at all -> window midpoint default.
+        r = resolve_gate_timestamp(rd)
+        if abs(r["seconds"] - (VSL_GATE_MIN_SEC + VSL_GATE_MAX_SEC) / 2.0) > 0.01:
+            fails.append(f"resolve_gate_timestamp(no track): expected midpoint, got {r}")
+
+        ck = rd / "working" / "checkpoints"
+        ck.mkdir(parents=True, exist_ok=True)
+        # a track with a slide boundary inside the window -> picks it.
+        (ck / "webinar_timing.json").write_text(json.dumps({
+            "total_audio_sec": 1200.0,
+            "timing": [
+                {"slide": 1, "audio_start": 0.0},
+                {"slide": 2, "audio_start": 90.0},
+                {"slide": 3, "audio_start": 300.0},
+                {"slide": 4, "audio_start": 600.0},
+            ],
+        }))
+        r = resolve_gate_timestamp(rd)
+        if r["seconds"] != 300.0:
+            fails.append(f"resolve_gate_timestamp(in-window boundary): expected 300.0, got {r}")
+
+        # a track with NO boundary inside the window, but a known total -> clamped.
+        (ck / "webinar_timing.json").write_text(json.dumps({
+            "total_audio_sec": 60.0,
+            "timing": [{"slide": 1, "audio_start": 0.0}],
+        }))
+        r = resolve_gate_timestamp(rd)
+        if not (VSL_GATE_MIN_SEC <= r["seconds"] <= VSL_GATE_MAX_SEC + 0.01):
+            fails.append(f"resolve_gate_timestamp(short talk): {r['seconds']} landed outside "
+                        f"[{VSL_GATE_MIN_SEC}, {VSL_GATE_MAX_SEC}]")
+
+    # 4) COPY — deterministic, content present.
+    brief = {
+        "OFFER_NAME": "The Momentum Method",
+        "TRANSFORMATION_PROMISE": "Go from stuck to shipped in 30 days.",
+        "AUDIENCE": "overwhelmed solo founders",
+        "CTA_ACTION": "Watch The Full Training",
+        "PRIMARY_OBJECTION": "I don't have time for another program.",
+        "PROOF_ASSETS": "312 founders shipped their first launch.",
+        "HOOK_SEED": "You don't need more time. You need momentum.",
+        "BRAND_PRIMARY": "#1a2b6d",
+    }
+    vsl_md = build_vsl_copy(brief, "Test Client")
+    if brief["HOOK_SEED"] not in vsl_md or brief["OFFER_NAME"] not in vsl_md:
+        fails.append("vsl copy missing baked content strings")
+
+    # 5) DESIGN PROMPT — band + content-gate pass, adversarial fails.
+    brand = resolve_brand(Path("/nonexistent"), {"deck_brief": brief})
+    fields = _vsl_content_fields(brief, "Test Client")
+    prompt = build_design_prompt(brand=brand, client_name="Test Client", fields=fields)
+    n = len(prompt.strip())
+    if prompt_gate is None or prompt_gate.length_problems(prompt.strip()):
+        fails.append(f"vsl-hero: prompt {n} chars outside the rule 12 band")
+    try:
+        assert_content_in_prompt("vsl-hero", fields, prompt)
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"vsl-hero: content gate REJECTED a content-bearing prompt: {exc}")
+    try:
+        _assert_prompt_band(prompt, "vsl-hero")
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"vsl-hero: band assertion failed on a valid prompt: {exc}")
+
+    # 5b) adversarial: zero-content page MUST be refused.
+    try:
+        assert_content_in_prompt("adv-empty", {}, "DESIGN A LANDING PAGE BACKGROUND...")
+        fails.append("content gate ACCEPTED a page with ZERO content strings")
+    except RuntimeError as exc:
+        if AF_PROMPT_NO_CONTENT not in str(exc):
+            fails.append(f"zero-content rejection did not name the AF code: {exc}")
+    # 5c) adversarial: wireframe directive present, even WITH content, MUST be refused.
+    try:
+        assert_content_in_prompt("adv-wire", fields,
+                                 "This is the BACKGROUND ONLY for a landing page. NO text.")
+        fails.append("content gate ACCEPTED a prompt carrying the BACKGROUND ONLY wireframe directive")
+    except RuntimeError as exc:
+        if AF_PROMPT_NO_CONTENT not in str(exc):
+            fails.append(f"wireframe rejection did not name the AF code: {exc}")
+
+    # 6) HTML — content strings present, ghl_rest_canvas.html_fragment compatible,
+    #    the gate JS/overlay markup is present, and (when importable) the
+    #    ghl_rest_canvas pure constructors the installer relies on (new_page_blob /
+    #    funnel_create / step_create / page_autosave, all called WITHOUT a session)
+    #    work purely offline.
+    marker = "ZHC-VSL-selftest"
+    html = build_vsl_html(
+        brand=brand, client_name="Test Client", fields=fields, hero_image_src=None,
+        video_src="test-client-WEBINAR.mp4", video_hosted=False, gate_seconds=300.0,
+        deck_slug="test-client", marker=marker,
+    )
+    missing = _html_content_strings_present(html, fields)
+    if missing:
+        fails.append(f"vsl HTML missing content strings: {missing}")
+    for needle in ("zhc-vsl-gate-overlay", "timeupdate", "GATE_SEC = 300.0", "<video"):
+        if needle not in html:
+            fails.append(f"vsl HTML missing expected gate mechanic marker: {needle!r}")
+
+    # 6b) GATE-FORM CONSENT (owner ruling 2026-10-13): the two statements
+    #     (email; SMS + voice AI combined) render as named, unchecked,
+    #     REQUIRED checkboxes whose text IS the consent sentence and carries
+    #     the client/brand name, with the branded gate wired (error element,
+    #     "Check here" tags, refreshConsentGate gating the unlock).
+    gate_consent = resolve_gate_consent_copy("Test Client")
+    if [c["name"] for c in gate_consent] != ["consent_email", "consent_sms_voice"]:
+        fails.append(f"gate consent statements wrong: {gate_consent}")
+    for c in gate_consent:
+        if "Test Client" not in c["text"]:
+            fails.append(f"gate consent statement carries no client/brand "
+                         f"name: {c}")
+        if c["text"].count("AI") > 2:
+            fails.append(f"gate consent statement uses 'AI' more than twice: {c}")
+    vsl_boxes = re.findall(r'<input type="checkbox"[^>]*>', html)
+    if len(vsl_boxes) != 2:
+        fails.append(f"gate form consent: expected 2 checkboxes, got "
+                     f"{len(vsl_boxes)}: {vsl_boxes}")
+    for bx in vsl_boxes:
+        if "required" not in bx:
+            fails.append(f"gate consent box not required (owner ruling "
+                         f"2026-10-13): {bx}")
+        if "checked" in bx:
+            fails.append(f"gate consent box renders pre-checked: {bx}")
+    for needle in ('name="consent_email"', 'name="consent_sms_voice"',
+                   "Check here", "consent-error", "refreshConsentGate",
+                   "voice AI calls"):
+        if needle not in html:
+            fails.append(f"gate form consent missing marker: {needle!r}")
+
+    try:
+        rc = _import_ghl_rest_canvas()
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"could not import ghl_rest_canvas.py: {exc}")
+        rc = None
+
+    if rc is not None:
+        # bare fragment passthrough (no full-document wrapper) must be a no-op.
+        try:
+            frag = rc.html_fragment(html)
+            if frag.strip() != html.strip():
+                fails.append("html_fragment() mutated a bare body-level fragment (should be a no-op)")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"html_fragment() raised on a valid bare fragment: {exc}")
+
+        # new_page_blob() — pure, offline, must succeed and internally pass
+        # assert_renderable_shape (raises AssertionError otherwise).
+        blob = None
+        try:
+            blob = rc.new_page_blob(html, surface="funnel",
+                                    primary_color=brand["primary"], secondary_color=brand["secondary"])
+            if not isinstance(blob, dict) or not blob.get("sections"):
+                fails.append("new_page_blob() returned an unexpected shape")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"new_page_blob() raised on a valid fragment: {exc}")
+
+        # funnel_create/step_create/page_autosave WITHOUT session -- pure/local,
+        # no browser_manager import, no network call of any kind.
+        try:
+            fc = rc.funnel_create("loc123", "Test Client — VSL", funnel_type="funnel")
+            if fc.get("method") != "POST" or "argv" in fc:
+                fails.append(f"funnel_create() without session produced an unexpected step: {fc.keys()}")
+            sc = rc.step_create("FUNNEL_ID", "VSL", "test-client-vsl")
+            if sc.get("method") != "POST" or "argv" in sc:
+                fails.append(f"step_create() without session produced an unexpected step: {sc.keys()}")
+            if blob is not None:
+                pa = rc.page_autosave("VSL_PAGE_ID", blob, funnel_id="FUNNEL_ID", page_version=1)
+                if pa.get("method") != "POST" or "argv" in pa or pa["body"]["pageVersion"] != 2:
+                    fails.append(f"page_autosave() without session produced an unexpected step: {pa}")
+        except Exception as exc:  # noqa: BLE001
+            fails.append(f"offline ghl_rest_canvas step construction raised: {exc}")
+
+
+    # 7) ledger round-trip.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        _record_ledger(rd, {"status": "built", "a": 1})
+        _record_ledger(rd, {"b": 2})
+        ledger = json.loads((rd / "working" / "checkpoints" / "vsl.json").read_text())
+        if ledger.get("a") != 1 or ledger.get("b") != 2:
+            fails.append(f"ledger round-trip lost a field: {ledger}")
+
+    # 8) front-door nonce — no env var, wrong env var, matching pair.
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        if _verify_entry_nonce(rd):
+            fails.append("_verify_entry_nonce: no env/file present but returned True")
+        nf = rd / ENTRY_NONCE_REL
+        nf.parent.mkdir(parents=True, exist_ok=True)
+        nf.write_text("a-real-nonce-value-1234567890")
+        old = os.environ.get("OC_DECK_ENTRY_NONCE")
+        try:
+            os.environ["OC_DECK_ENTRY_NONCE"] = "a-real-nonce-value-1234567890"
+            if not _verify_entry_nonce(rd):
+                fails.append("_verify_entry_nonce: matching env+file returned False")
+            os.environ["OC_DECK_ENTRY_NONCE"] = "a-DIFFERENT-nonce-value-000000"
+            if _verify_entry_nonce(rd):
+                fails.append("_verify_entry_nonce: mismatched env+file returned True")
+        finally:
+            if old is None:
+                os.environ.pop("OC_DECK_ENTRY_NONCE", None)
+            else:
+                os.environ["OC_DECK_ENTRY_NONCE"] = old
+
+    if fails:
+        print("vsl_builder selftest -> FAIL")
+        for f in fails:
+            print("  -", f)
+        return 1
+    print("vsl_builder selftest -> PASS "
+          "(gate: defer/build/waived/fail_closed x2 + case-insensitive, BOTH nested and "
+          "FLAT (deck-intake-driver.py) shapes, nested-wins-over-flat, blank-nested-falls-"
+          "through-to-flat, live Wave E flat-shape fixture -> build; hard video "
+          "dependency: missing/empty/bad-magic/valid + url cross-check; gate timestamp: "
+          "no-track/in-window/short-talk; copy content; prompt band + content-gate "
+          "pass/zero-content-refuse/wireframe-refuse; HTML content + gate markup + "
+          "gate-form consent (2 statements unchecked + required + branded gate) + "
+          "ghl_rest_canvas.html_fragment/new_page_blob/funnel_create/step_create/"
+          "page_autosave (all offline, no session); ledger round-trip; "
+          "front-door nonce absent/mismatch/match)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

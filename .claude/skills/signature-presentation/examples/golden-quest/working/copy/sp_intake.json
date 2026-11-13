@@ -1,0 +1,88 @@
+{
+  "deck_type": "signature_presentation",
+  "record_committed_atomically": true,
+  "record_commit_ids": "rec_sp_20260716T130406238116",
+  "answers": {
+    "q1": "CALLED: Find the Work Only You Can Do",
+    "q2": "yes — offer 2-3 alternates (e.g. \"Answered\", \"The Unclaimed Life\", \"The Work Only You Can Do\") before writing.",
+    "q3": "the quietly capable mid-career professional: competent and credentialed but unseen; the ache of 'is my time ever going to come?'; exhaustion from auditioning for a life that is already theirs; feeling unclaimed, not stuck.",
+    "q4": "left a credentialed, established career to build the coaching practice; a first-in-family milestone; a long-ignored whisper; the leap that traded the old identity for the calling; scars that became the map; a gripping 'why'.",
+    "q5": "The Wayfinder Blueprint — a named Blueprint organized as 3 Quests (the Purpose Quest, the Confidence Quest, the Value Quest) across 5 steps: 1) Name the Ache, 2) Read the Map You Already Carry, 3) Silence the Auditor, 4) Walk Before You're Ready, 5) Give the Gift Only You Can Give.",
+    "q6": "yes — alternates like \"The Calling Map\" or \"The Wayfinder's Path\" are fine.",
+    "q7": "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive).",
+    "q8": "carry the recurring motif hashtag #StillCalled through every phase; land the Quest-frame poetic fill-in-the-blank manifesto ending; keep it a purpose pitch, not a profit pitch; write in harmony with a warm, literary, conviction-forward brand voice."
+  },
+  "signature_frame": "quest",
+  "offer_token_ledger": [
+    "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive)."
+  ],
+  "q7_offer_products": [
+    "The Called Collective (a 12-week group mastermind) and The Wayfinder VIP Intensive (a 1-day private intensive)."
+  ],
+  "client_overrode_slide_floor": false,
+  "turn_ledger_provenance": {
+    "turns": [
+      {
+        "question_id": "interview_choice",
+        "turn": 1,
+        "asked_at": "2026-07-16T13:04:05.384903",
+        "validated_at": "2026-07-16T13:04:05.429340"
+      },
+      {
+        "question_id": "q1",
+        "turn": 2,
+        "asked_at": "2026-07-16T13:04:05.472653",
+        "validated_at": "2026-07-16T13:04:05.517369"
+      },
+      {
+        "question_id": "q2",
+        "turn": 3,
+        "asked_at": "2026-07-16T13:04:05.561924",
+        "validated_at": "2026-07-16T13:04:05.606567"
+      },
+      {
+        "question_id": "q3",
+        "turn": 4,
+        "asked_at": "2026-07-16T13:04:05.651818",
+        "validated_at": "2026-07-16T13:04:05.698217"
+      },
+      {
+        "question_id": "q4",
+        "turn": 5,
+        "asked_at": "2026-07-16T13:04:05.743596",
+        "validated_at": "2026-07-16T13:04:05.788751"
+      },
+      {
+        "question_id": "q5",
+        "turn": 6,
+        "asked_at": "2026-07-16T13:04:05.833303",
+        "validated_at": "2026-07-16T13:04:05.879065"
+      },
+      {
+        "question_id": "q6",
+        "turn": 7,
+        "asked_at": "2026-07-16T13:04:05.923998",
+        "validated_at": "2026-07-16T13:04:05.970558"
+      },
+      {
+        "question_id": "q7",
+        "turn": 8,
+        "asked_at": "2026-07-16T13:04:06.014967",
+        "validated_at": "2026-07-16T13:04:06.060015"
+      },
+      {
+        "question_id": "q8",
+        "turn": 9,
+        "asked_at": "2026-07-16T13:04:06.104737",
+        "validated_at": "2026-07-16T13:04:06.148360"
+      },
+      {
+        "question_id": "frame_selection",
+        "turn": 10,
+        "asked_at": "2026-07-16T13:04:06.192523",
+        "validated_at": "2026-07-16T13:04:06.237997"
+      }
+    ],
+    "signature": "c0d1b22247ef068d30d2bb26359dfd47736a8071b838ec93e579ec8a6d3dcceb"
+  }
+}

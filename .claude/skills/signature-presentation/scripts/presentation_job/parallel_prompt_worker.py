@@ -1,0 +1,1382 @@
+"""parallel_prompt_worker.py -- FIX 2: the missing parallel P4-PROMPT authoring worker.
+
+SPEC: PRESENTATION-DEPT-FIX-SPEC.md, FIX 2 (binding worker contract). The serial
+per-slide loop inside presentation_job/dispatcher.py (_dispatch_prompt_phase) stays
+as the documented rollback path behind the PRESENTATION_PROMPT_PARALLEL flag (default
+ON; =0 selects the serial loop). This module owns NO phase policy of its own: the
+dispatcher P4-PROMPT branch remains the owner of slide selection and routing, and it
+invokes this worker once per dispatch with a normalized prompt-wave-input.json.
+
+Binding contract implemented here (verbatim from spec lines 27-35):
+
+  * CLI: --input <abs prompt-wave-input.json> --output-dir <abs working/prompts>
+    [--workers N] [--resume] [--result-file <abs path>]. --workers may lower, never
+    raise, the measured limit. Default result file <run_dir>/working/checkpoints/
+    prompt-worker-results.json. Invalid/missing absolute paths, unknown schema
+    versions, or a worker request above measured capacity exit non-zero BEFORE any
+    provider call.
+  * Input schema (schema_version: 1): run_id, run_dir (abs), phase_id (== P4-PROMPT),
+    routing{provider, model, mode, measured_capacity (positive int)},
+    prompt_constraints{min_chars, max_chars, required_blocks (non-empty)}, slides
+    (non-empty) with the exact per-slide field set; slide_id and ordinal unique;
+    whole input rejected pre-dispatch on any validation failure.
+  * Concurrency (F8): one worker THREAD per slide task inside THIS process,
+    default worker count min(measured_capacity, slides). Workers share no mutable
+    output file; each task receives only its slide payload plus an immutable
+    routing snapshot. The wave ran in multiprocessing spawn children until F8:
+    presentation_job.governor keeps its token bucket, in-flight counter and
+    report_429 penalty in MODULE-LEVEL state, so every spawn child started with
+    its OWN empty bucket and max_inflight / the rolling 10 s window / the 429
+    halving were never enforced ACROSS the wave (100 children could each burst
+    20 in 10 s against one account). Threads share this process's governor, so a
+    wave holds ONE account bucket. The unit of work is an HTTPS round trip, so
+    the GIL costs nothing here.
+  * Per-slide result: {slide_id, ordinal, status, prompt_path, prompt_sha256,
+    char_count, model_used, attempts, started_at, ended_at, duration_s,
+    verify{passed, codes}, error_class, error_message, retryable}. Failed results
+    null the artifact-only fields. Provider exceptions are sanitized; credentials
+    and raw response headers never enter any result.
+  * Retry: at most 3 attempts per slide; retry only timeouts, 429s, 5xxs, and
+    verify_prompt failures; exponential backoff before attempts 2 and 3 (2s, then
+    4s) plus bounded 0-500ms jitter. Auth/permission errors and invalid input are
+    non-retryable (fail fast). Attempt-level telemetry rows carry NO secrets and
+    NO full provider payloads.
+  * Partial failure: successful slides are kept and never regenerated because a
+    peer failed. After a wave each failed slide is re-dispatched under its own
+    remaining attempt budget. A slide still failed after attempt 3 is reported
+    precisely and P4-PROMPT fails only AFTER all other slides finished. Two
+    consecutive FULL-WAVE failures (zero successful slides in two successive
+    multi-slide dispatches) abort immediately with the complete sanitized report;
+    no third full wave is launched.
+  * Artifacts: prompts written atomically (same-directory temp + os.replace) to
+    <run_dir>/working/prompts/slide-NN.txt (FIX 15: unified with the serial
+    loop's name; three digits for ordinals >=100),
+    then SHA-256/read-back verified. The aggregate result is atomically written to
+    the result file. An incomplete process may leave temp files but never a
+    canonical prompt path. If the real deterministic gate already certifies a
+    slide's on-disk prompt, that slide is skipped with zero provider spend (the
+    serial loop's resume property).
+  * No second prompt schema, no second verifier: per-slide verification reuses
+    dispatcher._verify_single_prompt, which IS build_deck.check_prompt_qc_deterministic.
+
+Transport seam (REQUIRED for proofs, no network in tests): the provider call is
+injectable through the module attribute `provider_call` -- the single seam every
+invocation goes through. The production default reuses the EXISTING routed
+authoring path dispatcher.py already uses today (dispatcher.compose_prompt +
+dispatcher.dispatch_complete -- FIX 16: the routed entrypoint, never the raw
+deepseek transport); credentials handling is never duplicated. Every worker
+resolves the attribute through _resolve_provider(), which also honors the
+PRESENTATION_PROMPT_PROVIDER_STUB env var (absolute path to a stub-spec JSON) so
+a subprocess-launched worker stubs deterministically; absent both it calls the
+real dispatcher path. Stub kinds are local-only mocks: "succeed" (generates a
+gate-passing prompt from the slide payload itself), "fail_429", "fail_500",
+"fail_timeout" (retryable), "fail_auth" (non-retryable), "fail_verify" /
+"fail_verify_then_succeed" (verify_prompt failure path), "fail_empty", "fail_all".
+
+Exit codes: 0 = every slide succeeded; 1 = one or more slides failed (result file
+still written); 2 = usage/schema validation failure BEFORE any provider call.
+
+FIX 104 (Master Part 8): the whole-input reject gate below DELEGATES to
+presentation_job.wave_contract.validate_input -- the ONE WaveContract shared
+with the dispatcher (stamp -> wave_input -> validate_input). The old hand-built
+field whitelist here is gone: it silently dropped any field the dispatcher's
+routing stamp grew (the F41 measured_capacity=None and F42 owning_role drift
+class). Field passthrough is now identity-preserving by construction.
+"""
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import hashlib
+import json
+import os
+import random
+import re
+import sys
+import tempfile
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+SCHEMA_VERSION = 1
+PHASE_ID = "P4-PROMPT"
+DEFAULT_MAX_WORKERS = 8          # FALLBACK ONLY -- used when measured_capacity is
+                                 # absent or unusable. It is NOT a ceiling on a
+                                 # measured provider: operator ruling 2026-09-04
+                                 # ("do not cap someone who brought their own
+                                 # capacity"). Wave width stays bounded by the
+                                 # number of slides ready to run (see _workers_for
+                                 # and execution_plan.cap_wave_width), which is the
+                                 # real safety -- a 15-slide wave spawns 15 workers,
+                                 # never 2500, even on a 2500 ceiling.
+RETRY_CAP = 3                    # attempts per slide, total, all rounds
+BACKOFF_S = {2: 2.0, 3: 4.0}     # sleep BEFORE attempt N (spec: 2s then 4s)
+JITTER_MAX_S = 0.5               # bounded 0-500ms jitter on every retry sleep
+# The prompt length band comes with each wave input (KIE rule 12 via the shared enforcer); no default lives here.
+
+RESULT_FILENAME = "prompt-worker-results.json"
+ATTEMPTS_LOG_SUFFIX = "-attempts.jsonl"
+INPUT_RELNAME = "prompt-wave-input.json"
+
+# FIX 104: the ONE WaveContract module (dispatcher <-> worker shared). The
+# whole-input reject gate below delegates here; stdlib-only import keeps the
+# spawn child payload light, same rule as _now_iso above.
+try:
+    from . import wave_contract as _wave_contract
+except ImportError:  # pragma: no cover - standalone/flat-import invocations
+    try:
+        import wave_contract as _wave_contract  # type: ignore[no-redef]
+    except ImportError:
+        _wave_contract = None  # type: ignore[assignment]
+
+
+class WorkerUsageError(RuntimeError):
+    """Pre-dispatch validation failure. Exit code 2, zero provider spend."""
+
+
+def _now_iso() -> str:
+    # Same shape as presentation_job.state.utcnow (kept dependency-free so the
+    # spawn child import stays light and never touches the engine state store).
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Same-directory temp file + os.replace. A crash may leave the temp file,
+    never a torn canonical file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.partial-", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001 -- cleanup is best-effort
+            pass
+        raise
+
+
+def _atomic_write_json(path: Path, obj: Any) -> None:
+    _atomic_write_bytes(path, (json.dumps(obj, ensure_ascii=False, indent=2,
+                                         sort_keys=True) + "\n").encode("utf-8"))
+
+
+def _append_attempt_log(log_path: Path, record: Dict[str, Any]) -> None:
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    except OSError:
+        pass  # telemetry never breaks the run (FIX 5 doctrine)
+
+
+# ---------------------------------------------------------------------------
+# Input validation -- whole-input reject BEFORE any dispatch (spec-mandated).
+# FIX 104: DELEGATED to presentation_job.wave_contract -- the ONE WaveContract
+# the dispatcher and this worker share. The previous hand-built whitelist here
+# (a return dict enumerating exactly four routing keys) silently dropped any
+# stamp field it did not name; the contract's identity-preserving normalize
+# makes that loss class impossible. Same reject messages, same normalized
+# shape, same exit-2 semantics (WorkerUsageError wraps the contract error).
+# ---------------------------------------------------------------------------
+def validate_input(data: Any, source: str) -> Dict[str, Any]:
+    try:
+        return _wave_contract.validate_input(data, source)
+    except _wave_contract.WaveContractError as exc:
+        raise WorkerUsageError(str(exc)) from exc
+
+
+def load_input(path: Path) -> Dict[str, Any]:
+    if not path.is_absolute():
+        raise WorkerUsageError(
+            f"--input must be an ABSOLUTE path (got {path!r})")
+    if not path.is_file():
+        raise WorkerUsageError(f"--input file does not exist: {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise WorkerUsageError(f"cannot read prompt-wave input {path}: {exc}")
+    return validate_input(data, str(path))
+
+
+# ---------------------------------------------------------------------------
+# Transport seam. `provider_call` is the module attribute EVERY invocation goes
+# through; tests may rebind it in-process (F8: wave workers are threads in THIS
+# process, so an in-process rebind is honoured by every unit of the wave), and a
+# subprocess-launched worker resolves the same seam through _resolve_provider()
+# (env stub spec or the real dispatcher path).
+# ---------------------------------------------------------------------------
+ProviderCall = Callable[..., str]  # PD-TEST-189: 7th arg `prior_reasons` is optional; see _default_provider_call
+
+provider_call: Optional[ProviderCall] = None   # None -> resolve per-process
+
+
+_STUB_ENV = "PRESENTATION_PROMPT_PROVIDER_STUB"
+
+
+class _StubSpec:
+    """Local-only provider stub resolved from a JSON spec file (no code exec)."""
+
+    def __init__(self, spec_path: str):
+        try:
+            raw = json.loads(Path(spec_path).read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 -- fail fast, non-retryable
+            raise RuntimeError(f"provider stub {spec_path} unreadable: {exc}")
+        if not isinstance(raw, dict):
+            raise RuntimeError(f"provider stub {spec_path} must be a JSON object")
+        self.default = raw.get("default", "succeed")
+        by_ordinal = raw.get("by_ordinal") or {}
+        if not isinstance(by_ordinal, dict):
+            raise RuntimeError("stub by_ordinal must be an object")
+        self.by_ordinal = {str(k): v for k, v in by_ordinal.items()}
+
+    def _plan(self, slide: Dict[str, Any]):
+        key = str(slide.get("ordinal"))
+        return self.by_ordinal.get(key, self.default)
+
+    def __call__(self, slide: Dict[str, Any], routing: Dict[str, Any], attempt: int,
+                 run_dir: Path, owning_role: str, n_slides: int,
+                 prior_reasons: Optional[List[str]] = None) -> str:
+        # PD-TEST-189 (review of #1173): `_execute_slide` passes `prior_reasons=`
+        # UNCONDITIONALLY, so an implementation left at six parameters dies with
+        # `TypeError` on EVERY attempt -- measured with
+        # PRESENTATION_PROMPT_PROVIDER_STUB set: BASE 1 provider call / attempt 1;
+        # #1173 0 calls / attempts 3 / `verify_failed`, because `_classify` maps
+        # TypeError to exactly the class this seam exists to diagnose. A defaulted
+        # CALLEE parameter does not make an existing 6-arg IMPLEMENTATION
+        # compatible; the implementation has to accept the keyword too.
+        plan = self._plan(slide)
+        kind = plan
+        if isinstance(plan, list):
+            if attempt - 1 >= len(plan):
+                kind = plan[-1]
+            else:
+                kind = plan[attempt - 1]
+        if kind == "succeed":
+            return _stub_rich_prompt(slide, routing, n_slides)
+        if kind == "fail_429":
+            raise RuntimeError("HTTP 429: stub rate limit")
+        if kind == "fail_500":
+            raise RuntimeError("HTTP 500: stub server error")
+        if kind == "fail_timeout":
+            raise RuntimeError("TimeoutError: stub timed out after 600s")
+        if kind == "fail_auth":
+            raise RuntimeError("HTTP 401 (non-transient): invalid credentials stub")
+        if kind == "fail_verify":
+            return "too-short stub"
+        if kind == "fail_verify_then_succeed":
+            if attempt < 2:
+                return "too-short stub"
+            return _stub_rich_prompt(slide, routing, n_slides)
+        if kind == "fail_empty":
+            return "   "
+        if kind == "fail_all":
+            raise RuntimeError("HTTP 503: stub permanent outage")
+        raise RuntimeError(f"HTTP 400 (non-transient): unknown stub kind {kind!r}")
+
+
+def _pad_lexicon(target_chars: int) -> str:
+    """Deterministic nonce-word lexicon used ONLY by the local stub to reach the
+    9,000-char floor with >=400 distinct words (the excellence target)."""
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    vowels = "aeiou"
+    words: List[str] = []
+    idx = 0
+    while sum(len(w) + 1 for w in words) < target_chars:
+        words.append(
+            letters[idx % 26] + letters[(idx // 26) % 26] +
+            letters[(idx // 676) % 26] + vowels[(idx // 17576) % 5] + "ta")
+        idx += 1
+    return " ".join(words)
+
+
+_RICH_SHEET = """CROP PLAN: full-bleed 1600x900 with a 4% edge bleed allowance on every side; the safe margin inset is 96px; text confined to the left third against a flat ground; the right two-thirds hold the graphic motif.
+TYPE SYSTEM: display face set at 96pt with 2% tracking; kicker line 24pt uppercase; supporting line 32pt light; numerals tabular; baseline grid 8px; optical alignment overrides mechanical centers; hyphenation banned; rag controlled to 45 characters per line; widow lines forbidden; ligatures retained.
+COLOR SCIENCE: primary #0B3D91 carries 62% of ink coverage; accent #E8B23A limited to 12%; ground #F7F5F0 holds the remaining 26%; contrast ratio of headline against ground measures 8.7:1; accent contrast 4.6:1; every swatch is sRGB with embedded profile; print conversion targets coated stock with 6% dot gain compensation.
+GEOMETRY: baseline grid aligned to 12 columns; gutter width 24px; module size 128px square; the motif rotates in 6-degree increments; circles derive from Fibonacci ratios; the diagonal sweep crosses at 31 degrees; corners rounded 4px; strokes 2px uniform.
+MATERIAL FEEL: matte laminate; ink density 3.1; grain amplitude 4%; paper tooth visible under raking light; no gloss highlights; printed blacks keep 88% density rather than pure black.
+HIERARCHY: headline is first read; supporting line second; small caps kicker third; nothing else competes; eye path enters top-left, drops to the headline, sweeps right, exits bottom-right; dwell emphasis achieved with weight, never with boxes.
+BRAND DISCIPLINE: the mark clears 48px of clear space on all sides; the reference mark never shrinks below 32px; the tagline lockup stays horizontal; brand curves keep their vector purity; no gradient mesh on the emblem.
+RENDER DISCIPLINE: export at 300 DPI; embed fonts as outlines; no compression artifacts above 2%; banding controlled with 1.2% dither; chromatic subsampling disabled on text layers; kerning pairs preserved.
+
+DO-NOT BLOCK:
+- garbled/misspelled text: render every quoted text string exactly as written, letter-for-letter; never garbled or misspelled glyph runs.
+- logo mutation: never redraw, recolor, restyle, or reinterpret the logo, monogram, tagline lockup, reference mark.
+- placeholder/bracket tokens: no bracketed placeholder tokens, no square bracket, nothing owner to confirm, none marked pending, no insert, no build note.
+- image narration/presenter/meta: no presenter line, no spoken-script, no stage direction, no telegraphing, no self-talk, never the word webinar; do not describe-the-picture inside the image.
+- anatomical artifacts: no fused hand, no malformed digit, no extra limb, no distorted facial, no mismatched eye, no asymmetric eye, no distorted teeth, no over-smoothed skin, natural body proportion; keep every finger clean and anatom.
+- background competing with text: never a busy, cluttered, high-detail background behind any text; the text zone stays clean; preserve legibility and negative space; the background must never compete.
+- demographic/skin-tone fidelity: render demographic and skin tone faithfully; never lighten, ashen, desaturate, mono-cast; representation_mix stays as captured; deep skin renders deep.
+- carried-forward universal baseline: no watermark, no emoji, no clipart, no default font, no calibri, no arial, no times new roman, no system default, no user-interface or ui artifact, no pure-black fills, no em dash.
+
+Do not begin the composition with any decorative flourish; build note discipline applies throughout; the slide remains a still image only. This prompt is grounded because the palette, grid, and type scales are the client's captured brand system — believable, true to life, lived-in, not a luxury artifact, actual print production constraints apply."""
+
+
+def _stub_rich_prompt(slide: Dict[str, Any], routing: Dict[str, Any],
+                      n_slides: int) -> str:
+    """Deterministic LOCAL stub completion that passes the real deterministic
+    prompt gate (proven against build_deck.check_prompt_qc_deterministic)."""
+    ordinal = slide["ordinal"]
+    copy_lines = list(slide.get("copy") or [f"Slide {ordinal} headline"])
+    copy_quoted = ", ".join(f'"{c}"' for c in copy_lines if c.strip()) or \
+        '"standby"'
+    lex = _pad_lexicon(6800)
+    body = f"""[ARCHETYPE: A2 recognition layout for slide {ordinal} of {n_slides}]
+LAYOUT: rule-of-thirds grid; headline occupies the left third; focal point anchored where the upper-third and left-third zone intersect; generous negative space reserved right of the fold; safe margin 96px all edges; composition balanced on a 12-column grid.
+
+PEOPLE: no. Pure typographic beat plus abstract geometry; no people element omitted language applies.
+
+PALETTE: brand primary #0B3D91, accent #E8B23A, ground #F7F5F0. Typography: headline 96pt, kickers 24pt, body 32pt, letter-spacing 2%. Texture: matte paper grain at 4% opacity, subtle ink-bleed on glyph edges, gradient wash 8 degrees.
+
+VERBATIM COPY: the headline reads exactly {copy_quoted} — spelling-lock: this exact string renders letter-for-letter; the subhead renders every quoted text string exactly as written, with per-line spelling lock pinned to the client's captured type system.
+
+DECK-CONSTANT SPEC SHEET (identical every slide; the variable is only the approved copy above):
+ART DIRECTION LEXICON: {lex}
+{_RICH_SHEET}"""
+    return body
+
+
+# U4: once-per-process announcement state for an unnameable route (below).
+_lease_announce_lock = threading.Lock()
+_lease_announced: set = set()
+
+
+def _announce_unleased_route(raw_provider: Any, reason: str) -> None:
+    """LOUD, once per distinct raw provider spelling per process: this wave's
+    provider identity could not be established, so the worker took NO outer
+    governor lease.
+
+    Announced on stderr AND on the governor's own acquisition log -- the same
+    proof surface the FIX 14/23 window proof reads -- because the log is only
+    read after the fact and stderr is only read live. This is deliberately the
+    shape `governor._announce_defaults_once` uses for the sibling case (a
+    provider with no providers.yaml row).
+
+    It is NOT fatal. The gate that matters still runs: dispatch_complete takes
+    its own lease keyed on the provider it actually dispatches to. What must
+    never happen -- and is what this replaces -- is charging the call to
+    DeepSeek's bucket because the code could not name the real provider."""
+    key = str(raw_provider)
+    with _lease_announce_lock:
+        if key in _lease_announced:
+            return
+        _lease_announced.add(key)
+    msg = (f"{PHASE_ID} governor lease: provider identity UNRESOLVABLE from the "
+           f"routing stamp ({reason}; routing.provider={raw_provider!r}). The "
+           f"worker is taking NO outer lease for this wave rather than charging "
+           f"it to a provider it cannot confirm -- dispatch_complete's inner "
+           f"gate still governs on the provider it actually dispatches to. Fix "
+           f"the routing stamp (dispatcher._routing_stamp) so routing.provider "
+           f"names this wave's provider.")
+    try:
+        print(f"WARNING: {msg}", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- announcing never breaks a unit
+        pass
+    try:
+        import presentation_job.dispatcher as _d
+        _gov = getattr(_d, "_governor", None)
+        if _gov is not None:
+            _gov._append_log(key or "unknown-provider", "lease-unresolved",
+                             0, 0, ok=False, note=msg)
+    except Exception:  # noqa: BLE001 -- the log is best-effort, same as above
+        pass
+
+
+def _wave_lease_provider(routing: Dict[str, Any], run_dir: Path) -> str:
+    """U4: the provider THIS wave's outer governor lease belongs to.
+
+    `routing` is the dispatcher's routing stamp for this phase, so
+    routing["provider"] is the route's resolved provider -- the value that
+    replaces the old hard-coded "deepseek-direct". It is folded through
+    dispatcher._govern_provider (capacity.normalize_provider, the ONE cap-table
+    authority) so the CATALOG spelling the stamp carries ('deepseek') and the
+    CANONICAL spelling the transport gates on ('deepseek-direct') collapse onto
+    one bucket and one re-entrancy depth key -- without that fold the two are
+    different strings and one logical call takes two real acquires against two
+    independent buckets over one account.
+
+    Returns "" when the stamp names no provider at all. That is announced
+    loudly (see _announce_unleased_route) and means "take no outer lease" --
+    never "pretend it is DeepSeek"."""
+    raw = (routing or {}).get("provider")
+    if not str(raw or "").strip():
+        _announce_unleased_route(raw, "the routing stamp carries no provider")
+        return ""
+    try:
+        import presentation_job.dispatcher as _d
+        canon = _d._govern_provider(raw)
+    except Exception as exc:  # noqa: BLE001 -- a fold failure is not a licence
+                              # to invent a provider; refuse loudly instead.
+        _announce_unleased_route(raw, f"provider fold failed: "
+                                      f"{type(exc).__name__}: {exc}")
+        return ""
+    if not canon or canon == "unknown-provider":
+        _announce_unleased_route(raw, "the fold could not canonicalise it")
+        return ""
+    return canon
+
+
+def _default_provider_call(slide: Dict[str, Any], routing: Dict[str, Any],
+                           attempt: int, run_dir: Path, owning_role: str,
+                           n_slides: int,
+                           prior_reasons: Optional[List[str]] = None) -> str:
+    """PRODUCTION transport: reuse the existing routed authoring path the
+    serial loop uses today (dispatcher.compose_prompt + dispatch_complete --
+    FIX 16: the routed entrypoint, never the raw deepseek transport). Lazy
+    import inside the child keeps the spawn import payload light; credentials are
+    handled ONLY by dispatcher (_load_deepseek_key), never here, never printed."""
+    import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
+    ordinal = int(slide["ordinal"])
+    slide_order = {
+        "owning_role": owning_role,
+        "phase_id": PHASE_ID,
+        "produces_artifact": [f"working/prompts/{_prompt_filename(ordinal)}"],
+        "_prompt_slide_ordinal": ordinal,
+        "_prompt_slide_total": n_slides,
+        "slide": dict(slide),
+    }
+    # PD-TEST-183 -- carry the ACTUAL previous-attempt findings.
+    #
+    # `prior_reasons` is supplied by the caller (`_execute_slide`), which owns the
+    # accumulated `base["_reasons"]` -- the verify path records the real failing
+    # checks there as `attempt {n}: verify failed ({'; '.join(reasons)})`. Before
+    # this, the instruction was content-free ("attempt N failed verification;
+    # re-author slide X"): it named neither the failing check nor the requirement,
+    # so a model re-authoring had no signal about WHICH token was missing.
+    #
+    # That is now MEASURED, not argued. On pres-operator-1d269693 the engine was
+    # given a funded re-dispatch and reproduced the SAME findings
+    # (AF-FACE-PROMPT-MISSING, AF-LIGHT-PROMPT-MISSING, AF-HAIR-INAUTHENTIC) and
+    # added AF-WORLD-SCALE -- spending the entire allowance plus the retry pool for
+    # the same non-result. Same masking family as PD-TEST-162 and PD-TEST-177: the
+    # durable record knows the real reason and the actor that could act on it is
+    # not told it.
+    #
+    # The seam stays backward-compatible: the parameter is optional, and a stub
+    # that ignores it still satisfies the call.
+    _compose_reasons = None
+    if attempt > 1:
+        _compose_reasons = [
+            f"attempt {attempt - 1} failed verification; re-author slide {ordinal}"]
+        for _r in (prior_reasons or []):
+            _compose_reasons.append(f"what failed on a previous attempt: {_r}")
+    system_prompt, user_prompt = dispatcher.compose_prompt(
+        phase_id=PHASE_ID, owning_role=owning_role,
+        dept_root=_dept_root_from(run_dir), run_dir=run_dir, order=slide_order,
+        attempt=attempt, prior_reasons=_compose_reasons)
+    user_prompt = (
+        f"=== THIS CALL AUTHORS EXACTLY ONE FILE: SLIDE {ordinal} OF {n_slides} ===\n"
+        f"Find slide {ordinal}'s block in slides_copy.md above (the line reading "
+        f"exactly `SLIDE {ordinal}`) and author ONLY its rich image-generation "
+        f"prompt. Output ONLY that one slide's complete prompt body (9,000 to "
+        f"18,000 characters) -- no slide-number header, no preamble, no other "
+        f"slide's content.\n\n" + user_prompt)
+    # FIX 7: routed completion. The worker owns NO transport: it asks the
+    # dispatcher's dispatch_complete, which resolves the route from the
+    # client resource profile (DeepSeek-direct stays the default/rollback
+    # path) and returns (content, usage, route_dict).
+    # FIX 14: this is a named governor call site. The worker holds its own
+    # logical governor lease for the duration of the routed completion --
+    # F8: one shared governor for the whole wave, since the wave's units are
+    # threads in one process rather than spawn children with private buckets.
+    #
+    # U4 (2026-09-07) -- THE LEASE FOLLOWS THE ROUTE, NOT A CONSTANT.
+    # This acquire was hard-coded to "deepseek-direct" regardless of where the
+    # wave was actually routed. A client on OpenRouter, Ollama, Anthropic or a
+    # newly adopted provider therefore took its rate/in-flight lease against
+    # DEEPSEEK'S bucket: the real provider's limits were never enforced (its
+    # bucket saw only dispatch_complete's inner acquire) and DeepSeek's shared
+    # account bucket was consumed by traffic that never touched DeepSeek.
+    # `routing` IS the dispatcher's own routing stamp for this wave
+    # (_routing_stamp -> wave_input -> validate_input), so routing["provider"]
+    # is the route's resolved provider -- the same value dispatch_complete will
+    # gate its inner acquire on. Both sides are folded by
+    # dispatcher._govern_provider (the ONE cap-table authority), which is what
+    # makes the depth counter dedupe them into exactly ONE real acquire: the
+    # stamp carries the CATALOG spelling ('deepseek') while the transport uses
+    # the canonical one ('deepseek-direct'), and comparing those raw is the
+    # DEFECT-5 mistake that discarded every measured ceiling.
+    # A route we cannot name is NOT silently defaulted to DeepSeek: we say so
+    # loudly and take NO outer lease, leaving dispatch_complete's inner gate --
+    # which keys on the provider it actually dispatches to -- as the one real
+    # gate. A wrong lease is worse than no lease; a silent wrong lease is the
+    # disease. A tree without governor.py no-ops the gate (_governor is None).
+    _gov = getattr(dispatcher, "_governor", None)
+    _lease = None
+    _lease_provider = _wave_lease_provider(routing, run_dir)
+    if _gov is not None and _lease_provider:
+        try:
+            # The FIX 14 named call-site acquire: routed through the
+            # dispatcher's provider registry (per thread+provider depth
+            # counter) so dispatch_complete's inner gate re-uses THIS lease
+            # instead of double-holding one logical call's capacity.
+            _lease = dispatcher._govern_acquire(_lease_provider)
+        except Exception:  # noqa: BLE001 -- gating never kills a unit
+            _lease = None
+    try:
+        _content, _usage, _route = dispatcher.dispatch_complete(
+            system_prompt, user_prompt, phase_id=PHASE_ID, run_dir=run_dir)
+    finally:
+        if _lease is not None and _gov is not None:
+            try:
+                dispatcher._govern_release(_lease_provider, _lease)
+            except Exception:  # noqa: BLE001
+                pass
+    return dispatcher._clean_payload(_content)
+
+
+def _dept_root_from(run_dir: Path) -> Path:
+    """Presentations dept root = the scripts dir's parent (same rule as
+    dispatcher.resolve_dept_root). Derived from THIS module's location so the
+    spawn child never needs an extra input field."""
+    import presentation_job.dispatcher as dispatcher
+    return dispatcher.resolve_dept_root(dispatcher._OWN_SCRIPTS_DIR)
+
+
+def _resolve_provider() -> Callable:
+    """Per-process seam resolution. Order: (1) module attribute bound in-process
+    by tests (spawn inheritance not relied on), (2) env stub spec for spawn
+    children, (3) production dispatcher path."""
+    if provider_call is not None:
+        return provider_call
+    env_spec = os.environ.get(_STUB_ENV)
+    if env_spec:
+        return _StubSpec(env_spec)
+    return _default_provider_call
+
+
+# ---------------------------------------------------------------------------
+# Error classification -- retry only timeouts/429/5xx/verify failures.
+# ---------------------------------------------------------------------------
+_RETRYABLE_CODES = ("timeout", "rate_limited", "server_error", "verify_failed",
+                    # Review F8: the budget classes are retryable BY DESIGN (a
+                    # refusal is free -- it is raised before any transport
+                    # call), so they belong here as well as in _classify, or
+                    # _finalize_failure would re-derive them as non-retryable
+                    # and silently undo the classification.
+                    "budget_exhausted", "budget_deferred")
+_NONRETRYABLE_CODES = ("auth_error", "permission_error", "invalid_input",
+                       "empty_response", "usage_error",
+                       # ...and this one is a HARD STOP, not a budget event.
+                       "claim_lost")
+
+
+def _classify(exc: BaseException) -> Tuple[str, bool]:
+    """Returns (error_class, retryable). Text matching is deliberately strict:
+    only explicit status codes or timeout markers count; everything unknown is
+    non-retryable so garbage never consumes the provider budget.
+
+    PD-TEST-162: SCHEDULING IS NOT A PROVIDER FAULT, and it is RETRYABLE.
+    `PaidBudgetExhausted` / `PaidAttemptDeferred` derive from
+    `DeepSeekCallError(RuntimeError)` -- not from ValueError/KeyError/TypeError,
+    and carrying none of the 401/403/429/5xx/timeout markers -- so they used to
+    fall through to this function's catch-all and be reported as
+    `provider_error` with `retryable=False`. Measured on run
+    pres-operator-1d269693 before the fix:
+
+        _classify(PaidBudgetExhausted('paid retry budget exhausted: 3 provider
+                   attempts'))  ->  ('provider_error', False)
+
+    Two harms, both observed: it sent the reader hunting credentials/endpoints
+    when the cause was LOCAL (the phase's own bounded paid budget, PD-TEST-161),
+    and it marked the unit abandoned rather than deferred until budget exists.
+    They are matched by TYPE FIRST so no wording change can re-mask them."""
+    # Local imports: `dispatcher` is already imported lazily elsewhere in this
+    # module (see the provider seam), and these two names live there.
+    try:
+        from . import dispatcher as _d
+        _budget_types = (_d.PaidBudgetExhausted, _d.PaidAttemptDeferred)
+    except Exception:  # noqa: BLE001 -- a degraded install keeps the old order
+        _d, _budget_types = None, ()
+    if _budget_types and isinstance(exc, _budget_types):
+        # Review F8: exactly ONE `PaidBudgetExhausted` is a HARD STOP rather than
+        # a budget event -- the claim-ownership refusal raised when another
+        # worker took the phase (dispatcher.py:9629). Retrying it achieves
+        # nothing and it must stay non-retryable, but the TYPE cannot tell it
+        # apart from a genuine budget refusal, so this one fixed literal is
+        # matched explicitly. Every OTHER budget message stays scheduling.
+        if "claim ownership changed" in str(exc):
+            return "claim_lost", False
+        eclass = ("budget_deferred"
+                  if isinstance(exc, _d.PaidAttemptDeferred)
+                  else "budget_exhausted")
+        return eclass, True
+
+    text = f"{type(exc).__name__}: {exc}"
+    if isinstance(exc, WorkerUsageError):
+        return "usage_error", False
+    if re.search(r"\b40[13]\b|invalid[ _]credentials|authentication|unauthorized",
+                 text, re.IGNORECASE):
+        return "auth_error", False
+    if re.search(r"\b403\b|permission", text, re.IGNORECASE):
+        return "permission_error", False
+    if "429" in text or "rate limit" in text.lower():
+        return "rate_limited", True
+    if re.search(r"\b5\d\d\b|server error|outage", text, re.IGNORECASE):
+        return "server_error", True
+    if "timeout" in text.lower() or "timed out" in text.lower() or \
+            isinstance(exc, TimeoutError):
+        return "timeout", True
+    if isinstance(exc, (ValueError, KeyError, TypeError)):
+        return "verify_failed", True
+    return "provider_error", False
+
+
+def _sanitize(msg: str) -> str:
+    """No credentials, tokens, or headers ever reach a result row."""
+    cleaned = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._-]+", r"\1<redacted>", msg)
+    cleaned = re.sub(
+        r"(?i)(api[-_ ]?key|authorization|sk-[a-z0-9]{8,})[=: ]+\S+",
+        r"\1=<redacted>", cleaned)
+    return cleaned[:400]
+
+
+def _settle_missed(run_dir, slide_id) -> "Optional[str]":
+    """PD-TEST-187: did the settle we just made actually LAND?
+
+    A settle can die in two ways and only one of them raises.
+    `_settle_unit_paid_attempts` returns QUIETLY when there is nothing to settle
+    (dispatcher.py, `if not led: return`), so a phase id that reads an empty
+    ledger is a silent no-op; and a settle that records "ok" for a unit we
+    reported "failed" writes the wrong durable row while leaving the reservation
+    in flight -- the exact state that makes this unit's own retry resolve as
+    `budget_deferred`. Neither raises, so `except` alone cannot see them.
+
+    Assert the POST-CONDITION instead. Returns a human-readable reason when the
+    settle provably did not take effect, else None.
+
+    Failure to CHECK returns None (stay quiet): a bookkeeping probe must never
+    cry wolf, and must never break a unit.
+    """
+    try:
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import
+        led = dispatcher._read_ledger(run_dir, PHASE_ID)
+        if not isinstance(led, dict):
+            return None
+        rows = led.get(dispatcher.LEDGER_UNIT_OUTCOMES)
+    except Exception:  # noqa: BLE001 -- a probe that cannot read is not a finding
+        return None
+    if not isinstance(rows, dict):
+        return f"the ledger carries no {dispatcher.LEDGER_UNIT_OUTCOMES} table"
+    row = rows.get(str(slide_id))
+    if not isinstance(row, dict):
+        return f"no outcome row was recorded for {slide_id!r}"
+    if row.get("worker") != "p4prompt-unit":
+        return (f"the outcome row for {slide_id!r} was written by "
+                f"{row.get('worker')!r}, not by this settle")
+    if row.get("status") != "failed":
+        return (f"the outcome row for {slide_id!r} records status "
+                f"{row.get('status')!r}, but this attempt FAILED")
+    return None
+
+
+def _report_dead_settle(run_dir, slide_id, attempt: int, detail: str) -> None:
+    """PD-TEST-187: a dead per-attempt settle is AUDIBLE, on two channels.
+
+    stderr is read live; the phase sidecar is read after the fact. That is the
+    same pair this module's own `_announce_unleased_route` uses ("the log is only
+    read after the fact and stderr is only read live"), and the sidecar is where
+    the dispatcher's serial settle already records the same class of failure.
+
+    FAIL-SOFT throughout: bookkeeping must never break a unit, so even the
+    report itself is guarded, and the text is sanitised and length-bounded
+    (`_sanitize`) exactly like every other exception this module surfaces.
+    """
+    text = _sanitize(str(detail))
+    try:
+        print(f"WARNING: the per-attempt paid-attempt settle for {slide_id!r} "
+              f"(attempt {attempt}) did not take effect: {text}; the attempt that "
+              f"just ended stays reserved in flight, so this unit's own retry may "
+              f"resolve as budget_deferred", file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001 -- even the warning must not break a unit
+        pass
+    try:
+        import presentation_job.dispatcher as dispatcher  # spawn-safe: file import
+        dispatcher._append_sidecar(run_dir, PHASE_ID, {
+            "status": "fanout_paid_settle_dead",
+            "unit": str(slide_id),
+            "attempt": int(attempt),
+            "reason": text,
+            "consequence": ("the attempt that just ended stays reserved in flight, "
+                            "so this unit's own retry can resolve as budget_deferred "
+                            "until a later settle succeeds"),
+        })
+    except Exception:  # noqa: BLE001 -- bookkeeping must never break a unit
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Artifact naming + atomic write + read-back verify.
+# ---------------------------------------------------------------------------
+def _prompt_filename(ordinal: int) -> str:
+    # FIX 15 (MASTER Fix 15): one prompt filename convention fleet-wide --
+    # `slide-NN.txt` (two digits), the name the serial loop, the per-slide
+    # verifier path, and build_deck's resolve_prompt_path all read. The old
+    # `slide-NN-prompt.txt` made every parallel-authored prompt invisible to
+    # the dispatcher's on-disk SHA/verify gate (dispatcher.py read
+    # slide-NN.txt only, so "no prompt file on disk" on every wave).
+    if ordinal >= 100:
+        return f"slide-{ordinal:03d}.txt"  # 3 digits for 3+ digit ordinals
+    return f"slide-{ordinal:02d}.txt"
+
+
+def _prompt_path(run_dir: Path, ordinal: int) -> Path:
+    return run_dir / "working" / "prompts" / _prompt_filename(ordinal)
+
+
+# ---------------------------------------------------------------------------
+# Per-slide verify through the EXISTING gate (no second verifier).
+# ---------------------------------------------------------------------------
+def _verify_prompt(slide: Dict[str, Any], prompt_text: str, run_dir: Path,
+                   constraints: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Write the completion atomically to the canonical prompt path, then run the
+    REAL per-slide gate (dispatcher._verify_single_prompt ->
+    build_deck.check_prompt_qc_deterministic). No second verifier exists."""
+    import presentation_job.dispatcher as dispatcher
+    target = _prompt_path(run_dir, int(slide["ordinal"]))
+    _atomic_write_bytes(target, prompt_text.encode("utf-8"))
+    ok, reasons = dispatcher._verify_single_prompt(run_dir, int(slide["ordinal"]))
+    return ok, list(reasons)
+
+
+# ---------------------------------------------------------------------------
+# One slide task: runs on a wave worker THREAD (F8) OR inline (n==1 /
+# constrained probes).
+# ---------------------------------------------------------------------------
+def prompt_slide_unit_key(slide: Dict[str, Any]) -> str:
+    """THE unit key for one slide's paid budget -- ONE definition, used by BOTH
+    halves of the PD-TEST-161 fix.
+
+    The declaration (dispatcher._dispatch_prompt_phase_parallel) and the paid
+    scope (this module's worker) must agree on this string EXACTLY, or every
+    slide defers: the review of PR #1164 measured that keying the declaration on
+    `ordinal` instead of `slide_id` still passed every test while producing 0
+    transport calls, 0 paid attempts and 8 `budget_deferred` in production.
+
+    Defined here rather than duplicated so the two halves cannot drift. Uses
+    `slide["slide_id"]` (required, not `.get`) because that is what
+    wave_contract.validate_input guarantees is present and unique -- an absent
+    key should fail loudly rather than silently fall back to the ordinal."""
+    return str(slide["slide_id"])
+
+
+def _execute_slide(task: Dict[str, Any]) -> Dict[str, Any]:
+    slide = task["slide"]
+    routing = task["routing"]
+    run_dir = Path(task["run_dir"])
+    constraints = task.get("prompt_constraints") or {}
+
+    n_slides = task["n_slides"]
+    owning_role = task["owning_role"]
+    ordinal = int(slide["ordinal"])
+    slide_id = prompt_slide_unit_key(slide)
+    attempts_log = Path(task["attempts_log"])
+    attempt_log_path = attempts_log.with_name(
+        attempts_log.name + ATTEMPTS_LOG_SUFFIX) if attempts_log.name != \
+        RESULT_FILENAME else attempts_log
+
+    started = _now_iso()
+    t0 = time.monotonic()
+    base = {
+        "slide_id": slide_id,
+        "ordinal": ordinal,
+        "status": "failed",
+        "prompt_path": None,
+        "prompt_sha256": None,
+        "char_count": None,
+        "model_used": routing.get("model"),
+        "attempts": 0,
+        "started_at": started,
+        "ended_at": None,
+        "duration_s": None,
+        "verify": {"passed": False, "codes": []},
+        "error_class": None,
+        "error_message": None,
+        "retryable": None,
+        "_reasons": [],
+    }
+    attempt = 0
+    pcall = _resolve_provider()
+    # PD-TEST-161 review F1: `dispatcher` is NOT a module global here -- every
+    # other use in this module is a function-local import (see _provider_call,
+    # _verify_and_write, _dept_root_from), because `dispatcher` imports THIS
+    # module at its own line 119, so a module-level import would be circular.
+    # The first version of the per-attempt scope below used the bare name and
+    # raised `NameError: name 'dispatcher' is not defined` on EVERY slide --
+    # before any provider call, so the wave silently produced nothing and spent
+    # nothing while reporting a provider fault. Bind it the way the rest of the
+    # module does.
+    import presentation_job.dispatcher as dispatcher  # spawn-safe: file import only
+    while attempt < RETRY_CAP:
+        if attempt > 0:
+            # PD-TEST-179: SETTLE THE ATTEMPT THAT JUST ENDED, before starting the
+            # next one.
+            #
+            # The dispatcher settles a whole wave only AFTER run_worker returns
+            # (`_dispatch_prompt_phase_parallel` -> `_settle_unit_paid_attempts`),
+            # but this retry loop runs INSIDE run_worker. So on every retry this
+            # unit still held its OWN previous reservation in state `reserved` --
+            # and the PD-TEST-124 double-reserve guard, whose contract is
+            # literally "the unit already has an IN-FLIGHT paid reservation",
+            # refused it. Measured on shipped main: a 1-slide wave whose
+            # transport raised HTTP 500 made ONE provider call and reported
+            # `budget_deferred` twice, where pre-PD-TEST-161 code made three and
+            # reported the real `server_error`.
+            #
+            # Settling here makes the guard's contract TRUE again rather than
+            # weakening it, so the retry is allowed because nothing is in flight
+            # -- not because a thread was recognised. This replaces the earlier
+            # thread-identity relaxation, which admitted ANY later reservation
+            # from the same thread, including a genuinely in-flight one, and
+            # thereby repealed the guarantee `tests/test_pd124_sibling_starvation.py`
+            # encodes (2 failures on main).
+            #
+            # FAIL-SOFT, deliberately: settling is bookkeeping and must never
+            # break a unit. The dispatcher's post-wave settle still runs and is
+            # idempotent over an already-settled row.
+            # PD-TEST-187 (independent review of #1169, then of the first version of
+            # this fix): a BARE `pass` here made a permanently dead settle
+            # indistinguishable from a working one. Measured: deleting this whole
+            # block, or mutating it four ways, leaves the repo's own neighbour
+            # suites GREEN at 46/46 while the end-to-end wave silently degrades to
+            # ONE provider call.
+            #
+            # The first version of this fix caught only a settle that RAISES, and
+            # adversarial review then proved that is the minority case: a settle
+            # whose phase id reads an empty ledger returns NORMALLY (dispatcher.py
+            # `if not led: return`), and one that records "ok" for a unit we
+            # reported "failed" also returns normally -- while writing the wrong
+            # durable row and leaving the reservation in flight. Both were still
+            # invisible, and the new test passed 2/2 under that mutant. So the
+            # POST-CONDITION is asserted as well: silence is not evidence.
+            #
+            # Still FAIL-SOFT: bookkeeping must never break a unit, so neither the
+            # check nor the report may raise out of here.
+            try:
+                dispatcher._settle_unit_paid_attempts(
+                    run_dir, PHASE_ID,
+                    [(slide_id, "failed", list(base.get("_reasons") or []))],
+                    worker_id="p4prompt-unit")
+                missed = _settle_missed(run_dir, slide_id)
+            except Exception as exc:  # noqa: BLE001 -- bookkeeping never breaks a unit
+                missed = f"{type(exc).__name__}: {exc}"
+            if missed:
+                _report_dead_settle(run_dir, slide_id, attempt, missed)
+        attempt += 1
+        try:
+            # PD-TEST-161: bind this ATTEMPT's paid reservation to THIS SLIDE.
+            #
+            # Without this the prompt fan-out reserved through the legacy
+            # phase-level clause (`paid >= DISPATCH_RETRY_CAP`, i.e. 3), so an
+            # 8-slide wave had 8 units racing for 3 attempts: measured on run
+            # pres-operator-1d269693, slides 02-06 failed at attempt 1 with ZERO
+            # verification codes at the SAME SECOND (they never reached a
+            # provider -- they lost the reservation race) while 01/07/08 got real
+            # attempts. PD-TEST-124 fixed exactly this for the COPY fan-out but
+            # `paid_unit_scope` is used at only that one site; this is the same
+            # accounting applied to the prompt fan-out, which is the other
+            # multi-unit paid path.
+            #
+            # One scope entry per ATTEMPT, so each attempt carries its own
+            # logical token -- two different tokens for one unit are two real
+            # attempts, and a duplicate call inside one attempt is a no-op. The
+            # phase's bounded total is declared by
+            # dispatcher._dispatch_prompt_phase_parallel immediately before the
+            # wave; outside such a declaration the legacy cap still applies
+            # byte-for-byte, so nothing else changes.
+            with dispatcher.paid_unit_scope(slide_id):
+                text = pcall(slide, routing, attempt, run_dir, owning_role,
+                            n_slides,
+                            prior_reasons=list(base.get("_reasons") or []))
+        except Exception as exc:  # noqa: BLE001 -- classified below
+            eclass, retryable = _classify(exc)
+            base["attempts"] = attempt
+            base["error_class"] = eclass
+            base["error_message"] = _sanitize(str(exc))
+            base["retryable"] = retryable
+            base["_reasons"].append(f"attempt {attempt}: {eclass}")
+            _append_attempt_log(attempt_log_path, {
+                "slide_id": slide_id, "ordinal": ordinal, "attempt": attempt,
+                "error_class": eclass, "retryable": retryable,
+                "at": _now_iso()})
+            if not retryable or attempt >= RETRY_CAP:
+                break
+            backoff = BACKOFF_S[attempt + 1] if (attempt + 1) in BACKOFF_S \
+                else BACKOFF_S.get(attempt, 2.0)
+            time.sleep(backoff + random.uniform(0.0, JITTER_MAX_S))
+            continue
+        if not text or not text.strip():
+            base["attempts"] = attempt
+            base["error_class"] = "empty_response"
+            base["error_message"] = "provider returned empty payload"
+            base["retryable"] = True
+            base["_reasons"].append(f"attempt {attempt}: empty response")
+            if attempt >= RETRY_CAP:
+                break
+            time.sleep((BACKOFF_S.get(attempt + 1, 2.0)) +
+                       random.uniform(0.0, JITTER_MAX_S))
+            continue
+        ok, reasons = _verify_prompt(slide, text, run_dir, constraints)
+        base["attempts"] = attempt
+        if ok:
+            base["_verified_on_attempt"] = attempt
+            break
+        base["_reasons"].append(
+            f"attempt {attempt}: verify failed ({'; '.join(reasons) or 'unknown'})")
+        _append_attempt_log(attempt_log_path, {
+            "slide_id": slide_id, "ordinal": ordinal, "attempt": attempt,
+            "error_class": "verify_failed", "retryable": True,
+            "codes": reasons[:5], "at": _now_iso()})
+        if attempt >= RETRY_CAP:
+            base["error_class"] = "verify_failed"
+            base["error_message"] = _sanitize(
+                "did not pass deterministic prompt QC: " +
+                "; ".join(reasons[:3]))
+            base["retryable"] = True
+            break
+        time.sleep((BACKOFF_S.get(attempt + 1, 2.0)) +
+                   random.uniform(0.0, JITTER_MAX_S))
+    # finalize
+    base["ended_at"] = _now_iso()
+    base["duration_s"] = round(time.monotonic() - t0, 3)
+    base["verify"] = {"passed": bool(base.get("verify", {}).get("passed")),
+                      "codes": list(base.get("verify", {}).get("codes", []))}
+    reasons_left = base.pop("_reasons", None) or []
+    if not base.get("error_message") and reasons_left:
+        base["error_message"] = _sanitize("; ".join(reasons_left[-2:]))
+    return base
+
+
+def _finalize_success(result: Dict[str, Any], run_dir: Path,
+                      routing: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill in artifact-only fields after the on-disk prompt verified clean."""
+    ordinal = int(result["ordinal"])
+    target = _prompt_path(run_dir, ordinal)
+    result["status"] = "succeeded"
+    result["prompt_path"] = str(target)
+    result["prompt_sha256"] = _sha256_file(target)
+    result["char_count"] = len(target.read_text(encoding="utf-8"))
+    result["model_used"] = routing.get("model")
+    result["verify"] = {"passed": True, "codes": []}
+    result["error_class"] = None
+    result["error_message"] = None
+    result["retryable"] = False
+    return result
+
+
+def _finalize_failure(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Spec: failed results are null artifact-only fields."""
+    result["status"] = "failed"
+    result["prompt_path"] = None
+    result["prompt_sha256"] = None
+    result["char_count"] = None
+    result["verify"] = {"passed": False, "codes": []}
+    if not result.get("error_class"):
+        result["error_class"] = "provider_error"
+    if result.get("error_message") is None and result.get("_reasons"):
+        result["error_message"] = _sanitize("; ".join(result["_reasons"]))
+    if result.get("retryable") is None:
+        result["retryable"] = result.get("error_class") in _RETRYABLE_CODES
+    return result
+
+
+def _run_one(task: Dict[str, Any]) -> Dict[str, Any]:
+    """One slide task end-to-end. Success is decided from DISK: the canonical
+    prompt file must exist and clear the real per-slide gate at read-back -- an
+    in-memory pass is never trusted over the on-disk artifact."""
+    run_dir = Path(task["run_dir"])
+    base = _execute_slide(task)
+    verified = base.pop("_verified_on_attempt", None) is not None
+    if not verified:
+        # Re-derive success from disk (covers resumed/already-good slides too).
+        target = _prompt_path(run_dir, int(task["slide"]["ordinal"]))
+        if target.is_file():
+            try:
+                ok, _reasons = _verify_prompt_readback(run_dir, int(
+                    task["slide"]["ordinal"]))
+                verified = ok
+            except Exception as exc:  # noqa: BLE001
+                base["error_message"] = _sanitize(f"read-back failed: {exc}")
+    if verified:
+        base = _finalize_success(base, run_dir, task["routing"])
+    else:
+        base = _finalize_failure(base)
+    base.pop("_reasons", None)
+    return base
+
+
+def _verify_prompt_readback(run_dir: Path, ordinal: int) -> Tuple[bool, List[str]]:
+    import presentation_job.dispatcher as dispatcher
+    return dispatcher._verify_single_prompt(run_dir, ordinal)
+
+
+# ---------------------------------------------------------------------------
+# Wave planning: failed slides get their own re-dispatch under remaining budget.
+# ---------------------------------------------------------------------------
+def _plan_wave(results: List[Dict[str, Any]], all_slides: List[Dict[str, Any]],
+               consumed_attempts: Dict[int, int]) -> List[Dict[str, Any]]:
+    failed_ordinals = {int(r["ordinal"]) for r in results
+                       if r["status"] != "succeeded"}
+    wave: List[Dict[str, Any]] = []
+    by_ord = {int(s["ordinal"]): s for s in all_slides}
+    for ordinal in sorted(failed_ordinals & set(by_ord)):
+        slide = dict(by_ord[ordinal])
+        slide["_consumed_attempts"] = consumed_attempts.get(ordinal, 0)
+        wave.append(slide)
+    return wave
+
+
+def _workers_for(slides: int, capacity: int, requested: Optional[int]) -> int:
+    # Honour the MEASURED ceiling. DEFAULT_MAX_WORKERS is only the fallback for a
+    # missing/invalid capacity -- clamping a measured 2500 down to 8 was the
+    # "cap 8 even when a provider advertises more" behaviour the operator ruled
+    # out on 2026-09-04. The wave is still bounded by `slides` on the return.
+    try:
+        cap = int(capacity)
+    except (TypeError, ValueError):
+        cap = 0
+    effective = cap if cap >= 1 else DEFAULT_MAX_WORKERS
+    if requested is not None:
+        if requested < 1:
+            raise WorkerUsageError("--workers must be >= 1")
+        if requested > capacity:
+            raise WorkerUsageError(
+                f"--workers {requested} exceeds measured_capacity {capacity}; "
+                "the flag may lower, never raise, the measured limit")
+        effective = min(requested, effective)
+    return max(1, min(effective, slides if slides >= 1 else 1)) \
+        if slides >= 1 else 1
+
+
+def _run_wave(wave_slides: List[Dict[str, Any]], cfg: Dict[str, Any],
+              consumed: Dict[int, int]) -> List[Dict[str, Any]]:
+    """One dispatch wave: up to N worker threads, one slide task per slot.
+
+    F8: the units run in THIS process so the whole wave shares ONE
+    presentation_job.governor (its buckets are module-level state)."""
+    if not wave_slides:
+        return []
+    results: List[Dict[str, Any]] = []
+    tasks: List[Dict[str, Any]] = []
+    total_slides = cfg["n_slides"]
+    for slide in wave_slides:
+        tasks.append({
+            "slide": slide,
+            "routing": cfg["routing"],
+            "run_dir": str(cfg["run_dir"]),
+            "n_slides": total_slides,
+            "owning_role": cfg["owning_role"],
+            "attempts_log": str(cfg["attempts_log"]),
+            "prompt_constraints": cfg["prompt_constraints"],
+            "_consumed_attempts": slide.get("_consumed_attempts", 0),
+        })
+    procs = _workers_for(len(wave_slides), cfg["routing"]["measured_capacity"],
+                         cfg["requested_workers"])
+    # Inline fallback avoids a pool for single-slide waves in constrained envs.
+    if procs <= 1 or cfg.get("inline"):
+        for task in tasks:
+            results.append(_run_one(task))
+        return results
+    # F8 -- ONE GOVERNOR PER WAVE. This used to be
+    # `multiprocessing.get_context("spawn").Pool(processes=procs)`.
+    # presentation_job.governor holds its token bucket, in-flight counter and
+    # report_429 penalty in module-level state, which a spawn child does NOT
+    # inherit: each child re-imported governor with an empty bucket, so
+    # max_inflight, the rolling 10 s window ceiling and the 429 halving bound
+    # ONE child instead of the wave. At 100 workers with deepseek burst 400 (FIX 61.6 D4) that
+    # is up to 2,000 admissions per 10 s against a single account bucket, and a
+    # 429 seen by one child never slowed its 99 peers.
+    # Threads run _run_one in THIS process, so every unit of the wave shares
+    # one governor (dispatcher._govern_acquire already keys its re-entrancy
+    # depth per thread, so the nested-lease accounting is thread-correct).
+    # The unit of work is an HTTPS round trip: the GIL is irrelevant here.
+    # `map` preserves task order, exactly as Pool.map did.
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=procs, thread_name_prefix="p4prompt") as pool:
+        results = list(pool.map(_run_one, tasks))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Orchestration: retry waves, partial keep-good, two-zero-wave abort, resume.
+# ---------------------------------------------------------------------------
+def run_worker(data: Dict[str, Any], *, workers_requested: Optional[int] = None,
+               resume: bool = False, result_file_override: Optional[str] = None,
+               inline: bool = False) -> Tuple[int, Dict[str, Any]]:
+    """Entry used by both the CLI and the dispatcher integration. Returns
+    (exit_code, result_document). Input is validated here too -- the whole-input
+    reject gate runs BEFORE any provider call regardless of entry point."""
+    data = validate_input(data, "run_worker")
+    run_dir: Path = Path(data["run_dir"])
+    routing = data["routing"]
+    slides_all: List[Dict[str, Any]] = data["slides"]
+    constraints = data["prompt_constraints"]
+
+    checkpoints = run_dir / "working" / "checkpoints"
+    checkpoints.mkdir(parents=True, exist_ok=True)
+    result_path = Path(result_file_override) if result_file_override else \
+        checkpoints / RESULT_FILENAME
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    attempts_log = result_path.with_name(result_path.stem)
+    prompts_dir = run_dir / "working" / "prompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg = {
+        "run_dir": run_dir,
+        "routing": routing,
+        "n_slides": len(slides_all),
+        "owning_role": data.get("owning_role") or
+        "Presentation Manager (Deck Author)",
+        "attempts_log": attempts_log,
+        "prompt_constraints": constraints,
+        "requested_workers": workers_requested,
+        "inline": inline,
+    }
+
+    # --- resume: keep already-certified slides out of the spend entirely.
+    succeeded: Dict[int, Dict[str, Any]] = {}
+    pending: List[Dict[str, Any]] = []
+    existing_results: Dict[int, Dict[str, Any]] = {}
+    if resume and result_path.is_file():
+        try:
+            prior = json.loads(result_path.read_text(encoding="utf-8"))
+            for row in prior.get("slides", []):
+                existing_results[int(row["ordinal"])] = row
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            existing_results = {}
+    for slide in slides_all:
+        ordinal = int(slide["ordinal"])
+        prior = existing_results.get(ordinal)
+        if resume and prior and prior.get("status") == "succeeded":
+            target = _prompt_path(run_dir, ordinal)
+            disk_ok = False
+            if target.is_file() and prior.get("prompt_sha256"):
+                disk_ok = _sha256_file(target) == prior["prompt_sha256"]
+            if not disk_ok:
+                try:
+                    ok, _r = _verify_prompt_readback(run_dir, ordinal)
+                    disk_ok = ok
+                except Exception:  # noqa: BLE001
+                    disk_ok = False
+            if disk_ok:
+                row = dict(prior)
+                row["prompt_path"] = str(target)
+                row["resumed"] = True
+                succeeded[ordinal] = row
+                continue
+        # skip a slide whose on-disk prompt ALREADY passes the real gate,
+        # regardless of the resume flag (same resume property as the serial loop)
+        else:
+            target_existing = _prompt_path(run_dir, ordinal)
+            already = False
+            if target_existing.is_file():
+                try:
+                    ok, _r = _verify_prompt_readback(run_dir, ordinal)
+                    already = ok
+                except Exception:  # noqa: BLE001
+                    already = False
+                if already:
+                    succeeded[ordinal] = {
+                        "slide_id": slide["slide_id"], "ordinal": ordinal,
+                        "status": "succeeded", "prompt_path": str(target_existing),
+                        "prompt_sha256": _sha256_file(target_existing),
+                        "char_count": len(target_existing.read_text("utf-8")),
+                        "model_used": routing.get("model"), "attempts": 0,
+                        "started_at": _now_iso(), "ended_at": _now_iso(),
+                        "duration_s": 0.0,
+                        "verify": {"passed": True, "codes": []},
+                        "error_class": None, "error_message": None,
+                        "retryable": False, "resumed": True,
+                    }
+                    continue
+        pending.append(slide)
+
+    # --- waves
+    wave_no = 0
+    consumed: Dict[int, int] = {int(s["ordinal"]): 0 for s in slides_all}
+    zero_success_waves = 0
+    all_results: List[Dict[str, Any]] = list(succeeded.values())
+
+    while pending:
+        wave_no += 1
+        # take only slides with remaining attempt budget from the pending set
+        budget = [(s, RETRY_CAP - consumed[int(s["ordinal"])])
+                  for s in pending]
+        wave_slides = [s for s, left in budget if left > 0]
+        if not wave_slides:
+            break
+        wave_results = _run_wave(wave_slides, cfg, consumed)
+        # merge: succeeded replace pending; failed carry forward consumed count
+        for row in wave_results:
+            ordinal = int(row["ordinal"])
+            consumed[ordinal] = consumed.get(ordinal, 0) + \
+                int(row.get("attempts") or 0)
+            if row["status"] == "succeeded":
+                succeeded[ordinal] = row
+            else:
+                all_results = [r for r in all_results
+                               if int(r["ordinal"]) != ordinal] + [row]
+        all_results = [r for r in all_results
+                       if int(r["ordinal"]) not in succeeded]
+        # a NON-retryable failure (auth/permission/invalid input) is terminal for
+        # that slide: no further wave re-spends it (retry only retryable classes).
+        dead = {int(r["ordinal"]) for r in wave_results
+                if r["status"] == "failed" and r.get("retryable") is False}
+        pending = [s for s in pending
+                   if int(s["ordinal"]) not in succeeded
+                   and int(s["ordinal"]) not in dead]
+        good = sum(1 for r in wave_results if r["status"] == "succeeded")
+        if len(wave_slides) > 1 and good == 0:
+            zero_success_waves += 1
+            if zero_success_waves >= 2:
+                # two consecutive FULL-wave failures (zero succeeded in two
+                # successive multi-slide dispatches): abort, no third wave
+                break
+        else:
+            zero_success_waves = 0
+
+    # --- final result document
+    failed_ordinals = [int(s["ordinal"]) for s in slides_all
+                       if int(s["ordinal"]) not in succeeded]
+    wave_failed = {int(r["ordinal"]): r for r in all_results
+                   if r["status"] != "succeeded"}
+    for s in slides_all:
+        o = int(s["ordinal"])
+        if o in failed_ordinals:
+            row = wave_failed.get(o) or existing_results.get(o)
+            if not isinstance(row, dict) or row.get("status") == "succeeded":
+                row = {
+                    "slide_id": s["slide_id"], "ordinal": o, "status": "failed",
+                    "prompt_path": None, "prompt_sha256": None, "char_count": None,
+                    "model_used": routing.get("model"),
+                    "attempts": consumed.get(o, 0),
+                    "started_at": _now_iso(), "ended_at": _now_iso(),
+                    "duration_s": 0.0,
+                    "verify": {"passed": False, "codes": []},
+                    "error_class": "not_scheduled", "error_message":
+                    "attempt budget exhausted before dispatch",
+                    "retryable": True}
+            _finalize_failure(row)
+            row.pop("_reasons", None)
+            all_results = [r for r in all_results if int(r["ordinal"]) != o] + [row]
+    all_results = list(succeeded.values()) + [
+        r for r in all_results if int(r["ordinal"]) not in succeeded]
+
+    document = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": data["run_id"],
+        "run_dir": str(run_dir),
+        "phase_id": PHASE_ID,
+        "routing": routing,
+        "prompt_constraints": constraints,
+        "total_slides": len(slides_all),
+        "succeeded_count": len(succeeded),
+        "failed_count": len(slides_all) - len(succeeded),
+        "status": "succeeded" if not failed_ordinals else "partial",
+        "zero_success_waves": zero_success_waves,
+        "wave_count": wave_no,
+        "slides": sorted(all_results, key=lambda r: int(r["ordinal"])),
+        "started_at": min((r.get("started_at") or _now_iso()
+                           for r in all_results), default=_now_iso()),
+        "ended_at": _now_iso(),
+        "worker_count": _workers_for(
+            max(1, len(slides_all)),
+            routing["measured_capacity"], workers_requested),
+        "inline": bool(inline),
+        "resume": bool(resume),
+        "provider_seam": _seam_name(),
+        # the canonical ordinal set the dispatcher's ingest must see
+        "missing_ordinals": sorted(failed_ordinals),
+    }
+    _atomic_write_json(result_path, document)
+    exit_code = 0 if not failed_ordinals else 1
+    return exit_code, document
+
+
+def _seam_name() -> str:
+    if provider_call is not None:
+        return getattr(provider_call, "__name__",
+                       repr(provider_call))[:80]
+    if os.environ.get(_STUB_ENV):
+        return f"env-stub:{_STUB_ENV}"
+    # FIX 16: the production seam is the ROUTED entrypoint
+    # (dispatcher.dispatch_complete), never the raw deepseek transport.
+    return "dispatcher.dispatch_complete"
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(
+        prog="parallel_prompt_worker",
+        description="FIX 2 parallel P4-PROMPT authoring worker (binding worker "
+                    "contract; the serial dispatcher loop stays as rollback)")
+    ap.add_argument("--input", required=True,
+                    help="absolute path to prompt-wave-input.json")
+    ap.add_argument("--output-dir", required=True,
+                    help="absolute working/prompts directory")
+    ap.add_argument("--workers", type=int, default=None,
+                    help="may lower, never raise, measured_capacity")
+    ap.add_argument("--resume", action="store_true",
+                    help="reuse prior succeeded slides without re-spend")
+    ap.add_argument("--result-file", default=None,
+                    help="abs path (default <run_dir>/working/checkpoints/"
+                         f"{RESULT_FILENAME})")
+    return ap.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(argv)
+    try:
+        input_path = Path(args.input).expanduser()
+        if not input_path.is_absolute():
+            raise WorkerUsageError(
+                f"--input must be ABSOLUTE (got {args.input!r})")
+        out_dir = Path(args.output_dir).expanduser()
+        if not out_dir.is_absolute():
+            raise WorkerUsageError(
+                f"--output-dir must be ABSOLUTE (got {args.output_dir!r})")
+        if args.result_file:
+            rf = Path(args.result_file).expanduser()
+            if not rf.is_absolute():
+                raise WorkerUsageError(
+                    f"--result-file must be ABSOLUTE (got {args.result_file!r})")
+        else:
+            rf = None
+        data = load_input(input_path)
+        # cross-check output-dir against run_dir-derived prompts dir
+        expect = str(_prompt_path(data["run_dir"], 1).parent)
+        if out_dir.resolve() != Path(expect).resolve():
+            raise WorkerUsageError(
+                f"--output-dir {out_dir} does not match run_dir prompts "
+                f"directory {expect}")
+        if data["run_dir"].parent.name not in ("runs", ".") and \
+                not data["run_dir"].is_dir():
+            raise WorkerUsageError(f"run_dir does not exist: {data['run_dir']}")
+        exit_code, _doc = run_worker(
+            data, workers_requested=args.workers, resume=args.resume,
+            result_file_override=str(rf) if rf else None)
+        return exit_code
+    except WorkerUsageError as exc:
+        print(f"parallel_prompt_worker: usage error: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,3255 @@
+#!/usr/bin/env python3
+"""capacity.py -- CLIENT capacity detection for the Presentations department.
+
+WHAT CHANGED AND WHY (unit u07)
+-------------------------------
+The previous version of this module hard-coded ONE operator's setup as module
+constants -- PROVIDER_CEILING = 2500 (DeepSeek v4 Flash), WORKFLOWS = 30,
+SUBAGENTS_PER_WORKFLOW = 16 -- read an operator-box settings path, and was
+consulted by nothing in the dispatch path. On a client box running Ollama Cloud
+at $20/month it would have reported hundreds of dispatchable agents. That is not
+a measurement, it is one machine's number wearing a measurement's clothes.
+
+This module now DETECTS the client's provider and plan and returns the cap that
+belongs to THAT account. It never guesses upward: an unknown provider or an
+unknown plan collapses to DEFAULT_CONSERVATIVE (3), and a provider whose plan
+cannot be determined PARKS the run behind a one-time interview question instead
+of inventing a number.
+
+HARDENING (fix/capacity-override-clamp)
+----------------------------------------
+`_resolve_override()` had an ordering-plus-trust bug: a declared
+`max_concurrent` with no recognisable `plan` returned status MEASURED with the
+declared value verbatim and unbounded, and that branch sat AHEAD of the
+provider-known/plan-unknown PARK branch -- so a `capacity_override.json` of
+`{"provider":"ollama-cloud","max_concurrent":9999}` (a known cap-table
+provider whose highest row anywhere is 8 -- it was 10 when that bug was found;
+the 2026-09-04 operator ruling lowered the $100/month row to 8 to leave the
+client 2 free slots, and the point of the sentence is unchanged: 9999 was
+never a reading off the account) yielded MEASURED / available=9999,
+never PARKED, never AF-CAPACITY-UNMEASURED. The declared number was trusted as
+if it were a reading off the account, when it was only ever a claim about it.
+Fixed by re-ordering `_resolve_override()`'s three cases so the PARK check for
+"provider known, plan unknown" runs BEFORE the bare-declared-int fallback (a
+declaration can never outrun the interview question for a cap-table provider),
+and by giving a genuinely unrecognised provider's declaration its own status --
+DECLARED_UNVERIFIED, bounded to DEFAULT_CONSERVATIVE -- so it is never
+mistaken for a real measurement again.
+
+THE CAP TABLE (binding) -- operator ruling fix/capacity-uncap-byok
+--------------------------------------------------------------------
+Do not limit someone who brought their own capacity. A bring-your-own-key
+direct provider is money the client is already paying for directly; this
+module is not the place to invent a ceiling on it.
+
+    ollama-cloud    + $20/month    ->     3 concurrent agents  (structural:
+    ollama-cloud    + $100/month   ->    8 concurrent agents   the account
+                                          itself enforces this, not us)
+    deepseek-direct                 ->  NO CAP (UNBOUNDED)
+    openrouter                      ->  NO CAP (UNBOUNDED)
+    any other declared BYOK-direct
+      provider added to NO_CAP_PROVIDERS -> NO CAP (UNBOUNDED)
+    a provider this build has never heard of that the CLIENT DECLARED in
+      their model plan (F17)                -> NO CAP (UNBOUNDED)
+    unknown provider (cannot even be identified) -> 3 (DEFAULT_CONSERVATIVE)
+
+F17 -- A NEW PROVIDER MUST NOT SILENTLY THROTTLE THE PIPELINE
+--------------------------------------------------------------------
+Before F17 the last row above swallowed the second-to-last one: an id no
+CAP_TABLE row and no alias covered resolved to None in normalize_provider(),
+and every consumer read that None as "no capacity information at all" --
+detect() fell to DEFAULT_CONSERVATIVE = 3, dispatcher._prompt_routing_stamp
+stamped capacity_status=provider-unresolved at DEFAULT_MAX_WORKERS = 8, and
+governor.provider_config fell to `defaults` rps 1.0, none of it announced.
+Adopting a model on a provider nobody had written code for therefore
+throttled the whole deck, and the only cure WAS that code change -- the exact
+thing the operator ruling forbids ("not forced onto any model; a new one must
+work without a code change"). A client who NAMES {provider, model} in their
+model plan is telling us they own that account: that declaration is the same
+brought-their-own-capacity evidence NO_CAP_PROVIDERS rests on, and it is the
+one signal separating a new provider from a typo. See
+declared_plan_providers() / is_no_cap_provider(); rollback env
+PRESENTATION_DECLARED_PROVIDER_UNCAP=0.
+
+ollama-cloud has a real, plan-dependent ceiling the account itself enforces
+($20 -> 3, $100 -> 8), so it lives in CAP_TABLE and PARKs behind the one-time
+plan interview when the plan is unknown. DeepSeek Direct was carried the
+same way under the 2026-09-04 ruling (Flash -> 2500, Pro -> 500); the owner
+ruling of 2026-10-15 settled the doctrine tension the other way: DeepSeek
+Direct has NO provider cap, so it stands in NO_CAP_PROVIDERS with OpenRouter.
+Neither of those two has an observable structural ceiling, so this module
+stops pretending one exists: `available` for those providers is the UNBOUNDED
+sentinel (see below) unless the operator/client DECLARES a lower number for
+this run via capacity_override.json's `max_concurrent` (self-throttling is
+always honoured; inventing an upward ceiling never is). UNBOUNDED is never
+a large magic integer -- see execution_plan.cap_wave_width(), which is what
+actually keeps a wave's width bounded by the number of items ready to run.
+
+DETECTION ORDER -- PER PROVIDER (F1, defect "one plan answer capped the run")
+-----------------------------------------------------------------------------
+THE DEFECT THIS ORDER REPLACES. The old order made `capacity_override.json`
+step (a): a file that names ONE provider pre-empted detection for the WHOLE
+box. A client who answered "ollama-cloud, $100/month" therefore ran their
+DeepSeek routes at 8 as well -- one account's plan answer wearing the whole
+client's clothes. `detect()` answered exactly one question ("what is this
+box's capacity") when the dispatch path asks a different one per route
+("what is THIS provider's capacity"), so no answer could be right for a
+two-provider client: whichever provider the single answer named, the other
+one was wrong (pinned by the override, or dropped to the conservative floor
+by the routing stamp's provider-identity check).
+
+THE ORDER NOW. detect()/probe() take `provider=` and `model=`; every answer
+is ABOUT ONE PROVIDER and says which one (`provider_requested` on the probe
+result). A no-arg call keeps its historical meaning -- "the PRIMARY route's
+account" -- for the launch gate, the wave scheduler and the work-order pool.
+
+  STAGE 1 -- which provider is this answer about?
+    1. the `provider=` argument, canonicalised through normalize_provider();
+    2. else the 9Router configuration -- which provider the primary model
+       routes to (~/.9router/db/data.sqlite, opened read-only; ONLY the
+       non-secret `combos.name` / `combos.models` columns are read);
+    3. else the OpenClaw agent model configuration -- the provider namespace
+       prefix on the primary model (~/.openclaw/openclaw.json,
+       `agents.*.model.primary`);
+    4. else the provider a declared capacity_override.json names (an
+       unconfigured box carrying a hand-written declaration is still telling
+       us which account it means).
+
+  STAGE 2 -- which plan is THAT provider on? First hit wins:
+    1. the model id, when the model IMPLIES the plan (DeepSeek Direct's
+       v4-pro / v4-flash slugs name its tier label, which is metadata only
+       since the 2026-10-15 no-cap ruling; Ollama Cloud's tiers run the
+       same models, so no slug can ever reveal them);
+    2. the resource profile's LOCKED entry for that provider -- the one
+       per-provider store of interview answers, and the ask-once gate;
+    3. the capacity_override.json sub-record FOR THAT PROVIDER (v2
+       `providers.<id>`, or a legacy v1 flat record when it names that
+       provider). A declaration about ollama-cloud is never consulted as an
+       answer about deepseek-direct;
+    4. no plan, provider is a NO_CAP_PROVIDERS / client-declared BYOK entry
+       -> MEASURED / UNBOUNDED (no plan of theirs changes a ceiling that
+       does not exist);
+    5. no plan, provider is on the STRUCTURAL cap table -> PARK behind the
+       one-time interview question for THAT provider;
+    6. no provider at all -> DEFAULT_CONSERVATIVE plus a loud UNDETERMINED.
+
+  STAGE 3 -- a declared `max_concurrent` for that provider may only LOWER the
+    resolved number, never raise it (the u07 hardening, unchanged).
+
+capacity_override.json survives ONLY as a per-provider operator self-throttle,
+honoured for the provider it names and no other. Its v2 shape is
+`{"schema": 2, "providers": {<canonical>: {plan?, max_concurrent?, note?}}}`;
+a legacy v1 flat `{provider, plan, max_concurrent}` record is READ as
+`providers: {record.provider: record}` in memory and is NEVER rewritten on
+read. The one-time interview answer's store is the RESOURCE PROFILE
+(resource_profile.record_plan_answer) -- one store, one lock, per provider.
+Two stores encoding one fact is the drift class this fix removes.
+
+CREDENTIAL SAFETY (binding)
+---------------------------
+Detection reads only WHICH provider is configured. It never reads, returns, logs
+or prints a credential VALUE. Every value that leaves this module passes through
+_safe_value(), which refuses any field whose key looks like a secret
+(key/token/secret/password/auth/credential/cookie/bearer). The 9Router
+`apiKeys` table and `providerConnections.data` blob are never queried. If a
+provider cannot be determined without touching secret material, this module
+returns UNDETERMINED instead.
+
+STATUSES
+--------
+    MEASURED           -- either (a) provider + plan BOTH resolved against the
+                          structural cap table (ollama-cloud): `available` is
+                          the cap-table number, and a declared max_concurrent
+                          may lower it, never raise it; or (b) the provider is
+                          a NO_CAP_PROVIDERS BYOK provider (openrouter,
+                          deepseek-direct, or a client-declared provider
+                          with no CAP_TABLE row -- F17): `available` is
+                          UNBOUNDED, or the
+                          declared max_concurrent verbatim when the
+                          operator/client chose to self-throttle this run --
+                          there is no table ceiling to reconcile it against.
+    DECLARED_UNVERIFIED -- max_concurrent was declared for a provider that is
+                          not recognised at all (not on the cap table, not a
+                          NO_CAP_PROVIDERS entry -- normalize_provider()
+                          returned None). A declaration about an unidentified
+                          provider is not a measurement: `available` is the
+                          declared value bounded to DEFAULT_CONSERVATIVE so a
+                          typo cannot produce a four-digit fan-out, and it is
+                          never labelled MEASURED.
+    UNDETERMINED       -- nothing resolved; `available` = DEFAULT_CONSERVATIVE (3).
+    PARKED             -- provider is on the STRUCTURAL cap table (ollama-cloud)
+                          but its plan is not; `available` is None and an
+                          interview question is attached. Dispatch must REFUSE.
+                          This fires even when a max_concurrent was declared
+                          alongside the provider: ollama-cloud's real ceiling is
+                          a physical fact the operator cannot opt out of by
+                          typing a bigger number, and clamping to its highest
+                          cap-table row would still be a guess about which plan
+                          is actually in effect -- this module never guesses
+                          upward. NO_CAP_PROVIDERS entries NEVER reach this
+                          status: they have no plan-dependent ceiling to park
+                          behind in the first place.
+    FAILED             -- a declared config exists but is unusable (e.g. malformed
+                          capacity_override.json); `available` is None. Dispatch
+                          must REFUSE. A broken declaration is never silently
+                          downgraded to a default -- that would hide the
+                          operator's own mistake.
+
+`available is None` is the ONLY signal a caller needs: it means "this probe could
+not produce a number", and the dispatch path fails closed with
+AF-CAPACITY-UNMEASURED.
+
+Exit codes (CLI): 0 success, 3 probe could not produce a number, 2 usage.
+
+FIX 9 -- per-provider live probes (presentation rev2 Phase B)
+-------------------------------------------------------------
+Capacity detection answers "HOW WIDE can this client run at once". It never
+answered "WHAT does this client actually own" -- which provider keys exist
+(presence only, never values), which exact models are unlocked on each one,
+and which models 9Router has wired locally. FIX 9 adds that inventory:
+
+  * `PROVIDER_PROBE_DEFS` names each probeable provider (openrouter,
+    ollama-cloud, deepseek-direct, agnes), the env keys that carry its
+    credential and its cheap `GET /models` endpoint.
+  * `probe_one_provider()` resolves key presence (env first, then the
+    secrets env files BY NAME ONLY -- the value is read into the Bearer
+    header transport and never anywhere else), then runs the models call
+    through an injectable transport (proofs/tests always inject a stub; the
+    default transport is the only thing that touches the network).
+  * `detect_9router_lineup()` reads the 9Router's LOCAL database -- the
+    already-established non-secret columns (providerNodes.prefix/baseUrl,
+    the kv `...|llm` wired-model rows, combos) and NEVER apiKeys or
+    providerConnections.data.
+  * `probe_providers(...)` is the FIX 9 entry point; `persist=True` stores
+    the inventory into the resource profile (resource_profile.py's
+    store_provider_probes). `capacity.probe()` itself stays read-only: it
+    surfaces presence + lineup under `provider_probes`, never a models call.
+
+Rollout flag: PRESENTATION_PROVIDER_PROBES (default ON; documented =0
+rollback below). Credentials never appear in any result, report, or log --
+each probe reports `presence: "yes"/"no"` and `key_source` (the env NAME or
+file path), never a key value.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime
+import errno
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Cap table + doctrine constants
+# ---------------------------------------------------------------------------
+
+#: The floor every unknown collapses to. NEVER guess upward.
+DEFAULT_CONSERVATIVE = 3
+
+PROBE_MODE = "live"  # NEVER "SIMULATED"
+
+PROVIDER_OLLAMA_CLOUD = "ollama-cloud"
+PROVIDER_DEEPSEEK_DIRECT = "deepseek-direct"
+PROVIDER_OPENROUTER = "openrouter"
+
+PLAN_OLLAMA_20 = "$20/month"
+PLAN_OLLAMA_100 = "$100/month"
+#: DeepSeek Direct's model tier labels. Under the 2026-09-04 ruling these
+#: were CAP_TABLE plans (Flash 2500 concurrent, Pro 500): an
+#: over-declaration was clamped DOWN and an unknown tier PARKed behind the
+#: one-time interview, same as ollama-cloud. The owner ruling of
+#: 2026-10-15 (doctrine wins: DeepSeek Direct has NO provider cap)
+#: reversed that: deepseek-direct is a NO_CAP_PROVIDERS entry now, and
+#: these ids survive only as the tier LABELS a declaration or profile may
+#: carry as metadata. No tier changes any ceiling, and no tier is ever
+#: interviewed for.
+PLAN_DEEPSEEK_PRO = "v4-pro"
+PLAN_DEEPSEEK_FLASH = "v4-flash"
+
+#: (provider, plan) -> concurrent agents. The single source of truth for the
+#: providers that have a REAL, structural ceiling -- one this module can
+#: observe and that the account itself enforces. As of fix/capacity-uncap-byok
+#: this is ollama-cloud ONLY: its $20/$100 tiers are hard account limits, not
+#: a number anyone chose. A bring-your-own-key direct provider (DeepSeek
+#: Direct, OpenRouter, ...) has no such table row -- see NO_CAP_PROVIDERS.
+CAP_TABLE = {
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_20): 3,
+    # 8, not the raw account maximum: operator ruling 2026-09-04 deliberately
+    # leaves the client 2 free agent slots so a presentation build never
+    # starves whatever else they are running on the same seat.
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): 8,
+}
+
+#: Providers on CAP_TABLE, derived rather than hand-duplicated: the set for
+#: which "plan known but unresolved" means PARK (see PLANS_BY_PROVIDER below).
+CAP_TABLE_PROVIDERS = frozenset(provider for provider, _plan in CAP_TABLE)
+
+#: Which plans a structural cap-table provider can be on -- drives the
+#: interview question and the "provider known, plan unknown" PARK. Only
+#: CAP_TABLE providers belong here; a BYOK provider in NO_CAP_PROVIDERS has no
+#: plan-dependent ceiling to interview the operator about.
+PLANS_BY_PROVIDER = {
+    PROVIDER_OLLAMA_CLOUD: (PLAN_OLLAMA_20, PLAN_OLLAMA_100),
+}
+
+#: OPERATOR RULING (fix/capacity-uncap-byok): "Do not limit someone who
+#: brought their own capacity." Every provider in this set is a
+#: bring-your-own-key direct account the client is already paying for --
+#: dispatch never invents a ceiling on it. `available` for a NO_CAP_PROVIDERS
+#: hit is UNBOUNDED (see below) unless the operator/client declares a lower
+#: max_concurrent for THIS run, which is always honoured as a self-throttle.
+#: deepseek-direct stands in this set by the owner ruling of 2026-10-15
+#: (doctrine wins: there is NO provider cap on DeepSeek Direct), reversing
+#: its 2026-09-04 move onto CAP_TABLE.
+#: Extend this set (never CAP_TABLE) for any other BYOK-direct provider --
+#: adding a real per-account ceiling belongs in CAP_TABLE instead, never here.
+NO_CAP_PROVIDERS = frozenset({PROVIDER_OPENROUTER, PROVIDER_DEEPSEEK_DIRECT})
+
+#: Tokens the cap table deliberately REFUSES -- "not a cap-table row" here
+#: means a decision, not ignorance: a local Ollama buys no plan, so it can
+#: never be a client's purchased capacity either. F17's client-declaration
+#: path below skips these, so declaring `ollama-local` in a model plan can
+#: never hand a laptop an unbounded ceiling.
+_REFUSED_PROVIDER_TOKENS = frozenset({
+    "ollama-local", "ollama-localhost", "local-ollama",
+})
+
+#: F17 rollback switch. Default ON; `=0` restores the pre-F17 behaviour
+#: exactly -- an unknown provider stays unknown and collapses to
+#: DEFAULT_CONSERVATIVE, whatever the client declared.
+DECLARED_UNCAP_ENV = "PRESENTATION_DECLARED_PROVIDER_UNCAP"
+
+STATUS_MEASURED = "MEASURED"
+STATUS_DECLARED_UNVERIFIED = "DECLARED_UNVERIFIED"
+STATUS_UNDETERMINED = "UNDETERMINED"
+STATUS_PARKED = "PARKED"
+STATUS_FAILED = "FAILED"
+
+#: The autofail the dispatch path raises when this probe cannot produce a number.
+AUTOFAIL_CODE = "AF-CAPACITY-UNMEASURED"
+
+SOURCE_OVERRIDE = "capacity_override.json"
+SOURCE_9ROUTER = "9router"
+SOURCE_OPENCLAW = "openclaw"
+SOURCE_NONE = "none"
+#: F1: the resource profile is the STORE of the one-time plan answer, so it
+#: is a first-class detection source -- not a mirror of the override file.
+SOURCE_PROFILE = "resource_profile.json"
+#: F1: the caller handed us the model it is about to route to, and the model
+#: id IMPLIED the plan (DeepSeek Direct's v4-pro/v4-flash).
+SOURCE_MODEL = "model-slug"
+#: F1: the caller named the provider and nothing else could corroborate it.
+SOURCE_REQUESTED = "provider-requested"
+
+#: The per-provider shape capacity_override.json is WRITTEN in today:
+#: {"schema": 2, "providers": {<canonical>: {plan?, max_concurrent?, note?}}}.
+#: A v1 flat {provider, plan, max_concurrent} record is still READ (scoped to
+#: the one provider it names) and is never rewritten on read.
+OVERRIDE_SCHEMA = 2
+
+OVERRIDE_FILENAME = "capacity_override.json"
+CONFIG_DIR_ENV = "PRESENTATION_CAPACITY_CONFIG_DIR"
+
+# ---------------------------------------------------------------------------
+# [PRES-044] One transactional profile/declaration store
+# ---------------------------------------------------------------------------
+# THE DEFECT (H-DATA, evidence/handoff-capacity-review.md, measured on this
+# tree): `declare_capacity()` read the file, merged one sub-record, and wrote
+# the WHOLE payload back with a fixed `.json.tmp` and no lock. Three concrete
+# losses fell out of that shape, all three reproduced on pristine base
+# (run/evidence/PRES-044/base-*/defect-repro.log):
+#   D1  writing a `plan` popped the same provider's `max_concurrent` -- a tier
+#       change silently removed the operator's self-throttle;
+#   D2  the rebuilt root carried only schema/providers/_note -- every unknown
+#       operator field at the root was dropped on the next declaration;
+#   D3  two concurrent writers shared one fixed tmp path: 8 threads -> 6
+#       FileNotFoundError crashes and a last-write-wins file. A same-provider
+#       stale revision overwrote a fresh writer's fields without a word.
+#
+# THE CONTRACT THIS SECTION BINDS (spec PRES-044 / QC-PRES-044):
+#   * ONE lock per store file spans the whole read -> validate -> merge ->
+#     write transaction, so concurrent writers serialise instead of racing.
+#     Cross-process via fcntl.flock; thread-safe via an in-process mutex;
+#     re-entrant for a nested declare() under the same module.
+#   * The write itself is unique-tmp (pid+thread) + fsync(file) + atomic
+#     os.replace + fsync(dir), all INSIDE the lock. A crash mid-write leaves
+#     the previous file intact; a failure raises -- never a success claim
+#     over a lost write.
+#   * Unknown root fields and unknown per-provider fields survive verbatim.
+#     This module owns exactly four root keys: schema, revision, providers,
+#     _note.
+#   * plan (entitlement), max_concurrent (allocation clamp) and any explicit
+#     reserve stay THREE DISTINCT fields -- a tier change never touches
+#     max_concurrent or reserve.
+#   * `revision` increments on every write; a caller that read revision N can
+#     pass expected_revision=N and a stale writer is REJECTED visibly
+#     (StoreRevisionConflict) instead of silently clobbering.
+#   * Back up before explicit schema migration; reading legacy (v1) state
+#     never rewrites it.
+class StoreRevisionConflict(RuntimeError):
+    """[PRES-044] A caller's expected_revision no longer matches the store.
+
+    Raised instead of silently overwriting whoever wrote between the caller's
+    read and its write. The caller may re-read, re-merge and retry -- losing
+    the other writer's fields is what it must never do quietly."""
+
+
+class StoreWriteError(RuntimeError):
+    """[PRES-044] The store could not be written durably.
+
+    Wraps the underlying OSError with the path and stage, so a disk-full or
+    un-renameable tmp surfaces as a visible, actionable configuration error
+    -- never as a silent success with the old data still on disk."""
+
+
+#: Per-store-path in-process lock (re-entrant): threads inside one process
+#: serialise on this before touching the cross-process flock, so the flock
+#: handoff cannot interleave two threads of one process. _STORE_FLOCK_DEPTH
+#: counts, per (store path, thread), how many nested acquisitions that thread
+#: holds so only the outermost one carries the flock (flock on a second fd
+#: of the same file deadlocks the SAME thread -- see _store_lock).
+_STORE_LOCKS_GUARD = threading.Lock()
+_STORE_LOCKS: dict = {}
+_STORE_FLOCK_DEPTH: dict = {}
+
+
+def _store_lock(path: Path):
+    """The re-entrant process-local lock for one store path, plus the
+    cross-process flock acquisition, as one context manager.
+
+    fcntl.flock is per-open-file-description: two threads of one process hold
+    DIFFERENT descriptions and do NOT exclude each other -- hence the
+    process-local mutex layered under it. flock() itself is only released by
+    closing ALL descriptions (or an explicit LOCK_UN), and every holder here
+    opens/closes within one call, so a crashed writer never leaves the
+    advisory lock wedged: the OS drops it when the process dies.
+
+    [PRES-044] RE-ENTRANT flock: the RLock lets one thread re-enter
+    (profile_transaction holds the store lock across its read AND its
+    save_profile write), but flock does NOT -- LOCK_EX on a second fd of the
+    same file blocks the SAME thread forever. So the flock is depth-counted
+    per (thread, path): only the OUTERMOST acquisition opens the lock file
+    and takes LOCK_EX; nested acquisitions re-enter the RLock alone, and the
+    flock is unlocked/closed only when the depth returns to zero."""
+    with _STORE_LOCKS_GUARD:
+        lock = _STORE_LOCKS.get(str(path))
+        if lock is None:
+            lock = threading.RLock()
+            _STORE_LOCKS[str(path)] = lock
+
+    @contextlib.contextmanager
+    def _locked():
+        with lock:
+            ident = threading.get_ident()
+            with _STORE_LOCKS_GUARD:
+                depth = _STORE_FLOCK_DEPTH.get((str(path), ident), 0)
+                outermost = depth == 0
+                _STORE_FLOCK_DEPTH[(str(path), ident)] = depth + 1
+            fh = None
+            try:
+                if outermost:
+                    lock_path = path.parent / (path.name + ".lock")
+                    try:
+                        fh = open(str(lock_path), "a+")
+                    except OSError:
+                        fh = None  # read-only dir: degrade to process-local only
+                    if fh is not None:
+                        try:
+                            import fcntl as _fcntl
+                            _fcntl.flock(fh.fileno(), _fcntl.LOCK_EX)
+                        except ImportError:  # pragma: no cover - non-POSIX host
+                            pass
+                yield
+            finally:
+                with _STORE_LOCKS_GUARD:
+                    remaining = _STORE_FLOCK_DEPTH.get((str(path), ident), 1) - 1
+                    if remaining <= 0:
+                        _STORE_FLOCK_DEPTH.pop((str(path), ident), None)
+                    else:
+                        _STORE_FLOCK_DEPTH[(str(path), ident)] = remaining
+                    unown = remaining <= 0
+                if unown and fh is not None:
+                    try:
+                        import fcntl as _fcntl
+                        _fcntl.flock(fh.fileno(), _fcntl.LOCK_UN)
+                    except Exception:  # noqa: BLE001 -- close() releases it
+                        pass
+                    try:
+                        fh.close()
+                    except OSError:
+                        pass
+
+    return _locked()
+
+
+def _atomic_write_locked(path: Path, payload: dict) -> None:
+    """[PRES-044] The durable write, called WITH the store lock held.
+
+    Unique tmp name (pid + thread id, plus a monotonic counter for repeated
+    writes in one thread), fsync of the file, atomic os.replace, fsync of the
+    directory so the rename itself is durable. On ANY failure the tmp is
+    removed and the ORIGINAL exception propagates: the previous file is
+    untouched (os.replace never ran), so valid old data stays on disk and the
+    error is visible -- never a success claim over a lost write."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(
+        f".json.tmp-{os.getpid()}-{threading.get_ident()}-{time.monotonic_ns()}")
+    try:
+        with open(str(tmp), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, indent=2) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:  # pragma: no cover - best effort on exotic filesystems
+            pass
+    except OSError as exc:
+        try:
+            tmp.unlink()
+        except OSError:  # pragma: no cover
+            pass
+        raise StoreWriteError(
+            f"{path}: durable write failed at "
+            f"{'replace' if exc.errno in (errno.EXDEV, errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST) else 'write/fsync'}"
+            f": {exc.__class__.__name__}: {exc}") from exc
+
+#: Platform-aware config paths (master plan Part 8 Fix 13 / FIX 68 seam):
+#: on the docker VPS the openclaw root is /data/.openclaw (HOME is often /tmp),
+#: so every Path.home() hard-code above read the WRONG box's config. These
+#: three constants resolve through presentation_job/oc_paths.py -- one module
+#: owns openclaw root resolution -- and fall back to the legacy Mac layout
+#: when oc_paths is not deployed beside this file (a partial deploy keeps the
+#: pre-FIX-68 behavior, never a hard break). Each stays a MODULE ATTRIBUTE on
+#: purpose: tests patch capacity.NINEROUTER_DB / OPENCLAW_CONFIG /
+#: HARNESS_SETTINGS_CANDIDATES directly and that contract is load-bearing.
+def _oc_paths():
+    """presentation_job.oc_paths when importable (package-relative first),
+    else None -- callers degrade to the legacy Mac paths."""
+    try:
+        from . import oc_paths as _op  # package-relative (python3 -m)
+        return _op
+    except ImportError:
+        try:
+            import oc_paths as _op  # direct file run from presentation_job/
+            return _op
+        except ImportError:
+            return None
+
+_ocp = _oc_paths()
+if _ocp is not None:
+    NINEROUTER_DB = Path.home() / ".9router" / "db" / "data.sqlite"
+    OPENCLAW_CONFIG = _ocp.root() / "openclaw.json"
+else:
+    NINEROUTER_DB = Path.home() / ".9router" / "db" / "data.sqlite"
+    OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
+HARNESS_SETTINGS_CANDIDATES = (
+    Path.home() / ".claude-nine" / "settings.json",
+    Path.home() / ".claude" / "settings.json",
+)
+
+# Process-table signature for the working-concurrency observation. argv[0]
+# basename starting with "claude" catches live sessions and their spawned
+# subagents; "openclaw" catches the gateway. The pattern is reported alongside
+# the count so the number is auditable, never taken on faith.
+PROCESS_PATTERN = re.compile(r"^(claude|openclaw)")
+
+
+class CapacityUnmeasured(RuntimeError):
+    """Raised when a caller demands a number this probe could not produce."""
+
+
+# ---------------------------------------------------------------------------
+# The UNBOUNDED sentinel -- "no cap", genuinely, never a large magic number
+# ---------------------------------------------------------------------------
+class _Unbounded:
+    """`available`'s value for a NO_CAP_PROVIDERS hit (openrouter,
+    deepseek-direct, or a client-declared provider with no CAP_TABLE
+    row -- F17):
+    a real measurement ("this account has no structural
+    ceiling"), not an absence of one and not a stand-in integer like 999999
+    that would eventually be wrong. A single module-level instance (UNBOUNDED,
+    below) is the only one ever constructed; compare with `is`, not `==`,
+    though `==` also works (see __eq__).
+
+    Comparison contract -- this is the part that keeps every downstream
+    consumer safe without special-casing it:
+      * UNBOUNDED compares as GREATER than every finite int (never less).
+      * Consequently `min(ready_items, UNBOUNDED) == ready_items` for any
+        finite `ready_items`, regardless of argument order. This is the ONLY
+        property execution_plan.cap_wave_width() relies on: a wave's width
+        stays governed by the actual number of DAG items ready to run, never
+        by this sentinel itself -- "no cap on the provider" is not "no bound
+        on one wave's width".
+      * UNBOUNDED is truthy and int()-incompatible on purpose: nothing in
+        this codebase may treat it as a literal count to range()/multiply/
+        spawn -- that would defeat the entire point of a genuine sentinel.
+
+    JSON: never serializes as Python's non-standard `Infinity` (invalid JSON)
+    or as a magic integer. Pass `default=json_default` to any `json.dumps()`
+    call whose payload might carry this value; it becomes the string
+    "UNBOUNDED"."""
+
+    __slots__ = ()
+
+    def __repr__(self):
+        return "UNBOUNDED"
+
+    def __str__(self):
+        return "UNBOUNDED"
+
+    def __eq__(self, other):
+        return isinstance(other, _Unbounded)
+
+    def __ne__(self, other):
+        return not isinstance(other, _Unbounded)
+
+    def __hash__(self):
+        return hash("presentation_job.capacity._Unbounded")
+
+    def __lt__(self, other):
+        return False  # UNBOUNDED is never less than anything, including itself
+
+    def __le__(self, other):
+        return isinstance(other, _Unbounded)
+
+    def __gt__(self, other):
+        return not isinstance(other, _Unbounded)
+
+    def __ge__(self, other):
+        return True
+
+    def __bool__(self):
+        return True
+
+    def __int__(self):
+        raise TypeError(
+            "UNBOUNDED has no finite integer value -- callers must branch on "
+            "is_unbounded()/`is UNBOUNDED` before treating capacity as a count "
+            "(e.g. execution_plan.cap_wave_width(), which bounds the WAVE width "
+            "by ready_items instead)"
+        )
+
+
+#: The single instance every "no structural ceiling" measurement uses.
+UNBOUNDED = _Unbounded()
+
+
+def is_unbounded(value) -> bool:
+    """True when `value` is the UNBOUNDED sentinel."""
+    return isinstance(value, _Unbounded)
+
+
+def json_default(obj):
+    """`json.dumps(..., default=json_default)` hook. Any capacity result (or
+    anything derived from one, e.g. launcher.py's `.capacity-status.json`
+    sidecar) that might carry UNBOUNDED must route its json.dumps() call
+    through this so it serializes to the literal string "UNBOUNDED" instead
+    of raising TypeError or falling back to JSON-invalid `Infinity`."""
+    if is_unbounded(obj):
+        return "UNBOUNDED"
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+# ---------------------------------------------------------------------------
+# FIX 9: per-provider live probes (key presence + a cheap list/models call)
+# ---------------------------------------------------------------------------
+PROBE_FLAG_ENV = "PRESENTATION_PROVIDER_PROBES"
+PROBE_FLAG_DEFAULT = "1"
+
+def probe_flag_enabled() -> bool:
+    """True unless the operator exported PRESENTATION_PROVIDER_PROBES=0.
+
+    Default ON per the rev2 rollback doctrine. `=0` is the documented
+    rollback for FIX 9's behavior change: probe_providers() returns an empty
+    dict without touching the network or the profile, capacity.probe()'s
+    `provider_probes` surface reads {"flag": "disabled"}, and nothing else
+    in the detection chain changes."""
+    return os.environ.get(PROBE_FLAG_ENV, PROBE_FLAG_DEFAULT) != "0"
+
+#: Per-provider probe definitions. Each names the env keys that may carry the
+#: credential (checked IN ORDER), the secrets env files consulted for that
+#: key NAME (values are never emitted), and the cheapest possible
+#: inventory call: `GET {base}/models` on the same OpenAI-compatible base the
+#: department's own transports already use. No completion call, no credit
+#: call, no balance query -- list/models is the spec's "cheap list/models
+#: call".
+PROVIDER_PROBE_DEFS = {
+    "openrouter": {
+        "label": "OpenRouter",
+        "env_keys": ("OPENROUTER_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "OPENROUTER_API_KEY"),
+                         ("~/.openclaw/.env", "OPENROUTER_API_KEY")),
+        "models_url": "https://openrouter.ai/api/v1/models",
+        # OpenRouter /models is public; the Bearer header is still sent when
+        # a key resolves so the key-present path is exercised end to end.
+        "auth_required_for_models": False,
+    },
+    "ollama-cloud": {
+        "label": "Ollama Cloud",
+        "env_keys": ("OLLAMA_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "OLLAMA_API_KEY"),
+                         ("~/.openclaw/.env", "OLLAMA_API_KEY")),
+        "models_url": "https://ollama.com/v1/models",
+        "auth_required_for_models": True,
+    },
+    "deepseek-direct": {
+        "label": "DeepSeek Direct",
+        "env_keys": ("DEEPSEEK_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "DEEPSEEK_API_KEY"),
+                         ("~/.openclaw/.env", "DEEPSEEK_API_KEY")),
+        "models_url": "https://api.deepseek.com/models",
+        "auth_required_for_models": True,
+    },
+    "agnes": {
+        "label": "Agnes",
+        "env_keys": ("AGNES_AI_API_KEY",),
+        "secret_files": (("~/.openclaw/secrets/.env", "AGNES_AI_API_KEY"),
+                         ("~/.openclaw/.env", "AGNES_AI_API_KEY")),
+        "models_url": "https://apihub.agnes-ai.com/v1/models",
+        "auth_required_for_models": True,
+    },
+    # ------------------------------------------------------------------
+    # kie probe target (master plan Part 8 Fix 13 / W08a-B3): kie.ai is the
+    # department's image provider (gpt-image-2-6 per model_catalog.json) and the
+    # only probeable provider with NO probe definition -- a box whose ONLY key
+    # is KIE_API_KEY reported an empty inventory, and FIX 12's preflight then
+    # priced its phases off an unverified account. kie.ai exposes no
+    # OpenAI-style `GET /models`; the CHEAPEST authenticated inventory call it
+    # has is the same credit read build_deck.py already uses for
+    # AF-KIE-BALANCE (KIE_CREDIT_URL): `GET /api/v1/chat/credit` with the
+    # Bearer key. The body is a credit count, not a model list, so `models`
+    # stays [] (never invented) and `ok` on HTTP 200 means "key present AND
+    # accepted by kie.ai" -- the presence/validity evidence FIX 9 asks for.
+    # ------------------------------------------------------------------
+    "kie": {
+        "label": "Kie.ai",
+        "env_keys": ("KIE_API_KEY",),
+        "secret_files": (),
+        "models_url": "https://api.kie.ai/api/v1/chat/credit",
+        "auth_required_for_models": True,
+        "models_endpoint": False,  # credit read: evidence of a live key, not a lineup
+    },
+}
+
+#: Where key VALUES may be read from when the environment does not already
+#: carry them. Same files the department's own loaders (dispatcher's
+#: _load_deepseek_key, build_deck's KIE loader) already read. The VALUE is
+#: forwarded ONLY into the Authorization header transport and never placed
+#: in any result, report, log, profile or exception message.
+#: FIX 68/B3: the list is resolved through oc_paths.secrets_env_candidates()
+#: (platform-aware: /data/.openclaw/secrets/.env FIRST on the docker VPS,
+#: ~/.openclaw first on a Mac, $OPENCLAW_SECRETS explicit override first of
+#: all), degrading to the legacy Mac list when oc_paths is not deployed
+#: beside this module. Kept as a module-level FUNCTION so a test can patch it.
+def _secrets_env_files():
+    try:
+        op = _oc_paths()
+        if op is not None:
+            return tuple(str(p) for p in op.secrets_env_candidates())
+    except Exception:  # noqa: BLE001 -- a broken oc_paths degrades to legacy
+        pass
+    return ("~/.openclaw/secrets/.env",
+            "~/.openclaw/secrets/secrets.env",
+            "~/.openclaw/.env",
+            "~/.openclaw/workspace/.env",
+            "~/clawd/secrets/.env")
+
+#: Backwards-compatible module attribute (docs/tests referenced the old tuple).
+SECRETS_ENV_FILES = (("~/.openclaw/secrets/.env",), ("~/.openclaw/.env",))
+
+# ---------------------------------------------------------------------------
+# FIX 67 secret-name canon (master plan Part 8 Fix 13 / W08a-B3 seam):
+# the NAME a credential is written under resolves through the ONE canon
+# (shared-utils/secret_helper: alias_list(canonical_for(name))), so a key
+# saved as KIE_KEY / KIE_AI_API_KEY / DEEP_SEEK_API_KEY / ... is found by the
+# same reader that finds the canonical spelling. The helper is path-imported
+# from the repo checkout, the installed skills dir, or /data/.openclaw/skills
+# -- the same seam research_web.py and kie_generate.py use -- and a box
+# without it keeps the exact pre-canon behavior (direct name only), never a
+# hard break. A placeholder-shaped value is REJECTED wherever it sits.
+# ---------------------------------------------------------------------------
+_secret_helper_mod = None
+_secret_helper_tried = False
+
+def _secret_helper():
+    """Path-import shared-utils/secret_helper.py (the FIX 67 canon helper).
+    Returns the module or None when no candidate location has it. Cached."""
+    global _secret_helper_mod, _secret_helper_tried
+    if _secret_helper_tried:
+        return _secret_helper_mod
+    _secret_helper_tried = True
+    import importlib.util
+    skills_default = None
+    op = _oc_paths()
+    if op is not None:
+        try:
+            skills_default = Path(op.skills())
+        except Exception:  # noqa: BLE001 -- partial deploy keeps the Mac default
+            skills_default = None
+    if skills_default is None:
+        skills_default = Path.home() / ".openclaw" / "skills"
+    repo_root = None
+    for anc in Path(__file__).resolve().parents:
+        if (anc / "shared-utils" / "secret_helper.py").is_file():
+            repo_root = anc
+            break
+    for d in (os.environ.get("SHARED_UTILS_DIR", "").strip(),
+              str(repo_root / "shared-utils") if repo_root else "",
+              str(skills_default / "shared-utils"),
+              "/data/.openclaw/skills/shared-utils"):
+        if d and (Path(d) / "secret_helper.py").is_file():
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    "secret_helper_s51", str(Path(d) / "secret_helper.py"))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore
+                _secret_helper_mod = mod
+            except Exception:  # noqa: BLE001 -- a broken helper is the no-canon path
+                _secret_helper_mod = None
+            break
+    return _secret_helper_mod
+
+def _is_placeholder_value(value: str) -> bool:
+    """FIX 67: a placeholder value (PASTE_REAL_TOKEN, CHANGE_ME, <TODO>, ...)
+    is rejected by every reader. Uses the canon's is_placeholder when the
+    helper is reachable; otherwise the same minimal inline gate so a partial
+    deploy still refuses."""
+    if not value:
+        return True
+    helper = _secret_helper()
+    if helper is not None:
+        try:
+            return bool(helper.is_placeholder(value))
+        except Exception:  # noqa: BLE001 -- canon failure degrades to inline
+            pass
+    low = value.strip().lower()
+    if len(low) < 10:
+        return True
+    for sub in ("paste_real_token", "your_key_here", "change_me", "changeme",
+                "<todo>", "[replace]", "{{", "placeholder", "example_key",
+                "todo:", "xxx"):
+        if sub in low:
+            return True
+    if low.startswith("<") and low.endswith(">"):
+        return True
+    if low.startswith("[") and low.endswith("]"):
+        return True
+    return False
+
+def _alias_names(env_key: str) -> Tuple[str, ...]:
+    """The accepted names for `env_key`: the canonical spelling plus every
+    alias in its canon family. Unknown names resolve to themselves (the canon
+    helper's own contract), so a family missing from the canon degrades to the
+    direct name -- never a hard break, never a NEW name invented here."""
+    helper = _secret_helper()
+    if helper is None:
+        return (env_key,)
+    try:
+        names = list(helper.alias_list(helper.canonical_for(env_key)))
+        return tuple(n for n in names if isinstance(n, str) and n) or (env_key,)
+    except Exception:  # noqa: BLE001 -- canon failure degrades to the direct name
+        return (env_key,)
+
+def probe_transport(url: str, key: Optional[str] = None,
+                    timeout: float = 8.0) -> Tuple[int, bytes]:
+    """THE injectable network transport (single seam; proofs/tests inject a
+    stub and never touch the network). Returns (http_status, body_bytes).
+    The bearer key, when one resolved, goes ONLY into the Authorization
+    header -- it is never returned, logged, or raised. urllib is the stdlib
+    default; no third-party HTTP dependency."""
+    request = urllib.request.Request(url, method="GET")
+    request.add_header("Accept", "application/json")
+    if key:
+        request.add_header("Authorization", f"Bearer {key}")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read()
+        except Exception:  # noqa: BLE001 -- error body is best-effort
+            body = b""
+        return exc.code, body
+    except Exception as exc:  # noqa: BLE001 -- transport failure is a verdict
+        return 0, str(exc).encode("utf-8", "replace")
+
+def _extract_model_ids(payload: bytes) -> Tuple[list, Optional[str]]:
+    """Pull the wired model ids out of a `GET /models` body.
+
+    OpenAI-compatible providers return {"data": [{"id": ...}, ...]}. Some
+    return a bare list. Anything unparseable becomes ([], reason) so the
+    probe reports honestly instead of inventing an inventory. Non-string ids
+    are coerced via str(); nothing else in the item is kept (some providers
+    attach per-model pricing/metadata blobs -- out of scope and untrusted)."""
+    try:
+        parsed = json.loads(payload.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        return [], "models body not JSON"
+    if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
+        items = parsed["data"]
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
+        return [], "models body shape unrecognized"
+    ids = []
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            ids.append(item["id"])
+        elif isinstance(item, str):
+            ids.append(item)
+    return ids, None
+
+
+def _price_per_million(raw: Any) -> Optional[float]:
+    """One pricing direction as dollars per million tokens.
+
+    Absent stays absent: a raw value of None (the catalog item carried
+    no such price) returns None, never 0 -- the catalog said nothing
+    about this direction, and no surface may invent a number for it. An
+    empty string is no price at all, so it reads as absent too. A
+    present value converts exactly as before (dollars per token x
+    1,000,000), so a real "0" in the catalog stays a real 0.0: None
+    means the catalog was silent, 0.0 means the catalog said zero, and
+    the two are never confused. Any other unparseable value raises, and
+    the caller keeps its skip-the-item behavior."""
+    if raw is None or raw == "":
+        return None
+    return float(raw) * 1_000_000
+
+
+def _extract_model_pricing(payload: bytes) -> dict:
+    """Pull {model_id: pricing} out of a GET /models body.
+
+    FIX 61.3: sibling of _extract_model_ids that keeps the pricing blob.
+    OpenRouter's pricing.prompt / pricing.completion are dollars PER TOKEN
+    as strings; multiplied by 1,000,000 for per-million. The endpoint is
+    public; no key is needed. Returns {} on any parse failure.
+
+    ABSENT IS ABSENT: a model whose catalog item carries no pricing
+    blob (or a blob missing one direction, or a non-dict blob) gets
+    None for the absent direction(s), never 0. The pre-fix code
+    zero-filled absent pricing, which made an unpriced model
+    indistinguishable from a free one by key presence and let a
+    downstream surface render the invented figure as a real "$0"
+    price. A pricing value that IS present but unparseable keeps the
+    pre-existing behavior: the item is skipped entirely (no entry),
+    which every consumer already reads as unpriced.
+    """
+    try:
+        parsed = json.loads(payload.decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError):
+        return {}
+    if isinstance(parsed, dict) and isinstance(parsed.get("data"), list):
+        items = parsed["data"]
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
+        return {}
+    out = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        mid = item.get("id")
+        if not isinstance(mid, str):
+            continue
+        pricing = item.get("pricing")
+        if not isinstance(pricing, dict):
+            pricing = {}
+        try:
+            prompt_per_m = _price_per_million(pricing.get("prompt"))
+            completion_per_m = _price_per_million(pricing.get("completion"))
+        except (ValueError, TypeError):
+            continue
+        out[mid] = {
+            "prompt_per_million": prompt_per_m,
+            "completion_per_million": completion_per_m,
+        }
+        # Keep the raw expiration for the retired-model check.
+        if item.get("expiration_date"):
+            out[mid]["expiration_date"] = item["expiration_date"]
+    return out
+
+def _read_secret_value(env_key: str) -> Optional[str]:
+    """Resolve a credential for `probe_one_provider`, in order:
+
+      1. an already-exported environment variable (the normal case for a
+         dispatch run -- the Engine inherits the sourced secrets env);
+      2. the department's secrets env files, matched BY KEY NAME -- the canon
+         FAMILY of that name (FIX 67: KIE_API_KEY also matches KIE_KEY,
+         KIE_AI_API_KEY, KIE_VIDEO_API_KEY, KIE_API_KEY_IAFS; DEEPSEEK_API_KEY
+         also matches DEEP_SEEK_API_KEY; ...), with the FILE SEARCH ORDER
+         resolved platform-aware through oc_paths.secrets_env_candidates()
+         (FIX 68: /data/.openclaw/secrets/.env first on the docker VPS,
+         ~/.openclaw first on a Mac, $OPENCLAW_SECRETS override first of all).
+
+    The VALUE is returned for the Authorization header only. Every caller
+    that surfaces anything to a human uses presence/key_source, never this.
+    A placeholder-shaped value is REJECTED (FIX 67) -- a key that says
+    PASTE_REAL_TOKEN is not a key. Returns None when no source has it."""
+    value = (os.environ.get(env_key) or "").strip()
+    if value and not _is_placeholder_value(value):
+        return value
+    # canon family: the canonical spelling plus every alias
+    accepted = _alias_names(env_key)
+    if env_key not in accepted:
+        accepted = (env_key,) + tuple(accepted)
+    for file_spec in _secrets_env_files():
+        path = Path(os.path.expanduser(file_spec))
+        try:
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                for name in accepted:
+                    if line.startswith(f"{name}="):
+                        candidate = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        if candidate and not _is_placeholder_value(candidate):
+                            return candidate
+        except OSError:
+            continue
+    # env carried a value but the canon rejected it as a placeholder: honour
+    # an explicitly injected fake-env view (proof seam) over the rejection,
+    # the same posture research_web.brave_key_present documents.
+    if value:
+        return value
+    return None
+
+def probe_one_provider(provider: str,
+                       transport: Optional[callable] = None,
+                       env: Optional[dict] = None) -> dict:
+    """One cheap live probe of one provider. Returns the FIX 9 verdict:
+
+        provider            normalized provider id (PROVIDER_PROBE_DEFS key)
+        present             bool -- key FOUND in env or the secrets env files
+        key_source          where the key NAME was found ("env:NAME" or the
+                            file path) -- never the value
+        probed              bool -- a models call was actually attempted
+        http_status         the transport's status (0 = transport failure)
+        models              sorted wired model ids (may be [] when not probed
+                            or the call failed -- never invented)
+        models_error        why models is [] (absent on success)
+        ok                  bool -- present AND probed AND models resolved
+
+    Never raises. Never puts the key value, or any response body fragment
+    beyond model ids, in the verdict. `env` lets proofs simulate presence
+    without touching os.environ."""
+    if provider not in PROVIDER_PROBE_DEFS:
+        return {"provider": provider, "present": False, "key_source": None,
+                "probed": False, "http_status": None, "models": [],
+                "models_error": "unknown provider", "ok": False}
+    spec = PROVIDER_PROBE_DEFS[provider]
+    env_keys = spec["env_keys"]
+    env_view = os.environ if env is None else env
+
+    present = False
+    key_source = None
+    key_value = None
+    for name in env_keys:
+        candidate = str((env_view.get(name) or "")).strip()
+        if candidate:
+            present, key_source, key_value = True, f"env:{name}", candidate
+            break
+    key_env = os.environ if env is None else env
+    if not present:
+        # secrets files: presence read by NAME from the files; the value is
+        # loaded only for the header. (Uses the real fs -- env= only fakes
+        # the process environment, matching dispatcher's loader posture.)
+        for name in env_keys:
+            resolved = _read_secret_value(name)
+            if resolved:
+                present, key_source, key_value = True, (
+                    "secrets-env-files"), resolved
+                break
+
+    result = {"provider": provider, "present": present,
+              "key_source": key_source if present else None,
+              "probed": False, "http_status": None, "models": [],
+              "models_error": None, "ok": False}
+
+    should_probe = spec["auth_required_for_models"] is False or present
+    if not should_probe:
+        result["models_error"] = "no key present -- models call skipped"
+        return result
+
+    transport = transport or probe_transport
+    try:
+        status, body = transport(spec["models_url"], key_value)
+    except Exception as exc:  # noqa: BLE001 -- a broken stub must not kill the probe
+        result.update({"probed": True, "http_status": 0,
+                       "models_error": f"transport failure: "
+                                       f"{exc.__class__.__name__}"})
+        return result
+    result["probed"] = True
+    result["http_status"] = status
+    if status == 200:
+        # FIX 9/B3: providers whose probe endpoint is NOT a model lineup
+        # (kie's credit read) carry models_endpoint=False in their def -- a
+        # 200 there is the evidence (key present AND accepted), `models`
+        # stays [] (never invented) and the verdict records the endpoint
+        # kind so the report can say what was actually measured.
+        if spec.get("models_endpoint") is False:
+            result["models_error"] = None
+            result["inventory_kind"] = "credit"
+            result["ok"] = True
+            return result
+        ids, error = _extract_model_ids(body)
+        if error:
+            result["models_error"] = error
+        else:
+            result["models"] = sorted(ids)
+            # FIX 61.3: keep the pricing table for the credit preflight.
+            result["model_pricing"] = _extract_model_pricing(body)
+            result["ok"] = True
+    elif status == 401 or status == 403:
+        result["models_error"] = ("key present but rejected by provider "
+                                  f"(HTTP {status})")
+    elif status == 0:
+        detail = body.decode("utf-8", "replace")[:120]
+        result["models_error"] = f"transport failure: {detail}"
+    else:
+        result["models_error"] = f"HTTP {status} from models endpoint"
+    return result
+
+def _ninerouter_lineup(db_path: Optional[Path] = None) -> dict:
+    """Read the 9Router's LOCAL model lineup -- the non-secret columns only.
+
+    Reads three things, all already-established non-secret surfaces:
+      * providerNodes.data's prefix/baseUrl (which provider namespaces exist);
+      * the kv rows keyed `{providerAlias}|{modelId}|llm` (what 9Router has
+        WIRED per provider node -- the local lineup the operator sees);
+      * combos.name/models (primary route listings, also read by the
+        capacity detection chain).
+    NEVER apiKeys, NEVER providerConnections.data (both carry credentials).
+    Returns {"hit", "detail", "providers": {prefix: {"label", "models"}},
+    "total_models"}."""
+    path = Path(db_path) if db_path else NINEROUTER_DB
+    out = {"hit": False, "detail": "", "providers": {}, "total_models": 0}
+    if not path.is_file():
+        out["detail"] = f"no 9Router database at {path}"
+        return out
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error as exc:
+        out["detail"] = f"9Router database unreadable: {exc.__class__.__name__}"
+        return out
+    try:
+        cur = con.cursor()
+        nodes = {}
+        try:
+            for data in cur.execute("select data from providerNodes"):
+                try:
+                    node = json.loads(data[0] or "{}")
+                except ValueError:
+                    continue
+                prefix = node.get("prefix")
+                if isinstance(prefix, str) and prefix:
+                    nodes[prefix] = {"label": node.get("name") or prefix,
+                                     "baseUrl": node.get("baseUrl"), "models": []}
+        except sqlite3.Error:
+            pass
+        wired = {}
+        try:
+            for key, in cur.execute("select key from kv where key like '%|llm'"):
+                parts = key.split("|")
+                if len(parts) < 3:
+                    continue
+                alias, model_id = parts[0], parts[1]
+                wired.setdefault(alias, []).append("|".join(parts[1:-1]))
+        except sqlite3.Error:
+            pass
+        # Map each node's alias onto its prefix when possible; node ids are
+        # uuid-ish aliases, so ALSO fall back to the prefix rows that carry
+        # their own models. The lineup is whatever 9Router has wired.
+        providers = {}
+        combined = dict(nodes)
+        for alias, models in wired.items():
+            if alias in combined:
+                combined[alias]["models"].extend(models)
+            else:
+                combined[alias] = {"label": alias, "baseUrl": None,
+                                   "models": list(models)}
+        for prefix, info in combined.items():
+            models = sorted(dict.fromkeys(info["models"]))
+            providers[prefix] = {"label": info["label"], "models": models}
+            out["total_models"] += len(models)
+        out["providers"] = providers
+        out["hit"] = bool(providers)
+        out["detail"] = (f"9Router lineup read from {path}: "
+                         f"{len(providers)} provider aliases, "
+                         f"{out['total_models']} wired models"
+                         if out["hit"] else f"no wired models in {path}")
+        return out
+    finally:
+        con.close()
+
+def detect_9router_lineup(db_path: Optional[Path] = None) -> dict:
+    """Public FIX 9 entry for the 9Router local lineup (never any secret
+    table). See _ninerouter_lineup()."""
+    return _ninerouter_lineup(db_path)
+
+def probe_providers(providers: Optional[list] = None,
+                    transport: Optional[callable] = None,
+                    db_path: Optional[Path] = None,
+                    persist: bool = False,
+                    config_dir: Optional[Path] = None) -> dict:
+    """FIX 9 entry point: probe providers + read the 9Router lineup.
+
+    With persist=True the inventory lands in the resource profile
+    (resource_profile.store_provider_probes) under `wired_models` and
+    `key_present` per provider, redacted by the profile's write path. With
+    persist=False (the default) nothing is stored -- capacity.probe() stays
+    read-only and calls this fresh. Returns:
+
+        {"flag": "1"|"0", "probes": {provider: verdict}, "ninerouter": ...,
+         "probed_at": iso}
+    """
+    if not probe_flag_enabled():
+        return {"flag": "0", "probes": {}, "ninerouter":
+                {"hit": False, "detail": "provider probes disabled by "
+                 f"{PROBE_FLAG_ENV}=0", "providers": {}, "total_models": 0},
+                "probed_at": datetime.datetime.now().astimezone().isoformat()}
+    wanted = providers or sorted(PROVIDER_PROBE_DEFS)
+    probes = {}
+    for provider in wanted:
+        if provider not in PROVIDER_PROBE_DEFS:
+            probes[provider] = {"provider": provider, "present": False,
+                                "key_source": None, "probed": False,
+                                "http_status": None, "models": [],
+                                "models_error": "unknown provider", "ok": False}
+            continue
+        probes[provider] = probe_one_provider(provider, transport=transport)
+    lineup = _ninerouter_lineup(db_path)
+    result = {
+        "flag": "1",
+        "probes": probes,
+        "ninerouter": lineup,
+        "probed_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    if persist:
+        try:
+            try:
+                from . import resource_profile as _rp
+            except ImportError:
+                import resource_profile as _rp  # type: ignore[no-redef]
+            _rp.store_provider_probes(result, config_dir=config_dir)
+        except Exception as exc:  # noqa: BLE001 -- never break the probe path
+            result["persist_error"] = f"{exc.__class__.__name__}: {exc}"
+    return result
+
+# ---------------------------------------------------------------------------
+# Credential safety
+# ---------------------------------------------------------------------------
+_SECRET_KEY_RE = re.compile(
+    r"(api[-_]?key|key|token|secret|password|passwd|auth|credential|cookie|bearer)",
+    re.IGNORECASE,
+)
+
+
+def _safe_value(key: str, value):
+    """Return `value` only when `key` cannot be carrying credential material.
+
+    Every string this module lifts out of a config file goes through here. A
+    field named apiKey / token / authToken / password / ... is dropped on the
+    floor: detection needs to know WHICH provider is configured, never what the
+    account's secret is."""
+    if _SECRET_KEY_RE.search(str(key)):
+        return None
+    return value
+
+
+def _get_safe(node, *path):
+    """Walk a nested dict by key path, refusing any secret-named segment."""
+    cur = node
+    for key in path:
+        if not isinstance(cur, dict):
+            return None
+        if _safe_value(key, True) is None:
+            return None
+        cur = cur.get(key)
+    return cur
+
+
+# ---------------------------------------------------------------------------
+# Normalisation
+# ---------------------------------------------------------------------------
+def canonical_provider_token(raw) -> Optional[str]:
+    """Fold a provider spelling onto ONE canonical token: lowercase, dashes.
+
+    Spelling only. It makes no claim that the provider is KNOWN -- that is
+    `normalize_provider`'s job. This is the form the cap table, the resource
+    profile and the governor all compare on, so `Acme_LLM`, `acme llm` and
+    `acme-llm` can never be three providers."""
+    if not isinstance(raw, str):
+        return None
+    token = raw.strip().lower().replace("_", "-").replace(" ", "-")
+    return token or None
+
+
+def _table_provider(token: str) -> Optional[str]:
+    """The cap-table id for a canonical token, or None when this build has
+    never heard of it.
+
+    The STATIC half of `normalize_provider`: no I/O, no profile, no client
+    declaration -- exactly the pre-F17 mapping, split out so the declaration
+    path below can never be mistaken for cap-table membership."""
+    if token in _REFUSED_PROVIDER_TOKENS:
+        return None  # a local Ollama has no purchased plan; not a cap-table row
+    if token in ("ollama-cloud", "ollamacloud", "ollama", "ollman"):
+        return PROVIDER_OLLAMA_CLOUD
+    if token.startswith("ollama-cloud"):
+        return PROVIDER_OLLAMA_CLOUD
+    if token in ("deepseek-direct", "deepseek", "deepseekdirect", "ds",
+                 "ds-max", "dspro", "dspro-max", "dspromax"):
+        return PROVIDER_DEEPSEEK_DIRECT
+    if token.startswith("deepseek"):
+        return PROVIDER_DEEPSEEK_DIRECT
+    if token in ("openrouter", "open-router", "openrouterai", "openrouter-direct"):
+        return PROVIDER_OPENROUTER
+    if token.startswith("openrouter"):
+        return PROVIDER_OPENROUTER
+    return None
+
+
+def is_known_provider(raw) -> bool:
+    """True when THIS BUILD already has an opinion about `raw`: a cap-table
+    id, or one of the tokens the table deliberately REFUSES. False means
+    "never heard of it" -- the only case F17's client-declaration path is
+    allowed to speak for."""
+    token = canonical_provider_token(raw)
+    if token is None:
+        return False
+    return token in _REFUSED_PROVIDER_TOKENS or _table_provider(token) is not None
+
+
+#: F17 cache for the declared-provider read, keyed by profile path and
+#: invalidated on (mtime_ns, size). The declaration set changes only when the
+#: client re-answers the interview, so a per-call file read would be pure
+#: waste on a path that runs inside the dispatch loop.
+_DECLARED_CACHE: dict = {}
+
+#: The model-plan keys that are NOT slots (resource_profile.record_model_plan
+#: writes these alongside the slots).
+_PLAN_NON_SLOT_KEYS = frozenset({"thinking", "floor_waivers", "source",
+                                 "declared_at"})
+
+
+def declared_plan_providers(config_dir: Optional[Path] = None) -> frozenset:
+    """F17: the canonical provider tokens the CLIENT DECLARED in their model
+    plan that this build has no opinion about.
+
+    WHY THIS EXISTS. Before F17 an unknown provider id resolved to None in
+    `normalize_provider`, and every consumer read that None as "no capacity
+    information at all": `detect()` fell through to DEFAULT_CONSERVATIVE = 3,
+    `dispatcher._prompt_routing_stamp` stamped
+    capacity_status=provider-unresolved with DEFAULT_MAX_WORKERS = 8, and
+    `governor.provider_config` fell to `defaults` rps 1.0 -- all of it
+    silent. Adopting a model on a provider this build had never been told
+    about therefore throttled the whole pipeline with nothing anywhere saying
+    why, and the only cure was a code change. The operator ruling is the
+    opposite: nobody is forced onto a model, and a new one must work WITHOUT
+    a code change.
+
+    A client who NAMES {provider, model} in their model plan is telling us
+    they own that account -- the same "brought their own capacity" evidence
+    that puts a provider in NO_CAP_PROVIDERS, and the one signal that
+    separates a new provider from a typo. Nothing else in this module treats
+    a bare string as a provider, and a declaration NEVER uncaps a provider
+    that has a real CAP_TABLE row (see `is_no_cap_provider`).
+
+    Read-only, never raises, and never consulted for a token the cap table
+    already resolves -- so the hot path does no I/O at all. Rollback:
+    PRESENTATION_DECLARED_PROVIDER_UNCAP=0 restores the pre-F17 behaviour
+    exactly (an unknown provider stays unknown)."""
+    if os.environ.get(DECLARED_UNCAP_ENV, "1") == "0":
+        return frozenset()
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            import resource_profile as _rp  # type: ignore[no-redef]
+        if not _rp.flag_enabled():
+            return frozenset()
+        path = Path(_rp.profile_path(config_dir))
+        try:
+            stat = path.stat()
+            key = (str(path), stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            key = (str(path), None, None)
+        cached = _DECLARED_CACHE.get(key[0])
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        found: frozenset = frozenset()
+        if key[1] is not None:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            plan = raw.get("model_plan") if isinstance(raw, dict) else None
+            tokens = set()
+            if isinstance(plan, dict):
+                for slot, spec in plan.items():
+                    if slot in _PLAN_NON_SLOT_KEYS:
+                        continue
+                    provider = None
+                    if isinstance(spec, dict):
+                        provider = spec.get("provider")
+                    elif isinstance(spec, str) and spec.count("@") == 1:
+                        provider = spec.rsplit("@", 1)[1]
+                    token = canonical_provider_token(provider)
+                    if token and not is_known_provider(token):
+                        tokens.add(token)
+            found = frozenset(tokens)
+        _DECLARED_CACHE[key[0]] = (key, found)
+        return found
+    except Exception:  # noqa: BLE001 -- a broken profile never breaks detection
+        return frozenset()
+
+
+def normalize_provider(raw, config_dir: Optional[Path] = None) -> Optional[str]:
+    """Map a declared/detected provider string onto a provider id.
+
+    Returns the CAP-TABLE id for a provider the table covers. Returns the
+    CANONICAL TOKEN ITSELF (F17) for a provider this build has never heard of
+    when the CLIENT DECLARED it in their model plan -- a new provider is a
+    provider, not a blank, and the declaration is the client bringing their
+    own capacity. Returns None for everything else: an unknown, undeclared
+    provider is an unknown provider, never the nearest-looking one."""
+    token = canonical_provider_token(raw)
+    if token is None:
+        return None
+    hit = _table_provider(token)
+    if hit is not None:
+        return hit
+    if token in _REFUSED_PROVIDER_TOKENS:
+        return None
+    if token in declared_plan_providers(config_dir):
+        return token
+    return None
+
+
+def is_no_cap_provider(provider: Optional[str],
+                       config_dir: Optional[Path] = None) -> bool:
+    """True when `provider` (an id already through `normalize_provider`) has
+    NO structural ceiling this module could observe: a NO_CAP_PROVIDERS entry,
+    or (F17) a client-declared provider with no CAP_TABLE row.
+
+    A CAP_TABLE provider is never uncapped by a declaration: an account
+    ceiling is a physical fact the client cannot opt out of by naming the
+    provider."""
+    if not provider:
+        return False
+    if provider in NO_CAP_PROVIDERS:
+        return True
+    if provider in CAP_TABLE_PROVIDERS:
+        return False
+    return provider in declared_plan_providers(config_dir)
+
+
+def _no_cap_kind(provider: str) -> str:
+    """The phrase the notes use for WHY this provider has no ceiling. Both
+    branches keep 'bring-your-own-key, no structural ceiling' -- the doctrine
+    is identical; only the evidence for it differs."""
+    if provider in NO_CAP_PROVIDERS:
+        return ("a NO_CAP_PROVIDERS entry (bring-your-own-key, no structural "
+                "ceiling)")
+    return ("a CLIENT-DECLARED provider with no CAP_TABLE row "
+            "(bring-your-own-key, no structural ceiling -- naming it in the "
+            "model plan IS the client bringing their own capacity)")
+
+
+def normalize_plan(raw, provider: Optional[str]) -> Optional[str]:
+    """Map a declared/detected plan string onto a cap-table plan id."""
+    if not isinstance(raw, str):
+        return None
+    token = raw.strip().lower()
+    if not token:
+        return None
+    if provider == PROVIDER_OLLAMA_CLOUD or provider is None:
+        digits = re.sub(r"[^0-9]", "", token)
+        if digits == "20":
+            return PLAN_OLLAMA_20
+        if digits == "100":
+            return PLAN_OLLAMA_100
+    if provider == PROVIDER_DEEPSEEK_DIRECT or provider is None:
+        compact = token.replace(" ", "-").replace("_", "-")
+        if "pro" in compact:
+            return PLAN_DEEPSEEK_PRO
+        if "flash" in compact:
+            return PLAN_DEEPSEEK_FLASH
+    return None
+
+
+def _plan_from_model_slug(provider: Optional[str], slug: str) -> Optional[str]:
+    """Derive the plan label from a model identifier, where the model IMPLIES it.
+
+    DeepSeek Direct is the only provider where a model id names a tier label:
+    v4-pro and v4-flash are different products, and the model id names which
+    one. Since the owner ruling of 2026-10-15 the label is metadata only:
+    DeepSeek Direct has no provider cap, so no tier changes a ceiling and no
+    tier is interviewed for. Ollama Cloud's $20 and $100 plans run the SAME
+    models, so no model id can ever reveal the plan -- that is why Ollama
+    Cloud always reaches the interview question."""
+    if provider != PROVIDER_DEEPSEEK_DIRECT:
+        return None
+    text = slug.lower()
+    if "pro" in text:
+        return PLAN_DEEPSEEK_PRO
+    if "flash" in text:
+        return PLAN_DEEPSEEK_FLASH
+    return None
+
+
+def interview_question(provider: str) -> str:
+    """The ONE question that resolves a STRUCTURAL cap-table provider with an
+    unknown plan -- today ollama-cloud only. NO_CAP_PROVIDERS entries
+    (openrouter, deepseek-direct, ...) never reach PARK, so this is never
+    called for them: there is no plan that would change their ceiling.
+
+    The numbers are rendered FROM CAP_TABLE, never hardcoded. A hardcoded
+    per-provider sentence drifted once already (it still advertised
+    "$100/month -> 10" after the operator lowered that row to 8), so the
+    only source of truth here is the table itself."""
+    plans = PLANS_BY_PROVIDER.get(provider, ())
+    if plans:
+        rows = ", ".join(f"{p} -> {CAP_TABLE.get((provider, p), '?')}" for p in plans)
+        return f"Which plan is your {provider} account on? ({rows}.)"
+    return f"Which plan is your {provider} account on?"
+
+
+# ---------------------------------------------------------------------------
+# Step (a): the declared override
+# ---------------------------------------------------------------------------
+def department_config_dir() -> Path:
+    """Where capacity_override.json lives.
+
+    $PRESENTATION_CAPACITY_CONFIG_DIR wins when set (this is how a client box, a
+    test, or an operator points detection at a specific declaration). Otherwise
+    the department's own config/ dir, falling back to the department root --
+    resolved by walking up from this file (presentation_job/ -> scripts/ -> dept),
+    never from a hard-coded operator path."""
+    env = os.environ.get(CONFIG_DIR_ENV)
+    if env:
+        return Path(env).expanduser()
+    dept = Path(__file__).resolve().parent.parent.parent
+    cfg = dept / "config"
+    return cfg if cfg.is_dir() else dept
+
+
+def override_path(config_dir: Optional[Path] = None) -> Path:
+    return Path(config_dir or department_config_dir()) / OVERRIDE_FILENAME
+
+
+def read_override(config_dir: Optional[Path] = None) -> Tuple[Optional[dict], Optional[str]]:
+    """Read the declared override. Returns (record, error).
+
+    Absent file -> (None, None): not an error, detection moves on.
+    Present but unreadable/not-JSON/not-an-object -> (None, reason): a HARD error.
+    A declaration the operator wrote and we cannot parse is never downgraded to a
+    silent default -- that would hide their mistake behind a plausible number.
+
+    TWO SHAPES ARE ACCEPTED (F1). The record is returned VERBATIM here;
+    _override_entries() below is what splits it into per-provider sub-records:
+
+      v2 (written today):  {"schema": 2,
+                            "providers": {"<canonical>": {"plan": ...,
+                                                          "max_concurrent": ...,
+                                                          "note": ...}, ...}}
+      v1 (legacy, READ-ONLY): {"provider": ..., "plan": ...,
+                               "max_concurrent": ...}
+
+    A v1 record is understood IN MEMORY as `providers: {record.provider:
+    record}` and is NEVER rewritten on read -- a client box keeps working
+    untouched, scoped to the one provider its file actually names."""
+    path = override_path(config_dir)
+    if not path.is_file():
+        return None, None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"{path} is present but unreadable/not valid JSON: {exc}"
+    if not isinstance(raw, dict):
+        return None, f"{path} must contain a JSON object, found {type(raw).__name__}"
+    return raw, None
+
+
+def _override_entries(record: Optional[dict],
+                      config_dir: Optional[Path] = None):
+    """Split a declared override into PER-PROVIDER sub-records.
+
+    Returns ``(entries, schema)``. Each entry is
+    ``{"canonical": <provider id or None>, "declared": <raw provider string>,
+    "record": <flat {provider, plan, max_concurrent, ...} dict>}`` -- the flat
+    dict is exactly what `_resolve_override()` already knows how to read, so
+    the three declaration cases (BYOK self-throttle / cap-table clamp /
+    unrecognised-and-bounded) are reused verbatim, one provider at a time.
+
+    A v2 record carries one sub-record per provider. A v1 flat record is
+    treated as ``{record["provider"]: record}`` and is never rewritten on
+    read. The point of the split is scope: a declaration about ollama-cloud
+    must never be readable as a statement about deepseek-direct, and before
+    F1 it was -- it pre-empted detection for the whole box."""
+    if not isinstance(record, dict):
+        return [], OVERRIDE_SCHEMA
+    providers_blob = record.get("providers")
+    looks_v2 = (record.get("schema") == OVERRIDE_SCHEMA
+                or (isinstance(providers_blob, dict) and "provider" not in record))
+    entries = []
+    if looks_v2:
+        if isinstance(providers_blob, dict):
+            for raw_key, sub_record in providers_blob.items():
+                if not isinstance(sub_record, dict):
+                    continue
+                flat = dict(sub_record)
+                flat.setdefault("provider", raw_key)
+                declared = _safe_value("provider", flat.get("provider"))
+                entries.append({
+                    "canonical": normalize_provider(declared, config_dir),
+                    "declared": declared,
+                    "record": flat,
+                })
+        return entries, OVERRIDE_SCHEMA
+    flat = dict(record)
+    declared = _safe_value("provider", flat.get("provider"))
+    entries.append({
+        "canonical": normalize_provider(declared, config_dir),
+        "declared": declared,
+        "record": flat,
+    })
+    return entries, 1
+
+
+def _override_entry_for(entries, provider: Optional[str]) -> Optional[dict]:
+    """The declared sub-record that names THIS provider, or None.
+
+    Returning None for every other provider IS the fix: a self-throttle the
+    operator typed about one account is not evidence about another one."""
+    if not provider:
+        return None
+    for entry in entries:
+        if entry.get("canonical") == provider:
+            return entry
+    return None
+
+
+def _plan_from_profile(provider: str,
+                       config_dir: Optional[Path] = None,
+                       profile: Optional[dict] = None) -> Optional[str]:
+    """The plan tier the CLIENT ANSWERED for THIS provider, from the resource
+    profile -- the one per-provider store of interview answers.
+
+    Only a LOCKED / plan_known entry counts: an entry a probe merely created
+    is not an answer. Read-only, lazily imported (resource_profile imports
+    this module, so a module-level import would be circular), and it never
+    raises -- a box with no profile, a flag-disabled profile or a corrupt one
+    yields None and detection moves on.
+
+    PRES-015: `profile` (an already-loaded snapshot, from resolve_capacity)
+    is read INSTEAD of the store when given -- one revision serves the run."""
+    if not provider:
+        return None
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            import resource_profile as _rp  # type: ignore[no-redef]
+    except ImportError:
+        return None
+    try:
+        if not _rp.flag_enabled():
+            return None
+        entry = _rp.get_provider(profile if profile is not None
+                                 else _rp.load_profile(config_dir), provider)
+        if not entry:
+            return None
+        if not (entry.get("locked") or entry.get("plan_known")):
+            return None
+        return normalize_plan(entry.get("plan_tier"), provider)
+    except Exception:  # noqa: BLE001 -- a broken profile never breaks detection
+        return None
+
+
+def _resolve_override(record: dict, path: Path,
+                      config_dir: Optional[Path] = None) -> dict:
+    """Turn a declared {provider, plan, max_concurrent} into a resolution dict.
+
+    A declaration is not a measurement -- except for a NO_CAP_PROVIDERS entry,
+    where a declared number is exactly what it claims to be: the operator/
+    client choosing to self-throttle a provider that has no ceiling to
+    reconcile against in the first place. The cases below are checked in THIS
+    order on purpose:
+
+      0. provider resolves to a NO_CAP_PROVIDERS entry (openrouter, or a
+         client-declared provider with no CAP_TABLE row -- F17)
+         -> MEASURED, no matter what the plan says. "Do not
+         limit someone who brought their own capacity": `available` is the
+         declared max_concurrent verbatim when given (a self-throttle is
+         always honoured, and never clamped -- there is no table row to clamp
+         it against), or UNBOUNDED when no number was declared. This check
+         runs FIRST so a BYOK provider can never fall through to the
+         structural-cap-table cases below, which do not apply to it.
+      1. (provider, plan) BOTH resolve to a STRUCTURAL cap-table row
+         (ollama-cloud) -> that row is authoritative; a declared
+         max_concurrent may only lower it.
+      2. provider resolves (it IS on the structural cap table) but plan does
+         not -> PARK, no matter what max_concurrent says. The provider's real
+         ceiling is a physical fact the operator cannot opt out of by typing a
+         bigger number, and clamping to that provider's own highest cap-table
+         row would still be a guess about which plan is actually in effect (a
+         $20/month Ollama Cloud account cannot run 8 just because a
+         $100/month account can) -- this module never guesses upward, so it
+         asks instead of assuming. This check MUST come before case 3 below:
+         if the bare-declared-int fallback ran first it would swallow every
+         "provider known, plan missing, max_concurrent present" declaration
+         and PARK would never fire -- that ordering mistake is the bug u07's
+         hardening fixed, and case 0 above must never reopen it for a
+         structural provider (it only ever fires for NO_CAP_PROVIDERS).
+      3. provider does not resolve at all (neither a cap-table row nor a
+         NO_CAP_PROVIDERS entry, e.g. an entirely unrecognised or absent
+         provider name) -> the declared number is the only information
+         available, but it is a self-report about an unidentified provider,
+         not a measurement. It is honoured only up to DEFAULT_CONSERVATIVE, so
+         a typo (784 instead of 8, or a placeholder 9999) cannot produce a
+         four-digit fan-out, and the result is labelled DECLARED_UNVERIFIED,
+         never MEASURED.
+    """
+    provider = normalize_provider(_safe_value("provider", record.get("provider")),
+                                  config_dir)
+    plan = normalize_plan(_safe_value("plan", record.get("plan")), provider)
+    declared = record.get("max_concurrent")
+    declared_int = declared if isinstance(declared, int) and not isinstance(declared, bool) else None
+    if declared_int is not None and declared_int < 1:
+        declared_int = None
+
+    notes = []
+
+    # Case 0: a bring-your-own-key direct provider -- NO CAP, by operator
+    # ruling. Never reaches PARK; a declared number self-throttles, verbatim,
+    # never clamped (there is nothing to clamp it against).
+    if is_no_cap_provider(provider, config_dir):
+        if declared_int is not None:
+            available = declared_int
+            notes.append(
+                f"{provider} is {_no_cap_kind(provider)} -- declared "
+                f"max_concurrent={declared_int} is honoured "
+                f"verbatim as a self-throttle for this run, never clamped upward or downward"
+            )
+        else:
+            available = UNBOUNDED
+            notes.append(
+                f"{provider} is {_no_cap_kind(provider)} -- no max_concurrent "
+                f"declared, so capacity is "
+                f"UNBOUNDED: dispatch as wide as the ready work allows"
+            )
+        return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
+                "available": available, "notes": notes}
+
+    # Case 1: a full known (provider, plan) pair on the STRUCTURAL cap table
+    # -- the table is authoritative.
+    if provider and plan and (provider, plan) in CAP_TABLE:
+        capped = CAP_TABLE[(provider, plan)]
+        if declared_int is not None and declared_int != capped:
+            # A declared number may lower it (an operator throttling
+            # themselves is legitimate) but must never raise it above what the
+            # account can actually run.
+            available = min(declared_int, capped)
+            notes.append(
+                f"declared max_concurrent={declared_int} reconciled against cap table "
+                f"{capped} for ({provider}, {plan}) -> {available} (never above the table)"
+            )
+        else:
+            available = capped
+        return {"status": STATUS_MEASURED, "provider": provider, "plan": plan,
+                "available": available, "notes": notes}
+
+    # Case 2: provider is on the structural cap table, plan is not resolvable
+    # -> PARK. Checked BEFORE the bare-declared-int fallback so a
+    # max_concurrent typed alongside a known provider can never bypass the
+    # interview question.
+    if provider in CAP_TABLE_PROVIDERS and not plan:
+        if declared_int is not None:
+            notes.append(
+                f"{path} declares provider {provider} with max_concurrent={declared_int}, "
+                f"but no recognisable plan -- a declared number is never authoritative for "
+                f"a structural cap-table provider until its plan is confirmed, so the "
+                f"declared value is disregarded and this PARKS behind the interview "
+                f"question instead of clamping to a guessed ceiling"
+            )
+        else:
+            notes.append(f"{path} declares provider {provider} but no recognisable plan")
+        return {"status": STATUS_PARKED, "provider": provider, "plan": None,
+                "available": None, "notes": notes}
+
+    # Case 3: provider is not recognised at all -- a self-reported number,
+    # bounded, honestly labelled, never MEASURED.
+    if declared_int is not None:
+        available = min(declared_int, DEFAULT_CONSERVATIVE)
+        notes.append(
+            f"({record.get('provider')!r}, {record.get('plan')!r}) is not a cap-table row "
+            f"and not a recognised NO_CAP_PROVIDERS entry; declared max_concurrent="
+            f"{declared_int} is a self-report, not a measurement -- bounded to "
+            f"DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE} -> {available}"
+        )
+        return {"status": STATUS_DECLARED_UNVERIFIED, "provider": provider, "plan": plan,
+                "available": available, "notes": notes}
+
+    return {"status": STATUS_UNDETERMINED, "provider": provider, "plan": plan,
+            "available": DEFAULT_CONSERVATIVE,
+            "notes": [f"{path} declares neither a cap-table provider/plan pair, a "
+                      f"NO_CAP_PROVIDERS entry, nor a positive integer max_concurrent"]}
+
+
+def declare_capacity(provider: str, *, plan: Optional[str] = None,
+                     max_concurrent: Optional[int] = None,
+                     config_dir: Optional[Path] = None,
+                     expected_revision: Optional[Any] = None) -> Path:
+    """Declare capacity for ONE provider in capacity_override.json (schema 2).
+
+    This is the operator/client SELF-THROTTLE writer, and after F1 it is the
+    only thing capacity_override.json is for. It MERGES: every other
+    provider's sub-record in the file survives the write, because a statement
+    about one account was never a statement about another and writing the
+    file as if it were is the defect F1 removes.
+
+    `plan` is validated against CAP_TABLE for a structural provider (an
+    unknown tier is never persisted as though it had been measured); for a
+    NO_CAP_PROVIDERS entry a resolved tier label is persisted as metadata
+    only, since no tier changes a ceiling that does not exist.
+    `max_concurrent` is a positive int that
+    can only LOWER what the tables resolve, never raise it -- the clamp lives
+    in `_resolve_override()` and is unchanged.
+
+    [PRES-044] TRANSACTIONAL: the read -> validate -> merge -> write runs
+    under ONE lock spanning the whole transaction (process-local mutex +
+    cross-process flock on `capacity_override.json.lock`), so two simultaneous
+    writers serialise and BOTH persist. The write is a unique tmp
+    (pid+thread) + fsync + atomic os.replace + directory fsync, all inside
+    the lock; a failure raises (ValueError/StoreWriteError) with the previous
+    file intact -- never a success claim over a lost write. Unknown root and
+    per-provider fields survive verbatim; plan (entitlement), max_concurrent
+    (allocation) and an explicit `reserve` stay three DISTINCT fields, so a
+    tier change can never silently remove a self-throttle. The file carries a
+    `revision` int bumped on every write: pass `expected_revision` (a
+    revision read earlier) to have a stale same-provider writer REJECTED with
+    StoreRevisionConflict instead of silently dropping a concurrent writer's
+    fields. Reading legacy (v1) state never rewrites it; an explicit schema
+    migration backs up first.
+
+    Returns the written path. Raises ValueError on an unknown provider, an
+    unknown (provider, plan) pair, a non-positive max_concurrent, a call
+    that declares nothing at all, or an unreadable existing file;
+    StoreRevisionConflict on a stale expected_revision; StoreWriteError when
+    the durable write fails."""
+    norm_provider = normalize_provider(provider, config_dir)
+    norm_plan = None
+    if plan is not None:
+        norm_plan = normalize_plan(plan, norm_provider)
+        if (not norm_provider or not norm_plan
+                or ((norm_provider, norm_plan) not in CAP_TABLE
+                    and norm_provider not in NO_CAP_PROVIDERS)):
+            raise ValueError(
+                f"refusing to persist an unknown pair (provider={provider!r}, "
+                f"plan={plan!r}); known pairs: {sorted(CAP_TABLE)}"
+            )
+    if not norm_provider:
+        raise ValueError(
+            f"refusing to declare capacity for an unidentified provider "
+            f"(provider={provider!r}); a declaration has to say WHICH account "
+            f"it is about"
+        )
+    if max_concurrent is not None:
+        if isinstance(max_concurrent, bool) or not isinstance(max_concurrent, int) \
+                or max_concurrent < 1:
+            raise ValueError(
+                f"refusing to declare max_concurrent={max_concurrent!r} for "
+                f"{norm_provider}: it must be a positive integer"
+            )
+    if norm_plan is None and max_concurrent is None:
+        raise ValueError(
+            f"refusing to write an empty declaration for {norm_provider}: pass a "
+            f"plan, a max_concurrent, or both"
+        )
+
+    path = override_path(config_dir)
+    with _store_lock(path):
+        payload = _declare_capacity_locked(
+            path, norm_provider, norm_plan, max_concurrent,
+            expected_revision, config_dir)
+    return path
+
+
+#: [PRES-044] Root keys this module owns in capacity_override.json. EVERY
+#: other root key is operator metadata and survives every write verbatim.
+_OVERRIDE_OWNED_ROOT_KEYS = ("schema", "revision", "providers", "_note")
+
+
+def _declare_capacity_locked(
+    path: Path,
+    norm_provider: str,
+    norm_plan: Optional[str],
+    max_concurrent: Optional[int],
+    expected_revision: Optional[Any],
+    config_dir: Optional[Path],
+) -> Path:
+    """The merge+write transaction for declare_capacity, called with the
+    store lock held. See declare_capacity for the binding contract."""
+    # MERGE, never clobber: read whatever is there (v1 or v2) and keep every
+    # OTHER provider's sub-record -- and every unknown ROOT field.
+    existing, error = read_override(path.parent)
+    if error:
+        raise ValueError(
+            f"refusing to merge a declaration into an unreadable file: {error}")
+
+    # [PRES-044] expected-revision reject: the caller read revision N; if the
+    # file now says M != N, another writer won the race and their fields are
+    # on disk -- reject LOUDLY (the caller may re-read, re-merge, retry) and
+    # never silently overwrite them.
+    current_revision = (existing or {}).get("revision")
+    if expected_revision is not None and current_revision != expected_revision:
+        raise StoreRevisionConflict(
+            f"{path} changed under us: expected revision "
+            f"{expected_revision!r}, found {current_revision!r} -- another "
+            f"writer's update is on disk and is preserved; re-read, re-merge, "
+            f"retry. Refusing to clobber their fields.")
+
+    entries, schema = _override_entries(existing, config_dir)
+
+    # [PRES-044] Preserve EVERY unknown root field verbatim: this module owns
+    # exactly schema/revision/providers/_note. A v1 legacy record is never
+    # rewritten by a read, but an explicit WRITE to it is the one sanctioned
+    # migration path, and it backs up first (below).
+    payload: dict = dict(existing) if isinstance(existing, dict) else {}
+
+    # [PRES-044] Explicit schema migration only, with backup: a v1 record is
+    # upgraded to schema 2 here (and ONLY here -- read_override never
+    # rewrites), after the pre-migration bytes are copied to
+    # <name>.pre-schema2.bak. A failed backup refuses the migration.
+    migration_backup: Optional[Path] = None
+    if schema != OVERRIDE_SCHEMA and isinstance(existing, dict):
+        migration_backup = path.with_suffix(".json.pre-schema2.bak")
+        try:
+            migration_backup.write_bytes(path.read_bytes())
+        except OSError as exc:
+            raise StoreWriteError(
+                f"{path}: refusing schema v{schema} -> v{OVERRIDE_SCHEMA} "
+                f"migration: pre-migration backup "
+                f"{migration_backup} could not be written: {exc}") from exc
+
+    providers = dict(payload.get("providers")) \
+        if isinstance(payload.get("providers"), dict) else {}
+    for entry in entries:
+        key = entry.get("canonical") or entry.get("declared")
+        if not key:
+            continue
+        keep = {k: v for k, v in entry["record"].items() if k != "provider"}
+        providers[str(key)] = keep
+    sub_record = dict(providers.get(norm_provider) or {})
+    if norm_plan is not None:
+        sub_record["plan"] = norm_plan
+        # [PRES-044] Deliberately NOT the cap-table number: CAP_TABLE is the
+        # single source of truth for what a tier allows, and copying it here
+        # would re-create the two-stores-one-fact drift F1 exists to remove.
+        # AND: plan, max_concurrent and reserve are THREE DISTINCT fields.
+        # A tier change sets `plan` and touches nothing else -- the operator's
+        # max_concurrent self-throttle and any explicit reserve survive it
+        # verbatim (H-DATA: the old code popped max_concurrent here).
+        sub_record["source"] = "interview"
+    if max_concurrent is not None:
+        sub_record["max_concurrent"] = max_concurrent
+        sub_record["source"] = "declaration"
+    sub_record["declared_at"] = (
+        datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
+    providers[norm_provider] = sub_record
+
+    payload["schema"] = OVERRIDE_SCHEMA
+    payload["providers"] = providers
+    try:
+        payload["revision"] = int(payload.get("revision") or 0) + 1
+    except (TypeError, ValueError):
+        payload["revision"] = 1
+    payload["_note"] = "Per-provider capacity declaration written by capacity.py. Each " \
+                       "entry is honoured ONLY for the provider it names. The one-time " \
+                       "plan interview's store is the resource profile, not this file; " \
+                       "this file is the operator/client self-throttle. plan / " \
+                       "max_concurrent / reserve are distinct fields; unknown root and " \
+                       "per-provider fields are preserved."
+    _atomic_write_locked(path, payload)
+    return path
+
+
+def persist_plan_answer(provider: str, plan: str,
+                        config_dir: Optional[Path] = None) -> Path:
+    """Deprecated alias for declare_capacity(provider, plan=plan).
+
+    Kept callable, with its exact positional signature, so existing callers
+    and tests keep working. The NAME is what was wrong: this never persisted
+    an "answer" in the ask-once sense -- the answer's store is the resource
+    profile (resource_profile.record_plan_answer). What it writes is a
+    per-provider DECLARATION."""
+    return declare_capacity(provider, plan=plan, config_dir=config_dir)
+
+
+# ---------------------------------------------------------------------------
+# Step (b): the 9Router configuration
+# ---------------------------------------------------------------------------
+def _harness_settings() -> Tuple[Optional[dict], Optional[Path]]:
+    """Read the harness settings.json, if one exists. Never exits.
+
+    Only three non-secret fields are ever consulted: `model`, `modelOverrides`,
+    and the ANTHROPIC_DEFAULT_*_MODEL aliases. Anything whose key looks like a
+    credential is refused by _safe_value()."""
+    for path in HARNESS_SETTINGS_CANDIDATES:
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(raw, dict):
+            return raw, path
+    return None, None
+
+
+def _primary_route_alias(settings: Optional[dict]) -> Optional[str]:
+    """The 9Router combo name the harness' primary model routes through.
+
+    settings.json declares `model` (e.g. "opus"); the ANTHROPIC_DEFAULT_*_MODEL
+    env aliases and `modelOverrides` map that onto a 9Router combo (e.g.
+    "opus-chain"). Both are plain model/route names -- no credential is read."""
+    if not isinstance(settings, dict):
+        return None
+    model = _safe_value("model", settings.get("model"))
+    if not isinstance(model, str) or not model.strip():
+        return None
+    model = model.strip()
+    env = settings.get("env") if isinstance(settings.get("env"), dict) else {}
+    alias_key = f"ANTHROPIC_DEFAULT_{model.upper()}_MODEL"
+    alias = _safe_value(alias_key, env.get(alias_key))
+    if isinstance(alias, str) and alias.strip():
+        return alias.strip()
+    overrides = settings.get("modelOverrides")
+    if isinstance(overrides, dict):
+        for key, value in overrides.items():
+            if _safe_value(key, True) is None or not isinstance(value, str):
+                continue
+            if key == model or key.endswith(f"-{model}") or model in key.split("-"):
+                return value.strip()
+    return model
+
+
+def _combo_models(alias: str, db_path: Path) -> Optional[list]:
+    """Read ONLY combos.name / combos.models for `alias`, read-only, never the
+    apiKeys table and never providerConnections.data (both carry secrets)."""
+    if not db_path.is_file():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error:
+        return None
+    try:
+        cur = con.cursor()
+        row = cur.execute(
+            "select models from combos where name = ? limit 1", (alias,)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            models = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        except ValueError:
+            return None
+        return models if isinstance(models, list) else None
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+
+
+def _split_route_entry(entry: str) -> Tuple[Optional[str], str]:
+    """'ds-max/deepseek-flash(max)' -> ('ds-max', 'deepseek-flash')."""
+    if not isinstance(entry, str) or "/" not in entry:
+        return None, str(entry or "")
+    namespace, remainder = entry.split("/", 1)
+    slug = re.sub(r"\(.*?\)", "", remainder).strip()
+    return namespace.strip(), slug
+
+
+def detect_from_9router(db_path: Optional[Path] = None) -> dict:
+    """Step (b). Which provider does the primary model route to?"""
+    db_path = Path(db_path) if db_path else NINEROUTER_DB
+    settings, settings_path = _harness_settings()
+    alias = _primary_route_alias(settings)
+    if not alias:
+        return {"hit": False,
+                "detail": f"no harness settings.json with a `model` field at "
+                          f"{', '.join(str(p) for p in HARNESS_SETTINGS_CANDIDATES)}"}
+    if not db_path.is_file():
+        return {"hit": False,
+                "detail": f"primary model alias {alias!r} (from {settings_path}) but no "
+                          f"9Router database at {db_path}"}
+    models = _combo_models(alias, db_path)
+    if not models:
+        return {"hit": False,
+                "detail": f"9Router database {db_path} has no combo named {alias!r} "
+                          f"(or it declares no models)"}
+    for entry in models:
+        namespace, slug = _split_route_entry(entry)
+        provider = normalize_provider(namespace)
+        if not provider:
+            continue
+        return {"hit": True, "provider": provider,
+                "plan": _plan_from_model_slug(provider, slug),
+                "detail": f"9Router combo {alias!r} routes to namespace {namespace!r} "
+                          f"(model {slug!r}) -> {provider}"}
+    namespaces = [_split_route_entry(e)[0] for e in models]
+    return {"hit": False,
+            "detail": f"9Router combo {alias!r} routes to namespaces {namespaces!r}, "
+                      f"none of which is a cap-table provider"}
+
+
+# ---------------------------------------------------------------------------
+# Step (c): the OpenClaw agent model configuration
+# ---------------------------------------------------------------------------
+_OPENCLAW_PRIMARY_PATHS = (
+    ("agents", "defaults", "model", "primary"),
+    ("agents", "defaults", "subagents", "model", "primary"),
+)
+
+
+def _openclaw_namespace_is_cloud(config: dict, namespace: str) -> Optional[bool]:
+    """Is this OpenClaw provider namespace the CLOUD Ollama or a local one?
+
+    Decided from models.providers.<ns>.baseUrl -- a routing endpoint, not a
+    credential (and the URL itself never leaves this function). Returns None when
+    the namespace declares no baseUrl."""
+    base_url = _get_safe(config, "models", "providers", namespace, "baseUrl")
+    if not isinstance(base_url, str) or not base_url:
+        return None
+    host = base_url.lower()
+    if "localhost" in host or "127.0.0.1" in host or "::1" in host or "0.0.0.0" in host:
+        return False
+    return True
+
+
+def detect_from_openclaw(config_path: Optional[Path] = None) -> dict:
+    """Step (c). The provider namespace prefix on the primary model."""
+    path = Path(config_path) if config_path else OPENCLAW_CONFIG
+    if not path.is_file():
+        return {"hit": False, "detail": f"no OpenClaw config at {path}"}
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"hit": False, "detail": f"OpenClaw config {path} unreadable: {exc}"}
+    if not isinstance(config, dict):
+        return {"hit": False, "detail": f"OpenClaw config {path} is not a JSON object"}
+
+    candidates = []
+    for keys in _OPENCLAW_PRIMARY_PATHS:
+        value = _get_safe(config, *keys)
+        if isinstance(value, str) and value.strip():
+            candidates.append((".".join(keys), value.strip()))
+    agents_list = _get_safe(config, "agents", "list")
+    if isinstance(agents_list, list):
+        for idx, agent in enumerate(agents_list):
+            value = _get_safe(agent, "model", "primary")
+            if isinstance(value, str) and value.strip():
+                candidates.append((f"agents.list[{idx}].model.primary", value.strip()))
+
+    if not candidates:
+        return {"hit": False,
+                "detail": f"OpenClaw config {path} declares no agents.*.model.primary"}
+
+    for where, model_id in candidates:
+        namespace, slug = _split_route_entry(model_id)
+        if namespace is None:
+            continue
+        if namespace.lower().startswith("ollama"):
+            is_cloud = _openclaw_namespace_is_cloud(config, namespace)
+            if is_cloud is False:
+                continue  # a local Ollama has no purchased plan
+        provider = normalize_provider(namespace)
+        if not provider:
+            continue
+        return {"hit": True, "provider": provider,
+                "plan": _plan_from_model_slug(provider, slug),
+                "detail": f"OpenClaw {where} = namespace {namespace!r} (model {slug!r}) "
+                          f"-> {provider}"}
+    namespaces = sorted({_split_route_entry(m)[0] for _, m in candidates})
+    return {"hit": False,
+            "detail": f"OpenClaw primary models use namespaces {namespaces!r}, none of "
+                      f"which is a cap-table provider"}
+
+
+# ---------------------------------------------------------------------------
+# Observation: how many harness processes are running right now
+# ---------------------------------------------------------------------------
+def measure_working_concurrent() -> tuple:
+    """Count live harness/subagent processes on the local box.
+
+    Uses psutil when importable; otherwise `ps -A -o pid=,command=` parsing.
+    Returns (count, method, ok). On failure returns (0, reason, False) and the
+    caller labels the number UNMEASURED -- never a fabricated value."""
+    self_pid = os.getpid()
+    try:
+        import psutil  # optional dependency
+
+        count = 0
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                if proc.info["pid"] == self_pid:
+                    continue
+                if PROCESS_PATTERN.match(proc.info["name"] or ""):
+                    count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return count, "psutil process_iter, pattern " + PROCESS_PATTERN.pattern, True
+    except ImportError:
+        pass
+    try:
+        out = subprocess.run(
+            ["ps", "-A", "-o", "pid=,command="],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if out.returncode != 0:
+            return 0, f"ps exited {out.returncode}", False
+        count = 0
+        for line in out.stdout.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) != 2:
+                continue
+            pid_str, command = parts
+            try:
+                pid = int(pid_str)
+            except ValueError:
+                continue
+            if pid == self_pid:
+                continue
+            argv0 = command.split(None, 1)[0]
+            basename = os.path.basename(argv0)
+            if basename.startswith("python") and "capacity.py" in command:
+                continue  # this probe's own interpreter
+            if PROCESS_PATTERN.match(basename):
+                count += 1
+        return count, "ps -A scan, argv[0] pattern " + PROCESS_PATTERN.pattern, True
+    except Exception as exc:  # noqa: BLE001 -- measurement must never raise
+        return 0, f"measurement failed: {exc}", False
+
+
+# ---------------------------------------------------------------------------
+# The probe
+# ---------------------------------------------------------------------------
+def detect(config_dir: Optional[Path] = None, *,
+           provider: Optional[str] = None,
+           model: Optional[str] = None,
+           profile: Optional[dict] = None) -> dict:
+    """Run the detection chain FOR ONE PROVIDER. Resolution + audit trail.
+
+    `provider` names the account the caller is asking about -- the ROUTED
+    provider, for a per-route width. Omitted (the historical no-arg call),
+    the question stays "what is the PRIMARY route's account?", answered by
+    the 9Router/OpenClaw detectors exactly as before. `model` is the model id
+    the caller is about to route to, for the providers whose model id implies
+    a plan tier label (DeepSeek Direct's v4 slugs; metadata only since the
+    2026-10-15 no-cap ruling).
+
+    See the module docstring's DETECTION ORDER for the two stages and why
+    they are two: before F1 a `capacity_override.json` naming ONE provider
+    pre-empted detection for the whole box, so one account's plan answer
+    capped every other account's routes.
+
+    PRES-015: `profile` hands detect() an ALREADY-LOADED profile snapshot --
+    the frozen one-revision client picture resolve_capacity() threads through.
+    When given, the profile store is NOT re-read (the snapshot IS the client
+    fact base); every other source behaves exactly as before. This keeps
+    `resolve_capacity` pure with respect to a run's profile revision without
+    changing any no-arg caller's behaviour byte for byte.
+
+    Never raises, never exits, never reads a credential value."""
+    trail = []
+    path = override_path(config_dir)
+    requested = provider
+
+    # (a) the declared override. Read FIRST because a declaration we cannot
+    # PARSE is a hard fact about the box, whichever provider is in question --
+    # never silently downgraded to a plausible default.
+    record, error = read_override(config_dir)
+    if error:
+        trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "ERROR",
+                      "detail": error})
+        return {"status": STATUS_FAILED, "provider": None, "plan": None,
+                "available": None, "source": SOURCE_OVERRIDE,
+                "provider_requested": requested,
+                "override_path": str(path), "trail": trail, "notes": [error]}
+    entries, schema = _override_entries(record, config_dir)
+    if record is None:
+        trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "MISS",
+                      "detail": f"no declared override at {path}"})
+    else:
+        named = ", ".join(str(e.get("canonical") or e.get("declared"))
+                          for e in entries) or "no provider"
+        trail.append({"step": "a", "source": SOURCE_OVERRIDE, "result": "READ",
+                      "detail": f"declared override at {path} (schema {schema}) "
+                                f"names: {named} -- honoured ONLY for the "
+                                f"provider(s) it names"})
+
+    # (b) 9Router, then (c) OpenClaw: WHICH provider does this box route to?
+    detected = None
+    for step, source, detector in (("b", SOURCE_9ROUTER, detect_from_9router),
+                                   ("c", SOURCE_OPENCLAW, detect_from_openclaw)):
+        found = detector()
+        if not found.get("hit"):
+            trail.append({"step": step, "source": source, "result": "MISS",
+                          "detail": found.get("detail", "")})
+            continue
+        trail.append({"step": step, "source": source,
+                      "result": "HIT" if found.get("plan") else "HIT (plan unknown)",
+                      "detail": found.get("detail", "")})
+        detected = {"provider": found.get("provider"), "plan": found.get("plan"),
+                    "source": source}
+        break
+
+    # --- STAGE 1: which provider is this answer ABOUT?
+    if requested is not None:
+        target = normalize_provider(requested, config_dir)
+        trail.append({"step": "1", "source": SOURCE_REQUESTED,
+                      "result": "HIT" if target else "UNRESOLVED",
+                      "detail": f"caller asked about provider {requested!r} -> "
+                                f"{target!r}"})
+    elif detected is not None:
+        target = detected["provider"]
+    elif entries:
+        # An unconfigured box carrying a hand-written declaration: the file is
+        # the only thing that says which account this is. When it names
+        # SEVERAL, the FIRST one in the file wins and the trail says so -- it
+        # is the operator's own ordering, it is deterministic, and a caller
+        # that needs a specific account passes provider= rather than relying
+        # on it. Silently min()-ing across the declared providers here is the
+        # exact "one provider's number stands in for the box" shape this fix
+        # removes.
+        identified = [e["canonical"] for e in entries if e["canonical"]]
+        target = identified[0] if identified else None
+        if len(identified) > 1:
+            trail.append({"step": "1", "source": SOURCE_OVERRIDE,
+                          "result": "AMBIGUOUS",
+                          "detail": f"no primary route detected and the declaration "
+                                    f"names {identified}; answering about the first, "
+                                    f"{target!r} -- pass provider= to ask about "
+                                    f"another"})
+    else:
+        target = None
+
+    entry = _override_entry_for(entries, target)
+    if entry is None and target is None and requested is None and entries:
+        # A declaration about a provider nothing can identify is still the only
+        # evidence on this box; case 3 of _resolve_override is the honest
+        # answer to it (DECLARED_UNVERIFIED, bounded, never MEASURED).
+        entry = entries[0]
+
+    if target is None and entry is None:
+        detail = (f"provider {requested!r} does not resolve to any cap-table row, "
+                  f"NO_CAP_PROVIDERS entry or client-declared provider"
+                  if requested is not None else
+                  "no provider could be determined from any source")
+        trail.append({"step": "e", "source": SOURCE_NONE, "result": "UNDETERMINED",
+                      "detail": f"{detail}; falling back to "
+                                f"DEFAULT_CONSERVATIVE={DEFAULT_CONSERVATIVE}"})
+        return {"status": STATUS_UNDETERMINED, "provider": None, "plan": None,
+                "available": DEFAULT_CONSERVATIVE, "source": SOURCE_NONE,
+                "provider_requested": requested,
+                "override_path": str(path), "trail": trail, "notes": []}
+
+    # --- STAGE 2: which plan is THAT provider on? First hit wins.
+    plan = None
+    plan_source = None
+    if target:
+        if model:
+            candidate = _plan_from_model_slug(target, str(model))
+            if candidate:
+                plan, plan_source = candidate, SOURCE_MODEL
+        if plan is None and detected is not None \
+                and detected["provider"] == target and detected.get("plan"):
+            plan, plan_source = detected["plan"], detected["source"]
+        if plan is None:
+            candidate = _plan_from_profile(target, config_dir,
+                                           profile=profile)
+            if candidate:
+                plan, plan_source = candidate, SOURCE_PROFILE
+                trail.append({"step": "2", "source": SOURCE_PROFILE, "result": "HIT",
+                              "detail": f"the resource profile carries a locked plan "
+                                        f"for {target}: {candidate}"})
+        if plan is None and entry is not None:
+            candidate = normalize_plan(
+                _safe_value("plan", entry["record"].get("plan")), target)
+            if candidate:
+                plan, plan_source = candidate, SOURCE_OVERRIDE
+
+    # --- STAGE 3: resolve it. A declared max_concurrent may only LOWER.
+    declared_record = dict(entry["record"]) if entry is not None else {}
+    synthetic = {
+        "provider": target if target is not None else (
+            requested if requested is not None else declared_record.get("provider")),
+        "plan": plan,
+        "max_concurrent": declared_record.get("max_concurrent"),
+    }
+    resolved = _resolve_override(synthetic, path, config_dir)
+
+    if resolved["status"] == STATUS_PARKED and entry is None:
+        # PARK reached without any declaration to blame: say so accurately
+        # rather than pointing at a file that does not mention this provider.
+        resolved["notes"] = [
+            f"{target} is on the structural cap table but no plan is known for it "
+            f"-- not from the routed model id, not from the resource profile, and "
+            f"not from any declaration at {path}. The answer's store is the "
+            f"resource profile (asked ONCE, then locked)."]
+
+    if plan_source:
+        source = plan_source
+    elif detected is not None and target is not None \
+            and detected["provider"] == target:
+        source = detected["source"]
+    elif entry is not None:
+        source = SOURCE_OVERRIDE
+    elif requested is not None:
+        source = SOURCE_REQUESTED
+    else:
+        source = SOURCE_NONE
+
+    if resolved["status"] == STATUS_PARKED:
+        trail.append({"step": "d", "source": source, "result": "PARK",
+                      "detail": f"provider {resolved['provider']} is on the "
+                                f"structural cap table but its plan is unknown "
+                                f"-- asking once"})
+
+    # PRES-015: surface the client's EXPLICIT declared max_concurrent (the raw
+    # override value) SEPARATELY from `available`. `available` is the derived
+    # cap-table number (which itself already folds the operator's historical
+    # reserve: ollama $100 says 8 = 10 - 2); the explicit value is the client's
+    # own self-throttle. resolve_capacity() needs the distinction because
+    # _account_factors re-derives the ceiling from the RAW account limit minus
+    # the (possibly client-overridden, possibly 0) reserve -- feeding it the
+    # derived 8 as the "allocation" would clamp a reserve-0 answer back to 8
+    # and the client's explicit "no reserve" ruling would never reach the
+    # ceiling. Only an EXPLICIT declaration is an allocation; the derived
+    # cap-table number is not.
+    explicit_declared = None
+    if entry is not None:
+        raw_declared = entry["record"].get("max_concurrent")
+        if isinstance(raw_declared, int) and not isinstance(raw_declared, bool) \
+                and raw_declared >= 1:
+            explicit_declared = int(raw_declared)
+    resolved.update({"source": source, "override_path": str(path),
+                     "provider_requested": requested, "trail": trail,
+                     "declared_max_concurrent": explicit_declared})
+    return resolved
+
+
+def resource_profile_surface(config_dir: Optional[Path] = None,
+                             resolution: Optional[dict] = None) -> dict:
+    """FIX 8: the capacity probe's read-only view of the per-client resource
+    profile (resource_profile.py's store). Returns a redacted summary of the
+    persisted client picture -- providers, plan tiers, ceilings, the
+    ask-once lock state and any intake question still owed -- WITHOUT ever
+    reading or emitting a credential, and WITHOUT changing detection: this
+    is a surfaced mirror, not a third detection source. `resolution` (the
+    detect() result, when available) feeds the pending-question evaluation
+    so a provider caught PARKing surfaces its one-time question even before
+    the profile has ever heard of it. Never raises; the probe must keep
+    working on a box with no profile, a flag-disabled profile, or a corrupt
+    one. Import is lazy so this module never depends on the profile module
+    at import time (launcher.py's dual-import posture keeps working either
+    way)."""
+    surface = {"profile_enabled": True, "profile_path": None,
+               "providers": [], "pending_questions": []}
+    try:
+        try:
+            from . import resource_profile as _rp  # package-relative
+        except ImportError:  # direct file run from presentation_job/
+            import resource_profile as _rp  # type: ignore[no-redef]
+    except ImportError:
+        surface["profile_enabled"] = False
+        return surface
+    if not _rp.flag_enabled():
+        surface["profile_enabled"] = False
+        return surface
+    try:
+        path = _rp.profile_path(config_dir)
+        surface["profile_path"] = str(path)
+        profile = _rp.load_profile(config_dir)
+        if profile.get("error"):
+            surface["profile_error"] = profile["error"]
+        summary = _rp.redacted_summary(profile)
+        surface["providers"] = summary.get("providers", [])
+        detection = None
+        if isinstance(resolution, dict):
+            provider = resolution.get("provider")
+            if isinstance(provider, str) and provider.strip():
+                detection = {"provider": provider,
+                             "detected": resolution["status"] != "UNDETERMINED"}
+        pending = _rp.pending_questions(profile=profile, detection=detection)
+        surface["pending_questions"] = pending
+        surface["pending_intake_ids"] = sorted(
+            {q.get("id") for q in pending})
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["profile_error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
+
+def fleet_shape_surface(config_dir: Optional[Path] = None) -> dict:
+    """FIX-PLAN Item 17: the capacity probe's read-only view of the fleet
+    shape and the remembered system gauge.
+
+    The probe CONSUMES the shape budgets the profile recorded at gauge
+    time: the recorded shape (fleet-mac / fleet-hostinger / fleet-contabo,
+    exact labels), the detection candidates when no shape is recorded,
+    and the persisted gauge (container budget, host ceiling, per-class
+    budgets, per-provider readings) WITH its freshness state -- a stale
+    or superseded gauge is surfaced as the state gauge_status() reports
+    ("stale-age", "shape-changed", "hardware-changed"), never silently
+    presented as measured truth. Local file reads only (the profile
+    store and /proc/cgroup evidence): zero discovery requests, so this
+    surface is safe on the probe path PRES-015 keeps pure of network
+    work. Never raises; a box with no profile, a flag-disabled profile,
+    or a broken store degrades to the detection-only answer."""
+    surface: dict = {"recorded_shape": None, "detected_shape": None,
+                     "candidates": [], "gauge_state": "missing",
+                     "gauge": None}
+    det: dict = {}
+    try:
+        try:
+            from . import hardware_budget as _hb
+        except ImportError:  # direct file run from presentation_job/
+            import hardware_budget as _hb  # type: ignore[no-redef]
+        det = _hb.detect_fleet_shape()
+        surface["detected_shape"] = det.get("shape")
+        surface["candidates"] = list(det.get("candidates") or [])
+        surface["container_budget_bytes"] = det.get("container_budget_bytes")
+        surface["host_ceiling_bytes"] = det.get("host_ceiling_bytes")
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["detection_error"] = f"{exc.__class__.__name__}: {exc}"
+    try:
+        try:
+            from . import resource_profile as _rp
+        except ImportError:  # direct file run from presentation_job/
+            import resource_profile as _rp  # type: ignore[no-redef]
+        if not _rp.flag_enabled():
+            surface["profile_enabled"] = False
+            return surface
+        surface["profile_enabled"] = True
+        profile = _rp.load_profile(config_dir)
+        surface["recorded_shape"] = _rp.fleet_shape(profile)
+        gauge = _rp.system_gauge(profile)
+        if gauge:
+            status = _rp.gauge_status(profile)
+            surface["gauge_state"] = status.get("state")
+            surface["gauge"] = {
+                "fleet_shape": gauge.get("fleet_shape"),
+                "measured_at": gauge.get("measured_at"),
+                "state": status.get("state"),
+                "hardware": gauge.get("hardware"),
+                "budgets": gauge.get("budgets"),
+                "providers": gauge.get("providers"),
+            }
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["profile_error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
+
+def provider_probes_surface(transport: Optional[callable] = None) -> dict:
+    """FIX 9 surface on capacity.probe(): a REDACTED summary of the provider
+    inventory -- per provider {present, key_source, probed, ok, model_count}
+    -- plus the 9Router wired lineups. NEVER carries a key value, NEVER makes
+    a models call itself unless the transport is the live default and the
+    flag is on: this surface exists so the FIX 30 intake and the report can
+    say what the box owns without moving the storage to this path (storing
+    stays with probe_providers(persist=True) / the profile). Errors never
+    break the capacity probe."""
+    surface: dict = {"flag": None, "providers": [], "ninerouter": None}
+    try:
+        if not probe_flag_enabled():
+            surface["flag"] = "0"
+            surface["detail"] = (f"provider probes disabled by {PROBE_FLAG_ENV}=0")
+            return surface
+        surface["flag"] = "1"
+        probes = probe_providers(transport=transport)
+        for provider, verdict in (probes.get("probes") or {}).items():
+            surface["providers"].append({
+                "provider": provider,
+                "present": bool(verdict.get("present")),
+                "key_source": verdict.get("key_source"),
+                "probed": bool(verdict.get("probed")),
+                "ok": bool(verdict.get("ok")),
+                "model_count": len(verdict.get("models") or []),
+            })
+        lineup = probes.get("ninerouter") or {}
+        surface["ninerouter"] = {
+            "hit": bool(lineup.get("hit")),
+            "total_models": lineup.get("total_models", 0),
+            "providers": {prefix: {"label": info.get("label"),
+                                   "models": info.get("models", [])}
+                          for prefix, info in
+                          (lineup.get("providers") or {}).items()},
+            "detail": lineup.get("detail", ""),
+        }
+    except Exception as exc:  # noqa: BLE001 -- never break the capacity probe
+        surface["error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
+# ---------------------------------------------------------------------------
+# PRES-015 -- the pure/admission split (H-P1, handoff-capacity-review.md)
+#
+# THE DEFECT THIS SEAM REMOVES: `probe()` unconditionally appended
+# `provider_probes_surface()` -- which, with PRESENTATION_PROVIDER_PROBES on
+# (the default), makes live `GET /models` calls to EVERY probeable provider.
+# `probe()` sits on the width path (dispatcher._routing_stamp,
+# resolve_max_workers, launcher.capacity_gate, execution_plan sizing), so a
+# 100-unit fan-out that stamps one route per phase re-ran provider DISCOVERY
+# as a side effect of scheduling. A models list is an INVENTORY, not a
+# concurrency measurement, and inventory freshness is not measured capacity.
+#
+# THE SPLIT:
+#   resolve_capacity(provider, model, profile_snapshot)  -- PURE. Reads the
+#     frozen profile/detection state it is handed (or the local on-disk
+#     stores, which are files, not the network), resolves the account
+#     ceiling/reserve/allocation through the existing _resolve_override
+#     stages, and NEVER issues a network request. This is what every
+#     scheduling / width / poll path calls.
+#   refresh_provider_inventory(...)  -- the EXPLICIT discovery door. Bounded
+#     (a provider list, not "everything"), deliberate (callers opt in by
+#     name), cached (a snapshot with probed_at / snapshot_revision), and the
+#     only path that may issue GET /models. Intake uses it; scheduling does
+#     not.
+#   probe() itself now carries the inventory surface ONLY when the caller
+#     explicitly asks (`include_inventory=True`) -- default is zero discovery
+#     requests, verified by a transport counter in the QC tests.
+#
+# ADMISSION FACTORS (H-P5's "separate the numbers"):
+#   account_limit      -- the raw structural ceiling (what the account
+#                         enforces: ollama $100 -> 10) when the table
+#                         knows one; None otherwise.
+#   account_ceiling    -- what THIS JOB may use: account_limit minus the
+#                         reserve (>=1 never fabricated: reserve can exhaust
+#                         it only to 1, not below).
+#   reserve            -- the operator's held-back slots (ollama $100:
+#                         ceiling 8 = 10 - 2). Visible, overridable by the
+#                         client (reserve 0 is legal), never silently merged
+#                         into the ceiling.
+#   allocation         -- the client's declared max_concurrent (the stored
+#                         "Max allocation 8"), a self-throttle that may lower
+#                         the ceiling, never raise it.
+# The historical CAP_TABLE number (8) stays the RESOLVED `available` for
+# ollama-cloud/$100 -- every v25.0.17/.20 caller contract is unchanged -- but
+# the record now SHOWS the 10 and the 2 separately instead of folding them.
+# ---------------------------------------------------------------------------
+#: (provider, plan) -> (account_limit, reserve) pairs the table derives its
+#: resolved ceilings from. Everything not listed here has no known raw
+#: account limit (the resolved number IS the limit; reserve applies to the
+#: client's own allocation instead of a known account maximum).
+ACCOUNT_LIMITS = {
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_20): (3, 0),
+    (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): (10, 2),
+}
+
+#: Default reserve when a client declares a max_concurrent of their own
+#: (the stored "Max allocation 8" case): the operator's 2-slot ruling.
+DEFAULT_RESERVE = 2
+
+#: Environment override for the reserve, when the client explicitly asks for
+#: 0 (or any other non-negative value). An invalid value is ignored, never
+#: guessed into a bigger or negative reserve.
+RESERVE_ENV = "PRESENTATION_CAPACITY_RESERVE"
+
+#: How long a provider-inventory snapshot stays fresh for consumers that ask
+#: `refresh_provider_inventory(max_age_s=...)` style. Inventory freshness is
+#: NEVER measured concurrency -- this bounds how stale a models list may be
+#: before an explicit refresh re-reads it, nothing more.
+INVENTORY_TTL_S = 300.0
+
+_INVENTORY_SNAPSHOT: dict = {}
+_INVENTORY_LOCK = None
+
+
+def _inventory_lock():
+    global _INVENTORY_LOCK
+    if _INVENTORY_LOCK is None:
+        import threading
+        _INVENTORY_LOCK = threading.Lock()
+    return _INVENTORY_LOCK
+
+
+def _account_factors(provider: Optional[str], plan: Optional[str],
+                     declared: Optional[int]) -> dict:
+    """The PRES-015 admission factors for one (provider, plan) pair.
+
+    Returns {account_limit, reserve, allocation, account_ceiling, basis}.
+    Never raises; unknown/None inputs yield None factors rather than
+    fabricated numbers. `allocation` (a declared max_concurrent) only ever
+    LOWERS the ceiling -- the u07 hardening's own rule, restated here."""
+    key = (provider, plan) if provider and plan else None
+    limit, default_reserve = (ACCOUNT_LIMITS.get(key, (None, None))
+                              if key else (None, None))
+    if limit is None:
+        # No structural account maximum is known: the resolved cap-table
+        # number (or the client's declared self-throttle) IS the ceiling and
+        # the reserve is informational only. Never invent a 10 for a provider
+        # whose plan says nothing about one.
+        ceiling = declared if isinstance(declared, int) and declared > 0 else None
+        return {"account_limit": None, "reserve": None,
+                "allocation": declared if isinstance(declared, int) and declared > 0
+                else None,
+                "account_ceiling": ceiling,
+                "basis": "no structural account limit known; the resolved "
+                         "ceiling is the cap-table/declared number itself"}
+    env_raw = (os.environ.get(RESERVE_ENV) or "").strip()
+    reserve = default_reserve
+    if env_raw:
+        try:
+            candidate = int(env_raw)
+            if candidate >= 0:
+                reserve = candidate
+        except ValueError:
+            pass  # an invalid override is ignored, never guessed
+    ceiling = max(1, limit - reserve) if isinstance(reserve, int) else limit
+    if isinstance(declared, int) and declared > 0:
+        ceiling = min(ceiling, declared)
+    return {"account_limit": limit, "reserve": reserve,
+            "allocation": declared if isinstance(declared, int) and declared > 0
+            else None,
+            "account_ceiling": ceiling,
+            "basis": (f"account limit {limit} minus reserve {reserve}"
+                      + (f", allocation {declared}" if declared else "")
+                      + f" -> {ceiling}")}
+
+
+def resolve_capacity(provider: Optional[str] = None,
+                     model: Optional[str] = None,
+                     profile_snapshot: Optional[dict] = None,
+                     config_dir: Optional[Path] = None,
+                     snapshot_revision: Optional[str] = None) -> dict:
+    """PURE per-route capacity resolution -- the scheduling-path entry.
+
+    PRES-015's split (H-P1): everything on a width path (routing stamps,
+    fan-out widths, poll loops, wave sizing) calls THIS. It performs ZERO
+    provider discovery: no GET /models, no probe_one_provider, no inventory
+    refresh. It reads only (a) the arguments handed to it, (b) the on-disk
+    declaration/profile stores (files, not the network), and (c) the 9Router/
+    OpenClaw LOCAL config detectors -- the same stores detect() always read.
+
+    `profile_snapshot` -- an ALREADY-LOADED profile dict (the immutable
+    snapshot one revision of the client's facts). When given, the profile
+    store is NOT re-read: one revision serves the whole run, so a mid-run
+    profile write cannot change a width under a dispatching wave. When
+    omitted, behaviour matches detect(): the store is read (a local file,
+    still no network). `snapshot_revision` -- recorded verbatim on the result
+    so a run's records can prove every width came from ONE revision.
+
+    The result carries the PRES-015 admission factors (account_limit /
+    reserve / allocation / account_ceiling) BESIDE the historical
+    `available`, plus `discovery_requests: 0` -- the literal claim the
+    transport-counter tests hold this module to."""
+    try:
+        result = detect(config_dir, provider=provider, model=model,
+                        profile=profile_snapshot)
+    except Exception as exc:  # noqa: BLE001 -- a broken store degrades, never raises
+        return {"status": STATUS_UNDETERMINED, "provider": provider,
+                "plan": None, "available": DEFAULT_CONSERVATIVE,
+                "provider_requested": provider,
+                "account_factors": {},
+                "snapshot_revision": snapshot_revision,
+                "discovery_requests": 0,
+                "error": f"{exc.__class__.__name__}: {exc}"}
+    declared = None
+    if result.get("status") == STATUS_MEASURED \
+            and isinstance(result.get("available"), int):
+        declared = result["available"]
+        # `available` at this point is the cap-table number or the declared
+        # self-throttle. _account_factors re-derives it from the raw account
+        # limit minus the reserve when the table knows both -- but ONLY an
+        # EXPLICIT client declaration is an allocation (PRES-015 step 5: the
+        # derived cap-table 8 is not a client statement and must never clamp
+        # a reserve-0 answer back to 8). `declared_max_concurrent` carries
+        # exactly the raw override value; a profile/concurrency_ceiling
+        # declaration rides the same rule via the profile entry read below.
+        allocation = result.get("declared_max_concurrent")
+        if not isinstance(allocation, int) or isinstance(allocation, bool):
+            allocation = None
+        factors = _account_factors(result.get("provider"), result.get("plan"),
+                                   allocation)
+        if factors.get("account_limit") is not None:
+            result["available"] = factors["account_ceiling"]
+    else:
+        factors = _account_factors(result.get("provider"), result.get("plan"),
+                                   None)
+    result["account_factors"] = factors
+    result["snapshot_revision"] = snapshot_revision
+    result["discovery_requests"] = 0
+    return result
+
+
+def refresh_provider_inventory(providers: Optional[list] = None,
+                               transport: Optional[callable] = None,
+                               config_dir: Optional[Path] = None,
+                               persist: bool = False,
+                               max_age_s: float = INVENTORY_TTL_S,
+                               force: bool = False) -> dict:
+    """THE EXPLICIT DISCOVERY DOOR (H-P1). Bounded, deliberate, cached.
+
+    The ONLY function in this module that may issue provider GET /models
+    calls, and only for the providers NAMED (default: every probeable one --
+    the same bounded set intake asks for). The snapshot cache means repeated
+    calls inside the TTL cost zero requests; `force=True` re-reads. With
+    persist=True the redacted inventory lands in the resource profile
+    (store_provider_probes), exactly as probe_providers(persist=True) always
+    did.
+
+    Returns {"snapshot_revision", "probed_at", "probes", "ninerouter",
+    "cached", "requests_made"}. `requests_made` counts the transport calls
+    THIS invocation issued (0 on a cache hit) -- the number the QC counter
+    asserts against. Never raises."""
+    lock = _inventory_lock()
+    now = time.time()
+    with lock:
+        cached = _INVENTORY_SNAPSHOT.get("snapshot") if not force else None
+        ts = _INVENTORY_SNAPSHOT.get("ts") or 0.0
+        if cached is not None and (now - ts) < max(0.0, max_age_s):
+            out = dict(cached)
+            out["cached"] = True
+            out["requests_made"] = 0
+            return out
+    result = probe_providers(providers=providers, transport=transport,
+                             persist=persist, config_dir=config_dir)
+    revision = "inv-" + datetime.datetime.now().astimezone().strftime(
+        "%Y%m%dT%H%M%S") + "-" + format(int(now * 1000) % 100000, "05d")
+    result["snapshot_revision"] = revision
+    result["cached"] = False
+    result["requests_made"] = sum(
+        1 for v in (result.get("probes") or {}).values()
+        if isinstance(v, dict) and v.get("probed"))
+    with lock:
+        _INVENTORY_SNAPSHOT["snapshot"] = dict(result)
+        _INVENTORY_SNAPSHOT["ts"] = now
+    return result
+
+
+def inventory_snapshot_revision() -> Optional[str]:
+    """The revision of the CURRENT cached inventory snapshot, or None when
+    no explicit refresh has run in this process. Recorded beside width
+    decisions so records can prove which inventory they were cut against."""
+    with _inventory_lock():
+        snap = _INVENTORY_SNAPSHOT.get("snapshot") or {}
+        return snap.get("snapshot_revision")
+
+
+def probe(config_dir: Optional[Path] = None, *,
+          provider: Optional[str] = None,
+          model: Optional[str] = None,
+          include_inventory: bool = False) -> dict:
+    """The main entry point. Read-only; never mutates anything, never exits.
+
+    Signature-compatible with every existing caller: `probe()` with no
+    arguments still asks "what is the PRIMARY route's account?" (the launch
+    gate, the wave scheduler and the work-order pool all legitimately want a
+    client-level answer), and `probe(config_dir)` positionally still works.
+
+    F1 adds the per-ROUTE form: `probe(provider=..., model=...)` answers about
+    THAT account and nothing else. The result carries `provider_requested` so
+    a caller (the routing stamp) can assert the answer is about the provider
+    it asked about, rather than inferring it.
+
+    PRES-015 (H-P1): the FIX 9 inventory surface (`provider_probes` -- live
+    GET /models calls) is NO LONGER a default side effect of this probe.
+    Every width consumer now runs with ZERO discovery requests; intake and
+    the `--capacity` report call `include_inventory=True` (or
+    refresh_provider_inventory() directly) when they deliberately want the
+    inventory, and that call is bounded, explicit and cached.
+
+        available     int  -> the number of agents this account may run at once
+        available     None -> the probe COULD NOT produce a number; the dispatch
+                              path must refuse with AF-CAPACITY-UNMEASURED
+    """
+    resolution = detect(config_dir, provider=provider, model=model)
+    working, method, ok = measure_working_concurrent()
+    available = resolution["available"]
+    factors = {}
+    if available is not None and resolution["status"] == STATUS_MEASURED:
+        factors = _account_factors(resolution.get("provider"),
+                                   resolution.get("plan"),
+                                   resolution.get("declared_max_concurrent")
+                                   if isinstance(
+                                       resolution.get("declared_max_concurrent"),
+                                       int)
+                                   and not isinstance(
+                                       resolution.get("declared_max_concurrent"),
+                                       bool)
+                                   else None)
+        if factors.get("account_limit") is not None:
+            available = factors["account_ceiling"]
+            resolution["available"] = available
+    result = {
+        "probe_mode": PROBE_MODE,
+        "timestamp": datetime.datetime.now().astimezone().isoformat(),
+        "status": resolution["status"],
+        "undetermined": resolution["status"] == STATUS_UNDETERMINED,
+        "provider": resolution["provider"],
+        "provider_requested": resolution.get("provider_requested"),
+        "plan": resolution["plan"],
+        "detection_source": resolution["source"],
+        "detection_trail": resolution["trail"],
+        "override_path": resolution["override_path"],
+        "default_conservative": DEFAULT_CONSERVATIVE,
+        "cap_table": {f"{p}|{pl}": n for (p, pl), n in sorted(CAP_TABLE.items())},
+        "dispatchable": available,
+        "available": available,
+        # PRES-015: the reserve is now SHOWN, not folded silently into the
+        # ceiling. 0 stays the historical value for every non-ACCOUNT_LIMITS
+        # provider; an ollama $100 probe reports reserve 2 (or the client's
+        # own override) beside ceiling 8 beside account limit 10.
+        "reserve": (factors or {}).get("reserve", 0)
+                   if isinstance(factors, dict) else 0,
+        "account_factors": factors,
+        "inventory_snapshot_revision": inventory_snapshot_revision(),
+        "interview_question": (interview_question(resolution["provider"])
+                               if resolution["status"] == STATUS_PARKED else None),
+        "autofail_code": AUTOFAIL_CODE if available is None else None,
+        "notes": resolution.get("notes", []),
+        "working_concurrent": working if ok else "UNMEASURED",
+        "working_concurrent_method": method,
+        "resource_profile": resource_profile_surface(config_dir,
+                                                     resolution=resolution),
+        # Item 17: the fleet shape + remembered gauge this probe's numbers
+        # were cut on (recorded shape, detection candidates, gauge state).
+        # Read-only local surface -- see fleet_shape_surface().
+        "fleet_shape": fleet_shape_surface(config_dir),
+        # PRES-015 (H-P1): zero discovery by default. The inventory surface
+        # rides along ONLY when the caller asked for it -- and even then it
+        # is served from the cached explicit-refresh snapshot, never as a
+        # hidden per-probe GET burst.
+        "provider_probes": (provider_probes_surface()
+                            if include_inventory else
+                            {"flag": "skipped", "providers": [],
+                             "detail": "inventory not requested "
+                                       "(include_inventory=False): zero "
+                                       "discovery requests"}),
+    }
+    return result
+
+
+def available_or_none(result: dict):
+    """The one accessor the dispatch path needs: a positive int, UNBOUNDED, or
+    None. UNBOUNDED is a real measurement (a NO_CAP_PROVIDERS hit) and is
+    returned as-is -- never coerced to None (that would PARK/refuse a
+    bring-your-own-key provider that has nothing to be unmeasured about) and
+    never coerced to a magic int (that would be exactly the defect this fix
+    removes)."""
+    if not isinstance(result, dict):
+        return None
+    value = result.get("available")
+    if is_unbounded(value):
+        return value
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return None
+    return value
+
+
+def require_available(result: dict):
+    """available_or_none(), but refuses instead of returning None. Returns a
+    positive int OR the UNBOUNDED sentinel -- never a bare int guaranteed;
+    callers that must loop/range/spawn a concrete count (never this module)
+    are expected to branch on is_unbounded() first."""
+    value = available_or_none(result)
+    if value is None:
+        raise CapacityUnmeasured(refusal_message(result))
+    return value
+
+
+def autofail_payload(result: dict) -> dict:
+    """The machine-readable refusal the dispatch path emits. The literal AF code
+    below is what registers this module against PIPELINE-MANIFEST.autofails."""
+    status = (result or {}).get("status") if isinstance(result, dict) else None
+    return {
+        "code": "AF-CAPACITY-UNMEASURED",
+        "status": status,
+        "detection_source": (result or {}).get("detection_source"),
+        "provider": (result or {}).get("provider"),
+        "plan": (result or {}).get("plan"),
+        "interview_question": (result or {}).get("interview_question"),
+        "override_path": (result or {}).get("override_path"),
+        "detail": refusal_message(result),
+    }
+
+
+def refusal_message(result: dict) -> str:
+    """Why the probe could not produce a number, in one sentence."""
+    if not isinstance(result, dict):
+        return ("capacity probe returned no result object -- capacity is UNMEASURED "
+                "and dispatch must not proceed")
+    status = result.get("status")
+    if status == STATUS_PARKED:
+        return (f"capacity is PARKED: provider {result.get('provider')} was detected but "
+                f"its plan is undeclared. Answer the interview question and the answer is "
+                f"persisted to {result.get('override_path')} (asked ONCE): "
+                f"{result.get('interview_question')}")
+    if status == STATUS_FAILED:
+        notes = "; ".join(result.get("notes") or []) or "the declared configuration is unusable"
+        return f"capacity detection FAILED: {notes}"
+    return (f"capacity probe produced no dispatchable number "
+            f"(status={status!r}, available={result.get('available')!r})")
+
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+def report_provider_rows(result: dict) -> list:
+    """One row PER PROVIDER for the operator report: provider, plan, ceiling,
+    whether the ask-once question was answered, and where that came from.
+
+    Sourced from the resource profile surface (the per-provider store), plus
+    the provider THIS probe answered about when the profile has never heard
+    of it. A single-provider report is how a plan answer about ONE account
+    came to be read as a statement about the whole box: an operator looking
+    at "Provider: ollama-cloud / Dispatchable: 8" had no way to see that
+    their DeepSeek routes were being capped by it."""
+    rows = {}
+    surface = result.get("resource_profile") or {}
+    for entry in surface.get("providers") or []:
+        if not isinstance(entry, dict):
+            continue
+        pid = entry.get("provider")
+        if not pid:
+            continue
+        rows[pid] = {
+            "provider": pid,
+            "plan": entry.get("plan_tier"),
+            "ceiling": entry.get("concurrency_ceiling"),
+            "answered": bool(entry.get("plan_known")),
+            "source": SOURCE_PROFILE,
+            "probed": False,
+        }
+    probed = result.get("provider")
+    if probed:
+        row = rows.get(probed)
+        if row is None:
+            row = {"provider": probed, "plan": None, "ceiling": None,
+                   "answered": False, "source": None, "probed": False}
+            rows[probed] = row
+        if row.get("plan") is None:
+            row["plan"] = result.get("plan")
+        if row.get("ceiling") is None:
+            row["ceiling"] = result.get("available")
+        row["source"] = result.get("detection_source") or row.get("source")
+        row["probed"] = True
+    return [rows[key] for key in sorted(rows)]
+
+
+def format_report(result: dict) -> str:
+    """Human-readable report + machine-greppable JSON block.
+
+    Signature-compatible with the previous version. The JSON block guarantees the
+    acceptance greps succeed:
+      grep '"probe_mode"'  -> "probe_mode": "live"
+      grep '"available"'   -> the cap for THIS account (or null when unmeasured)
+
+    F1: the report prints a PER-PROVIDER table, because capacity is a
+    per-provider fact and printing one number for a multi-provider client is
+    how the defect stayed invisible."""
+    lines = [
+        "CAPACITY PROBE -- Presentations department (client-capacity detection)",
+        f"Probe mode: {result.get('probe_mode')} (never SIMULATED)",
+        f"Status: {result.get('status')}",
+        f"Detection source: {result.get('detection_source')}",
+        f"Provider: {result.get('provider') or 'UNKNOWN'}",
+        f"Plan: {result.get('plan') or 'UNKNOWN'}",
+    ]
+    if result.get("status") == STATUS_UNDETERMINED:
+        sources = ", ".join(
+            f"{e.get('source')}({e.get('result')})" for e in result.get("detection_trail", [])
+        )
+        lines += [
+            "",
+            "!! UNDETERMINED -- no provider or plan could be determined from any source.",
+            f"!! Sources checked: {sources}",
+            f"!! Falling back to DEFAULT_CONSERVATIVE = {result.get('default_conservative')}. "
+            "Capacity is NEVER guessed upward.",
+            "",
+        ]
+    if result.get("status") == STATUS_PARKED:
+        lines += [
+            "",
+            f"!! PARKED -- {AUTOFAIL_CODE}: provider known, plan undeclared. Dispatch "
+            "must refuse until this is answered.",
+            f"!! INTERVIEW QUESTION: {result.get('interview_question')}",
+            f"!! The answer persists to {result.get('override_path')} -- asked ONCE, "
+            "never every run.",
+            "",
+        ]
+    if result.get("status") == STATUS_FAILED:
+        lines += [
+            "",
+            f"!! FAILED -- {AUTOFAIL_CODE}: {refusal_message(result)}",
+            "",
+        ]
+    available = result.get("available")
+    lines += [
+        f"Dispatchable: {available if available is not None else 'UNMEASURED'}",
+        f"Reserve: {result.get('reserve')}",
+        f"Effective available: {available if available is not None else 'UNMEASURED'}",
+        (f"Working concurrent now: {result.get('working_concurrent')} "
+         f"({result.get('working_concurrent_method')})"),
+    ]
+    fleet = result.get("fleet_shape") or {}
+    if fleet:
+        shape_txt = (fleet.get("recorded_shape")
+                     or fleet.get("detected_shape")
+                     or ("unknown (candidates: "
+                         + ", ".join(fleet.get("candidates") or [])
+                         + ")" if fleet.get("candidates") else "unknown"))
+        lines.append(
+            f"Fleet shape: {shape_txt} "
+            f"(gauge: {fleet.get('gauge_state', 'missing')})")
+    for note in result.get("notes") or []:
+        lines.append(f"Note: {note}")
+    rows = report_provider_rows(result)
+    if rows:
+        lines.append(
+            "Providers on this box -- each provider's OWN ceiling (a plan answer "
+            "about one account is never a statement about another):")
+        for row in rows:
+            ceiling = row.get("ceiling")
+            if is_unbounded(ceiling):
+                ceiling_txt = "UNBOUNDED"
+            elif ceiling is None:
+                ceiling_txt = "UNMEASURED"
+            else:
+                ceiling_txt = str(ceiling)
+            lines.append(
+                f"  {row['provider']}: plan {row.get('plan') or 'UNKNOWN'}, "
+                f"ceiling {ceiling_txt}, "
+                f"plan answered: {'yes' if row.get('answered') else 'no'}, "
+                f"source {row.get('source') or 'none'}"
+                + ("   <- this probe" if row.get("probed") else ""))
+    probes = result.get("provider_probes") or {}
+    if probes.get("providers"):
+        lines.append("Provider inventory (FIX 9 -- key presence, never a value):")
+        for entry in probes["providers"]:
+            lines.append(
+                f"  {entry.get('provider')}: key present: "
+                f"{'yes' if entry.get('present') else 'no'}"
+                f"{'' if entry.get('present') else ''}"
+                + (f" (source {entry.get('key_source')})" if entry.get("key_source") else "")
+                + (f", {entry.get('model_count')} models unlocked"
+                   if entry.get("probed") and entry.get("ok") else
+                   ", models call not resolved" if entry.get("present") else ""))
+    nine = probes.get("ninerouter") or {}
+    if nine.get("hit"):
+        lines.append(f"9Router lineup: {nine.get('total_models')} wired models "
+                     f"across {len(nine.get('providers') or {})} provider aliases")
+    lines.append("Detection trail:")
+    for entry in result.get("detection_trail", []):
+        lines.append(f"  ({entry.get('step')}) {entry.get('source')}: "
+                     f"{entry.get('result')} -- {entry.get('detail')}")
+    lines += ["", "=== JSON ===", json.dumps(result, indent=2, default=json_default)]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def record_plan_answer(provider: str, plan: str,
+                       config_dir: Optional[Path] = None) -> Path:
+    """The `--answer-plan` writer. THE STORE IS THE RESOURCE PROFILE.
+
+    F1/F2: the profile is the one per-provider home for an interview answer,
+    and it is what the governor's reserve (governor._plan_tier_inflight) and
+    every ask-once gate (resource_profile.pending_questions) already read.
+    Writing the answer into capacity_override.json as well was the projection
+    that let one provider's tier cap the whole box.
+
+    A v2 declaration IS written when the profile is switched off
+    (PRESENTATION_RESOURCE_PROFILE=0), because that documented rollback still
+    needs a durable home for the answer -- never a silent no-op.
+
+    Returns the path actually written."""
+    rp = None
+    try:
+        try:
+            from . import resource_profile as rp  # package-relative
+        except ImportError:  # pragma: no cover - direct file run
+            import resource_profile as rp  # type: ignore[no-redef]
+    except ImportError:
+        rp = None
+    if rp is not None and rp.flag_enabled():
+        rp.record_plan_answer(provider, plan, config_dir)
+        return rp.profile_path(config_dir)
+    return declare_capacity(provider, plan=plan, config_dir=config_dir)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="capacity.py",
+        description="Client-capacity detection -- detects, never guesses upward.",
+    )
+    parser.add_argument(
+        "--probe", action="store_true",
+        help="Run the capacity probe and print the detected numbers (default).",
+    )
+    parser.add_argument(
+        "--answer-plan", metavar="PLAN",
+        help="Record the capacity-interview answer (e.g. '$20', '$100') "
+             "for ONE provider so it is asked ONCE. The store is the "
+             "resource profile; a capacity_override.json declaration is written "
+             "only when the profile is switched off "
+             "(PRESENTATION_RESOURCE_PROFILE=0).",
+    )
+    parser.add_argument(
+        "--provider", metavar="PROVIDER",
+        help="Provider for --answer-plan; defaults to the detected provider.",
+    )
+    parser.add_argument(
+        "--config-dir", metavar="DIR",
+        help=f"Department config dir holding {OVERRIDE_FILENAME} "
+             f"(default: ${CONFIG_DIR_ENV} or the department root).",
+    )
+    return parser
+
+
+def main(argv: Optional[list] = None) -> int:
+    args = build_parser().parse_args(argv)
+    config_dir = Path(args.config_dir).expanduser() if args.config_dir else None
+
+    if args.answer_plan:
+        provider = args.provider
+        if not provider:
+            provider = detect(config_dir).get("provider")
+        if not provider:
+            print("capacity: no provider detected and none given -- pass --provider "
+                  f"(one of {sorted(PLANS_BY_PROVIDER)})", file=sys.stderr)
+            return 2
+        try:
+            written = record_plan_answer(provider, args.answer_plan, config_dir)
+        except (ValueError, OSError) as exc:
+            print(f"capacity: {exc}", file=sys.stderr)
+            return 2
+        print(f"capacity: recorded {provider} / {args.answer_plan} -> {written}")
+
+    result = probe(config_dir)
+    print(format_report(result))
+    if available_or_none(result) is None:
+        print(json.dumps(autofail_payload(result), indent=2), file=sys.stderr)
+        return 3  # == state.EXIT_GATE_BLOCKED: measured nothing, so nothing dispatches
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
