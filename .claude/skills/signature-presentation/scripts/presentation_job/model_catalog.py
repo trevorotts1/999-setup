@@ -1,0 +1,447 @@
+"""presentation_job/model_catalog.py -- FIX 13 live model catalog resolver.
+
+THE ONE-SENTENCE PROBLEM THIS FIXES: literal image/text/vision model IDs were
+hardcoded in pipeline code paths (build_deck.py MODEL_T2I/MODEL_I2I, the retired
+render_deck.py APPROVED_MODELS/FALLBACK_MODEL with its dead `nano-banana-2`,
+dispatcher.py DEEPSEEK_MODEL, and the image-path siblings prompt_gate.py /
+kie_generate.py / workbook_builder.py), so a provider shipping a newer GPT-Image-2
+version — or retiring a fallback — required editing pipeline code, and the three
+copies had already begun to drift.
+
+CONTRACT:
+  * `model_catalog.json` (shipped beside this module) is the ONLY place a literal
+    model ID for the presentations dept lives. Code paths resolve ALIASES:
+        image.t2i / image.i2i / image.fallback   -- render class (P-STYLE-PREVIEW, P4-RENDER)
+        text.strong / text.fast / text.judge     -- authoring/judge classes (FIX 7 router)
+        vision.ocr                               -- vision+OCR class (P-TYPO-QC, P-IMAGE-QC)
+    FIX 7 (model_router) and FIX 10 (gap analysis) consume these aliases; FIX 12
+    consumes the per-model `unit_costs` blocks. FIX 13 prices every block from
+    [R12] (status "priced", numeric rates; ollama-cloud is $0.00 -- monthly
+    pool). A null + status "cost_unknown" block means the price was never
+    entered: credit_preflight WARNs and excludes the phase from the numeric
+    estimate (estimate_source "unpriced"), never blocks on it and never
+    assumes the model is free.
+  * Operator bump: point PRESENTATION_MODEL_CATALOG_DIR at a directory holding a
+    model_catalog.json (the live "bump the catalog's preferred image model" knob --
+    the file is re-read whenever its mtime/size changes, so no code edit and no
+    restart is needed). Without the env var, the shipped catalog resolves.
+  * Fail-closed: a missing/unparseable catalog, an unknown alias, or an alias that
+    resolves to a RETIRED id raises CatalogError. Silence is never an option --
+    a wrong model id spends real money on real client jobs.
+  * `prefer_latest` on an image alias + a `candidates` list: the resolver picks the
+    candidate with the highest embedded version token (and refuses retired ones),
+    so "prefer latest GPT-Image-2 version" is catalog data, not code.
+  * Rollback: PRESENTATION_MODEL_CATALOG=0 restores the exact pre-FIX-13 literals
+    from the pinned ROLLBACK table below (single documented location; the ONLY
+    remaining literal place, and it is dead unless the flag is set to 0) --
+    EXCEPT text.strong, which carries no literal anywhere anymore (see below).
+  * Client-resolved aliases: an alias whose catalog entry carries
+    "resolution": "client-choice-or-configured-default" (text.strong) has NO
+    pinned model. It resolves to (1) the client's explicit choice,
+    PRESENTATION_MODEL_<ALIAS> (e.g. PRESENTATION_MODEL_TEXT_STRONG), or
+    (2) the client's configured default model (agents.defaults.model in
+    openclaw.json). Neither: CatalogError with an ask-the-client message.
+    A named default here is a prescription, and prescriptions go stale;
+    the catalog keeps the alias, the capability data and the recommendation,
+    never the client's model.
+
+No network here: the live provider `models` inventory belongs to FIX 9
+(capacity.py probes / resource_profile.py); this module turns ALIAS -> ID from
+versioned catalog data, and FIX 7's router intersects the result with the
+FIX 9-detected inventory before any call is made.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+FLAG_ENV = "PRESENTATION_MODEL_CATALOG"
+FLAG_DEFAULT = "1"
+DIR_ENV = "PRESENTATION_MODEL_CATALOG_DIR"
+
+#: Pre-FIX-13 literals, kept ONLY as the =0 rollback table. With the flag at its
+#: default (1) nothing in the pipeline reads these; every value above in the
+#: shipped catalog equals one of these so turning the flag off restores the
+#: exact old behavior.
+ROLLBACK_MODELS: Dict[str, str] = {
+    "image.t2i": "gpt-image-2-text-to-image",
+    "image.i2i": "gpt-image-2-image-to-image",
+    # The rollback MUST reproduce old behavior EXACTLY, and the old
+    # render_deck.py FALLBACK_MODEL literal was "nano-banana-2". That id is
+    # retired in the live catalog (the =1 path can never resolve to it); the
+    # =0 rollback restores the old string verbatim for parity, nothing else.
+    "image.fallback": "nano-banana-2",
+    # NO "text.strong" row: that alias is client-resolved on BOTH paths now.
+    # The rollback restores pre-FIX-13 literals, and a literal for
+    # text.strong is exactly the prescription this catalog no longer carries;
+    # resolve() routes the alias to client resolution instead (below).
+    "text.fast": "deepseek-flash",
+    "text.judge": "deepseek-flash",
+    "vision.ocr": "glm-ocr",
+}
+
+#: Aliases the dept code paths are allowed to request. Anything else is a
+#: programming error and fails closed.
+ALIASES = ("image.t2i", "image.i2i", "image.fallback",
+           "text.strong", "text.fast", "text.judge", "vision.ocr")
+
+SHIPPED_CATALOG = Path(__file__).resolve().parent / "model_catalog.json"
+
+
+class CatalogError(RuntimeError):
+    """Fail-closed catalog problem: missing file, bad JSON, unknown alias,
+    retired target, or no live candidate. Never proceed on a guessed model id."""
+
+
+def flag_enabled() -> bool:
+    """True (default) = resolve through the catalog. PRESENTATION_MODEL_CATALOG=0
+    = pre-FIX-13 rollback literals (documented single-line escape; reverts every
+    dept code path to its old hardcoded value at once)."""
+    return os.environ.get(FLAG_ENV, FLAG_DEFAULT) != "0"
+
+
+def catalog_path() -> Path:
+    """Active catalog file: override dir wins, shipped catalog otherwise."""
+    env = os.environ.get(DIR_ENV)
+    if env:
+        return Path(env).expanduser() / "model_catalog.json"
+    return SHIPPED_CATALOG
+
+
+# Resolve-time cache keyed by (path, mtime_ns, size): an operator editing the
+# override catalog takes effect on the next resolve, no restart, and a steady
+# pipeline does not re-read the file on every slide.
+_CACHE: Dict[Any, Any] = {"key": None, "doc": None}
+
+
+def load_catalog(refresh: bool = False) -> Dict[str, Any]:
+    path = catalog_path()
+    try:
+        st = path.stat()
+        key = (str(path), st.st_mtime_ns, st.st_size)
+    except OSError as exc:
+        raise CatalogError(f"model catalog unreadable at {path}: {exc}") from exc
+    if not refresh and _CACHE["key"] == key and _CACHE["doc"] is not None:
+        return _CACHE["doc"]
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CatalogError(f"model catalog unparseable at {path}: {exc}") from exc
+    if not isinstance(doc, dict) or not isinstance(doc.get("aliases"), dict):
+        raise CatalogError(f"model catalog at {path} has no 'aliases' object")
+    _CACHE["key"], _CACHE["doc"] = key, doc
+    return doc
+
+
+_VERSION_RE = re.compile(r"(\d+(?:\.\d+)*)")
+
+
+def _version_token(model_id: str) -> float:
+    """Highest dotted-number token in an id, for prefer_latest ordering.
+    'gpt-image-3-text-to-image' -> 3.0; 'gpt-image-2-0724' -> 724.0 is NOT wanted,
+    so only the FIRST version run after the family name counts."""
+    m = _VERSION_RE.search(model_id)
+    if not m:
+        return 0.0
+    parts = m.group(1).split(".")
+    try:
+        return float(parts[0]) + (float(parts[1]) / 100.0 if len(parts) > 1 else 0.0)
+    except ValueError:
+        return 0.0
+
+
+def _openclaw_config_paths() -> List[Path]:
+    """openclaw.json candidates for THIS box, pinned root first."""
+    paths: List[Path] = []
+    for name in ("OPENCLAW_ROOT", "OC_ROOT", "OC_CONFIG"):
+        pinned = (os.environ.get(name) or "").strip()
+        if pinned:
+            paths.append(Path(pinned).expanduser() / "openclaw.json")
+    paths.append(Path("/data/.openclaw") / "openclaw.json")
+    paths.append(Path.home() / ".openclaw" / "openclaw.json")
+    return paths
+
+
+def client_configured_default_model() -> str:
+    """The client's configured default model id, or "".
+
+    agents.defaults.model in openclaw.json, string form or
+    {"primary": ...} object form. This is the client's own configuration,
+    the second rung of the resolution order (after an explicit per-alias
+    client choice). Shared with model_router's configured-default rung.
+    """
+    for path in _openclaw_config_paths():
+        try:
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        model = ((data.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(model, dict):
+            model = model.get("primary")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+    return ""
+
+
+def _client_choice_env(alias: str) -> str:
+    return "PRESENTATION_MODEL_" + alias.upper().replace(".", "_").replace("-", "_")
+
+
+def resolve_client_model(alias: str):
+    """(model_id, source) for a client-resolved alias, or (None, "").
+
+    (1) the client's explicit choice: PRESENTATION_MODEL_<ALIAS>;
+    (2) the client's configured default model (agents.defaults.model).
+    Neither: (None, "") and the caller fails with an ask-the-client error.
+    """
+    env_name = _client_choice_env(alias)
+    choice = (os.environ.get(env_name) or "").strip()
+    if choice:
+        return choice, f"client choice ({env_name})"
+    default = client_configured_default_model()
+    if default:
+        return default, "client configured default (agents.defaults.model)"
+    return None, ""
+
+
+def _client_resolved_entry(alias: str) -> Dict[str, Any]:
+    """resolve() result for a client-resolved alias. Fail-closed with an
+    ask-the-client CatalogError when the client has neither chosen a model
+    for this alias nor configured a default model."""
+    model_id, how = resolve_client_model(alias)
+    if not model_id:
+        raise CatalogError(
+            f"model alias {alias!r} has no pinned model: ask the client "
+            f"which model they want to use for this alias, or have them "
+            f"configure a default model (agents.defaults.model in "
+            f"openclaw.json, or {_client_choice_env(alias)}); refusing to "
+            f"guess a model id")
+    provider, _, bare = model_id.partition("/")
+    if bare:
+        return {"provider": provider.strip(), "model": bare.strip(),
+                "alias": alias, "source": how,
+                "resolution": "client-choice-or-configured-default"}
+    return {"provider": "client", "model": model_id,
+            "alias": alias, "source": how,
+            "resolution": "client-choice-or-configured-default"}
+
+
+def resolve(alias: str, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Full catalog entry for an alias (provider, model, unit_costs, ...).
+    Fail-closed on unknown alias / retired resolution."""
+    if not flag_enabled():
+        if alias not in ALIASES:
+            raise CatalogError(f"unknown model alias {alias!r}")
+        if alias not in ROLLBACK_MODELS:
+            # Client-resolved alias (text.strong): no rollback literal
+            # exists for it on either path, by design.
+            return _client_resolved_entry(alias)
+        rb_key = alias
+        model = ROLLBACK_MODELS.get(rb_key)
+        if model is None:
+            raise CatalogError(f"rollback table has no entry for {alias!r}")
+        return {"provider": "rollback", "model": model, "alias": alias,
+                "source": f"{FLAG_ENV}=0 rollback literal"}
+    doc = catalog or load_catalog()
+    entry = doc.get("aliases", {}).get(alias)
+    if not isinstance(entry, dict):
+        raise CatalogError(
+            f"model alias {alias!r} not present in catalog "
+            f"({catalog_path()}); refusing to guess a model id")
+    if entry.get("resolution") == "client-choice-or-configured-default":
+        resolved = _client_resolved_entry(alias)
+        retired = set(doc.get("retired", {}) or {})
+        if resolved["model"] in retired:
+            raise CatalogError(
+                f"alias {alias!r} resolves (via {resolved['source']}) to "
+                f"retired model id {resolved['model']!r}; ask the client "
+                f"for a live model")
+        out = dict(entry)
+        out.update(resolved)
+        out["unit_costs"] = {
+            "status": "cost_unknown",
+            "basis": "client-resolved alias: priced from the client's "
+                     "resolved model at runtime, never from a catalog pin",
+        }
+        return out
+    retired = set(doc.get("retired", {}) or {})
+    candidates = [c for c in (entry.get("candidates") or []) if c not in retired]
+    model = entry.get("model")
+    if entry.get("prefer_latest") and candidates:
+        model = max(candidates, key=_version_token)
+    if model in retired:
+        raise CatalogError(
+            f"alias {alias!r} resolves to retired model id {model!r} "
+            f"(catalog {catalog_path()}); bump the alias to a live id")
+    if not isinstance(model, str) or not model.strip():
+        raise CatalogError(f"alias {alias!r} has no live model id in catalog")
+    out = dict(entry)
+    out["model"] = model
+    out["alias"] = alias
+    out["source"] = str(catalog_path())
+    return out
+
+
+def resolve_alias(alias: str) -> Dict[str, Any]:
+    """Name FIX 7's model_router.py and FIX 10's resource_profile.py look for
+    first when they probe for the catalog; identical to resolve()."""
+    return resolve(alias)
+
+
+#: Saved-config compat: older Flash aliases that resolve to the live
+#: deepseek-flash id through DeepSeek Direct. A legacy id is NEVER sent on
+#: the wire; callers that accept a stored model id fold it here first so a
+#: config saved before the V4.1 rename keeps routing instead of breaking.
+LEGACY_FLASH_MODEL_IDS = frozenset({"deepseek-v4-flash"})
+
+LIVE_FLASH_MODEL_ID = "deepseek-flash"
+
+
+def resolve_alias_compat(alias_or_model: str) -> Dict[str, Any]:
+    """resolve() plus the legacy-Flash shim: a stored model id naming an
+    older Flash alias resolves to the same entry as the live id.
+
+    Lookup order: catalog alias -> compat.legacy_aliases table in the loaded
+    catalog -> LEGACY_FLASH_MODEL_IDS fallback. Fail-closed on anything else,
+    exactly like resolve()."""
+    try:
+        return resolve(alias_or_model)
+    except CatalogError:
+        pass
+    doc: Optional[Dict[str, Any]] = None
+    try:
+        doc = load_catalog()
+    except CatalogError:
+        doc = None
+    mapped: Optional[str] = None
+    if doc is not None:
+        compat = doc.get("compat") or {}
+        legacy = (compat.get("legacy_aliases") or {}) if isinstance(compat, dict) else {}
+        if isinstance(legacy, dict):
+            hit = legacy.get(alias_or_model)
+            if isinstance(hit, str) and hit.strip():
+                mapped = hit.strip()
+    if mapped is None and alias_or_model in LEGACY_FLASH_MODEL_IDS:
+        mapped = LIVE_FLASH_MODEL_ID
+    if mapped is None:
+        raise CatalogError(
+            f"model alias {alias_or_model!r} not present in catalog "
+            f"({catalog_path()}); refusing to guess a model id")
+    # Resolve the catalog alias that serves the live id on deepseek-direct.
+    doc = doc or load_catalog()
+    for alias, entry in (doc.get("aliases") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        served = entry.get("served_ids") or {}
+        if isinstance(served, dict) and any(
+                str(v).strip() == mapped for v in served.values()):
+            return resolve(alias)
+        if entry.get("model") == mapped:
+            return resolve(alias)
+    raise CatalogError(
+        f"legacy model id {alias_or_model!r} maps to {mapped!r} with no "
+        f"catalog alias serving it; refusing to guess")
+
+
+def fold_legacy_flash_model_id(model: Any) -> str:
+    """A stored model id -> the live id the wire accepts. Legacy Flash ids
+    fold to deepseek-flash; every other value passes through unchanged (never
+    evidence of anything, just spelling)."""
+    text = str(model or "").strip()
+    if text in LEGACY_FLASH_MODEL_IDS:
+        return LIVE_FLASH_MODEL_ID
+    return text
+
+
+# ---------------------------------------------------------------------------
+# FIX 17a: served-id table + provider-id normalisation
+# ---------------------------------------------------------------------------
+#: Provider-id drift killer (FIX 16/17a): `ollama_cloud` and `ollama-cloud`
+#: name ONE provider; the catalog JSON historically carried the underscore
+#: form while resource_profile/capacity carry the dash form. Every consumer
+#: folds a raw provider string through here before a (alias, provider)
+#: lookup, so the two spellings can never diverge again. Unknown providers
+#: normalise to their lowercased dash form unchanged -- normalising a name
+#: is never evidence that a provider exists.
+def normalize_provider_id(provider: Any) -> str:
+    """Raw provider string -> the canonical dash-form id the catalog keys on.
+
+    Folds underscores/spaces to dashes and lowercases. Deepseek-direct and
+    deepseek fold to the same id here at the string level; capacity.py's
+    cap-table mapping stays the authority for cap-table membership and is
+    used when importable so both layers can never disagree."""
+    token = str(provider or "").strip().lower().replace("_", "-").replace(" ", "-")
+    try:  # capacity's cap table is the authority when the module is present
+        from presentation_job import capacity as _cap  # type: ignore
+    except Exception:  # noqa: BLE001 -- direct file run / package absence
+        _cap = None
+    if _cap is not None and hasattr(_cap, "normalize_provider"):
+        try:
+            mapped = _cap.normalize_provider(token)
+        except Exception:  # noqa: BLE001 -- normalisation never raises upward
+            mapped = None
+        if mapped:
+            return str(mapped)
+    if token == "deepseek":
+        # No cap-table module available: the dept's provider id for the
+        # native DeepSeek endpoint is deepseek-direct everywhere else.
+        return "deepseek-direct"
+    return token
+
+
+def served_ids_for(alias: str, *,
+                   catalog: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """The FIX 17a served-id row for one alias: {provider: served model id}.
+
+    Keys are canonical dash-form provider ids (normalize_provider_id folded
+    at read time so either spelling in the JSON still resolves). Empty dict
+    when the alias carries no served_ids block -- callers then fall back to
+    the alias's plain `model` id, never to a guessed provider mapping."""
+    try:
+        entry = resolve(alias, catalog=catalog)
+    except Exception:  # noqa: BLE001 -- unknown alias fails closed to {}
+        return {}
+    raw = entry.get("served_ids")
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    return {normalize_provider_id(k): str(v)
+            for k, v in raw.items() if str(v).strip()}
+
+
+def served_id(alias: str, provider: Any, *,
+              catalog: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """The provider's served id for one alias -- the literal id that
+    provider's endpoint actually accepts (e.g. text.judge on openrouter ->
+    'z-ai/glm-5.3-flash'; the same alias on deepseek-direct ->
+    'deepseek-flash'). None when that provider has no row: a missing
+    mapping is a miss, never the bare alias model id guessed as served."""
+    return served_ids_for(alias, catalog=catalog).get(normalize_provider_id(provider))
+
+
+def model_id(alias: str) -> str:
+    """The literal provider model id an alias resolves to. THIS is what the
+    payload builders send; nothing upstream of it carries a literal."""
+    return resolve(alias)["model"]
+
+
+def rollback_literal(alias: str) -> Optional[str]:
+    """Pre-FIX-13 literal for an alias (rollback/parity callers only)."""
+    return ROLLBACK_MODELS.get(alias)
+
+
+def image_mode_table() -> Dict[str, str]:
+    """{MODEL_T2I: ..., MODEL_I2I: ...} shaped resolution used by the image-path
+    modules; re-read on every call so a catalog bump changes the NEXT submit."""
+    return {"MODEL_T2I": model_id("image.t2i"), "MODEL_I2I": model_id("image.i2i")}
+
+
+def approved_image_models() -> List[str]:
+    """The live approved-list for render-path model validation (t2i + i2i)."""
+    return [model_id("image.t2i"), model_id("image.i2i")]

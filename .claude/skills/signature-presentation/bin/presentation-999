@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""presentation-999 -- the 999 host profile front door for signature-presentation.
+
+Run folders live under the user's chosen project folder. The department root is
+the vendored tree itself (``.claude/skills/signature-presentation``), reached by
+the workspace shim in ``host/999_paths.py`` -- no OpenClaw folder is needed.
+Notify is the file queue (``<run>/working/outbox.jsonl``); the session reads it
+and shows the rows to the user. The Command Center board mirror is OFF unless a
+board address is configured. The image key is read by name from the user's own
+``API docs.md`` and is never printed. Delivery is the run folder plus the user's
+Downloads folder.
+
+MODES
+  --plan        print the resolved paths, dependency report and commands; exit 0
+                even on a clean account with missing tools and no API docs.md
+  --deps        print the dependency gate verdict; exit 1 when a REQUIRED tool is
+                missing, naming each missing tool exactly as the canon does
+  --interview   run the department's intake driver in this chat; forwards
+                --next / --answer ID TEXT / --complete / --signature ...
+  --build       run the vendored bin/presentation door (passes args through)
+
+GLOBAL OPTIONS (any position)
+  --project-dir DIR   the user's chosen project folder (default: current dir)
+  --run-dir DIR       the run folder (default: <project>/presentation-runs/<stamp>)
+  --owner-msg-id ID   the Claude Code session's own user message id; recorded as
+                      the run's requester identity and the owner message id
+  --api-docs FILE     the user's own API docs.md (default: search project dir,
+                      <project>/docs, ~/Downloads, ~)
+
+EXIT CODES: 0 ok / plan, 1 dependency gate failed, 2 usage or path error,
+3+ propagated from the driver or the door.
+"""
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+HOST_DIR = Path(__file__).resolve().parent.parent / "host"
+if str(HOST_DIR) not in sys.path:
+    sys.path.insert(0, str(HOST_DIR))
+host = importlib.import_module("999_paths")
+
+MODES = ("--plan", "--deps", "--interview", "--build")
+GLOBALS = ("--project-dir", "--run-dir", "--owner-msg-id", "--api-docs")
+USAGE = __doc__
+
+def _die(message: str, code: int = 2) -> int:
+    print(f"presentation-999: {message}", file=sys.stderr)
+    return code
+
+def _split_globals(argv):
+    """Pull the wrapper's global options out, leaving mode + forwarded argv."""
+    opts = {name: None for name in GLOBALS}
+    rest = []
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        matched = False
+        for name in GLOBALS:
+            if token == name:
+                if i + 1 >= len(argv):
+                    raise ValueError(f"{name} needs a value")
+                opts[name] = argv[i + 1]
+                i += 2
+                matched = True
+                break
+            if token.startswith(name + "="):
+                opts[name] = token.split("=", 1)[1]
+                i += 1
+                matched = True
+                break
+        if matched:
+            continue
+        rest.append(token)
+        i += 1
+    return opts, rest
+
+def _take_mode(rest):
+    """The FIRST mode token is this wrapper's; later ones belong to the door."""
+    for index, token in enumerate(rest):
+        if token in MODES:
+            return token, rest[:index] + rest[index + 1:]
+    return None, rest
+
+def _run_dir_for(opts, project, create):
+    if opts["--run-dir"]:
+        run = host.run_dir(project, opts["--run-dir"])
+        if not host.under(run, project):
+            raise ValueError(
+                f"--run-dir {run} is outside the project folder {project}")
+    else:
+        run = host.default_run_dir(project)
+    if create:
+        host.ensure_run_dir(run)
+    return run
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        print(USAGE)
+        return 2
+    if "--help" in argv or "-h" in argv:
+        print(USAGE)
+        return 0
+    try:
+        opts, rest = _split_globals(argv)
+    except ValueError as exc:
+        return _die(str(exc))
+    mode, forwarded = _take_mode(rest)
+    if mode is None:
+        return _die("choose one of --plan, --deps, --interview, --build")
+    if any(token in MODES for token in forwarded) and mode != "--build":
+        return _die("only one mode may be selected")
+
+    project = host.project_dir(opts["--project-dir"])
+    if not project.is_dir():
+        return _die(f"project folder does not exist: {project}")
+
+    if mode == "--deps":
+        report = host.dependency_report()
+        print(json.dumps(report, indent=2))
+        return 1 if report.get("required_missing") else 0
+
+    try:
+        run = _run_dir_for(opts, project, create=(mode != "--plan"))
+    except ValueError as exc:
+        return _die(str(exc))
+
+    owner = opts["--owner-msg-id"] or host.load_owner(run)
+    if mode == "--plan":
+        print(json.dumps(host.plan(project, run, owner,
+                                   opts["--api-docs"]), indent=2))
+        return 0
+    if opts["--owner-msg-id"]:
+        host.save_owner(run, opts["--owner-msg-id"])
+    if mode == "--interview" and not owner:
+        return _die("--interview needs --owner-msg-id (the Claude Code session's "
+                    "own user message id); it is recorded as the run's requester "
+                    "identity and is never recovered from an OpenClaw folder")
+
+    try:
+        child_env = host.env(project, run, owner, opts["--api-docs"])
+    except RuntimeError as exc:
+        return _die(str(exc), 2)
+
+    if mode == "--interview":
+        if not forwarded:
+            return _die("--interview needs a driver verb (--next, --answer ID TEXT, "
+                        "--complete, --signature ...)")
+        driver = host.dept_scripts() / "deck-intake-driver.py"
+        cmd = [sys.executable, str(driver), "--run-dir", str(run)] + forwarded
+        return subprocess.run(cmd, env=child_env).returncode
+
+    # --build: hand off to the vendored door through the vendored wrapper, which
+    # applies its own exit-61 materialization check against the shim workspace.
+    door = host.skill_root() / "bin" / "presentation"
+    args = list(forwarded)
+    if "--run-dir" not in args and not any(a.startswith("--run-dir=") for a in args):
+        args = ["--run-dir", str(run)] + args
+    print(f"presentation-999: vendored dept {host.skill_root()}; run {run}; "
+          f"notify file-queue {Path(run) / 'working' / 'outbox.jsonl'}",
+          file=sys.stderr, flush=True)
+    return subprocess.run(["bash", str(door)] + args, env=child_env).returncode
+
+if __name__ == "__main__":
+    sys.exit(main())
