@@ -212,7 +212,7 @@
     ],
     "signature-presentation": [
       {
-        "version": "2.1.9",
+        "version": "v2.1.9",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-presentation",

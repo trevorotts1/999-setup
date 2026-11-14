@@ -4,10 +4,14 @@ Run: python3 -I .claude/skills/signature-presentation/host/test_999_registration
 
 Checks the two registries the 999 installers really read:
   CONTROL/bundled-skills.txt          one bare line, `signature-presentation`
-  CONTROL/bundled-components.json     one `components` entry with the S51 version
-                                      WITHOUT the leading `v` (unit text)
-and the negative controls: a v-prefixed version, a missing line, and a
-repoPath whose tree has no SKILL.md each must FAIL.
+  CONTROL/bundled-components.json     one `components` entry whose version is the
+                                      tree stamp EXACTLY, `v` prefix included
+and the negative controls: a version with the leading `v` stripped, a missing
+line, and a repoPath whose tree has no SKILL.md each must FAIL.
+
+The earlier unit text said "without the leading v". That was a spec defect: the
+stamp is the tree's (`skill-version.txt` = `v2.1.9`), and the four sibling
+v-prefixed components keep their `v` and pass the helper-pins guard.
 """
 from __future__ import annotations
 
@@ -48,11 +52,9 @@ def check(skills_text: str, components: dict, version_txt: str) -> list[str]:
         problems.append(f"expected exactly one signature-presentation record, found {len(entry)}")
     rec = entry[0]
     want_version = version_txt.strip()
-    if want_version.startswith("v"):
-        want_version = want_version[1:]
     if rec.get("version") != want_version:
         problems.append(
-            f"version is {rec.get('version')!r}; the S51 version without the leading v is {want_version!r}")
+            f"version is {rec.get('version')!r}; the tree stamp is {want_version!r}")
     if rec.get("platform") != "any":
         problems.append(f"platform is {rec.get('platform')!r}, expected 'any'")
     if rec.get("installFrom") != "repo-tree":
@@ -69,7 +71,7 @@ class Registration999Tests(unittest.TestCase):
         json.loads(COMPONENTS_JSON.read_text())
         self.assertGreater(len(skill_names(SKILLS_TXT.read_text())), 0)
 
-    def test_skill_is_registered_with_the_s51_version_without_leading_v(self):
+    def test_skill_is_registered_with_the_tree_stamp_verbatim(self):
         problems = check(
             SKILLS_TXT.read_text(),
             json.loads(COMPONENTS_JSON.read_text()),
@@ -81,16 +83,16 @@ class Registration999Tests(unittest.TestCase):
         self.assertTrue((REPO / REGISTERED_PATH / "SKILL.md").is_file())
 
     # --- negative controls: the check must be able to fail -------------------
-    def test_negative_v_prefixed_version_is_refused(self):
+    def test_negative_stripped_version_is_refused(self):
         skills = "signature-presentation\n"
         components = {"components": {"signature-presentation": [{
-            "version": "v2.1.9", "platform": "any", "installFrom": "repo-tree",
+            "version": "2.1.9", "platform": "any", "installFrom": "repo-tree",
             "repoPath": REGISTERED_PATH, "license": "MIT (repo license)"}]}}
         self.assertTrue(check(skills, components, "v2.1.9\n"))
 
     def test_negative_missing_registry_line_is_refused(self):
         components = {"components": {"signature-presentation": [{
-            "version": "2.1.9", "platform": "any", "installFrom": "repo-tree",
+            "version": "v2.1.9", "platform": "any", "installFrom": "repo-tree",
             "repoPath": REGISTERED_PATH, "license": "MIT (repo license)"}]}}
         self.assertTrue(check("email-engine\n", components, "v2.1.9\n"))
 
