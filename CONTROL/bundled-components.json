@@ -1,7 +1,7 @@
 {
   "schema": "bundled-components@1",
   "generatedBy": "CONTROL/bundled-skills.txt — surviving bundled skills registry (22; reconciled from the shipped tree)",
-  "generatedAt": "2026-11-13T00:00:00.000Z",
+  "generatedAt": "2026-11-14T00:00:00.000Z",
   "channel": {
     "default": "github-releases",
     "base": "https://github.com/trevorotts1/999-setup/releases",
@@ -149,7 +149,7 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.38",
+        "version": "0.2.39",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
@@ -176,7 +176,7 @@
     ],
     "signature-funnel": [
       {
-        "version": "v2.1.59",
+        "version": "v2.1.60",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-funnel",
@@ -194,7 +194,7 @@
     ],
     "signature-order-form": [
       {
-        "version": "0.1.10",
+        "version": "0.1.11",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/signature-order-form",
