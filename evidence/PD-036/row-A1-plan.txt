@@ -1,0 +1,65 @@
+$ presentation-999 --plan --project-dir <PROJECT>
+{
+  "profile": "999",
+  "skill_root": "<WORKTREE>/.claude/skills/signature-presentation",
+  "vendored": {
+    "present": true,
+    "files": 564,
+    "tree_digest": "d879c7c184a5eeed359d4103d85efbbf33557174fea56d5eb613587736a08d1a",
+    "source_commit": "b624f61aa0e35af2dd89bc924108322885af5125"
+  },
+  "dept_scripts": "<WORKTREE>/.claude/skills/signature-presentation/scripts",
+  "project_dir": "<SCRATCH>/proj.final.OnHqwB",
+  "run_dir": "<SCRATCH>/proj.final.OnHqwB/presentation-runs/2026-11-13-093159",
+  "workspace": "<SCRATCH>/proj.final.OnHqwB/.presentation-999/workspace",
+  "openclaw_root": "<SCRATCH>/proj.final.OnHqwB/.presentation-999/.openclaw",
+  "notify": {
+    "transport": "file-queue",
+    "command": "<WORKTREE>/.claude/skills/signature-presentation/bin/presentation-outbox-queue",
+    "outbox": "<SCRATCH>/proj.final.OnHqwB/presentation-runs/2026-11-13-093159/working/outbox.jsonl"
+  },
+  "command_center": {
+    "board_mirror": "off",
+    "configured_by": null,
+    "host": null
+  },
+  "image_key": {
+    "name": null,
+    "present": false,
+    "length": 0,
+    "source": null
+  },
+  "owner_message_id": "",
+  "delivery": {
+    "run_dir": "<SCRATCH>/proj.final.OnHqwB/presentation-runs/2026-11-13-093159/delivery",
+    "downloads": "<SCRATCH>/cleanhome.final.fkkFMb/Downloads"
+  },
+  "dependencies": {
+    "manifest": "<WORKTREE>/.claude/skills/signature-presentation/scripts/presentation-deps.json",
+    "manifest_found": true,
+    "present": [
+      "soffice",
+      "pdftoppm",
+      "ffmpeg",
+      "ffprobe",
+      "tesseract"
+    ],
+    "missing": [
+      "python:reportlab+pptx",
+      "python:pypdf",
+      "python:pytesseract"
+    ],
+    "required_missing": [
+      "python:reportlab+pptx",
+      "python:pypdf",
+      "python:pytesseract"
+    ]
+  },
+  "commands": {
+    "interview_next": "<WORKTREE>/.claude/skills/signature-presentation/bin/presentation-999 --interview --run-dir <SCRATCH>/proj.final.OnHqwB/presentation-runs/2026-11-13-093159 --next",
+    "interview_complete": "<WORKTREE>/.claude/skills/signature-presentation/bin/presentation-999 --interview --run-dir <SCRATCH>/proj.final.OnHqwB/presentation-runs/2026-11-13-093159 --complete",
+    "build": "<WORKTREE>/.claude/skills/signature-presentation/bin/presentation-999 --build --run-dir <SCRATCH>/proj.final.OnHqwB/presentation-runs/2026-11-13-093159 --slides <slides.json> --out <out.pptx>",
+    "deps": "<WORKTREE>/.claude/skills/signature-presentation/bin/presentation-999 --deps"
+  }
+}
+rc=0
