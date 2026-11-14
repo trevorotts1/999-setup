@@ -115,7 +115,7 @@ stands unchanged.
   after a local breakthrough, and ends on an end card with show, episode and where to
   watch. Its destination is the episode/channel, never the checkout.
 
-**The five uses - PURPOSE is question 1 of the card.** 1 Grow my business (a full
+**The four uses - PURPOSE is question 1 of the card.** 1 Grow my business (a full
 campaign: a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad clips),
 2 tell a client's success story, 3 teach a lesson, 4 a social media video (a paid ad
 or a free post). The purpose picks the lengths offered, the shape, the pacing profile
@@ -131,6 +131,44 @@ receipt carries an evidence level of `planned` / `generated` / `inspected` /
 PASS, and a high score never averages away a failed required check.
 
 Full guide: `references/drama-to-demand-method.md`.
+
+## Release v2.9.114: opening coaching, opening candidates, blueprint turns
+
+This release records four behaviours that already ship in the `v2.9.111`-`v2.9.113`
+code line. **It changes no behaviour** of the `v2.9.103` note above; it writes down
+what was not yet recorded anywhere:
+
+1. **A new run opens by asking what the video is for.** `intake_card.conversation`
+   takes `purpose_flow=None` and decides from the run: a NEW run folder asks the
+   purpose first, one plain question per message, and reuses what the client already
+   supplied (the brief's maximum as the recommended budget option, a saved character
+   by name) instead of asking again. A resumed run replays the exact list it used and
+   its approved artifacts stay byte-identical. No client-facing question uses method
+   jargon. Code: `choice_card/intake_card/intake_card.py`. Check:
+   `test_opening_flow_default_s75x.py`.
+2. **Opening candidates are worked examples, not advice.**
+   `references/sensational-openings.md` and `references/opening-proposals.md` carry
+   four worked sets, three genuinely different candidates each (different crisis type,
+   question and opening line), every candidate naming its spoken first line, headline,
+   first visible action, the question it opens, why that audience cares and how the
+   crisis connects to the actual offer, with the strongest recommended and a
+   counterexample table showing tame openings rejected. Fiction may invent a dramatic
+   event again; an invented event is still refused when it would read as a verified
+   fact about a real person or product.
+3. **Every required musical turn states its reason and its audible change.**
+   `method_plan.musical_turns` returns the four turns (spoken attention hook, first
+   singing at the ERM Drop, Hero Shift, earned Solution Signature Hook), each carrying
+   a written `reason` and an `audible_change` (`from`, `to`, `rhythm`,
+   `emotional_direction`, `vocal`); a turn with neither raises `TURN_REASON_MISSING`, a
+   turn with no audible change raises `TURN_AUDIBLE_CHANGE_MISSING`, and an
+   instrumental opening hook raises `ATTENTION_HOOK_NOT_SPOKEN`. `shot_seeds` emits
+   `shot_planner`'s own field names and `storyboard_input` feeds the storyboard
+   review. Check: `method_plan/test_method_plan.py`.
+4. **Every supported launcher records the purpose.** A new run through the text,
+   `telegram-json`, `openclaw-json` or Studio launcher writes `$RUN/control/method.json`
+   with the purpose and the planned gates A-F, so the later checks read a recorded fact
+   instead of guessing. Code: `intake_preflight/factory.py`. Check:
+   `test_factory_card_purpose_w3u2.py`.
 
 ## Route boundaries
 
@@ -179,7 +217,7 @@ when `music` would be next and the card answer is Yes (`$RUN/card-answers.json`,
 `intake_card.conversation`; the script in `$RUN/creative/script.json`: title, story, sheet, lyrics), runs
 `script_approval.stage.run_stage`: checks the story and lyric sheet, calls `request_approval`, sends the script
 (title, story a few lines per act, full lyrics with section labels) through the client-delivery path
-(`openclaw message send` to `--target`; no `--target` = the messages come back in `data.messages` for the chat),
+(the messages come back in `data.messages` for the chat; on this distribution that chat is where they are shown),
 records the run as waiting (`creative/script-approval.json`, `sent: true`) and answers `waiting` (exit 2) with no
 music command. The client's reply goes to `factory.py script-reply --run-dir $RUN --reply "<their words>"`:
 "approve" -> `handle_reply` records it and the next `next` hands out `music`; anything else is an edit: apply it
@@ -189,6 +227,33 @@ approval; approval is bound to the exact lyrics, and `kie_dispatch.dispatch` (mu
 `song_dispatch.run_takes` (`run_dir=`) read the record from the run folder themselves (`SCRIPT_NOT_APPROVED`
 when missing or stale). No: nothing changes. Code and tests: `scripts/core/script_approval/`
 (`stage.py`, `test_script_wiring.py`).
+
+**ONE music mode at a time; all three versions at once (WWFIX D2, money safety).**
+The three versions are ONE job, not three, so the music stage runs in exactly ONE of
+two modes and NEVER both:
+
+- *Umbrella* (the default, a non-workflow run): ONE agent unit runs all three
+  versions in one pass, three provider jobs in THREE THREADS inside that one unit
+  (`song_choices.generate_choices`; `cmd_generate` reports `dispatched: 3,
+  media_concurrency: 3, builder_agent_units: 1`). Three threads are NOT three
+  visible agent units, and the receipt must never relabel them.
+- *Orchestrated* (the workflow case, exactly three agent units `WW-001`..`WW-003`,
+  one owned folder each, `providerSlots` 3, reserve 0): each unit runs ONE variant
+  with the canonical runner and the per-unit selector `--variant <variant_id>` or
+  `--unit-id WW-00N` (`song_choices.run_unit` -> the SAME single-variant helper
+  `one_variant`; there is no second worker path). `cmd_generate` then reports
+  `dispatched: 1`.
+
+Never put an unqualified `song_choices.py generate` into all three unit prompts: each
+unit would then fan out three of its own and the run would pay for NINE generations
+instead of three. Fan-in only CHECKS and DELIVERS results that already exist
+(`song_choices.fan_in`, `deliver_choices` take no generate callable at all), and
+`_require_three` refuses a wrong or repeated set BEFORE any spend. When the three
+takes are saved, check and deliver them with
+`python3 scripts/core/song_choices/song_choices.py offer --run-dir "$RUN"`
+(the music stage, after `generate`): it rebuilds the three results from the saved
+takes, computes D4 once across them, writes/refreshes the acceptance records, and
+delivers the offered versions; `generate` alone never offers anything.
 
 **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
@@ -299,7 +364,9 @@ not style advice.
 scripts/core/intake_preflight/factory.py
 ```
 
-Two subcommands, standard library only, JSON envelope on every command:
+Twelve subcommands (`intake`, `preflight`, `next`, `event`, `storyboard`, `music`,
+`script-reply`, `final-recap`, `production-go`, `owner`, `card`, `character`), standard
+library only, JSON envelope on every command. The first two are the entry pair:
 
 ```bash
 python3 scripts/core/intake_preflight/factory.py intake   --brief-file brief.json
@@ -334,7 +401,7 @@ The packaged control layer lives in `scripts/core/`:
 | Module | Runs when | Owns |
 |---|---|---|
 | `intake_preflight/factory.py` | every entry | envelope, `intake` / `preflight` subcommands |
-| `intake_preflight/intake.py` | new campaign or changed brief | brief normalization, provenance, max-3 questions, summary digest |
+| `intake_preflight/intake.py` | new campaign or changed brief | brief normalization, provenance, the card's own question count, summary digest |
 | `intake_preflight/preflight.py` | before work, on config change | NAMES-only dependency, storage, profile, credential-presence, approval checks |
 | `state_store.py` | stage claim / completion / invalidation | legal transitions, expected-version checks, worker ownership |
 | `artifact_graph.py` | asset registration or upstream change | hashes, dependency binding, targeted invalidation |
@@ -347,16 +414,14 @@ The packaged control layer lives in `scripts/core/`:
 `delivery_verify.py` and `release_check.py` are named in the directive and
 are not in this package yet; treat any claim of them as unimplemented.
 
-## Packaged production modules (14)
+## Packaged production modules
 
-`scripts/core/` also ships the fourteen production modules, copied
-byte-identical from the canonical source `drama-song-factory-build/core/`
-(regenerate from that source on core changes; never hand-edit the copy):
-
-`research_engine`, `story_arc`, `lyric_writer`, `music_director`,
-`music_qc`, `character_continuity`, `product_style_bible`,
-`style_bible_integration`, `shot_planner`, `storyboard_director`,
-`video_router`, `final_assembler`, `delivery_variants`, `retake_manager`.
+`scripts/core/` is a copy of the onboarding skill's `scripts/core/`; never edit it
+here. It ships the production modules `research_engine`, `story_arc`, `lyric_writer`,
+`music_director`, `music_qc`, `character_continuity`, `product_style_bible`,
+`style_bible_integration`, `shot_planner`, `storyboard_director`, `video_router`,
+`final_assembler`, `delivery_variants` and `retake_manager`, beside the control layer
+the table above lists.
 
 Cross-distribution sha256 equality with the OpenClaw packaging is checked by
 `tests/test_parity_layout.py` and the workspace parity suite; when the
@@ -415,8 +480,8 @@ The layers and the assembler are the same in the OpenClaw distribution
 ## Suno song recipe (read this first when you build audio)
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
-added later) follows this recipe by default. It is what made the Kiesett and
-LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+added later) follows this recipe by default. It is what made the first client
+songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
@@ -450,13 +515,15 @@ take) and model (must equal the source take's model); extend has no duration
 field, so the extended length is measured, never assumed. Trevor's dry close-vocal rule stays.
 `core/song_dispatch` judges EVERY take (singcheck v2, spoken share band, sung
 of voice, 6 s stretch, hook sung 2+, script words, length, music under speech,
-clean ending, first sung), stops at the first pass, saves the stem and
-timestamps of every take, regenerates whole tracks only, and refuses
-openai-whisper.
+clean ending, first sung), saves the stem and timestamps of every take, and
+refuses openai-whisper. **One generation per version; the client decides.**
+Nothing regenerates and nothing loops: a take the judge fails keeps the paid
+file and the judge's named concerns, and the client is asked ONE question
+(redo all, keep one, or three new), as "Song approval" below states.
 
 The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
-runtime** by default (center 22.5; each ad can set its own, Black Successful
-Women uses 15-20), and the lyric writer derives its spoken word budget from the ad's
+runtime** by default (center 22.5; each ad can set its own - one client run set
+15-20), and the lyric writer derives its spoken word budget from the ad's
 own spoken target and the length formula's measured word rates (no fixed
 word percent). Singing is measured against **voice time**, sung / (sung + spoken),
 with a default target of **77.5%** (75-80): a music-only intro, gaps and the
@@ -516,7 +583,7 @@ cap refuses `STYLE_TOO_LONG` rather than dropping a clause. See "Prompt template
 
 R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measured rhythmic rap before any intro/outro allocation, and each rap verse on the sheet must itself reach a real budget: at least 8 seconds and at least ceil(8 seconds × the style's rap rate) words. Story-bearing lexical content starts within 5 seconds, and no opening wordless span may exceed 3 seconds. Real lexical word timing covers at least 70% of the delivered runtime; vocalise and music-only time never count. Every approved plot beat must be heard, in order, and each take is bound to the exact approved sheet revision it was generated from. Two pace changes are ordered, each separately bound to its own story beat and never merged into one. The first, the problem shift, belongs to the beat where the story hits the problem: it must be written into the submitted music style and must then pass a measured onset and energy drop check. The second, the rise shift, belongs to the beat where the story reaches the solution, the rise: it must be written into the submitted music style and must then pass its own measured rise check. Each pace change must additionally pass an independent smooth-transition review. Required rap evidence that is unmeasured, unavailable or unknown cannot pass; only an independent timed listening review or a calibrated classifier may grant it. These are new acceptance rules; the owner's existing spoken/sung 5/10 band is unchanged. The recommended SONG APPROVAL answer is Yes and an explicit No stays one song, but no assistant may answer a card question on the client's behalf: an answer with no recorded author and no recorded authority is treated as unspecified and routes to the recommended Yes.
 
-**Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until Trevor approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
+**Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until the person who owns this run approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
 
 ## Agnes path (optional)
 
@@ -532,8 +599,8 @@ only while a key is present; a run without that answer behaves exactly as today.
   prompt compliance and resume work as they always did.
 - **Fixed 10-second segments.** The delivered timeline is cut into 10-second clips;
   one still per segment is approved with the storyboard and used as that clip's first
-  frame. **Agnes runs are capped at 5 minutes** (Trevor 2026-10-13) - 7- and
-  10-minute episodes are KIE-only - and no run is ever split across days.
+  frame. **Agnes runs are capped at 5 minutes** (Trevor 2026-10-13) - the
+  10-minute long version is KIE-only - and no run is ever split across days.
 - **Quota, not spend:** 500 video seconds and 4,000 images per day per key pool,
   resetting 00:00 UTC, tracked by one ledger per pool. A run that does not fit today
   waits as a whole for the next reset; a vendor 402 always beats the local count.
@@ -564,7 +631,7 @@ only while a key is present; a run without that answer behaves exactly as today.
 Reference: `references/agnes-path.md` - the Agnes door, quota tracker, progress writer
 and the Agnes/OCR codes named above ship with the Agnes core batch in this release
 group. Uses available on it: campaign episodes up to 5 minutes, testimonials, lessons,
-paid ads (30 / 60 / 90 s) and short posts; 7- and 10-minute episodes stay on the KIE
+paid ads (60 / 90 s) and short posts; the 10-minute long version stays on the KIE
 path.
 
 ## What the storyboard is
@@ -617,9 +684,9 @@ words (protected names exact), singable, the brand-promise payoff line. The
 hook is sung `count = clamp(1 + floor(L / 25), 2, 12)` times, where L is the
 delivered length in seconds (chosen length minus 2).
 
-| Delivered | 28 s | 58 s | 88 s | 118 s | 178 s | 298 s | 598 s |
-|-----------|------|------|------|-------|-------|-------|-------|
-| Hook sung | 2    | 3    | 4    | 5     | 8     | 12    | 12    |
+| Delivered | 58 s | 88 s | 118 s | 178 s | 298 s | 598 s |
+|-----------|------|------|-------|-------|-------|-------|
+| Hook sung | 3    | 4    | 5     | 8     | 12    | 12    |
 
 Hook placement (FU-HOOK-PLACEMENT, Trevor 2026-10-09: "THE HOOK HAS TO MAKE
 SENSE AND BE PLACED CORRECTLY"): the hook is the payoff, never the opener.
@@ -717,8 +784,12 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
   header count), when no sung non-hook lyric was sung for a style that needs
   them, or when the measured sung share of voice is more than 10 points
   under the style's target. Rap versus spoken delivery on the audio is
-  UNMEASURED (the singing detector reads sung versus not sung; no
-  speech-to-text is used).
+  UNMEASURED: the singing detector reads sung versus not sung, and word timings come
+  from the ONE transcription step (`audio_c3/lyric_timing.provide_word_timings`):
+  Suno's own timestamped lyrics first, local faster-whisper only when the fallback is
+  enabled, client cloud speech-to-text last. A hand-written whisper/asr/transcription
+  script is refused by `scripts/qc-no-local-asr.sh`, and the OpenAI whisper stack is
+  never used.
 - **No gate switches itself off**: a missing `style_id`, length or plan
   field is a FAIL that says `UNMEASURED: <field>`.
 
@@ -736,6 +807,40 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
   never a PASS; without a `timing` argument each check keeps its text
   comparison, and a run measures first via `caption_timing.captions(sheet)` /
   `lyric_observed(approved_lines)`.
+
+### Rap floor, story gates and pace gate (WWFIX D1, acceptance rules)
+
+These three gates sit beside the style contract above and are judged on the plan and on
+the RETURNED take. Missing evidence is UNAVAILABLE, which blocks a PASS; a gate never
+switches itself off.
+
+- **Rap floor.** A style that DELIVERS rap (R&B Flow) must plan at least
+  `rap_s >= max(8.0, 0.10 * D)` seconds of rap and
+  `rap_words >= ceil(rap_s * the style's rap rate)` words, where D is the delivered
+  seconds (`length_formula.rap_floor_s` / `rap_floor_words`, one copy of the rule). At
+  D = 88 that is 8.8 s and 22 words. The opener keeps its cap; the closing call to
+  action YIELDS, so the spoken blocks can never eat the rap verses.
+  `length_formula.plan` always emits `words.rap`, `rap_s`, `rap_floor_s` and the
+  `rap_gate` report for a rap style. A sheet with fewer rap words than the floor is
+  refused before any spend (`RAP_PLANNED_ZERO_WORDS` in `song_contract.check_sheet`).
+- **Story gates on the returned take.** `story_coverage.judge_returned_take` measures
+  the approved PLOT LINE (a run of at least 4 consecutive plot words, never one stray
+  word) against an ABSOLUTE `FIRST_STORY_WORD_MAX_S = 5.0`, the opening wordless span
+  against `OPENING_WORDLESS_SHARE_MAX = 0.15` of the delivered seconds and
+  `OPENING_VOCALISE_MAX_S = 3.0`, real lexical time against
+  `LEXICAL_COVERAGE_MIN = 0.70` with NO vocalise counted, and every story-arc window
+  of at least `STORY_ARC_WINDOW_MIN_S = 5.0` against one measured lexical line.
+  `song_contract.check_returned_story` exposes the same verdict to the take judge.
+- **Pace gate.** `music_qc/pace_change.py` judges one ordered gear change on positive
+  spectral flux with local onset peaks, a fixed mean-plus-standard-deviation threshold
+  and a >= 0.12 s peak spacing. PASS needs BOTH a >= 30% onset-rate reduction AND a
+  >= 3 dB instrumental energy drop in the problem window, plus the return to baseline
+  within 20% and 3 dB and an independent smooth-seam check. bpm is REPORTED and
+  octave-folded but never grants a PASS (85.2 and 181.5 bpm are the same beat an octave
+  apart). Missing onset or energy evidence is UNMEASURED.
+- **Rap on the audio is UNMEASURED, never guessed.** `music_qc/rap_check.py` ships
+  fail-closed. No validated rap detector exists, so the verdict stays UNMEASURED until
+  a labelled rap control is present, and UNMEASURED blocks a take PASS.
 
 ## Creative doctrine (shared, not adapter-specific)
 
@@ -771,8 +876,12 @@ prints it - never a position remembered or counted by the agent (count truth,
 versions of the same lyric sheet in parallel, each a different arrangement of
 the client's music style (the variant table is `scripts/core/song_choices/
 variants.json`). Each version passes the same song checks as a single song
-(`song_dispatch`: lyrics, hook placement, voice rules); a version that fails
-is regenerated once, then reported. They land in `SONG-CHOICES/` in the
+(`song_dispatch`: lyrics, hook placement, voice rules); a version the judge
+FAILS is never regenerated by the factory - it keeps the judge's named concerns and
+is presented for listening only (`SONG-CHOICES/FOR-LISTENING/`), and the client
+answers ONE fork (`song_choices.FAILURE_FORK`, recorded in
+`song-choices/fork-decision.json`): `redo_all` / `new_three` reopen the music row
+for a round the client asked for, and `keep_one` never writes a PASS. They land in `SONG-CHOICES/` in the
 delivery folder as `1 - <LABEL> (<description>).mp3` (title tag = the same
 label) with a `README.txt`, and the client message ends "Reply 1, 2 or 3 to
 pick your song." No picture timing, image, video or lip-sync spend happens
@@ -785,7 +894,7 @@ $RUN --reply ...`, i.e. `intake_card.conversation(replies, run_dir=$RUN)` ->
 `song_choices.record_card_answer`): Yes turns the gate on, No records No, a
 changed answer at the recap replaces it, and a resumed run keeps what was
 recorded once versions exist. The three files and the message go to the client
-in one `openclaw message send` (`song_choices.send_choices`, files attached
+in one message on the chat (`song_choices.send_choices`, files attached
 in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
 recorded with `song_choices.py pick`.
 
@@ -837,8 +946,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   "Start here: the enforced flow") - and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.
-- **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
-  **10-minute long version**. Each length is its own song and timing map.
+- **Lengths:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes, and a
+  **10-minute long version**. One list, each length its own song and timing map.
   The 3, 5 and 10 minute ads each come with an automatic 60-second clip and
   a 90-second clip (`scripts/core/clip_cutdown`; free, included in the
   price); both clips land in the delivery folder with clear numbered names
@@ -870,30 +979,60 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   matched poses, 0.3-0.4 s dissolve, at least 3 seconds held per style, no
   flicker, identity locked; golden realism carries the transformation and
   payoff.
+- **Dual presence (hybrid ads, APPROVED 2026-10-11):** every hybrid ad carries
+  **exactly one** `DUAL_PRESENCE` shot - the photoreal lead and an opaque sketch
+  twin visible **together**, locked off in one side-by-side two-shot. It starts
+  between **45% and 75%** of the ad (target **55-65%**), holds **3.0-6.0 s**,
+  and sits in the objection-to-reframe bridge just before the register call to
+  action. Photoreal **55-65% of width**, twin **35-45%**, head heights within
+  **15%**, twin on the side **opposite the lead**. No split-screen, no
+  picture-in-picture, no ghost blend. Same identity in both renders; the sketch
+  is pure black-and-white line art, the base fully photoreal, exactly two
+  figures; the sketch eyeline lands on the photoreal lead (a mirrored pose
+  fails). Storyboard field `DUAL_PRESENCE {shot_id, start_pct, duration_s,
+  composition TWO_SHOT_SIDE_BY_SIDE, sketch_character, eyeline SKETCH-TO-REAL,
+  ad_card TRUE}` must be complete **before any generation spend**; shot list
+  entry `DUAL-01` carries `BASE_REAL` (photoreal clip) and `OVERLAY_SKETCH`
+  (alpha PNG, matched pose frame). Assembly is a 100% opacity alpha overlay on
+  the photoreal base, dissolve in of **8 frames or fewer**, **hard cut out of 1
+  frame** - never a cross-blend of the two styles. Frame-level QC samples the
+  declared window at **4 fps**; a frame passes when one half is line art and the
+  other photoreal colour, needing `duration_s x 4` consecutive passing frames
+  (**floor 12**). **Two negative controls, both required:** the same shot with
+  the twin removed (the stronger control) and the single-style "some time
+  later" phone shot at **112.0-114.3 s** must each return **zero passing
+  frames**; the flagship beat is the positive control. Bands are starting
+  values - calibrate on both controls. This is a **planned shot with its own
+  storyboard field, never a patch**.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows
   one plain line saying what it is; Sketch to Life shows as "Sketch to Life
   (Hybrid)"; video options show a `Watch:` sample link from
   `scripts/core/choice_card/intake_card/style_samples.json` (no link when the
   table says `null`). See `references/choice-card-spec.md`.
-- **Voice (decisions 27, 31):** All Suno (default) - sung and spoken lines
-  all from Suno, spoken lines over the music bed only, no singing-underneath
-  layer - or **Velvet Voiceover**: Google text-to-speech for the spoken
-  lines, one distinct voice per character, the sung version of each spoken
-  line playing softly underneath with the music bed dipped, **no echo effect
-  and no reverb**. The option was renamed from its earlier echo-flavoured name; that earlier string is
-  forbidden everywhere. Velvet Voiceover is the only exception to the
-  all-Suno rule.
+- **Voice (decisions 27, 31; one-track rule F1):** ONE Suno generation makes
+  the whole soundtrack. Every spoken passage is written into the song's own
+  lyrics, tagged as spoken (`[Spoken]` plus the character's voice tag), so Suno
+  performs the spoken words over the music inside the same track. **No separate
+  spoken takes, no gaps in the song for takes to sit in, no added music bed.**
+  The old voice-pack spoken-take route is superseded; a failed take is redone
+  as a whole track, never stitched from pieces. Record the one generation id in
+  the receipt.
+  **Velvet Voiceover** remains the one exception: it voices the spoken lines
+  with Google text-to-speech, one distinct voice per character, with the sung
+  version of each line playing softly underneath and the music bed dipped:
+  **no echo effect, no reverb**. It was renamed from its earlier echo-flavoured
+  spelling; that earlier string is forbidden everywhere.
 - **Per-character voice packs:** no two characters share a voice, in any look
   or music style.
 - **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** the
-  30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect Daughter close-up
-  (34%, teeth, roll -7.8) went to paid lip-sync unmeasured. Now
+  two client close-ups went to paid lip-sync unmeasured - one at face 28% of frame,
+  smile 0.62, one at 34% with teeth showing and roll -7.8. Now
   `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
   FaceLandmarker (one rule set: the constants block at the top of `picture_gate.py`, same
   names in the onboarding repo). LPG003 loosened it (Trevor: "loosen the checks so it's not
-  as strict"), calibrated so every Trevor-approved Kiesett version 2 and LeAnne Dolce
-  picture passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
+  as strict"), calibrated so every approved reference ad and client picture
+  passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
   count not 1, face height under 20%, |roll| over 20 deg, |yaw| over 0.25 (side profile),
   jawOpen over 0.30 (wide-open mouth), sharpness under 60. ACCEPT_WITH_FLAG (goes to Kling,
   flags written to the receipt): smile over 0.60, lip gap over 1.0% (teeth), face under 25%,
@@ -960,8 +1099,34 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   never another character, never a mixed vocal stem. Narrator, phone, voicemail
   and laptop voices may play as voice-over but are never lip-synced onto a
   person.
-- **Lip-sync process (Trevor approved, 2026-10-08, first used on the Stephanie Brown
-  ads; LSP001, built on LSC001).** Every run follows these six rules
+  **How a clip is cut, prompted, measured and retried (LSR001 + LSC001, 2026-10-08):**
+  (1) The input is the lead-vocal STEM only, never the mix. `lipsync_clips.choose_window`
+  picks the 4-6 s window from the Suno word timestamps: it starts at a word start and
+  ends at a word end (a real rest where one exists), then adds 0.30 s before and 0.20 s
+  after from try 1 (`stem_offset.cut_plan` corrects the stem lateness); at least 1.5
+  word onsets per second, no held word over 1.2 s (else marked `HELD_NOTE`), words with
+  p, b, m, f, v, w preferred, and a different line of a hook that is sung 2-3 times.
+  (2) The prompt (`lip_gate.kling_prompt`) says "sings" on sung lines and "says" on
+  spoken ones, one emotion, minimal head movement, steady locked camera; it never tells
+  the mouth to move in time (the audio does that). (3) The sync gate is `sync_check`
+  (calibrated on real controls); `event_sync` is advisory only. (4) **Two tries, then
+  the best take:** at most 2 paid `kling/ai-avatar-standard` jobs per segment, every
+  name variant counted (`lipsync_clips.check_try_limit`); try 2 runs only on a
+  PERSON'S call and only with a CHANGED input; after that the best-measured take is
+  kept and the receipt says `KEPT_BEST_OF_2 (tN), verdict, numbers, flag` with a
+  mouth-strip path. The card prices the worst case at 2 tries
+  (`check_budget(..., attempts=2)`). Every paid submit goes through
+  `load_governor.kie_request`; landmark extraction through `heavy_slot`.
+  **Rule followed by the agent; code check not yet shipped.** The Kling-avatar-first
+  order is a rule `lip_sync/lip_gate` enforces at run time, but
+  `scripts/core/lip_sync/` ships `lip_gate/`, `narrator_rule/` and `stem_offset/` only
+  - no `kling_first/` module (see `CHANGELOG.md`, "Not shipped here, on record").
+  **Rule followed by the agent; code check not yet shipped.** The octave-error guard
+  below is a rule the QC agent applies: `scripts/core/qc_voice_match/` ships
+  `qc_voice_match.py`, `line_voice_fit.py` and `pitch_ban/`, no `octave_guard/`
+  module (same CHANGELOG section).
+- **Lip-sync process (owner approved 2026-10-08; LSP001, built on LSC001).** Every
+  run follows these six rules
   (`lip_sync/lip_gate/lip_process.py`):
   1. **Reuse first.** Before any paid lip-sync job, re-measure every take already on
      disk for the segment with the sync check and keep the best: SYNCED, then WEAK,
@@ -981,9 +1146,10 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   5. **Edit placement.** Trim each Kling clip to its audio length (Kling pads the
      tail); place it at the Suno word timestamp, corrected by the measured stem offset
      (`stem_offset.py`; it was 66 ms late); upscale 720x1280 to 1080x1920 with lanczos;
-     conform to the native fps by DROPPING frames, never inventing them (no
-     minterpolate on lip-sync clips); all ffmpeg through `load_governor` (`heavy_slot`,
-     bounded threads) (`edit_plan`).
+     conform to the 30 fps master under "Frame rate (Part H H3)" above (a native-30
+     Kling clip passes through; a 24 fps source is motion-interpolated, never the plain
+     `fps` filter); all ffmpeg through `load_governor` (`heavy_slot`, bounded
+     threads) (`edit_plan`).
   6. **QC.** Checklist items 8 and 11 accept `KEPT_BEST` and flagged rows that carry a
      strip path (`lip_gate.qc_check`). A receipt row lists the take kept, jobs used
      (n of 2), the verdict and numbers, the flag and the strip path (`receipt_row`).
@@ -1030,8 +1196,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
 - **Pricing:** every figure on the card - video, both shapes, lip-sync
   close-ups, voice packs, clips and the batch total - comes from Skill 74
   `price`. This skill never computes or hard-codes a rate.
-- **Command Center:** one deliverable per ad, one Kanban card per ad and one
-  parent card per batch; department lead role
+- **Command Center:** one deliverable per ad, one parent card and twelve stage
+  cards per ad, and one parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
 
 ## Submit all ready jobs at once (Part F F5)
@@ -1050,7 +1216,7 @@ reference images, then keyframes, then clips; the single clips pass is the last 
 IMAGE  -> BlackCEO KIE Image (Skill 66)  -> capability-selected KIE model
 VIDEO  -> BlackCEO KIE Video (Skill 67)  -> capability-selected KIE model
 MUSIC  -> BlackCEO KIE Audio (Skill 68)  -> Suno via KIE
-TTS    -> Fish Audio (Skill 30) when spoken voice is required
+TTS    -> Spoken voice inside the Suno track; Velvet Voiceover -> Google text-to-speech through Skill 74
 ALIGN  -> verified local/approved alignment path; never invent a KIE STT endpoint
 ```
 
@@ -1064,6 +1230,28 @@ returns `tool-unavailable` / `module-unavailable` with an actionable error
 instead of a silent substitution. Model/role selection for agent work is
 resolved by the live runtime rules of the current mode, never by a hardcoded
 table in this skill.
+
+## Paid generation (what this skill may do)
+
+- **Music/lyrics/vocals: Suno through Skill 68 (`68-kie-audio`) - the createTask
+  envelope ONLY.** `POST /api/v1/jobs/createTask` with outer `model`
+  `ai-music-api/generate`, a TOP-LEVEL camelCase `callBackUrl` and a nested snake_case
+  `input` (custom_mode, instrumental, model, title, lyrics, style, negative_tags,
+  duration), with exactly ONE approved lyrics source at `input.lyrics`. **The legacy
+  music-generation route `/api/v1/generate` (the flat prompt/customMode payload) is
+  RETIRED**: `suno_recipe.check_envelope` and `kie_dispatch` refuse it by name, there
+  is NO legacy fallback and no silent switch-back. A classic `/api/v1/generate/<op>`
+  route (`/generate/extend`, `/generate/sounds`) is a DIFFERENT route and is untouched.
+  **Fish Audio is not used.** Spoken voice goes inside the Suno track; Velvet
+  Voiceover goes to Google text-to-speech, as the Voice bullet above states.
+- **Image and video:** Skills 66 / 67 (`66-kie-image`, `67-kie-video`).
+- **Live transport, polling and credit checks:** Skill 74, shadow-first - submit never
+  chooses or changes a model. Results are polled; no callback relay is used.
+- **Ordinary FFmpeg editing** rides Skills 25 / 27.
+
+Every paid path reserves through `scripts/core/spend_ledger.py` with a recorded ceiling
+first (no recorded ceiling = no paid call), keeps the reserved/submitted/unknown/
+reconciled protocol, and never auto-resubmits an uncertain outcome.
 
 ## Request and prompt limits (FU-U6, FU-U7, fail closed)
 
@@ -1088,7 +1276,7 @@ and a VERIFIED or UNVERIFIED status.
 
 Captions are the approved lyric sheet's own words, timed by the Suno
 timestamps. Speech-to-text is never a caption text source. Character and
-brand names (for example Stale, Stop Stale) are protected words:
+brand names carried by the approved sheet are protected words:
 
 - When the lyric sheet is BUILT, the lyric writer may not change a protected
   name or rewrite a packet line (`core/protected_names.py::check_sheet`,
@@ -1099,7 +1287,7 @@ brand names (for example Stale, Stop Stale) are protected words:
   (`music_qc.check_song_qc(..., protected=...)`).
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
-  protected=...)`): "the house went still" for "Stale" is a FAIL.
+  protected=...)`): "the house went still" for a protected word is a FAIL.
 
 Captions caught early (FU-U8; what main does). `protected_names._tokens` folds
 U+2019 and U+2018 and normalises NFKC, so "could\u2019ve" is one word.
@@ -1175,21 +1363,14 @@ Router-chain attempts remain `CHAIN_RESOLUTION_UNVERIFIED` until supported
 provider identity evidence proves the actual call. Code:
 `scripts/core/choice_card/intake_card/ai_models.py`.
 
-## Main window: orchestrate only, all work visible, no silent failure
-
-- The main window only operates and orchestrates. It does not do the build
-  work itself; every piece of work runs in a visible workflow or visible
-  agent that the user can watch.
-- A workflow, agent or model that is wrong, broken or not working is never
-  allowed to fail silently. Report it right away, in plain words, with what
-  broke and what was trying to run. Do not retry quietly, skip the step,
-  swap to another model, or carry on as if it worked.
-
 ## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
 
 Once intake is answered and the run has started, one watcher speaks to the
-client every 10 minutes until the job is COMPLETE or the 3-hour cap is reached.
-The client is never left wondering what happened.
+client every 10 minutes until the job is COMPLETE or cancelled, with one check-in
+point at 3 hours of the studio's own working time. Reaching the check-in point does
+not stop the run: the client gets one plain "this is taking longer than usual"
+message and supervision continues until the run is verified COMPLETE or the client
+cancels. The client is never left wondering what happened.
 
 `scripts/core/heartbeat/run_watch.py --run-dir $RUN [--interval-check] [--max-hours 3]`
 takes ONE read-only look (`control/state.sqlite3` opened `mode=ro`,
@@ -1211,13 +1392,11 @@ by the watcher.
   and never a claim that unfinished work is done.
 - **Unreadable state** = `HEARTBEAT_STATE_UNREADABLE`, loud, exit 1.
 
-Two drivers, one watcher: the OpenClaw cron
-(`timer-artifacts/install-keepalive-cron.sh --apply` registers ONE silent,
-isolated, cheap-model `skill75-keepalive` job every 10 minutes from
-`timer-artifacts/keepalive-cron-prompt.txt`; `timer-artifacts/uninstall.sh
---apply` removes it and writes the durable tombstone) and, in this
-distribution's runtime, the 10-minute `/loop` documented in `INSTRUCTIONS.md`
-section 6d. Both stop at the cap (`expired`, or `--interval-check` exit 10).
+One driver on this distribution: the 10-minute `/loop` documented in
+`INSTRUCTIONS.md` section 6d, or an equivalent self-scheduled wakeup. The loop stops
+only when the envelope's `loop_should_stop` is true (the run is verified COMPLETE, or
+the client cancelled); `--interval-check` exits 10 at that point and never because of
+elapsed time.
 
 Tests: `python3 scripts/core/heartbeat/test_run_watch.py`,
 `python3 timer-artifacts/checks/test_keepalive_cron.py`.
