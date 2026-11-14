@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-12T09:47:12Z",
+  "generatedAt": "2026-11-14T18:58:06Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -135,13 +135,13 @@
       "role": "The shared launch runtime (client_intake, signature_launch, signature_launch_contract) plus the KIE key resolver, prompt rule 12 enforcer, declared gate list and its test; merged into the installed shared-utils tree, never swapped in for it",
       "kind": "files",
       "required": true,
-      "version": "sha256:fb91140e443e",
+      "version": "sha256:95d20cd88cb4",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/shared-utils",
       "installPath": "skills/shared-utils",
       "fileCount": 155,
-      "sizeBytes": 1614480,
-      "treeSha256": "fb91140e443ebf63c1bb0efa727a232698e884d7625f748984e78f19f6df8c6e",
+      "sizeBytes": 1632421,
+      "treeSha256": "95d20cd88cb4cf071fbe6457dfef4a02731489e2c45b58a53d77ce1a2a1190e1",
       "skillMdSha256": null,
       "files": [
         {
@@ -162,7 +162,7 @@
         {
           "path": "client_intake/engine.py",
           "sourcePath": "shared-utils/client_intake/engine.py",
-          "sha256": "82b5a81339ce6b0430c31af23566bcf64ceb962955d90c9bc0198e99be065982"
+          "sha256": "07293265d1f41a2ee7f237455a33e1575c954a5652ff0fe03ec80269f13f292a"
         },
         {
           "path": "client_intake/fixtures/answers.7fig.json",
@@ -497,7 +497,7 @@
         {
           "path": "signature_launch/domain/launch.schema.json",
           "sourcePath": "shared-utils/signature_launch/domain/launch.schema.json",
-          "sha256": "ae49fed942561e9a569e88be5834624cdc383e8ec5fef15835ddf3ae741b9097"
+          "sha256": "d640f2542c25d31b19f97e033dace91b6aa5bb646e414373f0d173de6de4daf5"
         },
         {
           "path": "signature_launch/domain/launch.v1.0.schema.json",
@@ -512,7 +512,7 @@
         {
           "path": "signature_launch/domain/offer.schema.json",
           "sourcePath": "shared-utils/signature_launch/domain/offer.schema.json",
-          "sha256": "d83e14ce3eb4ef55c1fc3907a9d84006434f3dd438ce663ae0369a21bc8b9919"
+          "sha256": "fc9619e937786760dfe977737e40c144bcb6dd05847ba3514a462f96cac18340"
         },
         {
           "path": "signature_launch/domain/page-request.schema.json",
@@ -882,7 +882,7 @@
         {
           "path": "signature_launch_contract/offer_mapper.py",
           "sourcePath": "shared-utils/signature_launch_contract/offer_mapper.py",
-          "sha256": "0dda220a379ae7ccd43d429d612f0c2f5a54949771fee01da847bff31f884df9"
+          "sha256": "fec7be14ca6f4cab20f881048154f80a1d541967e9dadc0777fc360d16f1774d"
         },
         {
           "path": "signature_launch_contract/review_record.py",
@@ -902,7 +902,7 @@
         {
           "path": "signature_launch_contract/tests/test_offer_mapper.py",
           "sourcePath": "shared-utils/signature_launch_contract/tests/test_offer_mapper.py",
-          "sha256": "fa92bb7ec3b99abdd50367f948ae050eb9fdc5c76e27325d2f012f0682878531"
+          "sha256": "43ffbb10d62ebe5358705301ab545342415866bfc45b1de1d02ec82b01727802"
         },
         {
           "path": "signature_launch_contract/tests/test_review_record.py",
