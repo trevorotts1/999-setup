@@ -42,6 +42,7 @@ def check(name, got, want):
 
 
 def main():
+    FAILS.clear()
     tmp = tempfile.mkdtemp(prefix="b5-wal-")
     run = Path(tmp) / "run"
     (run / "control").mkdir(parents=True)
@@ -75,6 +76,13 @@ def main():
         if src.exists():
             shutil.copy2(str(src), str(sealed / "control" / "state.sqlite3") + suf)
     con.close()
+    # ONB core writes the step-gate seal under <run>/control/gates (U-A14).
+    # Point that directory at a writable target so the condition under test
+    # stays exact: the DATABASE directory is unwritable and SQLite cannot
+    # attach -wal/-shm, while the gate has somewhere legal to write.
+    gates_target = Path(tmp) / "gates-writable"
+    gates_target.mkdir()
+    (sealed / "control" / "gates").symlink_to(gates_target)
     sdb = sealed / "control" / "state.sqlite3"
     os.chmod(sealed / "control", 0o555)
     try:
@@ -91,6 +99,14 @@ def main():
                   "SELECT state FROM stages WHERE stage='research'"
               ).fetchone(), ("READY",))
 
+        with F._ro_connect(sdb) as reader:
+            try:
+                reader.execute("UPDATE stages SET state='DONE' WHERE stage='research'")
+            except sqlite3.OperationalError as exc:
+                assert exc.sqlite_errorcode & 0xff == sqlite3.SQLITE_READONLY, str(exc)
+            else:
+                raise AssertionError("read-only fallback allowed a database write")
+
         env = F.cmd_next(type("A", (), {"run_dir": str(sealed),
                                         "method": None, "run_id": "run-wal"})())
         check("2: next is not state-unreadable",
@@ -106,6 +122,10 @@ def main():
         return 1
     print("ALL PASS")
     return 0
+
+
+def test_unwritable_wal_store_reads_without_allowing_writes():
+    assert main() == 0, FAILS
 
 
 if __name__ == "__main__":
