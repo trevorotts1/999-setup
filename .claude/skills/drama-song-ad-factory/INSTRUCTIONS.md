@@ -145,12 +145,16 @@ main commit `ebf5c769a2ad5b2582bf2256588095cbef20cfac`) carries the round-3 acce
 rules and this distribution runs them unchanged. The commit id is rewritten at every
 sync, or it is stale the day after.
 
-- **Delivered-audio acceptance has FIVE gates only (WW-21).** Real rap, story
-  start, both pace changes, three audibly different versions including an
-  upbeat option, and multiple character voices. They live in
+- **Delivered-audio acceptance has FIVE named gates and no sixth (WW-21), and a
+  song must pass only the ones that apply to it (decision D-2).** The five are
+  real rap (only when the plan orders rap), story start (always), both pace
+  changes (always), three audibly different versions including an upbeat option
+  (only when three versions were ordered), and multiple character voices (only
+  when the cast has two or more). They live in
   `song_dispatch.accept_audio_results` with `AUDIO_RESULTS == ("D1","D2","D3","D4","D5")`;
-  there is no sixth gate, and evidence that is unmeasured, unavailable or
-  unknown cannot pass.
+  a check that does not apply is left out of that song's required list, never
+  deleted, and evidence that is unmeasured, unavailable or unknown still cannot
+  pass.
 - **Reconciled music direction (WW-29).** The vocalise is OPTIONAL and never a forced
   opening: a sheet may open with one short note or with no vocalise at all.
   R&B Flow consistently directs rhythmic speech-rhythm rap verses contrasted
@@ -311,14 +315,16 @@ the time answered go into the receipt
    announced on top of the card's. Money is asked once, on the card, with the
    real price. Quick mode is the default; Concept mode takes the client's own
    story.
-2. **Length:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes,
-   **10-minute long version**. Brief pre-fills the RECOMMENDED pick, else
+2. **Length:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes.
+   The **10-minute long version is not offered** (decision D-1: the song stage
+   refuses anything over 6 minutes, so it stays hidden until a long-song path
+   exists). Brief pre-fills the RECOMMENDED pick, else
    60 seconds - the card still shows and the answers still record (F15).
    Each length is its own song and timing map, never a cut-down.
 3. **Shape:** Vertical (9:16) or Wide (16:9), each generated natively - never a
    squash or crop of the other. The card asks these two and has no "both shapes"
    answer (`intake_card._shape_q`).
-4. **Clips:** the 3-minute, 5-minute and 10-minute ads each come with one
+4. **Clips:** the 3-minute and 5-minute ads each come with one
    automatic 60-second clip and one 90-second clip (`core/clip_cutdown`);
    cutting is free (FFmpeg, no new AI media), so the price already includes
    them. 60 s and 90 s ads get none.
