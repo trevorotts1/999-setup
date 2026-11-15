@@ -45,7 +45,7 @@
       "source_version": "v2.1.60",
       "files": 174,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:a8e185e965d5275eccdfa1bd953d54d62b0df44e87e3576adb76e2e213d7352b",
+      "sha256": "sha256:cb199ef4c7e1e2fa18fa58725f1f36b84f28871a2ec128b6971109c14d34d98d",
       "999_version": "v2.1.60",
       "source_sha256": "sha256:d037b9b626e2773b0dc6a4ff67a01b9b548889c9ca28ff132a99e09ca929210f"
     },
