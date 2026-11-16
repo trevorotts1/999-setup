@@ -188,7 +188,8 @@ Route elsewhere when the assignment is:
 When this skill runs in Claude Code or claude-nine, the MAIN window only
 operates and orchestrates. ALL work is done by VISIBLE workflows and agents.
 Things that are wrong, broken or not working are NEVER allowed to fail
-silently.
+silently: a workflow, agent or model that is wrong, broken or not working is
+never allowed to fail silently.
 
 - The main session never does hands-on work: no media generation, no file
   edits, no renders, no hand-run pipeline commands. It launches a visible
@@ -1146,9 +1147,10 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   5. **Edit placement.** Trim each Kling clip to its audio length (Kling pads the
      tail); place it at the Suno word timestamp, corrected by the measured stem offset
      (`stem_offset.py`; it was 66 ms late); upscale 720x1280 to 1080x1920 with lanczos;
-     conform to the 30 fps master under "Frame rate (Part H H3)" above (a native-30
-     Kling clip passes through; a 24 fps source is motion-interpolated, never the plain
-     `fps` filter); all ffmpeg through `load_governor` (`heavy_slot`, bounded
+     conform to the 30 fps master under "Frame rate (Part H H3)" above, which
+     replaced the old DROPPING frames rule for lip-sync clips (a native-30 Kling clip
+     passes through; a 24 fps source is motion-interpolated, never the plain `fps`
+     filter); all ffmpeg through `load_governor` (`heavy_slot`, bounded
      threads) (`edit_plan`).
   6. **QC.** Checklist items 8 and 11 accept `KEPT_BEST` and flagged rows that carry a
      strip path (`lip_gate.qc_check`). A receipt row lists the take kept, jobs used
