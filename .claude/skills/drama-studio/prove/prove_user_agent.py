@@ -212,7 +212,9 @@ PLANTS = {
     "studio_check": ("studio_check", "studio_check.py",
                      [('"User-Agent": STUDIO_USER_AGENT},', '},')]),
     "studio_bridge": ("studio_bridge", "studio_bridge.py",
-                      [('    req.add_header("User-Agent", STUDIO_USER_AGENT)\n', '')]),
+                      # Leading newline pins the anchor to _http's 4-space line;
+                      # the upload fetcher's 8-space copy is a different call path.
+                      [('\n    req.add_header("User-Agent", STUDIO_USER_AGENT)\n', '\n')]),
 }
 
 CHECKS = (
