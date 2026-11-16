@@ -1,9 +1,5 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
-## v2.9.200 - 2026-11-16 - U-J01 resync to onboarding main 12862e11
-
-- **Resync (FIN004).** Re-ran the U-J01 sync against ONB main `12862e112a169493d7cb0c2d484edd349926c2fb` over packaged base `2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea`: `scripts/core/test_cc_sync_outbox.py` and `drama-studio/studio_bridge.py` copied byte-identical from ONB (ONB commit `73d0566cf`), fingerprints regenerated with the unit's own `--write`, `VERSION` and `skill-version.txt` set to the ONB value `v2.9.200`.
-
 ## v2.9.199 - 2026-11-15 - U-J01 full canonical sync from onboarding main
 
 - **Full canonical core sync.** `scripts/core/` is replaced by the canonical
@@ -11,21 +7,20 @@
   (842 canonical files: 161 updated and 57 added over the packaged tree, nothing
   deleted). Packaged base: N99 main `24ca5e367a6a3c8ebc28c5f8086f8067d81ed19e`.
 - **Shared bridge.** `drama-studio/approvals_bridge.py` and `studio_bridge.py` are
-  copied from ONB `shared-bridge/`. `studio_claim.py` is deliberately NOT copied
-  (known runtime break outside this unit's exact scope).
+  copied from ONB `shared-bridge/`. `studio_claim.py` is copied byte for byte from
+  the same tree (sha256 `0ae65d54...6c4872`, identical at ONB main): the synced
+  `studio_bridge.py` calls `ClaimLedger.record_order_state` and
+  `claim_order(..., resume_fence=...)`, which the older packaged claim module did
+  not have, so the bridge broke at run time (F1) until the two moved together.
+  `drama-studio/VERSION` moves `2.7.48` -> `2.7.49`.
 - **References.** Only files present on both sides are replaced; the three
   N99-only reference files are kept byte for byte.
 - **Fingerprints.** `references/twin-sync-fingerprints.json` is regenerated against
-  those exact shas with canonical and packaged hashes recorded truthfully, so the
-  `studio_claim.py` pin records a real canonical/packaged difference rather than a
-  forged equality.
+  those exact shas with canonical and packaged hashes recorded truthfully; the
+  `studio_claim.py` pin now records canonical == packaged because the bytes match.
 - **Version.** `VERSION` and `skill-version.txt` are set to `v2.9.199` (the ONB
   skill version at the sync sha). `SKILL.md` is untouched by this unit; U-J02
   lands its frontmatter `version:` agreement.
-- **studio_claim.py (FIN002, Trevor's order 2026-11-16).** `drama-studio/studio_claim.py`
-  is now copied byte-identical from ONB `shared-bridge/` (sha256 `0ae65d54…`, the
-  same at `5a63f5eb…` and current ONB main), so its twin pin records equal canonical
-  and packaged hashes; this supersedes the "NOT copied" and "real difference" notes above.
 
 ## v2.9.103 - 2026-10-24 - S75 story-first batch from ONB main (partial sync)
 
