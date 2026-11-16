@@ -24,10 +24,33 @@
 # 3 = --upgrade verification failed, previous version restored and re-proven.
 # 4 = --upgrade verification failed and the rollback could not be completed.
 #                                                        # agent-pull-fix: R13
+# Every run that carries --upgrade ends, on stdout, with ONE machine line (any exit code; the exit code
+# itself is unchanged), so a tool reads the verdict from it instead of parsing `npm ls`:
+#     9ROUTER-RESULT rc=<exit code> from=<version before> to=<version on disk at exit>
+# (a version that could not be read is empty). Reader regex: ^9ROUTER-RESULT rc=([0-9]+) from=(\S*) to=(\S*)$
 #
 # Never touches keys, providers, combos, models or the database. Guards write a sibling
 # `<file>.pre-*` / `.bak-*` copy of each file they change inside the 9Router install dir.
 set -uo pipefail
+
+# BFX-011 (C14): the 9ROUTER-RESULT line is printed by an EXIT trap so it is last on EVERY exit path, including
+# usage errors that happen before the option loop reaches --upgrade (hence the pre-scan; the value after --root is
+# not an option). Without --upgrade no trap is set and nothing extra is printed.
+UPGRADE_REQ=0; _skip=0
+for _a in "$@"; do
+  [ "$_skip" = 1 ] && { _skip=0; continue; }
+  case "$_a" in --root) _skip=1 ;; --upgrade) UPGRADE_REQ=1 ;; esac
+done
+nr_result_line() {
+  local rc=$? from to
+  trap - EXIT
+  # `to` is whatever package.json says NOW (after a rollback that is the restored version); `from` is the version
+  # recorded before the install, or, when nothing was recorded (an early exit), the same live read: nothing changed.
+  to="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "${ROOT:-/nonexistent}/package.json" 2>/dev/null | head -1 | tr -d '[:space:]')"
+  from="$(printf '%s' "${UP_FROM:-$to}" | tr -d '[:space:]')"
+  printf '9ROUTER-RESULT rc=%s from=%s to=%s\n' "$rc" "$from" "$to"
+}
+if [ "$UPGRADE_REQ" = 1 ]; then trap nr_result_line EXIT; fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/../../assets/guards"
@@ -51,7 +74,7 @@ while [ $# -gt 0 ]; do
     --no-restart) RESTART=0 ;;
     --root) ROOT="${2:-}"; shift ;;
     --upgrade) UPGRADE=1; case "${2:-}" in ""|--*) ;; *) VER="$2"; shift ;; esac ;;
-    -h|--help) sed -n 2,28p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,33p "$0"; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) SEL+=("$1") ;;
   esac; shift
