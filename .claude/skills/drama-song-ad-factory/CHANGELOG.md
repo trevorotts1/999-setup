@@ -1,5 +1,27 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.199 - 2026-11-15 - U-J01 full canonical sync from onboarding main
+
+- **Full canonical core sync.** `scripts/core/` is replaced by the canonical
+  `openclaw-onboarding` tree at ONB main `5a63f5ebfc57e43d3b28d0028fd1ce7bd2661d0c`
+  (842 canonical files: 161 updated and 57 added over the packaged tree, nothing
+  deleted). Packaged base: N99 main `24ca5e367a6a3c8ebc28c5f8086f8067d81ed19e`.
+- **Shared bridge.** `drama-studio/approvals_bridge.py` and `studio_bridge.py` are
+  copied from ONB `shared-bridge/`. `studio_claim.py` is copied byte for byte from
+  the same tree (sha256 `0ae65d54...6c4872`, identical at ONB main): the synced
+  `studio_bridge.py` calls `ClaimLedger.record_order_state` and
+  `claim_order(..., resume_fence=...)`, which the older packaged claim module did
+  not have, so the bridge broke at run time (F1) until the two moved together.
+  `drama-studio/VERSION` moves `2.7.48` -> `2.7.49`.
+- **References.** Only files present on both sides are replaced; the three
+  N99-only reference files are kept byte for byte.
+- **Fingerprints.** `references/twin-sync-fingerprints.json` is regenerated against
+  those exact shas with canonical and packaged hashes recorded truthfully; the
+  `studio_claim.py` pin now records canonical == packaged because the bytes match.
+- **Version.** `VERSION` and `skill-version.txt` are set to `v2.9.199` (the ONB
+  skill version at the sync sha). `SKILL.md` is untouched by this unit; U-J02
+  lands its frontmatter `version:` agreement.
+
 ## v2.9.103 - 2026-10-24 - S75 story-first batch from ONB main (partial sync)
 
 Story-first Skill 75 work taken from openclaw-onboarding main `9488ccbc8`
