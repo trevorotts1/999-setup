@@ -1,5 +1,9 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.200 - 2026-11-16 - U-J01 resync to onboarding main 12862e11
+
+- **Resync (FIN004).** Re-ran the U-J01 sync against ONB main `12862e112a169493d7cb0c2d484edd349926c2fb` over packaged base `2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea`: `scripts/core/test_cc_sync_outbox.py` and `drama-studio/studio_bridge.py` copied byte-identical from ONB (ONB commit `73d0566cf`), fingerprints regenerated with the unit's own `--write`, `VERSION` and `skill-version.txt` set to the ONB value `v2.9.200`.
+
 ## v2.9.199 - 2026-11-15 - U-J01 full canonical sync from onboarding main
 
 - **Full canonical core sync.** `scripts/core/` is replaced by the canonical
