@@ -187,8 +187,8 @@ Route elsewhere when the assignment is:
 
 When this skill runs in Claude Code or claude-nine, the MAIN window only
 operates and orchestrates. ALL work is done by VISIBLE workflows and agents.
-Things that are wrong, broken or not working are NEVER allowed to fail
-silently.
+Things that are wrong, broken or not working are NEVER allowed to
+fail silently.
 
 - The main session never does hands-on work: no media generation, no file
   edits, no renders, no hand-run pipeline commands. It launches a visible
