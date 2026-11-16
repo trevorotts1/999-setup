@@ -18,6 +18,10 @@
 - **Version.** `VERSION` and `skill-version.txt` are set to `v2.9.199` (the ONB
   skill version at the sync sha). `SKILL.md` is untouched by this unit; U-J02
   lands its frontmatter `version:` agreement.
+- **studio_claim.py (FIN002, Trevor's order 2026-11-16).** `drama-studio/studio_claim.py`
+  is now copied byte-identical from ONB `shared-bridge/` (sha256 `0ae65d54…`, the
+  same at `5a63f5eb…` and current ONB main), so its twin pin records equal canonical
+  and packaged hashes; this supersedes the "NOT copied" and "real difference" notes above.
 
 ## v2.9.103 - 2026-10-24 - S75 story-first batch from ONB main (partial sync)
 
