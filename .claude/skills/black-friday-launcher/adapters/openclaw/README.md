@@ -37,6 +37,6 @@ One answers file per run (the shared client-intake answers file, written by `sha
 - Never send client messages or use Telegram, GHL or any other channel except this session's own reply.
 - Never borrow credentials: no Telegram token, no operator key, no other client's key.
 - Never guess a skills path. Use the install root you verified, or ask.
-- Never default price, offer name and claims, representation, community or bonus truth, entitlement, or paid-render approval. These pause the build until the client answers.
+- Never default price, offer name and claims, representation, community or bonus truth, or paid-render approval. These pause the build until the client answers.
 
 The adapter changes HOW the client is asked and told, never WHAT the gates enforce.
