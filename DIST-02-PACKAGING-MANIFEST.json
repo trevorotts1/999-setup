@@ -23,8 +23,14 @@
         "80-signature-upsell",
         "81-signature-downsell",
         "82-signature-thank-you",
-        "83-black-friday-launcher",
         "shared-utils/signature_launch"
+      ]
+    },
+    {
+      "repo": "trevorotts1/openclaw-onboarding",
+      "commit": "c6e680cdeff0918d189ccd7b529be97f470fafd6",
+      "used_for": [
+        "83-black-friday-launcher"
       ]
     }
   ],
@@ -256,13 +262,13 @@
       "status": "vendored",
       "999_path": ".claude/skills/black-friday-launcher",
       "source_path": "83-black-friday-launcher",
-      "source_commit": "1a476d2cbbc57fedbfa9dbcf73c91074bfd1a1dc",
-      "source_version": "0.2.38",
+      "source_commit": "c6e680cdeff0918d189ccd7b529be97f470fafd6",
+      "source_version": "0.2.39",
       "files": 145,
       "evidence": "diff -r source vs destination -> identical",
       "sha256": "sha256:bf0e00bff36840b89f7dadce51e9d5399fe375419ff01e792bb799a5a4538a88",
       "999_version": "0.2.39",
-      "source_sha256": "sha256:b6c66e4c883ebc58ee83a3cdd770235ce7312a4395cf7d593786c54c0bf4ab79"
+      "source_sha256": "sha256:4620ab65fb9cedb03ca163e14c00c16128a093c6f263a4bc6db212c798197a31"
     },
     {
       "id": "skill-number-assigned",
