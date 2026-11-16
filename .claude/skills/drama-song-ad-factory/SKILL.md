@@ -1146,7 +1146,8 @@ OpenClaw SOP `SOP--drama-song-ad-pipeline.md`.
   5. **Edit placement.** Trim each Kling clip to its audio length (Kling pads the
      tail); place it at the Suno word timestamp, corrected by the measured stem offset
      (`stem_offset.py`; it was 66 ms late); upscale 720x1280 to 1080x1920 with lanczos;
-     conform to the 30 fps master under "Frame rate (Part H H3)" above (a native-30
+     conform to the 30 fps master under "Frame rate (Part H H3)" above, which replaced
+     the old DROPPING frames rule for lip-sync clips (a native-30
      Kling clip passes through; a 24 fps source is motion-interpolated, never the plain
      `fps` filter); all ffmpeg through `load_governor` (`heavy_slot`, bounded
      threads) (`edit_plan`).

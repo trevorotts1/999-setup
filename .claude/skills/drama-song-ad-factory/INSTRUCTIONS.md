@@ -147,7 +147,8 @@ round-3 acceptance rules and this distribution runs them unchanged. The commit i
 are rewritten at every sync, or they are stale the day after.
 
 - **Delivered-audio acceptance runs only the checks that apply to that song
-  (WW-21, decision D-2).** D2 (story start) and D3 (both pace changes) always
+  (WW-21, decision D-2).** There are five gates in all, never a sixth.
+  D2 (story start) and D3 (both pace changes) always
   apply; D1 (real rap) applies only when the plan orders rap; D5 (more than one
   character voice) only when two or more voices were ordered; D4 (three audibly
   different versions including an upbeat option) only when three versions were
