@@ -112,9 +112,23 @@ def test_one_of_eight_reclaims_a_stale_lock():
         shutil.rmtree(state, ignore_errors=True)
 
 
+def test_a_lock_still_being_written_is_held():
+    """The winner's lock is empty between its create and its write; that is not stale."""
+    state = _state("opt3-lock-writing-")
+    try:
+        mod = load_runner()
+        path = os.path.join(state, LOCK_NAME)
+        open(path, "w").close()
+        assert mod.acquire_lock(state, "Lock Test", now=NOW) == (False, "held")
+        assert os.listdir(state) == [LOCK_NAME], "the in-flight lock was moved aside"
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+
 TESTS = [
     ("eight_racers_exactly_one_acquires", test_eight_racers_exactly_one_acquires),
     ("one_of_eight_reclaims_a_stale_lock", test_one_of_eight_reclaims_a_stale_lock),
+    ("a_lock_still_being_written_is_held", test_a_lock_still_being_written_is_held),
 ]
 
 

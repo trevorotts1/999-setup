@@ -214,6 +214,22 @@ def _record_is_stale(rec, now):
     return (now - started) >= LOCK_STALE_S
 
 
+def _lock_is_stale(path, now):
+    """True when the lock at path may be moved aside.
+
+    The winner creates the lock empty (O_EXCL) and writes its record a moment later, so
+    an unreadable lock younger than LOCK_CLAIM_STALE_S is a create still writing, never
+    stale. One that stays unreadable longer is a dead writer and is reclaimed.
+    """
+    rec = read_json(path)
+    if rec is None:
+        try:
+            return time.time() - os.stat(path).st_mtime > LOCK_CLAIM_STALE_S
+        except OSError:
+            return True                     # gone: the retried create stays exclusive
+    return _record_is_stale(rec, now)
+
+
 def _reclaim_claim(path):
     """The short-lived reclaim claim, or None when another caller holds it.
 
@@ -243,13 +259,13 @@ def _reclaim_claim(path):
 
 def _reclaim_stale(path, now):
     """Move a stale lock aside. True means: retry the exclusive create once."""
-    if not _record_is_stale(read_json(path), now):
+    if not _lock_is_stale(path, now):
         return False
     claim = _reclaim_claim(path)
     if claim is None:
         return False
     try:
-        if not _record_is_stale(read_json(path), now):
+        if not _lock_is_stale(path, now):
             return False                    # a run started while the claim was taken
         # ponytail: the record re-read above is a microsecond old; a run starting inside
         # that gap could be moved aside. Upgrade path: hold an fd on the lock and compare
