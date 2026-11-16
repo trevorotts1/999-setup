@@ -197,6 +197,15 @@ own journal shows every agent returned. The Workflow tool's reported `Transcript
 used to find the run's journal, not only a slug derived from the launching transcript. Regression test:
 `test_returned_run_live.py`.
 
+## [nine-router-setup 1.29.1] — 2026-11-16
+
+### `install-9router-guards.sh --upgrade` ends with one 9ROUTER-RESULT line (BFX-011)
+
+- Every `--upgrade` run prints, as its last stdout line and on every exit path,
+  `9ROUTER-RESULT rc=<exit code> from=<version before> to=<version on disk at exit>`, so a tool reads
+  the verdict from one line instead of parsing `npm ls`. Exit codes are unchanged; runs without
+  `--upgrade` print nothing extra. Test: `bash .claude/skills/nine-router-setup/tests/test-9router-result-line.sh`.
+
 ## [nine-router-setup 1.29.0] — 2026-10-08
 
 ### Headless Keychain fallback and guards that auto-resolve the 9Router install path (NHL001)
