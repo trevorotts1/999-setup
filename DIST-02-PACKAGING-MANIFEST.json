@@ -260,8 +260,8 @@
       "source_version": "0.2.38",
       "files": 145,
       "evidence": "diff -r source vs destination -> identical",
-      "sha256": "sha256:148e405d6013a6995039d5f6a9c636813b6581a6da13374c73111a885aa0a46f",
-      "999_version": "0.2.38",
+      "sha256": "sha256:bf0e00bff36840b89f7dadce51e9d5399fe375419ff01e792bb799a5a4538a88",
+      "999_version": "0.2.39",
       "source_sha256": "sha256:b6c66e4c883ebc58ee83a3cdd770235ce7312a4395cf7d593786c54c0bf4ab79"
     },
     {

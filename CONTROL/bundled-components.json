@@ -149,7 +149,7 @@
     ],
     "black-friday-launcher": [
       {
-        "version": "0.2.38",
+        "version": "0.2.39",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/black-friday-launcher",
