@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- fix/BFX-011-result-line: nine-router-setup: `install-9router-guards.sh --upgrade` ends every run with one stdout line `9ROUTER-RESULT rc=<exit code> from=<version before> to=<version on disk at exit>` (exit codes unchanged; no extra line without `--upgrade`). Test: `bash .claude/skills/nine-router-setup/tests/test-9router-result-line.sh`. Bundle digests regenerated; the skill VERSION stays 1.29.0 until the next nine-router-setup release tag.
 - ci(single trigger): the workflows no longer list `batch/**` under `push`. The batch merge engine always opens a pull request for a batch, so the `pull_request` trigger already runs every check; the push trigger ran each one a second time and doubled the jobs on the account's 20-job limit. Nothing else about any workflow changed.
 
 - frg/claude-hook: full-read guard for Claude Code and claude-nine (Trevor's order 2026-11-12). New hook-skill component `full-read-guard` (hook-skill 1.3.0, default on): a PreToolUse hook that blocks Grep, partial Read and shell grep/head/tail/sed -n on skill and SOP instruction files and points to `read-skill <name>`, which prints the skill and its direct dependencies (one level) in full with a receipt; lookup files named by the central manifest `hooks/full-read-guard/manifest.d/999.json` stay searchable; the same call blocked 3 times is allowed and logged. `setup-macos.sh` and `setup-windows.ps1` (nine-router-setup, whose VERSION stays 1.29.0 until the release tag is cut; the release bump is a separate step) install it step 9.7 (a2) with `install.sh --only full-read-guard --root <config dir>`. CONTRACT AMENDMENT (narrow and explicit): `--skills-only` still never writes any settings.json, but the roll path may run that one `--only full-read-guard --root ~/.claude-nine` command as its own step; it registers only the four full-read-guard hook entries in an existing settings.json and nothing else (the `--skills-only` WILL NOT touch list says so). Required up front is only SKILL.md, root INSTRUCTIONS.md and named SOPs (a dependency: SKILL.md only); step-folder and other markdown is read-on-open (whole when opened), lookup stays searchable. Root VERSION 1.39.0.
@@ -196,15 +197,6 @@ Now only CANCELLED, FAILED, COMPLETED and REAPED launches resolve a watch; a RET
 own journal shows every agent returned. The Workflow tool's reported `Transcript dir` (receipt `transcript_dir`) is
 used to find the run's journal, not only a slug derived from the launching transcript. Regression test:
 `test_returned_run_live.py`.
-
-## [nine-router-setup 1.29.1] — 2026-11-16
-
-### `install-9router-guards.sh --upgrade` ends with one 9ROUTER-RESULT line (BFX-011)
-
-- Every `--upgrade` run prints, as its last stdout line and on every exit path,
-  `9ROUTER-RESULT rc=<exit code> from=<version before> to=<version on disk at exit>`, so a tool reads
-  the verdict from one line instead of parsing `npm ls`. Exit codes are unchanged; runs without
-  `--upgrade` print nothing extra. Test: `bash .claude/skills/nine-router-setup/tests/test-9router-result-line.sh`.
 
 ## [nine-router-setup 1.29.0] — 2026-10-08
 
