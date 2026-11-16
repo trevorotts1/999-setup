@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.3.15 - 2026-11-16 - 999 version act for the recurring-billing launch schema
+
+- `references/launch.schema.json` carries the recurring-billing fields synced from onboarding 84209ac5 (byte copy of the Skill 49 and shared-utils `launch.schema.json`). The schema changed, so the version moves; nothing else in the skill changed.
+- `README.md`, `CONTROL/bundled-components.json`, `CONTROL/bundle-digests.json` and `DIST-02-PACKAGING-MANIFEST.json` carry 1.3.15.
+
 ## 1.3.13 - 2026-11-02 - 999 version act: pair 1.3.4 to 1.3.13, 999 synced with onboarding 69ae6927a
 
 - 999 version act, not a sync: the Skill 71 neutral files were already the synced onboarding code (the Skill 71 sync copied 0 files), so 1.3.4 was a stale label. `skill-version.txt` and `VERSION` now carry the onboarding value (1.3.13, byte copies of the source files) and the `SKILL.md` frontmatter `version:` line follows; nothing else in `SKILL.md` changed. Skill 83 (`black-friday-launcher`) requires Skill 71 at 1.3.12 or higher in its `dependencies.json`.
