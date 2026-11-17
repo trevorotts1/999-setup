@@ -2,12 +2,12 @@
  "algorithm": "sha256",
  "artifact": "twin-sync-fingerprints",
  "canonical": {
-  "base_sha": "5a63f5ebfc57e43d3b28d0028fd1ce7bd2661d0c",
+  "base_sha": "12862e112a169493d7cb0c2d484edd349926c2fb",
   "branch": "main",
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "438ebabfb22634488aadf30907fe1953958130d17b10ecf48e0d48ac5c57bbec"
+  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
  },
  "exclusions": [
   "__pycache__/",
@@ -3985,9 +3985,9 @@
    "packaged_sha256": "6d2a65d4e49b99032eddf8e227ecf4133f636acb6a800963eb8a80d9b7bf7fcf"
   },
   "test_cc_sync_outbox.py": {
-   "canonical_sha256": "729525ac313d6531a5880600a0c554bbe42b57d916249ea833e324bf9471f816",
+   "canonical_sha256": "73dfc67e9566a4b271083ec44fffde3622c9080bc43bb842de81984ca279332c",
    "match": true,
-   "packaged_sha256": "729525ac313d6531a5880600a0c554bbe42b57d916249ea833e324bf9471f816"
+   "packaged_sha256": "73dfc67e9566a4b271083ec44fffde3622c9080bc43bb842de81984ca279332c"
   },
   "test_cc_sync_studio.py": {
    "canonical_sha256": "c1aa0ce2573052e1f01f4c94756f55c6039650afda00c2ec907a114b6ec22b81",
@@ -4232,12 +4232,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "24ca5e367a6a3c8ebc28c5f8086f8067d81ed19e",
+  "base_sha": "2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "438ebabfb22634488aadf30907fe1953958130d17b10ecf48e0d48ac5c57bbec"
+  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4945,7 +4945,7 @@
  "studio_bridge_twin": {
   "algorithm": "sha256",
   "canonical": {
-   "base_sha": "5a63f5ebfc57e43d3b28d0028fd1ce7bd2661d0c",
+   "base_sha": "12862e112a169493d7cb0c2d484edd349926c2fb",
    "branch": "main",
    "label": "ONBOARDING_CANONICAL",
    "repo": "trevorotts1/openclaw-onboarding",
@@ -4961,9 +4961,9 @@
    },
    "studio_bridge.py": {
     "canonical": "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
-    "canonical_sha256": "4449b291b7a0540c3d83aaba874614a49e925366157fdad5828a071d7e9731f1",
+    "canonical_sha256": "38740566572a197c5bd7f4b2c0ffd8ea66b40b5580f8ae752284942876712ce1",
     "packaged": ".claude/skills/drama-studio/studio_bridge.py",
-    "packaged_sha256": "4449b291b7a0540c3d83aaba874614a49e925366157fdad5828a071d7e9731f1"
+    "packaged_sha256": "38740566572a197c5bd7f4b2c0ffd8ea66b40b5580f8ae752284942876712ce1"
    },
    "studio_claim.py": {
     "canonical": "75-drama-song-ad-factory/shared-bridge/studio_claim.py",
