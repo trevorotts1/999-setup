@@ -108,16 +108,26 @@ check "1.9.0 is behind 1.10.0 (numeric compare, not text)" "$(has "$LAST" 'resul
 
 # ---- 8. lock: a live foreign owner defers, nothing is changed ----
 B="$(newbox busy)"; publish 1.11.0; H0="$(headof "$B")"
-bash -c '. "$1"; box_update_lock_acquire "$2" holder-run other-role /x 2>/dev/null; echo ready; sleep 60' _ "$HELPER" "$B/lock" > "$ROOT/holder.out" &
+bash -c '. "$1"; box_update_lock_acquire "$2" holder-run other-role /x 2>/dev/null; echo ready; exec sleep 60' _ "$HELPER" "$B/lock" > "$ROOT/holder.out" &
 echo $! > "$ROOT/holder.pid"
 for _ in $(seq 50); do grep -q ready "$ROOT/holder.out" 2>/dev/null && break; sleep 0.1; done
-run "$B" --lock-wait 2
+T0=$SECONDS; run "$B" --lock-wait 3; ELAPSED=$((SECONDS - T0))
+check "busy lease: waited out the whole wait (not an immediate defer)" "$([ "$ELAPSED" -ge 3 ] && echo 0 || echo 1)" "elapsed ${ELAPSED}s, wanted >= 3"
 check "busy lease: rc 75 result=DEFERRED, no update" "$([ "$RC" = 75 ] && [ "$(headof "$B")" = "$H0" ] && [ "$(stubruns "$B")" = 0 ] && has "$LAST" 'result=DEFERRED' && echo 0 || echo 1)" "$OUT"
 check "busy lease: the other owner's record is left in place" "$([ -f "$B/lock" ] && grep -q '^run_id=holder-run' "$B/lock" && echo 0 || echo 1)"
 kill "$(cat "$ROOT/holder.pid")" 2>/dev/null; wait 2>/dev/null
 run "$B" --lock-wait 2
 check "dead owner's lease is reclaimed and the update proceeds" "$([ "$RC" = 0 ] && has "$LAST" 'result=UPDATED' && echo 0 || echo 1)" "$OUT"
 check "own lease is released after the update" "$([ ! -e "$B/lock" ] && echo 0 || echo 1)"
+
+# ---- 8b. the owner releases mid-wait: the run waits, then takes the lease and updates ----
+B="$(newbox midwait)"; publish 1.11.5
+bash -c '. "$1"; box_update_lock_acquire "$2" holder-run other-role /x 2>/dev/null; echo ready; exec sleep 3' _ "$HELPER" "$B/lock" > "$ROOT/holder2.out" &
+for _ in $(seq 50); do grep -q ready "$ROOT/holder2.out" 2>/dev/null && break; sleep 0.1; done
+T0=$SECONDS; run "$B" --lock-wait 30; ELAPSED=$((SECONDS - T0))
+wait 2>/dev/null
+check "mid-wait release: UPDATED after waiting for the owner" "$([ "$RC" = 0 ] && has "$LAST" 'result=UPDATED' && [ "$ELAPSED" -ge 2 ] && echo 0 || echo 1)" "elapsed ${ELAPSED}s rc $RC: $LAST"
+check "default wait is 30 minutes polled every 30 seconds" "$(grep -q 'LOCK_WAIT="\${AUTO_UPDATE_LOCK_WAIT:-1800}"' "$SCRIPT" && grep -q 'LOCK_POLL="\${AUTO_UPDATE_LOCK_POLL:-30}"' "$SCRIPT" && echo 0 || echo 1)"
 
 # ---- 9. launched by the auto-update run that owns the lease: ride it, never release it ----
 B="$(newbox inherit)"; publish 1.12.0
