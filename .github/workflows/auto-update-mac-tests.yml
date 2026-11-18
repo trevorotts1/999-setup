@@ -1,0 +1,28 @@
+name: auto-update-mac-tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/auto-update-mac.sh'
+      - 'tests/test-auto-update-mac.sh'
+      - '.github/workflows/auto-update-mac-tests.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'scripts/auto-update-mac.sh'
+      - 'tests/test-auto-update-mac.sh'
+      - '.github/workflows/auto-update-mac-tests.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  auto-update-mac:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Mac update-if-behind entry point (fixture origin, fake HOME)
+        run: bash tests/test-auto-update-mac.sh
