@@ -323,7 +323,7 @@ the installers link every skill it names. Third-party upstreams (`eli5`, `bro`) 
 their own MIT notices in their skill folders and in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-Every bundled skill carries a readable update stamp at its root (`spec-protocol` 1.38.1,
+Every bundled skill carries a readable update stamp at its root (`spec-protocol` 2.0.0,
 `nine-router-setup` 1.29.0, `kaizen` 1.1.0, `eli5` 1.1.0, `bro` 1.1.0,
 `blackceo-signature-page` 1.3.15, `hook-skill` 1.3.0, `kiss` 1.0.0,
 `drama-studio` 2.7.49). At every
