@@ -1,5 +1,18 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.202 - 2026-11-19 - fix(song): speak first, sing at the drop; lyric doctrine; word timing; pick after operator decision
+
+Lessons from a 3-minute Soul Ballad campaign run, where the first three rounds sang at about 5 s and the lyrics missed the real audience.
+
+- **Suno waits for the drop (suno_recipe, song_contract, suno-v6.json).** On a method run the style text now carries "no singing until the groove drops" and a spoken-backstory sentence in place of "Only the short intro is spoken". `check_pre_erm_opening` refuses a sheet whose spoken words before the first sung line cannot reach the ERM window (PRE_ERM_SPOKEN_SHORT / PRE_ERM_SPOKEN_LONG). `check_pace_style` accepts the method clauses. New Backstory cue.
+- **ERM window (method_plan).** A blueprint ERM outside the method window is refused with ERM_OUTSIDE_WINDOW.
+- **Take judge (song_dispatch).** The ERM apex comes from control/method.json and first singing is measured from word timing when present (the singing detector mis-scored spoken backstory as singing).
+- **Word timing (PREREQS, INSTALL, song_transports).** Model name corrected to `small`; install pre-fetches it and fixes cache ownership; a missing model raises WORD_TIMING_UNAVAILABLE instead of silently empty aligned words.
+- **Memory guard (lane_size).** Free memory is the cgroup working set, so reclaimable page cache no longer refuses local model loads; MiB/GB label fixed.
+- **Website spelling (protected_names).** `url` and `cta_url` from the brief are protected.
+- **Pick after operator decision (song_choices).** `record_pick` honours a recorded, digest-bound WW-21 operator decision for that variant, the same decision `factory music --operator-decision` already accepts.
+- **Doctrine (SKILL.md, INSTRUCTIONS.md, QC.md, EXAMPLES.md).** Write for the brief's real audience; concrete pain checklist; the client's own lines kept in the pain section; spoken backstory plus two sung pain sections before the hero; keep the chosen style; three places that tell Suno to wait; QC rows and a worked example.
+
 ## v2.9.200 - 2026-11-16 - U-J01 resync to onboarding main 12862e11
 
 - **999 CI made green for the sync (U-J01 final fix, Trevor's order 2026-11-16).** The synced canonical core tests read files outside `scripts/core/`. Edits in this commit: `references/lipsync-cartoon-proof.md` keeps this distribution's wording from 999 commit `9261c887` (no model-pin word): the one reference file that deliberately differs from ONB, whose copy fails `tests/test_model_choice.py` in both repositories; `SKILL.md` frontmatter `version:` set to `v2.9.200`; `CONTROL/bundled-components.json` declares `v2.9.200`. `CONTROL/bundle-digests.json` is restamped to this tree. No file under `scripts/core/` changed and the twin fingerprints are unchanged.
