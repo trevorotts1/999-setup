@@ -2,12 +2,12 @@
  "algorithm": "sha256",
  "artifact": "twin-sync-fingerprints",
  "canonical": {
-  "base_sha": "94e6632f0cfdf6b3fe994af4af3f08a0dc5f4725",
+  "base_sha": "fd5bf8359",
   "branch": "main",
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "4247c125ce104d48275145492b977bb2ce44cfe3bd9301a22684ddcb9df3ac8f"
+  "tree_sha256": "210d9a146ec5aa584ba8ce9d5c9577ff57dbd295f69cff0d91dbe0153cd0fa42"
  },
  "exclusions": [
   "__pycache__/",
@@ -3270,9 +3270,9 @@
    "packaged_sha256": "bdfea95dc2a7c797455ccbf10568f84284da4baad4838a7a167eb506b7430fb2"
   },
   "song_choices/test_pick_operator_decision_s75.py": {
-   "canonical_sha256": "b7f3061a90c3eafd0859537430f281073c12eaa0227ef7c56b35bfec1ae6a437",
+   "canonical_sha256": "9fe701c53c33c50f95ddc0a762183b12da9bfe5731804be11a0c3351bf30ab14",
    "match": true,
-   "packaged_sha256": "b7f3061a90c3eafd0859537430f281073c12eaa0227ef7c56b35bfec1ae6a437"
+   "packaged_sha256": "9fe701c53c33c50f95ddc0a762183b12da9bfe5731804be11a0c3351bf30ab14"
   },
   "song_choices/test_recommend.py": {
    "canonical_sha256": "1f797958a63ebf6216f972b6e1b2adc6c3916787e090375412ffca269db6bd1a",
@@ -4045,9 +4045,9 @@
    "packaged_sha256": "93d6f0093f08e8fdae395b138a21a746e0193f717400cbf9b01165a4b090c477"
   },
   "test_lane_size_working_set_s75.py": {
-   "canonical_sha256": "a6f87b53ad5955412ee61cc25f7e0d6f596633fedfd94ec24afc19ebb92f7380",
+   "canonical_sha256": "565e6cd267089fd263c526bf06f791b7ee9ef03ae416efa579a27253cefdae99",
    "match": true,
-   "packaged_sha256": "a6f87b53ad5955412ee61cc25f7e0d6f596633fedfd94ec24afc19ebb92f7380"
+   "packaged_sha256": "565e6cd267089fd263c526bf06f791b7ee9ef03ae416efa579a27253cefdae99"
   },
   "test_lipsync_clips.py": {
    "canonical_sha256": "6550772b09627c61fc0f735e671fde6c2412b40de7550ceacfbebe273056e00d",
@@ -4267,12 +4267,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "761144b8f2d7fe85ad2af1fd5c2714cd5e90aeaf",
+  "base_sha": "878cd33",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "16325da150007e454318eeadf7895ace7e5449ab4fc3c41c27a1262bb49ba40b"
+  "tree_sha256": "db415d654acf6cf4d8ca1bbcf785469440733df1b34626636eeb3bc796a4b922"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
