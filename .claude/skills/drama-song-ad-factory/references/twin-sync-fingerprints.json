@@ -2,12 +2,12 @@
  "algorithm": "sha256",
  "artifact": "twin-sync-fingerprints",
  "canonical": {
-  "base_sha": "12862e112a169493d7cb0c2d484edd349926c2fb",
+  "base_sha": "fd5bf8359",
   "branch": "main",
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "210d9a146ec5aa584ba8ce9d5c9577ff57dbd295f69cff0d91dbe0153cd0fa42"
  },
  "exclusions": [
   "__pycache__/",
@@ -1510,8 +1510,8 @@
    "packaged_sha256": "f8ef7bbed8cbd4397e781a9ead85f92e89999e1ddfe915638c30d48f9920ad57"
   },
   "intake_preflight/preflight.py": {
-   "canonical_sha256": "b9a47e8776f1845ba30b2d8d1d2904c3a879eaa798d42d41895ea7e6b1724fb1",
-   "match": true,
+   "canonical_sha256": "578ae5deda50b5b19f4e259b5609bb0ae0a7c54d6839d12543d2db391a3db4d7",
+   "match": false,
    "packaged_sha256": "b9a47e8776f1845ba30b2d8d1d2904c3a879eaa798d42d41895ea7e6b1724fb1"
   },
   "intake_preflight/stage_commands.json": {
@@ -1830,9 +1830,9 @@
    "packaged_sha256": "f75f7a8ae9233943be5447cc926ea8969cded511ec37832f6342c54ab38187e3"
   },
   "lane_size.py": {
-   "canonical_sha256": "b2b0cd66b2a5af7f492b53f619f0f5478b0eb98e7d05c9b5132d8dba7d5fe43b",
+   "canonical_sha256": "03fb300b57d71dc8a9e6d3e4869c06b71026faca004dad177c84c2aa6c66fea1",
    "match": true,
-   "packaged_sha256": "b2b0cd66b2a5af7f492b53f619f0f5478b0eb98e7d05c9b5132d8dba7d5fe43b"
+   "packaged_sha256": "03fb300b57d71dc8a9e6d3e4869c06b71026faca004dad177c84c2aa6c66fea1"
   },
   "length_formula/__init__.py": {
    "canonical_sha256": "00f2d0640a0e82a0b9b0e18843972c843b17c3c098baa2806477512fa34784d1",
@@ -2225,9 +2225,14 @@
    "packaged_sha256": "dec97acf9c591d71ed7c23d1245e835d717fb554424428043df2687f824075df"
   },
   "method_plan/method_plan.py": {
-   "canonical_sha256": "58462303ffd0e45522befcdce2234e51c15d46b6f5a7506ea4d887a080d2c4b9",
+   "canonical_sha256": "742705253909753f7dc3a5fdd41b2cbfe6733d6f5002744229f9dccf16483f5b",
    "match": true,
-   "packaged_sha256": "58462303ffd0e45522befcdce2234e51c15d46b6f5a7506ea4d887a080d2c4b9"
+   "packaged_sha256": "742705253909753f7dc3a5fdd41b2cbfe6733d6f5002744229f9dccf16483f5b"
+  },
+  "method_plan/test_erm_window_s75.py": {
+   "canonical_sha256": "a58898d17e786ee3eb3f34e732e38bd688584ab23b15917c06d6881e6c506eea",
+   "match": true,
+   "packaged_sha256": "a58898d17e786ee3eb3f34e732e38bd688584ab23b15917c06d6881e6c506eea"
   },
   "method_plan/test_method_plan.py": {
    "canonical_sha256": "471d12d791e51b851b2a36a2bbaa5add095e4add94f7d8e34e2004ff02f7499a",
@@ -2595,9 +2600,9 @@
    "packaged_sha256": "9e8b636e38e2079e6a9f31e3f02850e0e6ec7f459749da6a7003bb67ca350f4e"
   },
   "protected_names.py": {
-   "canonical_sha256": "f8cf2a3ccf0ab7a1ef241b9299f0a6bd6548163854c92bb211b8eeb04fd40ccc",
+   "canonical_sha256": "f8306bacd0e0cb9aa6da835f4a03a47e53564afdccc47e90534f040c127f27e2",
    "match": true,
-   "packaged_sha256": "f8cf2a3ccf0ab7a1ef241b9299f0a6bd6548163854c92bb211b8eeb04fd40ccc"
+   "packaged_sha256": "f8306bacd0e0cb9aa6da835f4a03a47e53564afdccc47e90534f040c127f27e2"
   },
   "qc_gate.py": {
    "canonical_sha256": "1b3e17f699ff53d124d5cd1194d5a6d87005540ebe05b35e7cff94d75d5249fa",
@@ -3235,9 +3240,9 @@
    "packaged_sha256": "26a24100b4c841de441833277bdcb9b369a84223460b767178e87e4d90a63549"
   },
   "song_choices/song_choices.py": {
-   "canonical_sha256": "d289b6045efc9e6a703c5b3feeeea32b9443e4818522fbffeaead3f47a67e58f",
+   "canonical_sha256": "58b7955ac8221cafd9d54070c25fce05e2006efcae40740dce4bf39ddd461abc",
    "match": true,
-   "packaged_sha256": "d289b6045efc9e6a703c5b3feeeea32b9443e4818522fbffeaead3f47a67e58f"
+   "packaged_sha256": "58b7955ac8221cafd9d54070c25fce05e2006efcae40740dce4bf39ddd461abc"
   },
   "song_choices/test_acceptance_real_takes_s75_052.py": {
    "canonical_sha256": "bffbe832189a0fdf1baf7f4a787a1325684f4101f892d89d453f191add201580",
@@ -3263,6 +3268,11 @@
    "canonical_sha256": "bdfea95dc2a7c797455ccbf10568f84284da4baad4838a7a167eb506b7430fb2",
    "match": true,
    "packaged_sha256": "bdfea95dc2a7c797455ccbf10568f84284da4baad4838a7a167eb506b7430fb2"
+  },
+  "song_choices/test_pick_operator_decision_s75.py": {
+   "canonical_sha256": "9fe701c53c33c50f95ddc0a762183b12da9bfe5731804be11a0c3351bf30ab14",
+   "match": true,
+   "packaged_sha256": "9fe701c53c33c50f95ddc0a762183b12da9bfe5731804be11a0c3351bf30ab14"
   },
   "song_choices/test_recommend.py": {
    "canonical_sha256": "1f797958a63ebf6216f972b6e1b2adc6c3916787e090375412ffca269db6bd1a",
@@ -3355,9 +3365,9 @@
    "packaged_sha256": "d68c36028523828e4941117beeefaa7e3d290abcdbad058cc0a3c519468afcdf"
   },
   "song_contract/song_contract.py": {
-   "canonical_sha256": "b47d6cfc89d2117c76bdb7df6689761804717e92112ba67302712c942d03a106",
+   "canonical_sha256": "9b4c73dc68e90de708e9d284903cd21d1a51609be3762c359e85277f6f4814be",
    "match": true,
-   "packaged_sha256": "b47d6cfc89d2117c76bdb7df6689761804717e92112ba67302712c942d03a106"
+   "packaged_sha256": "9b4c73dc68e90de708e9d284903cd21d1a51609be3762c359e85277f6f4814be"
   },
   "song_contract/test_song_contract.py": {
    "canonical_sha256": "e10568b7dad9c33e77cb825eb2c86244d6555203764fb89c0555a3264bea1d39",
@@ -3370,9 +3380,14 @@
    "packaged_sha256": "ba1ad6140f9455da6d64d1735da5cbafbe9ce19bb8c1410a8a402de2f3dee96d"
   },
   "song_dispatch/song_dispatch.py": {
-   "canonical_sha256": "ceb01b4737612c18fc6ebbedf708cd6aaca3cff6bd8c0573c30aff2b9449c490",
+   "canonical_sha256": "fbcba0b282c25d593875ab6bff1a5de1fcc669955094551f6a657a072c253fd1",
    "match": true,
-   "packaged_sha256": "ceb01b4737612c18fc6ebbedf708cd6aaca3cff6bd8c0573c30aff2b9449c490"
+   "packaged_sha256": "fbcba0b282c25d593875ab6bff1a5de1fcc669955094551f6a657a072c253fd1"
+  },
+  "song_dispatch/test_first_sung_word_timing_s75.py": {
+   "canonical_sha256": "42dea25af08d2d2c3e9099a22fcb53a9744ae74a3ba4148333a91ea894e21546",
+   "match": true,
+   "packaged_sha256": "42dea25af08d2d2c3e9099a22fcb53a9744ae74a3ba4148333a91ea894e21546"
   },
   "song_dispatch/test_method_song.py": {
    "canonical_sha256": "9ca179200bdec99f889e27db08978edafa5ff8542e36d503fe510e6183f1a070",
@@ -3420,9 +3435,9 @@
    "packaged_sha256": "1c3edec503261dc8ddd927bfd65fc5a505965d50dcd6d6ba0fa5759f3bd7d379"
   },
   "song_transports.py": {
-   "canonical_sha256": "24fb0b978c3206602c17e8d4af4ef458a0510e89d91ec8521d43c63c64f28dc2",
+   "canonical_sha256": "b444c66cd6a885f2d96f7aff26b04ed542936643d4f3635f351fbddbb084a569",
    "match": true,
-   "packaged_sha256": "24fb0b978c3206602c17e8d4af4ef458a0510e89d91ec8521d43c63c64f28dc2"
+   "packaged_sha256": "b444c66cd6a885f2d96f7aff26b04ed542936643d4f3635f351fbddbb084a569"
   },
   "spend_ledger.py": {
    "canonical_sha256": "82fcf663a994f1f4062944ddd082f5c41692652d327447bb8ded919149d2211c",
@@ -3895,19 +3910,24 @@
    "packaged_sha256": "0fc66f11f81ac22ba279db81da67b5046417c5c3bdd3eb2974e005af5a29fb09"
   },
   "suno_recipe/suno_recipe.py": {
-   "canonical_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6",
+   "canonical_sha256": "318afbfc124076bb607438e89a67d4eddb820fb0a963a14e6e689493388c195d",
    "match": true,
-   "packaged_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6"
+   "packaged_sha256": "318afbfc124076bb607438e89a67d4eddb820fb0a963a14e6e689493388c195d"
   },
   "suno_recipe/test_duration_policy_u3.py": {
    "canonical_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc",
    "match": true,
    "packaged_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc"
   },
-  "suno_recipe/test_pace_direction_g11.py": {
-   "canonical_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53",
+  "suno_recipe/test_method_wait_s75.py": {
+   "canonical_sha256": "f41663c5c611a1dff3119a4c2605eef5a64c73a49ec3c33200dcbb37fe403193",
    "match": true,
-   "packaged_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53"
+   "packaged_sha256": "f41663c5c611a1dff3119a4c2605eef5a64c73a49ec3c33200dcbb37fe403193"
+  },
+  "suno_recipe/test_pace_direction_g11.py": {
+   "canonical_sha256": "d9aed9e4f888ffca52812c89a42a6c892e629b72077af91d35db063e3f5a6ea6",
+   "match": true,
+   "packaged_sha256": "d9aed9e4f888ffca52812c89a42a6c892e629b72077af91d35db063e3f5a6ea6"
   },
   "suno_recipe/test_recipes_instruction_payload.py": {
    "canonical_sha256": "719f1b99ab94e24f9f2776bc49196d3200935e419a46c516cbcd70b070266711",
@@ -4024,6 +4044,11 @@
    "match": true,
    "packaged_sha256": "93d6f0093f08e8fdae395b138a21a746e0193f717400cbf9b01165a4b090c477"
   },
+  "test_lane_size_working_set_s75.py": {
+   "canonical_sha256": "565e6cd267089fd263c526bf06f791b7ee9ef03ae416efa579a27253cefdae99",
+   "match": true,
+   "packaged_sha256": "565e6cd267089fd263c526bf06f791b7ee9ef03ae416efa579a27253cefdae99"
+  },
   "test_lipsync_clips.py": {
    "canonical_sha256": "6550772b09627c61fc0f735e671fde6c2412b40de7550ceacfbebe273056e00d",
    "match": true,
@@ -4068,6 +4093,11 @@
    "canonical_sha256": "04d3b8b2356bcf4931e04548ab280c341c2a4053665e9e3b814ab238c9861d1f",
    "match": true,
    "packaged_sha256": "04d3b8b2356bcf4931e04548ab280c341c2a4053665e9e3b814ab238c9861d1f"
+  },
+  "test_protected_names_url_s75.py": {
+   "canonical_sha256": "83cd0f21f1327086d8108ad1823129b0a6d7ada3542167265c7258d3efe22d80",
+   "match": true,
+   "packaged_sha256": "83cd0f21f1327086d8108ad1823129b0a6d7ada3542167265c7258d3efe22d80"
   },
   "test_provider_evidence_required.py": {
    "canonical_sha256": "2f2a03acbf247459099498cfb7397b525111120de7a19d577f7d755a2028c379",
@@ -4138,6 +4168,11 @@
    "canonical_sha256": "fc02957213f05dae18dfaf44199a64c3efe1f5e5ed22cf632faf01d924637630",
    "match": true,
    "packaged_sha256": "fc02957213f05dae18dfaf44199a64c3efe1f5e5ed22cf632faf01d924637630"
+  },
+  "test_word_timing_loud_s75.py": {
+   "canonical_sha256": "c23a2b69992df02611a5dc46898a1cbbbd51af27dd88ec453c2406656c234f5b",
+   "match": true,
+   "packaged_sha256": "c23a2b69992df02611a5dc46898a1cbbbd51af27dd88ec453c2406656c234f5b"
   },
   "test_words_match_f7.py": {
    "canonical_sha256": "733f8abff9a293383d1a03cf11e350c897039446553156f7900f0e987db73edf",
@@ -4232,12 +4267,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea",
+  "base_sha": "878cd33",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "db415d654acf6cf4d8ca1bbcf785469440733df1b34626636eeb3bc796a4b922"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4983,9 +5018,9 @@
   "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference."
  },
  "summary": {
-  "differ": 0,
-  "in_scope_files": 842,
-  "match": 842,
+  "differ": 1,
+  "in_scope_files": 849,
+  "match": 848,
   "only_canonical": 0,
   "only_packaged": 0
  },

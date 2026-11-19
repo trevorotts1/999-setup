@@ -176,8 +176,16 @@ are rewritten at every sync, or they are stale the day after.
   `pick --reply` with words): `redo_all` / `new_three` reopen the music row for
   a round the client asked for, and `keep_one` is recorded but never writes a
   PASS — the WW-18/WW-21 measured gates still hold, so a kept take whose
-  required gates failed needs the documented `--operator-decision` route. Say
-  the concerns plainly and say the client may decide a take is fine.
+  required gates failed needs the documented `--operator-decision` route.
+  Two rules bind this fork: the first singing is judged by the words' own
+  timings on the returned take (word timing, never a "spoken" tag - install
+  the whisper small model), and a first sung word before the apex minus
+  1.5 s is a FAIL however the sheet labels it. The documented decision route
+  is the sequence in `SKILL.md` "WW-21": `record_acceptance`, then
+  `sha256_evidence_records({vid: measure_evidence_digest})`, then
+  `record_operator_decision`, then `factory.py music --operator-decision`; a
+  FAIL stays recorded as FAIL and the decision never writes PASS. Say the
+  concerns plainly and say the client may decide a take is fine.
 - **QC duration overshoot is a flag, not a stop.** One rule
   (`master_length.judge_duration`) governs the song `length` gate
   (`song_dispatch.judge_take`, target = delivered seconds) and the video master
@@ -250,7 +258,7 @@ run each argv without a shell). Never type them free hand or send them as one
 line: one block per question, one numbered option per line, a blank line
 between questions. See `references/choice-card-spec.md` section 2.1.
 
-**Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+**Stage 3 stop rule (script-lyrics, v2.9.70).** Read the stage's required list IN FULL first, never grepped - `SKILL.md` ("Writing the lyrics"), `INSTRUCTIONS.md`, `QC.md`, `EXAMPLES.md`, `references/drama-to-demand-method.md` (Steps 1 and 6-12, sections 6 and 7), `references/sensational-openings.md`, and the card's own `references/prompt-templates/music/<style>.json` - then write the sheet into the run's checklist. Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`), the words-fit check (`words_fit.preflight`) and the pre-ERM opening check (`check_pre_erm_opening`; `PRE_ERM_SPOKEN_SHORT` / `PRE_ERM_SPOKEN_LONG`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
 **Script approval.** The SCRIPT APPROVAL card question lets the client read and approve the story and song lyrics before the song is made. On Yes, send the script, pause, and do not generate the song until "approve". The saved session writes `$RUN/card-answers.json` itself - never write it by hand, because a hand-written file is what the session then refuses as legacy answers - and the script goes to `$RUN/creative/script.json`; `factory.py next` then sends the script and pauses by itself, and `factory.py script-reply` carries the client's answer; see SKILL.md "Script approval before the song". The card's question order is the card's own: never assert which question is last.
 
@@ -339,6 +347,8 @@ the time answered go into the receipt
    first) among them. The catalog is closed at eighteen; a nineteenth is refused
    `CATALOG_FULL`. The song brief, the Suno style prompt and the spoken/sung balance
    follow the choice.
+   **The style is locked to the card choice (R9):** the card's style is the
+   sheet's style, and a sheet is never quietly moved onto another style's rates.
 7. **Voice:** All Suno (default) or **Velvet Voiceover** - Google
    text-to-speech for the spoken lines, one distinct voice per character,
    the sung version of each line playing softly underneath with the music
