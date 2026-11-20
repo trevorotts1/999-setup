@@ -1,5 +1,12 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.203 - 2026-11-20 - a run with no recorded fork answer keeps its provider retry
+
+- **The bug.** `song_choices` sent `require_round_auth=True` on every paid dispatch, even when the client had never answered the fork question. With no recorded decision the retry of a first take that failed at the provider was then refused `MISSING_AUTH_REF` instead of keeping today's provider-failure retry: one submit, a refusal, no second submit.
+- **The fix.** The song runner only sends `require_round_auth` when a fork decision is actually recorded; a run with no recorded answer sends no flag and keeps the plain provider-failure retry. Recorded `keep_one` still stops the retry, and a recorded redo still authorizes exactly one new paid take.
+- **Tests.** New failing-first test in `song_choices/test_x07_offline_dispatch.py`: no recorded decision, first submit fails at the provider, retry succeeds with a second submit and the settled charge (failed on the old tree with `MISSING_AUTH_REF` and one submit).
+- **Twin fingerprints.** Regenerated with the repo generator against the same canonical sha; `CONTROL/bundle-digests.json` and `CONTROL/bundled-components.json` restamped to `v2.9.203`.
+
 ## v2.9.202 - 2026-11-20 - a keep_one answer stops a paid retry after the first take fails
 
 - **The bug.** `spend_ledger` stopped a provider-failure retry without an authorization reference only when the failed take had been an authorized creative retake. When the FIRST take failed at the provider and the client then answered `keep_one`, the song runner sent no reference with `require_round_auth=True`, the ledger allowed the retry as a plain provider-failure retry, and the second paid submit went out (`submits 1 -> 2`). `keep_one` never buys a new paid round, so this was a paid take the client's latest answer did not authorize.

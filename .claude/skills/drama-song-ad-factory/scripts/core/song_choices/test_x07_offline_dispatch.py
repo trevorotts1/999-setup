@@ -497,6 +497,27 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
         self.assertEqual(self._summary()["actual_cost"], 0)
 
+    def test_initial_failure_with_no_fork_decision_keeps_the_retry(self):
+        """No recorded fork decision: the song runner sends no
+        require_round_auth flag, so a provider-failure retry after the
+        INITIAL take failed keeps today's plain retry -- a second submit,
+        not MISSING_AUTH_REF. Regression: an unconditional
+        require_round_auth=True refused this retry with one submit made
+        and no second submit issued."""
+        self.transport.fail_submits = {1}
+        failed = self._generate()
+        self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        retry = self._generate()
+        env = retry["results"][0]["envelope"]
+        self.assertEqual(env["outcome"], "ok", env)
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        rows = self._auth_rows()
+        self.assertEqual(len(rows), 2, rows)
+        self.assertIn(rows[1]["retry_category"],
+                      ("failed_job_retry", "transport_retry"), rows)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS)
+
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):
         """CONTROL: neutralize the ledger's prior-state classification.
