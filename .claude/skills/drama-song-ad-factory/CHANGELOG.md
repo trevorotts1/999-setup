@@ -1,5 +1,11 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.202 - 2026-11-20 - round-2 gate fixes: a colon never ends the sentence, cue words never decide delivery anywhere
+
+- **Cue words never decide a section's delivery, in every gate.** The shared parser (`suno_recipe.parse_tag` and every caller, including the delivery map and the writer's tag reader) now honours a declared `[Name (sung|spoken|rap): cue]` first: a spoken intro whose cue says "over a light instrumental bed" keeps spoken delivery, so an intro-only sheet maps to spoken and no longer raises EMPTY_SHEET_DELIVERIES. Cue words never grant a delivery to an unnamed section either.
+- **A negated call asks for nothing, whatever its shape.** The closing check refuses "Do not: take the quiz." (a colon never ends the negation's sentence) and negative subjects ("Nobody should take the quiz.", "No one should take the quiz.", "Neither should take the quiz."). The guard applies to every action phrase, not just quiz ones, and negation reaches across line breaks ("Never\ntake the quiz.", "Do not\nbook a call." are refused; "Do not wait. Take the quiz now." in its own sentence still counts).
+- **Unchanged.** Real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric line under them are still refused. No word budget, opener length, sung share or sung-section count changed. New test: `scripts/core/suno_recipe/test_gatefix_round2_s75.py` (failing-first on head 99d2bb7); `test_cue_false_positives_s75.py` extended with the colon, negative-subject and newline cases.
+
 ## v2.9.201 - 2026-11-20 - cue words and quiz calls no longer refuse a real song
 
 - **A spoken or sung section is never music-only because of its cue.** The lyric check read the whole bracket, so a spoken intro whose cue said "over a light instrumental bed" was refused as if it were an instrumental section. Now, when a tag declares its delivery (`[Name (sung|spoken|rap): cue]`), only the section name decides; the cue never does. Tags that declare no delivery keep the old rule.

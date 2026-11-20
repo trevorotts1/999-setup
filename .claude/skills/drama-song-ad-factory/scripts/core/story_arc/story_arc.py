@@ -716,28 +716,33 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
 _NEGATORS = ("not", "never", "no", "nor", "cannot", "dont", "didnt", "doesnt", "cant", "wont")
+#: Subjects that forbid the act for everyone: "Nobody should take the quiz."
+#: matches even with no negator word in the sentence.
+_NEGATIVE_SUBJECTS = ("nobody", "no one", "noone", "neither", "none")
 
 def _commercial_calls(text):
     """Every commercial action ``text`` asks for, lower-cased, in order.
 
-    A quiz phrase whose sentence says "not", "never", "no", "nor", "cannot" or
-    an "n't" word anywhere before it asks for nothing: "Do not take the quiz.",
-    "Do not, take the quiz." and "Do not ever please take the quiz." are no
-    call. Only . ! ? ; : and an em dash end the sentence (a comma does not), so
-    a real call after a negation must stand in its own sentence: "Do not wait.
-    Take the quiz now." ponytail: conservative - "No more guessing, take our
-    quiz." is refused too (origin/main refused every quiz line); the guard
-    covers the quiz phrases only, so the older one-word actions keep their
-    exact behaviour; extend it to them if a negated "book"/"call" ever passes."""
+    A call counts only when nothing says not to act. A sentence refuses the
+    act when any word before the phrase is "not", "never", "no", "nor",
+    "cannot" or an "n't" word ("Do not take the quiz."), or when its subject
+    is negative ("Nobody should take the quiz."). A comma never ends the
+    sentence, so a real call after a negation must stand in its own sentence:
+    "Do not wait. Take the quiz now." ponytail: conservative - "No more
+    guessing, take our quiz." is refused too (origin/main refused every quiz
+    line); the guard applies to every action phrase, so "Do not book a call."
+    and a newline-split "Never\\ntake the quiz." are refused the same way.
+    """
     text = str(text or "")
     calls = []
     for m in _COMMERCIAL_RE.finditer(text):
         act = m.group(1).lower()
-        if act.endswith("quiz"):
-            sentence = re.split(r"[.!?;:\u2014]", text[:m.start()])[-1].lower()
-            words = re.findall(r"[\w'\u2019]+", sentence)
-            if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
-                continue
+        sentence = re.split(r"[.!?;\u2014]", text[:m.start()])[-1].lower()
+        words = re.findall(r"[\w'\u2019]+", sentence)
+        if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
+            continue
+        if re.search(r"\b(nobody|no\s+one|noone|neither|none)\b", sentence):
+            continue
         calls.append(act)
     return calls
 

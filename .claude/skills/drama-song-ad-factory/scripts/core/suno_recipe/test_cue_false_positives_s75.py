@@ -64,16 +64,21 @@ def test_quiz_call_counts_bare_noun_does_not():
     assert closing("The quiz is beautiful.") == "rejected"
     # a negated quiz phrase asks the listener for nothing
     # anywhere earlier in the same sentence: a comma or a filler word never
-    # lifts the negation
+    # lifts the negation; a colon never ends the sentence either
     for line in ("Do not take the quiz.", "I did not take the quiz.",
                  "Don't take the quiz.", "Never take this quiz.",
                  "Do not, take the quiz.", "Do not ever please take the quiz.",
-                 "Do not, under any circumstances, take our quiz."):
+                 "Do not, under any circumstances, take our quiz.",
+                 "Do not: take the quiz.", "Nobody should take the quiz.",
+                 "No one should take the quiz.", "Do not\nbook a call.",
+                 "Never\ntake the quiz."):
         assert closing(line) == "rejected", line
     # a call in its own sentence still counts
     for line in ("Do not wait. Take the quiz now.", "No more guessing. Take our quiz.",
                  "Don't wait! Start the quiz."):
         assert closing(line) == "ok", line
+    # one-word calls keep their pre-quiz behaviour: never negated
+    assert closing("Do not wait. Book a call today.") == "ok"
 
 
 if __name__ == "__main__":

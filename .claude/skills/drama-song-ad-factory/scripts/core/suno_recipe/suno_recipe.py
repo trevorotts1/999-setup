@@ -735,10 +735,18 @@ def parse_tag(tag):
     THE one parser (FU-U1): suno_recipe.parse_lyrics, words_fit.parse_sheet_words,
     music_styles.sheet_deliveries and lyric_writer.lyric_structure.delivery_of_tag
     all read tags through here, so no gate measures a different sheet.
+
+    A declared [Name (sung|spoken|rap): cue] names its own delivery, and only
+    Name is ever scanned for more delivery words: cue words ("over a light
+    instrumental bed") never decide the delivery (cue words never refuse a
+    section as music-only, and never grant it a delivery either).
     """
     raw = str(tag or "").strip()
     if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
         raw = raw[1:-1]
+    named = _NAMED_TAG_RE.match(raw.strip())
+    if named is not None:
+        return named.group(2).lower()
     norm = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
     if not norm:
         return None
