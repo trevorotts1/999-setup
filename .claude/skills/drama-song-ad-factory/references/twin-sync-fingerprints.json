@@ -3322,7 +3322,7 @@
   "song_choices/test_x07_offline_dispatch.py": {
    "canonical_sha256": "d24cdee9267d2b07297b760db9d73340df01e62ad28162d718f3020e33aaf13a",
    "match": false,
-   "packaged_sha256": "06e2d1c88f1eaa823280f247d9fdb090c1f2e8f47ff6a8e0370efc4a8d916008"
+   "packaged_sha256": "61c9b04e5dc99bb1247437282a7b344cae2211bea1cde93c57c29c4f2e8133c6"
   },
   "song_choices/variants.json": {
    "canonical_sha256": "09ffb8da6da25c7112992d7bfa48bd0e9139e9d94fef4cc7ba913384c9712957",
@@ -3427,7 +3427,7 @@
   "spend_ledger.py": {
    "canonical_sha256": "82fcf663a994f1f4062944ddd082f5c41692652d327447bb8ded919149d2211c",
    "match": false,
-   "packaged_sha256": "c5fef45d443b5bb3290d610906a60feb8d2d43e679676cd12446c8e2ccf6c10a"
+   "packaged_sha256": "696d5400743a60ade50ce57ea1e8eb50747f299c509ef67a25495634312ec7d7"
   },
   "spend_ledger_money_migration.py": {
    "canonical_sha256": "b2a1061955cbf311e6165c91a08cb7c4ad127943ac483bb4e187cb39bf231986",
@@ -4107,7 +4107,7 @@
   "test_spend_attempts_w02u2.py": {
    "canonical_sha256": "bb7dd218c47bb11dd6caca108c689b86354b55271efcaf54d1961a532bb5706f",
    "match": false,
-   "packaged_sha256": "bbf6a6dfa46a04de0b9d66d778c7a4013fb487045059b282db6803cdafa19dc3"
+   "packaged_sha256": "b2397ca884fc7eb1d50129b337b42728cec6bfd3ff3e935a053fc917742d28d3"
   },
   "test_spend_ledger_money_migration.py": {
    "canonical_sha256": "d18dc4ba187049e42ff42323751ed91cb42948255f0e9968f65a4a8a29e6d36e",
@@ -4232,12 +4232,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "761144b8f2d7fe85ad2af1fd5c2714cd5e90aeaf",
+  "base_sha": "a960bd69dd2d51fe3f1d9a57d1d0b2aba5bb9bd4",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "672a24420406c5bd3cada04d43ef9b32dab2fb9524bbdbb89ddb0523bfbd6b3d"
+  "tree_sha256": "0328e61ee52047cc40acc988e229e4304462a910665ec8a7f3738113806927d1"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
