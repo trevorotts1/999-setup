@@ -1,5 +1,12 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.201 - 2026-11-20 - cue words and quiz calls no longer refuse a real song
+
+- **A spoken or sung section is never music-only because of its cue.** The lyric check read the whole bracket, so a spoken intro whose cue said "over a light instrumental bed" was refused as if it were an instrumental section. Now, when a tag declares its delivery (`[Name (sung|spoken|rap): cue]`), only the section name decides; the cue never does. Tags that declare no delivery keep the old rule.
+- **Whole words only for no-voice names.** "Breakthrough", "Heartbreak" and "Breakdown" used to count as a `[Break]`, so the lyric sheet silently dropped every line of a sung Breakthrough section. Only the whole words "instrumental" and "break" mark a music-only section now.
+- **"Take the quiz" is a call to action.** The closing check now accepts "take the quiz", "take our quiz", "take this quiz" and "start the quiz". The bare word "quiz" still asks for nothing and is still refused.
+- **Unchanged.** Real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric line under them are still refused. No word budget, opener length, sung share or sung-section count changed. New test: `scripts/core/suno_recipe/test_cue_false_positives_s75.py`.
+
 ## v2.9.200 - 2026-11-16 - U-J01 resync to onboarding main 12862e11
 
 - **999 CI made green for the sync (U-J01 final fix, Trevor's order 2026-11-16).** The synced canonical core tests read files outside `scripts/core/`. Edits in this commit: `references/lipsync-cartoon-proof.md` keeps this distribution's wording from 999 commit `9261c887` (no model-pin word): the one reference file that deliberately differs from ONB, whose copy fails `tests/test_model_choice.py` in both repositories; `SKILL.md` frontmatter `version:` set to `v2.9.200`; `CONTROL/bundled-components.json` declares `v2.9.200`. `CONTROL/bundle-digests.json` is restamped to this tree. No file under `scripts/core/` changed and the twin fingerprints are unchanged.

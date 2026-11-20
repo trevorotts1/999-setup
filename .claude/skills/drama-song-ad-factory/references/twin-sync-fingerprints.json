@@ -3596,8 +3596,8 @@
   },
   "story_arc/story_arc.py": {
    "canonical_sha256": "a4108d326b0a69c259cbc9b23aeaacf9c664670110b8a89325e05d73ca4bc893",
-   "match": true,
-   "packaged_sha256": "a4108d326b0a69c259cbc9b23aeaacf9c664670110b8a89325e05d73ca4bc893"
+   "match": false,
+   "packaged_sha256": "274c30d0309b30be8b8749afaee8f2764770d9377777937e84054b132e54a284"
   },
   "story_arc/test_method_anchors.py": {
    "canonical_sha256": "bc4aea60801296ddf2b7540bd8f9730ff477800c0b1c52688be6e20cfa077ab4",
@@ -3896,8 +3896,13 @@
   },
   "suno_recipe/suno_recipe.py": {
    "canonical_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6",
-   "match": true,
-   "packaged_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6"
+   "match": false,
+   "packaged_sha256": "8e1b5a78b68496753507ba48677da0385318f472902890996bf8a54259297a6f"
+  },
+  "suno_recipe/test_cue_false_positives_s75.py": {
+   "canonical_sha256": null,
+   "match": false,
+   "packaged_sha256": "aa45f60f6348713ff29b8c24af90e3aafd51616f7e1cee930aae590348817af3"
   },
   "suno_recipe/test_duration_policy_u3.py": {
    "canonical_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc",
@@ -4232,12 +4237,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea",
+  "base_sha": "761144b8f2d7fe85ad2af1fd5c2714cd5e90aeaf",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "ab671d6f730b20eb1b77b0d16a5abad2f8d86bb365d7156a8730a73832f872f0"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4983,11 +4988,11 @@
   "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference."
  },
  "summary": {
-  "differ": 0,
-  "in_scope_files": 842,
-  "match": 842,
+  "differ": 2,
+  "in_scope_files": 843,
+  "match": 840,
   "only_canonical": 0,
-  "only_packaged": 0
+  "only_packaged": 1
  },
  "unit": "KIE26-FP"
 }
