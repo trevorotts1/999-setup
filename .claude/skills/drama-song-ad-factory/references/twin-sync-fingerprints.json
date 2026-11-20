@@ -3597,7 +3597,7 @@
   "story_arc/story_arc.py": {
    "canonical_sha256": "2fe112b5748646aaacea69e4d5ed1c2008183d39d6ab93e0310fa1b2134fe632",
    "match": false,
-   "packaged_sha256": "9c22aaa0d1f75b29a2766a6127b863b702d7cd3cd8d38eef2698a5d9d0440800"
+   "packaged_sha256": "cece76d10a2f3b62b6d0dc0730b11b4ec11a7a87bee0058db30fa1f61d923210"
   },
   "story_arc/test_method_anchors.py": {
    "canonical_sha256": "bc4aea60801296ddf2b7540bd8f9730ff477800c0b1c52688be6e20cfa077ab4",
@@ -3897,7 +3897,7 @@
   "suno_recipe/suno_recipe.py": {
    "canonical_sha256": "359a6a735766f3298ad2fbe7cc16aa09a96bbd80f32bebb27f818c51ee595754",
    "match": false,
-   "packaged_sha256": "7039006e6d8d7bfee75b27bdbbb9262208a4c687915bb8ceda63b8ac0f2f0d82"
+   "packaged_sha256": "7da3db832c12735eaa04649a8b80ecb9e0668711aef830ca435b5127c7f1a3cf"
   },
   "suno_recipe/test_cue_false_positives_s75.py": {
    "canonical_sha256": "861850c01449fa15b2e055f68c5ffc948e75fe48efcdef589e597c396c19a9f3",
@@ -3918,6 +3918,11 @@
    "canonical_sha256": null,
    "match": false,
    "packaged_sha256": "48e1d0cab39bc1ba3bf909640cfd95e1d23c19389c7cbe3fcc04110c6c14c1fe"
+  },
+  "suno_recipe/test_gatefix_round4_s75.py": {
+   "canonical_sha256": null,
+   "match": false,
+   "packaged_sha256": "0f8347e56f1beb787855d7f6e2b06b31c64ee58bd8f21114c4b07d9227a034e0"
   },
   "suno_recipe/test_pace_direction_g11.py": {
    "canonical_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53",
@@ -4252,7 +4257,7 @@
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "e2ac1fd0d521f91e82a22ea1cda7c4b9981df02d7cc055182a2690b90874cce1"
+  "tree_sha256": "d921e4bfe732abc74371ab0f6c9db954a10f59a2c923946ec7724fae837a5fda"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4999,10 +5004,10 @@
  },
  "summary": {
   "differ": 3,
-  "in_scope_files": 845,
+  "in_scope_files": 846,
   "match": 841,
   "only_canonical": 0,
-  "only_packaged": 1
+  "only_packaged": 2
  },
  "unit": "KIE26-FP"
 }

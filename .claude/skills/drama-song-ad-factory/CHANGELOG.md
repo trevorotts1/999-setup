@@ -1,5 +1,11 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.204 - 2026-11-20 - round-4 gate fixes: the cue never mutes the section, a domain period never splits the sentence
+
+- **The cue never mutes the section.** `is_no_voice_tag` now judges only the name half (before any cue colon), so `[Intro spoken: over a light instrumental bed]` is voiced and `render_lyrics` keeps its lyric. A section with a declared sung, spoken or rap delivery is voiced, even when a no-voice word sits in the name. Real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric are still refused.
+- **A domain period never splits the negation's sentence.** The closing check masks letter-dot-letter periods before splitting sentences, so "Do not visit example.com and take the quiz." and "Never visit example.com and book a call." are refused. Real calls with a domain ("Take the quiz: https://example.com", "Book a call at example.com now.", a call in its own sentence after a domain) still count.
+- **Unchanged.** Word budget, opener cap, sung share, sung sections and pre-ERM rules unchanged; the round-2 and round-3 quiz rows hold. New test: `scripts/core/suno_recipe/test_gatefix_round4_s75.py` (failing-first on head 692f208).
+
 ## v2.9.203 - 2026-11-20 - round-3 gate fixes: cue words never decide, anywhere
 
 - **Cue words never decide, in any dialect.** `suno_recipe.parse_tag` now splits a non-parenthesized tag at the colon and reads only the name half: `[Intro spoken: instrumental bed]` is spoken, `[Verse: rap beat]` names no delivery at all (it is refused only if a lyric sits under it and the grammar cannot classify it). The parenthesized `[Name (spoken): cue]` rule from round 2 is unchanged. `check_no_voice_lines` judges the same name half, so `[Verse: instrumental bed]` with a lyric is legal while real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric are still refused.

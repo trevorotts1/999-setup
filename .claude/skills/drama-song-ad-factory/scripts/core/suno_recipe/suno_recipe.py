@@ -657,15 +657,38 @@ def recipe_style_ids():
 def is_no_voice_tag(tag):
     """True for a section that has NO voice: a tag only, never a lyric line.
 
-    Whole words only: "Breakthrough", "Heartbreak" and "Breakdown" are sung
-    section names, never a [Break]; a substring test made render_lyrics drop
-    every line of a sung [Breakthrough] section.
+    Whole words on the NAME half only: "Breakthrough", "Heartbreak" and
+    "Breakdown" are sung section names, never a [Break]; a substring test
+    made render_lyrics drop every line of a sung [Breakthrough] section.
+    Only the name half (before any cue colon) decides, so a cue word
+    ("[Intro spoken: over a light instrumental bed]") never makes a voiced
+    section music-only -- that cue scanned whole-tag dropped the section's
+    only lyric in render_lyrics while parse_lyrics kept it as spoken.
+    Callers that hold a parsed section dict use the declaration too: a
+    section with a declared sung|spoken|rap delivery is voiced.
     """
     # A word is a run of Unicode letters, digits, combining marks and the
     # underscore (so "Breaké", "breakα" and "Break_more" are each one word,
     # never "break" plus a separator); \w with re.UNICODE matches exactly
     # that set. Anything else splits words.
-    words = re.findall(r"\w+", str(tag).lower(), re.UNICODE)
+    raw = str(tag or "")
+    name, decl = raw.split(":", 1)[0], None
+    named = re.match(r"^(.*?)\s*\((sung|spoken|rap)\)\s*$",
+                     name.strip(), re.I)
+    if named is not None:
+        name, decl = named.group(1), named.group(2).lower()
+    if decl is not None:
+        # A declared sung|spoken|rap section is voiced even when its name is
+        # a no-voice word: an "[Instrumental (spoken): ...]" closing still
+        # speaks. A declared [Name (instrumental)] is never produced by the
+        # grammar, so no branch for it.
+        return False
+    if isinstance(tag, dict) and \
+            str(tag.get("delivery") or "").lower() in ("sung", "spoken", "rap"):
+        # A parsed section with a declared delivery is voiced, even when the
+        # no-voice word sits in the name half (a "[Break (spoken)]" section).
+        return False
+    words = re.findall(r"\w+", str(name).lower(), re.UNICODE)
     return any(word in NO_VOICE_TAGS for word in words)
 
 
