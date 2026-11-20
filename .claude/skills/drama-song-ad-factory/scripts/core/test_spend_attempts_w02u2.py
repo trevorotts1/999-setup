@@ -407,12 +407,31 @@ def test_withdrawn_auth_stops_retry_and_initial_spends_ref():
         shutil.rmtree(d, ignore_errors=True)
 
 # --- 6d. keep_one stops a retry after an INITIAL failure ---------------
-def test_keep_one_stops_retry_after_initial_failure():
+def test_keep_one_stops_initial_submit_and_retry_after_initial_failure():
     """keep_one is the client's CURRENT answer (require_round_auth, no
-    reference): it stops a provider-failure retry even after an INITIAL
-    attempt failed -- the latest recorded answer decides and keep_one never
-    buys a new paid round. A run with NO recorded fork decision passes no
-    flag and keeps today's plain provider-failure retry."""
+    reference): it stops the FIRST paid submit too -- a song with no prior
+    ledger row on its key cannot buy its initial attempt -- and it stops a
+    provider-failure retry after an INITIAL attempt failed. A run with NO
+    recorded fork decision passes no flag and keeps today's plain
+    provider-failure retry (initial submit and retry)."""
+    db, d = tmp_db(run_id="ko0", repair_cap=3)
+    try:
+        refused = L.plan(db, "ko0", "k1", "", "digest-1", 5,
+                         require_round_auth=True)
+        check("keep_one: initial submit before any attempt refused",
+              refused["outcome"] == "rejected"
+              and refused["reason_code"] == "MISSING_AUTH_REF", str(refused))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='ko0'")
+        check("keep_one: nothing persisted", got == [(0,)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="nd0", repair_cap=3)
+    try:
+        first = L.plan(db, "nd0", "k1", "", "digest-1", 5)
+        check("no-decision: initial submit still allowed",
+              first["outcome"] == "ok", str(first))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
     db, d = tmp_db(run_id="ko", repair_cap=3)
     try:
         first = L.allocate_attempt(db, "ko", "k1", "digest-1", estimated_cost=5)
@@ -630,7 +649,7 @@ TESTS = [
     test_failed_job_retry_ignores_auth_ref,
     test_plain_retry_after_authorized_retake_still_allowed,
     test_withdrawn_auth_stops_retry_and_initial_spends_ref,
-    test_keep_one_stops_retry_after_initial_failure,
+    test_keep_one_stops_initial_submit_and_retry_after_initial_failure,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,
     test_migration_100_preserves_rows,

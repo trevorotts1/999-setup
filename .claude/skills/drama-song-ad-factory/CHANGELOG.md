@@ -1,5 +1,12 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.204 - 2026-11-20 - keep_one stops the first submit; the fork file is read once
+
+- **The bug.** `spend_ledger` checked `require_round_auth` only for retries, so `keep_one` recorded before a song's first take let the initial paid submit through (`KIE_DISPATCH_OK`, one submit, one row). And `song_choices` read the fork file twice per dispatch (reference, then answered flag), so an answer recorded between the reads could pair an old redo reference with a new `keep_one` decision and authorize spend.
+- **The fix.** The `require_round_auth` refusal now also covers the initial submit (no ledger history on the key + flag + no reference = `MISSING_AUTH_REF`); callers with no recorded decision still send no flag and keep the plain path. The dispatch boundary reads the fork file once (`fork_authorization` returns reference + answered together); `redo_authorization` and `fork_decision` share the same single-read helper.
+- **Tests.** New failing-first tests: ledger `test_keep_one_stops_initial_submit_and_retry_after_initial_failure` (failed on the old tree with an `ok` initial, passes now); song `test_keep_one_before_any_take_buys_nothing` (old tree bought the take, now `MISSING_AUTH_REF` with zero submits) and `test_single_read_pairs_reference_with_answered_flag` (old tree had no `fork_authorization`; the single-read boundary pairs them). Full suites: `test_spend_attempts_w02u2.py` 13/13, `test_x07_offline_dispatch.py` 14/14.
+- **Twin fingerprints.** Regenerated with the repo generator against the same canonical sha; `CONTROL/bundle-digests.json` and `CONTROL/bundled-components.json` restamped to `v2.9.204`.
+
 ## v2.9.203 - 2026-11-20 - a run with no recorded fork answer keeps its provider retry
 
 - **The bug.** `song_choices` sent `require_round_auth=True` on every paid dispatch, even when the client had never answered the fork question. With no recorded decision the retry of a first take that failed at the provider was then refused `MISSING_AUTH_REF` instead of keeping today's provider-failure retry: one submit, a refusal, no second submit.

@@ -481,6 +481,38 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(self.transport.submits(), 2, self.transport.calls)
         self.assertEqual(self._summary()["actual_cost"], CREDITS)
 
+    def test_keep_one_before_any_take_buys_nothing(self):
+        """keep_one recorded BEFORE the song's first take: the initial
+        dispatch is refused MISSING_AUTH_REF with no provider submit and
+        no ledger row. Failing-first for the round-3 keep_one finding:
+        on the old ledger the initial submit was committed."""
+        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+        out = self._generate()
+        self._refused(out, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 0, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 0, self._auth_rows())
+        self.assertEqual(self._summary()["actual_cost"], 0)
+
+    def test_single_read_pairs_reference_with_answered_flag(self):
+        """The dispatch boundary reads the fork file ONCE: with a redo_all
+        answer recorded, fork_authorization returns that decision's
+        reference plus answered=True together. Failing-first for the
+        round-3 double-read finding: the old boundary read the file twice
+        (reference, then answered flag), so an answer recorded between
+        the reads paired an old redo reference with a new decision."""
+        self.assertEqual(self._fork("redo all")["answer"], "redo_all")
+        auth, answered = SC.fork_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID)
+        self.assertTrue(auth, (auth, answered))
+        self.assertTrue(answered, (auth, answered))
+        self.assertEqual(auth, SC.redo_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID), (auth, answered))
+        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+        auth2, answered2 = SC.fork_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID)
+        self.assertEqual(auth2, "", (auth2, answered2))
+        self.assertTrue(answered2, (auth2, answered2))
+
     def test_keep_one_after_an_initial_failure_stops_the_retry(self):
         """keep_one after the INITIAL take failed at the provider: the retry
         is refused with no submit and no new row. The latest recorded answer

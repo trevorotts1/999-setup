@@ -35,8 +35,9 @@ Paid-attempt identity (directive 8.4, findings D20/D21):
   presents it (an initial one included). A failed/transport retry that
   presents its round's reference again is not refused or re-recorded. A
   caller that passes require_round_auth=True (it knows the client's current
-  answer) is refused MISSING_AUTH_REF for a retry inside a paid round
-  without a reference, so a withdrawn authorization stops the retry; other
+  answer) is refused MISSING_AUTH_REF for an initial submit or a retry
+  inside a paid round without a reference, so a withdrawn authorization
+  stops the spend; other
   callers keep the plain retry (ponytail: the caller's flag marks whose
   call carries the client's current answer; the ledger cannot read the
   fork file itself). A provider success that fails creative QC
@@ -721,6 +722,18 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
                 return refuse("DUPLICATE_LOGICAL_JOB",
                               "logical job already active; poll it, never "
                               "resubmit", attempt_id, run[6])
+        # An initial submit is one invocation of the caller with no ledger
+        # history on this key, so the caller's require_round_auth flag marks
+        # whose call carries the client's CURRENT fork answer: a recorded
+        # keep_one refuses the FIRST paid submit too, and nothing else about
+        # the plain initial path changes (no-decision callers send no flag).
+        if not prior and require_round_auth and not auth_ref:
+            conn.execute("ROLLBACK")
+            return refuse("MISSING_AUTH_REF",
+                          "the client's current answer authorizes no paid "
+                          "attempt; a new redo answer is needed before "
+                          "anything is bought",
+                          attempt_id, run[6])
         if cat_final == "creative_retake" and not auth_ref:
             conn.execute("ROLLBACK")
             return refuse("MISSING_AUTH_REF",
@@ -737,6 +750,8 @@ def _allocate(db_path, cmd, run_id, logical_key, attempt_id, request_digest,
             # empty reference read as withdrawn: any provider-failure retry
             # inside a paid round -- a creative round after a success, or a
             # still-open initial round after a failure -- is then refused.
+            # An initial submit with no history is refused above, so this
+            # block only ever sees real retries.
             # keep_one never buys a new paid round, whatever came before it;
             # a run with no recorded decision passes no flag and keeps the
             # plain retry. Every other caller keeps the plain

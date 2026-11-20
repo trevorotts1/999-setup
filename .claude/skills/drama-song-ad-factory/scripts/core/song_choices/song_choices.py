@@ -1814,13 +1814,25 @@ def _sole_failed_version(run_dir):
 def fork_decision(run_dir):
     """The latest recorded client answer, or None when the client has not
     answered yet."""
+    log = _read_fork_log(run_dir)
+    return log[-1] if log else None
+
+
+def _read_fork_log(run_dir):
+    """The recorded fork answers as ONE atomic file read, or [].
+
+    A single read: the caller pairs this log's last record with the
+    reference derived from it, so an answer recorded between two reads can
+    never pair an old reference with a new decision."""
     try:
         with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
             doc = json.load(f) or {}
     except (OSError, ValueError):
-        return None
-    log = doc.get("decisions") or []
-    return log[-1] if log and isinstance(log[-1], dict) else None
+        return []
+    log = doc.get("decisions") if isinstance(doc, dict) else None
+    if not isinstance(log, list):
+        return []
+    return [rec for rec in log if isinstance(rec, dict)]
 
 
 #: The fork answers that authorize a new PAID round (a creative retake).
@@ -1838,20 +1850,32 @@ def redo_authorization(run_dir, logical_key):
     in the round has its own reference and the ledger's one-authorization-
     one-job rule still refuses a second spend on the same answer. A later
     answer is a new decision and a new reference. Nothing recorded, or a
-    keep_one answer, returns "" and the ledger refuses the retake."""
-    try:
-        with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
-            doc = json.load(f) or {}
-    except (OSError, ValueError):
-        return ""
-    log = doc.get("decisions") if isinstance(doc, dict) else None
-    if not isinstance(log, list) or not log or not isinstance(log[-1], dict):
+    keep_one answer, returns "" and the ledger refuses the retake. The log
+    is read ONCE per call (see _read_fork_log)."""
+    log = _read_fork_log(run_dir)
+    if not log:
         return ""
     rec = log[-1]
     if rec.get("answer") not in REDO_ANSWERS:
         return ""
     digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
     return "fork-decision-%d-%s:%s" % (len(log), digest, logical_key)
+
+
+def fork_authorization(run_dir, logical_key):
+    """ONE atomic file read: (auth_ref, answered).
+
+    The reference from the log's last record plus whether ANY decision is
+    recorded, read together so the dispatch boundary can never pair a
+    reference from one read with an answered flag from another."""
+    log = _read_fork_log(run_dir)
+    if not log:
+        return "", False
+    rec = log[-1]
+    if rec.get("answer") not in REDO_ANSWERS:
+        return "", True
+    digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    return "fork-decision-%d-%s:%s" % (len(log), digest, logical_key), True
 
 def client_message(offered, failed=(), recommend=None, concerns=None):
     nums = sorted(int(n) for n in offered)
@@ -2627,10 +2651,13 @@ def _real_generate(run_dir, ledger, run_id, dispatcher=None):
         # IS the client's current answer, so an empty one (a later keep_one)
         # also stops a failed redo's retry (require_round_auth) -- and after
         # an INITIAL failure too. No recorded fork decision means no flag:
-        # that run keeps today's plain provider-failure retry behavior.
-        auth = redo_authorization(run_dir, logical_key)
+        # that run keeps today's plain provider-failure retry behavior. The
+        # reference and the answered flag come from ONE atomic file read
+        # (fork_authorization), so a decision recorded mid-dispatch can
+        # never pair an old reference with a new answered flag.
+        auth, answered = fork_authorization(run_dir, logical_key)
         extra = {"auth_ref": auth} if auth else {}
-        if fork_decision(run_dir) is not None:
+        if answered:
             extra["require_round_auth"] = True
         env = _dispatch(model=payload.get("model") or "ai-music-api/generate",
                         request=payload, save_dir=save_dir, ledger_db=ledger,
