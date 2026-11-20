@@ -1732,7 +1732,7 @@
   "kie_dispatch/kie_dispatch.py": {
    "canonical_sha256": "8a15ba7ddd7121ed351eee3e039e7a96ff349885efe3b830f58a0b55ad534f2f",
    "match": false,
-   "packaged_sha256": "752f0245fef8d9784250d7c5f72350ef0482e96d8c7b963d1cfd628caee665c1"
+   "packaged_sha256": "3f0b73cae151ab122d37efe196ceb4f44b26ba1785bf7e4560b391ef9806ec0c"
   },
   "kie_dispatch/model_lock.py": {
    "canonical_sha256": "2315038bf58c6129cc43d12c330c97ea052fef9e9fee1150a3ae2c471db77235",
@@ -3237,7 +3237,7 @@
   "song_choices/song_choices.py": {
    "canonical_sha256": "d289b6045efc9e6a703c5b3feeeea32b9443e4818522fbffeaead3f47a67e58f",
    "match": false,
-   "packaged_sha256": "21d07a67ebe40f086ff6df7449af6a36d3513d96188fbf12bebf55d07b6c354b"
+   "packaged_sha256": "92b421f32f9db70423ecd7ab6ace68d25c36d53f9848264a4481dca08566f249"
   },
   "song_choices/test_acceptance_real_takes_s75_052.py": {
    "canonical_sha256": "bffbe832189a0fdf1baf7f4a787a1325684f4101f892d89d453f191add201580",
@@ -3427,7 +3427,7 @@
   "spend_ledger.py": {
    "canonical_sha256": "82fcf663a994f1f4062944ddd082f5c41692652d327447bb8ded919149d2211c",
    "match": false,
-   "packaged_sha256": "3a39033732c51ee6e0aca5aa2c50038007a3f2fbd66857f3cf16492d32453e23"
+   "packaged_sha256": "c5fef45d443b5bb3290d610906a60feb8d2d43e679676cd12446c8e2ccf6c10a"
   },
   "spend_ledger_money_migration.py": {
    "canonical_sha256": "b2a1061955cbf311e6165c91a08cb7c4ad127943ac483bb4e187cb39bf231986",
@@ -4107,7 +4107,7 @@
   "test_spend_attempts_w02u2.py": {
    "canonical_sha256": "bb7dd218c47bb11dd6caca108c689b86354b55271efcaf54d1961a532bb5706f",
    "match": false,
-   "packaged_sha256": "3c530a303b58b09d21658c25d2aba78ea5901820f6427a101f781677203ae580"
+   "packaged_sha256": "bbf6a6dfa46a04de0b9d66d778c7a4013fb487045059b282db6803cdafa19dc3"
   },
   "test_spend_ledger_money_migration.py": {
    "canonical_sha256": "d18dc4ba187049e42ff42323751ed91cb42948255f0e9968f65a4a8a29e6d36e",
@@ -4237,7 +4237,7 @@
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "581d20f9683ffa0cea94fae8619215df463f2e36500e86f438c80f8eefd2efc7"
+  "tree_sha256": "672a24420406c5bd3cada04d43ef9b32dab2fb9524bbdbb89ddb0523bfbd6b3d"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
