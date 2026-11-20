@@ -715,23 +715,28 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
-_NEGATORS = ("not", "never", "no")
+_NEGATORS = ("not", "never", "no", "nor", "cannot", "dont", "didnt", "doesnt", "cant", "wont")
 
 def _commercial_calls(text):
     """Every commercial action ``text`` asks for, lower-cased, in order.
 
-    A quiz phrase with "not", "never", "no" or "n't" among the two words before
-    it (same clause) asks for nothing: "Do not take the quiz." and "I did not
-    take the quiz." are no call. ponytail: the negation guard covers the quiz
-    phrases only, so the older one-word actions keep their exact behaviour;
-    extend it to them if a negated "book"/"call" ever passes a real closing."""
+    A quiz phrase whose sentence says "not", "never", "no", "nor", "cannot" or
+    an "n't" word anywhere before it asks for nothing: "Do not take the quiz.",
+    "Do not, take the quiz." and "Do not ever please take the quiz." are no
+    call. Only . ! ? ; : and an em dash end the sentence (a comma does not), so
+    a real call after a negation must stand in its own sentence: "Do not wait.
+    Take the quiz now." ponytail: conservative - "No more guessing, take our
+    quiz." is refused too (origin/main refused every quiz line); the guard
+    covers the quiz phrases only, so the older one-word actions keep their
+    exact behaviour; extend it to them if a negated "book"/"call" ever passes."""
     text = str(text or "")
     calls = []
     for m in _COMMERCIAL_RE.finditer(text):
         act = m.group(1).lower()
         if act.endswith("quiz"):
-            before = re.split(r"[.!?;:,\u2014]", text[:m.start()])[-1].lower().split()[-2:]
-            if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in before):
+            sentence = re.split(r"[.!?;:\u2014]", text[:m.start()])[-1].lower()
+            words = re.findall(r"[\w'\u2019]+", sentence)
+            if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
                 continue
         calls.append(act)
     return calls
