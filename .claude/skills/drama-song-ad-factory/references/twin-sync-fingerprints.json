@@ -3322,7 +3322,7 @@
   "song_choices/test_x07_offline_dispatch.py": {
    "canonical_sha256": "d24cdee9267d2b07297b760db9d73340df01e62ad28162d718f3020e33aaf13a",
    "match": false,
-   "packaged_sha256": "506cf024294d2047006d03310927e898e8ea738352e842b5a5e17d05cd0e4b46"
+   "packaged_sha256": "06e2d1c88f1eaa823280f247d9fdb090c1f2e8f47ff6a8e0370efc4a8d916008"
   },
   "song_choices/variants.json": {
    "canonical_sha256": "09ffb8da6da25c7112992d7bfa48bd0e9139e9d94fef4cc7ba913384c9712957",
@@ -3427,7 +3427,7 @@
   "spend_ledger.py": {
    "canonical_sha256": "82fcf663a994f1f4062944ddd082f5c41692652d327447bb8ded919149d2211c",
    "match": false,
-   "packaged_sha256": "982ed69ab8496841590bf4e5e79e4b84ac104373fd9f9b9234fe51648056f550"
+   "packaged_sha256": "3a39033732c51ee6e0aca5aa2c50038007a3f2fbd66857f3cf16492d32453e23"
   },
   "spend_ledger_money_migration.py": {
    "canonical_sha256": "b2a1061955cbf311e6165c91a08cb7c4ad127943ac483bb4e187cb39bf231986",
@@ -4107,7 +4107,7 @@
   "test_spend_attempts_w02u2.py": {
    "canonical_sha256": "bb7dd218c47bb11dd6caca108c689b86354b55271efcaf54d1961a532bb5706f",
    "match": false,
-   "packaged_sha256": "ea1dc73ad752f8ffbf401896a4898a81c430f062b5cb9771c8e518b636c14770"
+   "packaged_sha256": "3c530a303b58b09d21658c25d2aba78ea5901820f6427a101f781677203ae580"
   },
   "test_spend_ledger_money_migration.py": {
    "canonical_sha256": "d18dc4ba187049e42ff42323751ed91cb42948255f0e9968f65a4a8a29e6d36e",
@@ -4237,7 +4237,7 @@
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "0591b07fe84f3b7a15164ad2cfbf18db0a43dee1a86ff6d6efb839944a567a00"
+  "tree_sha256": "581d20f9683ffa0cea94fae8619215df463f2e36500e86f438c80f8eefd2efc7"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
