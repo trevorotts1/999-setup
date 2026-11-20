@@ -35,6 +35,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import unicodedata
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
@@ -660,7 +661,10 @@ def is_no_voice_tag(tag):
     section names, never a [Break]; a substring test made render_lyrics drop
     every line of a sung [Breakthrough] section.
     """
-    words = re.sub(r"[^a-z0-9]+", " ", str(tag).lower()).split()
+    # A word is a run of Unicode letters, digits and combining marks, so
+    # "Breaké" or "breakα" is one word, never "break" plus a separator.
+    words = "".join(ch if ch.isalnum() or unicodedata.category(ch)[0] == "M"
+                    else " " for ch in str(tag).lower()).split()
     return any(word in NO_VOICE_TAGS for word in words)
 
 

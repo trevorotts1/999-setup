@@ -715,6 +715,27 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
+_NEGATORS = ("not", "never", "no")
+
+def _commercial_calls(text):
+    """Every commercial action ``text`` asks for, lower-cased, in order.
+
+    A quiz phrase with "not", "never", "no" or "n't" among the two words before
+    it (same clause) asks for nothing: "Do not take the quiz." and "I did not
+    take the quiz." are no call. ponytail: the negation guard covers the quiz
+    phrases only, so the older one-word actions keep their exact behaviour;
+    extend it to them if a negated "book"/"call" ever passes a real closing."""
+    text = str(text or "")
+    calls = []
+    for m in _COMMERCIAL_RE.finditer(text):
+        act = m.group(1).lower()
+        if act.endswith("quiz"):
+            before = re.split(r"[.!?;:,\u2014]", text[:m.start()])[-1].lower().split()[-2:]
+            if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in before):
+                continue
+        calls.append(act)
+    return calls
+
 #: a block tagged as the closing call.
 _CTA_TAG_RE = re.compile(r"\b(?:cta|call ?to ?action|offer|book|assessment|"
                          r"next ?step|closing|pitch)\b", re.I)
@@ -938,7 +959,7 @@ def check_causal_story(story):
         if _CURE_RE.search(ca):
             errors.append({"error": "magical-cure",
                            "detail": "commercial action promises a cure with no mechanism: %r" % ca})
-        elif not _COMMERCIAL_RE.search(ca):
+        elif not _commercial_calls(ca):
             errors.append({"error": "summary-only-promise",
                            "detail": "commercial action %r asks for no real step "
                                      "(book/order/assessment/schedule/call/apply)" % ca})
@@ -1012,16 +1033,17 @@ def check_payload_closing(sheet_text, commercial_action=None, require_cta=False)
         out.update(outcome="rejected", reason_code="magical-cure",
                    detail="the closing promises a cure with no mechanism")
         return out
-    if not _COMMERCIAL_RE.search(body):
+    calls = _commercial_calls(body)
+    if not calls:
         out.update(outcome="rejected", reason_code="summary-only-promise",
                    detail="the closing asks for no commercial action "
                           "(book/order/assessment/schedule/call/apply)")
         return out
     if commercial_action is not None:
-        want = _COMMERCIAL_RE.search(str(commercial_action))
-        if want and not re.search(r"\b%s\b" % re.escape(want.group(1)), body, re.I):
+        want = _commercial_calls(commercial_action)
+        if want and want[0] not in calls:
             out.update(outcome="rejected", reason_code="closing-not-approved-call",
-                       detail="the closing lacks the approved action %r" % want.group(1))
+                       detail="the closing lacks the approved action %r" % want[0])
             return out
     out.update(outcome="ok", reason_code="closing-ok",
                detail="the closing carries the commercial call")

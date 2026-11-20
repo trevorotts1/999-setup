@@ -3597,7 +3597,7 @@
   "story_arc/story_arc.py": {
    "canonical_sha256": "a4108d326b0a69c259cbc9b23aeaacf9c664670110b8a89325e05d73ca4bc893",
    "match": false,
-   "packaged_sha256": "274c30d0309b30be8b8749afaee8f2764770d9377777937e84054b132e54a284"
+   "packaged_sha256": "e620bf5ac3ef0d59dc047aebed7f37d324c256e2e0a66a3fd6d1d7041765d763"
   },
   "story_arc/test_method_anchors.py": {
    "canonical_sha256": "bc4aea60801296ddf2b7540bd8f9730ff477800c0b1c52688be6e20cfa077ab4",
@@ -3897,12 +3897,12 @@
   "suno_recipe/suno_recipe.py": {
    "canonical_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6",
    "match": false,
-   "packaged_sha256": "8e1b5a78b68496753507ba48677da0385318f472902890996bf8a54259297a6f"
+   "packaged_sha256": "3bf1a76dca47446ffa1f95c4b217d038d4726390cd03061c6180ea01797e5197"
   },
   "suno_recipe/test_cue_false_positives_s75.py": {
    "canonical_sha256": null,
    "match": false,
-   "packaged_sha256": "aa45f60f6348713ff29b8c24af90e3aafd51616f7e1cee930aae590348817af3"
+   "packaged_sha256": "f90db107fffabb096411c9f2ecae8660da556cedd9a677c2b8220709415b6a2b"
   },
   "suno_recipe/test_duration_policy_u3.py": {
    "canonical_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc",
@@ -4242,7 +4242,7 @@
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "ab671d6f730b20eb1b77b0d16a5abad2f8d86bb365d7156a8730a73832f872f0"
+  "tree_sha256": "2e3f8d613510f75c23264ae4697e8c666128c1227d74098e9e15eee759061bbe"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {

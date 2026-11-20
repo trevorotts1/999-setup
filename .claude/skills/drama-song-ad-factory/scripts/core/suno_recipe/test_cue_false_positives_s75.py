@@ -41,7 +41,7 @@ def test_real_no_voice_sections_still_refuse_a_lyric_line():
 
 
 def test_whole_words_only():
-    for tag in ("Breakthrough", "Heartbreak", "Breakdown"):
+    for tag in ("Breakthrough", "Heartbreak", "Breakdown", "Breaké", "breakα"):
         assert not R.is_no_voice_tag(tag), tag
     for tag in ("Instrumental", "Instrumental Break", "Break", "break 2"):
         assert R.is_no_voice_tag(tag), tag
@@ -62,6 +62,12 @@ def test_quiz_call_counts_bare_noun_does_not():
     for line in ("Take our quiz today.", "Take this quiz now.", "Start the quiz."):
         assert closing(line) == "ok", line
     assert closing("The quiz is beautiful.") == "rejected"
+    # a negated quiz phrase asks the listener for nothing
+    for line in ("Do not take the quiz.", "I did not take the quiz.",
+                 "Don't take the quiz.", "Never take this quiz."):
+        assert closing(line) == "rejected", line
+    assert closing("Do not wait. Take the quiz now.") == "ok"
+    assert closing("No more guessing, take our quiz.") == "ok"
 
 
 if __name__ == "__main__":
