@@ -2,12 +2,12 @@
  "algorithm": "sha256",
  "artifact": "twin-sync-fingerprints",
  "canonical": {
-  "base_sha": "12862e112a169493d7cb0c2d484edd349926c2fb",
+  "base_sha": "f3a5db34bae2b50de2dd090abd7f72d7dc1c3585",
   "branch": "main",
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "c8d0ea52c4c2189e8b5e3cada21880379d747134180553bd8ca9ec32a3484058"
  },
  "exclusions": [
   "__pycache__/",
@@ -1510,8 +1510,8 @@
    "packaged_sha256": "f8ef7bbed8cbd4397e781a9ead85f92e89999e1ddfe915638c30d48f9920ad57"
   },
   "intake_preflight/preflight.py": {
-   "canonical_sha256": "b9a47e8776f1845ba30b2d8d1d2904c3a879eaa798d42d41895ea7e6b1724fb1",
-   "match": true,
+   "canonical_sha256": "578ae5deda50b5b19f4e259b5609bb0ae0a7c54d6839d12543d2db391a3db4d7",
+   "match": false,
    "packaged_sha256": "b9a47e8776f1845ba30b2d8d1d2904c3a879eaa798d42d41895ea7e6b1724fb1"
   },
   "intake_preflight/stage_commands.json": {
@@ -2160,9 +2160,9 @@
    "packaged_sha256": "d687589f39fbe86236e5d72da41bb82249014b6b0980e85a3b1ef6c3bf41c7c7"
   },
   "lyric_writer/lyric_structure.py": {
-   "canonical_sha256": "8e61019510796fb3c830d946b749a21ef6661abb51390dde3c8998c4b382d090",
+   "canonical_sha256": "5f4c25e4f5c73d291e44ec1d880e4f3b1ab22f9af39abf645223163c26a63afd",
    "match": true,
-   "packaged_sha256": "8e61019510796fb3c830d946b749a21ef6661abb51390dde3c8998c4b382d090"
+   "packaged_sha256": "5f4c25e4f5c73d291e44ec1d880e4f3b1ab22f9af39abf645223163c26a63afd"
   },
   "lyric_writer/lyric_writer.py": {
    "canonical_sha256": "dc7cfc0cf14f07b08f1fe78173ee0b25295cd94c1478cd6a584f57b9391d5464",
@@ -3595,9 +3595,9 @@
    "packaged_sha256": "44b65cbafcb138f0a4e0c023ea6a4c6ef9eec1cfc9373d0ee4557c5c0f99ba41"
   },
   "story_arc/story_arc.py": {
-   "canonical_sha256": "a4108d326b0a69c259cbc9b23aeaacf9c664670110b8a89325e05d73ca4bc893",
-   "match": true,
-   "packaged_sha256": "a4108d326b0a69c259cbc9b23aeaacf9c664670110b8a89325e05d73ca4bc893"
+   "canonical_sha256": "2fe112b5748646aaacea69e4d5ed1c2008183d39d6ab93e0310fa1b2134fe632",
+   "match": false,
+   "packaged_sha256": "cece76d10a2f3b62b6d0dc0730b11b4ec11a7a87bee0058db30fa1f61d923210"
   },
   "story_arc/test_method_anchors.py": {
    "canonical_sha256": "bc4aea60801296ddf2b7540bd8f9730ff477800c0b1c52688be6e20cfa077ab4",
@@ -3895,14 +3895,34 @@
    "packaged_sha256": "0fc66f11f81ac22ba279db81da67b5046417c5c3bdd3eb2974e005af5a29fb09"
   },
   "suno_recipe/suno_recipe.py": {
-   "canonical_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6",
+   "canonical_sha256": "359a6a735766f3298ad2fbe7cc16aa09a96bbd80f32bebb27f818c51ee595754",
+   "match": false,
+   "packaged_sha256": "7da3db832c12735eaa04649a8b80ecb9e0668711aef830ca435b5127c7f1a3cf"
+  },
+  "suno_recipe/test_cue_false_positives_s75.py": {
+   "canonical_sha256": "861850c01449fa15b2e055f68c5ffc948e75fe48efcdef589e597c396c19a9f3",
    "match": true,
-   "packaged_sha256": "bfab99c55d2705c4f46f4da3bf522e44caa07079261bb11594c18ab5bebe8af6"
+   "packaged_sha256": "861850c01449fa15b2e055f68c5ffc948e75fe48efcdef589e597c396c19a9f3"
   },
   "suno_recipe/test_duration_policy_u3.py": {
    "canonical_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc",
    "match": true,
    "packaged_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc"
+  },
+  "suno_recipe/test_gatefix_round2_s75.py": {
+   "canonical_sha256": "cbd07b6badb0d604e8854bd0e580ac43851d74afe10f078e83a3d82edb9e7381",
+   "match": true,
+   "packaged_sha256": "cbd07b6badb0d604e8854bd0e580ac43851d74afe10f078e83a3d82edb9e7381"
+  },
+  "suno_recipe/test_gatefix_round3_s75.py": {
+   "canonical_sha256": null,
+   "match": false,
+   "packaged_sha256": "48e1d0cab39bc1ba3bf909640cfd95e1d23c19389c7cbe3fcc04110c6c14c1fe"
+  },
+  "suno_recipe/test_gatefix_round4_s75.py": {
+   "canonical_sha256": null,
+   "match": false,
+   "packaged_sha256": "0f8347e56f1beb787855d7f6e2b06b31c64ee58bd8f21114c4b07d9227a034e0"
   },
   "suno_recipe/test_pace_direction_g11.py": {
    "canonical_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53",
@@ -4232,12 +4252,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea",
+  "base_sha": "761144b8f2d7fe85ad2af1fd5c2714cd5e90aeaf",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "d921e4bfe732abc74371ab0f6c9db954a10f59a2c923946ec7724fae837a5fda"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4983,11 +5003,11 @@
   "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference."
  },
  "summary": {
-  "differ": 0,
-  "in_scope_files": 842,
-  "match": 842,
+  "differ": 3,
+  "in_scope_files": 846,
+  "match": 841,
   "only_canonical": 0,
-  "only_packaged": 0
+  "only_packaged": 2
  },
  "unit": "KIE26-FP"
 }
