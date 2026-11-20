@@ -2,12 +2,12 @@
  "algorithm": "sha256",
  "artifact": "twin-sync-fingerprints",
  "canonical": {
-  "base_sha": "c041cc6ef1da8127bd8b13a7d2a8dd5fcd2dd83d",
+  "base_sha": "f3a5db34bae2b50de2dd090abd7f72d7dc1c3585",
   "branch": "main",
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "0af12806460f2e5182ace22fbfa561f8ee3a537dc764f3def28842d99d510363"
+  "tree_sha256": "c8d0ea52c4c2189e8b5e3cada21880379d747134180553bd8ca9ec32a3484058"
  },
  "exclusions": [
   "__pycache__/",
@@ -2160,8 +2160,8 @@
    "packaged_sha256": "d687589f39fbe86236e5d72da41bb82249014b6b0980e85a3b1ef6c3bf41c7c7"
   },
   "lyric_writer/lyric_structure.py": {
-   "canonical_sha256": "79b169c54c0071f72974ce8bc566aa80a303d13f9b80c7ca78fff3d5bceafeb1",
-   "match": false,
+   "canonical_sha256": "5f4c25e4f5c73d291e44ec1d880e4f3b1ab22f9af39abf645223163c26a63afd",
+   "match": true,
    "packaged_sha256": "5f4c25e4f5c73d291e44ec1d880e4f3b1ab22f9af39abf645223163c26a63afd"
   },
   "lyric_writer/lyric_writer.py": {
@@ -3595,9 +3595,9 @@
    "packaged_sha256": "44b65cbafcb138f0a4e0c023ea6a4c6ef9eec1cfc9373d0ee4557c5c0f99ba41"
   },
   "story_arc/story_arc.py": {
-   "canonical_sha256": "8ea30ce3940381b417a5d1e53f06d9a29269a929fddc2366c6ab2363270d0395",
+   "canonical_sha256": "2fe112b5748646aaacea69e4d5ed1c2008183d39d6ab93e0310fa1b2134fe632",
    "match": false,
-   "packaged_sha256": "2fe112b5748646aaacea69e4d5ed1c2008183d39d6ab93e0310fa1b2134fe632"
+   "packaged_sha256": "9c22aaa0d1f75b29a2766a6127b863b702d7cd3cd8d38eef2698a5d9d0440800"
   },
   "story_arc/test_method_anchors.py": {
    "canonical_sha256": "bc4aea60801296ddf2b7540bd8f9730ff477800c0b1c52688be6e20cfa077ab4",
@@ -3845,8 +3845,8 @@
    "packaged_sha256": "4ca7eb4b1a3c0bf0a80d288595ff6ab0b6c159239c9c56af3cc875c810d0420e"
   },
   "sung_hook/hook_placement.py": {
-   "canonical_sha256": "7732175186d4ec580804192ea1c72024d9bdce07ef160bf4691d76443b8f7493",
-   "match": false,
+   "canonical_sha256": "69d71be8c056136374c59e68318b6376aa49b71b7f03d513357bdfd3a7004622",
+   "match": true,
    "packaged_sha256": "69d71be8c056136374c59e68318b6376aa49b71b7f03d513357bdfd3a7004622"
   },
   "sung_hook/sung_hook.py": {
@@ -3896,12 +3896,12 @@
   },
   "suno_recipe/suno_recipe.py": {
    "canonical_sha256": "359a6a735766f3298ad2fbe7cc16aa09a96bbd80f32bebb27f818c51ee595754",
-   "match": true,
-   "packaged_sha256": "359a6a735766f3298ad2fbe7cc16aa09a96bbd80f32bebb27f818c51ee595754"
+   "match": false,
+   "packaged_sha256": "7039006e6d8d7bfee75b27bdbbb9262208a4c687915bb8ceda63b8ac0f2f0d82"
   },
   "suno_recipe/test_cue_false_positives_s75.py": {
-   "canonical_sha256": "d77298b8b18df1f3723489941b57c5590fe34026a4f2340e239fea441c045c93",
-   "match": false,
+   "canonical_sha256": "861850c01449fa15b2e055f68c5ffc948e75fe48efcdef589e597c396c19a9f3",
+   "match": true,
    "packaged_sha256": "861850c01449fa15b2e055f68c5ffc948e75fe48efcdef589e597c396c19a9f3"
   },
   "suno_recipe/test_duration_policy_u3.py": {
@@ -3910,9 +3910,14 @@
    "packaged_sha256": "f8101b1d8fda87f4ff8d6e101ee36815cfbbb0980594e56650473b260cf068cc"
   },
   "suno_recipe/test_gatefix_round2_s75.py": {
+   "canonical_sha256": "cbd07b6badb0d604e8854bd0e580ac43851d74afe10f078e83a3d82edb9e7381",
+   "match": true,
+   "packaged_sha256": "cbd07b6badb0d604e8854bd0e580ac43851d74afe10f078e83a3d82edb9e7381"
+  },
+  "suno_recipe/test_gatefix_round3_s75.py": {
    "canonical_sha256": null,
    "match": false,
-   "packaged_sha256": "cbd07b6badb0d604e8854bd0e580ac43851d74afe10f078e83a3d82edb9e7381"
+   "packaged_sha256": "48e1d0cab39bc1ba3bf909640cfd95e1d23c19389c7cbe3fcc04110c6c14c1fe"
   },
   "suno_recipe/test_pace_direction_g11.py": {
    "canonical_sha256": "31b32a9afa470c7e27754672b79836e6d2b2ef19cf9c60495cdc6281c243fa53",
@@ -4247,7 +4252,7 @@
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "29ead240c07ede4cc88fdc82604f1f1b679bcd6eed56e5fe9160ea7d7de47b44"
+  "tree_sha256": "e2ac1fd0d521f91e82a22ea1cda7c4b9981df02d7cc055182a2690b90874cce1"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4993,9 +4998,9 @@
   "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference."
  },
  "summary": {
-  "differ": 5,
-  "in_scope_files": 844,
-  "match": 838,
+  "differ": 3,
+  "in_scope_files": 845,
+  "match": 841,
   "only_canonical": 0,
   "only_packaged": 1
  },

@@ -1,5 +1,12 @@
 # Changelog - drama-song-ad-factory (Skill 75)
 
+## v2.9.203 - 2026-11-20 - round-3 gate fixes: cue words never decide, anywhere
+
+- **Cue words never decide, in any dialect.** `suno_recipe.parse_tag` now splits a non-parenthesized tag at the colon and reads only the name half: `[Intro spoken: instrumental bed]` is spoken, `[Verse: rap beat]` names no delivery at all (it is refused only if a lyric sits under it and the grammar cannot classify it). The parenthesized `[Name (spoken): cue]` rule from round 2 is unchanged. `check_no_voice_lines` judges the same name half, so `[Verse: instrumental bed]` with a lyric is legal while real `[Instrumental]`, `[Instrumental Break: band only]` and `[Break]` sections with a lyric are still refused.
+- **Underscore is a word character.** `is_no_voice_tag` splits words with Unicode-aware `\w`, so `Break_more` is one word and never a `[Break]`. `Breaké`, `breakα`, `Breakthrough`, `Heartbreak` and `Breakdown` stay sung.
+- **The closing keeps a spoken cue.** `story_arc.closing_block` skips only sections whose NAME is music-only, so a `[CTA (spoken): over a light instrumental bed]` closing is still the closing: an earlier `Book a call.` cannot mask a closing `The quiz is beautiful.`, which is refused as a summary-only promise.
+- **Unchanged.** Word budget, opener cap, sung share, sung sections and pre-ERM rules unchanged; the round-2 quiz accept/refuse rows (colon, negative subjects, line breaks, own-sentence calls) hold. New test: `scripts/core/suno_recipe/test_gatefix_round3_s75.py` (failing-first on head d0892b6).
+
 ## v2.9.202 - 2026-11-20 - round-2 gate fixes: a colon never ends the sentence, cue words never decide delivery anywhere
 
 - **Cue words never decide a section's delivery, in every gate.** The shared parser (`suno_recipe.parse_tag` and every caller, including the delivery map and the writer's tag reader) now honours a declared `[Name (sung|spoken|rap): cue]` first: a spoken intro whose cue says "over a light instrumental bed" keeps spoken delivery, so an intro-only sheet maps to spoken and no longer raises EMPTY_SHEET_DELIVERIES. Cue words never grant a delivery to an unnamed section either.

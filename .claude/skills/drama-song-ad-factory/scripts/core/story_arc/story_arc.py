@@ -1017,10 +1017,29 @@ def _blocks(text):
     return out
 
 
+def _is_no_voice_name(tag):
+    """True when a section NAME (before any cue colon) is music-only.
+
+    Whole words only (Unicode-aware word characters keep "Breaké",
+    "breakα" and "Break_more" one word, never "break" plus a separator), so
+    "Breakthrough" stays sung. A cue word after the colon ("Verse:
+    instrumental bed") never makes a voiced section music-only.
+    """
+    name = str(tag or "").split(":", 1)[0]
+    return any(w in ("instrumental", "break")
+               for w in re.findall(r"\w+", name.lower(), re.UNICODE))
+
+
 def closing_block(sheet_text):
-    """The closing block: the last non-[End], non-instrumental section, or None."""
+    """The closing block: the last non-[End], non-instrumental section, or None.
+
+    Only the tag's NAME decides: a cue word ("over a light instrumental
+    bed") never makes a closing unfindable, so an earlier "Book a call."
+    cannot mask a closing quiz line.
+    """
     blocks = [b for b in _blocks(sheet_text)
-              if not re.search(r"\bend\b|instrumental", b["tag"], re.I)]
+              if not re.search(r"\bend\b", b["tag"], re.I)
+              and not _is_no_voice_name(b["tag"])]
     return blocks[-1] if blocks else None
 
 
