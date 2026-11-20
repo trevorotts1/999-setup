@@ -7,7 +7,7 @@
   "label": "ONBOARDING_CANONICAL",
   "repo": "trevorotts1/openclaw-onboarding",
   "tree": "75-drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "5e4104290ed3d1341e398ffbbbd62f5e6a82e85f3d26722bd597d462d9157970"
  },
  "exclusions": [
   "__pycache__/",
@@ -1510,8 +1510,8 @@
    "packaged_sha256": "f8ef7bbed8cbd4397e781a9ead85f92e89999e1ddfe915638c30d48f9920ad57"
   },
   "intake_preflight/preflight.py": {
-   "canonical_sha256": "b9a47e8776f1845ba30b2d8d1d2904c3a879eaa798d42d41895ea7e6b1724fb1",
-   "match": true,
+   "canonical_sha256": "578ae5deda50b5b19f4e259b5609bb0ae0a7c54d6839d12543d2db391a3db4d7",
+   "match": false,
    "packaged_sha256": "b9a47e8776f1845ba30b2d8d1d2904c3a879eaa798d42d41895ea7e6b1724fb1"
   },
   "intake_preflight/stage_commands.json": {
@@ -1730,9 +1730,9 @@
    "packaged_sha256": "43db6afa70aaef4e657ebeb311c030a1ed96d2d39fe0860a3d90f438a571b035"
   },
   "kie_dispatch/kie_dispatch.py": {
-   "canonical_sha256": "8a15ba7ddd7121ed351eee3e039e7a96ff349885efe3b830f58a0b55ad534f2f",
+   "canonical_sha256": "3f0b73cae151ab122d37efe196ceb4f44b26ba1785bf7e4560b391ef9806ec0c",
    "match": true,
-   "packaged_sha256": "8a15ba7ddd7121ed351eee3e039e7a96ff349885efe3b830f58a0b55ad534f2f"
+   "packaged_sha256": "3f0b73cae151ab122d37efe196ceb4f44b26ba1785bf7e4560b391ef9806ec0c"
   },
   "kie_dispatch/model_lock.py": {
    "canonical_sha256": "2315038bf58c6129cc43d12c330c97ea052fef9e9fee1150a3ae2c471db77235",
@@ -1750,9 +1750,9 @@
    "packaged_sha256": "02cdecc0ba2abf894dfa860c13c3eec8b074f0c161b32af75d76b5cb99c83975"
   },
   "kie_dispatch/test_kie_cli_state_store_b5.py": {
-   "canonical_sha256": "3b46b45f498cc38dd73e4a6ea89fcbc88a1f2d57d45d43a7348a6c6630d029a1",
+   "canonical_sha256": "95c0eed81426511c206fdc5c352c6f038a278ddc3cc7f5d5209e6ba0be6b1a02",
    "match": true,
-   "packaged_sha256": "3b46b45f498cc38dd73e4a6ea89fcbc88a1f2d57d45d43a7348a6c6630d029a1"
+   "packaged_sha256": "95c0eed81426511c206fdc5c352c6f038a278ddc3cc7f5d5209e6ba0be6b1a02"
   },
   "kie_dispatch/test_kie_dispatch.py": {
    "canonical_sha256": "0cbb54e5ddca5b9227e682fc6f1766dfa64cfff6876f84d6bc12921aa9bb4529",
@@ -3235,9 +3235,9 @@
    "packaged_sha256": "26a24100b4c841de441833277bdcb9b369a84223460b767178e87e4d90a63549"
   },
   "song_choices/song_choices.py": {
-   "canonical_sha256": "d289b6045efc9e6a703c5b3feeeea32b9443e4818522fbffeaead3f47a67e58f",
-   "match": true,
-   "packaged_sha256": "d289b6045efc9e6a703c5b3feeeea32b9443e4818522fbffeaead3f47a67e58f"
+   "canonical_sha256": "a213863498153f7cfa99a5075d589954b60d16fd18e3057a6d73bc396fdc7ad2",
+   "match": false,
+   "packaged_sha256": "27175293fbab4440aacee5e6fcdc435c21c6edcabb72e620e8dfcee830908a69"
   },
   "song_choices/test_acceptance_real_takes_s75_052.py": {
    "canonical_sha256": "bffbe832189a0fdf1baf7f4a787a1325684f4101f892d89d453f191add201580",
@@ -3320,9 +3320,9 @@
    "packaged_sha256": "46eb6de0b26f2f0da07c84e8a12d7a174a72de03ae76eeb96529966588c8c63c"
   },
   "song_choices/test_x07_offline_dispatch.py": {
-   "canonical_sha256": "d24cdee9267d2b07297b760db9d73340df01e62ad28162d718f3020e33aaf13a",
-   "match": true,
-   "packaged_sha256": "d24cdee9267d2b07297b760db9d73340df01e62ad28162d718f3020e33aaf13a"
+   "canonical_sha256": "b322b598ad23526e81334a7a8e81b1de48200f5b8c1a012da04f07193dabd42b",
+   "match": false,
+   "packaged_sha256": "8e75a54c5cfd795298fb1364d077c33c23bfafbf6900ea632e7858330c80fbc8"
   },
   "song_choices/variants.json": {
    "canonical_sha256": "09ffb8da6da25c7112992d7bfa48bd0e9139e9d94fef4cc7ba913384c9712957",
@@ -3425,9 +3425,9 @@
    "packaged_sha256": "24fb0b978c3206602c17e8d4af4ef458a0510e89d91ec8521d43c63c64f28dc2"
   },
   "spend_ledger.py": {
-   "canonical_sha256": "82fcf663a994f1f4062944ddd082f5c41692652d327447bb8ded919149d2211c",
-   "match": true,
-   "packaged_sha256": "82fcf663a994f1f4062944ddd082f5c41692652d327447bb8ded919149d2211c"
+   "canonical_sha256": "696d5400743a60ade50ce57ea1e8eb50747f299c509ef67a25495634312ec7d7",
+   "match": false,
+   "packaged_sha256": "43b0b1bec1e09959c5526b4a5033c042153ab5b33a85b231ae9c272c8c11b531"
   },
   "spend_ledger_money_migration.py": {
    "canonical_sha256": "b2a1061955cbf311e6165c91a08cb7c4ad127943ac483bb4e187cb39bf231986",
@@ -4105,9 +4105,9 @@
    "packaged_sha256": "e58d1fe4b38bc320ff84ff063af03ce7235b27e15304addddaa5bdd1f39b4072"
   },
   "test_spend_attempts_w02u2.py": {
-   "canonical_sha256": "bb7dd218c47bb11dd6caca108c689b86354b55271efcaf54d1961a532bb5706f",
-   "match": true,
-   "packaged_sha256": "bb7dd218c47bb11dd6caca108c689b86354b55271efcaf54d1961a532bb5706f"
+   "canonical_sha256": "b2397ca884fc7eb1d50129b337b42728cec6bfd3ff3e935a053fc917742d28d3",
+   "match": false,
+   "packaged_sha256": "7e209b190513bbd7914324f2d62c582f303488cff6600c763c1c293ad3177a1f"
   },
   "test_spend_ledger_money_migration.py": {
    "canonical_sha256": "d18dc4ba187049e42ff42323751ed91cb42948255f0e9968f65a4a8a29e6d36e",
@@ -4232,12 +4232,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "2167ee2a1efc5b8abb660fe368b7d50d0de4e9ea",
+  "base_sha": "761144b8f2d7fe85ad2af1fd5c2714cd5e90aeaf",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "2d1acfa6adb4eac634aadcfc078b1ac688fc0f257c11c47e3b985ddb383099c0"
+  "tree_sha256": "fc92f805d1d0bd6b27824f55a257063dd5d83358d0eb3b429344c6676952eec9"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
@@ -4983,9 +4983,9 @@
   "why": "The Option-3 runner (`.claude/skills/drama-studio/option3_runner.py`) puts `<skill root>/studio_bridge.py` in its scoped command, and with CLAUDE_PLUGIN_ROOT / DRAMA_STUDIO_SKILL_ROOT unset the skill root is the drama-studio folder itself. The bridge is the U5 shared studio bridge whose canonical home is onboarding skill 75's `shared-bridge/`; studio_bridge.py imports its sibling studio_claim.py, so both must be present. A 999 install must receive the actual bridge bytes, never a bare reference."
  },
  "summary": {
-  "differ": 0,
+  "differ": 5,
   "in_scope_files": 842,
-  "match": 842,
+  "match": 837,
   "only_canonical": 0,
   "only_packaged": 0
  },
