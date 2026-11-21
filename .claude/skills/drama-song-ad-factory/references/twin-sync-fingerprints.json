@@ -3237,7 +3237,7 @@
   "song_choices/song_choices.py": {
    "canonical_sha256": "d289b6045efc9e6a703c5b3feeeea32b9443e4818522fbffeaead3f47a67e58f",
    "match": false,
-   "packaged_sha256": "27175293fbab4440aacee5e6fcdc435c21c6edcabb72e620e8dfcee830908a69"
+   "packaged_sha256": "a26b2c96f83901429349f0bc9c8f0f8822de8a252fe603772bdfcbef166e636f"
   },
   "song_choices/test_acceptance_real_takes_s75_052.py": {
    "canonical_sha256": "bffbe832189a0fdf1baf7f4a787a1325684f4101f892d89d453f191add201580",
@@ -3322,7 +3322,7 @@
   "song_choices/test_x07_offline_dispatch.py": {
    "canonical_sha256": "d24cdee9267d2b07297b760db9d73340df01e62ad28162d718f3020e33aaf13a",
    "match": false,
-   "packaged_sha256": "8e75a54c5cfd795298fb1364d077c33c23bfafbf6900ea632e7858330c80fbc8"
+   "packaged_sha256": "23dd221a90d4f2c5d51612fcac7ecc14129a40bc297cea0bff564dfeddf1e20f"
   },
   "song_choices/variants.json": {
    "canonical_sha256": "09ffb8da6da25c7112992d7bfa48bd0e9139e9d94fef4cc7ba913384c9712957",
@@ -4252,12 +4252,12 @@
  },
  "normalisation": "none - raw file bytes are hashed with sha256; the two exclusions above are applied identically on both sides. No line-ending, whitespace or generated-marker rewriting.",
  "packaged": {
-  "base_sha": "5c4ea29",
+  "base_sha": "f4ef928",
   "branch": "main",
   "label": "999_PACKAGED",
   "repo": "trevorotts1/999-setup",
   "tree": ".claude/skills/drama-song-ad-factory/scripts/core/",
-  "tree_sha256": "0fa42f8c6428346bbf3730067884163d02ea9205681f821286c9eba9e9331b7a"
+  "tree_sha256": "44337bef3017948d922645fbb2087b0a460530f0cf660923fbccbcedf5687da4"
  },
  "pre_sync_999_main_divergence_from_canonical": {
   "cc_sync.py": {
