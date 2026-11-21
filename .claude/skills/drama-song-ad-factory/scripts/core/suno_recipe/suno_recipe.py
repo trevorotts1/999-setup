@@ -35,6 +35,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import unicodedata
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
@@ -654,9 +655,41 @@ def recipe_style_ids():
 
 
 def is_no_voice_tag(tag):
-    """True for a section that has NO voice: a tag only, never a lyric line."""
-    head = str(tag).lower()
-    return any(word in head for word in NO_VOICE_TAGS)
+    """True for a section that has NO voice: a tag only, never a lyric line.
+
+    Whole words on the NAME half only: "Breakthrough", "Heartbreak" and
+    "Breakdown" are sung section names, never a [Break]; a substring test
+    made render_lyrics drop every line of a sung [Breakthrough] section.
+    Only the name half (before any cue colon) decides, so a cue word
+    ("[Intro spoken: over a light instrumental bed]") never makes a voiced
+    section music-only -- that cue scanned whole-tag dropped the section's
+    only lyric in render_lyrics while parse_lyrics kept it as spoken.
+    Callers that hold a parsed section dict use the declaration too: a
+    section with a declared sung|spoken|rap delivery is voiced.
+    """
+    # A word is a run of Unicode letters, digits, combining marks and the
+    # underscore (so "Breaké", "breakα" and "Break_more" are each one word,
+    # never "break" plus a separator); \w with re.UNICODE matches exactly
+    # that set. Anything else splits words.
+    raw = str(tag or "")
+    name, decl = raw.split(":", 1)[0], None
+    named = re.match(r"^(.*?)\s*\((sung|spoken|rap)\)\s*$",
+                     name.strip(), re.I)
+    if named is not None:
+        name, decl = named.group(1), named.group(2).lower()
+    if decl is not None:
+        # A declared sung|spoken|rap section is voiced even when its name is
+        # a no-voice word: an "[Instrumental (spoken): ...]" closing still
+        # speaks. A declared [Name (instrumental)] is never produced by the
+        # grammar, so no branch for it.
+        return False
+    if isinstance(tag, dict) and \
+            str(tag.get("delivery") or "").lower() in ("sung", "spoken", "rap"):
+        # A parsed section with a declared delivery is voiced, even when the
+        # no-voice word sits in the name half (a "[Break (spoken)]" section).
+        return False
+    words = re.findall(r"\w+", str(name).lower(), re.UNICODE)
+    return any(word in NO_VOICE_TAGS for word in words)
 
 
 def _tag(sec, style_id=None):
@@ -726,14 +759,26 @@ def parse_tag(tag):
     THE one parser (FU-U1): suno_recipe.parse_lyrics, words_fit.parse_sheet_words,
     music_styles.sheet_deliveries and lyric_writer.lyric_structure.delivery_of_tag
     all read tags through here, so no gate measures a different sheet.
+
+    A declared [Name (sung|spoken|rap): cue] names its own delivery, and only
+    Name is ever scanned for more delivery words: cue words ("over a light
+    instrumental bed") never decide the delivery (cue words never refuse a
+    section as music-only, and never grant it a delivery either). The same
+    holds outside the parentheses: "[Intro spoken: ...]" names spoken in its
+    name half, while "[Verse: rap beat]" has no delivery word in its name
+    half -- a cue word after the colon never grants one.
     """
     raw = str(tag or "").strip()
     if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
         raw = raw[1:-1]
-    norm = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+    named = _NAMED_TAG_RE.match(raw.strip())
+    if named is not None:
+        return named.group(2).lower()
+    name = raw.split(":", 1)[0]
+    norm = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
     if not norm:
         return None
-    if re.search(r"\binstrumental\b", norm) or norm == "inst":
+    if norm == "inst" or re.search(r"\binstrumental\b", norm):
         return INSTRUMENTAL
     best = None
     for rank, (delivery, words) in enumerate(_DELIVERY_WORDS):
@@ -807,6 +852,9 @@ def check_no_voice_lines(text):
     Suno sings whatever line it finds; "6 s, band only" under
     [Instrumental Break] would be sung. The checker reads the RAW text,
     because a parser could drop the line silently.
+
+    Only the tag's NAME decides: "[Verse: instrumental bed]" is a sung
+    section with a cue, never music-only, so a lyric under it is legal.
     """
     errs, no_voice = [], False
     for ln in str(text).splitlines():
@@ -814,8 +862,17 @@ def check_no_voice_lines(text):
         if not s:
             continue
         if s.startswith("[") and s.endswith("]"):
-            no_voice = "(" not in s or is_no_voice_tag(s[1:].split(":")[0])
-            no_voice = no_voice or is_no_voice_tag(s)
+            named = _NAMED_TAG_RE.match(s[1:-1].strip())
+            if named is not None:
+                # A declared [Name (sung|spoken|rap): cue]: only Name decides.
+                # Cue words ("over a light instrumental bed") never make a
+                # voiced section music-only.
+                no_voice = is_no_voice_tag(named.group(1))
+            else:
+                # No parenthesized delivery: the name half (before any colon)
+                # decides; a cue word after the colon never makes it no-voice.
+                inner = s[1:-1].strip().split(":", 1)[0]
+                no_voice = is_no_voice_tag(inner)
             continue
         if s.startswith("["):
             no_voice = False
