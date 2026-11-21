@@ -550,6 +550,56 @@ class X07OfflineDispatch(unittest.TestCase):
                       ("failed_job_retry", "transport_retry"), rows)
         self.assertEqual(self._summary()["actual_cost"], CREDITS)
 
+    # ---- corrupt / tampered fork file: fail closed --------------------
+    def _corrupt_fork(self, payload):
+        with open(os.path.join(self.run_dir, "song-choices",
+                               SC.FORK_FILE), "w",
+                  encoding="utf-8") as f:
+            f.write(payload)
+
+    def test_corrupt_fork_file_blocks_a_paid_retake(self):
+        """A fork file that is not valid JSON authorizes nothing: the retake
+        after a succeeded take is refused and the provider submits nothing."""
+        self._generate()
+        self._fork("redo all")
+        self._corrupt_fork("{not json")
+        second = self._generate()
+        self._refused(second, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+
+    def test_corrupt_fork_file_blocks_a_plain_retry(self):
+        """A tampered fork file after a provider failure: the plain retry is
+        refused too, because the recorded answer cannot be validated."""
+        self.transport.fail_submits = {1}
+        self._generate()
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self._fork("keep one")
+        self._corrupt_fork(json.dumps({"decisions": [{"answer": "hacked"}]}))
+        log, readable = SC._read_fork_log(self.run_dir)
+        self.assertEqual((log, readable), ([], True))
+        auth, answered = SC.fork_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID)
+        self.assertEqual((auth, answered), ("", True))
+        retry = self._generate()
+        self._refused(retry, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
+
+    def test_malformed_latest_record_does_not_revive_an_older_redo(self):
+        """A null latest record authorizes nothing and revives nothing: the
+        older redo_all answer stays spent (DUPLICATE_AUTHORIZATION stays
+        refused)."""
+        self._generate()
+        self._fork("redo all")
+        second = self._generate()
+        self.assertEqual(second["results"][0]["envelope"]["outcome"], "ok")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self._corrupt_fork(json.dumps({"decisions": [{"answer": "redo_all"},
+                                                     None]}))
+        third = self._generate()
+        self._refused(third, "MISSING_AUTH_REF")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):
         """CONTROL: neutralize the ledger's prior-state classification.
