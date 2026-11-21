@@ -1813,26 +1813,42 @@ def _sole_failed_version(run_dir):
 
 def fork_decision(run_dir):
     """The latest recorded client answer, or None when the client has not
-    answered yet."""
-    log = _read_fork_log(run_dir)
+    answered yet. An invalid log also returns None (never a guess)."""
+    log, _readable = _read_fork_log(run_dir)
     return log[-1] if log else None
 
 
 def _read_fork_log(run_dir):
-    """The recorded fork answers as ONE atomic file read, or [].
+    """The recorded fork answers as ONE atomic file read: records plus state.
 
-    A single read: the caller pairs this log's last record with the
-    reference derived from it, so an answer recorded between two reads can
-    never pair an old reference with a new decision."""
+    Returns (records, readable) where readable is False when the file is
+    absent, unreadable or structurally invalid. Callers distinguish "no
+    answer recorded" (decision file missing entirely: no flag, today's
+    plain retry behavior) from "the answer cannot be validated" (fail
+    closed: it authorizes nothing and a recorded require_round_auth blocks
+    even a plain provider-failure retry). A single read: the caller pairs
+    the last record with the reference derived from it, so an answer
+    recorded between two reads can never pair an old reference with a new
+    decision. Anything outside FORK_ANSWERS in the log means the file was
+    tampered with or corrupted -- it authorizes nothing."""
     try:
         with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
             doc = json.load(f) or {}
+    except FileNotFoundError:
+        return [], False
     except (OSError, ValueError):
-        return []
-    log = doc.get("decisions") if isinstance(doc, dict) else None
-    if not isinstance(log, list):
-        return []
-    return [rec for rec in log if isinstance(rec, dict)]
+        return [], True
+    if not isinstance(doc, dict):
+        return [], True
+    if "decisions" not in doc:
+        return [], True
+    log = doc.get("decisions")
+    if not isinstance(log, list) or not log:
+        return [], True
+    if any(not isinstance(rec, dict) or rec.get("answer") not in FORK_ANSWERS
+           for rec in log):
+        return [], True
+    return log, True
 
 
 #: The fork answers that authorize a new PAID round (a creative retake).
@@ -1852,29 +1868,37 @@ def redo_authorization(run_dir, logical_key):
     answer is a new decision and a new reference. Nothing recorded, or a
     keep_one answer, returns "" and the ledger refuses the retake. The log
     is read ONCE per call (see _read_fork_log)."""
-    log = _read_fork_log(run_dir)
+    log, _readable = _read_fork_log(run_dir)
     if not log:
         return ""
     rec = log[-1]
     if rec.get("answer") not in REDO_ANSWERS:
         return ""
-    digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    # Bind the record AND its position in the log: two identical answers at
+    # different positions are different authorizations, so a new identical
+    # answer is never refused as a duplicate of the old one.
+    digest = hashlib.sha256(json.dumps({"n": len(log), "rec": rec}, sort_keys=True).encode("utf-8")).hexdigest()[:16]
     return "fork-decision-%d-%s:%s" % (len(log), digest, logical_key)
 
 
 def fork_authorization(run_dir, logical_key):
     """ONE atomic file read: (auth_ref, answered).
 
-    The reference from the log's last record plus whether ANY decision is
-    recorded, read together so the dispatch boundary can never pair a
-    reference from one read with an answered flag from another."""
-    log = _read_fork_log(run_dir)
+    The reference from the log's last record plus whether the client has a
+    VALID decision recorded, read together so the dispatch boundary can
+    never pair a reference from one read with an answered flag from another.
+    Absent file (never answered): answered False -- the caller sends no
+    flag and the plain retry keeps today's behavior. Unreadable or invalid
+    log (the answer cannot be validated): auth_ref "" but answered True,
+    so the ledger's require_round_auth blocks even a plain provider-failure
+    retry."""
+    log, readable = _read_fork_log(run_dir)
     if not log:
-        return "", False
+        return "", readable
     rec = log[-1]
     if rec.get("answer") not in REDO_ANSWERS:
         return "", True
-    digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha256(json.dumps({"n": len(log), "rec": rec}, sort_keys=True).encode("utf-8")).hexdigest()[:16]
     return "fork-decision-%d-%s:%s" % (len(log), digest, logical_key), True
 
 def client_message(offered, failed=(), recommend=None, concerns=None):
