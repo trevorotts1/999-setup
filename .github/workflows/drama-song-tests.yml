@@ -123,8 +123,8 @@ jobs:
               */test_clean_install_discovery.py) envs=(DSAF_ALLOW_ABSENT_HELPERS=1) ;;
             esac
             n=$((n+1))
-            out="$(HOME="$h" env "${envs[@]}" python3 "$t" "${extra[@]}" </dev/null 2>&1)"
-            code=$?   # captured before anything else can reset it
+            code=0
+            out="$(HOME="$h" env "${envs[@]}" python3 "$t" "${extra[@]}" </dev/null 2>&1)" || code=$?   # captured before anything else can reset it
             if [ "$code" -ne 0 ]; then
               if [ "$t" = "$SKILL/tests/story_first_acceptance/run_acceptance.py" ] \
                  && [ "$(grep -c 'BLOCKED_DEPENDENCY' <<<"$out")" -eq 4 ] \
