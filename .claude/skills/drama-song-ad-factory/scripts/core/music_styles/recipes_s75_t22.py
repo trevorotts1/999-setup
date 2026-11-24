@@ -135,12 +135,12 @@ RECIPES = {
             negative=("no instrumental-only cut", "no copied melody or "
                       "arrangement sequence"),
             clauses=(
-                "orchestral film-style song",
+                "film-style song",
                 "dry close upfront vocal",
                 "60-88 bpm",
                 "expressive lead vocal with clear diction",
                 "piano and low cello foundation",
-                "sweeping violin and viola section",
+                "broad violin and viola section",
                 "warm brass entering at the turn",
                 "controlled film-score percussion",
                 "wide dynamic swells",

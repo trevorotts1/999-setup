@@ -306,6 +306,16 @@ def build_fixtures():
         with open(p, "wb") as fh:
             fh.write(("proof-run synthetic clip %d" % i).encode())
         clips.append(p)
+    # N-03: a lip-sync take is never scored for STORY motion (gate_clips
+    # skips it), so the ad also carries its b-roll story shots -- the clips
+    # the F12 motion gate actually scores. No face in a b-roll shot, and the
+    # scoring step's score rides the row (the assembler never scores video).
+    story = []
+    for i in (1, 2, 3):
+        p = os.path.join(tmp, "story%02d.mp4" % i)
+        with open(p, "wb") as fh:
+            fh.write(("proof-run synthetic story clip %d" % i).encode())
+        story.append(p)
     # One lip-sync clip per line, cut ON THE BEAT (no crossfade): the H4 face
     # gate reads a shot window from its offset, the provenance join reads it
     # from offset - xfade, so a fade would make one shot carry two speakers'
@@ -345,6 +355,17 @@ def build_fixtures():
              "lip_sync": True, "lip_sync_line_ids": ["cta01"],
              "transition": "none", "beat_cut": True,
              "motion_score": {"score": 0.9, "flagged": False}},
+            # N-03 b-roll: no lip-sync line and no face, so the F12 gate
+            # scores these rows and the F9 frame check does not sample them.
+            {"src": os.path.basename(story[0]), "dur": 2.0,
+             "faces_on_screen": [],
+             "motion_score": {"score": 0.5, "flagged": False}},
+            {"src": os.path.basename(story[1]), "dur": 2.0,
+             "faces_on_screen": [],
+             "motion_score": {"score": 0.5, "flagged": False}},
+            {"src": os.path.basename(story[2]), "dur": 2.0,
+             "faces_on_screen": [],
+             "motion_score": {"score": 0.5, "flagged": False}},
         ],
     }
     # H4/E6 provenance: an approved storyboard, per-clip artifacts and the
