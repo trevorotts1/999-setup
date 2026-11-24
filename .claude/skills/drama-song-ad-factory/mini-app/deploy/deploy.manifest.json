@@ -1,0 +1,42 @@
+{
+  "schema": "blackceo.mini-app-deploy/v1",
+  "unit": "U4",
+  "service_home": "75-drama-song-ad-factory/mini-app/",
+  "owned_source": "deploy/",
+  "_note": "Deploy-side manifest for the Drama Studio mini-app. No real Cloudflare id, token or secret value belongs in this file: the wrangler config keeps <PLACEHOLDER> ids and deploy.sh resolves them into a throwaway /tmp config at deploy time. U2 owns worker/ (service), U3 owns pages/ (UI); this manifest and deploy.sh own deploy/ only.",
+  "cloudflare": {
+    "intended_account_label": "BlackCEO",
+    "intended_zone_name": "zerohumanworkforce.com",
+    "api_base": "https://api.cloudflare.com/client/v4"
+  },
+  "worker": {
+    "name": "drama-studio-mini-app",
+    "route_host": "studio.zerohumanworkforce.com",
+    "main": "src/index.js",
+    "service_entry": "service/src/worker.js",
+    "kv_binding": "DS_STUDIO",
+    "kv_title": "DS_STUDIO",
+    "compatibility_date": "2024-09-23"
+  },
+  "bucket": {
+    "name": "zhw-drama-studio",
+    "retention_days": 45,
+    "retention_prefix": "clients/"
+  },
+  "secrets": [
+    { "name": "DS_ENROLLMENT_SECRET", "value_source": "env", "required": true },
+    { "name": "DS_ADMIN_KEY",         "value_source": "env", "required": true },
+    { "name": "R2_ACCOUNT_ID",        "value_source": "env", "required": true },
+    { "name": "R2_ACCESS_KEY_ID",     "value_source": "env", "required": true },
+    { "name": "R2_SECRET_ACCESS_KEY", "value_source": "env", "required": true }
+  ],
+  "env": {
+    "token_var": "CLOUDFLARE_DRAMA_STUDIO_API_TOKEN",
+    "token_var_note": "The DEPLOY token: account/zone resolution, the zone guard, R2, the secret puts and the Worker deploy. Read from the environment only; no value belongs in this file.",
+    "kv_dns_token_var": "STUDIO_KV_DNS_API_TOKEN",
+    "kv_dns_token_fallback": "env.token_var",
+    "kv_dns_token_note": "OPTIONAL. Covers the KV-namespace and the DNS steps (they need KV namespaces read/write and zone DNS records read/write, which the deploy token may not carry). Unset or empty it FALLS BACK to env.token_var. Names and HTTP codes are printed; values never are.",
+    "wrangler_toml": "worker/wrangler.toml",
+    "schema_sql": "worker/schema.sql"
+  }
+}

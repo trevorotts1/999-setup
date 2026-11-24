@@ -1,0 +1,200 @@
+-- ============================================================================
+-- schema.sql — Drama Studio service: the declarative record contract (U2)
+--
+-- The studio's KV and R2 are schemaless, so this file is the CONTRACT every
+-- key this service reads or writes obeys, and the seed inventory U4's deploy
+-- files use. It is documentation that is also a specification: if code and
+-- this file disagree, this file is wrong or the code is — one of them changes
+-- in the same unit.
+--
+-- Plan section 3.2: "One shared Drama Studio ... one storage bucket
+-- (drama-studio), two secrets." Section 3.15: "No names in links. No names in
+-- storage paths. No passwords. No client credentials. No KIE key."
+--
+-- ============================================================================
+-- KV  (binding: DS_STUDIO)
+-- ============================================================================
+--
+-- 1. KEY RECORDS                          key: <fingerprint>
+--    key:  key:<sha256-hex of the secret>
+--    value: JSON
+--      {
+--        "client_id":   string,  -- "c-<32 hex>"; the studio invented it
+--        "kind":        string,  -- "link" | "box" | "machine"
+--        "label":       string|null,  -- computer name for a machine key
+--        "fingerprint": string,  -- sha256 hex; ALWAYS equals the key suffix
+--        "status":      string,  -- "active" | "revoked"
+--        "created_at":  number,  -- epoch ms
+--        "last_check_in": number|null
+--      }
+--    The raw secret is NEVER a field here. It is returned to its owner once,
+--    at mint time, and nowhere else. A revoked record fails resolution.
+--
+-- 2. PAIRING RECORDS                      pair: <fingerprint>
+--    key:  pair:<sha256-hex of the NORMALIZED code (ABCD-2345 -> ABCD2345)>
+--    value: JSON
+--      {
+--        "client_id":   string,
+--        "fingerprint": string,
+--        "exp":         number,  -- epoch ms, mint + 15 minutes
+--        "tries":       number,  -- wrong attempts; 5 locks it
+--        "status":      string   -- "open" | "burned" | "locked"
+--      }
+--    Single use: a successful pairing deletes the record (section 3.11).
+--
+-- 3. CLIENT RECORDS                       client: <client_id>
+--    value: JSON
+--      {
+--        "client_id":      string,
+--        "created_at":     number,
+--        "option":         1|2|3,       -- section 3.10; default 1 (wait)
+--        "option_set_at":  number,
+--        "option_approval": {"option3": true, "client_name": string}|null,
+--        "timezone":       string|null  -- IANA name; optional, U12 may collect it
+--      }
+--    There is NO name, slug, email or location id in this record's keys.
+--
+-- 4. ORDER RECORDS                        order: <client_id>:<order_id>
+--    value: JSON
+--      {
+--        "order_id":     string,  -- "r_<8 hex>"
+--        "client_id":    string,
+--        "title":        string,  -- the client's own words, shown back to them
+--        "state":        string,  -- waiting | in_production | needs_you | ready
+--                                 -- | delivered | done | cancelled | expired
+--        "paid_started": boolean, -- a cancel is refused once true
+--        "created_at":   number,
+--        "updated_at":   number,
+--        "in_production_at": number|null, -- pickup: stamped on claim/answer
+--        "delivered_at": number|null,
+--        "accepted_at":  number|null,   -- client tapped Looks good
+--        "downloaded_at": number|null,  -- an OBSERVED download, never a guess
+--        "last_actor":   string
+--      }
+--    Every state move also stamps `<state>_at` (lifecycle.transition), so
+--    needs_you_at, ready_at, done_at and cancelled_at appear the same way.
+--    The order id is scoped by client_id in the KEY, so another client's key
+--    cannot even name this record.
+--
+-- 5. CHECK-INS                            checkin: <client_id>   (R2, NOT KV)
+--    value: the epoch-ms of the last check-in, as a plain string.
+--    Written by POST /api/studio/checkin, at most once per 20 minutes
+--    (options.CHECKIN_SAVE_EVERY_MS). Lives in the R2 bucket, not KV: boxes
+--    check in every 2 minutes and KV's free tier is 1,000 writes/day.
+--
+-- 6. UPLOAD JOBS                          upload: <client_id>:<upload_id>
+--    value: JSON
+--      {
+--        "client_id":    string,
+--        "upload_id":    string,  -- "u_<24 hex>"
+--        "channel":      "audio" | "image" | "video",
+--        "object_path":  string,  -- clients/<client_id>/intake/<upload_id>.<ext>
+--        "source_sha256": string|null,
+--        "content_type": string|null,
+--        "size_bytes":   number,
+--        "max_bytes":    number,
+--        "status":       "queued" | "failed",
+--        "created_at":   string,  -- ISO 8601 UTC
+--        "error":        string    -- only on failure; never a silent blank
+--      }
+--
+-- 7. THE ONE OPERATOR RECORD PER CLIENT PER DAY   ops: <client_id>:<YYYY-MM-DD>
+--    key:  ops:<client_id>:<UTC day>          (section 3.10A rule 3)
+--    value: JSON
+--      {
+--        "client_id":  string,
+--        "day":        "YYYY-MM-DD",
+--        "line":       string,  -- "Computer has not checked in since 2:14 PM with an order waiting"
+--        "writes":     number,  -- 1 on creation; 2+ after same-day replacements
+--        "updated_at": number
+--      }
+--    At most ONE record per client per UTC day. A later same-day line REPLACES
+--    the record; it never creates a second key and never stacks. TTL is 30
+--    days, so the marker prunes with the status record (section 3.15).
+--
+-- 8. WEB-PUSH SUBSCRIPTIONS (U20, OPTIONAL, version 2)
+--    key:  push:<client_id>:<subscription_id>
+--    value: JSON
+--      {
+--        "subscription_id": string,  -- "push_<24 hex>"; the studio invented it
+--        "client_id":   string,
+--        "endpoint":    string,  -- the push service URL; NOT a secret
+--        "keys": {"p256dh": string, "auth": string},  -- the browser's PUBLIC keys
+--        "user_agent":  string|null,
+--        "status":      string,  -- "active" | "revoked"
+--        "created_at":  number,
+--        "updated_at":  number,
+--        "revoked_at":  number|null,
+--        "last_sent_at": number|null
+--      }
+--    Written ONLY when DS_WEB_PUSH_ENABLED is exactly "true" or "1". With it
+--    unset the subscribe route refuses (AF-DS-PUSH-DISABLED) and stores NOTHING,
+--    so a version-0 studio has no record here at all (U20: "never version-0
+--    gate", joint plan line 1091; line 832, "none blocks version 0").
+--    One record per endpoint for a client: the same endpoint REPLACES its own
+--    record rather than stacking. Retention kind `push_subscription` is
+--    NEVER-SWEPT (retention.js): a subscription is removed only by an explicit
+--    unsubscribe or by a push service answering 404/410. NO key material is
+--    ever stored here — endpoint and the browser's two PUBLIC keys only.
+--
+-- ============================================================================
+-- R2  (binding: DRAMA_STUDIO)
+-- ============================================================================
+--
+--   clients/<client_id>/inbox.json          -- waiting orders only, capped at 50
+--   clients/<client_id>/intake/<upload_id>.<ext>
+--                                           -- phone -> storage DIRECT, through
+--                                              a presigned PUT; the bytes never
+--                                              pass through the Worker
+--   clients/<client_id>/video/<name>        -- R2 fallback copy only; deleted 7
+--                                              days after delivery (U4 owns the
+--                                              lifecycle rule object)
+--
+-- NOTHING is stored under a name, a slug or an email. A bucket listing can
+-- never be read to learn whose video is whose; that mapping lives only in
+-- client: <client_id> inside the KV.
+--
+-- ============================================================================
+-- THE BUCKET'S OWN RULE  (U4's file to create; recorded here for the contract)
+-- ============================================================================
+--
+--   A delete-after-45-days rule on the `clients/` prefix: every stored object is
+--   removed 45 days after it was uploaded. Enrollment records, delivery receipts
+--   and GHL media are not in this bucket and are untouched.
+--
+-- ============================================================================
+-- THE RETENTION SWEEP'S CLOCK  (the columns retention.js reads; no others)
+-- ============================================================================
+--
+--   rule `from`     column read on the stored record
+--   --------------  --------------------------------------------------------
+--   created         created_at        order, client, key and upload records
+--   pickup          in_production_at  lifecycle.transition on claim / answer
+--   stage_approved  finalized_at      approvals-api.composeReady, ready.json
+--   delivered       delivered_at      lifecycle.transition on deliver
+--
+--   A record carrying none of them yet is KEPT, never swept. retention.js
+--   reads only the columns named here. It once read `created_at_ms` and
+--   `event_at_ms`, which no writer produces, so every record was kept and the
+--   sweep ran and deleted nothing.
+--
+-- ============================================================================
+-- SECRETS  (declared here; the deploy files in U4 set them — this unit never
+-- prints, copies or stores a value)
+-- ============================================================================
+--
+--   DS_ENROLLMENT_SECRET  fleet enrollment. Registration only. It never reads
+--                         an existing client's data (section 3.15).
+--   DS_ADMIN_KEY          the admin surface consumed by U12.
+--   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY   presign only.
+--   DS_WEB_PUSH_ENABLED   OPTIONAL (U20). "true" or "1" turns web push on;
+--                         anything else — unset, empty, "false" — leaves it OFF.
+--   DS_WEB_PUSH_PUBLIC_KEY / DS_WEB_PUSH_PRIVATE_KEY / DS_WEB_PUSH_SUBJECT
+--                         OPTIONAL (U20) VAPID material. Read from env, never
+--                         stored, echoed or printed. The send path refuses while
+--                         they are unset.
+--
+-- Two secrets, per section 3.2. There is no per-client secret, no operator key
+-- on a client box, and no client credential here of any kind. The U20 web-push
+-- values are env-only and optional: a studio that never sets them is a complete
+-- version-0 studio.

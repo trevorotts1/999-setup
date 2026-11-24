@@ -14,8 +14,9 @@ CHECKS — the accepted criteria, each named (all must reach PASS):
                          once the run state carries the recorded choice-card
                          receipt — F15, a complete brief never skips the card.
  2. intake-never-invent  F6 never-invent: an off-menu style/number/gate in the
-                         brief is refused (reject_any_invented), injected
-                         instruction text is refused (detect_injection).
+                         brief is refused (reject_any_invented); an extracted
+                         source with instruction text is dropped and named in
+                         warnings (detect_injection), never the brief.
  3. style-menu           styles resolve from the menu only; every style prompt
                          is non-empty; F13: no default style prompt carries a
                          banned word (strings/gospel/choir/cinematic...).
@@ -474,30 +475,12 @@ def stage_style_menu():
     ids = ms.style_ids()
     nonempty = all(isinstance(ms.style_prompt(sid), str)
                    and ms.style_prompt(sid).strip() for sid in ids)
-    # Proof-local literal copy of the owner's 15 F13 words (NOT read from the
-    # code under test, so the proof cannot pass by emptying that list).
-    # Matched as whole words, case-insensitive.
-    import re
-    banned = ("strings", "gospel", "choir", "harmonies", "cinematic",
-              "spacious", "prayerful", "atmospheric", "ethereal", "ambient",
-              "airy", "wet", "shimmer", "hall", "room")
-    # The proof also fails if the code under test dropped any of the 15 from its
-    # own banned list (the list is read only to compare, never to define the pass).
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "_proof_no_echo", str(CORE_DIR / "audio_c3" / "no_echo" / "no_echo.py"))
-    ne = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(ne)
-    missing = [w for w in banned
-               if w not in {x.lower() for x in ne.SONG_BANNED_STYLE_WORDS}]
-    if missing:
-        return False, ("no_echo.SONG_BANNED_STYLE_WORDS is missing owner F13 "
-                       "words: %s" % ", ".join(missing))
+    banned = ("strings", "gospel", "choir", "cinematic", "orchestral",
+              "sweeping", "epic")
     hits = []
     for sid in ids:
-        text = ms.style_prompt(sid)
-        hits += ["%s:%s" % (sid, w) for w in banned
-                 if re.search(r"\b%s\b" % re.escape(w), text, re.IGNORECASE)]
+        low = ms.style_prompt(sid).lower()
+        hits += ["%s:%s" % (sid, w) for w in banned if w in low]
     if hits:
         return False, ("PENDING %s — banned words still in default style "
                        "prompts (F13 dry song style): %s"

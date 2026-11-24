@@ -1,0 +1,1449 @@
+// =============================================================================
+// Drama Song Ad Factory mini-app — the order flow on the page
+// -----------------------------------------------------------------------------
+// mini-app/ui/studio.js
+//
+// HOME -> one question per screen (the draft saves after every answer) ->
+// RECAP -> "Lock it in" -> ORDER RECEIVED, then the PROJECT page (status
+// timeline, approvals, delivery link) and the premiere.
+//
+// WHAT THIS FILE DELIBERATELY DOES NOT DO
+//   * It asks no question of its own. Every question comes from
+//     getQuestions() — the intake_card.py `studio-json` export served as
+//     /questions.json, the only place questions are defined (SPEC §5).
+//   * It keeps no store of its own beyond the screen on display. Drafts,
+//     orders and approvals live in the service; this page reads and writes
+//     them through globalThis.studioService (service-client.js).
+//   * It carries no client id of its own — the id is whatever the service
+//     reports in `session.client_id`.
+//
+// HASH ROUTING KEEPS THE KEY. The URL is `#k=<key>&p=<page>`; navigation
+// rewrites `p` and preserves `k` (SPEC §3 — the personal key lives in the
+// fragment and must never be dropped by routing).
+//
+// Accessibility contract (asserted by checks/a11y-check.mjs):
+//   * every control is a native <button>, <input type="radio"> or <a>;
+//   * every input has a real <label>; every icon-only region has a name;
+//   * focus order is source order (no positive tabindex anywhere);
+//   * changing page MOVES FOCUS to the new page heading;
+//   * every state change is announced in the polite live region;
+//   * no state is carried by motion or colour alone — each has words too.
+// =============================================================================
+import { studio, serviceConnected, ServiceUnavailableError } from "./api-client.js";
+import { encode, toElement } from "./qr.js";
+import { sendFile } from "./upload/upload.js";
+
+// ── sibling modules, each owned by another unit ──────────────────────────────
+// service-client.js (W1-studio-page-U1) installs globalThis.studioService;
+// approvals-view.js (W1-studio-page-U3) exports renderApprovalsFor(order, root).
+// Each import is guarded so the page and its checks still run on a branch where
+// that file has not landed yet: without the service the page says "not
+// connected" in words, without the view the project page says approvals are not
+// here yet. The moment the file exists, the import succeeds and the feature is
+// on — nothing is skipped silently after that.
+let renderApprovalsFor = null;
+
+async function loadSiblingModules() {
+  try { await import("./service-client.js"); } catch { /* not on this branch yet */ }
+  try { ({ renderApprovalsFor } = await import("./approvals-view.js")); } catch { /* same */ }
+}
+
+// ── the version-0 option surface ─────────────────────────────────────────────
+// NOT USED BY ANY SCREEN ANYMORE: the page asks getQuestions() instead (see the
+// header). It stays exported only because checks/ui-contract.mjs imports it and
+// asserts on it, and that file is not this unit's to edit — deleting it means
+// updating ui-contract.mjs first (named in the PR body for the conductor).
+export const DEFAULT_OPTIONS = {
+  questions: [
+    { id: "offer", label: "What are we promoting?", hint: "Your offer and its link.",
+      choices: [] },
+    { id: "audience", label: "Who is it for, and what should they do?", hint: "One sentence.",
+      choices: [] },
+    { id: "character", label: "Who stars in your video?", hint: "Describe them, or bring back a saved one.",
+      choices: [{ id: "new", label: "Create a new character" }, { id: "saved", label: "Use one I saved before" }] },
+    { id: "length", label: "How long should it run?", hint: "Longer runs also come with 60- and 90-second clips.",
+      choices: [
+        { id: "60", label: "60 seconds" }, { id: "180", label: "3 minutes" },
+        { id: "300", label: "5 minutes" }, { id: "600", label: "10 minutes" }] },
+    { id: "music", label: "What does your song feel like?", hint: "The style the composer writes in.",
+      choices: [
+        { id: "soul-rise", label: "Soul Rise", hint: "Warm and uplifting" },
+        { id: "quiet-drive", label: "Quiet Drive", hint: "Steady and confident" },
+        { id: "bright-clap", label: "Bright Clap", hint: "Upbeat, clap-along" }] },
+    { id: "look", label: "How should every shot look?", hint: "Pick the style you want to see.",
+      choices: [
+        { id: "lifelike-3d", label: "Lifelike 3D", hint: "Real and cinematic" },
+        { id: "2d-painted", label: "2D Hand-Painted", hint: "Warm storybook" },
+        { id: "sketch-to-life", label: "Sketch to Life", hint: "A sketch comes alive" },
+        { id: "canvas-to-life", label: "Canvas to Life", hint: "A painted canvas comes alive" },
+        { id: "canvas-to-3d", label: "Canvas to 3D", hint: "A canvas turns 3D" }] },
+    { id: "model", label: "Pick the quality level", hint: "The video model that films it.",
+      choices: [
+        { id: "standard", label: "Standard", hint: "Fastest, lowest cost" },
+        { id: "high", label: "High", hint: "Recommended balance" },
+        { id: "premium", label: "Premium", hint: "Best picture, highest cost" }] },
+    { id: "budget", label: "Set your ceiling", hint: "The most this run may spend, with a redo allowance.",
+      choices: [{ id: "recommended", label: "The recommended budget" },
+        { id: "custom", label: "A number I will give you" }] },
+  ],
+  looks: [
+    { id: "lifelike-3d", label: "Lifelike 3D", sampleUrl: "https://studio.example.com/samples/lifelike-3d" },
+    { id: "2d-painted", label: "2D Hand-Painted", sampleUrl: "https://studio.example.com/samples/2d-painted" },
+    { id: "sketch-to-life", label: "Sketch to Life", sampleUrl: "https://studio.example.com/samples/sketch-to-life" },
+    { id: "canvas-to-life", label: "Canvas to Life", sampleUrl: "https://studio.example.com/samples/canvas-to-life" },
+    { id: "canvas-to-3d", label: "Canvas to 3D", sampleUrl: "https://studio.example.com/samples/canvas-to-3d" },
+  ],
+  songs: [
+    { id: "a", label: "Version A", hint: "Slower, piano-led, with a gentle build", audioUrl: "https://studio.example.com/songs/a" },
+    { id: "b", label: "Version B", hint: "Warm start that lifts into a bright chorus", audioUrl: "https://studio.example.com/songs/b" },
+    { id: "c", label: "Version C", hint: "Upbeat from the first note, bouncy rhythm", audioUrl: "https://studio.example.com/songs/c" },
+  ],
+};
+
+// The five pages. The ids are the contract checks/ui-contract.mjs asserts on:
+// `start` is the home screen, `approvals` is the project screen (status,
+// approvals and delivery live together there), `delivery` is the premiere.
+const PAGES = [
+  { id: "start", label: "Home", title: "Welcome to your studio" },
+  { id: "questions", label: "Questions", title: "Tell us about your video" },
+  { id: "recap", label: "Recap", title: "Read this back, then lock it in" },
+  { id: "approvals", label: "Project", title: "Your project and approvals" },
+  { id: "delivery", label: "Premiere", title: "Your finished video" },
+];
+
+// Plain words for every order state the service can report (lifecycle.js).
+const STATUS_WORDS = {
+  waiting: "Waiting for the studio to start",
+  in_production: "In production",
+  needs_you: "Needs you",
+  ready: "Ready for you",
+  delivered: "Delivered",
+  done: "Finished",
+  cancelled: "Cancelled",
+  expired: "Expired",
+};
+// S75-073 — a stage is on the timeline only when the order really reached it.
+// The service stamps each move (`created_at` for waiting, then `<state>_at` in
+// lifecycle.js), so the page reads the stamps instead of guessing from order.
+// "Needs you" is deliberately absent from this list: it is shown as a
+// highlighted line only while it is the state the order is in now.
+const TIMELINE_STAGES = [
+  { state: "waiting", stamp: "created_at" },
+  { state: "in_production", stamp: "in_production_at" },
+  { state: "ready", stamp: "ready_at" },
+  { state: "delivered", stamp: "delivered_at" },
+];
+
+const state = {
+  page: "start",
+  clientId: null,       // session.client_id — the service's id, never a hard-coded one
+  optionLine: "",
+  orders: [],
+  order: null,          // the project on screen
+  questions: [],        // from getQuestions()
+  visible: [],          // those questions that are on now (shows_when), in card order
+  visibleFrom: null,    // the questions list `visible` was built from
+  qIndex: 0,            // which question screen
+  note: "",             // drawn above the Next button after an empty tap
+  picks: [],            // selected option number, as a string
+  texts: [],            // typed answer for a free-text option
+  replies: [],          // what the box replays: option number, or the typed text
+  agnesRemembered: "unknown",   // session.agnes_remembered — "yes", "no", "unknown"
+  agnesProgress: null,          // session.agnes_progress — the Agnes job's record
+  locked: false,
+  sending: false,       // Lock it in is in flight — a second tap sends nothing
+  orderId: null,        // S75-071 — ONE id for the recap on screen, until accepted
+  // U-Z11 — the order a "Continue" on a needs_you order came from. Locking in
+  // again posts a NEW order; this is the old one that is cancelled after it.
+  continueFrom: null,
+  // U-Z08 — the photos, logos and voice notes the client added, in order. The
+  // ids ride the draft and the order; the names are what the screen reads back.
+  uploadIds: [],
+  uploadLines: [],
+  delivery: null,
+  sessionFailure: null, // S75-077 — "link" (the service refused the key) or "unreachable"
+  // S75-073 — what the project page is showing and what it last drew.
+  staleLine: "",        // stale_page_line the service sent with the order, if it sent one
+  approvalItems: [],    // the approval listing behind the drawn signature
+  projectSig: "",       // the signature of the last thing drawn on the project page
+};
+
+// ── which screens are on: the `shows_when` the card exports (SPEC B1) ────────
+// Every screen the intake_card `studio-json` export carries a `shows_when`
+// condition ({"purpose": [1]}, {"agnes_remembered": ["unknown","yes"],
+// "length_s_max": 300}); the page evaluates it rather than guessing, so a screen
+// a purpose never asks is never rendered. A condition this page does not know
+// hides the screen — a question is never shown on a guess.
+export function screenIsOn(screen, questions = [], answers = {}, agnesRemembered = "unknown") {
+  const rule = screen && screen.shows_when;
+  if (!rule || !Object.keys(rule).length) return true;
+  const purpose = ((questions || []).find((q) => q.id === "purpose") || {}).options || [];
+  for (const [key, allowed] of Object.entries(rule)) {
+    const list = Array.isArray(allowed) ? allowed : [allowed];
+    if (key === "purpose") {
+      // A rule naming every purpose option (the export's `_EVERY_PURPOSE`) is no
+      // restriction at all; a narrower one only bites once PURPOSE has an answer,
+      // because until then there is no purpose to rule the screen out with.
+      if (!purpose.length || list.length >= purpose.length) continue;
+      const answer = answers.purpose;
+      if (answer == null || answer === "") return false;
+      if (!list.some((n) => String(n) === String(answer))) return false;
+    } else if (key === "agnes_remembered") {
+      if (!list.some((v) => String(v) === String(agnesRemembered || "unknown"))) return false;
+    } else if (key === "length_s_max") {
+      // 7- and 10-minute episodes are KIE-only, so AGNES is asked only while the
+      // chosen length is one Agnes can make (SPEC A15, `length_s_max` 300 s).
+      const seconds = chosenLengthSeconds(questions, answers);
+      if (seconds == null || seconds > Number(allowed)) return false;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The length the client picked, in seconds, read off the option text the card
+// itself offers ("60 seconds", "3 minutes + 60s and 90s clips") — never a second
+// length table beside `length_formula`.
+function chosenLengthSeconds(questions, answers) {
+  for (const id of ["episode_length", "length"]) {
+    const answer = answers[id];
+    if (answer == null || answer === "") continue;
+    const screen = (questions || []).find((q) => q.id === id);
+    const option = ((screen && screen.options) || []).find((o) => String(o.n) === String(answer));
+    const found = /(\d+)\s*(second|minute)/i.exec(String((option && option.text) || ""));
+    return found ? Number(found[1]) * (/minute/i.test(found[2]) ? 60 : 1) : null;
+  }
+  return null;
+}
+
+// ── S75-059 — the price of an option at the chosen LENGTH ────────────────────
+// THE formula, the same arithmetic as
+// `catalog_calculator.card_render.price_envelope` (and `quote` on top of it).
+// A different sum here is a different price from the card the client approves,
+// so `checks/price-check.mjs` pins these three lengths to the Python function's
+// own output in `checks/price-fixture.json`:
+//
+//   shots  = ceil(length_s / shot_s)
+//   video  = unit === "second" ? rate_usd * length_s : rate_usd * shots
+//   frames = (shots + keyframe_count_extra) * keyframe_usd
+//   total  = (video + frames + song_usd) * (1 + redo_rate), rounded to the cent
+//
+// The rates ride the option itself (the card exports them); an option with no
+// rates is not priced here and says nothing rather than guessing a number.
+// A rate the card did not export is NOT zero: `Number(null)` and `Number("")`
+// are both 0, which would print "about $0.00" as if the video were free.
+// Anything blank is "not priced", never a made-up price.
+const rateOf = (v) => (v == null || v === "" ? NaN : Number(v));
+
+export function optionPriceUsd(option, lengthSeconds) {
+  if (!option) return null;
+  const seconds = Number(lengthSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const rate = rateOf(option.rate_usd);
+  const shot = rateOf(option.shot_s);
+  const keyframe = rateOf(option.keyframe_usd);
+  const song = rateOf(option.song_usd);
+  const redo = rateOf(option.redo_rate);
+  const extra = rateOf(option.keyframe_count_extra);
+  if (![rate, shot, keyframe, song, redo].every(Number.isFinite) || shot <= 0) return null;
+  const shots = Math.ceil(seconds / shot);
+  const video = String(option.unit) === "second" ? rate * seconds : rate * shots;
+  const frames = (shots + (Number.isFinite(extra) ? extra : 0)) * keyframe;
+  return Math.round((video + frames + song) * (1 + redo) * 100) / 100;
+}
+
+/** The line under a priced option: its price at the chosen length, or the
+ *  sentence that says why no price is shown yet. "" for an unpriced option. */
+export function optionPriceLine(option, lengthSeconds) {
+  if (!option || !Number.isFinite(rateOf(option.rate_usd))) return "";
+  const total = optionPriceUsd(option, lengthSeconds);
+  if (total == null) return "price shown after you pick a length";
+  return `about $${total.toFixed(2)}`;
+}
+
+// The screens that are on, in the card's own order: PURPOSE first, its one
+// follow-up right after it, EPISODE LENGTH in LENGTH's own slot, SHAPE right
+// after the length screen, AGNES after VIDEO STYLE — the placement of
+// `intake_card._shaped` (METHOD-INTEGRATION 3.2), so the replies this page
+// saves sit at the positions the bridge replays. The SET of screens comes only
+// from `shows_when`; an unplaced screen lands last rather than vanishing.
+function shapeScreens(questions, answers, agnesRemembered) {
+  const on = (questions || []).filter((q) => screenIsOn(q, questions, answers, agnesRemembered));
+  const get = (id) => on.find((q) => q.id === id);
+  const out = [];
+  const put = (q) => { if (q && !out.includes(q)) out.push(q); };
+  put(get("purpose"));
+  put(get("permission") || get("where"));
+  for (const base of questions || []) {
+    if (base.id === "length") {
+      // EPISODE LENGTH for a campaign sits in LENGTH's own slot, and SHAPE
+      // right behind it — at that position whether LENGTH itself is on or not,
+      // because a campaign answers EPISODE LENGTH instead of LENGTH.
+      put(get("episode_length") || get("length"));
+      put(get("shape"));
+      continue;
+    }
+    if (["purpose", "episode_length", "permission", "where", "shape", "agnes"].includes(base.id)) continue;
+    put(get(base.id));
+    if (base.id === "look") put(get("agnes"));
+  }
+  on.forEach(put);
+  return out;
+}
+
+// The list rebuilt from the answers so far: the same walk `intake_card.
+// conversation()` takes, reply by reply, so a saved draft replays identically.
+export function visibleScreens(questions, replies = [], agnesRemembered = "unknown") {
+  const answers = {};
+  let list = shapeScreens(questions, answers, agnesRemembered);
+  for (const reply of replies || []) {
+    const at = Object.keys(answers).length;
+    if (reply == null || reply === "" || at >= list.length) break;
+    answers[list[at].id] = reply;
+    list = shapeScreens(questions, answers, agnesRemembered);
+  }
+  return list;
+}
+
+// ── the Agnes progress line on the project card (SPEC A11) ───────────────────
+// SPEC A11's own two sentences. The only reason the quota ledger writes today
+// is the daily reset, so it carries its words here; any other reason is printed
+// as plain "paused" — the page never shows the client a reason code it was not
+// given words for.
+const WAITING_WORDS = { "agnes-quota-next-day": "paused until tomorrow - today's plan time is used up" };
+
+function clockAt(iso) {
+  const at = new Date(String(iso));
+  if (Number.isNaN(at.getTime())) return "";
+  const h = at.getHours();
+  return `${h % 12 || 12}:${String(at.getMinutes()).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+}
+
+export function agnesProgressLine(progress) {
+  if (!progress || typeof progress !== "object") return "";
+  const total = Number(progress.clips_total);
+  const done = Number(progress.clips_done);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(done)) return "";
+  if (progress.waiting_reason) {
+    const why = WAITING_WORDS[String(progress.waiting_reason)] || "paused";
+    const at = clockAt(progress.next_continue_utc);
+    return at ? `${why}, continues at ${at}` : why;
+  }
+  const low = Number(progress.eta_minutes_low);
+  const high = Number(progress.eta_minutes_high);
+  const eta = low > 0 ? low : high > 0 ? high : 0;
+  if (!eta) return `Making your video clips: ${done} of ${total} done`;
+  const h = Math.floor(eta / 60);
+  const m = eta % 60;
+  const left = h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
+  return `Making your video clips: ${done} of ${total} done — about ${left} to go`;
+}
+
+const el = (tag, attrs = {}, children = []) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "text") node.textContent = v;
+    else node.setAttribute(k, v === true ? "" : String(v));
+  }
+  for (const c of [].concat(children)) node.append(c);
+  return node;
+};
+
+const main = () => document.getElementById("main");
+
+function announce(text) {
+  const status = document.getElementById("status");
+  if (status) status.textContent = text;
+}
+
+// Move focus to the freshly rendered page heading — the screen-reader cue that
+// the page changed. The heading is a real <h1> made focusable for exactly this.
+function focusHeading() {
+  const h = main().querySelector("h1");
+  if (h) { h.setAttribute("tabindex", "-1"); h.focus(); }
+}
+
+// ── hash routing: `#k=<key>&p=<page>`, and `k` is never dropped ──────────────
+function readHash() {
+  const raw = location.hash.replace(/^#/, "");
+  const params = new URLSearchParams(raw);
+  const page = params.get("p") || (PAGES.some((p) => p.id === raw) ? raw : "");
+  return { key: params.get("k") || "", page };
+}
+
+function personalLink() {
+  const { key } = readHash();
+  return key ? `${location.origin}/#k=${key}` : "";
+}
+
+function setPage(id) {
+  state.page = id;
+  state.note = "";
+  render();
+  const { key } = readHash();
+  const params = new URLSearchParams();
+  if (key) params.set("k", key);
+  params.set("p", id);
+  const next = `#${params.toString()}`;
+  // A host with no history (a check's DOM shim, a bare page context) still
+  // renders; only the address bar update is skipped.
+  if (location.hash !== next && typeof history !== "undefined"
+    && typeof history.replaceState === "function") history.replaceState(null, "", next);
+}
+
+// ── chrome ───────────────────────────────────────────────────────────────────
+function renderNav() {
+  const nav = document.getElementById("steps-nav");
+  nav.replaceChildren(...PAGES.map((p) => {
+    const b = el("button", { type: "button", text: p.label });
+    if (p.id === state.page) b.setAttribute("aria-current", "page");
+    // S75-074 — the top-bar Questions button starts (or resumes) the order; it
+    // never drops the client on an empty screen with no questions loaded.
+    b.addEventListener("click", () => (p.id === "questions" ? startOrder() : setPage(p.id)));
+    return b;
+  }));
+}
+
+function renderProgress() {
+  const idx = PAGES.findIndex((p) => p.id === state.page);
+  const pct = Math.round((idx / (PAGES.length - 1)) * 100);
+  const rail = document.getElementById("rail");
+  rail.setAttribute("aria-valuenow", String(pct));
+  document.getElementById("rail-fill").style.width = `${pct}%`;
+  // S75-074 step 9 — inside the questions the count is the questions the client
+  // is actually being asked ("Question 3 of 17"); the five pages keep "Step N of 5".
+  let label = `Step ${idx + 1} of ${PAGES.length}`;
+  if (state.page === "questions") {
+    const list = screens();
+    if (list.length) label = `Question ${Math.min(state.qIndex + 1, list.length)} of ${list.length}`;
+  }
+  document.getElementById("step-label").textContent = label;
+}
+
+// ── the service, in the words this page shows when it is not there ───────────
+function svc() {
+  const s = globalThis.studioService;
+  if (!s) throw new ServiceUnavailableError();
+  return s;
+}
+
+async function loadQuestions() {
+  if (state.questions.length) return;
+  try {
+    const out = await svc().getQuestions();
+    const list = out && Array.isArray(out.questions) ? out.questions : [];
+    state.questions = list;
+    if (!list.length) announce("The questions are not available right now. Nothing was lost — try again.");
+  } catch (err) {
+    announce(serviceMessage(err));
+  }
+}
+
+// A reply is the option number as a string, or — for an option the card reads
+// as typed text ("Reply with …") — exactly what the client typed (SPEC §5).
+const isFreeTextOption = (o) => /^reply with/i.test(String(o.detail || "").trim());
+
+// S75-074 — a typed question asks for a sentence. The page draws the text box
+// directly and never an option row; the reply is exactly what was typed. An
+// older export still carried the one "reply with" option row, and both shapes
+// read the same way here, so a page loaded before the re-export keeps working.
+export function isTypedScreen(question) {
+  return Boolean(question && question.typed);
+}
+
+// S75-074 step 1 — the heading is the exported `title` when the card carries
+// one. An older export carries only an upper-case `label` ("BUDGET"), which is
+// never drawn as a heading: the question's own sentence is, until the title lands.
+export function headingFor(question) {
+  const title = String((question && question.title) || "").trim();
+  if (title) return title;
+  const label = String((question && question.label) || "").trim();
+  if (label && label !== label.toUpperCase()) return label;
+  // The fallback is the drawn question, never the raw one: the sample sentence is
+  // stripped everywhere else and must not survive in the heading (S75-074 step 6).
+  const sentence = questionLabel(question);
+  return sentence || label || "Your question";
+}
+
+// S75-074 step 6 — "Tap a link to watch a sample." is an instruction with
+// nothing to tap unless the export carries a `sample_url`; the link below the
+// options is the only place a sample is offered, in the words "Watch a sample".
+const SAMPLE_SENTENCE = /\s*Tap a link to watch a sample\.?/i;
+export function questionLabel(question) {
+  return String((question && question.question) || "").trim().replace(SAMPLE_SENTENCE, "").trim();
+}
+
+function hydrateReplies(replies) {
+  // The list is rebuilt from these replies (SPEC B1), so every index below is
+  // an index into the list on display, never into the whole export.
+  const list = visibleScreens(state.questions, replies || [], state.agnesRemembered);
+  state.visible = list;
+  state.visibleFrom = state.questions;
+  state.picks = [];
+  state.texts = [];
+  (replies || []).forEach((r, i) => {
+    const q = list[i];
+    if (!q || r == null || r === "") return;
+    // A typed screen's reply is the sentence itself, whatever its options say.
+    if (isTypedScreen(q)) { state.texts[i] = String(r); return; }
+    // A draft or order saved before S75-059 carries the pick as a bare number;
+    // one saved after it carries `"<n>. <option text>"`. Both read back.
+    const pick = q.options.find((o) => String(o.n) === String(r));
+    if (pick) { state.picks[i] = String(pick.n); return; }
+    const numbered = OPTION_REPLY.exec(String(r));
+    if (numbered) {
+      const byNumber = q.options.find((o) => String(o.n) === numbered[1]);
+      if (byNumber && !isFreeTextOption(byNumber)) { state.picks[i] = String(byNumber.n); return; }
+    }
+    const free = q.options.find(isFreeTextOption) || q.options[0];
+    if (free) { state.picks[i] = String(free.n); state.texts[i] = String(r); }
+  });
+}
+
+// The screens that are on right now. The list is rebuilt when the questions
+// themselves change (or nothing has been built yet) — an answer changes it
+// through `answerChanged`, never through a re-render, so an answer in progress
+// is never thrown away by drawing the page again.
+function screens() {
+  if (state.questions.length && (state.visibleFrom !== state.questions || !state.visible.length)) {
+    hydrateReplies(state.replies);
+  }
+  return state.visible;
+}
+
+// S75-059 — an option pick travels WITH its text: `"<n>. <option text>"`. The
+// box compares the text after the number with its own card, so a card that
+// reordered its options asks the client instead of quietly picking a different
+// one (the box half is U-K04). A typed answer stays exactly what was typed.
+const OPTION_REPLY = /^\s*(\d+)\.\s+([\s\S]*)$/;
+
+export function answerReply(question, pick, typedText) {
+  // A typed question has no option row to pick from: the text is the reply.
+  if (isTypedScreen(question)) return String(typedText || "").trim();
+  if (!question || pick == null || pick === "") return "";
+  const opt = (question.options || []).find((o) => String(o.n) === String(pick));
+  if (opt && isFreeTextOption(opt)) return String(typedText || "").trim();
+  const text = opt ? String(opt.text || "").trim() : "";
+  return text ? `${pick}. ${text}` : String(pick);
+}
+
+function replyFor(i) {
+  const q = state.visible[i];
+  if (isTypedScreen(q)) return String(state.texts[i] || "").trim();
+  return answerReply(q, state.picks[i], state.texts[i]);
+}
+
+const currentReplies = () => state.visible.map((_, i) => replyFor(i));
+
+/** U-Z11 (S75-106) — the id of the question each reply answers, in the same
+ *  order. Lock it in also appends one "yes" (the recap's confirmation), so the
+ *  list carries one empty id at the end to stay the same length; the service
+ *  reads only the ids it knows the brief by. */
+const currentReplyIds = () => [...state.visible.map((q) => String((q && q.id) || "")), ""];
+
+function firstUnanswered() {
+  for (let i = 0; i < state.visible.length; i++) if (!replyFor(i)) return i;
+  return state.visible.length;
+}
+
+function ensurePick(i) {
+  const q = state.visible[i];
+  if (q && !state.picks[i] && q.options.length === 1) state.picks[i] = String(q.options[0].n);
+}
+
+// One option was picked on screen `i`. PURPOSE rebuilds the list that follows
+// it, so everything after that screen is dropped — the card does the same
+// (SPEC B1: "every answer after it has to be given again").
+function answerChanged(i, value) {
+  state.note = "";
+  const screenId = state.visible[i] && state.visible[i].id;
+  state.picks[i] = value;
+  if (state.visible[i] && state.visible[i].id === "purpose") {
+    state.picks.length = i + 1;
+    state.texts.length = i + 1;
+  }
+  state.replies = currentReplies();
+  hydrateReplies(state.replies);
+  // The rebuilt list carries no reply for a typeable option whose text is still
+  // empty, so the pick itself is put back on the screen it was made on. Without
+  // this the box for "Set my own limit" never appears (S75-074 step 4).
+  const after = state.visible[i];
+  if (after && after.id === screenId) state.picks[i] = String(value);
+  state.qIndex = Math.min(i, Math.max(0, state.visible.length - 1));
+  render();
+}
+
+async function saveDraft() {
+  try {
+    await svc().saveDraft({ replies: state.replies, upload_ids: state.uploadIds });
+    announce("Saved. Your answers are safe.");
+  } catch (err) {
+    announce(serviceMessage(err));
+  }
+}
+
+async function advance() {
+  const i = state.qIndex;
+  const value = replyFor(i);
+  if (!value) {
+    // Say it where the button is, not only in the status line at the bottom.
+    // A typed screen has no option to pick, so its line asks for the sentence.
+    state.note = (isTypedScreen(state.visible[i]) || state.picks[i])
+      ? "Type your answer first." : "Pick one of the options first.";
+    announce(state.note);
+    render();
+    return;
+  }
+  state.note = "";
+  state.replies = currentReplies();
+  await saveDraft();
+  if (i + 1 >= state.visible.length) { setPage("recap"); return; }
+  state.qIndex = i + 1;
+  render();
+}
+
+async function startOrder() {
+  // A new order starts from nothing of the last one — its photos included.
+  state.continueFrom = null;
+  state.uploadIds = [];
+  state.uploadLines = [];
+  await loadQuestions();
+  if (!state.questions.length) { render(); return; }
+  hydrateReplies(state.replies);
+  state.replies = currentReplies();
+  const next = firstUnanswered();
+  if (next >= state.visible.length) { setPage("recap"); return; }
+  state.qIndex = next;
+  setPage("questions");
+}
+
+function goAnswer() {
+  hydrateReplies(state.replies);
+  state.note = "";
+  state.qIndex = Math.min(firstUnanswered(), Math.max(0, state.visible.length - 1));
+  setPage("questions");
+}
+
+const statusWords = (order) => STATUS_WORDS[order && order.state] || "In progress";
+
+function openProject(order) {
+  state.order = order;
+  // A different project starts from nothing read yet (S75-073).
+  state.staleLine = "";
+  state.approvalItems = [];
+  state.projectSig = "";
+  setPage("approvals");
+}
+
+// ── pages ────────────────────────────────────────────────────────────────────
+function pageHome() {
+  const link = personalLink();
+  const nodes = [el("h1", { text: "Welcome to your studio" })];
+
+  if (!serviceConnected()) {
+    nodes.push(el("div", { class: "refusal", text: new ServiceUnavailableError().message }));
+  }
+
+  nodes.push(el("div", { class: "card" }, [
+    el("h2", { text: "Start a drama video" }),
+    el("p", { text: "Answer the studio's questions one screen at a time. Your answers save as you go, so you can close this page and come back." }),
+    el("div", { class: "actions" }, [primary("Order a new video", () => startOrder())]),
+  ]));
+
+  if (state.optionLine) {
+    nodes.push(el("div", { class: "panel" }, [el("p", { text: state.optionLine })]));
+  }
+
+  // A refused link has nothing to list and cannot load any: the empty list is
+  // hidden rather than shown as "Nothing here yet".
+  if (!(state.sessionFailure === "link" && !state.orders.length)) {
+    nodes.push(el("div", { class: "card" }, [el("h2", { text: "Your projects" }), ...projectList()]));
+  }
+
+  if (link) {
+    nodes.push(el("div", { class: "card" }, [
+      el("h2", { text: "Your studio link" }),
+      qrSurface(link, "your studio link"),
+    ]));
+  } else if (serviceConnected()) {
+    nodes.push(el("p", { class: "muted", text: "Open this page from your personal link and your studio QR code appears here." }));
+  }
+
+  return nodes;
+}
+
+function projectList() {
+  if (!state.orders.length) {
+    return [el("p", { class: "muted", text: "Nothing here yet. Your first project appears the moment you lock in an order." })];
+  }
+  return [el("ul", {}, state.orders.map((o) => {
+    const li = el("li", {});
+    const b = el("button", {
+      type: "button", class: "btn secondary",
+      text: `${o.title || "Your video"} — ${statusWords(o)}`,
+    });
+    b.addEventListener("click", () => openProject(o));
+    li.append(b);
+    return li;
+  }))];
+}
+
+/** U-Z08 — the PHOTOS screen's uploader, under its text box. Each file goes
+ *  straight to the studio and its id is kept for the order; every accepted file
+ *  leaves a line "Added: <name>" so the client sees what the studio has. */
+function photoUploadBox() {
+  const wrap = el("div", { class: "panel" });
+  const label = el("label", { for: "add-photo", text: "Add a photo, logo or voice note" });
+  const input = el("input", { id: "add-photo", type: "file", accept: ".jpg,.jpeg,.png,.heic,.webp,.mp3,.m4a,.wav,.mp4,.mov" });
+  const added = el("ul", { class: "upload-list" });
+  for (const text of state.uploadLines) added.append(el("li", { text }));
+  input.addEventListener("change", async () => {
+    const files = [...(input.files || [])];
+    if (!files.length) return;
+    input.disabled = true;
+    try {
+      for (const file of files) {
+        try {
+          const result = await sendFile(file, readHash().key);
+          state.uploadIds.push(result.upload_id);
+          state.uploadLines.push(`Added: ${file.name}`);
+          added.append(el("li", { text: `Added: ${file.name}` }));
+          announce(`Added: ${file.name}`);
+        } catch (err) {
+          // The sentence is already the client's: the service's own message
+          // when it sent one, else upload.js's plain line.
+          announce(err && err.message ? err.message : "That file could not be added. Please try again.");
+        }
+      }
+    } finally {
+      input.disabled = false;
+      input.value = "";
+    }
+  });
+  wrap.append(label, input, added);
+  return wrap;
+}
+
+function answerBox(value, onInput, question) {
+  const wrap = el("div", {});
+  const id = "q-answer";
+  // A story-brief answer is a sentence — an audience and an action, a character
+  // description, a list of photos — so it gets room to be one. The BUDGET's
+  // "a different maximum" is a dollar amount and stays a single line. The
+  // question's own `typed` flag decides; the option text is never sniffed.
+  const typed = Boolean(question && question.typed);
+  wrap.append(el("label", { for: id, text: typed ? "Your answer, in your own words" : "Your answer" }));
+  const box = typed
+    ? el("textarea", { id, rows: "3", autocomplete: "off" })
+    : el("input", { id, type: "text", autocomplete: "off" });
+  box.value = value;
+  box.addEventListener("input", () => onInput(box.value));
+  wrap.append(box);
+  // U-Z08 — the PHOTOS screen is where a client adds the pictures themselves.
+  if (question && question.id === "photos") wrap.append(photoUploadBox());
+  return wrap;
+}
+
+function pageQuestions() {
+  const list = screens();
+  if (!list.length) {
+    return [
+      el("h1", { text: "Tell us about your video" }),
+      el("div", { class: "refusal", text: "The questions are not here yet. Nothing you typed has been lost — go home and try again." }),
+      el("div", { class: "actions" }, [secondary("Home", () => setPage("start"))]),
+    ];
+  }
+
+  const i = Math.min(state.qIndex, list.length - 1);
+  const q = list[i];
+  const typed = isTypedScreen(q);
+  // A typed screen never draws an option row (S75-074 step 2): the box is the
+  // whole answer, so an export that still carries the one "reply with" option
+  // reads exactly like one that carries no options at all.
+  if (!typed) ensurePick(i);
+  const selectable = typed ? [] : (q.options || []);
+  const chosen = selectable.find((o) => String(o.n) === String(state.picks[i] || ""));
+
+  // S75-059 — what an option costs at the length the client picked. The length
+  // is read off the answer they already gave; before that there is no price to
+  // show and the option says so.
+  const answersGiven = {};
+  list.forEach((item, k) => {
+    const picked = state.picks[k];
+    if (item && picked != null && picked !== "") answersGiven[item.id] = picked;
+  });
+  const lengthSeconds = chosenLengthSeconds(state.questions, answersGiven);
+
+  const fieldset = el("fieldset", { class: "options" });
+  fieldset.append(el("legend", { text: questionLabel(q) }));
+  if (q.example) fieldset.append(el("p", { class: "hint muted", text: `See a great answer: ${q.example}` }));
+  for (const o of selectable) {
+    const id = `q-${q.id}-${o.n}`;
+    const input = el("input", { id, type: "radio", name: `q-${q.id}`, value: String(o.n) });
+    if (String(state.picks[i]) === String(o.n)) input.checked = true;
+    input.addEventListener("change", () => answerChanged(i, String(o.n)));
+    // The card's own `price` string on an older export; the arithmetic above
+    // once the export carries rates instead (S75-059). S75-074 step 5: when the
+    // detail already states the price, the price field is skipped — once.
+    const priceText = o.price || optionPriceLine(o, lengthSeconds);
+    const showPrice = Boolean(priceText)
+      && !(o.detail && String(o.detail).includes(String(priceText)));
+    fieldset.append(el("label", { class: "option", for: id }, [
+      input,
+      el("span", {}, [
+        el("span", { class: "label", text: o.text }),
+        // S75-074 step 5 — the card's own recommendation, as a small tag.
+        o.recommended ? el("span", { class: "tag hint", text: " Recommended" }) : null,
+        o.detail ? el("span", { class: "hint", text: ` ${o.detail}` }) : null,
+        showPrice ? el("span", { class: "hint", text: ` ${priceText}` }) : null,
+      ].filter(Boolean)),
+    ]));
+  }
+  // S75-074 step 5 — one line under the options, in the card's own words.
+  if (q.why) fieldset.append(el("p", { class: "hint muted", text: q.why }));
+  // S75-074 step 6 — a sample is a real link, never a sentence telling the
+  // client to tap a link that is not there.
+  const sample = selectable.find((o) => o && o.sample_url);
+  if (sample) {
+    fieldset.append(el("p", { class: "hint" }, [
+      el("a", { href: String(sample.sample_url), text: "Watch a sample" }),
+    ]));
+  }
+  for (const text of q.supplementary_explanation || []) {
+    fieldset.append(el("p", { class: "hint", text }));
+  }
+  // A typed screen's box is always drawn; an untyped one grows a box only when
+  // the option the client picked reads typed text ("reply with …").
+  if (typed || (chosen && isFreeTextOption(chosen))) {
+    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }, q));
+  }
+
+  return [
+    el("h1", { text: headingFor(q) }),
+    el("p", { class: "muted", text: `${i + 1} of ${list.length}. Your answer saves when you tap Next.` }),
+    el("div", { class: "card" }, [fieldset]),
+    // Directly above the button row, so the reason is beside the button the
+    // client just tapped and not only in the status line at the bottom.
+    state.note ? el("p", { class: "inline-note", text: state.note }) : null,
+    el("div", { class: "actions" }, [
+      i > 0
+        ? secondary("Back", () => { state.note = ""; state.qIndex = i - 1; render(); })
+        : secondary("Home", () => setPage("start")),
+      primary(i + 1 >= list.length ? "Read the recap" : "Next", () => advance()),
+    ]),
+  ].filter(Boolean);
+}
+
+function pageRecap() {
+  if (state.locked) return pageReceived();
+  const list = screens();
+  if (!list.length) {
+    return [
+      el("h1", { text: "Read this back, then lock it in" }),
+      el("div", { class: "refusal", text: "There is nothing to recap yet. Start your order from the home screen." }),
+      el("div", { class: "actions" }, [secondary("Home", () => setPage("start"))]),
+    ];
+  }
+
+  // S75-071 — one tap, one order. The id is minted when the recap is drawn and
+  // kept in state until the order is accepted, so a second tap (or a retry
+  // after an error) names the SAME order and the service stores it once.
+  if (!state.orderId) state.orderId = newOrderId();
+
+  // S75-059 — the recap says the question's plain wording and the option TEXT
+  // the client picked ("The sound: R&B Flow"), never the upper-case label and
+  // never the option's number. A typed answer reads back as it was typed
+  // (S75-074: a typed screen's reply is its sentence, with or without options).
+  // S75-074 step 6 — the recap is a question screen too: it shows the same
+  // plain wording, so the "Tap a link to watch a sample." sentence is gone
+  // here as well (the sample link is drawn beside the options, not in a recap).
+  const recapHeading = (q) => String(
+    (q && (q.title || questionLabel(q) || q.label)) || "Your answer").trim();
+  const recapAnswer = (i) => {
+    const q = list[i];
+    if (isTypedScreen(q)) return String(state.texts[i] || "").trim() || "not answered yet";
+    const pick = state.picks[i];
+    const opt = q && pick ? (q.options || []).find((o) => String(o.n) === String(pick)) : null;
+    if (!opt) return "not answered yet";
+    if (isFreeTextOption(opt)) return String(state.texts[i] || "").trim() || "not answered yet";
+    return String(opt.text || "").trim() || "not answered yet";
+  };
+  const replies = currentReplies();
+  const rows = list.map((q, i) => {
+    const li = el("li", {});
+    const b = el("button", {
+      type: "button", class: "btn secondary",
+      text: `${i + 1}. ${recapHeading(q)}: ${recapAnswer(i)}`,
+    });
+    b.addEventListener("click", () => { state.qIndex = i; setPage("questions"); });
+    li.append(b);
+    return li;
+  });
+  const missing = replies.some((r) => !r);
+
+  return [
+    el("h1", { text: "Read this back, then lock it in" }),
+    missing ? el("div", { class: "refusal", text: "One line is still empty. Tap it to answer before locking in." }) : null,
+    el("div", { class: "card" }, [el("h2", { text: "Your recap" }), el("ol", {}, rows)]),
+    el("p", { class: "muted", text: "Tap any line to change it. Locking it in sends your answers to the studio — nothing starts before that." }),
+    el("div", { class: "actions" }, [
+      missing ? null : lockInButton(),
+      secondary("Change an answer", () => goAnswer()),
+    ].filter(Boolean)),
+  ].filter(Boolean);
+}
+
+/** A fresh order id in the service's own shape: `r_` plus eight lower-case hex. */
+function newOrderId() {
+  const bytes = new Uint8Array(4);
+  if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return "r_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** S75-077 — the project is named by the client's own offer: the first 60
+ *  characters of the OFFER answer, or "Your video" when there is none. */
+export function orderTitle() {
+  const at = state.visible.findIndex((q) => q && q.id === "offer");
+  const text = at >= 0 ? String(replyFor(at) || "").trim() : "";
+  return text ? text.slice(0, 60) : "Your video";
+}
+
+/** The Lock it in button, in its sending state while the order is on the wire. */
+function lockInButton() {
+  const b = primary("Lock it in", () => lockIn(b));
+  if (state.sending) { b.disabled = true; b.textContent = "Sending..."; }
+  return b;
+}
+
+async function lockIn(button) {
+  if (state.sending) return;
+  state.sending = true;
+  if (button) { button.disabled = true; button.textContent = "Sending..."; }
+  try {
+    const out = await svc().lockIn({
+      title: orderTitle(),
+      replies: [...currentReplies(), "yes"],
+      // U-Z11 — every answer travels with the id of the question it answers,
+      // so the service reads the brief by screen and never by position.
+      reply_ids: currentReplyIds(),
+      upload_ids: [...state.uploadIds],
+      order_id: state.orderId,
+    });
+    state.locked = true;
+    state.orderId = null;
+    // The order holds the files now; a fresh order starts empty.
+    state.uploadIds = [];
+    state.uploadLines = [];
+    // U-Z11 — this order was continued from one the studio sent back. The new
+    // order owns the work now, so the old one is cancelled. Best effort: the
+    // new order is the client's, and a refused cancel must not undo it.
+    const previous = state.continueFrom;
+    state.continueFrom = null;
+    if (previous) await cancelOrder(previous);
+    if (out && out.order) {
+      state.order = out.order;
+      state.orders = [out.order, ...state.orders.filter((o) => o.order_id !== out.order.order_id)];
+      if (out.option_line) state.optionLine = out.option_line;
+    }
+    announce("Order received. Your answers are with the studio.");
+  } catch (err) {
+    // The order did not go through: the button comes back, with the SAME id,
+    // so the retry is the same order and can never become a second one.
+    state.sending = false;
+    if (button) { button.disabled = false; button.textContent = "Lock it in"; }
+    announce(serviceMessage(err));
+    return;
+  }
+  state.sending = false;
+  render();
+}
+
+function pageReceived() {
+  return [
+    el("h1", { text: "Order received" }),
+    el("div", { class: "complete", text: "Your order is in. The studio picks it up within about two minutes and plays your answers back exactly as you gave them." }),
+    el("div", { class: "actions" }, [
+      primary("See my project", () => setPage("approvals")),
+      secondary("Back to home", () => setPage("start")),
+    ]),
+  ];
+}
+
+export function timelineFor(order) {
+  if (!order) return [];
+  const current = order.state;
+  const rows = [];
+  for (const { state: stage, stamp } of TIMELINE_STAGES) {
+    const reached = typeof order[stamp] === "number";
+    const now = stage === current;
+    if (!reached && !now) continue;
+    rows.push(el("li", {
+      class: now ? "current" : "finished",
+      text: `${STATUS_WORDS[stage]}${now ? " — now" : " — finished"}`,
+    }));
+  }
+  if (current === "needs_you") {
+    rows.push(el("li", { class: "current", text: `${STATUS_WORDS.needs_you} — now` }));
+  } else if (current && !TIMELINE_STAGES.some((s) => s.state === current)) {
+    // done / cancelled / expired: the state it is in now, in words.
+    rows.push(el("li", { class: "current", text: `${statusWords(order)} — now` }));
+  }
+  return rows.length ? [el("ol", {}, rows)] : [];
+}
+
+// ── S75-073 — the project page keeps itself true ────────────────────────────
+// While the project page is open and the tab is visible, the order and its
+// approvals are read again every 30 seconds, and once more the moment the tab
+// comes back. The page redraws only when the state, the stale line or the list
+// of approval versions changed — and never while the client is typing into a
+// box on the page, because a redraw would throw away what has been typed.
+export const PROJECT_REFRESH_MS = 30000;
+
+/** What the project page is showing: state + the studio's note + stale line +
+ *  approval versions. */
+export function projectSignature(order, staleLine, approvalItems) {
+  const versions = (approvalItems || [])
+    .map((it) => `${(it && (it.stage || it.item_id)) || ""}@${it && it.version != null ? it.version : ""}`)
+    .sort()
+    .join(",");
+  // U-Z11 — the note is part of what is drawn: a new reason under an unchanged
+  // state must still reach the page.
+  return `${(order && order.state) || ""}|${(order && order.note) || ""}|${staleLine || ""}|${versions}`;
+}
+
+/** Every input and textarea drawn on the page, wherever it sits. */
+function textBoxes() {
+  const out = [];
+  const visit = (node) => {
+    if (!node) return;
+    const tag = String(node.tagName || "").toUpperCase();
+    if (tag === "INPUT" || tag === "TEXTAREA") out.push(node);
+    for (const child of node.children || []) visit(child);
+  };
+  const root = typeof main === "function" ? main() : null;
+  if (root) visit(root);
+  return out;
+}
+
+/** True while a text box on the page has focus or holds text — never redraw. */
+export function redrawBlocked() {
+  const active = typeof document !== "undefined" ? document.activeElement : null;
+  for (const box of textBoxes()) {
+    if (box === active) return true;
+    if (typeof box.value === "string" && box.value.trim()) return true;
+  }
+  return false;
+}
+
+/**
+ * One read of the order and its approvals. Redraws only when the signature
+ * changed and no box on the page is being typed into. `manual` is the
+ * "Check for updates" button: it says in words what happened either way.
+ * @returns {Promise<boolean>} whether the page was redrawn
+ */
+export async function refreshProject({ manual = false } = {}) {
+  const order = state.order || state.orders[0];
+  if (!order || !order.order_id || !serviceConnected()) return false;
+  let fresh;
+  let items;
+  try {
+    fresh = await svc().getOrder(order.order_id);
+    const listed = await svc().listApprovals(order.order_id);
+    items = listed && Array.isArray(listed.items) ? listed.items : [];
+  } catch (err) {
+    // A read that failed changes nothing: the page keeps what it drew.
+    if (manual) announce(serviceMessage(err));
+    return false;
+  }
+  // The page, or the project on it, may have changed while the read was in
+  // flight. Painting then would show one project's data on another screen.
+  const still = state.order || state.orders[0];
+  if (state.page !== "approvals" || !still || still.order_id !== order.order_id) return false;
+  const nextOrder = (fresh && fresh.order) || order;
+  const staleLine = (fresh && typeof fresh.stale_page_line === "string") ? fresh.stale_page_line : "";
+  if (projectSignature(nextOrder, staleLine, items) === state.projectSig) {
+    if (manual) announce("Nothing has changed yet.");
+    return false;
+  }
+  if (redrawBlocked()) {
+    if (manual) announce("Finish typing first — then the page will show what changed.");
+    return false;
+  }
+  state.order = nextOrder;
+  state.orders = state.orders.map((o) => (o && o.order_id === nextOrder.order_id ? nextOrder : o));
+  state.staleLine = staleLine;
+  state.approvalItems = items;
+  render();
+  if (manual) announce("Updated.");
+  return true;
+}
+
+let refreshTimer = null;
+let refreshingFor = null;
+
+/** Read once now, then every PROJECT_REFRESH_MS while the page stays open. */
+export function startProjectRefresh() {
+  stopProjectRefresh();
+  refreshProject();
+  if (typeof setInterval === "function") {
+    refreshTimer = setInterval(() => { refreshProject(); }, PROJECT_REFRESH_MS);
+  }
+}
+
+export function stopProjectRefresh() {
+  if (refreshTimer !== null && typeof clearInterval === "function") clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+/** The reader runs on the project page and nowhere else. */
+function syncProjectRefresh() {
+  if (state.page === "approvals") {
+    if (refreshingFor !== "approvals") {
+      refreshingFor = "approvals";
+      startProjectRefresh();
+    }
+  } else if (refreshingFor !== null) {
+    refreshingFor = null;
+    stopProjectRefresh();
+  }
+}
+
+/** The tab is hidden: no reads. It is visible again: read at once. */
+function onVisibilityChange() {
+  if (typeof document === "undefined") return;
+  if (document.visibilityState === "hidden") {
+    refreshingFor = null;
+    stopProjectRefresh();
+  } else if (state.page === "approvals") {
+    refreshingFor = "approvals";
+    startProjectRefresh();
+  }
+}
+
+/**
+ * "Start it again" — the order's own answers go back into the recap, so the
+ * client changes what they want and locks in a NEW order (a fresh id; the old
+ * one is terminal). Lifecycle: the draft is cleared at lock-in, so the replies
+ * kept on the order record are the only copy — they are what this reads.
+ */
+function startAgainButton(order) {
+  return primary("Start it again", () => startAgain(order));
+}
+
+/** U-Z11 — "Continue" on an order the studio sent back (needs_you): the recap
+ *  reopens with this order's own answers, and locking in posts a NEW order and
+ *  cancels this one. The answer event moves an order back to in_production for
+ *  the box, never from the page, so the client's change is a new order. */
+async function continueOrder(order) {
+  state.continueFrom = (order && order.order_id) || null;
+  await startAgain(order);
+}
+
+/** The cancel itself belongs to service-client.js, which owns the transport.
+ *  Until that client carries `cancelOrder` there is none on the wire and the
+ *  old order simply stays where it is; the new order is unaffected. */
+async function cancelOrder(orderId) {
+  try {
+    const client = globalThis.studioService;
+    const cancel = client && typeof client.cancelOrder === "function" ? client.cancelOrder : null;
+    if (cancel) await cancel(orderId);
+  } catch {
+    // The new order is the client's; the old one ends later.
+  }
+}
+
+async function startAgain(order) {
+  const kept = Array.isArray(order && order.replies) ? order.replies.filter((r) => typeof r === "string") : [];
+  state.replies = kept;
+  state.locked = false;
+  state.sending = false;
+  state.orderId = null;
+  state.qIndex = 0;
+  await loadQuestions();
+  hydrateReplies(state.replies);
+  state.qIndex = Math.min(firstUnanswered(), Math.max(0, state.visible.length - 1));
+  setPage("recap");
+}
+
+// The Agnes job's own record for this project (SPEC A11): the service reports
+// it per project — keyed by order id, or as the record itself when there is one
+// project — and until the service reports it at all, there is no line to show.
+function progressFor(order) {
+  const all = state.agnesProgress;
+  if (!all || typeof all !== "object") return null;
+  if (order && order.order_id && all[order.order_id]) return all[order.order_id];
+  return Object.prototype.hasOwnProperty.call(all, "clips_total") ? all : null;
+}
+
+function progressNodes(order) {
+  const line = agnesProgressLine(progressFor(order));
+  return line ? [el("p", { text: line })] : [];
+}
+
+function pageProject() {
+  const order = state.order || state.orders[0];
+  const nodes = [el("h1", { text: "Your project" })];
+
+  if (!order) {
+    nodes.push(el("p", { class: "muted", text: "No project yet. Lock in an order and it shows up here with its status." }));
+    nodes.push(el("div", { class: "actions" }, [secondary("Back to home", () => setPage("start"))]));
+    return nodes;
+  }
+
+  nodes.push(el("div", { class: "card" }, [
+    el("h2", { text: order.title || "Your video" }),
+    el("p", { text: `Status: ${statusWords(order)}` }),
+    // U-Z11 (S75-106) — why the studio needs them, or why the order was
+    // cancelled: the service's own words, right under the status.
+    order.note ? el("p", { class: "inline-note", text: order.note }) : null,
+    // S75-073 — the service's own line when this page has fallen behind.
+    state.staleLine ? el("p", { class: "muted", text: state.staleLine }) : null,
+    ...timelineFor(order),
+    ...progressNodes(order),
+  ].filter(Boolean)));
+
+  // S75-073 — a cancelled or expired order says what happened, in words, and
+  // offers the one thing left to do. `state_reason` is never printed: it is a
+  // machine code, not something a client can read.
+  if (order.state === "cancelled" || order.state === "expired") {
+    nodes.push(el("div", { class: "panel" }, [
+      el("p", {
+        text: order.state === "cancelled"
+          ? "This order was cancelled before any work was charged. Your answers were kept."
+          : "This order was not picked up in 45 days and has ended.",
+      }),
+      startAgainButton(order),
+    ]));
+  }
+
+  // U-Z11 — an order the studio sent back is never a dead end: Continue opens
+  // the recap with this order's own answers, and locking in posts a new order
+  // and cancels this one.
+  if (order.state === "needs_you") {
+    nodes.push(el("div", { class: "actions" }, [primary("Continue", () => continueOrder(order))]));
+  }
+
+  const approvalsCard = el("div", { class: "card" }, [el("h2", { text: "Your approvals" })]);
+  const slot = el("div", {});
+  approvalsCard.append(slot);
+  if (renderApprovalsFor) {
+    Promise.resolve(renderApprovalsFor(order, slot))
+      .then((ret) => {
+        if (ret && !slot.childNodes.length) {
+          if (Array.isArray(ret)) slot.append(...ret); else slot.append(ret);
+        }
+      })
+      .catch((err) => {
+        slot.replaceChildren(el("p", { class: "refusal", text: `The approvals could not be loaded (${err.message}). Try again.` }));
+      });
+  } else {
+    slot.append(el("p", { class: "muted", text: "Approvals appear here as soon as the studio sends them. Nothing waits on this page — you will get a message too." }));
+  }
+  nodes.push(approvalsCard);
+
+  const url = order.delivery && order.delivery.url;
+  if (url) {
+    nodes.push(el("div", { class: "card" }, [
+      el("h2", { text: "Your finished video" }),
+      el("div", { class: "actions" }, [primary("Watch it now", () => {
+        // The delivery screen is a player now, so it needs the one thing it
+        // cannot look up itself: whether the link still stands (the service
+        // reports `availability` beside the order, never as an order state).
+        state.delivery = {
+          masterUrl: url, clips: [], qrPayload: url,
+          availability: order.availability || "available",
+        };
+        setPage("delivery");
+      })]),
+      el("p", {}, [el("a", { href: url, rel: "noopener", download: "", text: "Open my video" })]),
+    ]));
+  }
+
+  nodes.push(el("div", { class: "actions" }, [
+    secondary("Check for updates", () => { refreshProject({ manual: true }); }),
+    secondary("Back to home", () => setPage("start")),
+  ]));
+  // What this draw is showing — the reader compares against it, so an
+  // unchanged read repaints nothing and a typing client is never interrupted.
+  state.projectSig = projectSignature(order, state.staleLine, state.approvalItems);
+  return nodes;
+}
+
+function qrSurface(url, what) {
+  const wrap = el("div", { class: "qr-surface" });
+  try {
+    const matrix = encode(url);
+    const svg = toElement(matrix, { scale: 6 });
+    svg.setAttribute("aria-label", `QR code for ${what}. The same link is written out below.`);
+    wrap.append(svg);
+  } catch (err) {
+    wrap.append(el("p", { class: "refusal", text: `The code could not be drawn (${err.message}). Use the link below.` }));
+  }
+  wrap.append(el("p", { class: "qr-link" }, [
+    el("span", { class: "muted", text: "Or open it directly: " }),
+    el("a", { href: url, rel: "noopener", text: url }),
+  ]));
+  wrap.append(el("ol", { class: "qr-steps" }, [
+    el("li", { text: "Open your phone's camera." }),
+    el("li", { text: "Point it at the code above." }),
+    el("li", { text: "Tap the link that appears." }),
+  ]));
+  return wrap;
+}
+
+// The delivery screen: a player the client can watch, and one plain link that
+// saves the file. Nothing here measures the link — a page cannot tell a client
+// anything useful about bytes or header names, and a button that refuses to
+// work until a check passed is a button that does not work (S75-070).
+function pageDelivery() {
+  const d = state.delivery;
+  if (!d) {
+    return [
+      el("h1", { text: "Your finished video" }),
+      el("p", { class: "muted", text: "Your finished video will appear here. You will also get a message when it is ready." }),
+    ];
+  }
+
+  // The studio's storage link lasts 7 days after delivery; the video itself
+  // stays in the client's own media library, so the page says what to do next.
+  if (d.availability === "r2-expired") {
+    return [
+      el("h1", { text: "Your finished video" }),
+      el("p", { text: "This download link ended 7 days after delivery. Your video is still in your own media library. Ask us for a fresh link." }),
+    ];
+  }
+
+  return [
+    el("h1", { text: "Your finished video" }),
+    el("div", { class: "card" }, [
+      el("h2", { text: "Watch and save" }),
+      el("video", { controls: true, playsinline: true, preload: "metadata", src: d.masterUrl }),
+      el("div", { class: "actions" }, [
+        el("a", {
+          class: "btn",
+          href: d.masterUrl,
+          download: "05 - Video Captioned.mp4",
+          rel: "noopener",
+          text: "Download my video",
+        }),
+      ]),
+      el("p", { class: "muted", text: "If the video opens in a new tab instead of saving, press and hold it and choose Save." }),
+    ]),
+    d.clips?.length ? el("div", { class: "card" }, [
+      el("h2", { text: "Clips for social media" }),
+      el("ul", {}, d.clips.map((c) => el("li", { text: `${c.label} — ${c.url}` }))),
+    ]) : null,
+    d.qrPayload ? el("div", { class: "card" }, [
+      el("h2", { text: "Watch it on your phone" }),
+      qrSurface(d.qrPayload, "your finished video"),
+    ]) : null,
+  ].filter(Boolean);
+}
+
+function primary(label, onClick) {
+  const b = el("button", { class: "btn", type: "button", text: label });
+  b.addEventListener("click", onClick);
+  return b;
+}
+function secondary(label, onClick) {
+  const b = el("button", { class: "btn secondary", type: "button", text: label });
+  b.addEventListener("click", onClick);
+  return b;
+}
+function serviceMessage(err) {
+  if (err instanceof ServiceUnavailableError) return err.message;
+  return `Something went wrong saving that (${err.message}). Nothing was lost — try again.`;
+}
+
+// ── a session the service refuses, said once on the page (S75-077) ───────────
+// The service answers 401 with one of these codes (index.js, keys.js,
+// isolation.js); the bare HTTP code is the fallback service-client.js stamps.
+const LINK_REFUSED_CODES = new Set([
+  "AF-DS-KEY-MALFORMED", "AF-DS-KEY-UNKNOWN", "AF-DS-KEY-REVOKED",
+  "AF-DS-ID-INVALID", "AF-DS-HTTP-401",
+]);
+const SESSION_NOTICE = {
+  link: "This studio link is no longer active. Ask for your new link - your projects are safe.",
+  unreachable: "The studio could not be reached. Check your connection and open the page again.",
+};
+function sessionNotice() {
+  const words = SESSION_NOTICE[state.sessionFailure];
+  if (!words) return null;
+  return el("div", { class: "card", role: "status" }, [el("p", { text: words })]);
+}
+
+// ── render ───────────────────────────────────────────────────────────────────
+const RENDERERS = {
+  start: pageHome, questions: pageQuestions, recap: pageRecap,
+  approvals: pageProject, delivery: pageDelivery,
+};
+
+export function render() {
+  renderNav();
+  renderProgress();
+  const notice = sessionNotice();
+  main().replaceChildren(...(notice ? [notice] : []), ...RENDERERS[state.page]());
+  focusHeading();
+  syncProjectRefresh();
+}
+
+async function boot() {
+  await loadSiblingModules();
+
+  const fromHash = readHash();
+  state.page = PAGES.some((p) => p.id === fromHash.page) ? fromHash.page : "start";
+
+  if (serviceConnected()) {
+    try {
+      const session = await studio.getSession({ clientId: state.clientId });
+      state.clientId = session.client_id || state.clientId;
+      state.optionLine = session.option_line || "";
+      state.orders = Array.isArray(session.orders) ? session.orders : [];
+      state.replies = Array.isArray(session.draft && session.draft.replies)
+        ? [...session.draft.replies] : [];
+      // U-Z08 — the photos a saved draft already carries come back with it.
+      state.uploadIds = Array.isArray(session.draft && session.draft.upload_ids)
+        ? [...session.draft.upload_ids] : [];
+      // The remembered Agnes answer and the Agnes job's progress ride the same
+      // session (W2-wiring-U3). Absent until that lands: "unknown" keeps AGNES
+      // on the card (its shows_when names "unknown") and no progress line shows.
+      state.agnesRemembered = session.agnes_remembered || "unknown";
+      state.agnesProgress = session.agnes_progress || null;
+      state.sessionFailure = null;
+    } catch (err) {
+      // A refused key is a page-level card, never the "saving" line: nothing
+      // was being saved, and the client's next step is a new link.
+      state.sessionFailure = LINK_REFUSED_CODES.has(String(err && err.code)) ? "link" : "unreachable";
+    }
+    if (state.page === "questions" || state.page === "recap") {
+      await loadQuestions();
+      hydrateReplies(state.replies);
+      const next = firstUnanswered();
+      if (next >= state.visible.length) state.page = "recap";
+      else if (state.page === "questions") state.qIndex = next;
+    }
+  } else {
+    announce(new ServiceUnavailableError().message);
+  }
+
+  render();
+  window.addEventListener("hashchange", () => {
+    const { page } = readHash();
+    if (PAGES.some((p) => p.id === page) && page !== state.page) { state.page = page; render(); }
+  });
+  // S75-073 — coming back to the tab reads at once instead of waiting for the
+  // next interval; leaving it stops the reads.
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+  }
+}
+
+if (typeof document !== "undefined") boot();
+
+export { state, PAGES };

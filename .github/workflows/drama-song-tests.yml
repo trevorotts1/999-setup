@@ -70,13 +70,28 @@ jobs:
           # one is invisible. Run every file that pytest collects nothing from.
           rc=0
           n=0
+          # Runner entry points each carry the minimal legal invocation their
+          # own argparse requires (a bare run argparse-errors before anything
+          # checks):
+          #   install_fixtures/harness.py -> --self-check. With no candidate
+          #     reachable (this repo carries no onboarding layout and the
+          #     runner has no ~/openclaw-onboarding), the harness returns its
+          #     own named resolve-failure, exit 2 — the script's documented
+          #     non-pass, never a silent skip.
+          #   story_first_acceptance/run_acceptance.py -> --out at a fresh
+          #     path (its only required argument; --flavor defaults to both).
           while IFS= read -r t; do
             if HOME="$(mktemp -d)" python3 -m pytest -q "$t" --collect-only 2>/dev/null | grep -qE '^[0-9]+ (test|item)'; then
               continue
             fi
-            n=$((n+1))
             h="$(mktemp -d)"
-            if ! (HOME="$h" python3 "$t" </dev/null); then echo "FAIL (script, empty HOME): $t"; rc=1; fi
+            extra=()
+            case "$t" in
+              */install_fixtures/harness.py) extra=(--self-check) ;;
+              */story_first_acceptance/run_acceptance.py) extra=(--out "$h") ;;
+            esac
+            n=$((n+1))
+            if ! (HOME="$h" python3 "$t" "${extra[@]}" </dev/null); then echo "FAIL (script, empty HOME): $t"; rc=1; fi
           done < <(find "$SKILL/tests" -type f -name '*.py' -not -path '*/__pycache__/*' | sort)
           echo "script-style test files run: $n"
           [ "$rc" -eq 0 ]

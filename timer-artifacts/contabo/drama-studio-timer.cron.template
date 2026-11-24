@@ -1,0 +1,34 @@
+# Drama Studio bridge timer — Contabo client container (U6).
+#
+# Platform DEFINITION (a crontab line), not a registration. It lives on the
+# container's persistent volume at
+#   /home/node/.openclaw/scripts/drama-studio-timer.cron
+#
+# ARMING: `install-timer.sh --register` merges ONE line of this definition into
+# the `node` user's crontab, removing any previous line carrying the tag
+# `drama-studio-timer` first, so a second run never doubles the timer. It runs
+# check-first and exits 0 when the line is already there. Every other mode only
+# writes files and prints the command. Manual whole-file equivalent (replaces
+# the crontab; --register preserves it):
+#   docker exec -u node <container> sh -c 'crontab /home/node/.openclaw/scripts/drama-studio-timer.cron'
+#
+# DIRECT SHELL: [/bin/sh, run-timer.sh] with an explicit minimal environment.
+# No Claude, no claude-nine, no model, no interactive session, no idle/agent
+# event.
+#
+# RESTART STATE — the Contabo trap. Here $HOME (/home/node) is the EPHEMERAL
+# container layer: a recreate wipes it. So every persistent path is under the
+# volume /home/node/.openclaw — script, log, machine key/address and state dir.
+# cron re-fires every 2 minutes and the state survives reboot/recreate because
+# none of it sits in $HOME's throwaway layer.
+#
+# Placeholders expanded by install-timer.sh:
+#   __SCRIPT_PATH__ -> /home/node/.openclaw/scripts/run-timer.sh
+#   __LOG_PATH__    -> /home/node/.openclaw/logs/drama-studio-timer.log
+#   __HOME__        -> /home/node
+#   __PATH__        -> container PATH with the persistent npm-global first
+#   __STORE_DIR__   -> /home/node/.openclaw/.drama-studio   (persistent, NOT $HOME)
+#
+# The trailing `# drama-studio-timer` is the de-duplication TAG: --register
+# strips any crontab line containing it before appending this one.
+__SCHEDULE__ HOME=__HOME__ PATH=__PATH__ DS_PLATFORM=contabo DS_STATE_DIR=__STORE_DIR__ /bin/sh __SCRIPT_PATH__ >> __LOG_PATH__ 2>&1 # drama-studio-timer

@@ -1,0 +1,2137 @@
+"""The Suno song recipe v2 (replaces G12): the default for EVERY Suno style.
+
+Built from the measured BSW passes (spoken opener of 3 words or fewer, a
+wordless sung vocalise, hyphen-held vowels, about 65 words for 58 s) and the
+cited research (Suno prompt research 09, Perplexity 10 and 11, 2026-10-08).
+Only the Velvet Voiceover version keeps its own flow. stdlib only; no
+network, no spend.
+
+The rules (verbatim in SKILL.md):
+  1. Spoken delivery follows THE one constraint policy (S75-W05-U2, D09): in
+     this dramatization mode a meaningful spoken scene may appear in ANY
+     section (the legacy Intro/Outro-only assumption is removed), spoken is
+     named at most once in the style text, and the style says the full band
+     keeps playing under the spoken lines.
+  2. Sung lines are short and metered inside the policy's preferred syllable
+     band (4-12, lyric_writer W-G-002 G5), rhymed, with hyphen-held vowels. A
+     preferred-band miss is an accept-with-warning finding, never a failure;
+     only a policy hard bound carrying a clear mode-specific reason can refuse
+     a line. A wordless sung vocalise is OPTIONAL (WW-29): it is never a forced
+     lead-in, and where a sheet carries one it asks for a short note only,
+     never long held notes.
+  3. The hook is the payoff, never the opener (FU-HOOK-PLACEMENT, Trevor
+     2026-10-09): it comes after the build-up the style's own structure
+     calls for (a verse, plus a pre-chorus/build where the style and the
+     length plan have one), the first hook measured at or after the story
+     beat where its words become true. The hook is
+     built from the client's own words and repeated by length.
+  4. Each take's singing is measured, not taken from its labels.
+Style text is 1000 characters or less. Negative tags never include
+"spoken word". Trevor's dry close-vocal rule (no string pads, layered
+vocals, choir or reverb) stays.
+"""
+from __future__ import annotations
+
+import math
+import os
+import re
+import sys
+import unicodedata
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+# S75-W05-U3: THE canonical duration registry is a zero-import leaf
+# (suno_recipe/duration_registry.py), re-exported here and bound BEFORE every
+# heavy import so music_styles / prompt_templates / style_defaults can read
+# their length tables from it in any import order. ONE table: the scattered
+# duration tuples (preflight's missing-120 PROFILE_LENGTHS_S included, D12)
+# are replaced by these names.
+try:
+    from .duration_registry import (   # noqa: E402
+        CANONICAL_DURATION_S, DURATION_LABELS_S, DURATION_REGISTRY,
+        REGISTRY_VERSION as DURATION_REGISTRY_VERSION,
+        RECOMMENDED_DURATION_S, SUPPORTED_SHAPES,
+        duration_row, durations, preflight_profiles, profile_row, profiles,
+        profiles_for, shapes,
+    )
+except ImportError:            # loaded as a plain module (core/suno_recipe on sys.path)
+    try:
+        from duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S, DURATION_REGISTRY,
+            REGISTRY_VERSION as DURATION_REGISTRY_VERSION,
+            RECOMMENDED_DURATION_S, SUPPORTED_SHAPES,
+            duration_row, durations, preflight_profiles, profile_row, profiles,
+            profiles_for, shapes,
+        )
+    except ImportError:
+        from suno_recipe.duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S, DURATION_REGISTRY,
+            REGISTRY_VERSION as DURATION_REGISTRY_VERSION,
+            RECOMMENDED_DURATION_S, SUPPORTED_SHAPES,
+            duration_row, durations, preflight_profiles, profile_row, profiles,
+            profiles_for, shapes,
+        )
+
+import ending_qc as _EQ         # noqa: E402
+import length_formula as _LF    # noqa: E402
+import music_styles as _MS      # noqa: E402
+import prompt_limits as _PL     # noqa: E402
+import prompt_templates as _PT  # noqa: E402
+import spoken_share as _SS      # noqa: E402
+import sung_hook as _SH         # noqa: E402
+from sung_hook import hook_placement as _HP   # noqa: E402
+
+TOOL_NAME = "suno_recipe"
+TOOL_VERSION = "2.0.0"
+
+RULES = (
+    "Spoken delivery follows THE one constraint policy: a meaningful spoken scene may appear in any section of this dramatization; spoken named once in the style text; the full band keeps playing under it.",
+    "Sung lines are short and metered inside the policy's preferred syllable band (4-12), rhymed, with hyphen-held vowels; a preferred-band miss is an accept-with-warning finding, never a failure; a wordless vocalise is OPTIONAL, and where a sheet carries one it is a short lead-in, never a long held note.",
+    "The hook is the payoff, never the opener: it comes after the build-up (a verse, plus a pre-chorus where the style has one), measured at or after the story beat where its words become true; the hook is the client's own words.",
+    "Each take's singing is measured, not taken from its labels.",
+)
+
+#: The ONLY style id that skips the recipe: the spoken Google voiceover over
+#: the song (core/voice_velvet_echo VELVET_ID). Keep this set to one id.
+EXEMPT_STYLE_IDS = frozenset({"velvet_voiceover"})
+
+#: Trevor 5/10 band: first real singing is due by 15% of runtime; within 5
+#: points of runtime still passes, within 10 passes with a flag, past that fails.
+FIRST_SING_TARGET = 0.15
+ACCEPT_PTS, FLAG_PTS = 5, 10
+SUNO_STYLE_FIELD_MAX = 1000          # Suno style field character limit
+MIN_HOOK_REPEATS = 2
+BAND_WORDING = "the full band keeps playing continuously under them"
+
+# ---------------------------------------------------------------------------
+# S75-W05-U3: THE one constraint policy (D09, spec 6.3).
+#
+# This recipe no longer carries its own contradictory rules (the 8-syllable
+# cap that refused the writer's legal 9-11 syllable lines; the legacy
+# "spoken only in [Intro]/[Outro]" assumption). It CONSUMES the single
+# versioned mode/duration-aware constraint policy authored in S75-W05-U2
+# (lyric_writer), through ``POLICY_SOURCES`` below, and falls back to
+# ``DEFAULT_CONSTRAINT_POLICY`` -- the same numbers the writer writes under --
+# until that policy resolves. Preferred ranges are accept-with-warning; only a
+# hard bound carrying a clear mode-specific reason may refuse a line, so a
+# 9-syllable line accepted by the writer can never be contradicted here
+# without one.
+#: The three quality outcomes (spec 6.3). "ok" is the no-finding case; every
+#: finding is one of these three. Warnings and errors travel in SEPARATE lists
+#: end to end, so no generic any(findings) check, exit-code mapper, downstream
+#: aggregator or Command Center projection can convert a warning into failure.
+OUTCOME_REQUIRED = "required_correction"
+OUTCOME_WARNING = "accept_with_warning"
+OUTCOME_USER = "user_decision_required"
+OUTCOMES = (OUTCOME_REQUIRED, OUTCOME_WARNING, OUTCOME_USER)
+#: The correction classes (spec 6.2). Regeneration is never an automatic
+#: class: never destroy the only good take or regenerate the whole song for a
+#: two-second overshoot.
+EDIT_DETERMINISTIC = "deterministic_edit"
+EDIT_WITHIN_ALLOWANCE = "repair_within_allowance"
+EDIT_USER_CHOICE = "user_choice"
+CORRECTION_CLASSES = (EDIT_DETERMINISTIC, EDIT_WITHIN_ALLOWANCE, EDIT_USER_CHOICE)
+
+CONSTRAINT_POLICY_VERSION = "blackceo.constraint-policy/v1"
+#: THE fallback policy: lyric_writer's own sung-line band (W-G-002 G5:
+#: SUNG_SYL_MIN=4 / SUNG_SYL_MAX=12). hard_max None = no hard syllable bound
+#: (a preferred-band miss warns, never fails). spoken_sections.allowed_in
+#: None = spoken in ANY section -- this dramatization mode (D09 removed the
+#: legacy Intro/Outro-only restriction).
+DEFAULT_CONSTRAINT_POLICY = {
+    "policy_version": CONSTRAINT_POLICY_VERSION,
+    "mode": "dramatization",
+    "sung_line": {"preferred_min_syllables": 4, "preferred_max_syllables": 12,
+                  "hard_max_syllables": None},
+    "spoken_sections": {"allowed_in": None},
+    "source": "suno_recipe fallback of the S75-W05-U2 policy "
+              "(lyric_writer SUNG_SYL_MIN=4 / SUNG_SYL_MAX=12, W-G-002 G5)",
+}
+#: Where the S75-W05-U2 policy lives once that unit lands. The recipe resolves
+#: the policy through these entry points at call time (mapping or callable)
+#: and falls back to DEFAULT_CONSTRAINT_POLICY when none answers; it never
+#: keeps a second rule set of its own.
+POLICY_SOURCES = (
+    ("lyric_writer.constraint_policy", "CONSTRAINT_POLICY"),
+    ("lyric_writer.constraint_policy", "get_policy"),
+    ("lyric_writer.constraint_policy", "policy_for"),
+    ("lyric_writer.lyric_writer", "CONSTRAINT_POLICY"),
+    ("lyric_writer.lyric_writer", "constraint_policy"),
+)
+_POLICY_OVERRIDE = None
+#: WW-16: the mandated opening vocalise is BOUNDED. Every sheet must still open
+#: with a wordless vocalise (rule 4), but its cue must ask for a SHORT lead-in
+#: (the 3.0-second ceiling); the data's "two very long held notes" produced a
+#: 13.657 s wordless gap that nothing measured. A sheet that DECLARES an
+#: opening-vocalise cue asking for long/held notes, or naming a span over the
+#: ceiling, is refused before any spend.
+#: WW-29 removed the DATA mandate: models/suno-v6.json
+#: cue_vocabulary.sung.vocalise is now "wordless, brief lead-in, one short
+#: note", and the model block no longer forces a wordless lead-in at all. The
+#: ceiling below still refuses any DECLARED cue that asks for long/held notes or
+#: names a span over it -- the guard fires on the production path
+#: (song_dispatch.validate_request -> parse_lyrics keeps the bracket cue).
+OPENING_VOCALISE_MAX_S = 3.0
+_VOCALISE_LONG_RE = re.compile(
+    r"\b(?:long|held|hold|sustain\w*|prolong\w*|extended?|drag\w*)\b", re.I)
+_VOCALISE_SECONDS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", re.I)
+#: WW-07: the approved lowest-point direction and the return, written from the
+#: approved pace plan into the FINAL provider style.
+#: G11 (2026-10-17, measured -- do not re-litigate): the drop is an ABSENCE,
+#: not a thinner texture. Every stem ever measured kept its drums and RAISED
+#: its energy under the old "half-time with thin, sparse drums" wording: 36
+#: historical stems plus the 12 of the a2 round, whose onsets were flat or
+#: RISING with the energy (1.760 -> 1.760/s at +3.48 dB, 1.886 -> 1.886/s at
+#: +7.91 dB, 2.263 -> 2.766/s at +2.63 dB, 1.760 -> 2.891/s at +2.29 dB) while
+#: the pace_change gate demands a 3 dB drop and a 30% onset REDUCTION. Naming
+#: what is REMOVED, and for how long, is a different instruction from naming a
+#: thinner sound: the return names its intensity for the same reason.
+#: The clause stays short -- the serialized style runs against the 1000-char
+#: SUNO_STYLE_FIELD_MAX, and an over-cap append REFUSES, never truncates.
+PACE_DROP_CLAUSE = "at the lowest point the drums and bass cut out entirely for four seconds"
+PACE_RETURN_CLAUSE = "then the drums slam back in at double intensity"
+#: W1-method-song-U2 (METHOD-INTEGRATION F5, conflicts C3/C4): a METHOD run
+#: replaces both generic clauses with the method's own two seams, written only
+#: when ``pace_plan["method"]`` is true. C3: the drop is AT THE ERM, not "at the
+#: lowest point". C4 + Trevor 2026-10-13 (decision #5): the Hero Shift is any
+#: clear change of pace in the direction this story calls for -- faster, slower,
+#: heavier, bigger, dramatic -- never only a return to the opening groove.
+#: S75 measured (2026-11-19): the method lane needed the SAME ABSENCE wording
+#: the generic lane got from G11. A method order under the old wording sang
+#: about 5 s in -- the first sung line long before the ERM -- while the same
+#: order naming "no singing until the groove drops" held the first sung line
+#: back to 38-46 s, inside the ERM window. The drop therefore LEADS with that
+#: refusal and still carries the ERM Drop's "the first sung line enters exactly
+#: as" anchor, which test_method_pace asserts.
+METHOD_ERM_DROP_CLAUSE = ("no singing until the groove drops, and the first sung "
+                          "line enters exactly as the groove drops to a heavier, "
+                          "sparser half-time feel")
+#: The lead a caller's own ``drop`` text gets prefixed with when it names no
+#: refusal of its own: an explicit drop is still an absence, never a texture.
+METHOD_NO_SINGING_LEAD = "no singing until the groove drops, then "
+#: S75: the spoken-band sentence a METHOD style carries verbatim, so the
+#: method's long spoken backstory is licensed under the music (the band never
+#: drops out under the narration), and "no singing yet" is unmistakable.
+METHOD_SPOKEN_CLAUSE = "The full band keeps playing under the spoken lines."
+METHOD_HERO_SHIFT_CLAUSE = ("when help arrives the music changes pace again, clearly and "
+                            "dramatically, in the direction this story calls for")
+#: U15d (design 4.2): the style lead, the cue strings and the gender words are
+#: DATA now (references/prompt-templates/music/*.json and models/suno-v6.json),
+#: never constants here. STYLE_LEAD was `female lead, ... slow tempo` for every
+#: style, which contradicted the R&B Flow rap verses (file 18 E.2).
+PRODUCT_SHARE_FLOOR_PCT, PRODUCT_SHARE_CAP_PCT = 10.0, 15.0
+#: No-voice section tags: a tag only, NEVER a lyric line Suno could sing.
+NO_VOICE_TAGS = ("instrumental", "break")
+#: The villain/pain lyric guidance (U16) rides in the model block; read from
+#: product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE when that tree has it.
+VILLAIN_GUIDANCE_SOURCE = ("product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE "
+                           "(U16 onb 8467e0354d3116eec980928cab7abaab8cef51ed, "
+                           "999 c4787e2c13e71e3f7877d232aa7c80271f477adc)")
+_MUSIC_CACHE, _MODEL_CACHE = {}, {}
+#: Negative tags (research 09 + 10 + Trevor's dry rule). NEVER "spoken word".
+NEGATIVE_TAGS = ("rap", "rapping", "choir", "reverb", "echo", "band dropout",
+                 "acapella sections", "talk-singing", "monotone delivery")
+REQUIRED_NEGATIVES = ("choir", "reverb", "echo")     # Trevor's dry rule
+FORBIDDEN_NEGATIVES = ("spoken word", "spoken", "speech", "narration", "voiceover")
+RAP_STYLE_IDS = frozenset({"rnb-flow"})              # the data's own id for "rap IS this style"
+#: WW-29: THE rap-style fact reads the STYLE'S OWN DATA. ``RAP_STYLE_IDS`` is a
+#: second copy of it that matches only the bare id, so ``"R&B Flow" in
+#: RAP_STYLE_IDS`` was False while the style's own deliveries say rap -- and the
+#: rap-negative guard switched itself OFF for the label, judging the same style
+#: two ways ("rap style must not exclude rap" for "rnb-flow", [] for "R&B Flow").
+#: Every rap check below reads is_rap_style instead; the constant stays only as
+#: the id song_choices still consults.
+#: KIE generate-music values measured/researched 2026-10-08.
+KIE_PARAMS = {"model": "V6", "custom_mode": True, "instrumental": False,
+              "style_weight": 0.75, "weirdness_constraint": 0.3, "variety": 0}
+
+# ---------------------------------------------------------------------------
+# WW-30: the CURRENT KIE music-generation contract, held in ONE place.
+#
+#   POST <KIE host>/api/v1/jobs/createTask      (path: KIE_MUSIC_TASK_ENDPOINT)
+#   {"model": "ai-music-api/generate",
+#    "callBackUrl": <TOP-LEVEL camelCase URL, only when one is set>,
+#    "input": {"custom_mode": ..., "instrumental": ..., "model": <value>,
+#              "title": ..., "lyrics": ..., "style": ...,
+#              "negative_tags": ..., "duration": ...}}
+#
+# Skill 68's music reference (references/music.md, section 1) lists the CURRENT
+# createTask song request's required input as custom_mode, instrumental and
+# model only: no callback address is required, so with KIE_CALLBACK_URL unset
+# the envelope carries no callBackUrl and the run polls the task.
+#
+# The legacy flat /api/v1/generate music-generation contract is RETIRED in
+# this skill: nothing here builds it, nothing falls back to it and
+# ``check_envelope`` refuses it by name. There is no silent switch-back.
+#: The route PATH. No host is named in this module: the KIE host belongs to
+#: the transport boundary (Skill 74), and the skill's own static checks refuse
+#: a KIE host outside kie_dispatch/ (F14). The absolute URL is therefore
+#: endpoint-on-the-KIE-host, composed where the request is actually sent.
+KIE_MUSIC_TASK_ENDPOINT = "/api/v1/jobs/createTask"
+KIE_MUSIC_TASK_URL = "POST " + KIE_MUSIC_TASK_ENDPOINT + " on the KIE host"
+#: The outer route model of the createTask envelope (never a version).
+KIE_MUSIC_TASK_MODEL = "ai-music-api/generate"
+#: RETIRED (refused with LEGACY_FLAT_CONTRACT). Kept as a NAMED constant so a
+#: reader can see exactly which path was retired rather than inferring it.
+KIE_LEGACY_GENERATE_ENDPOINT = "/api/v1/generate"
+
+#: The individual Suno generation VALUE, sent as ``input.model``.
+#:
+#: STATUS: **UNDETERMINED**. The plan's revised research names the newest
+#: documented FAMILY as V6 and the candidate VALUES as ``V6``, ``V6_MINI`` and
+#: ``V6_WILD`` ("Required. Use V6, V6_MINI or V6_WILD."). NO chronological
+#: ranking is published, so WHICH of the three is newest is UNVERIFIED. The
+#: candidates below are listed UNRANKED, no newest variant is invented, and no
+#: paid acceptance test was run to find one. This constant is the SINGLE named
+#: place this skill reads the value from: a later run that establishes the
+#: value updates it HERE and nowhere else.
+KIE_MUSIC_MODEL_VALUE = "V6"
+KIE_MUSIC_MODEL_VALUE_STATUS = "UNDETERMINED"
+KIE_MUSIC_MODEL_VALUE_CANDIDATES = ("V6", "V6_MINI", "V6_WILD")
+
+#: A FIXTURE-only callback address. Nothing defaults to it and no request ever
+#: sends it: Skill 68's music reference (references/music.md, section 1) lists
+#: the CURRENT createTask song request's required input as ``custom_mode``,
+#: ``instrumental`` and ``model`` only, so no callback address is required and
+#: the run polls the task. ``callback_from_env`` is the ONE source of a real
+#: address, and with none set the envelope carries no ``callBackUrl`` at all.
+DEFAULT_CALLBACK_URL = "https://example.invalid/cb"
+
+
+def callback_from_env():
+    """The callback address to send, or None when the run polls the task.
+
+    Skill 68's music reference (``68-kie-audio/references/music.md``,
+    section 1): the CURRENT ``POST /api/v1/jobs/createTask`` song request
+    requires ``custom_mode``, ``instrumental`` and ``model`` inside ``input`` --
+    no callback address. ``KIE_CALLBACK_URL`` is therefore the ONE source of a
+    real relay address; with it unset nothing is sent and the result is polled.
+    No placeholder is ever invented (``DEFAULT_CALLBACK_URL`` is fixtures only).
+    """
+    return (os.environ.get("KIE_CALLBACK_URL") or "").strip() or None
+
+#: The directions the createTask envelope must carry inside ``input``.
+REQUIRED_MUSIC_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics",
+                             "style", "negative_tags", "duration")
+#: EVERY key ``input`` may lawfully carry: the required directions, the lyrics
+#: alternative, the model value, the brief fields and the KIE param block.
+#: Allowed by LIST, so a key nobody named -- a display-metadata spelling the
+#: guard's shape rule never learned -- cannot legally ride out of the envelope.
+ENVELOPE_INPUT_KEYS = frozenset(REQUIRED_MUSIC_DIRECTIONS) | frozenset({
+    "model", "prompt", "vocal_gender", "style_weight", "weirdness_constraint",
+    "variety",
+})
+#: Keys that only ever existed on the retired FLAT contract: seeing one at the
+#: top level of an envelope proves a legacy payload, not a createTask one.
+LEGACY_FLAT_KEYS = ("lyrics", "custom_mode", "instrumental", "style",
+                    "negative_tags", "title", "prompt", "duration")
+#: A callback written with any of these names, or nested in ``input``, is a
+#: misplaced callback: when a callback rides at all it is exactly one TOP-LEVEL
+#: ``callBackUrl``, and its absence is lawful (the run polls the task).
+MISPLACED_CALLBACK_KEYS = ("callback_url", "callbackUrl", "callback",
+                           "call_back_url", "CallBackUrl")
+
+_SPOKEN_WORD_RE = re.compile(r"\b(spoken|speaks?|speaking|speech|talk\w*|narrat\w*)\b", re.I)
+#: C05-CUE-RATES: the one instrument name the delivery-word scan false-positives
+#: on. A "talking drum" is percussion, not a spoken-delivery direction, so it is
+#: removed before the at-most-once count. Nothing else is excused: "spoken",
+#: "speaks", "speech", "narrated" and any other "talk*" still count.
+_INSTRUMENT_TALK_RE = re.compile(r"\btalking\s+drum\b", re.I)
+
+
+class RecipeError(ValueError):
+    def __init__(self, code, message):
+        super().__init__("%s: %s" % (code, message))
+        self.code = code
+
+
+def _words(text):
+    return _SH.words(text)
+
+
+# ---------------------------------------------------------------------------
+# U15d (design 4.2-4.3, 8.8): every style text, cue and gender word is DATA.
+#   references/prompt-templates/music/<style>.json  -> style_parts, cue_overrides,
+#                                                      negative_tags, rap_allowed
+#   references/prompt-templates/models/suno-v6.json -> cue_vocabulary, tag_grammar,
+#                                                      kie_params, hook_formula
+# Nothing below is a second copy of those files.
+
+def music_block(style_id):
+    """The music/<style>.json block for one style id. Fails closed, names path."""
+    sid = str(style_id)
+    if sid not in _MUSIC_CACHE:
+        _MUSIC_CACHE[sid] = _PT.load("music", sid)
+    return _MUSIC_CACHE[sid]
+
+
+def model_block():
+    """The models/suno-v6.json block."""
+    if "suno-v6" not in _MODEL_CACHE:
+        _MODEL_CACHE["suno-v6"] = _PT.load("model", "suno-v6")
+    return _MODEL_CACHE["suno-v6"]
+
+
+def vocal_gender_word(vocal_gender=None):
+    """The {gender} slot from the brief. Never hard-coded female (U15d/U5).
+
+    "f"/"female" and "m"/"male" map to the plain word; any other non-empty
+    string is the brief's own wording (the sheet example uses "Warm female");
+    None gives no gender word at all rather than a default one.
+    """
+    if vocal_gender is None:
+        return ""
+    if not isinstance(vocal_gender, str) or not vocal_gender.strip():
+        raise RecipeError("BAD_VOCAL_GENDER",
+                          "vocal_gender must be a non-empty string, got %r"
+                          % (vocal_gender,))
+    key = vocal_gender.strip().lower()
+    return {"f": "female", "female": "female",
+            "m": "male", "male": "male"}.get(key, vocal_gender.strip())
+
+
+def base_prompt(style_id):
+    """The style's own first part (data), WITHOUT the Suno-style-text wrapper."""
+    return "%s." % str(music_block(style_id)["style_parts"][0]).rstrip(".")
+
+def is_rap_style(style_id):
+    """WW-29: True when the STYLE'S OWN DATA delivers rap (R&B Flow).
+
+    ONE copy of the rap fact: music_styles' deliveries and music/<style>.json's
+    rap_allowed -- the same two sources ``check_lyric_sheet`` already read. A
+    style named by its display label ("R&B Flow") answers exactly as its id
+    ("rnb-flow") does. Unknown, absent or exempt style -> False (fail closed).
+    """
+    if not style_id:
+        return False
+    try:
+        if "rap" in _MS.style(style_id)["deliveries"]:
+            return True
+    except _MS.MusicStyleError:
+        return False
+    return bool(music_block(style_id).get("rap_allowed"))
+
+
+#: The two fields the brief fills, which the model block documents in prose.
+KIE_BRIEF_FIELDS = ("vocal_gender", "duration")
+
+
+def kie_params():
+    """The concrete KIE generate values, read from models/suno-v6.json.
+
+    The model block carries prose for the two fields the brief fills
+    (vocal_gender, duration); only those are dropped, so a value the data
+    changes (model, weights, constraints) reaches the payload automatically.
+    """
+    block = model_block().get("kie_params") or {}
+    out = {k: v for k, v in block.items() if k not in KIE_BRIEF_FIELDS}
+    return out if isinstance(out.get("model"), str) else dict(KIE_PARAMS)
+
+
+def cue_for(delivery, tag, style_id=None):
+    """The cue string for one section, read from the data (design 4.3).
+
+    music/<style>.json cue_overrides first ("sung:hook"), then the model
+    block's cue_vocabulary; a section with no entry of its own falls back to
+    that delivery's verse cue, so a cue is never invented in code.
+    """
+    vocab = model_block()["cue_vocabulary"].get(delivery) or {}
+    key = str(tag).lower().split()[0]
+    over = (music_block(style_id).get("cue_overrides") or {}) if style_id else {}
+    # FU-RNBFLOW-SONG: a section with no cue of its own falls back to the
+    # STYLE's verse cue first, so an upbeat style never inherits "slow".
+    return (over.get("%s:%s" % (delivery, key)) or vocab.get(key)
+            or over.get("%s:verse" % delivery) or vocab.get("verse") or "")
+
+
+def method_pace_clauses(pace_plan):
+    """The method's OWN two seam clauses for one method order: ``(drop, return)``.
+
+    The drop is the ERM Drop verbatim; the Hero Shift takes the direction the
+    Blueprint's HERO_SHIFT cue carries (``hero_direction``, else the cue's own
+    ``emotional_direction``) after the colon, and stands without one when the
+    order names no direction. Explicit ``drop`` / ``return`` on the order always
+    win, so one order drives ``pace_clause`` and the final-style check alike.
+    """
+    o = pace_plan if isinstance(pace_plan, dict) else {}
+    direction = str(o.get("hero_direction") or o.get("emotional_direction") or "").strip()
+    direction = direction.rstrip(".")
+    hero = METHOD_HERO_SHIFT_CLAUSE + (": %s" % direction if direction else "")
+    drop = str(o.get("drop") or METHOD_ERM_DROP_CLAUSE).strip()
+    if "no singing" not in drop.lower():
+        drop = METHOD_NO_SINGING_LEAD + drop
+    return (drop, o.get("return") or hero)
+
+def pace_clause(pace_plan):
+    """WW-07: the approved lowest-point direction (drums and bass cut out,
+    then slam back in) and the return, written from the approved pace plan into
+    the FINAL provider style. No pace plan = no clause (never invented, never a
+    provider tempo field).
+
+    W1-method-song-U2: a method order (``pace_plan["method"]`` true) writes the
+    method's OWN two seams instead -- the ERM Drop and the Hero Shift -- and
+    nothing about the generic "lowest point" wording reaches a method run.
+    Every other request is byte-identical to today."""
+    if not pace_plan:
+        return ""
+    if pace_plan.get("method"):
+        drop, ret = method_pace_clauses(pace_plan)
+    else:
+        drop = pace_plan.get("drop") or PACE_DROP_CLAUSE
+        ret = pace_plan.get("return") or PACE_RETURN_CLAUSE
+    return "%s, %s." % (str(drop).strip().rstrip("."), str(ret).strip().rstrip("."))
+
+
+def check_opening_vocalise_cue(cue):
+    """WW-16: a DECLARED opening vocalise cue must be able to satisfy the
+    ceiling. A cue that asks for long/held notes, or names a span over
+    OPENING_VOCALISE_MAX_S seconds, is refused before spend. None/"" = no
+    declared cue (the render supplies the bounded one)."""
+    if cue is None:
+        return None
+    text = str(cue).strip()
+    if not text:
+        return None
+    m = _VOCALISE_SECONDS_RE.search(text)
+    if m and float(m.group(1)) > OPENING_VOCALISE_MAX_S:
+        return ("the opening vocalise cue asks for %s s, over the %.1f s ceiling"
+                % (m.group(1), OPENING_VOCALISE_MAX_S))
+    if _VOCALISE_LONG_RE.search(text):
+        return ("the opening vocalise cue asks for long/held notes, which cannot "
+                "satisfy the %.1f s ceiling" % (OPENING_VOCALISE_MAX_S,))
+    return None
+
+
+def syllables(line):
+    """Rough syllable count; hyphen-held vowels (sma-a-all) count once."""
+    n = 0
+    for w in re.findall(r"[A-Za-z'-]+", str(line)):
+        w = re.sub(r"(.)\1+", r"\1", w.replace("-", "").lower())
+        if len(w) > 2 and w.endswith("e") and w[-2] not in "aeiouy":
+            w = w[:-1]
+        n += max(len(re.findall(r"[aeiouy]+", w)), 1)
+    return n
+
+
+# ---- S75-W05-U3: policy resolution and evaluation --------------------------
+
+def set_constraint_policy(policy):
+    """Inject the policy this recipe enforces (tests, W05-U2 wiring).
+
+    None clears the injection and the recipe resolves through POLICY_SOURCES
+    again. The recipe judges ONE policy either way -- there is no local rule
+    set left to drift against the writer.
+    """
+    global _POLICY_OVERRIDE
+    _POLICY_OVERRIDE = policy
+    return policy
+
+
+def _merge_policy(base, over):
+    """``over`` merged over ``base`` (nested dicts merged, one shape)."""
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for k, v in (over or {}).items():
+        out[k] = {**out.get(k, {}), **v} if isinstance(v, dict) and isinstance(out.get(k), dict) \
+            else v
+    return out
+
+
+def _policy_reason_ok(policy):
+    """True unless the policy contradicts the canonical default with NO reason.
+
+    D09 / spec 6.3: a 9-syllable line accepted upstream cannot be contradicted
+    downstream without a clear mode-specific reason. A hard bound tighter than
+    the canonical preferred band, or any spoken-section restriction, must
+    carry ``mode_specific_reason``; an unreasoned contradiction is ignored and
+    surfaces as a warning.
+    """
+    hard = (policy.get("sung_line") or {}).get("hard_max_syllables")
+    spoken = (policy.get("spoken_sections") or {}).get("allowed_in")
+    tight = (hard is not None and hard < DEFAULT_CONSTRAINT_POLICY["sung_line"]["preferred_max_syllables"]) \
+        or bool(spoken)
+    if not tight:
+        return True
+    return bool(str(policy.get("mode_specific_reason") or "").strip())
+
+
+def constraint_policy(mode=None, duration_s=None):
+    """THE constraint policy this recipe enforces (spec 6.3).
+
+    Resolves the S75-W05-U2 policy through POLICY_SOURCES (mapping or
+    callable), else DEFAULT_CONSTRAINT_POLICY. The result is normalized to one
+    shape and an unreasoned downstream contradiction is ignored (with a
+    recorded note), so the writer's accepted lines can never be refused here
+    without a clear mode-specific reason.
+    """
+    if _POLICY_OVERRIDE is not None:
+        pol = _merge_policy(DEFAULT_CONSTRAINT_POLICY, _POLICY_OVERRIDE)
+        pol.setdefault("policy_version", CONSTRAINT_POLICY_VERSION)
+        pol.setdefault("source", "explicitly injected policy")
+    else:
+        pol = dict(DEFAULT_CONSTRAINT_POLICY)
+        for mod_name, attr in POLICY_SOURCES:
+            try:
+                mod = __import__(mod_name, fromlist=[attr])
+                obj = getattr(mod, attr)
+            except (ImportError, AttributeError):
+                continue
+            if callable(obj):
+                try:
+                    obj = obj(mode=mode, duration_s=duration_s)
+                except TypeError:
+                    try:
+                        obj = obj(mode)
+                    except TypeError:
+                        obj = obj()
+            if isinstance(obj, dict):
+                pol = _merge_policy(DEFAULT_CONSTRAINT_POLICY, obj)
+                pol.setdefault("source", "%s:%s" % (mod_name, attr))
+                break
+    if not _policy_reason_ok(pol):
+        pol = _merge_policy(DEFAULT_CONSTRAINT_POLICY,
+                            {"mode_specific_reason": pol.get("mode_specific_reason")})
+        pol["source"] = (str(pol.get("source") or "") +
+                         " [POLICY_UNREASONED_CONTRADICTION ignored: a tight "
+                         "downstream rule needs a clear mode_specific_reason]")
+    return pol
+
+
+def evaluate_sheet_constraints(sheet, policy=None):
+    """Policy findings for one sheet: {"errors", "warnings", "policy"}.
+
+    The preferred sung-line band (4-12) warns outside it; only a hard bound
+    with a clear mode-specific reason refuses. Spoken scenes outside
+    [Intro]/[Outro] are PRESERVED in this dramatization mode (D09). Warnings
+    never join the errors list -- the seam a generic any(findings) check would
+    need does not exist.
+    """
+    pol = policy or constraint_policy()
+    errors, warnings = [], []
+    sung = pol.get("sung_line") or {}
+    pref_min = sung.get("preferred_min_syllables")
+    pref_max = sung.get("preferred_max_syllables")
+    hard_max = sung.get("hard_max_syllables") if _policy_reason_ok(pol) else None
+    allowed_in = (pol.get("spoken_sections") or {}).get("allowed_in") \
+        if _policy_reason_ok(pol) else None
+    for s in sheet or []:
+        tag = str(s.get("tag", ""))
+        head = tag.lower().split()[0] if tag else ""
+        delivery = s.get("delivery")
+        if delivery == "spoken" and allowed_in:
+            if head not in tuple(a.lower() for a in allowed_in):
+                errors.append("spoken section %r: the policy with reason %r "
+                              "allows spoken only in %s"
+                              % (tag, pol.get("mode_specific_reason"),
+                                 ", ".join(str(a) for a in allowed_in)))
+        if delivery == "sung" and head != "vocalise":
+            for ln in s.get("lines") or []:
+                n = syllables(ln)
+                if hard_max is not None and n > hard_max:
+                    errors.append("sung line over the policy hard bound of %d "
+                                  "syllables (mode-specific reason: %s): %r"
+                                  % (hard_max, pol.get("mode_specific_reason"), ln))
+                elif (pref_min is not None and n < pref_min) or \
+                        (pref_max is not None and n > pref_max):
+                    warnings.append("sung line at %d syllables is outside the "
+                                    "preferred %s-%s band (accepted with "
+                                    "warning): %r"
+                                    % (n, pref_min, pref_max, ln))
+    return {"errors": errors, "warnings": warnings, "policy": pol}
+
+
+def is_exempt(style_id):
+    return style_id in EXEMPT_STYLE_IDS
+
+
+def suno_style_ids():
+    """Every style that must use the recipe (the music_styles menu)."""
+    return tuple(_MS.style_ids())
+
+
+def recipe_style_ids():
+    """Every id the recipe ACCEPTS: the D18 menu plus registered extra styles.
+
+    S75-T22 repair r3: ``music_styles.register_styles`` adopts an offered style
+    outside the three D18 records, and every id-based route (style_prompt,
+    spoken_target, section_hint, style) already resolves a registered id. The
+    recipe gates below must accept the same ids or a style can dispatch on the
+    catalogue seam and still be refused with UNKNOWN_STYLE. A registered style
+    is not thereby buildable: ``style_text`` still needs its own
+    ``references/prompt-templates/music/<id>.json`` (that data gap is a
+    separate, class-wide one).
+    """
+    return tuple(_MS.style_ids()) + tuple(_MS.extra_style_ids())
+
+
+def is_no_voice_tag(tag):
+    """True for a section that has NO voice: a tag only, never a lyric line.
+
+    Whole words only: "Breakthrough", "Heartbreak" and "Breakdown" are sung
+    section names, never a [Break]; a substring test made render_lyrics drop
+    every line of a sung [Breakthrough] section.
+    """
+    # A word is a run of Unicode letters, digits, combining marks and the
+    # underscore (so "Breaké", "breakα" and "Break_more" are each one word,
+    # never "break" plus a separator); \w with re.UNICODE matches exactly
+    # that set. Anything else splits words.
+    words = re.findall(r"\w+", str(tag).lower(), re.UNICODE)
+    return any(word in NO_VOICE_TAGS for word in words)
+
+
+def _no_voice_section(sec):
+    """True for a section that carries no voice: a tag only, never a lyric.
+
+    Only the tag's NAME half (before any cue colon) or declared delivery
+    decides. A declared [Name (sung|spoken|rap): cue] always carries voice,
+    and a cue word after the colon ("Intro spoken: instrumental bed") never
+    makes a voiced section music-only -- the same name-half rule the lyric
+    checker (check_no_voice_lines) and the delivery parser (parse_tag) use.
+    """
+    tag = str(sec.get("tag", ""))
+    named = _NAMED_TAG_RE.match(tag.strip())
+    if named is not None:
+        d = named.group(2).lower()
+        if d in DELIVERIES:
+            return False
+        return is_no_voice_tag(named.group(1))
+    name = tag.split(":", 1)[0]
+    return is_no_voice_tag(name)
+
+
+def _tag(sec, style_id=None):
+    d = sec["delivery"]
+    if d is None or _no_voice_section(sec):
+        # no voice: a TAG ONLY, with its cue inside the tag, never a line
+        return ("[%s: %s]" % (sec["tag"], sec["cue"])) if sec.get("cue") \
+            else "[%s]" % sec["tag"]
+    # A section may carry its own cue / vocalist label (a rap verse sung by
+    # "Vocal B, male voice"); otherwise the cue is read from the data, which is
+    # where the opening vocalise's cue belongs (WW-29 removed the data's old
+    # "two very long held notes" cue; the bounded cue is the data's now).
+    if sec.get("cue"):
+        note = sec["cue"]
+    else:
+        note = cue_for(d, sec["tag"], style_id)
+    voice = sec.get("voice")
+    if voice and note:
+        note = "%s, %s" % (voice, note)
+    return ("[%s (%s): %s]" % (sec["tag"], d, note)) if note else \
+        "[%s (%s)]" % (sec["tag"], d)
+
+
+def render_lyrics(sheet, style_id=None):
+    """Lyric sheet text: spoken tags only Intro/Outro, ends with [End].
+
+    A no-voice section renders as a TAG with no lyric line: a line under an
+    instrumental tag would be SUNG by Suno (design 4.3). Only the tag's name
+    half decides: a declared delivery or a cue word after the colon never
+    makes a voiced section music-only, so a spoken "[Intro spoken:
+    instrumental bed]" keeps its lyric lines.
+    """
+    out = []
+    for s in sheet:
+        if str(s["tag"]).strip().lower() == "end":
+            continue                          # the terminator is appended once
+        tag = _tag(s, style_id)
+        if s.get("delivery") is None or _no_voice_section(s):
+            out.append(tag)
+        else:
+            out.append(tag + "\n" + "\n".join(s["lines"]))
+    return "\n\n".join(out) + "\n\n[End]"
+
+
+# ---- FU-U1: THE one tag grammar ------------------------------------------
+# Plan 18-OPUS-SKILL75-FUTURE-PLAN 2.A (A1/A2): one parser owns the tag
+# grammar so every gate measures the same sheet. Delivery words, matched at
+# a word boundary on a punctuation-normalized tag, so "trap beat" is never
+# read as rap and "spoken-word" still counts. The earliest delivery word in
+# the tag wins; ties go rap -> spoken -> sung. Both bracket dialects parse
+# here: [Name (sung|spoken|rap): note] and [Sung|Spoken|Rap - ...].
+_DELIVERY_WORDS = (
+    ("rap", ("rap", "raps", "rapped", "rapping")),
+    ("spoken", ("spoken", "speak", "speaks", "speaking", "talk", "talks",
+                "narrate", "narrated")),
+    ("sung", ("sung", "sing", "sings", "singing")),
+)
+DELIVERIES = ("sung", "spoken", "rap")
+INSTRUMENTAL = "instrumental"
+_BRACKET_RE = re.compile(r"^\[([^\]]*)\]\s*$")
+#: The recipe's own dialect: [Name (sung|spoken|rap): note]. The tag kept is
+#: Name, so render_lyrics -> parse_lyrics round-trips.
+_NAMED_TAG_RE = re.compile(r"^(.*?)\s*\((sung|spoken|rap)\)(?::\s*([^\]]*))?$", re.I)
+
+
+def parse_tag(tag):
+    """The delivery a tag names: "sung" / "spoken" / "rap" / "instrumental",
+    or None for a tag that names no delivery ([Verse], [End]).
+
+    THE one parser (FU-U1): suno_recipe.parse_lyrics, words_fit.parse_sheet_words,
+    music_styles.sheet_deliveries and lyric_writer.lyric_structure.delivery_of_tag
+    all read tags through here, so no gate measures a different sheet.
+
+    A declared [Name (sung|spoken|rap): cue] names its own delivery, and only
+    Name is ever scanned for more delivery words: cue words ("over a light
+    instrumental bed") never decide the delivery (cue words never refuse a
+    section as music-only, and never grant it a delivery either). The same
+    holds outside the parentheses: "[Intro spoken: ...]" names spoken in its
+    name half, while "[Verse: rap beat]" has no delivery word in its name
+    half -- a cue word after the colon never grants one.
+    """
+    raw = str(tag or "").strip()
+    if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
+        raw = raw[1:-1]
+    named = _NAMED_TAG_RE.match(raw.strip())
+    if named is not None:
+        return named.group(2).lower()
+    name = raw.split(":", 1)[0]
+    norm = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    if not norm:
+        return None
+    if norm == "inst" or re.search(r"\binstrumental\b", norm):
+        return INSTRUMENTAL
+    best = None
+    for rank, (delivery, words) in enumerate(_DELIVERY_WORDS):
+        for word in words:
+            m = re.search(r"\b%s\b" % word, norm)
+            if m is not None and (best is None or (m.start(), rank) < best[:2]):
+                best = (m.start(), rank, delivery)
+    return best[2] if best else None
+
+
+#: FU-U1: the name every other module reads this grammar by. words_fit,
+#: music_styles and lyric_writer resolve a tag's delivery through here, so no
+#: gate measures a different sheet.
+delivery_of_tag = parse_tag
+
+
+def parse_lyrics(text):
+    """Inverse of render_lyrics. Untagged text yields an empty sheet.
+
+    FU-U1: a lyric line under a bracket the grammar cannot classify raises
+    RecipeError(UNTAGGED_LYRIC_LINES) naming the lines -- never cur = None,
+    which silently threw away every [Rap Verse ... (rap)] line. An
+    [Instrumental] block carries no lyrics by definition. Both bracket
+    dialects parse: [Name (sung|spoken|rap): note] keeps Name as the tag,
+    [Sung|Spoken|Rap - ...] keeps the bracket text.
+    """
+    sheet, cur, lost = [], None, []
+    for ln in str(text).splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith("["):
+            m = _BRACKET_RE.match(s)
+            if m is not None:
+                inner = m.group(1).strip()
+                named = _NAMED_TAG_RE.match(inner)
+                if named is not None:
+                    cur = {"tag": named.group(1).strip(),
+                           "delivery": named.group(2).lower(), "lines": []}
+                    # WW-16: KEEP the bracket's declared cue, so
+                    # check_lyric_sheet's opening-vocalise ceiling guard can fire
+                    # on the production path (song_dispatch.validate_request ->
+                    # parse_lyrics), not only on a hand-built dictionary.
+                    if named.group(3):
+                        cur["cue"] = named.group(3).strip()
+                    sheet.append(cur)
+                    continue
+                d = parse_tag(inner)
+                if d in DELIVERIES:
+                    cur = {"tag": inner, "delivery": d, "lines": []}
+                    sheet.append(cur)
+                else:
+                    # instrumental: wordless; anything else: refuse if lyrics follow
+                    cur = None if d == INSTRUMENTAL else "lost"
+                continue
+        if isinstance(cur, dict):
+            cur["lines"].append(s)
+        elif cur == "lost":
+            lost.append(s)
+        # cur is None: text before any tag -- untagged sheet, still empty
+    if lost:
+        raise RecipeError("UNTAGGED_LYRIC_LINES",
+                          "lyric text sits under a tag with no delivery (name it "
+                          "sung|spoken|rap): %s" % "; ".join(repr(x) for x in lost[:8]))
+    return sheet
+
+
+def check_no_voice_lines(text):
+    """[] when no lyric line sits under a no-voice tag (design 4.3/8.8).
+
+    Suno sings whatever line it finds; "6 s, band only" under
+    [Instrumental Break] would be sung. The checker reads the RAW text,
+    because a parser could drop the line silently.
+
+    Only the tag's NAME decides: "[Verse: instrumental bed]" is a sung
+    section with a cue, never music-only, so a lyric under it is legal.
+    """
+    errs, no_voice = [], False
+    for ln in str(text).splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith("[") and s.endswith("]"):
+            # A rendered tag carries "(spoken): cue" inside the bracket, so
+            # strip any parenthesized delivery tail first, then judge the
+            # same name half the parser uses: only the name decides, a cue
+            # word after the colon never makes a voiced section no-voice.
+            inner = re.sub(r"\s*\((sung|spoken|rap)\)\s*",
+                           " ", s[1:-1].strip(), flags=re.I)
+            inner = inner.split(":", 1)[0]
+            no_voice = is_no_voice_tag(inner)
+            continue
+        if s.startswith("["):
+            no_voice = False
+            continue
+        if no_voice:
+            errs.append("lyric line under a no-voice tag (it would be sung): %r" % s)
+            no_voice = False
+    return errs
+
+
+def sheet_words(sheet, delivery=None):
+    return sum(len(str(l).split()) for s in sheet
+               if delivery in (None, s["delivery"]) for l in s["lines"])
+
+
+# ---- FU-U5: voice tags come from the cast ---------------------------------
+# Plan 18-OPUS-SKILL75-FUTURE-PLAN unit U5 / root cause A7: the One-Check
+# lyric sheet was hand-tagged "[... Desk Neighbor (rap): Female voice ...]"
+# while the cast record said the desk neighbour was a man, and no code ever
+# compared the two. This is the SHEET TAG versus CAST RECORD check. It is
+# NOT the style-prompt gender slot (U15d owns that: the {gender} in
+# music/*.json and suno-v6.json vocal_gender come from the brief, never
+# hard-coded), and it does not touch vocal_gender.
+GENDER_WORDS = {"female": "female", "woman": "female", "f": "female",
+                "male": "male", "man": "male", "m": "male"}
+#: Same two words voice_casting accepts; a cast that says anything else is
+#: not a gender this check can prove, so it fails closed.
+CAST_GENDERS = frozenset(("male", "female"))
+_GENDER_WORD_RE = re.compile(r"\b(female|woman|male|man)\b", re.I)
+_ANY_BRACKET_RE = re.compile(r"\[([^\]\n]*)\]")
+#: Section words that are never a character name (the recipe's own tags).
+_SECTION_WORDS = frozenset((
+    "rap", "verse", "hook", "intro", "outro", "bridge", "vocalise", "chorus",
+    "end", "instrumental", "break", "pre", "post", "section", "part"))
+
+
+def parse_voice_tags(sheet_text):
+    """Every bracket in a lyric sheet with the gender word it names.
+
+    Returns [{"tag", "gender", "name"}] per bracket. gender is
+    "female"/"male" or None when the bracket names no gender word; name is
+    the cast character the bracket names, or None when it names nobody
+    ([Hook], [Intro], [End]). One parser, so the check and any caller read
+    the same brackets (FU-U1's rule applied to this check).
+    """
+    out = []
+    for m in _ANY_BRACKET_RE.finditer(str(sheet_text or "")):
+        inner = m.group(1).strip()
+        norm = re.sub(r"[^a-z0-9]+", " ", inner.lower()).strip()
+        g = _GENDER_WORD_RE.search(norm)
+        out.append({"tag": inner,
+                    "gender": GENDER_WORDS[g.group(1).lower()] if g else None,
+                    "name": _tag_character(inner)})
+    return out
+
+
+def _tag_character(inner):
+    """The cast character a bracket names, or None when it names none.
+
+    "[Rap Verse 3 Desk Neighbor (rap): ...]" names "Desk Neighbor";
+    "[Hook (sung): ...]", "[Intro (spoken): ...]", "[End]" and
+    "[Instrumental Break]" name nobody and are never judged. The bracket's
+    own name (the text before the delivery in parentheses, or before the
+    first comma or dash) has its leading section words and numbers stripped.
+    """
+    head = re.split(r"[(,]", str(inner or ""))[0]
+    head = re.split(r"\s+-\s+|\s+-\s*|\s+—\s*", head)[0]
+    norm = re.sub(r"[^a-z0-9]+", " ", head.lower()).strip()
+    words = norm.split()
+    while words and (words[0] in _SECTION_WORDS or words[0].isdigit()):
+        words.pop(0)
+    name = " ".join(words).strip()
+    return name if len(name) >= 2 else None
+
+
+def check_voice_tags(sheet_text, cast_genders=None):
+    """FU-U5: every cast character's sheet tag gender equals the cast record.
+
+    ``cast_genders`` maps a cast character name to "male"/"female" (the
+    brief's ``characters[].gender``; ``protected_names.cast_genders`` builds
+    it from a brief). Returns a list of error strings, [] = pass.
+
+    - A bracket naming a cast character whose tag gender differs from the
+      cast -> VOICE_TAG_MISMATCH naming both sides.
+    - A bracket naming a cast character with NO gender word -> fail closed,
+      VOICE_TAG_UNCHECKED (an unverifiable tag is never a pass).
+    - A cast entry whose gender is neither "male" nor "female" -> fail
+      closed, VOICE_TAG_UNCHECKED: the check cannot prove the tag.
+    - A bracket naming no cast character ([Hook], [Intro], [End], a bare
+      [Rap Verse 3], a name the cast does not list) is never judged.
+    - No cast record at all (None or empty) -> []: the check is off, exactly
+      as today, so this unit changes nothing for a caller who passes no cast.
+
+    This never judges the style prompt and never touches vocal_gender: All
+    Suno is the default voice and this unit adds no voice option.
+    """
+    if not cast_genders:
+        return []
+    cast = {}
+    for name, gender in cast_genders.items():
+        g = str(gender or "").strip().lower()
+        cast[_norm_char(name)] = (name, g if g in CAST_GENDERS else None)
+    errs = []
+    for t in parse_voice_tags(sheet_text):
+        if not t["name"]:
+            continue
+        hit = cast.get(t["name"])
+        if hit is None:
+            continue                      # names nobody in this cast
+        name, want = hit
+        if want is None:
+            errs.append("VOICE_TAG_UNCHECKED: [%s] names %s, whose cast record "
+                        "has no gender (male|female)" % (t["tag"], name))
+        elif t["gender"] is None:
+            errs.append("VOICE_TAG_UNCHECKED: [%s] names %s with no gender "
+                        "word; the cast says %s" % (t["tag"], name, want))
+        elif t["gender"] != want:
+            errs.append("VOICE_TAG_MISMATCH: [%s] tags %s %s voice, the cast "
+                        "says %s" % (t["tag"], name, t["gender"], want))
+    return errs
+
+
+def _norm_char(name):
+    """A character name normalized for matching: case, spacing, separators."""
+    return re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
+
+
+def check_pre_erm_opening(sheet, length_s, style_id=None, warnings_out=None):
+    """S75: a METHOD sheet's spoken lead-in must fill the gap before the ERM.
+
+    A method run's first sung word belongs at the ERM apex (METHOD C3), so the
+    seconds before it have to be SPOKEN, not left silent for Suno to fill with
+    an early vocal -- the measured failure was a sung line about 5 s in. This
+    walks the sheet from the top and sums the words of the sections before the
+    first sung or rap section, at the style's own spoken rate, and refuses a
+    lead-in that cannot reach ``erm_apex_s - METHOD_FIRST_SUNG_TOL_S`` or that
+    overruns the ERM window's close. A sheet that OPENS with a no-voice tag
+    ([Instrumental]) earns a warning instead of a refusal: the render may still
+    hold the silence, but the sheet does not guarantee it. A style with no
+    spoken rate and no style id falls back to the ballad default (fail closed
+    on "too slow", never "promised to fit").
+    """
+    if not sheet or length_s is None:
+        return []
+    m = _LF.plan(length_s + _LF.END_EARLY_S, method=True)["method"]
+    apex = m["erm_apex_s"]
+    tol = getattr(getattr(_SS, "spoken_share", _SS), "METHOD_FIRST_SUNG_TOL_S")
+    lo = apex - tol
+    hi = m["erm_window_s"][1]
+    import words_fit as _WF          # lazy: the measured rates, as line 1818
+    rate = _WF.rates_for(style_id)["spoken"]
+    words, lead_in, has_voice = 0, False, False
+    for s in sheet:
+        d = s.get("delivery")
+        if d in ("sung", "rap"):
+            has_voice = True
+            break
+        if d is None or is_no_voice_tag(s.get("tag", "")):
+            lead_in = True
+            continue
+        if d == "spoken":
+            words += sheet_words([s])
+    if not has_voice:
+        return []
+    planned = words / float(rate)
+    if planned < lo - 1e-9:
+        if lead_in:
+            note = ("PRE_ERM_LEAD_IN_UNPLANNED: the sheet opens with a no-voice "
+                    "lead-in, so the %.1f s of spoken lead-in is not a guarantee "
+                    "that the first sung line lands at or after %.2f s (ERM apex "
+                    "%.2f s)" % (planned, lo, apex))
+            if isinstance(warnings_out, list):
+                warnings_out.append(note)
+            return []
+        need = int(math.ceil(lo * rate - 1e-9))
+        return ["PRE_ERM_SPOKEN_SHORT: the spoken lead-in is %.1f s (%.0f words), "
+                "but the first sung line may not start before %.2f s (ERM apex "
+                "%.2f s - %.1f s); add at least %d spoken words of backstory "
+                "under a spoken [Backstory] tag, or pick a longer card"
+                % (planned, words, lo, apex, tol, need)]
+    if planned > hi + 1e-9:
+        most = int(math.floor(hi * rate + 1e-9))
+        return ["PRE_ERM_SPOKEN_LONG: the spoken lead-in is %.1f s, past the ERM "
+                "window's %.2f s; keep it to %d spoken words or fewer"
+                % (planned, hi, most)]
+    return []
+
+def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
+                      style_id=None, hook_plan=None, policy=None,
+                      warnings_out=None, method=False):
+    """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
+
+    S75-W05-U3: the sheet is judged against THE one constraint policy
+    (``policy``, else ``constraint_policy()``), never this module's own
+    contradictory rules. ``warnings_out`` (optional list) receives the
+    policy's accept-with-warning findings; they never appear in the returned
+    errors and can never be converted into failure downstream.
+
+    With length_s (delivered seconds) the I8 hook count and the length-formula
+    word budget are enforced too. FU-U1: rap sections are counted in the total
+    budget and allowed only where the style is a rap style (RAP_STYLE_IDS, or
+    music/<style>.json rap_allowed) -- a rap section with no style named fails
+    closed. U15d: a no-voice section (Instrumental, Break) must carry no lines.
+    """
+    errs = []
+    if not sheet:
+        return ["no tagged sections: every section must be (sung), (spoken) or (rap)"]
+    for s in sheet:
+        d, tag = s.get("delivery"), str(s.get("tag", ""))
+        if d is None or _no_voice_section(s):
+            if s.get("lines"):
+                errs.append("section %r has no voice but carries lyric lines "
+                            "(Suno would sing them)" % tag)
+            continue
+        if d not in DELIVERIES or not s.get("lines"):
+            errs.append("section %r needs delivery sung|spoken|rap and lines" % s.get("tag"))
+    if errs:
+        return errs
+    rap = [s for s in sheet if s.get("delivery") == "rap"]
+    rap_ok = is_rap_style(style_id)
+    if rap and not rap_ok:
+        errs.append("rap sections need a rap style (got style_id=%r): %s"
+                    % (style_id, ", ".join(repr(s["tag"]) for s in rap[:4])))
+    # S75-W05-U3: the policy decides both former local rules. The
+    # Intro/Outro-only spoken restriction is gone for this dramatization
+    # (D09), and the 8-syllable cap is gone for the writer's 4-12 band;
+    # a preferred-band miss warns, never refuses.
+    findings = evaluate_sheet_constraints(sheet, policy)
+    errs += findings["errors"]
+    if warnings_out is not None:
+        warnings_out.extend(findings["warnings"])
+    sung = [s for s in sheet if s["delivery"] == "sung"]
+    if not sung:
+        return errs + ["no sung section"]
+    # WW-29: the wordless vocalise is OPTIONAL. It is never a forced lead-in and
+    # a sheet is no longer refused for carrying none; the WW-16 ceiling below
+    # still bounds the cue of any sheet that DOES carry one.
+    # WW-16: a DECLARED opening vocalise cue must be a SHORT lead-in. A sheet
+    # that DECLARES a long/held or over-ceiling cue cannot satisfy the opening
+    # ceiling and is refused before spend.
+    voc = next((s for s in sung if s["tag"].lower().startswith("vocalise")), None)
+    if voc is not None and voc.get("cue"):
+        why = check_opening_vocalise_cue(voc["cue"])
+        if why:
+            errs.append(why)
+    # WW-29: the first hook never OPENS the song -- but never because a vocalise
+    # comes first (that was the retired rule). The current payoff doctrine holds:
+    # the hook is the payoff and needs the build-up the style's own structure
+    # calls for (hook_placement.check_buildup measures the same rule on the same
+    # sheet), so the refusal names that doctrine.
+    if sheet[0]["tag"].lower().startswith("hook"):
+        errs.append("the first hook may not open the song: the hook is the payoff, "
+                    "it comes after the build-up (a verse, plus a pre-chorus where "
+                    "the style has one)")
+    keys = [tuple(_words(" ".join(s["lines"]))) for s in sung
+            if not s["tag"].lower().startswith("vocalise")]
+    hooks = [k for k in set(keys) if keys.count(k) >= MIN_HOOK_REPEATS]
+    if not hooks:
+        return errs + ["no repeated sung hook (same sung lines at least %d times)" % MIN_HOOK_REPEATS]
+    client = set(_words(client_text or ""))
+    # No gate switches itself off: no client text = the own-words rule is
+    # UNMEASURED (a refusal); the hook count and structure run regardless.
+    if not client:
+        errs.append("UNMEASURED: client_text (the hook must be the client's own words)")
+    elif not any(h and set(h) <= client for h in hooks):
+        errs.append("repeated hook is not built from the client's own words")
+    if length_s is not None:
+        best = max(hooks, key=keys.count)
+        errs += _SH.check_sheet_count(sheet, best, length_s,
+                                      _HP.hook_target(length_s, hook_plan))
+    if length_s is not None:
+        p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
+        # v2.9.70: ``p`` prices a named NON-RAP style at its own measured rates
+        # (length_formula._fit_style_words), so for Soul Ballad/Soul Rise its
+        # total is words_fit's ceiling. This row is NOT that gate: it is the
+        # DRAFTING tolerance (10% + 2) it has always been, so it takes the
+        # larger of the styled plan and the unstyled one -- byte-for-byte the
+        # allowance origin/main applied, for a rap style (styled carries the rap
+        # words) and for a non-rap style (unstyled is the uncapped total).
+        # Reading the capped total here refused a real approved 48 s sheet (58
+        # words against 52.6) and broke three shipped self-checks; reading the
+        # UNSTYLED total alone refused a rap sheet (123 words against 95, which
+        # ignores its 128-word rap plan). ``words_fit.preflight`` remains the
+        # ONE gate that decides whether a sheet FITS.
+        budget = max(p["words"]["total"],
+                     _LF.plan(length_s + _LF.END_EARLY_S,
+                              spoken_share_pct)["words"]["total"])
+        total = sheet_words(sheet)
+        # R&B word budget: U2 landed on 999 main only (MGB010a); on the
+        # onboarding tree the rap budget is still open (file 18 decision 1),
+        # so the ballad budget is not applied to a rap sheet there.
+        rap_pending = sheet_words(sheet, "rap") > 0 and not rap_ok
+        if not rap_pending and total > budget * 1.1 + 2:
+            errs.append("%d words, the %d s budget is %d" % (total, length_s, budget))
+        intro = [s for s in sheet if s["delivery"] == "spoken" and s["tag"].lower().startswith("intro")]
+        if intro and sheet_words(intro) > p["words"]["opener_max"]:
+            errs.append("spoken intro is %d words, max %d at this length"
+                        % (sheet_words(intro), p["words"]["opener_max"]))
+        if method:
+            errs += check_pre_erm_opening(sheet, length_s, style_id, warnings_out)
+    return errs
+
+
+def sheet_seconds(sheet, rate=None):
+    """Estimated delivered seconds of a sheet at the length-formula rates.
+
+    The rate for rap comes from music/<style>.json rap_rate_wps (data); the
+    sung and spoken rates stay length_formula's own measured constants. A
+    no-voice section contributes its own ``seconds`` when it carries one.
+    """
+    rate = rate or {"sung": _LF.SUNG_WPS, "spoken": _LF.SPOKEN_WPS}
+    total = 0.0
+    for s in sheet:
+        if s.get("delivery") is None or _no_voice_section(s):
+            total += float(s.get("seconds") or 0.0)
+            continue
+        wps = rate.get(s["delivery"])
+        if wps is None and s.get("style_id") is not None:
+            wps = music_block(s["style_id"]).get("rap_rate_wps")
+        total += sheet_words([s]) / float(wps or _LF.SUNG_WPS)
+    return round(total, 3)
+
+
+def is_product_section(tag):
+    """True for the product passage and its reprises ([Product (reprise 2)])."""
+    return str(tag).strip().lower().startswith("product")
+
+
+def product_share_pct(sheet, delivered_s):
+    """The product passage's share of the delivered seconds (U13: 10-15%).
+
+    Counts every [Product ...] section, reprises included, at the measured
+    delivery rates. This is the number the gate judges; the fixtures' own
+    measured block carries the same rule (design 4.6).
+    """
+    if not isinstance(delivered_s, (int, float)) or delivered_s <= 0:
+        raise RecipeError("BAD_DELIVERED_S",
+                          "delivered_s must be positive seconds, got %r" % (delivered_s,))
+    prod = [s for s in sheet if is_product_section(s.get("tag", ""))]
+    return round(100.0 * sheet_seconds(prod) / float(delivered_s), 2)
+
+
+def check_product_share(sheet, delivered_s,
+                        floor_pct=PRODUCT_SHARE_FLOOR_PCT,
+                        cap_pct=PRODUCT_SHARE_CAP_PCT):
+    """[] when the product passage covers 10-15% of the delivered seconds.
+
+    The rule is judged on the passage the sheet HAS: a sheet carrying no
+    [Product ...] section is the planner's business (U13/U15h own the product
+    seconds), not this gate's, so it makes no claim here rather than measuring
+    a share of zero.
+    """
+    if not any(is_product_section(s.get("tag", "")) for s in sheet):
+        return []
+    pct = product_share_pct(sheet, delivered_s)
+    if not floor_pct <= pct <= cap_pct:
+        return ["product passage is %.1f%% of the %g s delivered length, "
+                "outside %g-%g%%" % (pct, delivered_s, floor_pct, cap_pct)]
+    return []
+
+
+def hook_target(style_id, length_s):
+    """I8 hook repeats for a style and delivered length (0 = exempt voiceover)."""
+    return 0 if is_exempt(style_id) else _SH.hook_count(length_s)
+
+
+def negative_tags(style_id=None):
+    """The negative-tag string for a style, read from music/<style>.json (data).
+
+    The rap style's data carries no rap negatives; every other style keeps
+    them. No second copy lives here.
+    """
+    if style_id is not None and not is_exempt(style_id):
+        block = music_block(_style_key(style_id))
+        if block.get("negative_tags") is not None:
+            return str(block["negative_tags"])
+    tags = [t for t in NEGATIVE_TAGS
+            if not (is_rap_style(style_id) and t.startswith("rap"))]
+    return ", ".join(tags)
+
+
+def _style_key(style_id):
+    """The data file's own style id (label or id accepted, via music_styles)."""
+    return _MS.style(style_id)["style_id"]
+
+
+def _gender_variant(part, gender_word):
+    """One style part with {gender} replaced by the brief's word (never fixed).
+
+    The data's placeholder is ``{gender} lead``; with a real gender word the
+    sentence reads "Warm female lead". The golden sheets wrote "Warm female
+    lead" from a brief whose word was "Warm female", so the word goes in
+    verbatim; with no word from the brief the placeholder is refused rather
+    than defaulted, because a hard-coded female is the U5 defect.
+    """
+    if "{gender}" in part:
+        if not gender_word:
+            raise RecipeError("GENDER_REQUIRED",
+                              "the style part needs {gender} and the brief names none: %r"
+                              % part)
+        return part.replace("{gender}", gender_word)
+    return part
+
+
+#: WW-29: an over-cap FINAL style REFUSES and deletes nothing. The message names
+#: the refusal and the required directions the style was still carrying, so no
+#: reader can mistake it for a silent truncation.
+def _too_long_note(text, carried=None):
+    return ("%d chars, limit %d; the request is REFUSED and NO clause is deleted -- "
+            "the final style still carries %s"
+            % (len(text), SUNO_STYLE_FIELD_MAX,
+               carried or ("the delivery map, the band wording, the one clean ending, "
+                           "the hook-placement clause and the approved pace clause")))
+
+def _method_style_block(block, pace_plan):
+    """S75: a METHOD style's spoken/band sentence is the ONE approved wording.
+
+    The style data's shared part says the intro and outro are the only spoken
+    sections, which is false on a method run: the backstory is spoken inside
+    the music before the ERM. The part that names ``spoken`` AND ``band keeps
+    playing`` is replaced with ``METHOD_SPOKEN_CLAUSE`` so the band is stated
+    to keep playing under the narration and "no singing yet" survives. Returns
+    the block UNCHANGED (same object, never a copy of a copy) for every
+    non-method run, and NEVER mutates the cached ``music_block``.
+    """
+    if not (isinstance(pace_plan, dict) and pace_plan.get("method")):
+        return block
+    parts = []
+    for part in block.get("style_parts") or []:
+        low = str(part).lower()
+        if "spoken" in low and "band keeps playing" in low:
+            parts.append(METHOD_SPOKEN_CLAUSE)
+        else:
+            parts.append(part)
+    return dict(block, style_parts=parts)
+
+def compose_style_block(block, sheet=None, vocal_gender="f", pace_plan=None,
+                        style_id=None, deliveries=None):
+    """THE one style-text composer, for any style data block.
+
+    ``style_text`` passes the live catalog's music/<style>.json block. A
+    recipe owned by another unit, not yet registered in the menu, passes its
+    own block, so one clean ending, the FU-HOOK-PLACEMENT order clause, the
+    G1 delivery map, the approved pace clause and the 1000-char cap are all
+    composed and checked HERE -- never a second copy in a recipe loader.
+
+    ``deliveries`` is the block's own delivery set when the sheet names none.
+    """
+    block = _method_style_block(block, pace_plan)
+    word = vocal_gender_word(vocal_gender)
+    parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
+             for p in block["style_parts"]]
+    # The clean-ending clause is ending_qc's, appended the way ending_qc
+    # appends it (comma, no double period). It is here so the measured
+    # style counts equal the design's (623/699/707, 733/809/817 with the
+    # FU-HOOK-PLACEMENT order clause) and so the final
+    # payload is the same whether or not with_clean_ending has run.
+    text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
+    # FU-HOOK-PLACEMENT rule 5: the section order is the sheet's, and the
+    # song never opens with the hook (Suno added a hook at 13.6 s in v2).
+    text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
+    # G1 delivery map: the map sentence must name the sheet's deliveries.
+    text = _MS.assert_delivery_map(
+        style_id, text, _sheet_deliveries(sheet, style_id, block, deliveries))
+    # WW-07: the approved pace direction goes LAST, after the ending, the
+    # hook-placement order clause and the delivery map, and the 1000-char
+    # cap is measured on the FINAL text (a raise, never a truncation).
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        raise RecipeError("STYLE_TOO_LONG", _too_long_note(text))
+    return text
+
+def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
+    """Suno style field: the style's OWN parts, in order, one clean ending.
+
+    Built from music/<style>.json style_parts (design 4.2): part 1 is the base
+    prompt (ending with a period, which fixes the "no distortion The lead"
+    run-on), part 2 is the sung lead carrying the brief's gender word, part 3
+    the delivery map, part 4 the spoken clause. The gender word comes from the
+    brief (``vocal_gender``), never hard-coded female.
+
+    The style's data owns the negatives; the ending clause is ending_qc's
+    (composed there, never restated here). S75-T21 moved the composition into
+    ``compose_style_block`` so a recipe this menu does not carry yet composes
+    through the same code.
+    """
+    if style_id is not None and not is_exempt(style_id):
+        sid = _style_key(style_id)
+        return compose_style_block(music_block(sid), sheet, vocal_gender,
+                                   pace_plan, sid)
+    if (pace_plan or {}).get("method"):
+        text = "%s. %s" % (_MS.style_prompt(style_id).rstrip(".,"),
+                           METHOD_SPOKEN_CLAUSE)
+    else:
+        text = "%s. Only the short intro and the final outro are spoken; %s." % (
+            _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        raise RecipeError("STYLE_TOO_LONG", _too_long_note(
+            text, carried="the spoken/band clause, the vocal-gender direction and "
+                          "the approved pace clause"))
+    return text
+
+
+def _sheet_deliveries(sheet, style_id, block=None, deliveries=None):
+    """The deliveries a sheet names, or the style's own when it names none.
+
+    ``block``/``deliveries`` let a recipe outside the live menu answer without
+    a catalog lookup; the catalog path is unchanged.
+    """
+    if sheet:
+        names = {s["delivery"] for s in sheet if s.get("delivery") and s.get("lines")}
+        if names:
+            return names
+    if deliveries:
+        return set(deliveries)
+    if block is not None:
+        return set(block["deliveries"])
+    return set(music_block(style_id)["deliveries"])
+
+
+# ===== WWC-U26 (WW-26): the FINAL style for ONE complete variant brief =====
+#: WW-26 replaces the shared request plus a short appended ``clause`` with three
+#: independently authored COMPLETE briefs. The base recipe's shared DESCRIPTIVE
+#: core (``style_parts[0]`` genre/bpm and ``style_parts[1]`` shared vocal line)
+#: is REPLACED by the caller's per-variant brief. Only the COMPLIANCE trailer
+#: every style text must carry stays shared -- the delivery map, the band
+#: wording, the one clean ending and the hook-order clause (``style_parts[2:]``)
+#: -- because no variant may vary those.
+BRIEF_STYLE_NOTE = ("WW-26: compliance trailer first, the variant's own complete "
+                    "brief next, the approved pace clause LAST, cap on the final text")
+
+#: C2 repair: the lead's presence direction ("close dry upfront vocal" /
+#: "dry upfront vocal") lives in ``style_parts[0]``, which the WW-26 brief
+#: replaces. A variant that harmonises or stacks the lead must still ship it
+#: (variants.json marks those ``revoices_lead``), so the phrase is lifted from the
+#: style's OWN data -- never restated here -- and joins the compliance trailer.
+#: A style whose data carries no such rule gains nothing.
+_LEAD_PRESENCE_RE = re.compile(r"(?:close\s+)?dry\s+upfront\s+vocal", re.IGNORECASE)
+
+def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
+                     pace_plan=None, tail_clause=None, revoices_lead=False):
+    """WW-26: the FINAL provider style for ONE complete variant brief.
+
+    ``brief_text`` is the variant's whole, independently authored core (groove,
+    palette, energy, cast/version vocal direction, rap-versus-sung hook,
+    immediate scene words, both shifts, short ending) -- it starts the style, so
+    the three styles share no common prefix and no variant is a short suffix on
+    a shared core. ``tail_clause`` (the variant's own arrangement sentence) is
+    the LAST content before the pace clause, so the assembled style still ends
+    with that variant's arrangement exactly as the base asserted. The mandated
+    compliance wording (the delivery map, band wording, one clean ending,
+    hook-order clause) sits BETWEEN them -- it is the only shared text, because
+    no variant may vary it. ``revoices_lead`` restores the base lead-presence
+    direction, taken from the style's own ``style_parts[0]``, for a variant that
+    harmonises or stacks the lead: the WW-26 brief replaces that line, and a
+    harmonised lead must still reach Suno dry and upfront. The approved pace
+    clause is appended LAST and the 1000-char cap is measured on the FINAL text
+    (a raise, never a truncation).
+    """
+    sid = _style_key(style_id)
+    block = _method_style_block(music_block(sid), pace_plan)
+    parts = [str(p).rstrip(".") for p in (block.get("style_parts") or [])]
+    if len(parts) < 2:
+        raise RecipeError("NO_STYLE_PARTS", "%r carries no compliance parts" % (style_id,))
+    compliance = list(parts[2:] if len(parts) >= 4 else parts[-2:])
+    presence = _LEAD_PRESENCE_RE.search(parts[0]) if revoices_lead else None
+    if presence:
+        compliance.insert(0, "%s." % presence.group(0))
+    mid = _gender_variant(" ".join(compliance), vocal_gender_word(vocal_gender)).rstrip(".")
+    mid = "%s, %s." % (mid, _EQ.STYLE_ENDING)
+    mid = "%s %s." % (mid.rstrip(), _HP.PROMPT_CLAUSE)
+    text = "%s. %s" % (str(brief_text).strip().rstrip("."), mid)
+    if tail_clause:
+        text = "%s %s." % (text.rstrip(), str(tail_clause).strip().rstrip("."))
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        raise RecipeError("STYLE_TOO_LONG", _too_long_note(text))
+    return text
+
+def check_style_text(text):
+    """Style rules: 1000 chars or less, spoken named at most once, band wording."""
+    text = str(text)
+    errs = []
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        errs.append("style text is %d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
+    # G1 delivery map (merged on main) is the one mandated spoken clause; it is
+    # not counted against the at-most-once rule.
+    own = text.replace(_MS.DELIVERY_MAP_CLAUSES[0][1], "")
+    own = own.replace(_MS.DELIVERY_MAP_CLAUSES[1][1], "").replace(_MS.DELIVERY_MAP_CLAUSES[2][1], "")
+    own = _INSTRUMENT_TALK_RE.sub("", own)   # "talking drum" is percussion, not a delivery
+    n = len(_SPOKEN_WORD_RE.findall(own))
+    if n > 1:
+        errs.append("style text names spoken delivery %d times, at most once" % n)
+    if "band keeps playing" not in text.lower():
+        errs.append("style text must say the full band keeps playing under the spoken lines")
+    return errs
+
+
+def check_negatives(neg, style_id=None):
+    low = [t.strip().lower() for t in str(neg).split(",") if t.strip()]
+    errs = ["negative_tags missing %r" % w for w in REQUIRED_NEGATIVES if w not in low]
+    errs += ["negative_tags must not contain %r (it would suppress our own spoken lines)" % w
+             for w in FORBIDDEN_NEGATIVES if any(w in t for t in low)]
+    if is_rap_style(style_id) and any(t.startswith("rap") for t in low):
+        errs.append("rap style must not exclude rap")
+    return errs
+
+
+def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
+            vocal_gender="f", delivered_s=None, hook_plan=None, pace_plan=None,
+            policy=None):
+    """THE gate every Suno style goes through. Returns style + lyrics text.
+
+    Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
+    ``delivered_s`` (or ``length_s``) enables the U13 product-share gate.
+    ``pace_plan`` (WW-07) writes the approved lowest-point direction and the
+    return into the style, last, under the 1000-char cap.
+
+    S75-W05-U3: the result carries "warnings" (the policy's
+    accept-with-warning findings) and "constraint_policy" (the version
+    enforced). A warning never joins ``errs`` and never raises: the only
+    refusal path is an error list that is non-empty.
+    """
+    if is_exempt(style_id):
+        return {"exempt": True}
+    if style_id not in recipe_style_ids():
+        raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
+                          "exempt; add it to music_styles" % (style_id,))
+    warnings = []
+    pol = policy or constraint_policy(mode="dramatization", duration_s=length_s)
+    errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
+                             style_id=style_id, hook_plan=hook_plan,
+                             policy=pol, warnings_out=warnings,
+                             method=bool((pace_plan or {}).get("method")))
+    errs += check_no_voice_lines(render_lyrics(sheet, style_id))
+    d = delivered_s if delivered_s is not None else length_s
+    # FU-HOOK-PLACEMENT rule 1, always on (no length = UNMEASURED: length_s)
+    errs += _HP.check_buildup(sheet, style_id, d)
+    if d is not None:
+        errs += check_product_share(sheet, d)
+    # FU-HOOK-PLACEMENT rules 2-3, always on: the first hook MEASURED at or
+    # after its story beat (no hook_plan = UNMEASURED: hook_plan)
+    errs += _HP.check_story(sheet, hook_plan, d, style_id)
+    if errs:
+        raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
+    return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender, pace_plan),
+            "lyrics": render_lyrics(sheet, style_id),
+            "negative_tags": negative_tags(style_id),
+            "warnings": warnings,
+            "constraint_policy": pol["policy_version"]}
+
+
+def envelope_input(req):
+    """The nested ``input`` object of a createTask envelope, or None.
+
+    ONE reader for every caller: nothing reads a direction off the top level,
+    because the top level carries the route model and the callback only.
+    """
+    if not isinstance(req, dict):
+        return None
+    inp = req.get("input")
+    return inp if isinstance(inp, dict) else None
+
+
+def check_envelope(req):
+    """Named refusals for one built music request. [] = send it.
+
+    The ONE approved contract is the createTask envelope::
+
+        POST <KIE host>/api/v1/jobs/createTask   (KIE_MUSIC_TASK_ENDPOINT)
+        {"model": "ai-music-api/generate",
+         "callBackUrl": <TOP-LEVEL camelCase URL, only when one is set>,
+         "input": {snake_case directions}}
+
+    A callback address is NOT required (Skill 68's music reference, section 1:
+    required input is ``custom_mode``, ``instrumental`` and ``model``), so its
+    absence is lawful and the run polls the task; a callback that IS present
+    must be exactly one non-empty TOP-LEVEL camelCase address.
+    Every deviation is refused with a named reason, and the legacy flat
+    ``/api/v1/generate`` music-generation contract is RETIRED: it is never
+    accepted here and never used as a fallback. Exactly ONE approved lyrics
+    source may be sent -- ``input.lyrics`` -- and sending a ``prompt`` beside
+    it is a defect (COMPETING_LYRICS), never a silent preference.
+    """
+    if not isinstance(req, dict):
+        return ["ENVELOPE_NOT_AN_OBJECT: a music request must be a JSON object"]
+    errs = []
+    inp = envelope_input(req)
+    flat = sorted(k for k in LEGACY_FLAT_KEYS if k in req)
+    if inp is None:
+        if flat:
+            # The retired flat contract: its own fields sit at the TOP level.
+            return ["LEGACY_FLAT_CONTRACT: the retired flat %s payload (fields "
+                    "%s at the top level) is refused; send the createTask "
+                    "envelope instead (outer model %r, top-level callBackUrl, "
+                    "nested snake_case input)"
+                    % (KIE_LEGACY_GENERATE_ENDPOINT, ", ".join(flat),
+                       KIE_MUSIC_TASK_MODEL)]
+        return ["ENVELOPE_INPUT_MISSING: createTask requires a nested 'input' "
+                "object carrying the snake_case directions"]
+    if flat:
+        errs.append("LEGACY_FLAT_CONTRACT: %s belong inside 'input', not at "
+                    "the top level of the createTask envelope"
+                    % ", ".join(flat))
+    # -- the callback: optional, and only TOP LEVEL camelCase when sent ------
+    # No callback address is required by the CURRENT createTask song request
+    # (Skill 68's music reference, section 1), so an ABSENT callBackUrl is
+    # lawful: the run polls the task. A callback that IS present must be one
+    # non-empty top-level camelCase address; the invented placeholder is gone.
+    if "callBackUrl" in req:
+        cb = req.get("callBackUrl")
+        if not (isinstance(cb, str) and cb.strip()):
+            errs.append("CALLBACK_EMPTY: a present 'callBackUrl' must be a "
+                        "non-empty TOP-LEVEL camelCase address; got %r" % (cb,))
+    misplaced = [k for k in MISPLACED_CALLBACK_KEYS if k in req or k in inp]
+    if "callBackUrl" in inp:
+        misplaced.append("input.callBackUrl")
+    if misplaced:
+        errs.append("CALLBACK_NOT_TOP_LEVEL: callback key(s) %s are misplaced; "
+                    "a callback is sent only as exactly one TOP-LEVEL "
+                    "'callBackUrl', and omitting it is lawful (the run polls "
+                    "the task)"
+                    % ", ".join(sorted(misplaced)))
+    # -- the model: outer route id, inner VALUE ----------------------------
+    if req.get("model") != KIE_MUSIC_TASK_MODEL:
+        errs.append("UNSUPPORTED_MODEL: the outer model must be %r (got %r); "
+                    "a version never rides the outer model on createTask"
+                    % (KIE_MUSIC_TASK_MODEL, req.get("model")))
+    ver = inp.get("model")
+    if ver not in KIE_MUSIC_MODEL_VALUE_CANDIDATES:
+        errs.append("UNSUPPORTED_MODEL_VALUE: input.model must be one of %s "
+                    "(got %r); the newest individual value is %s and no value "
+                    "outside the named candidates is accepted"
+                    % (", ".join(KIE_MUSIC_MODEL_VALUE_CANDIDATES), ver,
+                       KIE_MUSIC_MODEL_VALUE_STATUS))
+    # -- exactly one lyrics source -----------------------------------------
+    lyrics, prompt = inp.get("lyrics"), inp.get("prompt")
+    if lyrics and prompt:
+        errs.append("COMPETING_LYRICS: both input.lyrics and input.prompt are "
+                    "set; send EXACTLY ONE approved lyrics source (input.lyrics "
+                    "is the approved one) and drop the prompt")
+    elif not lyrics and not prompt:
+        errs.append("MISSING_DIRECTION: no lyrics source at all; input.lyrics "
+                    "must carry the one approved sheet")
+    # -- every input key is one this contract names -------------------------
+    unknown = sorted(str(k) for k in inp if k not in ENVELOPE_INPUT_KEYS)
+    if unknown:
+        errs.append("UNKNOWN_INPUT_KEY: input carries %s outside the accepted "
+                    "createTask directions (%s); an unrecognised key is refused "
+                    "rather than sent"
+                    % (", ".join(unknown),
+                       ", ".join(sorted(ENVELOPE_INPUT_KEYS))))
+    # -- required directions ------------------------------------------------
+    missing = [f for f in REQUIRED_MUSIC_DIRECTIONS if f not in inp]
+    if missing:
+        errs.append("MISSING_DIRECTION: input is missing %s"
+                    % ", ".join(missing))
+    return errs
+
+
+#: WW-27: the ensemble cast gate (character_bible.character_bible), imported
+#: LAZILY so a build with no cast never loads it.
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's cast gate)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        import character_bible.character_bible as _cb   # noqa: PLC0415
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
+
+
+def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
+                  spoken_share_pct=None, delivered_s=None, hook_plan=None, pace_plan=None,
+                  callback_url=None, **kw):
+    """The KIE createTask envelope for one ad. ``length_s`` is the DELIVERED
+    length (chosen - 2). Raises RecipeError on any rule break.
+
+    WW-27: ``cast`` (a brief carrying ``characters``, or an already resolved
+    cast) runs the ensemble gate TWICE -- the cast record alone BEFORE anything
+    is built (the cast decision precedes drafting), then the FINAL
+    ``input.lyrics`` and ``input.style`` after every transformation. An
+    incomplete character, an ensemble with fewer than two characters, a
+    villain/foil who never speaks or is never answered, an undeclared speaker, a
+    shared Suno voice direction or a style that commands a single voice raises
+    ``RecipeError("CAST_REJECTED")``. The cast rides the SCRIPT the request
+    carries -- the speaker tags in ``input.lyrics``, already checked -- never a
+    provider field this builder invents. No cast -> nothing changes, exactly as
+    before.
+
+    WW-30: this returns the CURRENT contract only -- outer model
+    ``ai-music-api/generate``, a TOP-LEVEL camelCase ``callBackUrl`` ONLY when
+    ``callback_url`` (or ``KIE_CALLBACK_URL``) names one, and a nested
+    snake_case ``input`` carrying every direction plus exactly one lyrics
+    source (``input.lyrics``). No callback address is required by the CURRENT
+    createTask song request (Skill 68's music reference, section 1), so with
+    none set the request carries no ``callBackUrl`` at all -- the run polls the
+    task and no made-up address is ever sent. The legacy flat payload is not
+    built here and there is no fallback to it.
+
+    WW-07: ``pace_plan`` writes the approved drop and return into the FINAL
+    ``input.style`` (after the ending and hook clauses, under the 1000-char
+    cap). It is judging metadata only: it is NEVER added to the request, and no
+    provider tempo field is ever invented. Unknown ``_``-prefixed keys (the
+    internal ``_pace_plan``) are dropped.
+    """
+    cast = kw.pop("cast", None)
+    if cast is not None:   # WW-27: the cast decision, BEFORE anything is built
+        _early = _cast_model().check_cast(cast)
+        if _early["reasons"]:
+            raise RecipeError("CAST_REJECTED", "; ".join(_early["reasons"]))
+    out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
+                  vocal_gender, delivered_s, hook_plan, pace_plan)
+    if out.get("exempt"):
+        raise RecipeError("EXEMPT", "voiceover style has no Suno request")
+    inp = kie_params()
+    inp.pop("model", None)          # the route model is the OUTER model now
+    inp.update({"model": KIE_MUSIC_MODEL_VALUE, "duration": length_s,
+                "vocal_gender": vocal_gender, "title": title,
+                "style": out["style"], "lyrics": out["lyrics"],
+                "negative_tags": out["negative_tags"]})
+    req = {"endpoint": KIE_MUSIC_TASK_ENDPOINT,
+           "model": KIE_MUSIC_TASK_MODEL,
+           "input": inp}
+    # U-M01: the address is sent only when one really exists (an explicit
+    # argument or KIE_CALLBACK_URL); with none the key is ABSENT and the run
+    # polls the task. The retired placeholder default is never sent.
+    cb = callback_url if callback_url is not None else callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
+    # WW-07: internal judging metadata never reaches the provider.
+    for k in list(req):
+        if str(k).startswith("_"):
+            del req[k]
+    errs = check_envelope(req)
+    if errs:
+        raise RecipeError("REQUEST_ENVELOPE_REJECTED", "; ".join(errs))
+    # FU-U6 (plan E.1): the final payload measured against the catalog caps;
+    # over a cap, prompt_limits raises naming field, chars, cap, source, status.
+    _PL.check_request("suno-generate", req)
+    if cast is not None:
+        # WW-27: the FINAL serialized payload is judged, after every
+        # transformation -- the sheet the provider will sing and the style it
+        # will follow, not an intermediate.
+        rcpt = _cast_model().check_cast(cast, sheet_text=req["input"]["lyrics"],
+                                        style_text=req["input"]["style"])
+        if rcpt["reasons"]:
+            raise RecipeError("CAST_REJECTED", "; ".join(rcpt["reasons"]))
+    return req
+
+
+def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
+                  length_s=None, cast_genders=None, hook_plan=None, cast=None):
+    """Seam for music_director.build_generate_request. Raises RecipeError.
+
+    With style_id: the full recipe is enforced (exempt id passes untouched).
+    Without: a raw Suno base prompt is a bypass and is refused; any other
+    free-form style text is left to the caller (legacy behavior).
+
+    FU-U5: with ``cast_genders`` (a name -> "male"/"female" map from the
+    brief's characters, e.g. ``protected_names.cast_genders(brief)``) every
+    sheet voice tag must agree with the cast record. This runs FIRST and in
+    BOTH branches, because the cheapest place to catch a wrong tag is before
+    any recipe work at all -- and it never touches vocal_gender.
+    """
+    cast_errs = check_voice_tags(lyrics_text, cast_genders)
+    if cast_errs:
+        raise RecipeError("VOICE_TAG_MISMATCH", "; ".join(cast_errs))
+    if style_id is None:
+        if any(str(style_text_).startswith(_MS.style_prompt(i))
+               for i in suno_style_ids()):
+            raise RecipeError("RECIPE_BYPASSED", "Suno style used without "
+                              "the song recipe; pass style_id and client_text")
+        # No gate switches itself off: without the style, the song contract,
+        # hook placement and the recipe cannot be measured, so a sheet that
+        # carries sung or rap sections is refused, never waved through.
+        # Any non-empty lyrics are refused: Suno sings untagged text too. Only
+        # an empty / instrumental-only request (no voiced words) passes.
+        try:
+            voiced = any(s["delivery"] or s["lines"] for s in parse_lyrics(lyrics_text))
+        except RecipeError:   # lyric lines under a bracket naming no delivery: Suno sings them
+            voiced = True
+        voiced = voiced or any(ln.strip() and not ln.strip().startswith("[")
+                               for ln in str(lyrics_text or "").splitlines())
+        if voiced:
+            raise RecipeError("UNMEASURED", "UNMEASURED: style_id (the request carries lyrics; "
+                              "the song contract, hook placement and recipe need the style)")
+        return
+    if is_exempt(style_id):
+        return
+    if style_id not in recipe_style_ids():
+        raise RecipeError("UNKNOWN_STYLE", repr(style_id))
+    # FU-RNBFLOW-SONG: the style's own contract (real sung lyrics, rap tagged
+    # as rap on the beat, plain spoken outro). No length -> "UNMEASURED:
+    # length_s", a refusal, never a skipped check.
+    from song_contract import song_contract as _SC
+    # WW-27: the declared cast judges the sheet's speakers and the FINAL style's
+    # voice direction here too; with no cast this call is byte-identical to before.
+    errs = _SC.check_sheet(lyrics_text, style_id, length_s, style_text_,
+                           cast=cast)["reasons"]
+    errs += check_style_text(style_text_)
+    errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s,
+                              style_id=style_id, hook_plan=hook_plan)
+    errs += _HP.check_buildup(lyrics_text, style_id, length_s)   # FU-HOOK-PLACEMENT rule 1
+    errs += _HP.check_story(lyrics_text, hook_plan, length_s, style_id)   # rules 2-3, always on
+    if errs:
+        raise RecipeError("RECIPE_BYPASSED", "; ".join(errs))
+
+
+def check_payload(payload, client_text=None, vocal_gender=None):
+    """Every U15d rule on one BUILT payload (the golden-sheet shape). [] = pass.
+
+    Measures the FINAL payload: the style after ending_qc, the lyric chars per
+    segment, the title and the negative tags against their caps; the hook
+    count across all segments against sung_hook.hook_count(D); the product
+    share across all segments against 10-15%; and each segment's text against
+    the no-voice-line rule and a render/parse roundtrip.
+    """
+    errs = []
+    D = payload.get("delivered_s")
+    segs = payload.get("segments") or []
+    if not segs:
+        return ["payload carries no segments"]
+    sheets, hooks = [], 0
+    for i, seg in enumerate(segs):
+        text = seg.get("lyrics") or ""
+        errs += ["segment %d: %s" % (i, e) for e in check_no_voice_lines(text)]
+        if len(text) > 5000:
+            errs.append("segment %d lyrics is %d chars, cap 5000" % (i, len(text)))
+        sh = parse_lyrics(text)
+        sheets += sh
+        hooks += sum(1 for s in sh if str(s["tag"]).lower().startswith("hook"))
+    style = payload.get("style") or ""
+    errs += check_style_text(style)
+    title, neg = payload.get("title") or "", payload.get("negative_tags") or ""
+    if len(title) > 80:
+        errs.append("title is %d chars, cap 80" % len(title))
+    if len(neg) > 1000:
+        errs.append("negative_tags is %d chars, cap 1000" % len(neg))
+    sid = payload.get("music_style")
+    if not sid:   # no gate switches itself off: no style, nothing below is measured
+        return errs + ["UNMEASURED: music_style"]
+    if not is_exempt(sid):
+        errs += check_negatives(neg, sid)
+        errs += check_lyric_sheet(sheets, client_text or "", None, None, style_id=sid)
+        errs += _HP.check_buildup(sheets, sid, D)   # FU-HOOK-PLACEMENT rule 1, always on
+        errs += _HP.check_story(sheets, payload.get("hook_plan"), D, sid)   # rules 2-3
+        if vocal_gender is not None and "{gender}" in style:
+            errs.append("a {gender} placeholder reached the payload")
+    if D:
+        want = _HP.hook_target(D, payload.get("hook_plan"))
+        if hooks != want:
+            errs.append("hook count %d, the %g s delivered length needs %d" % (hooks, D, want))
+        errs += check_product_share(sheets, D)
+    return errs
+
+
+# ---- S75-W05-U3: duration is a target unless the destination has a real limit
+# Spec 6.2 (findings D12): ONE canonical registry (duration_registry) for the
+# six durations and every shape; the overshoot decision below is the ONLY
+# duration-correction rule. THE one overshoot allowance lives in
+# master_length (order 2026-10-21, OVERSHOOT_ALLOWANCE_S) and is read there,
+# never copied here.
+DURATION_POLICY_VERSION = "blackceo.duration-policy/v1"
+#: The elements the existing assembly path protects when a take is edited to
+#: an exact placement (spec 6.2): opening, key plot points, hook, CTA.
+PROTECTED_ELEMENTS = ("opening", "plot_points", "hook", "cta")
+
+
+def _overshoot_allowance_s():
+    """master_length's ONE overshoot allowance (never a second copy here)."""
+    import master_length.master_length as _ML   # noqa: PLC0415
+    return float(_ML.OVERSHOOT_ALLOWANCE_S)
+
+
+def judge_duration_correction(measured_s, target_s, placement_limit_s=None,
+                              protected_fits=True,
+                              repair_allowance_remaining=True):
+    """SPEC 6.2: ONE classified decision for a measured take against its brief.
+
+    Duration is a TARGET unless the destination has a real limit
+    (``placement_limit_s`` = the exact maximum a placement requires):
+
+    - a good 62 s take for a 60 s brief is PRESERVED and presented with a
+      measured-duration warning (outcome accept_with_warning);
+    - an exact-maximum placement gets a suitable edit through the EXISTING
+      assembly path (``edit_plan["route"] == "assembly"``), protecting the
+      opening, key plot points, hook and CTA, while the master is preserved;
+    - an extreme mismatch is NEVER accepted merely because overshoot is
+      advisory: it forces an edit or a bounded repair plan, and the decision
+      is classified (deterministic_edit / repair_within_allowance /
+      user_choice). Only the user_choice class may end in regeneration, and
+      never automatically.
+
+    The only good take is never destroyed and the song is never regenerated
+    for a two-second overshoot: ``preserve_take`` is True and ``regenerate``
+    False on every automatic decision.
+
+    Returns {outcome, correction_class, reason_code, warning, measured_s,
+    target_s, placement_limit_s, binding_max_s, overshoot_s, preserve_take,
+    regenerate, edit_plan}. ``outcome`` is "ok" when nothing deviates, else
+    one of OUTCOMES.
+    """
+
+    def _dec(outcome, cls, code, warning=None, edit_plan=None, overshoot=None):
+        return {"policy_version": DURATION_POLICY_VERSION,
+                "outcome": outcome, "correction_class": cls,
+                "reason_code": code, "warning": warning,
+                "measured_s": measured_s, "target_s": target_s,
+                "placement_limit_s": placement_limit_s,
+                "binding_max_s": binding, "overshoot_s": overshoot,
+                "preserve_take": True, "regenerate": False,
+                "edit_plan": edit_plan}
+
+    if not isinstance(measured_s, (int, float)) or measured_s <= 0:
+        return {"policy_version": DURATION_POLICY_VERSION,
+                "outcome": OUTCOME_REQUIRED, "correction_class": None,
+                "reason_code": "DURATION_UNMEASURED",
+                "warning": "measured duration is %r; remeasure the existing "
+                           "take before any correction is chosen"
+                           % (measured_s,),
+                "measured_s": measured_s, "target_s": target_s,
+                "placement_limit_s": placement_limit_s,
+                "binding_max_s": placement_limit_s
+                if placement_limit_s is not None else target_s,
+                "overshoot_s": None,
+                "preserve_take": True, "regenerate": False, "edit_plan": None}
+    binding = placement_limit_s if placement_limit_s is not None else target_s
+    over = round(float(measured_s) - float(binding), 3)
+    allowance = _overshoot_allowance_s()
+    edit_plan = {"route": "assembly", "protect": list(PROTECTED_ELEMENTS),
+                 "target_s": binding, "master_preserved": True}
+    if over <= 0:
+        if abs(float(measured_s) - float(target_s)) > 1e-9:
+            return _dec(OUTCOME_WARNING, None, "DURATION_MEASURED_VARIATION",
+                        "measured duration %g s against the %g s brief: the "
+                        "take is preserved with this measured-duration "
+                        "warning" % (measured_s, target_s), None, over)
+        return _dec("ok", None, "DURATION_WITHIN", None, None, over)
+    if over <= allowance + 1e-9:
+        warning = ("measured duration %g s is %g s over the %g s %s: the take "
+                   "is preserved (measured-duration warning); never destroy "
+                   "the only good take or regenerate for a small overshoot"
+                   % (measured_s, over, binding,
+                      "placement limit" if placement_limit_s is not None
+                      else "brief target"))
+        if placement_limit_s is not None:
+            # exact-maximum placement: a suitable edit through the existing
+            # assembly path, protecting opening, plot points, hook and CTA.
+            return _dec(OUTCOME_WARNING, EDIT_DETERMINISTIC,
+                        "DURATION_EXACT_PLACEMENT_EDIT", warning, edit_plan, over)
+        return _dec(OUTCOME_WARNING, None, "DURATION_MEASURED_VARIATION",
+                    warning, None, over)
+    # Extreme mismatch: never accepted merely because overshoot is advisory.
+    warning = ("measured duration %g s is %g s over the %g s %s (past the %g s "
+               "allowance): the take is NOT accepted as-is; the correction is "
+               "forced and classified" % (measured_s, over, binding,
+                                          "placement limit"
+                                          if placement_limit_s is not None
+                                          else "brief target", allowance))
+    if protected_fits:
+        return _dec(OUTCOME_REQUIRED, EDIT_DETERMINISTIC,
+                    "DURATION_EXTREME_MISMATCH", warning, edit_plan, over)
+    if repair_allowance_remaining:
+        return _dec(OUTCOME_REQUIRED, EDIT_WITHIN_ALLOWANCE,
+                    "DURATION_EXTREME_MISMATCH", warning, None, over)
+    return _dec(OUTCOME_USER, EDIT_USER_CHOICE,
+                "DURATION_EXTREME_MISMATCH", warning, None, over)
+
+
+def _planned_pct(plan, style_id, key):
+    """Percent of delivered runtime one delivery holds in the APPROVED plan
+    (U3): words[key] / words_fit's measured rate for the style, over the
+    plan's delivered seconds. Missing counts -> None (fall back)."""
+    words = (plan or {}).get("words") or {}
+    if key not in words:
+        return None
+    delivered = (plan or {}).get("delivered_s")
+    if not isinstance(delivered, (int, float)) or delivered <= 0:
+        return None
+    import words_fit as _WF
+    rate = _WF.rates_for(style_id).get(key)
+    if not rate:
+        return None
+    return round(float(words[key]) / float(rate) / float(delivered) * 100.0, 3)
+
+def score_take(take, hook_text=None, words=None, length_s=None,
+               style_id=None, plan=None, placement_limit_s=None):
+    """Rule 4: judge a take from MEASURED or ALIGNED segments only.
+
+    take = {"segments": [{"delivery", "start", "end", "source": "measured"
+    or "aligned"}]}. A take with no segments, or any segment built from
+    labels alone, fails. "aligned" is the rap-versus-speech split (measured
+    word timestamps x the sheet's delivery labels) and is NEVER recorded as
+    "measured".
+
+    FU-U3: ``style_id`` carries the music style and ``plan`` the approved
+    plan (U2) through the judge. Bands per style, always the 5/10 band:
+    Soul Ballad and Soul Rise keep spoken 22.5 / sung-of-voice 77.5 exactly;
+    for a rap style (R&B Flow) the plain-spoken and rap shares are judged
+    against the share each delivery has in the APPROVED plan -- the
+    documented default from plan 18 section 9 item 1 (a TREVOR-DECISION
+    ITEM; no new number invented), plain spoken with no rap keeps 22.5, and
+    sung-of-voice on a rap sheet is recorded, not gated. The 6 s sung
+    stretch and the hook count stay hard.
+
+    Checks first singing by 15% of runtime on the same band. With hook_text,
+    Suno aligned words and length_s, the sung hook count is measured too (I8,
+    Trevor band) and the receipt is returned under "hook". Returns
+    {"verdict": PASS|FLAG|FAIL, "reasons"}.
+    """
+    segs = (take or {}).get("segments")
+    if not segs:
+        return _res("FAIL", ["take has no measured segments (labels are not a measurement)"])
+    srcs = {s.get("source") for s in segs}
+    if not srcs <= {"measured", "aligned"} or "measured" not in srcs:
+        return _res("FAIL", ["take scored from labels: segments must come from the detector (source=measured) or the aligned word split (source=aligned)"])
+    basis = _SS.segment_basis(segs)
+    t = _SS.style_targets(style_id)
+    reasons, flags = [], []
+    shares = _SS.measure_share(segs, basis, style_id=style_id)
+    if t["rap_delivery"] and t["target_from_plan"]:
+        planned = _planned_pct(plan, style_id, "spoken")
+        tgt = _SS.SPOKEN_TARGET_PCT if planned is None else planned
+    else:
+        tgt = _SS.SPOKEN_TARGET_PCT
+    band = _SS.check_share(shares["share"], segs, basis, target_pct=tgt,
+                           style_id=style_id)
+    if band["verdict"] == "FAIL":
+        reasons += band["reasons"]
+    flags += band.get("flags", [])
+    # rap as its own delivery: judged against the plan's own rap share for a
+    # rap style, against zero for a style that allows none.
+    if t["rap_delivery"]:
+        planned_rap = _planned_pct(plan, style_id, "rap")
+        if shares["rap_seconds"] > 0 or planned_rap:
+            j = _SS.judge_gap(shares["rap_share_pct"],
+                              planned_rap if planned_rap is not None
+                              else _SS.SPOKEN_TARGET_PCT)
+            if j["verdict"] == "FAIL":
+                reasons.append("rap share %.1f%% vs plan %s: %.1f points off, redo"
+                               % (shares["rap_share_pct"],
+                                  "none" if planned_rap is None else "%.1f%%" % planned_rap,
+                                  j["gap_pts"]))
+    elif shares["rap_seconds"] > 0:
+        j = _SS.judge_gap(shares["rap_share_pct"], 0.0)
+        if j["verdict"] != "PASS":
+            reasons.append("%.1f%% rap measured in a style that allows none"
+                           % shares["rap_share_pct"])
+    # SPK001: singing is judged against VOICE time (sung / voice); intro,
+    # gaps and end card never count against it. For a rap style the
+    # percentage is recorded, not gated (hook content, not a planned share).
+    if shares["voice_seconds"] - shares["sung_seconds"] > 0:
+        voice = _SS.check_sung_of_voice(segs, basis=basis, style_id=style_id)
+        reasons += voice["reasons"]
+        flags += voice["flags"]
+    sung = [s["start"] for s in segs if s["delivery"] == "sung"]
+    total = shares["total_seconds"]
+    if not sung:
+        reasons.append("no singing in the take")
+    else:
+        gap = (min(sung) / total - FIRST_SING_TARGET) * 100.0
+        if gap > FLAG_PTS:
+            reasons.append("first singing at %.0f%% of runtime, target %.0f%% "
+                           "(%.1f points late)" % (min(sung) / total * 100,
+                                                   FIRST_SING_TARGET * 100, gap))
+        elif gap > ACCEPT_PTS:
+            flags.append("first singing %.1f points past target" % gap)
+    receipt = None
+    if hook_text is not None:
+        hook_segs = [s for s in segs if s.get("source") == "measured"]
+        receipt = _SH.measure(hook_text, words or [], hook_segs, _SH.hook_count(length_s))
+        if receipt["verdict"] == "FAIL":
+            reasons.append("hook sung %d of %d times %s" % (
+                receipt["measured"], receipt["target"], receipt["reason"]))
+        elif receipt["verdict"] == "FLAG":
+            flags.append("hook sung %d of %d times" % (receipt["measured"], receipt["target"]))
+    out = _res("FAIL" if reasons else ("FLAG" if flags else "PASS"), reasons + flags)
+    out["basis"] = basis
+    out["style_id"] = style_id
+    if receipt:
+        out["hook"] = receipt
+    # S75-W05-U3 (spec 6.2): the measured take runs through the ONE duration
+    # decision. A measured-duration warning rides in out["warnings"] ONLY --
+    # never in out["reasons"] -- so no generic any(findings) check can convert
+    # it into failure; only an extreme mismatch is refused (verdict FAIL), with
+    # the forced edit or bounded repair classified in out["duration_decision"].
+    if length_s is not None:
+        dur = judge_duration_correction(total, length_s, placement_limit_s)
+        out["duration_decision"] = dur
+        out["warnings"] = []
+        if dur["outcome"] in (OUTCOME_REQUIRED, OUTCOME_USER):
+            out["reasons"] = out["reasons"] + [
+                "%s: %s" % (dur["reason_code"], dur["warning"] or "")]
+            out["verdict"] = "FAIL"
+        elif dur["warning"]:
+            out["warnings"].append(dur["warning"])
+            if out["verdict"] == "PASS":
+                out["verdict"] = "FLAG"
+    return out
+
+def _res(verdict, reasons):
+    return {"verdict": verdict, "reasons": reasons}
+
+def length_that_fits(sheet, style_id=None, spoken_share_pct=None, lengths=None):
+    """The shortest offered song length whose LYRICS_REJECTED word checks BOTH
+    pass for this sheet -- the word budget AND the spoken-intro cap -- for the
+    client's "what will fix it" line. Read-only: it judges nothing and refuses
+    nothing.
+
+    Same arithmetic as ``check_lyric_sheet`` (the length plan's word total
+    with its drafting tolerance, and the spoken-intro cap); the test
+    ``test_stop_explanations_s75.py`` holds the two in step by running the gate
+    at the length this names and at the one before it. None = no offered
+    length fits (the words, or the spoken intro, must get shorter).
+    """
+    total = sheet_words(sheet)
+    intro = [s for s in sheet if s.get("delivery") == "spoken"
+             and str(s.get("tag", "")).lower().startswith("intro")]
+    opener = sheet_words(intro) if intro else 0
+    out = {"total_words": total, "opener_words": opener,
+           "words_fit_length_s": None, "opener_fit_length_s": None}
+    for L in sorted(lengths or CANONICAL_DURATION_S):
+        try:
+            p = _LF.plan(L, spoken_share_pct, style_id=style_id)
+            budget = max(p["words"]["total"],
+                         _LF.plan(L, spoken_share_pct)["words"]["total"])
+        except Exception:  # noqa: BLE001 - a length the plan cannot price never fits
+            continue
+        if out["words_fit_length_s"] is None and total <= budget * 1.1 + 2:
+            out["words_fit_length_s"] = L
+        if out["opener_fit_length_s"] is None and opener <= p["words"]["opener_max"]:
+            out["opener_fit_length_s"] = L
+    # One length the client can actually pick: it must clear BOTH checks.
+    # The opener cap tops out at 12 words even at the longest length, so a
+    # 62-word spoken opening fits NO offered length: both stays None and the
+    # message tells the client to shorten the opener instead of naming a
+    # length the gate would still refuse.
+    both = [L for L in sorted(lengths or CANONICAL_DURATION_S)
+            if (out["words_fit_length_s"] is not None
+                and out["opener_fit_length_s"] is not None
+                and L >= out["words_fit_length_s"]
+                and L >= out["opener_fit_length_s"])]
+    out["length_s"] = both[0] if both else None
+    return out

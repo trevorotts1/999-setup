@@ -1,70 +1,52 @@
-# Core Updates — drama-song-ad-factory (Claude-Nine / Claude Code)
+# Skill 75: Drama Song Ad Factory - CORE_UPDATES
 
-What may change in this skill, and what must never change with it.
+## Core .md files this skill is allowed to update
 
-## The one core that matters: `scripts/core/`
+- `AGENTS.md`
+- `TOOLS.md`
+- `MEMORY.md`
 
-`scripts/core/` is a **packaged copy** of the canonical control layer. The
-canonical source path and release mechanism are recorded in
-`references/parity-contract.md` and in `ARCHITECTURE-DECISIONS.md` (directive
-2.4). Rules:
+Do NOT update any other core file for this skill unless the user
+explicitly requests it. In particular never touch `SOUL.md`,
+`IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, or the shared core files
+documented in `docs/SHARED-CORE-FILES.md`.
 
-1. Never hand-edit files under `scripts/core/`.
-2. To update: regenerate the copy from the canonical source, then run
-   `python3 tests/test_cli_smoke.py` and `python3 tests/test_parity_layout.py`.
-3. `test_parity_layout.py` compares bytes with the canonical tree when it is
-   present and reports `PARITY UNDETERMINED` when it is not. Undetermined is
-   not a pass — run the check where the canonical tree exists before claiming
-   parity.
-4. Bump `VERSION`, add a `CHANGELOG.md` entry naming exactly what changed, and
-   keep the `SKILL.md` frontmatter `version:` equal to `VERSION`.
+Apply only the labeled sections below, to the labeled files only - no
+other edits, no reformatting of surrounding text.
 
-## When a contract version changes
+## What to add (exact text)
 
-If the update changes `scripts/core/contracts/campaign-schema.json`,
-`artifact-schema.json`, `qc-schema.json`, or
-`scripts/core/acceptance-profile.json`:
+### AGENTS.md
 
-- record the old/new contract versions and the migration path;
-- record rollback notes in the release manifest;
-- re-qualify consumers — a contract change is not a cosmetic bump;
-- carry the same change into the OpenClaw distribution in the same release
-  window. A one-sided core change is a lockstep defect (directive 2.3), not a
-  style difference.
+Add this rule:
 
-## What does NOT change when the core changes
+```md
+## Drama Song Ad Factory (Skill 75) - Song Ad Production Rules
+- Route: song-driven direct-response ads only -> Skill 75; motion graphics -> motion-video-plus; landing pages -> blackceo-signature-page; plain KIE dispatch -> 74-kie-live-adapter
+- Every intake/preflight/resume runs through scripts/core/intake_preflight/factory.py (exit map: ok 0, error 1, waiting 2, parked 3, rejected 4) - no runtime prompt bypasses a failed guard
+- No recorded spend ceiling = no paid call; uncertain submissions are reconciled, never auto-resubmitted
+- A maker never judges its own output; UNAVAILABLE never becomes PASS
+```
 
-- `adapters/claude-nine/README.md` and `adapters/claude-code/README.md` —
-  runtime guidance changes only when runtime wiring itself changes. Both
-  adapters keep invoking the same entrypoint; no adapter gains its own copy of
-  the control logic, its own provider path or its own model table.
-- Creative doctrine in `SKILL.md` (twelve-stage arc, lyrics-as-copy, product
-  reveal timing, no lip-sync default) is shared methodology, not an adapter
-  concern; a doctrine change is a core-methodology change and belongs in the
-  canonical source first.
-- Nothing here may write a config-directory override, a router/model base URL,
-  or global routing settings (repository rules 9 and 10).
+### TOOLS.md
 
-## Registry and docs
+Add this section:
 
-- Adding/removing this skill from the install path means editing
-  `CONTROL/bundled-skills.txt` only, preserving every pre-existing entry.
-  Registry mechanics are owned by the installer-registration lane
-  (`installer-registration/`), not by this skill folder.
-- `INSTRUCTIONS.md`, `INSTALL.md`, `EXAMPLES.md`, `QC.md`, `PREREQS.json`
-  describe the shipped behavior: when behavior changes, update the doc that
-  states it in the same commit — a doc that contradicts the CLI is a defect.
-- This distribution has no workspace core files (no AGENTS.md/TOOLS.md/MEMORY.md
-  wiring) to update; the OpenClaw distribution's core-file updates are a
-  separate, onboarding-owned flow.
+```md
+## Drama Song Ad Factory (Skill 75)
 
-## Never in a core update
+- Location: `~/.openclaw/skills/75-drama-song-ad-factory/` (VPS: `/data/.openclaw/skills/75-drama-song-ad-factory/`)
+- Purpose: end-to-end drama-song ad production - intake, preflight, storyboard, KIE music/image/video generation, timed assembly, independent QC, delivery
+- Control CLI: `python3 scripts/core/intake_preflight/factory.py intake|preflight ...` (stdlib only, JSON envelope `blackceo.intake-preflight/envelope/v1`)
+- Prereq checker: `bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/75-drama-song-ad-factory"`
+- Providers: music via Skill 68 (Suno), image Skill 66, video Skill 67, transport Skill 74, callbacks Skill 46, voice Skill 30
+- Docs: INSTRUCTIONS.md (operating), EXAMPLES.md (verified commands), QC.md (checklist), INSTALL.md (install/update), PREREQS.json (executable mirror)
+```
 
-- No secrets, key values or provider tokens in any file of this skill.
-- No new third-party dependency: the control layer is standard library only;
-  a core update that needs an outside package must fail preflight with an
-  actionable `module-unavailable` error instead of silently adding one.
-- No weakening of a guard to make a test green: fix the check's subject, not
-  the check. A failed guard must never invoke a static-provider fallback to
-  evade itself (directive 24.1).
-- No self-approval: the author of a change does not write its QC verdict.
+### MEMORY.md
+
+Add this pointer:
+
+```md
+- Drama Song Ad Factory (Skill 75): `~/.openclaw/skills/75-drama-song-ad-factory/` - canonical mode name `drama-song-vsl`
+```

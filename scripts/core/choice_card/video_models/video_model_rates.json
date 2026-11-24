@@ -1,0 +1,124 @@
+{
+ "_doc": "The one table behind the VIDEO MODEL question. KIE list prices, 1 credit = $0.005, silent shots, no video input, before any top-up bonus.",
+ "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-5",
+ "source_note": "MiniMax H3: 8 credits ($0.04) per second at 768P, 4-15 second generations (KIE registry minimax-h3/image-to-video, checked 2026-10-24). Restored as row 1 on 2026-10-24: the live KIE catalog DOES carry minimax-h3/image-to-video, so the 2026-10-21 removal under the claim that it never did was wrong. Hailuo 02 Standard (5 credits, $0.025/s at 768P) stays on the price menu but is no longer the card's recommended row.",
+ "checked": "2026-10-09",
+ "keyframe_usd": 0.02,
+ "song_usd": 0.06,
+ "redo_rate": 0.2,
+ "models": [
+  {
+   "n": 1,
+   "recommended": true,
+   "name": "MiniMax H3",
+   "blurb": "great quality, best value",
+   "kie_model": "minimax-h3/image-to-video",
+   "lock": "minimax-h3/*",
+   "resolution": "768P",
+   "unit": "second",
+   "rate_usd": 0.04,
+   "shot_s": 15,
+   "shape": "plain"
+  },
+  {
+   "n": 2,
+   "recommended": false,
+   "name": "Seedance 2.5",
+   "blurb": "premium detail and motion",
+   "kie_model": "bytedance/seedance-2-5",
+   "resolution": "720p",
+   "unit": "second",
+   "rate_usd": 0.315,
+   "shot_s": 15,
+   "shape": "silent_aspect"
+  },
+  {
+   "n": 3,
+   "recommended": false,
+   "name": "Seedance 2.0 Mini",
+   "blurb": "quicker and cheaper",
+   "kie_model": "bytedance/seedance-2-mini",
+   "resolution": "720p",
+   "unit": "second",
+   "rate_usd": 0.041,
+   "shot_s": 15,
+   "shape": "silent_aspect"
+  },
+  {
+   "n": 4,
+   "recommended": false,
+   "name": "Google Veo 3.1",
+   "blurb": "top-tier realism",
+   "kie_model": "veo-3-1",
+   "kie_tier": "veo3_fast",
+   "resolution": "720p",
+   "unit": "clip",
+   "rate_usd": 0.3,
+   "shot_s": 8,
+   "clip_s": [
+    4,
+    6,
+    8
+   ],
+   "shape": "tiered_input",
+   "aspect_ratio": true
+  }
+ ],
+ "ultra": {
+  "_doc": "F-QM-4: the Ultra row is its own entry, not a numbered vendor option, so the four numbered rows and their answer-index mapping never move. Ultra renders 4K and is shown only when a live registry model advertises 4K pricing; otherwise ultra_model() returns ULTRA_MODEL_UNAVAILABLE and the card shows it as unavailable -- never a lower-resolution substitute.",
+  "name": "Ultra",
+  "resolution": "4K",
+  "unit": "clip",
+  "kie_model": "veo-3-1",
+  "kie_tier": "veo3_fast",
+  "rate_usd": 0.9,
+  "shot_s": 8,
+  "clip_s": [4, 6, 8],
+  "shape": "tiered_input",
+  "requires_pricing_marker": "4k"
+ },
+ "measured": {
+  "_doc": "N-55: measured prices recorded so a cost estimate refuses only a model that truly has no price (PRICE_MISSING). KIE credits; 1 credit = $0.005. source: KIE's own records for 119 tasks and the 2026-11-23 OmniHuman 2.0 test ledger, re-read 2026-11-23.",
+  "minimax-h3/image-to-video": {
+   "unit": "clip",
+   "credits_by_seconds": {
+    "4": 32,
+    "5": 40,
+    "6": 48,
+    "7": 56,
+    "8": 64
+   },
+   "source": "KIE records for 119 tasks, 2026-11-23"
+  },
+  "gpt-image-2-6/sunburst": {
+   "unit": "image",
+   "credits_low": 12.4,
+   "credits_high": 13.1,
+   "source": "KIE records for 119 tasks, 2026-11-23"
+  },
+  "minimax-h3/reference-to-video": {
+   "unit": "clip",
+   "credits_by_seconds": {
+    "4": 32,
+    "5": 56,
+    "6": 64,
+    "7": 72,
+    "8": 64
+   },
+   "source": "measured 2026-11-23"
+  },
+  "omnihuman-2-0": {
+   "unit": "rounded-second",
+   "credits_per_second": 14,
+   "source": "59 of 59 OmniHuman ledger rows across three runs, 2026-11-23"
+  },
+  "veo-3-1-4k": {
+   "unit": "clip",
+   "credits": {
+    "lite": 150,
+    "fast": 180
+   },
+   "source": "KIE veo-3-1 pricing text, read 2026-11-23"
+  }
+ }
+}
