@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 # keepalive-cron-prompt.txt - the prompt the skill75-keepalive cron runs every
 # 10 minutes. install-keepalive-cron.sh substitutes __SKILL_ROOT__ and
 # __RUNS_DIR__ into this text and registers it as ONE openclaw cron job
