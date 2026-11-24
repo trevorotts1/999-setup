@@ -3,7 +3,7 @@
   "unit": "W3-03-U5",
   "source": "directive section 2.4 and section 5.3; helper identities directive section 5.1",
   "generatedBy": "installer-registration/helper-deps.py repin",
-  "generatedAt": "2026-11-15T14:17:43Z",
+  "generatedAt": "2026-11-24T13:13:06Z",
   "hash": {
     "algorithm": "sha256",
     "tree": "sha256 over the sorted lines '<file_sha256>  <relative/path>' for every regular file under the helper root (posix relative paths), skipping __pycache__/, *.pyc, *.bak-*, *.log, .DS_Store \u2014 the same exclusions the repository .gitignore enforces",
@@ -87,14 +87,14 @@
       "role": "KIE paid transport: discovery, schemas, upload, submit, poll, credits",
       "kind": "skill",
       "required": true,
-      "version": "v1.1.19",
+      "version": "v1.1.21",
       "sourceRepo": "https://github.com/trevorotts1/openclaw-onboarding",
       "sourcePath": "openclaw-onboarding/74-kie-live-adapter",
       "installPath": "skills/74-kie-live-adapter",
       "fileCount": 42,
-      "sizeBytes": 874027,
-      "treeSha256": "b5ad8e2ee612e18c46a15ff19daf1b5635807d95eb4d46973b16eede27238aa5",
-      "skillMdSha256": "d8849b000983e1bc38d41cb0e1e3b80218116811ea4b45d9bb5f5dd76901566e"
+      "sizeBytes": 876157,
+      "treeSha256": "6d0a4811c80ee1bd8480315b2177e98d141003864774cc99b2681b9fe623069a",
+      "skillMdSha256": "20d85ebfc7c694a2ef5f1ff2fddd0c31bf0049f46ca8db4407e62a942db86ca8"
     },
     {
       "id": "46",
