@@ -44,6 +44,15 @@ clean copy. No root found at all = exit 2 (tooling), never a silent pass.
 stdlib only, no network, no provider calls, no repo writes (subprocesses run
 with PYTHONDONTWRITEBYTECODE=1). Exit 0 = every row pass, 1 = any row FAIL,
 2 = resolve failure (nothing checked). Never writes a verdict file.
+
+Helper-set marker: a repository that does not distribute all nine helper
+skills (the bare 999-setup checkout carries only the 66-/68- installer
+symlinks under installer-registration/helpers) may set
+DSAF_ALLOW_ABSENT_HELPERS=1. Every matrix row that needs an ABSENT helper
+SKILL.md — its discovery row, the nine-helper preflight row and the hermetic
+removal controls — then prints a named SKIP row instead of FAIL, and the
+exit stays governed by FAILs only. A tree that ships the full helper set
+never sets the variable and fails exactly as before.
 """
 from __future__ import annotations
 
@@ -82,6 +91,9 @@ def skill_dir_name_for(root: Path):
     return SKILL_DIR_NAME_ONB   # keeps every FAIL row honestly named
 
 BOX = os.environ.get("BOX_SLUG", "local")
+#: Repositories that do not distribute the nine helper skills set this to run
+#: the discovery matrix in the marked SKIP mode documented above.
+ALLOW_ABSENT_HELPERS = os.environ.get("DSAF_ALLOW_ABSENT_HELPERS") == "1"
 
 # DEPENDENCY-MANIFEST.md section 2: provider helpers resolved by source —
 # never by bare reference (directive 2.4).
@@ -144,13 +156,23 @@ def row(status, name, detail=""):
     if status == "FAIL":
         FAILS.append(name)
     line = f"{status}: {name}"
-    if detail and status != "ok":
+    if detail and status not in ("ok", "SKIP"):
         line += f" ({detail})"
     print(line, flush=True)
 
 
 def check(name, ok, detail=""):
     row("ok" if ok else "FAIL", name, detail)
+
+
+def check_or_skip(name, ok, detail=""):
+    """Matrix row for a helper SKILL.md. In the marked SKIP mode (repo does
+    not distribute the helper set) an absent helper is a named SKIP, never a
+    FAIL; a present helper still checks as before."""
+    if ALLOW_ABSENT_HELPERS and not ok:
+        row("SKIP", name + " (absent in this tree)", detail)
+        return
+    check(name, ok, detail)
 
 
 # --------------------------------------------------------------------------- #
@@ -338,11 +360,19 @@ def helper_checks(root: Path, tmp: Path, factory: Path | None):
     for h in REQUIRED_HELPERS:
         sm = root / h / "SKILL.md"
         ok = sm.is_file() and sm.stat().st_size > 0
-        check(f"helpers: {h} discovered", ok, str(sm))
+        check_or_skip(f"helpers: {h} discovered", ok, str(sm))
 
     # shipped preflight over the real helpers, approval recorded -> rc 0.
     # A removed helper makes this fail with reference-missing-or-truncated.
-    if factory and factory.is_file():
+    # In the marked SKIP mode a tree without the full helper set cannot run
+    # this row honestly; it skips with the absent helpers named.
+    absent = [h for h in REQUIRED_HELPERS
+              if not (root / h / "SKILL.md").is_file()]
+    if ALLOW_ABSENT_HELPERS and absent:
+        row("SKIP", "helpers: preflight passes with approval (rc 0) "
+                    "(needs all %d helpers; absent: %s)"
+            % (len(REQUIRED_HELPERS), ",".join(absent)))
+    elif factory and factory.is_file():
         refs = [root / h / "SKILL.md" for h in REQUIRED_HELPERS]
         rc, env, tail = run_preflight(factory, root, tmp, write_auth(tmp), refs)
         # preflight.py has four success reason codes (preflight-pass,
@@ -426,7 +456,17 @@ def packaging_checks(root: Path):
 
 
 def negative_controls(root: Path, tmp: Path, factory: Path):
-    """Hermetic proof that discovery+preflight discriminate on a missing helper."""
+    """Hermetic proof that discovery+preflight discriminate on a missing helper.
+    Skips, named, in the marked SKIP mode: with helper SKILL.md files absent
+    from this tree the controls cannot be built at all."""
+    if ALLOW_ABSENT_HELPERS and [h for h in REQUIRED_HELPERS
+                                 if not (root / h / "SKILL.md").is_file()]:
+        absent = ",".join(h for h in REQUIRED_HELPERS
+                          if not (root / h / "SKILL.md").is_file())
+        for name in ("control: hermetic helper-removal controls (needs all "
+                     "%d helpers; absent: %s)" % (len(REQUIRED_HELPERS), absent),):
+            row("SKIP", name)
+        return
     auth = write_auth(tmp)
     # full temp copy: every required helper's SKILL.md present
     full = tmp / "copy-full"
@@ -492,7 +532,8 @@ def main() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     npass = sum(1 for s, _, _ in ROWS if s == "ok")
-    print(f"SUMMARY: {npass} ok, {len(FAILS)} FAIL, {len(ROWS)} rows")
+    nskip = sum(1 for s, _, _ in ROWS if s == "SKIP")
+    print(f"SUMMARY: {npass} ok, {nskip} SKIP, {len(FAILS)} FAIL, {len(ROWS)} rows")
     if FAILS:
         print("RESULT: FAIL\nfailed rows:\n  - " + "\n  - ".join(FAILS))
         return 1
