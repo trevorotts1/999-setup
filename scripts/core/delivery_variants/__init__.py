@@ -1,0 +1,124 @@
+"""delivery_variants package: text/product checks, aspect variants, deliverable writers.
+
+Directive 17.8 (acceptance) + 20.4 (deliverables: campaign-manifest.json,
+cost-report.json, provenance.json). Stdlib only.
+"""
+from .caption_srt import (
+    check_captions_srt,
+    export_captions_srt,
+    parse_srt,
+    srt_file_name,
+)
+from .checks import (
+    CTA_HOLD_MIN_SECONDS,
+    MOBILE_RENDITION_WIDTH_PX,
+    check_captions,
+    check_cta_hold,
+    check_exact_copy,
+    check_mobile_readability,
+    text_product_check,
+)
+from .manifests import (
+    ManifestError,
+    sha256_file,
+    verify_binding,
+    write_campaign_manifest,
+    write_cost_report,
+    write_provenance,
+)
+from .song_files import (
+    DELIVERY_VERSIONS,
+    VERSION_NOTE_NAME,
+    build_audio_versions,
+    build_song_files,
+    check_audio_versions,
+    check_song_files,
+    expected_version_files,
+    version_file_name,
+    version_note_text,
+    write_song_docs,
+    write_version_docs,
+)
+from .variants import (
+    ASPECTS,
+    VariantError,
+    build_variant_plan,
+    expected_dimensions,
+    safe_area,
+)
+# DEL-08 after its two reuse targets (song_files naming, manifests hash).
+from .cover_image import (
+    DEFAULT_HEIGHT,
+    DEFAULT_WIDTH,
+    CoverImageError,
+    build_cover,
+    build_cover_argv,
+    check_cover_image,
+    cover_file_name,
+    select_frame,
+    title_of,
+    write_cover_docs,
+)
+from .video_delivery import (
+    VideoDeliveryError,
+    build_video_delivery,
+    captioned_name,
+    check_video_delivery,
+    clean_name,
+    write_video_docs,
+)
+
+SCHEMA_VERSION = "1.0.0"
+TOOL_VERSION = "1.0.0"
+
+__all__ = [
+    "check_captions_srt",
+    "export_captions_srt",
+    "parse_srt",
+    "srt_file_name",
+    "CTA_HOLD_MIN_SECONDS",
+    "MOBILE_RENDITION_WIDTH_PX",
+    "check_captions",
+    "check_cta_hold",
+    "check_exact_copy",
+    "check_mobile_readability",
+    "text_product_check",
+    "ManifestError",
+    "sha256_file",
+    "verify_binding",
+    "write_campaign_manifest",
+    "write_cost_report",
+    "write_provenance",
+    "build_song_files",
+    "check_song_files",
+    "write_song_docs",
+    "DELIVERY_VERSIONS",
+    "VERSION_NOTE_NAME",
+    "build_audio_versions",
+    "check_audio_versions",
+    "expected_version_files",
+    "version_file_name",
+    "version_note_text",
+    "write_version_docs",
+    "ASPECTS",
+    "VariantError",
+    "build_variant_plan",
+    "expected_dimensions",
+    "safe_area",
+    "DEFAULT_HEIGHT",
+    "DEFAULT_WIDTH",
+    "CoverImageError",
+    "build_cover",
+    "build_cover_argv",
+    "check_cover_image",
+    "cover_file_name",
+    "select_frame",
+    "title_of",
+    "write_cover_docs",
+    "VideoDeliveryError",
+    "build_video_delivery",
+    "captioned_name",
+    "check_video_delivery",
+    "clean_name",
+    "write_video_docs",
+]

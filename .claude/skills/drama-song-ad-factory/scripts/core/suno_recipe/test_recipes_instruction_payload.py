@@ -64,7 +64,7 @@ class RegisteredStyleInstructionPayload(unittest.TestCase):
                               hook_plan=HOOK_PLAN)
         self.assertEqual(R.check_envelope(req), [])
         inp = req["input"]
-        self.assertTrue(inp["style"].startswith("orchestral film-style song"))
+        self.assertTrue(inp["style"].startswith("film-style song"))
         self.assertIn("band keeps playing", inp["style"].lower())
         self.assertIn("The lead SPEAKS", inp["style"])
         self.assertTrue(inp["lyrics"])

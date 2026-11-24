@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""FU-SONG-APPROVAL tests: the SONG APPROVAL card question, three labelled songs,
+the pick gate, and the extra song price.
+
+Run: python3 core/song_choices/test_song_choices_fu_song.py   (needs ffmpeg + ffprobe)
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CORE = os.path.dirname(HERE)
+for sub in ("", "intake_preflight"):
+    sys.path.insert(0, os.path.join(CORE, sub))
+from choice_card.intake_card import intake_card as IC          # noqa: E402
+from song_choices import song_choices as SC                     # noqa: E402
+import length_formula as LF                                     # noqa: E402
+import kie_dispatch.kie_dispatch as KD                          # noqa: E402
+import factory as F                                             # noqa: E402
+from test_production_process import (confirmed_run, complete_stage, approve_script,
+                                     seal_stage)
+
+#: S75-006 moved SONG APPROVAL off the new card: a new run elects the three
+#: approvals through CHECKPOINTS. This suite exercises the approval screen itself
+#: -- its wording, its recap line and the gate it drives -- so it drives the
+#: frozen pre-S75-006 card, the one that still ASKS it by name.
+N = len(IC.LEGACY_QUESTIONS)
+IDS = [q["id"] for q in IC.LEGACY_QUESTIONS]
+SONG_N = IDS.index("song") + 1
+
+
+def ANS(song="1", upto=None):
+    """Replies for every card question in order (AI models, length ... script): the
+    spend question takes a dollar amount, SONG APPROVAL takes ``song``, the rest take 1."""
+    r = IC.example_replies(IC.LEGACY_QUESTIONS)   # the story brief is typed, the choices picked
+    r[SONG_N - 1] = song
+    return r if upto is None else r[:upto]
+CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
+HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
+SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+         {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+         {"tag": "Verse", "delivery": "sung", "lines": ["And I rise above the pa-a-ain,", "Through the dark I walk alo-o-one,"]},
+         {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
+         {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
+         {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
+         {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
+         {"tag": "Outro", "delivery": "spoken", "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
+# WWFIX D1: R&B Flow DELIVERS rap, so its sheet must plan the rap floor
+# (max(8 s, 10% of D) => 22 rap words at 88 s). The soul styles above carry no
+# rap and are refused a rap block, so the two styles cannot share one sheet.
+# WWR3INTFIX U1 (option i): the rapped R&B Flow fixture runs on the 88-SECOND
+# CARD. WW-01 made the floor PER VERSE (2 verses, each 8.8 s / 22 words at
+# D = 88 => 40 rap words = 16.0 s at 2.5 wps); below 88 s no sheet clears BOTH
+# the per-verse floor AND the 72.9% sung-share target at once, which is why the
+# old 58 s fixture was refused. At 88 s the shipped golden
+# (suno-90s-rnb-flow.json) clears every gate the same way, so the rapped
+# variant runs the 88 s sheet, KEEPING the spoken [Outro] CTA (the take judge's
+# script_words gate needs the client's own closing words present) and declaring
+# FOUR hook blocks.
+RNB_LEN = 88
+SHEET_RNB = [SHEET[0], SHEET[1], SHEET[2], SHEET[3],
+             {"tag": "Verse", "delivery": "sung",
+              "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
+                        "I walk out free,", "I rise a-a-above,", "I am more than this,",
+                        "I am he-e-ere,", "I am not lost,", "I am still standing ta-a-all,"]},
+             SHEET[5], SHEET[6],
+             {"tag": "Hook 4", "delivery": "sung", "lines": HOOK},
+             {"tag": "Verse", "delivery": "rap",
+              "lines": ["Backup shoes, backup jacket, but no backup plan,",
+                        "So I count what I make and not what they take today,"]},
+             {"tag": "Verse", "delivery": "rap",
+              "lines": ["Every door they closed I opened with my own two hands,",
+                        "And I keep walking toward the morning light now,"]},
+             SHEET[7]]   # the spoken [Outro] CTA (the script_words gate needs it)
+
+
+def sheet_for(style):
+    """The sheet the style can actually carry (WWFIX D1 rap floor)."""
+    return SHEET_RNB if style == "rnb-flow" else SHEET
+
+
+_FIRST_WORD_S = 4.0      # the first aligned word's start; the hook window opens at 13.4 s
+#: BUILD-PLAN W1-method-song-U1: both pace turns are mandatory and measured on
+#: EVERY run, so a run missing the pace order is refused at dispatch
+#: (PACE_TURNS_REQUIRED). Every dispatching fixture here carries one.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
+PLAN = dict(LF.plan(90, (15, 20)), pace_change=PACE_ORDER)
+SCRIPT = "One closed door. She Found Power in the Climb. Get the book. Link below."
+HOOKTXT = " ".join(HOOK)
+_W = "one closed door oo-o-oh i am not small i never was one seed of truth made me strong " \
+     "i am not small i never was i am not small i never was she found power in the climb get the book link below".split()
+# WWR3INTFIX U1: the take's measured windows scale with the 88-second card, so
+# every hook block the 88 s sheet declares lands inside a sung window.
+#: The MEASURED gear change of a fully-measured take (music_qc.pace_change
+#: windows): the drop at the ordered seam and a return to the opening groove at
+#: the second seam. Both turns are required and measured on EVERY run
+#: (BUILD-PLAN W1-method-song-U1), so an offered take carries them like it
+#: carries its segments and aligned words.
+PACE_EVIDENCE = {"pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
+                 "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
+                 "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
+GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 3, "source": "measured"},
+                     {"delivery": "sung", "start": 3, "end": 80, "source": "measured"},
+                     {"delivery": "spoken", "start": 80, "end": 86, "source": "measured"}],
+        "aligned_words": [{"word": w, "startS": 3 + i, "endS": 3.5 + i} for i, w in enumerate(_W)],
+        "detector": "singing_detector 2.0.0", "duration_s": 87.5, "music_under_speech_ratio": 0.6,
+        "tail_rms_dbfs": -30.0, "first_sung_s": 2.5, **PACE_EVIDENCE}
+
+
+def _suno_words(lyrics, duration_s=87.5):
+    """Aligned words the way Suno returns them: each section header rides inline on
+    the section's first word (FU-HOOK-PLACEMENT reads them), spread EVENLY from 4 s
+    to the take's own duration so a longer sheet still lands inside the take."""
+    out = []
+    for block in lyrics.split("\n\n"):
+        head, *lines = block.split("\n")
+        toks = " ".join(lines).split() or [""]
+        out += [{"word": (head + "\n" + t + " ") if k == 0 else t + " "} for k, t in enumerate(toks)]
+    step = max(0.05, (float(duration_s) - _FIRST_WORD_S) / max(1, len(out)))
+    return [dict(w, startS=_FIRST_WORD_S + i * step, endS=_FIRST_WORD_S + i * step + min(0.5, step))
+            for i, w in enumerate(out)]
+
+
+def _mp3(path, hz):
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=%d:duration=1" % hz, path],
+                   check=True, capture_output=True)
+
+
+def _tag(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=title", "-of",
+                          "default=nw=1:nk=1", path], capture_output=True, text=True, check=True).stdout
+    return out.strip()
+
+
+def _pipeline(tmp, bad_first=(), bad_always=()):
+    """Run the Yes path with a fake generator. Returns (results, calls, barrier_ok)."""
+    reqs = SC.build_requests("rnb-flow", sheet_for("rnb-flow"), CLIENT, "T", RNB_LEN,
+                             hook_plan={"true_at_beat": "the_world"}, pace_plan=PACE_ORDER)
+    calls, seen, lock = {}, set(), threading.Lock()
+    barrier = threading.Barrier(3, timeout=10)
+
+    def generate(v, rq):
+        with lock:
+            calls[v["id"]] = calls.get(v["id"], 0) + 1
+            k = calls[v["id"]]
+        if k == 1:
+            barrier.wait()                     # only passes if all three run at the same time
+        with lock:
+            seen.add(threading.get_ident())
+        src = os.path.join(tmp, "%s-%d.mp3" % (v["id"], k))
+        _mp3(src, 300 + 100 * len(calls))
+        bad = v["id"] in bad_always or (v["id"] in bad_first and k == 1)
+        t = dict(GOOD, audio_path=src, aligned_words=_suno_words(rq["input"]["lyrics"], GOOD["duration_s"]))
+        if bad:
+            t["detector"] = "singcheck v1"
+        return [t]
+
+    res = SC.generate_choices(reqs, PLAN, generate, lambda t: {}, lambda v, t, r: None,
+                              SCRIPT, HOOKTXT, (15, 20))
+    return res, calls, len(seen)
+
+
+def test_card_has_song_approval_after_storyboard():
+    labels = [q["label"] for q in IC.LEGACY_QUESTIONS]
+    # five story-brief questions then the nine production choices (DSR-105)
+    assert N == 14 and labels[:5] == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS"], labels
+    assert labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
+    block = IC.render_card(IC.LEGACY_QUESTIONS).split("\n\n")[SONG_N - 1].split("\n")
+    assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_N, N)
+    assert block[1] == "Do you want to hear and pick the song before any video is made?"
+    assert block[2].startswith("1. Yes, send me 3 versions to choose from - ") and IC.REC in block[2]
+    assert block[3].startswith("2. No, just make it - ") and IC.REC not in block[3]
+    step = IC.conversation(ANS(upto=SONG_N - 1),
+                           questions=IC.LEGACY_QUESTIONS)["message"]
+    assert step.startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N)) and 'say "recommended".' in step
+    assert IC.conversation(ANS(upto=SONG_N - 1) + ["recommended"],
+                           questions=IC.LEGACY_QUESTIONS)["answers"][SONG_N - 1]["n"] == 1
+
+
+def test_recap_lists_it_and_line_change_works():
+    st = IC.conversation(ANS(), questions=IC.LEGACY_QUESTIONS)
+    # S75-030: the recap prints the screen's own words, never the shouting LABEL.
+    assert "%d. Song approval: Yes, send me 3 versions to choose from" % SONG_N in st["message"]
+    assert IC.song_required(st["answers"]) is True
+    fix = IC.conversation(ANS() + [str(SONG_N)], questions=IC.LEGACY_QUESTIONS)
+    assert fix["message"].startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N))
+    no = IC.conversation(ANS() + [str(SONG_N), "2"], questions=IC.LEGACY_QUESTIONS)
+    assert IC.song_required(no["answers"]) is False and "%d. Song approval: No, just make it" % SONG_N in no["message"]
+
+
+def test_three_distinct_variants_per_style_all_pass_the_request_check():
+    for style in ("rnb-flow", "soul-ballad", "soul-rise"):
+        reqs = SC.build_requests(style, sheet_for(style), CLIENT, "T",
+                                 RNB_LEN if style == "rnb-flow" else 58,
+                                 hook_plan={"true_at_beat": "the_world"})
+        assert len({rq["input"]["style"] for _, rq in reqs}) == 3 and len({v["label"] for v, _ in reqs}) == 3
+        assert len({rq["input"]["lyrics"] for _, rq in reqs}) == 1        # same lyric sheet
+        for v, rq in reqs:
+            assert rq["input"]["style"].endswith(v["clause"].rstrip(".") + ".")
+
+
+def test_yes_path_three_labelled_files_titles_readme_and_parallel():
+    with tempfile.TemporaryDirectory() as tmp:
+        res, calls, threads = _pipeline(tmp)
+        assert [r["status"] for r in res] == ["PASS", "PASS", "PASS"] or all(r["status"] in ("PASS", "FLAG") for r in res)
+        assert threads == 3 and sorted(calls.values()) == [1, 1, 1]
+        run, deliv = os.path.join(tmp, "run"), os.path.join(tmp, "Delivery")
+        msg = SC.deliver_choices(res, deliv, run)
+        folder = os.path.join(deliv, "SONG-CHOICES")
+        names = sorted(f for f in os.listdir(folder) if f.endswith(".mp3"))
+        assert len(names) == 3 and [n[:4] for n in names] == ["1 - ", "2 - ", "3 - "]
+        for n in names:
+            assert _tag(os.path.join(folder, n)) == n[:-4], (n, _tag(os.path.join(folder, n)))
+        readme = open(os.path.join(folder, "README.txt")).read().splitlines()
+        assert len(readme) == 3 and readme[0].startswith("1 - POLISHED MODERN - 1:28 - ")
+        assert "1. POLISHED MODERN" in msg and "2. WARM LIVE BAND" in msg and "3. CINEMATIC STRINGS" in msg
+        assert "Reply 1, 2 or 3 to pick your song." in msg
+
+
+def test_failed_version_is_presented_and_never_regenerated():
+    """ORDER 2026-10-21: the song-failure verdict belongs to the client.
+
+    A take the judge fails is NOT regenerated (no second call, no loop); it is
+    returned with the judge's named concerns, presented for listening, and the
+    client is asked the ONE fork. Its paid file is preserved.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        res, calls, _ = _pipeline(tmp, bad_first=("warm-live-band",), bad_always=("cinematic-strings",))
+        by = {r["variant"]["id"]: r for r in res}
+        # NO autonomous retry: one generation per variant, always.
+        assert calls["warm-live-band"] == 1 and calls["cinematic-strings"] == 1, calls
+        assert by["warm-live-band"]["status"] == "FAILED"
+        assert by["warm-live-band"]["concerns"], by["warm-live-band"]
+        assert by["warm-live-band"]["take"] is None          # never offered for a pick
+        assert by["warm-live-band"]["heard"]["audio_path"]   # but kept for listening
+        assert by["polished-modern"]["status"] != "FAILED"
+        msg = SC.deliver_choices(res, os.path.join(tmp, "D"), os.path.join(tmp, "run"))
+        assert "Let me" not in msg and "second try" not in msg
+        assert SC.FAILURE_FORK in msg
+        assert "You can still keep one of them if it sounds right to you." in msg
+        assert "you may listen and decide one of them is exactly what you want" not in msg
+        files = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.endswith(".mp3"))
+        listen = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES", SC.FOR_LISTENING))
+                        if f.endswith(".mp3"))
+        # the offer surface carries accepted takes only; failed ones are in
+        # their own listening folder, labelled NOT PASSED.
+        assert len(files) == 1 and "NOT PASSED" not in files[0], files
+        assert len(listen) == 2 and all("NOT PASSED" in f for f in listen), listen
+        st = SC._state(os.path.join(tmp, "run"))
+        assert list(st["offered"]) == ["1"], st["offered"]  # only the passing take is offerable
+        assert st["failure_fork"] is True
+        # the client's answer is authoritative and recorded in the run state
+        rec = SC.record_fork_decision(os.path.join(tmp, "run"), "redo all of them", who="client")
+        assert rec["answer"] == "redo_all"
+        assert SC.fork_decision(os.path.join(tmp, "run"))["answer"] == "redo_all"
+        second = SC.record_fork_decision(os.path.join(tmp, "run"), "generate three new options")
+        assert second["answer"] == "new_three"
+        assert [d["answer"] for d in json.load(open(SC._path(os.path.join(tmp, "run"), SC.FORK_FILE)))["decisions"]] \
+            == ["redo_all", "new_three"]
+        try:
+            SC.record_fork_decision(os.path.join(tmp, "run"), "do whatever you think")
+        except SC.ChoiceError:
+            pass
+        else:
+            raise AssertionError("an answer outside the three branches must be refused, never guessed")
+
+def test_all_failed_versions_are_presented_with_the_one_fork():
+    with tempfile.TemporaryDirectory() as tmp:
+        res, calls, _ = _pipeline(tmp, bad_always=("polished-modern", "warm-live-band", "cinematic-strings"))
+        assert sorted(calls.values()) == [1, 1, 1], calls
+        msg = SC.deliver_choices(res, os.path.join(tmp, "D"), os.path.join(tmp, "run"))
+        assert SC.FAILURE_FORK in msg and "Version" in msg
+        files = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.endswith(".mp3"))
+        listen = sorted(f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES", SC.FOR_LISTENING))
+                        if f.endswith(".mp3"))
+        assert files == [] and len(listen) == 3, (files, listen)
+        assert all("NOT PASSED" in f for f in listen), listen
+        st = SC._state(os.path.join(tmp, "run"))
+        assert st["offered"] == {}          # nothing is offered for a pick
+        # every later stage stays held until the client answers
+        assert SC.refusal(os.path.join(tmp, "run")) is not None
+
+
+def _stage_run(tmp, music_done=True, *, song=True):
+    run = os.path.join(tmp, "run")
+    confirmed_run(run, song=song)
+    for stage in ("research", "creative-strategy", "script-lyrics"):
+        complete_stage(run, stage)
+    approve_script(run)
+    if music_done:
+        complete_stage(run, "music")
+    return run
+
+
+class _A:
+    def __init__(self, d):
+        self.run_dir = d
+
+
+def test_gate_blocks_picture_and_paid_jobs_until_pick():
+    with tempfile.TemporaryDirectory() as tmp:
+        res, _, _ = _pipeline(tmp)
+        run = _stage_run(tmp)
+        SC.init(run, True)
+        SC.deliver_choices(res, os.path.join(tmp, "D"), run)
+        env = F.cmd_next(_A(run))
+        assert env["outcome"] == "error" and env["reason_code"] == "SONG_PICK_MISSING", env
+        assert KD._song_pick_refusal("kling/video", run)["reason_code"] == "SONG_PICK_MISSING"
+        assert KD._song_pick_refusal("google/imagen4-fast", run)["reason_code"] == "SONG_PICK_MISSING"
+        assert KD._song_pick_refusal("ai-music-api/generate", run) is None      # the song stage itself may run
+        for bad in ("4", "", "abc"):
+            try:
+                SC.record_pick(run, bad)
+            except SC.ChoiceError:
+                pass
+            else:
+                raise AssertionError("pick %r accepted" % bad)
+        assert KD._song_pick_refusal("kling/video", run) is not None
+        label = SC.record_pick(run, "2")
+        assert label.startswith("2 - WARM LIVE BAND")
+        picked = SC.picked_song(run)
+        src = os.path.join(tmp, "D", "SONG-CHOICES", [f for f in os.listdir(os.path.join(tmp, "D", "SONG-CHOICES")) if f.startswith("2 - ")][0])
+        assert open(picked, "rb").read() == open(src, "rb").read()
+        assert KD._song_pick_refusal("kling/video", run) is None
+        # S75-002: the pick rewrites music/picked-song.mp3 and song-choices/
+        # pick.json AFTER the music stage was sealed, so the seal named the
+        # stand-ins, not what ships. Re-seal the stage over the picked master
+        # (nothing downstream is sealed yet); the gate then opens the next
+        # stage on the files that actually ship.
+        seal_stage(run, "music")
+        env = F.cmd_next(_A(run))
+        assert env["outcome"] == "ok" and env["data"]["stage"] == "continuity-bible", env
+        with open(picked, "ab") as f:                      # a changed song closes the gate again
+            f.write(b"x")
+        assert SC.refusal(run)["reason_code"] == "SONG_PICK_MISSING"
+        os.remove(picked)
+        assert F.cmd_next(_A(run))["reason_code"] == "SONG_PICK_MISSING"
+
+
+def test_no_path_is_unchanged_and_broken_state_fails_closed():
+    with tempfile.TemporaryDirectory() as tmp:
+        run = _stage_run(tmp, song=False)
+        # Preserve the legacy absent-state surface with a confirmed No answer.
+        os.remove(os.path.join(run, "song-choices", "state.json"))
+        assert SC.refusal(run) is None and KD._song_pick_refusal("kling/video", run) is None   # no state file
+        env = F.cmd_next(_A(run))
+        assert env["outcome"] == "ok" and env["data"]["stage"] == "continuity-bible"
+        SC.init(run, False)
+        assert SC.refusal(run) is None and F.cmd_next(_A(run))["outcome"] == "ok"
+        with open(os.path.join(run, "song-choices", "state.json"), "w") as f:
+            f.write("{not json")
+        assert SC.refusal(run)["reason_code"] == "SONG_PICK_MISSING"
+        assert F.cmd_next(_A(run))["outcome"] == "error"
+
+
+CARD = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad", "length": 60,
+                    "video_model": "MiniMax H3 768P"}, "who": "t", "at": "2026-10-09T09:00:00Z"}
+
+
+def _dispatch(run, model):
+    def runner(*a, **k):
+        raise AssertionError("a paid call was made")
+    return KD.dispatch(model=model, request={"model": model, "input": {"prompt": "p" * 200}, "card_receipt": CARD},
+                       save_dir=os.path.join(run, "out"), ledger_db=os.path.join(run, "spend.sqlite3"),
+                       run_id="r", logical_key="k", attempt_id="a1", estimated_cost=1,
+                       prompt="q" * 200, runner=runner)
+
+
+def test_kie_dispatch_itself_refuses_before_any_ledger_row_or_call():
+    with tempfile.TemporaryDirectory() as tmp:
+        run = os.path.join(tmp, "run")
+        SC.init(run, True)
+        env = _dispatch(run, "google/imagen4-fast")
+        assert env["outcome"] == "rejected" and env["reason_code"] == "SONG_PICK_MISSING", env
+        assert not os.path.exists(os.path.join(run, "spend.sqlite3"))       # nothing reserved
+        SC.init(run, False)                                                  # No answer: not this gate
+        try:                                      # past the gate it hits the (absent) ledger instead
+            assert _dispatch(run, "google/imagen4-fast").get("reason_code") != "SONG_PICK_MISSING"
+        except Exception as e:  # noqa: BLE001
+            assert "SONG_PICK_MISSING" not in repr(e)
+
+
+def test_pick_needs_a_yes_run_and_an_offered_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        run = os.path.join(tmp, "run")
+        f = os.path.join(tmp, "x.mp3")
+        _mp3(f, 400)
+        SC._write(run, "state.json", {"required": False, "offered": {"1": {"label": "1 - X", "file": f}}})
+        try:
+            SC.record_pick(run, "1")
+        except SC.ChoiceError:
+            pass
+        else:
+            raise AssertionError("a pick was recorded on a No run")
+        res, _, _ = _pipeline(tmp)
+        SC.init(run, True)
+        SC.deliver_choices(res, os.path.join(tmp, "D"), run)
+        folder = os.path.join(tmp, "D", "SONG-CHOICES")
+        os.remove(os.path.join(folder, [f for f in os.listdir(folder) if f.startswith("1 - ")][0]))
+        try:
+            SC.record_pick(run, "1")
+        except SC.ChoiceError:
+            pass
+        else:
+            raise AssertionError("picked a song whose file is gone")
+        assert SC.refusal(run) is not None
+
+
+def test_card_price_includes_two_extra_songs_when_yes():
+    from catalog_calculator import card_render
+    resp = json.load(open(os.path.join(CORE, "catalog_calculator", "extensions", "fixtures", "skill74-responses.json")))
+
+    def price(model, units):
+        spec = resp.get(model)
+        if spec is None:
+            return {"state": "fail", "error": {"code": "price_unavailable", "msg": model}}
+        unit, tier = spec["unit"], spec["tier_credits"]
+        est = round(tier * units, 4) if unit in ("per-second", "per-1k-chars", "per-image", "per-1m-tokens") else round(tier, 4)
+        return {"state": "ok", "model_id": model, "warnings": [], "data": {
+            "pricing_desc": "x", "credits_min": tier, "credits_max": tier, "unit": unit, "units": units,
+            "credits_estimate": est, "preflight_required": round(est * 1.3, 2), "preflight_multiplier": 1.3,
+            "price_source": "test"}}
+
+    base, ok1 = card_render.render({}, price)
+    yes, ok2 = card_render.render({"song_choices": True}, price)
+    assert ok1 and ok2 and "Song picks:" not in base and "Song picks:" in yes
+    tot = lambda t: float(t.split("= $")[1].split()[0])
+    music = float([l for l in base.splitlines() if l.strip().startswith("Music:")][0].split("$")[-1])
+    assert abs((tot(yes) - tot(base)) - 2 * music * 1.5) < 0.02, (tot(yes), tot(base), music)
+    assert "added $" in yes
+    assert SC.extra_cost_cents() == 2 * SC._SD.GEN_COST_CENTS
+
+
+if __name__ == "__main__":
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        sys.exit("ffmpeg and ffprobe are required for this suite")
+    fails = 0
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print("PASS", name)
+            except Exception as e:  # noqa: BLE001
+                fails += 1
+                print("FAIL", name, repr(e))
+    print("ALL PASS" if not fails else "%d FAILED" % fails)
+    sys.exit(1 if fails else 0)

@@ -1,0 +1,950 @@
+// ============================================================================
+// index.js — Drama Studio service entry (U2)
+//
+// Joint plan section 3.2: "One shared Drama Studio ... One page service, one
+// storage bucket (drama-studio), two secrets. The client's own box (or Claude
+// Code computer) is the brain... The box is the brain, the relay is dumb."
+//
+// This Worker is that dumb relay. It holds ZERO client credentials, ZERO KIE
+// keys, ZERO GHL tokens and ZERO provider ids. It stores what the client said,
+// mints short-lived direct-upload links, and answers one line to a check-in.
+//
+// BINDINGS (declared in schema.sql; wrangler.toml is U4's file, not this one)
+//   DS_STUDIO             KV   — key records, client records, orders, check-ins,
+//                                 upload jobs, the one operator record per
+//                                 client per day
+//   DRAMA_STUDIO          R2   — the client's inbox object and uploaded bytes
+//   DS_ENROLLMENT_SECRET  secret — fleet enrollment (registration only; it
+//                                 never reads an existing client's data)
+//   DS_ADMIN_KEY          secret — the admin surface U12 consumes
+//   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY — presign only
+//
+// The presented key ALWAYS travels in the `x-ds-key` header, never in the query
+// string, so it cannot land in a URL log.
+//
+// ROUTES (the interface contract consumed by U3, U4 and U12) — see README.md.
+// ============================================================================
+
+'use strict';
+
+import { AF_ID_INVALID, isClientId, ownsPath } from './ids.js';
+import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
+import { AF_PAIR_EXPIRED, AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
+import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
+import { AF_UP_KIND, AF_UP_NOT_ARRIVED, AF_UP_UNKNOWN, acceptUpload, pollUpload } from './uploads.js';
+import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
+import { dueForDeletion } from './retention.js';
+import { AF_OPT_APPROVAL, clientKeys, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
+import { listKeys, randomConnectHex } from './support.js';
+import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
+// W2 wiring: the page, the personal link and the approvals live in their own
+// modules; index.js only dispatches to them (SPEC §4).
+import { AF_LINK_KIND, linkRoute } from './link.js';
+import { deleteDraft, pageRoute, validateReplies } from './page-api.js';
+import { approvalsRoute } from './approvals-api.js';
+import { authorityPrefix } from './approval-store.js';
+import { orderRetentionKind, withRetentionKind } from './retention.js';
+
+export const SERVICE_VERSION = '0.1.0';
+export { randomConnectHex };
+
+/** S75-071 — the order id the page mints for one recap: `r_` plus eight
+ *  lower-case hex. The service still invents one when the page sends none. */
+const ORDER_ID_FORMAT = /^r_[0-9a-f]{8}$/;
+/** The upload id shape acceptUpload mints (uploads.js). */
+const UPLOAD_ID_FORMAT = /^u_[0-9a-f]{24}$/;
+/** U-Z11 (S75-106) — the one line an order carries for the client: why the
+ *  studio needs them, or why the order was cancelled. The page draws it under
+ *  the status, so it is trimmed to what one line holds. */
+const NOTE_MAX_CHARS = 300;
+/** U-Z12 (S75-103) — the key kinds an admin may cut off here. `link` is absent
+ *  on purpose: a personal link is rotated by minting a new one (link.js), and
+ *  the admin page offers only the computer key and the box key. */
+const REVOKE_KINDS = ['box', 'machine'];
+
+// ---------------------------------------------------------------------------
+// DSR-105 — the story brief
+//
+// The chat intake asks for the offer, the link, the audience, the character
+// and the photos; the studio page used to ask only the nine production
+// choices, so an order placed here carried no brief and the crew had nothing
+// to write from. intake_card.py now asks those first, and this reads them
+// back out of the replies.
+//
+// U-Z11 (S75-106) — the page sends `reply_ids` alongside `replies`: the id of
+// the question each answer belongs to, in the same order. When they are
+// present the brief is read BY ID, so a card that reorders or merges screens
+// can never put one answer where another belonged. A page older than this
+// change sends no ids, and its answers are read by position exactly as before.
+// `test/brief.test.mjs` checks these ids against the committed ui/questions.json
+// and fails if the card stops asking one of them.
+//
+// An order is NEVER refused for a thin brief: the answers are the client's
+// work, and a refusal would throw them away. It is stored marked, so the box
+// sees `brief_complete`/`brief_missing` and can ask for the rest.
+// ---------------------------------------------------------------------------
+
+/** The card's questions that carry the brief, in the order intake_card.py asks
+ *  them. With `reply_ids` the order below does not matter — each answer is read
+ *  by the id it travels with. */
+export const BRIEF_QUESTION_IDS = ['offer', 'link', 'audience', 'character', 'photos'];
+
+/** An option pick on the wire: "1" (a page older than S75-059) or
+ *  "1. MiniMax H3" (the page since). A typed answer that merely starts with a
+ *  number is not matched by "1.2 million" or "3 apples" — the dot is required. */
+export const OPTION_PICK_REPLY = /^\d+(\.\s|$)/;
+
+/** Without these four the crew has no brief to write from. `photos` is asked
+ *  and stored but never required: plenty of ads use what the client already has. */
+export const BRIEF_REQUIRED_IDS = ['offer', 'link', 'audience', 'character'];
+
+/**
+ * @param {string[]} replies the client's answers, in card order
+ * @param {string[]} [replyIds] U-Z11 — the question id each answer belongs to,
+ *   same order as `replies`. Absent on a page older than S75-106.
+ * @returns {{brief: Record<string,string>, complete: boolean, missing: string[]}}
+ */
+export function readBrief(replies, replyIds) {
+  const list = Array.isArray(replies) ? replies : [];
+  const brief = {};
+  const take = (id, value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    // An OPTION PICK is not an answer someone typed. A page loaded before this
+    // fix sends the nine production choices as bare numbers; since S75-059 the
+    // page sends them as "<n>. <option text>" so the box can compare the text
+    // with its own card. Neither shape is the client's own words, so neither
+    // is stored as the brief: the number "1" or "1. MiniMax H3" must never be
+    // read as their offer. Everything is still in `replies`, the replay channel.
+    if (text && !OPTION_PICK_REPLY.test(text)) brief[id] = text;
+  };
+  if (Array.isArray(replyIds)) {
+    // U-Z11 — the answer names its screen; a duplicate id is read last-wins and
+    // an id the brief does not want is skipped.
+    replyIds.forEach((id, i) => {
+      if (BRIEF_QUESTION_IDS.includes(id)) take(id, list[i]);
+    });
+  } else {
+    BRIEF_QUESTION_IDS.forEach((id, i) => take(id, list[i]));
+  }
+  const missing = BRIEF_REQUIRED_IDS.filter((id) => !brief[id]);
+  return { brief, complete: missing.length === 0, missing };
+}
+
+// ---------------------------------------------------------------------------
+// Adapters — the shapes tests inject in memory
+// ---------------------------------------------------------------------------
+
+export function kvStore(ns) {
+  return {
+    kvGet: (k) => ns.get(k),
+    kvPut: (k, v, ttl) => (ttl ? ns.put(k, v, { expirationTtl: ttl }) : ns.put(k, v)),
+    kvDelete: (k) => ns.delete(k),
+    kvList: async (prefix) => {
+      const names = [];
+      let cursor = null;
+      do {
+        const page = await ns.list({ prefix, cursor, limit: 1000 });
+        names.push(...page.keys.map((k) => k.name));
+        cursor = page.list_complete ? null : page.cursor;
+      } while (cursor);
+      return names;
+    },
+  };
+}
+
+export function r2Store(bucket) {
+  return {
+    objectGet: async (p) => {
+      const o = await bucket.get(p);
+      return o ? { value: await o.text() } : null;
+    },
+    objectPut: (p, v) => bucket.put(p, v),
+    objectDelete: (p) => bucket.delete(p),
+    // U-Z07 — a staging object's name is never written on the order record, so
+    // the cleanup after a finished order has to ask the bucket which ones exist.
+    objectList: async (prefix) => {
+      const keys = [];
+      let cursor = null;
+      do {
+        const page = await bucket.list({ prefix, cursor, limit: 1000 });
+        keys.push(...(page.objects || []).map((o) => o.key));
+        cursor = page.truncated ? page.cursor : null;
+      } while (cursor);
+      return keys;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Entry
+// ---------------------------------------------------------------------------
+
+export default {
+  async fetch(request, env) {
+    const path = new URL(request.url).pathname;
+    // The whole studio page, the admin page and the upload page are static
+    // files under the assets dir (ui/); every JSON route starts with /api/.
+    // A GET outside /api/ is served ONLY if staticAssetPath's allow-list names
+    // it. Anything else — the bundle also carries checks/, admin/test/,
+    // admin/prove/, package.json and README.md — is a 404 here and never
+    // reaches the assets binding or the API dispatch (SPEC §4).
+    if (request.method === 'GET' && !path.startsWith('/api/')) {
+      const assetPath = staticAssetPath(path);
+      if (assetPath) return serveAsset(request, env, assetPath);
+      return fail(404, 'AF-DS-ASSET-NOT-ALLOWED', `No page file at ${path}.`);
+    }
+    const store = kvStore(env.DS_STUDIO);
+    const objects = r2Store(env.DRAMA_STUDIO);
+    return handle(request, env, store, objects);
+  },
+};
+
+export async function handle(request, env, store, objects, deps = {}) {
+  const url = new URL(request.url);
+  const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
+  const nowMs = Date.now();
+  const key = request.headers.get('x-ds-key') || '';
+  let body = {};
+  if (request.method === 'POST' || request.method === 'PUT') {
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+  }
+
+  // GET /api/studio/health
+  if (request.method === 'GET' && url.pathname === '/api/studio/health') {
+    return ok({ service: 'drama-studio-service', version: SERVICE_VERSION });
+  }
+
+  // GET /api/studio/push — is the OPTIONAL web-push surface on? (U20)
+  // Public and inert: it reveals one boolean and nothing else. Unset
+  // DS_WEB_PUSH_ENABLED means `false` for every studio, forever.
+  if (request.method === 'GET' && url.pathname === '/api/studio/push') {
+    return ok({ enabled: pushEnabled(env) });
+  }
+
+  // POST /api/studio/enroll — a box registers itself ONCE and invents nothing
+  if (request.method === 'POST' && url.pathname === '/api/studio/enroll') {
+    const enrolled = await enrollClient({
+      store,
+      env,
+      presentedSecret: body.enrollment_secret || '',
+      claimedClientId: body.client_id,
+      nowMs,
+    });
+    if (!enrolled.ok) return fail(403, enrolled.code, 'Registration was refused.');
+    const minted = await mintKey();
+    const record = await buildKeyRecord({ clientId: enrolled.client_id, kind: 'box', label: body.label, secret: minted.secret, nowMs });
+    await store.kvPut(`key:${record.fingerprint}`, JSON.stringify(record));
+    // U-Z14 — enrollment registers a NEW client (never adopts one), so it has
+    // a box key and no machine key: the box sentence, decided without a LIST.
+    await markBoxOnly(store, enrolled.client_id, true);
+    // The key is returned exactly once, to its owner. It is never stored raw.
+    return ok({ client_id: enrolled.client_id, key: minted.secret }, 201);
+  }
+
+  // POST /api/studio/pair — U12 mints the code, this burns it (section 3.11)
+  if (request.method === 'POST' && url.pathname === '/api/studio/pair') {
+    // The 5-try lock has to hold per CALLER, not per code: a wrong code finds
+    // no record, so a per-code counter never increments (section 3.11).
+    const pairFailKey = `pairfail:${request.headers.get('CF-Connecting-IP') || 'unknown'}`;
+    const pairFails = Number(await store.kvGet(pairFailKey)) || 0;
+    if (pairFails >= PAIRING_MAX_TRIES) {
+      return fail(403, AF_PAIR_LOCKED, 'Too many wrong codes from this address. Try again later.');
+    }
+    const recordRaw = await store.kvGet(await pairRecordKey(body.code || ''));
+    const attempt = await attemptPairing(recordRaw ? JSON.parse(recordRaw) : null, body.code, nowMs);
+    if (!attempt.ok) {
+      if (attempt.record && recordRaw) {
+        // Persist the incremented try count so the 5-try lock is real state,
+        // not a per-request guess.
+        await store.kvPut(`pair:${attempt.record.fingerprint}`, JSON.stringify(attempt.record), 900);
+      }
+      await store.kvPut(pairFailKey, String(pairFails + 1), 900);
+      // S75-077 — an expired code says how to get a working one; every other
+      // refusal keeps the one wording, so a wrong code learns nothing.
+      return fail(403, attempt.code, attempt.code === AF_PAIR_EXPIRED
+        ? 'That pairing code has expired. Codes last 15 minutes - ask for a new one.'
+        : 'That pairing code cannot be used.');
+    }
+    await store.kvDelete(pairFailKey);
+    await store.kvDelete(`pair:${attempt.record.fingerprint}`);
+    const minted = await mintKey();
+    const machine = await buildKeyRecord({
+      clientId: attempt.record.client_id,
+      kind: 'machine',
+      label: body.computer_name,
+      secret: minted.secret,
+      nowMs,
+    });
+    await store.kvPut(`key:${machine.fingerprint}`, JSON.stringify(machine));
+    // U-Z14 — a paired computer means this studio is no longer box-only.
+    await markBoxOnly(store, attempt.record.client_id, false);
+    return ok({ client_id: attempt.record.client_id, key: minted.secret, tools: body.tools || null }, 201);
+  }
+
+  // POST /api/studio/admin/pairing-code — admin surface U12 consumes
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/pairing-code') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    if (!body.client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id is required.');
+    if (!isClientId(body.client_id)) {
+      // The studio INVENTS the identifier (ids.js) — never a name or a slug.
+      // Refuse BEFORE minting: no code is created and nothing is stored, so a
+      // bad id can never reach a key record and crash a later route.
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id must be a studio-issued id (c-<32 hex>).');
+    }
+    const code = await mintPairingCode();
+    await store.kvPut(
+      `pair:${code.fingerprint}`,
+      JSON.stringify({
+        client_id: body.client_id,
+        fingerprint: code.fingerprint,
+        exp: nowMs + 15 * 60 * 1000,
+        tries: 0,
+        status: 'open',
+      }),
+      15 * 60,
+    );
+    return ok({ code: code.code, expires_in: 900 }, 201);
+  }
+
+  // POST /api/studio/admin/revoke — U-Z12 (S75-103): cut off a leaked key.
+  // It names a CLIENT and a KIND, never a key: the route lists the stored
+  // `key:` records, marks every ACTIVE record of that client and kind
+  // `revoked`, and answers how many it cut. A revoked key is refused by
+  // isolation.resolveKey with AF-DS-KEY-REVOKED on its next check-in. The
+  // route never takes, returns, logs or renders a key value — the fingerprint
+  // in the record name is the only form the service ever knows.
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/revoke') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    if (!body.client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id is required.');
+    if (!isClientId(body.client_id)) {
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id must be a studio-issued id (c-<32 hex>).');
+    }
+    if (!REVOKE_KINDS.includes(body.kind)) {
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'kind must be "box" or "machine".');
+    }
+    const cut = await revokeKeys(store, { clientId: body.client_id, kind: body.kind });
+    return ok({ client_id: body.client_id, kind: body.kind, revoked: cut });
+  }
+
+  // POST /api/studio/options — admin sets the option (Option 3 behind approval)
+  if (request.method === 'POST' && url.pathname === '/api/studio/options') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    const target = body.target_client_id;
+    if (!target) return fail(400, 'AF-DS-ADMIN-INVALID', 'target_client_id is required.');
+    const record = await clientRecord(store, target);
+    const set = setOption(record, body.option, { nowMs, approval: body.approval });
+    if (!set.ok) return fail(set.code === AF_OPT_APPROVAL ? 403 : 400, set.code, set.message);
+    // The client record is the enrollment record: the table's never-delete class.
+    await store.kvPut(`client:${target}`, JSON.stringify(withRetentionKind(set.record, 'enrollment_record')));
+    return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(objects, target), await clientKeys(store, target)) });
+  }
+
+  // POST /api/studio/admin/push/send — operator-triggered, explicitly opt-in (U20)
+  // Until a transport is injected (deps.pushTransport) this REFUSES and sends
+  // nothing: an unconfigured studio is inert, never a half-send.
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/push/send') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    if (!body.target_client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'target_client_id is required.');
+    const out = await sendPush({
+      env, store, clientId: body.target_client_id, payload: body.payload, transport: deps.pushTransport, nowMs,
+    });
+    if (!out.ok) return fail(503, out.code || AF_PUSH_DISABLED, out.message || 'Web push is off.');
+    return ok({ attempted: out.attempted, sent: out.sent, failed: out.failed, pruned: out.pruned });
+  }
+
+  // POST /api/studio/admin/link — the one route with no key: the admin page
+  // presents the admin_key in the body, for any client (SPEC §4).
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/link') {
+    const adminLink = await linkRoute(request, { store, env, body, url, nowMs, ok, fail, isAdmin });
+    if (adminLink) return adminLink;
+  }
+
+  // Everything below needs a key.
+  const auth = await authorizeClient(store, key, body.client_id);
+  if (!auth.ok) {
+    if (auth.code === AF_ISO_CROSS) return fail(403, auth.code, 'That key cannot open this.');
+    if (auth.code === AF_ID_INVALID) {
+      // The key is known but its client_id is not a studio-issued id, so no
+      // scoped path can be built. A structured refusal here — instead of
+      // scopePath throwing deeper in the route — is what stops the Worker
+      // returning 500 / error code 1101 (CHECKIN-500).
+      return fail(401, auth.code, 'This key is not bound to a studio client id. Pair this computer again.');
+    }
+    return fail(401, auth.code, 'That key cannot open this.');
+  }
+  const clientId = auth.client_id;
+
+  // W2 dispatch: link, page and approvals routes answer their own paths; the
+  // first non-null Response wins and everything else falls through to the
+  // routes below (SPEC §4).
+  const ctx = { store, env, objects, auth, body, url, nowMs, ok, fail, isAdmin, project };
+  for (const route of [linkRoute, pageRoute, approvalsRoute]) {
+    const routed = await route(request, ctx);
+    if (routed) return routed;
+  }
+
+  // POST /api/studio/push/subscribe — a browser registers its OWN subscription.
+  // With web push off this refuses and stores NOTHING (section 5.2: a refusal
+  // that writes is not a refusal).
+  if (request.method === 'POST' && url.pathname === '/api/studio/push/subscribe') {
+    if (!pushEnabled(env)) return fail(503, AF_PUSH_DISABLED, 'Web push is off. Nothing was stored.');
+    const reg = await registerSubscription(store, {
+      clientId, subscription: body.subscription, userAgent: request.headers.get('user-agent'), nowMs,
+    });
+    return reg.ok ? ok({ subscription_id: reg.record.subscription_id }, 201) : fail(400, reg.code, reg.message);
+  }
+
+  // POST /api/studio/push/unsubscribe — revoke one of the caller's own records.
+  if (request.method === 'POST' && url.pathname === '/api/studio/push/unsubscribe') {
+    const out = await revokeSubscription(store, { clientId, subscriptionId: body.subscription_id, nowMs });
+    return out.ok
+      ? ok({ subscription_id: out.record.subscription_id, status: out.record.status })
+      : fail(404, out.code, out.message || 'No such subscription for this key.');
+  }
+
+  // POST /api/studio/checkin — the 2-minute network call. Zero model tokens.
+  if (request.method === 'POST' && url.pathname === '/api/studio/checkin') {
+    // S75-083: the retention sweep runs on this path. The box already calls it
+    // every two minutes, so the service's own deletion rule gets a caller
+    // without a second service, a scheduler or a timer.
+    const swept = await sweepExpiredRecords(store, clientId, nowMs);
+    const result = await checkIn(objects, { clientId, nowMs, orders: body.orders });
+    if (Array.isArray(body.orders)) await writeInbox(objects, { clientId, orders: body.orders, nowMs });
+    if (swept.swept > 0) {
+      // A record the sweep deleted must leave the box's mirror too, or the box
+      // keeps replaying an order the service no longer holds.
+      await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
+    }
+    return ok(result);
+  }
+
+  // POST /api/studio/uploads — presigned DIRECT R2 PUT, bytes never here
+  if (request.method === 'POST' && url.pathname === '/api/studio/uploads') {
+    const out = await acceptUpload({ store, env, clientId, body, nowUtc: new Date(nowMs).toISOString() });
+    return out.ok ? ok(out, out.status) : fail(out.status, out.code, out.message);
+  }
+
+  // POST /api/studio/orders — the client tapped Lock it in
+  if (request.method === 'POST' && url.pathname === '/api/studio/orders') {
+    // S75-071 — one tap, one order. The page mints ONE id for the recap on
+    // screen and sends it with every tap, so a double tap (or a retry after a
+    // lost answer) is the same order: it is written once, and every later POST
+    // with that id answers 200 with the order already stored and writes
+    // nothing — its state is not touched. A PRESENT id must be `r_` plus eight
+    // lower-case hex; with no id at all the service still invents one.
+    const askedId = body.order_id;
+    if (askedId !== undefined && askedId !== null) {
+      if (typeof askedId !== 'string' || !ORDER_ID_FORMAT.test(askedId)) {
+        return fail(400, 'AF-DS-ORDER-ID', 'An order id is "r_" and eight lower-case hex characters.');
+      }
+      const already = await store.kvGet(`order:${clientId}:${askedId}`);
+      if (already) {
+        return ok({
+          order: project(JSON.parse(already), nowMs),
+          option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
+        }, 201);
+      }
+    }
+    // The answers are the order: the box replays them through factory.py, so
+    // they are validated against the SPEC §4 limits and stored on the record
+    // (they used to be dropped — only the title survived).
+    const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids, body.reply_ids);
+    if (!checked.ok) return fail(400, checked.code, checked.message);
+    // U-Z08 — every id the page names that is one of OUR ids (`u_` + 24 hex,
+    // the shape acceptUpload mints) must be an upload THIS client asked for.
+    // Without this an order could point at a file that was never accepted, and
+    // the box would go looking for something no record exists for. A string
+    // outside that shape is not an id this service ever issued and is left to
+    // the box, which treats a missing file as a warning, never a refusal.
+    for (const uploadId of checked.uploadIds) {
+      if (!UPLOAD_ID_FORMAT.test(uploadId)) continue;
+      const job = await pollUpload(store, { clientId, uploadId });
+      if (!job.ok) {
+        return fail(400, AF_UP_UNKNOWN, 'One of the files you added is not with your studio. Add it again.');
+      }
+    }
+    const orderId = askedId || `r_${randomConnectHex(4)}`;
+    const read = readBrief(checked.replies, checked.replyIds);
+    const order = {
+      order_id: orderId,
+      client_id: clientId,
+      title: String(body.title || 'your video'),
+      replies: checked.replies,
+      // U-Z11 — the id of the question each answer belongs to, kept beside the
+      // answers so the box can compare them with its own card. An old page
+      // sends none and the field is simply absent.
+      ...(checked.replyIds === undefined ? {} : { reply_ids: checked.replyIds }),
+      upload_ids: checked.uploadIds,
+      // DSR-105 — the brief the card asked first, beside the replies the box
+      // replays. `brief` is what factory.py reads when the run starts; the
+      // replies stay the replay channel and are never rewritten.
+      brief: read.brief,
+      brief_complete: read.complete,
+      brief_missing: read.missing,
+      state: 'waiting',
+      paid_started: false,
+      created_at: nowMs,
+      updated_at: nowMs,
+    };
+    // A brand-new order is the waiting class (45 days from creation).
+    await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(order, orderRetentionKind(order))));
+    // Lock it in ends the draft: the order holds the answers now.
+    await deleteDraft(objects, clientId);
+    // DSF-611 — the box must see this order on its VERY first poll.
+    // waitingList() is a KV LIST taken in the same request as the kvPut above;
+    // KV list is eventually consistent, so the brand-new key is not in it and
+    // the object was stored with orders:[] (live Worker, 11 min 49 s until an
+    // unrelated event rewrote it). Rebuild the inbox from the inbox object's
+    // own content — an R2 read is strongly consistent — plus THIS order. No
+    // list, no delay, no retry.
+    const seen = (await readInbox(objects, clientId)).waiting.filter((o) => o.order_id !== orderId);
+    const waiting = [...seen, order];
+    await writeInbox(objects, {
+      clientId,
+      // keep the newest if the cap is hit, so this order can never be the one
+      // waitingOrders() slices off — an invisible order is the bug itself.
+      orders: waiting.length > MAX_WAITING_ORDERS ? waiting.slice(-MAX_WAITING_ORDERS) : waiting,
+      nowMs,
+    });
+    return ok({
+      order: project(order, nowMs),
+      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
+    }, 201);
+  }
+
+  // /api/studio/orders/<id> and /api/studio/orders/<id>/<verb>
+  if (parts.length >= 4 && parts[0] === 'api' && parts[1] === 'studio' && parts[2] === 'orders') {
+    const orderId = parts[3];
+    const verb = parts[4];
+    const raw = await store.kvGet(`order:${clientId}:${orderId}`);
+    if (!raw) return fail(404, 'AF-DS-ORDER-MISSING', 'No such order for this key.');
+
+    if (!verb && request.method === 'GET') {
+      const stale = staleVerdict({
+        record: await clientRecord(store, clientId),
+        lastCheckMs: await lastCheckIn(objects, clientId),
+        hasWaitingOrder: JSON.parse(raw).state === 'waiting',
+        nowMs,
+      });
+      if (stale.stale && stale.operator_line) {
+        // Rule 3: replaced, never stacked. One record per client per day.
+        await writeOperatorRecord(store, { clientId, line: stale.operator_line, nowMs });
+      }
+      return ok({ order: project(JSON.parse(raw), nowMs), stale_page_line: stale.page_line });
+    }
+
+    if (verb === 'state' && request.method === 'POST') {
+      // SPEC §3: the phone may cancel its own order and nothing else — claim,
+      // deliver and every other event belong to the box or the computer.
+      if (auth.record.kind === 'link' && body.event !== 'cancel') {
+        return fail(403, AF_LINK_KIND, 'A personal link may only cancel an order.');
+      }
+      // S75-102 — a delivery the page cannot show is refused HERE, before the
+      // order moves. Storing it and answering 200 hid the bad link: the page
+      // then showed a delivered order with nothing it could show.
+      if (body.event === 'deliver' && body.delivery !== undefined && body.delivery !== null) {
+        const isObject = typeof body.delivery === 'object';
+        const deliveryUrl = isObject && typeof body.delivery.url === 'string' ? body.delivery.url : '';
+        const deliveryKind = isObject && (body.delivery.kind === 'ghl' || body.delivery.kind === 'r2') ? body.delivery.kind : null;
+        if (!deliveryUrl.startsWith('https://') || !deliveryKind) {
+          return fail(400, 'AF-DS-DELIVERY-INVALID', 'The delivery link must be an https link of kind ghl or r2.');
+        }
+      }
+      const moved = transition(JSON.parse(raw), body.event, { nowMs, actor: body.actor || auth.record.kind });
+      if (!moved.ok) return fail(409, moved.code, moved.message);
+      if (body.event === 'claim' || body.event === 'needs_you') moved.order.paid_started = Boolean(body.paid_started);
+      // U-Z11 (S75-106) — a refused or cancelled order says why, in the same
+      // words the client is waiting on, and the page draws that line under the
+      // status. `answer` clears it: the client has seen it and acted.
+      if (body.event === 'needs_you' || body.event === 'cancel') {
+        moved.order.note = (typeof body.reason === 'string' ? body.reason : '').trim().slice(0, NOTE_MAX_CHARS);
+      } else if (body.event === 'answer') {
+        delete moved.order.note;
+      }
+      if (body.event === 'deliver' && body.delivery) {
+        // The page shows WHERE the video is (GHL library first, R2 copy
+        // second). Only an https URL and one of the two known kinds are stored.
+        const deliveryUrl = typeof body.delivery.url === 'string' ? body.delivery.url : '';
+        const deliveryKind = body.delivery.kind === 'ghl' || body.delivery.kind === 'r2' ? body.delivery.kind : null;
+        if (deliveryUrl.startsWith('https://') && deliveryKind) {
+          // Plan 3.15: the GHL library copy is never deleted by the studio; the
+          // R2 fallback goes 7 days after delivery. The copy is tagged HERE, at
+          // the only place that records where the video lives.
+          const delivery = { url: deliveryUrl, kind: deliveryKind };
+          moved.order.delivery = deliveryKind === 'ghl'
+            ? withRetentionKind(delivery, 'ghl_media')
+            : withRetentionKind(delivery, 'r2_fallback_video');
+        }
+      }
+      // U-Z07 — the order is finished (delivered, done) or abandoned (cancel):
+      // the intake files and the approval staging copies have done their job
+      // and are deleted. A store that refuses never fails the state change.
+      if (CLEANUP_EVENTS.includes(body.event)) {
+        const cleaned = await cleanupOrderFiles({
+          store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
+        });
+        if (cleaned.pending) moved.order.cleanup_pending = true;
+        else if (moved.order.cleanup_pending) delete moved.order.cleanup_pending;
+      }
+      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(moved.order, orderRetentionKind(moved.order))));
+      await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
+      return ok({ order: project(moved.order, nowMs) });
+    }
+
+    if (verb === 'cancel' && request.method === 'POST') {
+      const moved = transition(JSON.parse(raw), 'cancel', { nowMs, actor: auth.record.kind });
+      if (!moved.ok) return fail(409, moved.code, moved.message);
+      // U-Z07 — a cancelled order keeps none of its intake files either.
+      const cleaned = await cleanupOrderFiles({
+        store, objects, clientId, orderId, uploadIds: moved.order.upload_ids,
+      });
+      if (cleaned.pending) moved.order.cleanup_pending = true;
+      await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(withRetentionKind(moved.order, orderRetentionKind(moved.order))));
+      await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
+      return ok({ order: project(moved.order, nowMs) });
+    }
+  }
+
+  // GET /api/studio/options — the real-wait line for the client's record
+  if (request.method === 'GET' && url.pathname === '/api/studio/options') {
+    const record = await clientRecord(store, clientId);
+    return ok({ option: record.option || 1, line: optionLine(record, nowMs, await lastCheckIn(objects, clientId), await clientKeys(store, clientId)) });
+  }
+
+  // POST /api/studio/uploads/<id>/complete — the poll view for a phone
+  if (parts.length === 5 && parts[4] === 'complete' && request.method === 'POST') {
+    const poll = await pollUpload(store, { clientId, uploadId: parts[3] });
+    return poll.ok ? ok(poll.job) : fail(poll.status, poll.code, poll.message);
+  }
+
+  // GET /api/studio/uploads/<id>/file — U-Z08: the studio's own computer (or a
+  // paired machine) reads the bytes a client uploaded, so it can put them in
+  // the run's intake folder. The phone's link key never opens this: a link is
+  // for one client's screen, not for pulling that client's files.
+  if (request.method === 'GET' && parts.length === 5
+      && parts[0] === 'api' && parts[1] === 'studio' && parts[2] === 'uploads' && parts[4] === 'file') {
+    const kind = auth.record && auth.record.kind;
+    if (kind !== 'box' && kind !== 'machine') {
+      return fail(403, AF_UP_KIND, 'Only the studio computer may read an uploaded file.');
+    }
+    const poll = await pollUpload(store, { clientId, uploadId: parts[3] });
+    // A job this client does not own and an id that never existed answer the
+    // same 404, so the route cannot be used to probe another studio's ids.
+    if (!poll.ok || !ownsPath(clientId, poll.job && poll.job.object_path)) {
+      return fail(404, AF_UP_NOT_ARRIVED, 'No such upload for this studio.');
+    }
+    // Streamed from the bucket binding itself, never through the text adapter.
+    const object = env && env.DRAMA_STUDIO ? await env.DRAMA_STUDIO.get(poll.job.object_path) : null;
+    if (!object) return fail(404, AF_UP_NOT_ARRIVED, 'That file has not arrived yet.');
+    const headers = new Headers({
+      'Content-Type': (poll.job && poll.job.content_type) || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    if (typeof object.size === 'number') headers.set('Content-Length', String(object.size));
+    return new Response(object.body, { status: 200, headers });
+  }
+
+  return fail(404, 'AF-DS-NOT-FOUND', `No route for ${request.method} ${url.pathname}.`);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export function isAdmin(env, presented) {
+  const expected = env && env.DS_ADMIN_KEY;
+  return typeof expected === 'string' && expected.length > 0 && presented === expected;
+}
+
+/** Every page file the studio domain may serve (SPEC §4). The assets directory
+ *  is the WHOLE ui/ folder, so the bundle also carries checks/, admin/test/,
+ *  admin/prove/, upload/fragment-check.mjs, package.json and README.md. None of
+ *  those belongs on the client's domain, so this list — and nothing else — is
+ *  what a GET outside /api/ can ever reach. */
+const ASSET_ALLOW_LIST = new Set([
+  '/index.html',
+  '/studio.js',
+  '/studio.css',
+  '/qr.js',
+  '/download.js',
+  '/api-client.js',
+  '/service-client.js',
+  '/approvals-view.js',
+  '/questions.json',
+  '/upload/index.html',
+  '/upload/upload.js',
+]);
+
+/** The one place that maps a public GET path onto a file inside the assets
+ *  directory (ui/). An allow-list, not a pass-through: anything not named here
+ *  returns null and index.js answers 404 (SPEC §4). */
+function staticAssetPath(path) {
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('/api/')) return null;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return null; // A malformed escape never reaches the assets binding.
+  }
+  if (decoded.includes('\\') || decoded.includes('\0')) return null;
+  const segments = decoded.split('/').filter((s) => s !== '');
+  // Refuse every dot segment: `.`, `..`, and any dotfile (.assetsignore, .env).
+  // A traversal attempt therefore never resolves to a file outside the list.
+  if (segments.some((s) => s === '.' || s === '..' || s.startsWith('.'))) return null;
+  const clean = `/${segments.join('/')}`;
+
+  if (clean === '/' || clean === '/index.html') return '/index.html';
+  // The admin page and its own scripts — lib/*.js only, never admin/test or
+  // admin/prove.
+  if (clean === '/admin' || clean === '/admin/index.html') return '/admin/index.html';
+  if (/^\/admin\/lib\/[^/]+\.js$/.test(clean)) return clean;
+  // The phone page keeps its two SPEC §4 aliases; both resolve to ui/upload/.
+  if (clean === '/uploads') return '/upload/index.html';
+  if (clean === '/upload.js') return '/upload/upload.js';
+  if (ASSET_ALLOW_LIST.has(clean)) return clean;
+  return null; // /checks/**, /admin/test/**, /admin/prove/**, /package.json,
+  // /README.md, /upload/fragment-check.mjs and every other path: 404.
+}
+
+/** Serve one file from the assets binding with the service's own headers.
+ *  The upload page moved from the assets root into ui/upload/, so a bundle
+ *  deployed before that move still answers at the root: try ui/upload/ first,
+ *  then the root. */
+async function serveAsset(request, env, assetPath) {
+  if (!env.DS_UPLOAD_ASSETS) return fail(503, 'AF-DS-UP-PAGE', 'That page is not ready.');
+  const candidates = assetPath === '/upload/index.html' ? [assetPath, '/index.html'] : [assetPath];
+  let asset = null;
+  for (const candidate of candidates) {
+    try {
+      const got = await env.DS_UPLOAD_ASSETS.fetch(new Request(new URL(candidate, request.url), request));
+      if (got && got.status >= 200 && got.status < 300) {
+        asset = got;
+        break;
+      }
+    } catch {
+      // A bundle without that file: try the next candidate.
+    }
+  }
+  if (!asset) return fail(404, 'AF-DS-UP-PAGE', 'That page is not ready.');
+  const headers = new Headers(asset.headers);
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  // The delivery screen plays the finished video from wherever the studio
+  // stored it, so media-src names those two hosts and nothing else changes:
+  // connect-src stays the r2.cloudflarestorage.com surface the page already had
+  // (S75-070 — a player must not be a hole in the page's own rules).
+  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob: https://storage.googleapis.com https://*.r2.dev; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+  return new Response(asset.body, { status: asset.status, headers });
+}
+
+// ---------------------------------------------------------------------------
+// U-Z07 (S75-083) — a finished order does not keep its working files
+//
+// Intake answers and photos are asked for a reason only until the order is
+// delivered, done or cancelled; approval `staging/` copies exist only until the
+// frozen `files/` copy is made. Both are the client's own bytes, so both are
+// removed here, at the one moment the order is finished — never on a timer that
+// could not be undone.
+//
+// What is NOT deleted here: `files/` (the page still plays them), `ready.json`
+// (the card stays answerable) and `decision.json` (the client's answer). The
+// bucket's own 45-day rule removes those later (deploy.manifest.json, U-DP2).
+//
+// A store that refuses a delete is recorded on the order as
+// `cleanup_pending: true`; it NEVER fails the state change. A delivery the page
+// can show is worth more than a cleanup that has to be retried.
+// ---------------------------------------------------------------------------
+
+/** The events after which an order's working files are no longer needed. */
+const CLEANUP_EVENTS = ['deliver', 'done', 'cancel'];
+
+/**
+ * Delete one order's intake objects and approval staging objects.
+ * @returns {{pending: boolean}} pending = at least one delete did not happen
+ */
+async function cleanupOrderFiles({ store, objects, clientId, orderId, uploadIds }) {
+  const targets = new Set();
+  let pending = false;
+
+  // Intake: the object path lives on the upload job, never on the order, and it
+  // is re-checked with ownsPath so a corrupt record can never name another
+  // client's object.
+  for (const uploadId of Array.isArray(uploadIds) ? uploadIds : []) {
+    try {
+      const raw = await store.kvGet(`upload:${clientId}:${uploadId}`);
+      if (!raw) continue;
+      const job = JSON.parse(raw);
+      const path = job && typeof job.object_path === 'string' ? job.object_path : '';
+      if (path && ownsPath(clientId, path)) targets.add(path);
+    } catch {
+      pending = true;
+    }
+  }
+
+  // Approval staging: found by prefix under this order's own namespace. Only
+  // `/staging/` segments are named, so `files/`, `ready.json` and
+  // `decision.json` can never match. A store with no list capability (an
+  // injected test adapter) knows of no staging object and is not an error.
+  if (typeof objects.objectList === 'function') {
+    try {
+      const listed = await objects.objectList(`${authorityPrefix(clientId, orderId)}/`);
+      for (const key of listed) {
+        if (typeof key === 'string' && key.includes('/staging/') && ownsPath(clientId, key)) targets.add(key);
+      }
+    } catch {
+      pending = true;
+    }
+  }
+
+  for (const path of targets) {
+    try {
+      if (typeof objects.objectDelete !== 'function') throw new Error('AF-DS-NO-DELETE');
+      await objects.objectDelete(path);
+    } catch {
+      pending = true;
+    }
+  }
+  return { pending };
+}
+
+/** U-Z12 (S75-103) — cut every ACTIVE key of one client and one kind off.
+ *  A record that is already revoked is left alone and not counted, so a second
+ *  call answers 0 and changes nothing. Records of other clients, and of other
+ *  kinds (link, machine when box is asked for), are never read past the test.
+ *  @returns {Promise<number>} how many keys this call cut off. */
+async function revokeKeys(store, { clientId, kind }) {
+  let cut = 0;
+  // U-Z14 — a revocation can restore the box sentence (cutting a computer key),
+  // so the active kinds of this client are read off the same listing.
+  let hasBox = false;
+  let hasMachine = false;
+  for (const name of await listKeys(store, 'key:')) {
+    const raw = await store.kvGet(name);
+    if (!raw) continue;
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || record.client_id !== clientId) continue;
+    if (record.kind !== kind) {
+      if (record.status === 'active' && record.kind === 'box') hasBox = true;
+      if (record.status === 'active' && record.kind === 'machine') hasMachine = true;
+      continue;
+    }
+    if (record.status !== 'active') continue;
+    record.status = 'revoked';
+    await store.kvPut(name, JSON.stringify(record));
+    cut += 1;
+  }
+  await markBoxOnly(store, clientId, hasBox && !hasMachine);
+  return cut;
+}
+
+/** U-Z14 — keep the box verdict on the client record. Creating an order may
+ *  not LIST KV at all (DSF-611), so the routes that mint or revoke a key, which
+ *  already know the answer, are the ones that write it. One KV write, and only
+ *  when the verdict changed. */
+async function markBoxOnly(store, clientId, boxOnly) {
+  const record = await clientRecord(store, clientId);
+  if (record.box_only === boxOnly) return;
+  await store.kvPut(`client:${clientId}`, JSON.stringify({ ...record, box_only: boxOnly }));
+}
+
+async function clientRecord(store, clientId) {
+  const raw = await store.kvGet(`client:${clientId}`);
+  return raw ? JSON.parse(raw) : { client_id: clientId, option: 1, last_check_in: null };
+}
+
+/**
+ * S75-083 — the retention sweep. `retention.js` held the whole deletion rule
+ * and production never imported it, so every stored class lived forever.
+ *
+ * It runs on the check-in route, the one path the box already calls on a
+ * clock: the sweep lists the caller's OWN order records, hands them to
+ * `dueForDeletion`, and deletes exactly what the rule names. Nothing here
+ * invents a kind, a column or a key — the tag is written by the module that
+ * stores the record, and a record carrying no tag is not a retention object,
+ * so it is never swept. A record with no event yet is kept by the rule itself.
+ *
+ * The scope is the caller's `order:<client_id>:` namespace only: a sweep can
+ * never reach another client's records, and a record this parser cannot read
+ * is skipped, never guessed at.
+ *
+ * Ceiling: the adapter has no R2 delete (page-api.deleteDraft stores a marker
+ * instead), so this sweeps the KV records the retention kinds tag and leaves
+ * the R2 copies to the bucket's own lifecycle rule. Upgrade when the adapter
+ * gains objectDelete.
+ */
+export async function sweepExpiredRecords(store, clientId, nowMs) {
+  const keys = await listKeys(store, `order:${clientId}:`);
+  const items = [];
+  for (const key of keys) {
+    const raw = await store.kvGet(key);
+    if (!raw) continue;
+    let record;
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!record || typeof record.retention_kind !== 'string') continue;
+    items.push({ ...record, kind: record.retention_kind, path: key });
+  }
+  if (items.length === 0) return { swept: 0 };
+  const due = dueForDeletion(items, nowMs);
+  for (const key of due.delete) await store.kvDelete(key);
+  return { swept: due.delete.length };
+}
+
+async function waitingList(store, clientId) {
+  const keys = await listKeys(store, `order:${clientId}:`);
+  const orders = [];
+  for (const k of keys) {
+    const raw = await store.kvGet(k);
+    if (raw) orders.push(JSON.parse(raw));
+  }
+  return orders;
+}
+
+/** The projection U3 renders: state with timers applied, plus availability.
+ *  R2 availability is a SEPARATE field, never an order state (section 3.10A). */
+export function project(order, nowMs) {
+  const resolved = resolveOrderState(order, nowMs);
+  const out = { ...order, state: resolved.state, state_reason: resolved.reason };
+  if (resolved.timer) out.state_from_timer = true;
+  if (typeof order.delivered_at === 'number') {
+    out.availability = nowMs >= order.delivered_at + 7 * 24 * 60 * 60 * 1000 ? 'r2-expired' : 'available';
+  } else {
+    out.availability = 'not-delivered';
+  }
+  return out;
+}
+
+function ok(data, status = 200) {
+  return new Response(JSON.stringify({ ok: true, ...data }), {
+    status,
+    headers: JSON_RESPONSE_HEADERS,
+  });
+}
+
+function fail(status, code, message) {
+  return new Response(JSON.stringify({ ok: false, code, message }), {
+    status,
+    headers: JSON_RESPONSE_HEADERS,
+  });
+}
+
+const JSON_RESPONSE_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+};
+

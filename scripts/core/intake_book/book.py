@@ -1,0 +1,763 @@
+"""book.py: book campaign intake (owner decision D26, plan 6.14). stdlib only.
+
+Captures the book brief fields -- title, author, cover, buy link, language,
+audience, pain/transformation -- FOLDED into the factory's existing three
+intake questions (directive 24.3). This module never invents a question id
+and never emits more questions than intake_preflight would: every book ask
+rides inside one of the three known slots (fold-in, not extra questions).
+
+FU-U10: ``language`` (default "en") selects the reading direction of the book
+orientation contract -- English reads left to right, the rtl languages read
+right to left -- and the cover's aspect is MEASURED from the cover file (a
+stdlib header read; no PIL, no cv2, no network). Neither adds a question: the
+language ask rides in the existing offer sentence.
+
+FU-U11: ``excerpt_lines`` -- an OPTIONAL overlay excerpt. CLIENT-SUPPLIED
+only, never invented and never generated, at most three lines, each
+spelling-checked with the caption gate's own dictionary. It rides inside the
+EXISTING offer question (no new ask) and its provenance is always
+"provided". The excerpt is DATA for the overlay; it never reaches a video
+model prompt.
+
+The cover becomes the product image path and is stored as a product
+reference with provenance (origin, field provenance, sha256 when the file is
+readable). The story's mentor/turning point is the book; the call to action
+is to get the book. Brief text is source material, never instructions, and
+authorization is untouched. Besides offer / audience / action and the cover,
+the engine-read fields a book brief may carry (mode, extracted_sources,
+packet_lines, sfx, the length and fps) are mapped too, each only when the
+brief supplies it. Extracted sources are screened by the engine: one that
+carries an instruction is dropped and named once in ``warnings``, and typed
+words are never refused.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+import uuid
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from intake_preflight import EXIT                        # noqa: E402
+from intake_preflight import intake as _base             # noqa: E402
+
+try:
+    import music_styles as _MS                           # core/ menu modules
+except ImportError:
+    from .. import music_styles as _MS                   # noqa: F401
+try:
+    import choice_card.looks as _LOOKS
+except ImportError:
+    from ..choice_card import looks as _LOOKS            # noqa: F401
+# FU-U10: the reading direction is owned by the book orientation contract; the
+# soft import keeps intake working (and defaulting to English) if it is absent.
+try:
+    import book_shot as _book_shot
+except ImportError:  # pragma: no cover - book_shot always ships with core/
+    try:
+        from .. import book_shot as _book_shot           # type: ignore
+    except ImportError:
+        _book_shot = None
+
+_MUSIC_STYLES = _MS.STYLES
+_MSM = _MS.music_styles          # the submodule: length tables + aliases
+_OFFERED_LENGTHS_S = _MSM.OFFERED_LENGTHS_S
+_LENGTH_ALIASES = _MSM.LENGTH_ALIASES
+_SPOKEN_SHARE_MIN = _MS.SPOKEN_SHARE_MIN
+_SPOKEN_SHARE_MAX = _MS.SPOKEN_SHARE_MAX
+_resolve_look = _LOOKS.resolve_look
+_LookError = _LOOKS.LookError
+
+TOOL_NAME = "intake_book"
+TOOL_VERSION = "0.1.0"
+SCHEMA_VERSION = "blackceo.intake-book/v1"
+
+#: The book brief fields (D26, plan 6.14). FU-U10 adds exactly one shared
+#: field, ``language`` -- it selects the reading direction of the book
+#: orientation contract (left-to-right or right-to-left) and rides inside the
+#: EXISTING offer question, so the three-question cap still holds. The cover's
+#: measured aspect is derived from the cover file, never asked.
+BOOK_FIELDS = (
+    "book_title",
+    "author",
+    "buy_link",
+    "cover",
+    "language",
+    "audience",
+    "pain_or_transformation",
+)
+
+#: FU-U11: the OPTIONAL overlay excerpt. Never in BOOK_FIELDS -- it is not a
+#: brief field the intake asks for and never adds a question; it rides inside
+#: the existing offer slot when the client supplies it.
+EXCERPT_FIELD = "excerpt_lines"
+EXCERPT_MAX_LINES = 3
+EXCERPT_PROVENANCE = "provided"
+#: The notice the card shows when the client supplied no excerpt (the
+#: onboarding half's wording, kept for the package export surface).
+EXCERPT_NOTE_EMPTY = ("No excerpt supplied -- the pages carry no overlay "
+                      "text. The excerpt is optional and is never invented "
+                      "for the client.")
+
+#: Default when the brief says nothing: English, which is left-to-right.
+DEFAULT_LANGUAGE = "en"
+
+#: Client spellings folded into the canonical field names.
+ALIASES = {
+    "book_title": ("book_title", "title", "book"),
+    "author": ("author", "book_author", "author_name"),
+    "buy_link": ("buy_link", "link", "purchase_url", "buy_url"),
+    "cover": ("cover", "cover_image", "product_image", "cover_path"),
+    "language": ("language", "book_language", "reading_language", "lang"),
+    "audience": ("audience", "who_for"),
+    "pain_or_transformation": ("pain_or_transformation", "pain",
+                               "transformation", "pain_or_transform"),
+}
+
+#: FU-U11: spellings the client's brief may use for the optional excerpt.
+EXCERPT_ALIASES = ("excerpt_lines", "excerpt", "overlay_lines", "page_lines")
+
+#: Which book fields fold into which of the factory's intake slots.
+#: Union == BOOK_FIELDS: no book field is ever asked outside the cap.
+FOLDED_FIELDS = {
+    "offer": ("book_title", "author", "buy_link", "cover", "language"),
+    "audience_action": ("audience", "pain_or_transformation"),
+    "placement": (),
+}
+
+#: Book wording for the slots the book fields ride in (plan 6.14). The
+#: placement slot keeps the generic intake wording. FU-U10 folds
+#: the language ask into the same offer sentence -- one question, not two.
+Q_BOOK_OFFER = ("What is the book -- title and author -- where do readers "
+                "buy it, which cover image should we use as the product "
+                "image, and what language is it written in (English reads "
+                "left to right)?")
+Q_BOOK_AUDIENCE = ("Who is the book for, what pain or transformation does it "
+                   "deliver, and what should viewers do after watching?")
+
+STORY_ROLE = "the mentor/turning point of the story is the book"
+CTA_PREFIX = "Get the book"
+COVER_SOURCE = "client-supplied book cover (D26, plan 6.14)"
+COVER_NOTE = ("No cover supplied -- the product image will be designed from "
+              "the brief (choice-card spec 3.9).")
+LINK_NOTE = "No buy link supplied -- the call to action has no destination."
+
+
+_RTL_FALLBACK = ("ar", "he", "fa", "ur", "yi", "dv", "ps", "sd")
+
+def reading_direction(language):
+    """'rtl' / 'ltr' for a brief language. One owner: book_shot's table.
+
+    The local fallback covers the (unreachable in a full install) case where
+    book_shot is absent: the direction is still chosen from the brief, never
+    guessed from what a model produced.
+    """
+    if _book_shot is not None:
+        return _book_shot.reading_direction(language)
+    lang = (language or DEFAULT_LANGUAGE).strip().lower().split("-")[0]
+    lang = lang.split("_")[0]
+    return "rtl" if lang in _RTL_FALLBACK else "ltr"
+
+def _text(v):
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
+def _sha256_file(path):
+    """sha256 of a local file, or None when it is not a readable file."""
+    try:
+        if not os.path.isfile(path):
+            return None
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def normalize(brief, settings=None):
+    """Resolve the six book fields: brief > settings.defaults > missing.
+
+    Returns (fields, provenance) with provenance values provided/inherited/
+    missing. A non-string value (list, dict, number) never becomes a field --
+    it is treated as absent instead of being coerced into a product path.
+    """
+    brief = brief if isinstance(brief, dict) else {}
+    settings = settings or {}
+    defaults = settings.get("defaults") if isinstance(settings.get("defaults"), dict) else {}
+    fields, prov = {}, {}
+
+    def pick(name):
+        for key in ALIASES[name]:
+            v = _text(brief.get(key))
+            if v:
+                return v, "provided"
+        for key in ALIASES[name]:
+            v = _text(defaults.get(key))
+            if v:
+                return v, "inherited"
+        return None, "missing"
+
+    for name in BOOK_FIELDS:
+        fields[name], prov[name] = pick(name)
+    # FU-U10: English is the default only when nothing was supplied -- the
+    # value is recorded as "defaulted", never as if the client had said it.
+    if not fields.get("language"):
+        fields["language"] = DEFAULT_LANGUAGE
+        prov["language"] = "defaulted"
+    # FU-U11: the excerpt is OPTIONAL and CLIENT-SUPPLIED only. It is never
+    # defaulted, never generated, never lengthened.
+    ex, ex_prov = _pick_excerpt(brief)
+    if ex is not None:
+        fields[EXCERPT_FIELD] = ex
+        prov[EXCERPT_FIELD] = ex_prov
+    return fields, prov
+
+
+def _pick_excerpt(brief):
+    """(lines, provenance) for a supplied excerpt, or (None, "missing").
+
+    ``provided`` is the ONLY value this can return for lines: there is no
+    path here that invents, generates or inherits an excerpt. A value that
+    is not a list of non-empty strings, or is longer than the cap, is a
+    brief error and refuses (BOOK_EXCERPT_INVALID) rather than being
+    silently dropped or truncated.
+    """
+    raw = None
+    for key in EXCERPT_ALIASES:
+        if key in brief:
+            raw = brief.get(key)
+            break
+    if raw is None or raw == "" or raw == []:
+        return None, "missing"
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        raise BookBriefError(EXCERPT_INVALID,
+                             "excerpt_lines must be a list of lines")
+    lines = []
+    for ln in raw:
+        if not isinstance(ln, str) or not ln.strip():
+            raise BookBriefError(EXCERPT_INVALID,
+                                 "excerpt_lines entries must be non-empty "
+                                 "strings")
+        lines.append(ln.strip())
+    if len(lines) > EXCERPT_MAX_LINES:
+        raise BookBriefError(EXCERPT_INVALID,
+                             "excerpt_lines has %d lines; the cap is %d"
+                             % (len(lines), EXCERPT_MAX_LINES))
+    errs = _spellcheck_excerpt(lines)
+    if errs:
+        raise BookBriefError(EXCERPT_INVALID,
+                             "excerpt is not spelling-clean: %s"
+                             % "; ".join(errs[:3]))
+    return lines, EXCERPT_PROVENANCE
+
+
+class BookBriefError(Exception):
+    """A brief the client must fix. Carries the reason code the card shows."""
+
+    def __init__(self, code, message):
+        super().__init__("%s: %s" % (code, message))
+        self.code = code
+
+
+EXCERPT_INVALID = "BOOK_EXCERPT_INVALID"
+
+
+def _spellcheck_excerpt(lines):
+    """Spelling errors, from the caption gate's own dictionary (one owner)."""
+    try:
+        import protected_names as _PN
+    except ImportError:
+        return ["SPELLCHECK_UNAVAILABLE: protected_names cannot be imported"]
+    # check_spelling walks the LINES of its argument; a dict is walked over
+    # its KEYS, so the lines are passed as a list (never a dict).
+    return list(_PN.check_spelling(list(lines)))
+
+
+def excerpt_lines(brief):
+    """The client's optional excerpt as (lines, provenance, errors).
+
+    The onboarding half's package surface, kept: evaluate() is the fail-closed
+    path (a bad excerpt refuses the brief), while this read-only view reports
+    the errors instead of raising, for a caller that wants to show them.
+    CLIENT-SUPPLIED ONLY -- lines come verbatim from the brief, never composed
+    here; provenance is "provided" when lines were supplied, "missing" when
+    the field is absent, never invented.
+    """
+    try:
+        lines, prov = _pick_excerpt(brief)
+    except BookBriefError as exc:
+        return [], "missing", [str(exc)]
+    if lines is None:
+        return [], "missing", []
+    return list(lines), prov, []
+
+
+def to_intake_brief(fields, brief=None):
+    """Map book fields onto the standard intake brief.
+
+    A slot counts as answered only when ALL of its book fields are present,
+    so a half-filled slot still opens exactly the one question that already
+    exists -- the ask folds in, it never multiplies.
+
+    U-GEN423: the shared engine also reads ``mode``, ``extracted_sources``,
+    ``packet_lines``, ``sfx``, ``length``/``length_option``, ``target_length_s``
+    and ``fps`` from the brief itself. A book brief may carry them; they used
+    to be dropped here, which left mode/notices/warnings structurally constant
+    on the book path. Each is forwarded ONLY when the brief actually supplies
+    it -- nothing is defaulted, because a fabricated value would read as if
+    the client had asked for it.
+    """
+    brief = brief if isinstance(brief, dict) else {}
+    offer = None
+    if fields.get("book_title") and fields.get("author") and fields.get("buy_link"):
+        offer = "%s by %s -- get it at %s" % (
+            fields["book_title"], fields["author"], fields["buy_link"])
+    audience = None
+    if fields.get("audience") and fields.get("pain_or_transformation"):
+        audience = "%s -- delivers %s" % (
+            fields["audience"], fields["pain_or_transformation"])
+    mapped = {
+        "offer": offer,
+        "audience": audience,
+        # The book's call to action is always "get the book"; it never
+        # consumes a question slot of its own.
+        "action": (CTA_PREFIX + ": " + fields["buy_link"]) if fields.get("buy_link")
+        else CTA_PREFIX,
+    }
+    if fields.get("cover"):
+        mapped["assets"] = [fields["cover"]]
+    # U-GEN423: pass-through fields the shared engine reads from the brief.
+    # Scalars go over verbatim (each reader -- mode_of, notices -- coerces its
+    # own type); list-shaped fields are forwarded only as lists, which is the
+    # shape the engine walks. A key the brief does not have is left out.
+    for key in ("mode", "fps", "target_length_s"):
+        if brief.get(key) is not None:
+            mapped[key] = brief[key]
+    for key in ("extracted_sources", "packet_lines", "sfx"):
+        if isinstance(brief.get(key), list):
+            mapped[key] = brief[key]
+    # The book brief spells a length as ``length``; the engine reads
+    # ``length_option`` and parses it with its own ``_as_length`` ("90s"/"2m"
+    # and plain seconds all convert). An explicit length_option wins.
+    length = brief.get("length_option", brief.get("length"))
+    if length is not None:
+        mapped["length_option"] = length
+    return mapped
+
+
+def card_notes(fields):
+    notes = []
+    if not fields.get("cover"):
+        notes.append(COVER_NOTE)
+    if not fields.get("buy_link"):
+        notes.append(LINK_NOTE)
+    return notes
+
+
+#: PNG / JPEG / GIF / BMP magic numbers -> (format, size reader). Stdlib only:
+#: the cover's aspect is a header read, never an image decode.
+def _image_size(path):
+    """(width, height) from the file header, or None when unreadable.
+
+    PNG and JPEG cover the real cases (a client cover file); the header read
+    keeps this module stdlib-only as the intake layer requires.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(32)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                w = int.from_bytes(head[16:20], "big")
+                h = int.from_bytes(head[20:24], "big")
+                return (w, h) if w and h else None
+            if head[:2] == b"\xff\xd8":                      # JPEG: scan SOFn
+                f.seek(2)
+                while True:
+                    b = f.read(1)
+                    while b and b != b"\xff":
+                        b = f.read(1)
+                    if not b:
+                        return None
+                    while b == b"\xff":
+                        b = f.read(1)
+                    if not b:
+                        return None
+                    marker = b[0]
+                    if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:
+                        continue
+                    ln = int.from_bytes(f.read(2), "big")
+                    if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                        d = f.read(5)
+                        if len(d) < 5:
+                            return None
+                        h = int.from_bytes(d[1:3], "big")
+                        w = int.from_bytes(d[3:5], "big")
+                        return (w, h) if w and h else None
+                    f.seek(ln - 2, 1)
+    except OSError:
+        return None
+    return None
+
+def cover_aspect(fields):
+    """{'width','height','aspect','measured'} for the cover file.
+
+    ``measured`` is False whenever the bytes could not be read: the aspect is
+    then never invented, and the orientation contract simply says so.
+    """
+    cover = fields.get("cover")
+    size = _image_size(cover) if cover else None
+    if not size:
+        return {"width": None, "height": None, "aspect": None,
+                "measured": False}
+    w, h = size
+    return {"width": w, "height": h,
+            "aspect": "%.6f" % (float(w) / float(h)), "measured": True}
+
+def product_reference(fields, prov):
+    """The cover stored as a product reference with provenance (plan 6.14)."""
+    cover = fields.get("cover")
+    sha = _sha256_file(cover) if cover else None
+    return {
+        "product_id": "book-cover",
+        "role": "product_image",
+        "path": cover,
+        "provides_product_image": bool(cover),
+        "provenance": {
+            "source": COVER_SOURCE,
+            "origin": cover,
+            "field_provenance": prov.get("cover"),
+            "sha256": sha,
+            "readable": sha is not None,
+            "note": None if cover else COVER_NOTE,
+        },
+    }
+
+
+def _reword(question):
+    """Same slot, book wording; ids and count come from the base engine."""
+    q = dict(question)
+    q["question"] = {
+        "offer": Q_BOOK_OFFER,
+        "audience_action": Q_BOOK_AUDIENCE,
+    }.get(q.get("id"), q.get("question"))
+    q["folded_fields"] = list(FOLDED_FIELDS.get(q.get("id"), ()))
+    return q
+
+
+def _excerpt_rejected(brief, detail, code, settings):
+    """The rejected shape for a bad excerpt. Same keys as every other
+    rejection this module returns, so a caller reads one shape."""
+    return {
+        "outcome": "rejected", "reason_code": code.lower(),
+        "questions": [], "question_message": None,
+        "summary": {"campaign_type": "book"}, "digest": None,
+        "provenance": {"book": {}, "intake": {}}, "untrusted_fields": [],
+        "auth_status": "missing", "approval_invalidated": False,
+        "changes": [], "product_reference": None,
+        "excerpt_error": detail,
+        "next_action": ("Fix the excerpt and resubmit: at most %d lines, each "
+                        "a real word. An excerpt is optional -- omit it to "
+                        "continue without an overlay." % EXCERPT_MAX_LINES),
+    }
+
+
+def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None):
+    """Run book intake. Shape mirrors intake_preflight.evaluate.
+
+    outcome: ok / waiting / parked / rejected / error. The question list is
+    exactly what intake_preflight asks for the mapped brief, reworded -- so
+    the three-question cap holds by construction, not by a second cap.
+    """
+    settings = settings or {}
+    if not isinstance(brief, dict):
+        return {
+            "outcome": "rejected", "reason_code": "bad-brief-not-a-dict",
+            "questions": [], "question_message": None,
+            "summary": {"campaign_type": "book"}, "digest": None,
+            "provenance": {"book": {}, "intake": {}}, "untrusted_fields": [],
+            "auth_status": "missing", "approval_invalidated": False,
+            "changes": [], "product_reference": None,
+            "next_action": "Resubmit the brief as a JSON object.",
+        }
+
+    try:
+        fields, prov = normalize(brief, settings)
+    except BookBriefError as exc:
+        return _excerpt_rejected(brief, str(exc), exc.code, settings)
+    # F6: menus and numbers come from Trevor's words or the skill's tables,
+    # never invented. Checked at compile time, before any question is asked.
+    invented = reject_any_invented(brief)
+    mapped = to_intake_brief(fields, brief)
+    base = _base.evaluate(mapped, settings, resume_state, run_id, now_unix)
+    # U-E05: an instruction-bearing source is dropped and named, never a
+    # refusal -- the run continues on the client's own words. U-GEN423 now
+    # forwards extracted_sources into the mapped brief, so the engine's own
+    # warnings already name them; the raw-brief screen stays for any path that
+    # maps nothing, and a name is never listed twice.
+    warnings = list(base.get("warnings") or [])
+    for name in _base.detect_injection(brief):
+        w = "source ignored: %s" % name
+        if w not in warnings:
+            warnings.append(w)
+
+    base_fields, _ = _base.normalize(mapped, settings)
+    base_summary = dict(base.get("summary") or {})
+    base_summary.pop("auth_status", None)  # re-bound to the book digest below
+    summary = dict(base_summary)
+    summary["campaign_type"] = "book"
+    summary["book"] = {k: fields.get(k) for k in BOOK_FIELDS}
+    summary["product_image_path"] = fields.get("cover")
+    summary["story_role"] = STORY_ROLE
+    summary["card_notes"] = card_notes(fields)
+    # FU-U10: reading direction comes from brief.language, never from a model,
+    # and the cover's aspect is MEASURED (measured=False when unreadable).
+    summary["reading_direction"] = reading_direction(fields.get("language"))
+    summary["cover_aspect"] = cover_aspect(fields)
+    # FU-U11: the excerpt, when the client supplied one. Provenance is
+    # "provided" by construction; a brief with no excerpt carries no key, so
+    # it can never look like an invented one.
+    if fields.get(EXCERPT_FIELD):
+        summary["excerpt_lines"] = list(fields[EXCERPT_FIELD])
+        summary["excerpt_provenance"] = EXCERPT_PROVENANCE
+    digest = hashlib.sha256(
+        json.dumps(summary, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    # Authorization is bound to THIS record's digest (scope may be "campaign"
+    # or the exact digest), never to the base intake digest.
+    status = _base.auth_status_for(base_fields, digest, settings, now_unix)
+    summary["auth_status"] = status
+
+    questions = [_reword(q) for q in (base.get("questions") or [])]
+    message = _base._fmt([q["question"] for q in questions])
+    out = {
+        "outcome": base.get("outcome"),
+        "reason_code": base.get("reason_code"),
+        "questions": questions,
+        "question_message": message,
+        "summary": summary,
+        "digest": digest,
+        "provenance": {"book": prov, "intake": base.get("provenance")},
+        "auth_status": status,
+        "approval_invalidated": base.get("approval_invalidated", False),
+        "changes": base.get("changes", []),
+        "product_reference": product_reference(fields, prov),
+        "next_action": base.get("next_action"),
+        "next_stage": base.get("next_stage"),
+        "mode": base.get("mode"),
+        "notices": base.get("notices"),
+        "warnings": warnings,
+    }
+    if invented:  # F6: an invented style/number/gate refuses the brief
+        out.update({
+            "outcome": "rejected",
+            "reason_code": invented["reason_code"],
+            "questions": [],
+            "question_message": None,
+            "invented_fields": invented["invented_fields"],
+            "approval_invalidated": False,
+            "changes": [],
+            "next_action": (
+                "Use a value from the skill's menu (styles: %s; looks: %s; "
+                "lengths: %s s; alias 'upbeat' = Soul Rise) or leave the field "
+                "out so the card shows the default."
+                % (", ".join(_MS.style_ids()),
+                   ", ".join(_LOOKS.LOOK_ORDER),
+                   "/".join(str(n) for n in _OFFERED_LENGTHS_S))),
+        })
+    return out
+
+
+# ------------------------------------------------------------- F6 gate ----
+#: Part F F6 (manual 02, F6): briefs never invent. Style/look values must sit
+#: on the skill's menus (music_styles.STYLES + the choice-card looks table),
+#: numbers must sit on the documented length table or the D15 spoken-share
+#: band, and gate names must be one of the approval gates the skill itself
+#: defines. Anything else -- "upbeat tropical EDM", "77 seconds", a private
+#: music-approval gate -- refuses with reason BRIEF_INVENTED_FIELD. A field
+#: not given never invents: intake defaults it and the choice card shows it.
+BRIEF_INVENTED_FIELD = "BRIEF_INVENTED_FIELD"
+
+#: Documented alias (F6 example, manual 02): 'upbeat' maps to the menu's
+#: Soul Rise (the style that lifts into an upbeat groove at the turn).
+STYLE_ALIASES = {"upbeat": "soul-rise"}
+
+#: The skill's own approval gates (F6: "gates = the skill's own list").
+#: Spellings accepted for each; anything not here is an invented gate,
+#: including a new one an orchestrator might invent to skip a real one.
+GATE_ALIASES = {
+    "storyboard approval": (
+        "storyboard approval", "storyboard approvals", "storyboard approved",
+        "storyboard"),                      # directive 14.1 (video_spend_allowed)
+    "adversarial review": (
+        "adversarial review", "adversarial reviews"),   # directive 14.4
+    "authorization approval": (
+        "authorization approval", "authorization", "intake approval"),
+}
+
+#: Brief keys whose value is menu-typed (a style word), a number, or a gate.
+#: Free-text fields (offer, audience, pain, ...) are never judged here.
+STYLE_KEYS = ("style", "music", "music_style", "audio_style")
+LOOK_KEYS = ("look",)
+LENGTH_KEYS = ("length", "length_option", "target_length_s")
+SHARE_KEYS = ("spoken_share", "spoken_share_pct")
+GATE_KEYS = ("gates", "approval_gates")
+
+
+#: Flattened set: every accepted gate spelling.
+def _gate_spellings():
+    return frozenset(s for spellings in GATE_ALIASES.values()
+                     for s in spellings)
+
+
+def _music_style_id(value):
+    """Menu id for a style value, or None when it is invented."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    low = value.strip().lower()
+    if low in STYLE_ALIASES:
+        return STYLE_ALIASES[low]
+    if low in _MUSIC_STYLES:
+        return low
+    for sid, rec in _MUSIC_STYLES.items():
+        if low == rec["label"].lower():
+            return sid
+    return None
+
+
+def _length_seconds(value):
+    """Seconds for a length value on the documented table, or None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        secs = int(round(float(value)))
+        return secs if secs in _OFFERED_LENGTHS_S else None
+    if isinstance(value, str):
+        key = value.strip().lower().replace(" ", "").replace("-", "")
+        return _LENGTH_ALIASES.get(key)
+    return None
+
+
+def _on_share_band(value):
+    """True when the value sits on the D15 band (fraction or percent)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    v = float(value)
+    return _SPOKEN_SHARE_MIN <= v <= _SPOKEN_SHARE_MAX or (
+        100.0 * _SPOKEN_SHARE_MIN <= v <= 100.0 * _SPOKEN_SHARE_MAX)
+
+
+def reject_any_invented(brief):
+    """F6 brief compiler check. None when clean; otherwise the refusal.
+
+    Returns {"reason_code": BRIEF_INVENTED_FIELD, "invented_fields": [...]}
+    listing every menu-typed field whose value is neither the order's words
+    (a menu name or documented alias) nor the skill's own tables.
+    """
+    if not isinstance(brief, dict):
+        return None
+    invented = []
+
+    for key in STYLE_KEYS:
+        if key in brief and _music_style_id(brief.get(key)) is None:
+            invented.append(key)
+    for key in LOOK_KEYS:
+        if key in brief:
+            value = brief.get(key)
+            if isinstance(value, str) and value.strip():
+                try:                            # menu words only
+                    _resolve_look(value)
+                except _LookError:
+                    invented.append(key)
+            else:
+                invented.append(key)
+    for key in LENGTH_KEYS:
+        if key in brief and _length_seconds(brief.get(key)) is None:
+            invented.append(key)
+    for key in SHARE_KEYS:
+        if key in brief and not _on_share_band(brief.get(key)):
+            invented.append(key)
+    for key in GATE_KEYS:
+        if key not in brief:
+            continue
+        value = brief.get(key)
+        parts = value.split(",") if isinstance(value, str) else value
+        if not isinstance(parts, list) or not all(
+                isinstance(p, str) and " ".join(p.strip().lower().split())
+                in _gate_spellings() for p in parts if isinstance(p, str)) \
+                or not [p for p in parts if isinstance(p, str) and p.strip()]:
+            invented.append(key)
+    if not invented:
+        return None
+    return {"reason_code": BRIEF_INVENTED_FIELD,
+            "invented_fields": sorted(set(invented))}
+
+
+def main(argv=None):
+    """CLI: one envelope on stdout, factory exit codes (0 ok, 2 waiting,
+    3 parked, 4 rejected, 1 error)."""
+    ap = argparse.ArgumentParser(
+        prog="book.py",
+        description="Book campaign intake (D26, plan 6.14) -- folded into the "
+                    "factory's three-question cap.")
+    ap.add_argument("--brief", default=None, help="Brief as a JSON string.")
+    ap.add_argument("--brief-file", default=None)
+    ap.add_argument("--settings-file", default=None)
+    ap.add_argument("--resume-file", default=None)
+    ap.add_argument("--run-id", default=None)
+    a = ap.parse_args(argv)
+    run_id = a.run_id or uuid.uuid4().hex[:12]
+    try:
+        if a.brief_file:
+            with open(a.brief_file, encoding="utf-8") as f:
+                brief = json.load(f)
+        else:
+            brief = json.loads(a.brief or "{}")
+        settings = {}
+        if a.settings_file:
+            with open(a.settings_file, encoding="utf-8") as f:
+                settings = json.load(f)
+        resume = None
+        if a.resume_file:
+            with open(a.resume_file, encoding="utf-8") as f:
+                resume = json.load(f)
+        r = evaluate(brief, settings, resume, run_id)
+        outcome, reason = r["outcome"], r["reason_code"]
+        next_action = r["next_action"]
+        data = {k: r.get(k) for k in (
+            "questions", "question_message", "summary", "digest", "provenance",
+            "auth_status", "approval_invalidated", "changes", "untrusted_fields",
+            "invented_fields",
+            "product_reference", "next_stage",
+            "mode", "notices", "warnings")}
+        expected = (resume or {}).get("digest") if resume else None
+        state_version = {"expected": expected, "current": r.get("digest")}
+    except Exception as e:                                  # noqa: BLE001
+        outcome, reason = "error", "book-intake-failed"
+        next_action = str(e)[:200]
+        data, state_version = {}, {"expected": None, "current": run_id}
+    env = {
+        "schema_version": SCHEMA_VERSION,
+        "tool_version": TOOL_VERSION,
+        "command": "book-intake",
+        "run_id": run_id,
+        "outcome": outcome,
+        "reason_code": reason,
+        "next_action": next_action,
+        "evidence": [],
+        "data": data,
+        "state_version": state_version,
+    }
+    json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
+    sys.stdout.write("\n")
+    return EXIT.get(outcome, 1)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
