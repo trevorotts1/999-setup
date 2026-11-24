@@ -1,0 +1,87 @@
+// ============================================================================
+// inbox.js — Drama Studio service: inbox entry (U2)
+//
+// Joint plan section 3.2: "a 2-minute read of one small inbox file per box" —
+// the studio writes ONE small inbox object per client, and the box (or Claude
+// Code computer) reads it with its own key. Section 3.10: the bridge script
+// prints nothing when there is no order, prints one line when there is one:
+//
+//   DRAMA_ORDER r_123 "Spring Sale"
+//
+// and records "last check-in" either way.
+//
+// The studio is a dumb relay: this module stores what the client said and
+// hands back one line. It never decides to run anything.
+// ============================================================================
+
+'use strict';
+
+import { checkinKey, scopePath } from './ids.js';
+import { CHECKIN_SAVE_EVERY_MS, lastCheckIn } from './options.js';
+import { withRetentionKind } from './retention.js';
+
+export const MAX_WAITING_ORDERS = 50;
+export const INBOX_LINE_PREFIX = 'DRAMA_ORDER';
+
+/** clients/<id>/inbox.json — the one small file per box. */
+export function inboxPath(clientId) {
+  return scopePath(clientId, 'inbox.json');
+}
+
+/** The waiting orders only, newest last, capped so the file stays small. */
+export function waitingOrders(orders) {
+  const list = (orders || []).filter((o) => o && o.state === 'waiting');
+  return list.slice(0, MAX_WAITING_ORDERS);
+}
+
+/**
+ * Write the client's inbox: waiting orders only, never the whole order table
+ * (a box has no business reading another stage's records).
+ */
+export async function writeInbox(objectStore, { clientId, orders, nowMs }) {
+  const waiting = waitingOrders(orders);
+  await objectStore.objectPut(
+    inboxPath(clientId),
+    // A stored object in the client's own scope: the 45-day storage class.
+    JSON.stringify(withRetentionKind({ client_id: clientId, updated_at: nowMs, orders: waiting }, 'project_object')),
+  );
+  return { ok: true, path: inboxPath(clientId), waiting: waiting.length };
+}
+
+export async function readInbox(objectStore, clientId) {
+  const obj = await objectStore.objectGet(inboxPath(clientId));
+  if (!obj) return { waiting: [] };
+  try {
+    const parsed = JSON.parse(obj.value);
+    return { waiting: waitingOrders(parsed.orders) };
+  } catch {
+    return { waiting: [] };
+  }
+}
+
+/** The one line a bridge prints. Null when there is nothing to do. */
+export function inboxLine(orders) {
+  const first = waitingOrders(orders)[0];
+  if (!first) return null;
+  const title = String(first.title || 'your video').replace(/"/g, "'");
+  return `${INBOX_LINE_PREFIX} ${first.order_id} "${title}"`;
+}
+
+/**
+ * A check-in from a box or computer: records the moment, returns the one line
+ * (or nothing). Zero model tokens on the client side — this is the network
+ * call, not a model turn. The moment is re-saved at most every
+ * CHECKIN_SAVE_EVERY_MS. Boxes send `{orders: true}`, so only a real array is
+ * treated as an order list; anything else reads the inbox.
+ */
+export async function checkIn(objectStore, { clientId, nowMs, orders }) {
+  const last = await lastCheckIn(objectStore, clientId);
+  if (last === null || nowMs - last >= CHECKIN_SAVE_EVERY_MS) {
+    // A bare millisecond count read back with Number() (options.lastCheckIn),
+    // not a record: it carries no retention kind on purpose, because re-shaping
+    // it would change that reader and the table names no class for it.
+    await objectStore.objectPut(checkinKey(clientId), String(nowMs));
+  }
+  const inbox = Array.isArray(orders) ? { waiting: waitingOrders(orders) } : await readInbox(objectStore, clientId);
+  return { ok: true, checked_in_at: nowMs, line: inboxLine(inbox.waiting) };
+}

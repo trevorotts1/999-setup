@@ -1,0 +1,1078 @@
+#!/usr/bin/env python3
+"""G7 tests: the 7-question delivery checklist on the Final edit QC gate.
+
+Done-when cases from Trevor order 1140 (in HOME=$(mktemp -d), no operator
+paths, stdlib only):
+  1. a receipt missing ANY of the 7 measured answers FAILS the gate;
+  2. a complete measured receipt PASSES;
+  3. a "yes" without a measurement FAILS;
+  4. a "no" produces a redo directive naming ONLY the failing part and
+     never a cancel (repair_scope is exactly the failing questions, the
+     shared gate verdict stays FAIL -- targeted repair -- never BLOCKED).
+
+Also proves the checklist ships verbatim next to the code and that the
+gate record wires into core/qc_gate.py (evaluate accepts it; a FAIL
+record fails the final_edit stage fail-closed).
+
+W39 CONSUMERS-R2 makes Q12 authoritative: PACKAGE_COMPLETE is granted only
+against the run's OWN recorded obligations (core/delivery_package/run_inputs
+.delivery_context), never against a folder inspection. So every receipt here
+is evaluated against a REAL confirmed intake -- the real card session writer,
+the real stage store (control/state.sqlite3) and the run's saved length
+answer -- and names it through the receipt's own ``run_root``. A folder
+inspection with no resolvable run is still REPORTED (historical structure) but
+can never grant a completion, which the refusal case below pins down.
+
+The delivery folder stays a fixture: contract-valid bytes for the items the
+run owes (and a synthetic, never-rendered export master), because the subject
+here is the final checker, not a renderer. Nothing is mocked: no fake
+authority, no fake run inputs, no fake store.
+
+Run from the skill root (the real intake card resolves the live KIE model
+registry by walking up from the working directory):
+    python3 scripts/core/delivery_checklist/test_delivery_checklist.py
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+_CORE = _HERE.parents[0]                       # .../scripts/core
+_SKILL = _CORE.parents[1]                      # .../75-drama-song-ad-factory
+if str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+
+# the checker lives in the package next to this test; import it as a
+# package module so sys.path order can never shadow it with __init__.py
+import delivery_checklist.delivery_checklist as dc  # noqa: E402
+
+import qc_gate                                 # noqa: E402  (shared gate)
+
+# DEL-13: Q12 answers from the delivery FOLDER, so the fixture builds one
+# complete 12-item folder once and every case above reuses it.
+import shutil
+import delivery_package.contract as package_contract  # noqa: E402
+# W39: Q12 grants nothing without the run's own record, so the fixture writes
+# a REAL confirmed intake and names it in the receipt's run_root.
+from choice_card.intake_card import intake_session as session  # noqa: E402
+import delivery_package.run_inputs as run_inputs  # noqa: E402
+
+def _stamp_wave_lipsync_model(root):
+    """Pin fixture lip-sync receipts to the wave roster (OmniHuman 2.0).
+
+    attach_evidence writes the retired "kling/ai-avatar-standard" id into
+    every synthetic receipt; the wave's model_lock admits only
+    "omnihuman-2-0" (S-42), so check_plan refuses the export proof
+    (LIPSYNC_MODEL_UNLISTED) unless the stamp moves with the roster. The
+    stamp is rewritten to the roster id the run chose, read from the lock
+    itself, never a hand-typed id.
+    """
+    import glob as _glob
+    import json as _json
+    import kie_dispatch.model_lock as _ML
+    roster = _ML.LOCKED_LIPSYNC_MODEL
+    for path in _glob.glob(str(Path(root) / "receipts" / "*.json")):
+        rec = _json.loads(Path(path).read_text())
+        ev = rec.get("evidence") or {}
+        if (ev.get("lipsync_model") == "kling/ai-avatar-standard"
+                and roster != "kling/ai-avatar-standard"):
+            ev["lipsync_model"] = roster
+            rec["evidence"] = ev
+            Path(path).write_text(_json.dumps(rec))
+
+_PKG_TMP = Path(tempfile.mkdtemp(prefix="del13-checklist-"))
+_PKG_FOLDER = _PKG_TMP / "delivery"
+package_contract.write_reference_package(_PKG_FOLDER)
+_REAL_MASTERS = {}
+#: The CLI round trip runs the checker in a child process: S75-057 means Q8
+#: decodes the clean cut, so that child needs the box's ffmpeg/ffprobe too.
+_CLI_PATH = ":".join(
+    ["/usr/bin", "/bin"] +
+    [str(Path(bin_).parent) for name in ("ffmpeg", "ffprobe")
+     for bin_ in [shutil.which(name)] if bin_])
+
+
+def real_master(picture="red"):
+    """(master, clean): REAL 10 s media, cleaned by video_delivery.clean_argv.
+
+    S75-057: Q8 compares the DECODED picture and the audio (duration and
+    loudness), so the fixture cannot be synthetic bytes any more. The master
+    is a 10 s 30 fps synthetic clip and the clean cut is the one production
+    makes of it. Built once per picture; every receipt keeps its own copy.
+    """
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        raise unittest.SkipTest("ffmpeg + ffprobe required")
+    if picture not in _REAL_MASTERS:
+        from delivery_variants import video_delivery as VD
+        root = Path(tempfile.mkdtemp(prefix="master-%s-" % picture,
+                                     dir=_PKG_TMP))
+        master, clean = root / "master.mp4", root / "clean.mp4"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y",
+             "-f", "lavfi", "-i", "color=c=%s:s=64x64:r=30:d=10" % picture,
+             "-f", "lavfi", "-i", "sine=frequency=440:duration=10",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+             "-shortest", str(master)],
+            check=True, capture_output=True, text=True)
+        subprocess.run(VD.clean_argv(master, clean), check=True,
+                       capture_output=True, text=True)
+        _REAL_MASTERS[picture] = (master, clean)
+    return _REAL_MASTERS[picture]
+
+#: What the fixture client actually typed to the real intake card. Three
+#: minutes + the two short cuts: the run owes the twelve base items, item 6
+#: as the contract's two clips.
+INTAKE_REPLIES = {
+    "offer": "New Chapter Coaching", "link": "https://example.com/coaching",
+    "audience": "successful founders 45-60",
+    "character": "Christine, a lawyer", "photos": "Generate the photos",
+    "models": "deepseek-chain builds, opus-chain checks", "spend": "$25",
+    "script": "1", "song": "1", "storyboard": "1",
+    "length": "3 minutes + 60s and 90s clips",
+}
+_RUN_CACHE = {}
+
+
+def confirm_run(run, *, length=None):
+    """Write a REAL confirmed intake (card session + stage store) into run.
+
+    One authority, the production one: ``intake_session.process`` writes
+    control/intake-session.json, the real control/state.sqlite3 store (its own
+    schema and migrations) and the saved answer records the run's obligations
+    are derived from. Nothing here is hand-shaped.
+    """
+    replies = dict(INTAKE_REPLIES)
+    if length is not None:
+        replies["length"] = length
+    run = Path(run)
+    run.mkdir(parents=True, exist_ok=True)
+    turn = session.process([], run_dir=run, purpose_flow=False,
+                           runtime="claude-nine")
+    for _ in range(40):
+        if turn.get("done"):
+            return turn["run_id"]
+        qid = turn.get("question_id")
+        raw = "yes" if qid == "recap" else replies.get(qid, "1")
+        turn = session.process(
+            [raw], run_dir=run, purpose_flow=False, runtime="claude-nine",
+            question_id=qid, question_digest=turn.get("question_digest"),
+            source="client", source_ref="del13:" + str(qid))
+        if turn.get("outcome") == "error":
+            raise AssertionError(turn)
+    raise AssertionError("intake did not reach its confirmation: %r" % turn)
+
+
+def real_run():
+    """The module's one confirmed run: (run_dir, run_id), written once."""
+    if "run" not in _RUN_CACHE:
+        run = _PKG_TMP / "run"
+        _RUN_CACHE["run"] = (run, confirm_run(run))
+    return _RUN_CACHE["run"]
+
+
+def tearDownModule():
+    shutil.rmtree(_PKG_TMP, ignore_errors=True)
+
+RUN = "g7-run"
+STAGE = "final"
+REVIEWER = {"identity": "delivery_checklist/1.0.0",
+            "session": "g7-test-session",
+            "authority": "trevor-order-1140-G7"}
+MAKERS = {dc.CHECK_ID: "final_assembler/1.0.0",
+          "final-edit-e2e": "final_assembler/1.0.0"}
+# gate 4 "Final" required list with the G7 checker on it (the wiring the
+# run's Final edit QC uses from now on)
+FINAL_GATE_REQUIRED = ["final_edit", "delivery_checklist"]
+
+
+def final_edit_record(run=RUN, stage=STAGE, verdict="PASS"):
+    """A sibling final_edit PASS record, so the gate has both required checks."""
+    return {
+        "schema_version": "1.0.0", "check_id": "final-edit-e2e",
+        "run_id": run, "stage": stage, "check": "final_edit",
+        "verdict": verdict,
+        "evidence": {"summary": "final edit %s (e2e fixture)"
+                               % ("pass" if verdict == "PASS" else "FAIL")},
+        "checker_version": "1.0.0",
+        "reviewer": {"identity": "final_qc/1.0.0", "session": "g7-e2e",
+                     "authority": "17.5 final edit QC"},
+    }
+
+
+def full_answered_receipt(picture="red"):
+    """A receipt answering all 7 questions with measured evidence."""
+    run, _run_id = real_run()
+    receipt = {
+        "SUNG": {"style": "sung", "sung_pct": 61.0, "spoken_pct": 39.0,
+                 "detector": "singing-detector(vocal-stem)", "source_sung_pct":
+                 "vocal-stem astats", "source_spoken_pct": "vocal-stem astats",
+                 "source_detector": "detector-id g3"},
+        "ON_TARGET": {"shares": {
+            "sung": {"measured_pct": 61.0, "target_pct": 60.0},
+            "spoken": {"measured_pct": 45.0, "target_pct": 45.0},
+        }, "length_s": 61.0, "target_length_s": 60.0,
+            "source_shares": "timing map", "source_length_s": "ffprobe"},
+        "WORDS": {"words_present": 100, "words_total": 100,
+                  "missing_words": [], "invented_words": [],
+                  "source_words_present": "diff script vs srt",
+                  "source_words_total": "script"},
+        "FACES": {"shots": [
+            {"shot": "s1", "frame": "frames/s1-012.png", "emotion_match":
+             True},
+            {"shot": "s2", "frame": "frames/s2-044.png", "emotion_match":
+             True},
+        ], "source_shots": "sampled frames"},
+        "VOICE_MUSIC": {"music_unbroken": True, "music_gaps_s": 0.0,
+                        "reverb_tail_s": 0.0, "lines": [
+            {"delivery": "spoken", "mode": "spoken"},
+            {"delivery": "sung", "mode": "sung"},
+        ], "source_music_gaps_s": "silencedetect"},
+        "MODELS": {"used": {"video": "MiniMax H3 768P",
+                            "images": "gpt-image sunburst",
+                            "song": "Suno V6",
+                            # S-42: one lip-sync model, no menu.
+                            "lip_sync": "OmniHuman 2.0"},
+                   "source_used": "job receipts"},
+        "HONEST_RECEIPT": {"measured_fields": 14, "unmeasured_fields": 0,
+                           "source_measured_fields": "receipt audit",
+                           "source_unmeasured_fields": "receipt audit"},
+        "LIP_SYNC": {"source": "lip_gate.sync_check (calibrated)", "clips": [
+            {"clip": "ls1", "lip_verdict": "PASS", "corr": 0.71, "margin": 0.2,
+             "verdict": "PASS", "jobs_total": 1},
+            {"clip": "ls2", "lip_verdict": "ACCEPT_WITH_FLAG", "corr": 0.5,
+             "margin": 0.02, "verdict": "ACCEPT_WITH_FLAG", "jobs_total": 1},
+        ]},
+        "FIRST_SUNG": {"source": "singing-detector vocal stem",
+                       "detector": "singing-detector(vocal-stem)",
+                       "first_sung_pct": 14.0},
+        "PICTURES_MATCH": {"source": "H5 shot-to-line map, Suno timestamps",
+                           "shots": [
+            {"shot": "s1", "time_s": 4.2, "line": "the house went quiet",
+             "match": True, "slowdown": 1.0},
+            {"shot": "s2", "time_s": 9.8, "line": "she picked up the phone",
+             "match": True, "slowdown": 1.1},
+        ]},
+        "GOALS_BAND": {"source": "target engine receipt", "goals": [
+            {"name": "sung_share", "measured": 61.0, "target": 60.0},
+            {"name": "spoken_share", "measured": 49.0, "target": 45.0},
+            {"name": "length_s", "measured": 63.0, "target": 60.0,
+             "unit": "s"},
+            {"name": "first_sung", "measured": 21.0, "target": 15.0,
+             "flag": "FLAG first_sung 21 vs 15 (6 off, over 5)"},
+        ]},
+        "PACKAGE_COMPLETE": {"delivery_folder": str(_PKG_FOLDER),
+                             "source": "delivery_package.verify_folder"},
+        # W39: the run whose own record authorizes this completion. Q12
+        # resolves it through run_inputs.delivery_context; without it the
+        # folder would only ever be a structural inspection.
+        "run_root": str(run),
+    }
+
+    # Synthetic export proof: no rendering/provider call. Quantity policy is
+    # deliberately outside this Q8 identity/coverage fixture.
+    from test_lipsync_evidence import attach_evidence
+    from lipsync_evidence import check_plan
+    from final_assembler import assembler as A
+    from final_assembler.master_provenance import sha256_file
+    root = Path(tempfile.mkdtemp(prefix="export-", dir=_PKG_TMP))
+    tl = {"fps": 30, "segments": [
+        {"src": str(root / ("clip%d.mp4" % i)), "dur": 5,
+         "lip_sync": True, "transition": "none", "beat_cut": True} for i in range(2)]}
+    attach_evidence(tl, root)
+    plan = A.plan_timeline(tl)
+    for seg in plan["segments"]:
+        seg["source_dur"] = 5
+    master = root / "master.mp4"
+    real_master_file, real_clean_file = real_master(picture)
+    shutil.copyfile(real_master_file, master)
+    folder = package_contract.write_reference_package(root / "delivery")
+    shutil.copyfile(real_clean_file,
+                    folder / package_contract.ITEMS_BY_KEY["video"].files[1])
+    receipt["PACKAGE_COMPLETE"]["delivery_folder"] = str(folder)
+    # S-42 (wave): the lip-sync model is OmniHuman 2.0 on every run.
+    # attach_evidence (U-LIPGATE, scripts/core/test_lipsync_evidence.py)
+    # still stamps the retired Kling id in its fixture receipts; pin it to
+    # the wave roster here, inside the export proof, so check_plan admits
+    # the fixture. Nothing here is mocked.
+    _stamp_wave_lipsync_model(root)
+    rc = {"outcome": "ok", "produced_by": {"module": "final_assembler.assembler"},
+          "master_sha256": sha256_file(master),
+          "evidence": {"output_dur": plan["total_dur"], "lipsync_plan": plan,
+                       "lipsync_export": check_plan(plan, require_measured=True)}}
+    Path(str(master) + ".receipt.json").write_text(json.dumps(rc))
+    receipt["LIP_SYNC"]["master_path"] = str(master)
+    for row, seg in zip(receipt["LIP_SYNC"]["clips"], plan["segments"]):
+        row.update(shot_id=seg["shot_id"], sha256=seg["artifact"]["sha256"],
+                   task_id=seg["artifact"]["provenance"]["task_id"])
+    return receipt
+
+
+def measured_yes(q, receipt):
+    """Flip question q's answer to an explicit measured pass."""
+    receipt[q] = receipt[q]                  # already measured in the fixture
+    return receipt
+
+
+def _detector_record(sung=61.0, runtime=60.0, take="o3"):
+    """A G3 detector record (the record the amended G5 receipt is built from)."""
+    sung_share = sung / 100.0
+    return {"tool": "singing_detector", "tool_version": "2.0.0",
+            "sung_share": sung_share, "spoken_share": 1.0 - sung_share,
+            "rap_share": 0.0, "no_voice_share": 0.0, "confidence": 0.9,
+            "measured": True, "runtime_s": runtime, "take": take}
+
+
+def g5_measured_block(sung=61.0, runtime=60.0):
+    """The block core/singing_detector/receipt_evidence.measured_share()
+    builds -- built HERE by that real module, never hand-shaped, so the
+    test proves the two units agree on the field names."""
+    RE = dc._receipt_evidence()
+    assert RE is not None, "receipt_evidence reader missing"
+    return RE.measured_share(_detector_record(sung, runtime))
+
+
+def g5_full_block(sung=61.0, runtime=60.0):
+    """The full amended receipt block: shares + target + gap + takes."""
+    RE = dc._receipt_evidence()
+    assert RE is not None, "receipt_evidence reader missing"
+    return RE.receipt_block(_detector_record(sung, runtime),
+                            target={"sung_share": 0.60},
+                            rounds_used=1, selected_take=None)
+
+
+class G7DoneWhen(unittest.TestCase):
+    # ---- done-when 1: missing ANY measured answer FAILS the gate -------
+    def test_missing_answer_fails(self):
+        for q in dc.QUESTIONS:
+            receipt = full_answered_receipt()
+            del receipt[q]
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], "missing %s must FAIL" % q)
+            self.assertIn(q, res["repair_scope"])
+            codes = {c.split(":")[0] for c in
+                     [res["detail"]]}
+            self.assertIn(dc.REASON_CODES["ANSWER_MISSING"], res["reason_code"])
+
+    # ---- done-when 2: complete measured receipt PASSES ------------------
+    def test_complete_receipt_passes(self):
+        res = dc.evaluate(full_answered_receipt())
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertEqual(res["repair_scope"], [])
+        self.assertEqual(res["reason_code"], "CHECKLIST_ALL_MEASURED_PASS")
+        self.assertEqual(len(res["answers"]), 12)
+        self.assertTrue(all(a["answer"] == "yes"
+                            for a in res["answers"].values()))
+
+    # ---- done-when 3: "yes" without a measurement FAILS -----------------
+    def test_yes_without_measurement_fails(self):
+        for q, bare in (
+            ("SUNG", {"sung": "yes"}),
+            ("ON_TARGET", {"on_target": "yes"}),
+            ("WORDS", {"words_ok": True}),
+            ("FACES", {"faces_ok": "yes"}),
+            ("VOICE_MUSIC", {"music_ok": "yes"}),
+            ("MODELS", {"models_ok": True}),
+            ("HONEST_RECEIPT", {"honest": "yes"}),
+            ("LIP_SYNC", {"lip_sync_ok": "yes"}),
+            ("FIRST_SUNG", {"singing_early": True}),
+            ("PICTURES_MATCH", {"pictures_ok": "yes"}),
+            ("GOALS_BAND", {"all_within": "yes"}),
+            ("PACKAGE_COMPLETE", {"package_ok": True}),
+        ):
+            receipt = full_answered_receipt()
+            receipt[q] = bare
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"],
+                             "%s bare 'yes' must count as 'no'" % q)
+            expected = ["LIP_SYNC", q] if q == "PACKAGE_COMPLETE" else [q]
+            self.assertEqual(res["repair_scope"], expected)
+            self.assertEqual(res["answers"][q]["answer"], "no")
+
+    # ---- done-when 4: "no" re-does ONLY the failing part, never cancel --
+    def test_no_names_only_failing_part_never_cancels(self):
+        # Q2 off-target: length 20% off (target 60, measured 72) only
+        receipt = full_answered_receipt()
+        receipt["ON_TARGET"]["length_s"] = 72.0
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["ON_TARGET"])
+        self.assertNotIn("CANCEL", res["reason_code"])
+        # gate stays FAIL (targeted repair), never BLOCKED; the sibling
+        # final_edit record passes, so the FAIL is the checklist alone
+        rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
+        gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
+        self.assertEqual(gate["gate"], "FAIL")
+        self.assertEqual(gate["repair_scope"], [dc.CHECK_ID])
+        self.assertNotEqual(gate["gate"], "BLOCKED")
+        # and two failures name exactly those two, nothing more
+        receipt["WORDS"]["invented_words"] = ["wow"]
+        res2 = dc.evaluate(receipt)
+        self.assertEqual(sorted(res2["repair_scope"]),
+                         ["ON_TARGET", "WORDS"])
+
+    # ---- the other five G7 laws -----------------------------------------
+    def test_yes_without_measurement_in_evidence_counts_no(self):
+        # the literal order law: "yes" WITHOUT a measurement == "no"
+        receipt = full_answered_receipt()
+        receipt["FACES"] = {"faces_ok": "yes", "emotion": "matches"}
+        res = dc.evaluate(receipt)
+        self.assertEqual(res["answers"]["FACES"]["answer"], "no")
+        self.assertIn("NO_MEASUREMENT", res["answers"]["FACES"]["measurement"])
+
+    def test_off_target_within_tolerance_passes(self):
+        receipt = full_answered_receipt()
+        receipt["ON_TARGET"]["shares"]["spoken"]["measured_pct"] = 49.5
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+
+    def test_unmeasured_written_unmeasured_is_honest(self):
+        receipt = full_answered_receipt()
+        receipt["HONEST_RECEIPT"] = {
+            "reverb_tail_s": "UNMEASURED",
+            "source_reverb_tail_s": "not sampled this run",
+            "measured_fields": 13,
+            "source_measured_fields": "receipt audit",
+        }
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+
+    def test_honest_numbers_without_source_fail(self):
+        receipt = full_answered_receipt()
+        del receipt["HONEST_RECEIPT"]["source_measured_fields"]
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("HONEST_RECEIPT", res["repair_scope"])
+
+    def test_wrong_model_fails(self):
+        # S75-057: a wrong video model is caught by the run's OWN clip
+        # evidence against the card's lock (F16), never by a fixed table of
+        # model names -- the fixed table also refused legitimate runs.
+        receipt = full_answered_receipt()
+        receipt["clips"] = [{"id": "c0",
+                             "model": "bytedance/seedance-2-mini"}]
+        receipt["locked_video_model"] = "hailuo/02-image-to-video-*"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("MODELS", res["repair_scope"])
+        self.assertIn("VIDEO_MODEL_MISMATCH", res["detail"])
+
+    def test_face_mismatch_names_frame_and_line(self):
+        receipt = full_answered_receipt()
+        receipt["FACES"]["shots"][1]["emotion_match"] = False
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("s2", res["detail"])
+        self.assertIn("FACES", res["repair_scope"])
+
+    def test_sung_zero_on_sung_ad_fails(self):
+        receipt = full_answered_receipt()
+        receipt["SUNG"]["sung_pct"] = 0.0
+        receipt["SUNG"]["spoken_pct"] = 100.0
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    # ---- G3-WIRE: sung claims flow through core/singing_detector --------
+    def test_q1_detector_must_be_the_singing_detector(self):
+        """A named-but-wrong instrument (labels) is the fake-number path."""
+        for bad in ("section labels", "verse/chorus time", "manual listen",
+                    "vocal-stem astats"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"]["detector"] = bad
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], bad)
+            self.assertIn("SUNG", res["repair_scope"], bad)
+
+    def test_q1_accepts_every_singing_detector_spelling(self):
+        for good in ("singing_detector", "singing-detector(vocal-stem)",
+                     "singing detector v2.0.0", "SingingDetector"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"]["detector"] = good
+            res = dc.evaluate(receipt)
+            self.assertTrue(res["pass"], (good, res["detail"]))
+
+    def test_q1_share_source_must_be_measured(self):
+        receipt = full_answered_receipt()
+        receipt["SUNG"]["share_source"] = "planned"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_q9_detector_must_be_the_singing_detector(self):
+        receipt = full_answered_receipt()
+        receipt["FIRST_SUNG"]["detector"] = "section labels"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("FIRST_SUNG", res["repair_scope"])
+
+    def test_music_broken_fails(self):
+        receipt = full_answered_receipt()
+        receipt["VOICE_MUSIC"]["music_gaps_s"] = 2.5
+        receipt["VOICE_MUSIC"]["music_unbroken"] = False
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("VOICE_MUSIC", res["repair_scope"])
+
+    def test_bad_receipt_fails_closed(self):
+        with self.assertRaises(dc.ChecklistError):
+            dc.evaluate("not-a-receipt")
+        with self.assertRaises(dc.ChecklistError):
+            dc.evaluate(None)
+
+    # ---- H11: Q8-Q11 --------------------------------------------------
+    def test_h11_q8_flagged_passes_unflagged_fail_does_not(self):
+        receipt = full_answered_receipt()
+        self.assertTrue(dc.evaluate(receipt)["pass"])      # PASS + ACCEPT_WITH_FLAG
+        clips = receipt["LIP_SYNC"]["clips"]
+        clips[1].update(lip_verdict="FAIL", verdict="FAIL_REPLACE")
+        res = dc.evaluate(receipt)
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC"])
+        self.assertIn("ls2", res["detail"])
+        clips[1].update(verdict="KEPT_BEST_OF_2", flag="FAIL kept", jobs_total=2,
+                        mouth_strip="ls2-strip.png")       # flagged keep-best
+        self.assertTrue(dc.evaluate(receipt)["pass"])
+
+    def test_h11_q8_no_offset_or_corr_rule_and_gaps_fail(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0].update(offset_s=0.20, corr=0.1)
+        self.assertTrue(dc.evaluate(receipt)["pass"], "no correlation or offset rule")
+        for mutate in (lambda c: c.pop("lip_verdict"), lambda c: c.pop("corr"),
+                       lambda c: c.update(jobs_total=3),
+                       lambda c: c.update(lip_verdict="UNDETERMINED"),
+                       lambda c: c.update(lip_verdict="UNMEASURABLE")):
+            receipt = full_answered_receipt()
+            mutate(receipt["LIP_SYNC"]["clips"][1])
+            self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+        receipt = full_answered_receipt()                  # a person looked: fine
+        receipt["LIP_SYNC"]["clips"][1].update(lip_verdict="UNDETERMINED",
+                                               person_verdict="PASS")
+        self.assertTrue(dc.evaluate(receipt)["pass"])
+
+    def test_h11_q9_first_sung_band(self):
+        for pct, want in ((10.0, "ACCEPT"), (20.0, "ACCEPT"),
+                          (23.0, "ACCEPT_WITH_FLAG")):
+            r = full_answered_receipt()
+            r["FIRST_SUNG"]["first_sung_pct"] = pct
+            r["GOALS_BAND"]["goals"][3]["measured"] = 15.0   # keep Q11 clean
+            res = dc.evaluate(r)
+            self.assertTrue(res["pass"], (pct, res["detail"]))
+            self.assertEqual(res["evidence"]["first_sung_band"], want)
+        r = full_answered_receipt()
+        r["FIRST_SUNG"]["first_sung_pct"] = 3.3     # Kiesett v3: late
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["FIRST_SUNG"])
+        r["FIRST_SUNG"].pop("detector")
+        self.assertFalse(dc.evaluate(r)["pass"])    # no label-only answers
+
+    def test_h11_q10_mismatched_shot_or_slowmo_fails(self):
+        r = full_answered_receipt()
+        r["PICTURES_MATCH"]["shots"][1]["match"] = False
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["PICTURES_MATCH"])
+        self.assertIn("s2", res["detail"])
+        r = full_answered_receipt()
+        r["PICTURES_MATCH"]["shots"][0]["slowdown"] = 1.26
+        self.assertEqual(dc.evaluate(r)["repair_scope"], ["PICTURES_MATCH"])
+        r = full_answered_receipt()
+        del r["PICTURES_MATCH"]["shots"][0]["line"]
+        self.assertEqual(dc.evaluate(r)["repair_scope"], ["PICTURES_MATCH"])
+
+    def test_h11_band_edges(self):
+        self.assertEqual(dc.band(5.0), "ACCEPT")
+        self.assertEqual(dc.band(5.1), "ACCEPT_WITH_FLAG")
+        self.assertEqual(dc.band(10.0), "ACCEPT_WITH_FLAG")
+        self.assertEqual(dc.band(10.1), "REDO")
+
+    def test_h11_q11_flag_must_be_shown_and_over_10_redone(self):
+        r = full_answered_receipt()
+        del r["GOALS_BAND"]["goals"][3]["flag"]       # 6 off, no flag shown
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["GOALS_BAND"])
+        self.assertIn("no flag", res["detail"])
+        r = full_answered_receipt()
+        r["GOALS_BAND"]["goals"][0]["measured"] = 71.5   # 11.5 off: redo
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["GOALS_BAND"])
+        self.assertIn("redo", res["detail"])
+        self.assertEqual(res["evidence"]["goals_flagged"], 1)
+
+    def test_h11_q2_uses_band_flag_ok_redo_fails(self):
+        r = full_answered_receipt()
+        r["ON_TARGET"]["shares"]["spoken"]["measured_pct"] = 52.0   # 7 off
+        res = dc.evaluate(r)
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertTrue(res["evidence"]["on_target_flags"])
+        r["ON_TARGET"]["shares"]["spoken"]["measured_pct"] = 56.0   # 11 off
+        self.assertEqual(dc.evaluate(r)["repair_scope"], ["ON_TARGET"])
+
+    # ---- amend (order 1150 part G): the checklist consumes the amended
+    # receipt fields -- G5's receipt_evidence, the G3-WIRE provenance
+    # suffix, KEPT_BEST and flagged lip-sync rows ---------------------------
+    def test_amend_q1_consumes_measured_share_block(self):
+        """The G5 measured_share() block is the authority Q1 answers with."""
+        receipt = full_answered_receipt()
+        receipt["SUNG"] = {"style": "sung",
+                           "receipt_evidence": g5_measured_block(sung=61.0)}
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+        line = res["answers"]["SUNG"]["measurement"]
+        self.assertIn("sung 61.0%", line)
+        self.assertIn("singing_detector", line)
+
+    def test_amend_q1_full_receipt_block_with_takes(self):
+        """receipt_block() (shares + target + gap + every take) also passes."""
+        receipt = full_answered_receipt()
+        receipt["receipt_evidence"] = g5_full_block(sung=61.0)
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+
+    def test_amend_q1_block_missing_a_field_fails(self):
+        """A block missing ANY promised share FAILS (G7 law 2)."""
+        for key in ("sung_pct", "spoken_pct", "rap_pct", "no_voice_pct",
+                    "sung_seconds", "runtime_s"):
+            receipt = full_answered_receipt()
+            block = g5_measured_block()
+            del block[key]
+            receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], "missing %s must FAIL" % key)
+            self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_block_without_detector_or_confidence_fails(self):
+        for key in ("detector", "confidence"):
+            receipt = full_answered_receipt()
+            block = g5_measured_block()
+            del block[key]
+            receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], key)
+            self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_label_shaped_block_fails(self):
+        """A label-shaped block: source != measured is the failed-ad shape."""
+        receipt = full_answered_receipt()
+        block = g5_measured_block()
+        block["source"] = "labelled"
+        receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_label_shaped_plain_field_fails(self):
+        """The plain-field path: 54% 'sung' whose source names labels."""
+        for src in ("labels", "planned", "section labels",
+                    "verse/chorus time"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"] = {
+                "style": "sung", "sung_pct": 54.0, "spoken_pct": 46.0,
+                "detector": "singing-detector(vocal-stem)", "source": src}
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], src)
+            self.assertIn("SUNG", res["repair_scope"], src)
+
+    def test_amend_q1_block_with_dishonest_take_fails(self):
+        """check_receipt is the reader: a label-shaped take FAILS inside Q1."""
+        receipt = full_answered_receipt()
+        block = g5_full_block()
+        block["takes"].append({"take": "o4", "sung_pct": 44.0,
+                               "source": "labels"})
+        receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_provenance_suffix_appears(self):
+        """The G3-WIRE provenance suffix rides the SUNG measurement, in the
+        exact shape sung_vocal_guard.record_for_gate prints and core/qc_gate
+        requires on a PASS sung claim."""
+        res = dc.evaluate(full_answered_receipt())
+        line = res["answers"]["SUNG"]["measurement"]
+        self.assertIn("share_source=measured", line)
+        self.assertIn("sung_share=61.0%", line)
+        self.assertIn("detector=singing-detector(vocal-stem)", line)
+        self.assertIn(dc.provenance_suffix("singing-detector(vocal-stem)",
+                                           None, 61.0), line)
+        # the record's summary carries the same suffix, so the provenance
+        # travels with the qc record too
+        rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
+        self.assertIn("share_source=measured", rec["evidence"]["summary"])
+        self.assertIn("sung_share=61.0%", rec["evidence"]["summary"])
+        # a label-shaped receipt's record never claims a measured share
+        bad = full_answered_receipt()
+        bad["SUNG"] = {"style": "sung", "sung_pct": 54.0, "spoken_pct": 46.0,
+                       "detector": "singing-detector(vocal-stem)",
+                       "source": "labels"}
+        res_bad = dc.evaluate(bad)
+        self.assertNotIn("share_source=measured",
+                         res_bad["answers"]["SUNG"]["measurement"])
+
+    def test_amend_q8_kept_best_row_flags_not_fails(self):
+        """KEPT_BEST: kept though not clean -- flag shown, numbers ride."""
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][1].update(
+            {"tag": "KEPT_BEST", "lip_verdict": "FAIL", "corr": 0.40,
+             "flag": "syNCED keep-best: no clean take exists"})
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+        line = res["answers"]["LIP_SYNC"]["measurement"]
+        self.assertIn("KEPT_BEST", line)
+        self.assertIn("1 tagged kept-take", line)
+        # the untagged shifted row still FAILS (existing law untouched)
+        receipt["LIP_SYNC"]["clips"][1]["tag"] = ""
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    def test_amend_q8_flagged_row_needs_reason(self):
+        for tag in ("KEPT_BEST", "FLAGGED"):
+            receipt = full_answered_receipt()
+            receipt["LIP_SYNC"]["clips"][0].update(
+                {"tag": tag, "lip_verdict": "FAIL", "corr": 0.20})
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], tag)     # no reason shown
+            self.assertIn("LIP_SYNC", res["repair_scope"], tag)
+            receipt["LIP_SYNC"]["clips"][0]["note"] = "kept, no clean take"
+            res = dc.evaluate(receipt)
+            self.assertTrue(res["pass"], (tag, res["detail"]))
+            self.assertIn(tag, res["answers"]["LIP_SYNC"]["measurement"])
+
+    def test_amend_q8_unknown_tag_fails(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0]["tag"] = "PROBABLY_FINE"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("LIP_SYNC", res["repair_scope"])
+
+    def test_amend_q8_tagged_row_still_needs_its_numbers(self):
+        receipt = full_answered_receipt()
+        del receipt["LIP_SYNC"]["clips"][1]["corr"]
+        receipt["LIP_SYNC"]["clips"][1]["tag"] = "KEPT"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("LIP_SYNC", res["repair_scope"])
+
+    def test_amend_g5_reader_matches_receipt_evidence_api(self):
+        """The checklist reads the same module G5 producers write."""
+        RE = dc._receipt_evidence()
+        self.assertIsNotNone(RE, "receipt_evidence reader not loadable")
+        self.assertEqual(dc._g5_problem(g5_measured_block()), "")
+        verdict = RE.check_receipt({"sung_pct": 54.0, "source": "labels"})
+        self.assertEqual(verdict["verdict"], "FAIL")
+
+    # ---- gate wiring ------------------------------------------------------
+    def test_record_wires_into_shared_gate(self):
+        res = dc.evaluate(full_answered_receipt())
+        rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
+        self.assertEqual(rec["check"], "delivery_checklist")
+        self.assertEqual(rec["schema_version"], "1.0.0")
+        err = qc_gate.validate_record(rec)
+        self.assertIsNone(err, err)
+        gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
+        self.assertEqual(gate["gate"], "PASS", gate["failures"])
+
+    def test_final_edit_gate_4_requires_the_checklist(self):
+        # gate 4 "Final" wiring: when delivery_checklist is required (the
+        # G7 final gate row), a run without its record cannot advance.
+        # A missing checker run is structural (BLOCKED: no record repair
+        # can pass it); a FAIL *inside* the record is targeted FAIL.
+        gate = qc_gate.evaluate(RUN, STAGE, [final_edit_record()], MAKERS,
+                                FINAL_GATE_REQUIRED)
+        self.assertEqual(gate["gate"], "BLOCKED")
+        codes = {f["code"] for f in gate["failures"]}
+        self.assertIn("MISSING_QC", codes)
+
+    def test_fail_record_fails_final_stage(self):
+        receipt = full_answered_receipt()
+        del receipt["MODELS"]
+        res = dc.evaluate(receipt)
+        rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
+        gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
+        self.assertEqual(gate["gate"], "FAIL")
+        self.assertIn(dc.CHECK_ID, gate["repair_scope"])
+
+    def test_maker_self_review_still_refused(self):
+        res = dc.evaluate(full_answered_receipt())
+        rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
+        makers = {dc.CHECK_ID: REVIEWER["identity"],
+                  "final-edit-e2e": "final_qc/1.0.0"}
+        gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
+                                makers, FINAL_GATE_REQUIRED)
+        self.assertEqual(gate["gate"], "BLOCKED")
+        codes = {f["code"] for f in gate["failures"]}
+        self.assertIn("MAKER_SELF_REVIEW", codes)
+
+    # ---- checklist ships verbatim -----------------------------------------
+    def test_checklist_file_verbatim(self):
+        shipped = _SKILL / "references" / "QC-CHECKLIST-BEFORE-DELIVERY.md"
+        self.assertTrue(shipped.is_file(), str(shipped))
+        text = shipped.read_text(encoding="utf-8")
+        for marker in ("SUNG?", "ON TARGET?", "WORDS?", "FACES?",
+                       "VOICE + MUSIC?", "MODELS?", "HONEST RECEIPT?",
+                       "LIP-SYNC MEASURED?", "FIRST SUNG?",
+                       "PICTURES MATCH THE WORDS?",
+                       "JUDGED BY TREVOR'S BAND?",
+                       'A "yes" without a measurement counts as "no"'):
+            self.assertIn(marker, text)
+        # 11 human checklist questions in the verbatim document, plus Q12
+        # PACKAGE_COMPLETE (DEL-13): the delivery-folder contract, enforced
+        # from code (core/delivery_package), not from the prose checklist.
+        self.assertEqual(len(dc.QUESTIONS), 12)
+        self.assertEqual(dc.QUESTIONS[-1], "PACKAGE_COMPLETE")
+        for human in ("SUNG", "ON_TARGET", "WORDS", "FACES", "VOICE_MUSIC",
+                      "MODELS", "HONEST_RECEIPT", "LIP_SYNC", "FIRST_SUNG",
+                      "PICTURES_MATCH", "GOALS_BAND"):
+            self.assertIn(human, dc.QUESTIONS)
+
+    # ---- CLI round trip (temp home, no operator paths) ---------------------
+    def test_cli_round_trip(self):
+        with tempfile.TemporaryDirectory() as td:
+            receipt = full_answered_receipt()
+            rp = os.path.join(td, "receipt.json")
+            with open(rp, "w", encoding="utf-8") as f:
+                json.dump(receipt, f)
+            p = subprocess.run(
+                [sys.executable, str(_HERE / "delivery_checklist.py"),
+                 "check", "--receipt", rp],
+                capture_output=True, text=True,
+                env={"HOME": td, "PATH": _CLI_PATH})
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            out = json.loads(p.stdout)
+            self.assertEqual(out["outcome"], "ok")
+            # failing receipt: exit 5, redo directive names only that part
+            del receipt["WORDS"]
+            with open(rp, "w", encoding="utf-8") as f:
+                json.dump(receipt, f)
+            p = subprocess.run(
+                [sys.executable, str(_HERE / "delivery_checklist.py"),
+                 "check", "--receipt", rp],
+                capture_output=True, text=True,
+                env={"HOME": td, "PATH": _CLI_PATH})
+            self.assertEqual(p.returncode, 5, p.stdout + p.stderr)
+            out = json.loads(p.stdout)
+            self.assertEqual(out["repair_scope"], ["WORDS"])
+            # gate record path
+            qp = os.path.join(td, "rec.json")
+            p = subprocess.run(
+                [sys.executable, str(_HERE / "delivery_checklist.py"),
+                 "check", "--receipt", rp, "--qc-record", qp,
+                 "--run-id", RUN, "--stage", STAGE,
+                 "--reviewer-identity", REVIEWER["identity"],
+                 "--reviewer-session", REVIEWER["session"],
+                 "--reviewer-authority", REVIEWER["authority"]],
+                capture_output=True, text=True,
+                env={"HOME": td, "PATH": _CLI_PATH})
+            self.assertEqual(p.returncode, 5, p.stdout + p.stderr)
+            rec = json.loads(Path(qp).read_text(encoding="utf-8"))
+            err = qc_gate.validate_record(rec)
+            self.assertIsNone(err, err)
+
+
+class PackageFolderGate(unittest.TestCase):
+    """DEL-13: the run FAILS when any of the 12 package items is missing."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="del13-q12-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def folder(self, name="delivery"):
+        return package_contract.write_reference_package(self.tmp / name)
+
+    def receipt(self, folder):
+        r = full_answered_receipt()
+        clean = Path(folder) / package_contract.ITEMS_BY_KEY["video"].files[1]
+        if clean.is_file():
+            shutil.copyfile(r["LIP_SYNC"]["master_path"], clean)
+        r["PACKAGE_COMPLETE"] = {"delivery_folder": str(folder),
+                                 "source": "delivery_package.verify_folder"}
+        return r
+
+    def test_complete_delivery_folder_passes_q12(self):
+        res = dc.evaluate(self.receipt(self.folder()))
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertEqual(res["repair_scope"], [])
+        self.assertEqual(res["evidence"]["items_present"], 12)
+        self.assertEqual(res["evidence"]["items_expected"], 12)
+        self.assertEqual(res["evidence"]["missing_items"], [])
+
+    def test_every_missing_package_item_fails_the_run(self):
+        for item in package_contract.PACKAGE_ITEMS:
+            folder = self.folder("d-" + item.key)
+            first = folder / item.files[0]
+            if first.is_dir():
+                shutil.rmtree(first)
+            else:
+                first.unlink()
+            res = dc.evaluate(self.receipt(folder))
+            self.assertFalse(res["pass"], item.key)
+            self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"],
+                             item.key)
+            self.assertIn(dc.CHECKLIST_PACKAGE_INCOMPLETE, res["reason_code"])
+            self.assertIn(item.key, res["detail"], item.key)
+            self.assertIn(item.key, res["evidence"]["missing_items"])
+
+    def test_only_the_package_question_is_in_repair_scope(self):
+        folder = self.folder()
+        (folder / "07 - Ready-to-Post Kit.pdf").unlink()
+        res = dc.evaluate(self.receipt(folder))
+        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertTrue(all(a["answer"] == "yes"
+                            for q, a in res["answers"].items()
+                            if q != "PACKAGE_COMPLETE"))
+
+    def test_empty_file_is_not_a_delivered_item(self):
+        folder = self.folder()
+        (folder / "09 - Lyric Sheet.pdf").write_bytes(b"")
+        res = dc.evaluate(self.receipt(folder))
+        self.assertFalse(res["pass"])
+        self.assertIn("lyric_sheet", res["evidence"]["missing_items"])
+
+    def test_missing_delivery_folder_fails_closed(self):
+        res = dc.evaluate(self.receipt(self.tmp / "absent"))
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
+        self.assertIn(dc.CHECKLIST_PACKAGE_INCOMPLETE, res["reason_code"])
+
+    def test_answer_without_a_folder_path_counts_as_no(self):
+        r = full_answered_receipt()
+        r["PACKAGE_COMPLETE"] = {"package_ok": True}
+        res = dc.evaluate(r)
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
+        self.assertEqual(res["answers"]["PACKAGE_COMPLETE"]["answer"], "no")
+        self.assertIn(dc.REASON_CODES["NO_MEASUREMENT"],
+                      res["reason_code"])
+
+    def test_a_receipt_with_no_q12_answer_fails(self):
+        r = full_answered_receipt()
+        del r["PACKAGE_COMPLETE"]
+        res = dc.evaluate(r)
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
+        self.assertIn(dc.REASON_CODES["ANSWER_MISSING"], res["reason_code"])
+
+    def test_folder_is_relative_to_the_receipt_run_root(self):
+        # the run's OWN delivery folder, named relatively: the receipt's
+        # run_root is the authority the relative path resolves against.
+        run = self.tmp / "run-relative"
+        confirm_run(run)
+        folder = package_contract.write_reference_package(run / "delivery")
+        r = self.receipt(folder)
+        r["PACKAGE_COMPLETE"]["delivery_folder"] = "delivery"
+        r["run_root"] = str(run)
+        res = dc.evaluate(r)
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertEqual(res["evidence"]["authority"], "resolved-run")
+
+
+
+class ExportIdentityTests(unittest.TestCase):
+    def test_invalid_export_duration_refused(self):
+        for duration in (float("nan"), float("inf"), 0, -1):
+            with self.subTest(duration=duration):
+                receipt = full_answered_receipt()
+                path = Path(receipt["LIP_SYNC"]["master_path"] + ".receipt.json")
+                rc = json.loads(path.read_text())
+                rc["evidence"]["output_dur"] = duration
+                path.write_text(json.dumps(rc))
+                self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_other_package_master_refused(self):
+        receipt = full_answered_receipt()
+        other = full_answered_receipt(picture="blue")   # another PICTURE
+        receipt["PACKAGE_COMPLETE"] = other["PACKAGE_COMPLETE"]
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    # ---- S75-057: Q8 compares the picture and the audio, not the file ----
+    def test_q8_clean_video_from_clean_argv_answers_yes(self):
+        """A clean cut made by video_delivery.clean_argv from the master: yes.
+
+        The old whole-file SHA-256 could never match (clean_argv re-encodes
+        the audio), so this legitimate delivery was always reported failed.
+        """
+        receipt = full_answered_receipt()
+        res = dc.evaluate(receipt)
+        self.assertNotIn("LIP_SYNC", res["repair_scope"], res["detail"])
+        self.assertEqual(res["answers"]["LIP_SYNC"]["answer"], "yes")
+        measured = res["evidence"]["clean_video"]
+        self.assertTrue(measured["picture_equal"])
+        self.assertLessEqual(measured["duration_delta_s"], 0.1)
+        self.assertLessEqual(measured["loudness_delta_lu"], 0.5)
+
+    def test_q8_frame_removed_answers_no(self):
+        """One frame removed from the clean cut changes the picture: no."""
+        receipt = full_answered_receipt()
+        folder = Path(receipt["PACKAGE_COMPLETE"]["delivery_folder"])
+        clean = folder / package_contract.ITEMS_BY_KEY["video"].files[1]
+        dropped = Path(receipt["LIP_SYNC"]["master_path"]).parent \
+            / "clean-dropped.mp4"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-i", str(clean),
+             "-vf", "select='not(eq(n,5))'", "-fps_mode", "passthrough",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p",
+             "-c:a", "copy", str(dropped)],
+            check=True, capture_output=True, text=True)
+        shutil.copyfile(dropped, clean)
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("LIP_SYNC", res["repair_scope"])
+        self.assertIn("picture", res["detail"])
+
+    def test_replaced_package_clean_video_refused(self):
+        receipt = full_answered_receipt()
+        folder = Path(receipt["PACKAGE_COMPLETE"]["delivery_folder"])
+        (folder / package_contract.ITEMS_BY_KEY["video"].files[1]).write_bytes(b"replacement")
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    def test_missing_package_clean_video_refused(self):
+        receipt = full_answered_receipt()
+        folder = Path(receipt["PACKAGE_COMPLETE"]["delivery_folder"])
+        (folder / package_contract.ITEMS_BY_KEY["video"].files[1]).unlink()
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
+
+    def test_export_proof_passes(self):
+        self.assertNotIn("LIP_SYNC", dc.evaluate(full_answered_receipt())["repair_scope"])
+
+    def test_generated_but_unused_clip_refused(self):
+        receipt = full_answered_receipt()
+        path = Path(receipt["LIP_SYNC"]["master_path"] + ".receipt.json")
+        rc = json.loads(path.read_text())
+        rc["evidence"]["lipsync_plan"]["segments"].pop()
+        path.write_text(json.dumps(rc))
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_unused_qc_row_refused(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0]["task_id"] = "unused-task"
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_replaced_export_refused(self):
+        receipt = full_answered_receipt()
+        Path(receipt["LIP_SYNC"]["master_path"]).write_bytes(b"replacement")
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_missing_export_receipt_refused(self):
+        receipt = full_answered_receipt()
+        Path(receipt["LIP_SYNC"]["master_path"] + ".receipt.json").unlink()
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_source_replaced_after_export_refused(self):
+        receipt = full_answered_receipt()
+        master = Path(receipt["LIP_SYNC"]["master_path"])
+        (master.parent / "clip0.mp4").write_bytes(b"replacement")
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_stale_approval_after_export_refused(self):
+        receipt = full_answered_receipt()
+        master = Path(receipt["LIP_SYNC"]["master_path"])
+        (master.parent / "storyboard/shot-0.png").write_bytes(b"changed-still")
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

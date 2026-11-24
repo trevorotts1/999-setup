@@ -1,0 +1,208 @@
+{
+  "skill": "75-drama-song-ad-factory",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 - Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (01-teach-yourself-protocol) before using this skill - repo law and build-directive section 25 step 1. The folder ships with install.sh / update-skills.sh; verify it exists: ls ~/.openclaw/skills/01-teach-yourself-protocol (Mac) or ls /data/.openclaw/skills/01-teach-yourself-protocol (VPS)."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 - Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 75 - every production skill installs on a backed-up box. The folder ships with install.sh / update-skills.sh; verify: ls ~/.openclaw/skills/02-back-yourself-up-protocol (Mac) or ls /data/.openclaw/skills/02-back-yourself-up-protocol (VPS)."
+    },
+    {
+      "id": "skill-07-kie-setup",
+      "type": "skill",
+      "label": "Skill 07 - KIE Setup",
+      "check": { "skill": "07-kie-setup" },
+      "severity": "required",
+      "satisfy": "Install Skill 07 (07-kie-setup): it owns KIE account setup and the credential context every paid KIE path in this factory builds on. From an onboarding checkout run: bash update-skills.sh; verify the 07-kie-setup folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-46-callback-relay",
+      "type": "skill",
+      "label": "Skill 46 - KIE callback relay",
+      "check": { "skill": "46-kie-callback-relay" },
+      "severity": "optional",
+      "satisfy": "Not used by this skill today: results are polled. Skill 46 (46-kie-callback-relay) is the async KIE provider callback relay (image/video/audio task completion); this skill does not need it. From an onboarding checkout run, if you want it: bash update-skills.sh; verify the 46-kie-callback-relay folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-66-kie-image",
+      "type": "skill",
+      "label": "Skill 66 - KIE image",
+      "check": { "skill": "66-kie-image" },
+      "severity": "required",
+      "satisfy": "Install Skill 66 (66-kie-image): image generation, prompt constraints and image domain QC ride Skill 66 (build-directive section 2.1/5.1 - references to Skills 66/67/68/74 do not install them). From an onboarding checkout run: bash update-skills.sh; verify the 66-kie-image folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-67-kie-video",
+      "type": "skill",
+      "label": "Skill 67 - KIE video",
+      "check": { "skill": "67-kie-video" },
+      "severity": "required",
+      "satisfy": "Install Skill 67 (67-kie-video): video clip routing and video domain QC ride Skill 67 (no hardcoded model pins in this skill). From an onboarding checkout run: bash update-skills.sh; verify the 67-kie-video folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-68-kie-audio",
+      "type": "skill",
+      "label": "Skill 68 - KIE audio (Suno)",
+      "check": { "skill": "68-kie-audio" },
+      "severity": "required",
+      "satisfy": "Install Skill 68 (68-kie-audio): Suno music/lyrics/vocals go through Skill 68's createTask contract ONLY (POST /api/v1/jobs/createTask, outer model ai-music-api/generate, top-level callBackUrl, nested snake_case input with one lyrics source at input.lyrics; the legacy /api/v1/generate music-generation route is RETIRED with no fallback). From an onboarding checkout run: bash update-skills.sh; verify the 68-kie-audio folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-74-kie-live-adapter",
+      "type": "skill",
+      "label": "Skill 74 - KIE live adapter",
+      "check": { "skill": "74-kie-live-adapter" },
+      "severity": "required",
+      "satisfy": "Install Skill 74 (74-kie-live-adapter): paid transport (discovery, schemas, upload, submit, poll, credits) rides Skill 74 shadow-first; this skill never opens a competing transport. From an onboarding checkout run: bash update-skills.sh; verify the 74-kie-live-adapter folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-24-storyboard-writer",
+      "type": "skill",
+      "label": "Skill 24 - Storyboard Writer",
+      "check": { "skill": "24-storyboard-writer" },
+      "severity": "required",
+      "satisfy": "Install Skill 24 (24-storyboard-writer): storyboard/shot planning output reuses the canonical storyboard skill (build-directive section 25 step 3). From an onboarding checkout run: bash update-skills.sh; verify the 24-storyboard-writer folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-25-video-creator",
+      "type": "skill",
+      "label": "Skill 25 - Video Creator",
+      "check": { "skill": "25-video-creator" },
+      "severity": "required",
+      "satisfy": "Install Skill 25 (25-video-creator): ordinary FFmpeg-based video work rides Skills 25/27 (SKILL.md route law). From an onboarding checkout run: bash update-skills.sh; verify the 25-video-creator folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-27-video-editor",
+      "type": "skill",
+      "label": "Skill 27 - Video Editor",
+      "check": { "skill": "27-video-editor" },
+      "severity": "required",
+      "satisfy": "Install Skill 27 (27-video-editor): ordinary FFmpeg-based editing rides Skills 25/27 (SKILL.md route law). From an onboarding checkout run: bash update-skills.sh; verify the 27-video-editor folder exists in SKILLS_DIR."
+    },
+    {
+      "id": "skill-30-fish-audio",
+      "type": "skill",
+      "label": "Skill 30 - Fish Audio API reference (not used by drama song ads)",
+      "check": { "skill": "30-fish-audio-api-reference" },
+      "severity": "optional",
+      "satisfy": "NOT USED by drama song ads: Fish Audio (Skill 30) was the spoken-voiceover route in an earlier draft; spoken voiceover is now built as Skill 74 request JSON (a google/gemini-*-tts model) and dispatched through core/kie_dispatch (manual M2). Do not install Skill 30 for this skill and do not spend on Fish Audio; sung music never needed it."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "KIE API Key",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "KIE_API_KEY is the KIE.ai Market API credential. The checker only tests that the NAME is set; it never prints the value. If it is missing, tell the operator in plain words that the KIE key is not set on this computer and stop. Do not open, print or search any secrets or .env file, do not run any command that echoes the value, and do not create a new key."
+    },
+    {
+      "id": "fish-audio-api-key",
+      "type": "credential",
+      "label": "Fish Audio API key (not used by drama song ads)",
+      "check": { "envVar": "FISH_AUDIO_API_KEY" },
+      "severity": "optional",
+      "satisfy": "NOT USED by drama song ads: FISH_AUDIO_API_KEY (and FISH_AUDIO_VOICE_ID) were the spoken-voiceover credential in an earlier draft; spoken voiceover now rides Skill 74 with a google/gemini-*-tts model on KIE_API_KEY (manual M2), so no Fish Audio credential is ever needed. Do not mint, add or check a Fish Audio key for this skill."
+    },
+    {
+      "id": "python3-binary",
+      "type": "binary",
+      "label": "Python 3 (control layer)",
+      "check": { "binary": "python3" },
+      "severity": "required",
+      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages - the one exception is the optional lip-sync gate stack (mediapipe, opencv, numpy and the pinned face_landmarker.task model), which BOTH the picture gate and the measured clip gate need; see python-mediapipe and face-landmarker-model. Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
+    },
+    {
+      "id": "ffmpeg-binary",
+      "type": "binary",
+      "label": "FFmpeg (assembly)",
+      "check": { "binary": "ffmpeg" },
+      "severity": "required",
+      "satisfy": "ffmpeg must be on PATH: clip stitching, voiceover mux and the -14 LUFS finish ride FFmpeg (DEPENDENCY-MANIFEST section 3). Verify: ffmpeg -version. If missing: Mac brew install ffmpeg; VPS apt-get update && apt-get install -y ffmpeg. Rerun the check after install."
+    },
+    {
+      "id": "ffprobe-binary",
+      "type": "binary",
+      "label": "ffprobe (measuring media length)",
+      "check": { "binary": "ffprobe" },
+      "severity": "required",
+      "satisfy": "ffprobe ships with ffmpeg. Verify: ffprobe -version."
+    },
+    {
+      "id": "openclaw-binary",
+      "type": "binary",
+      "label": "openclaw command (client messages on OpenClaw boxes)",
+      "check": { "binary": "openclaw" },
+      "severity": "optional",
+      "satisfy": "Needed only on OpenClaw boxes, where it is already installed. On a Claude Code machine messages go to the chat instead."
+    },
+    {
+      "id": "faster-whisper-optional",
+      "type": "manual",
+      "label": "faster-whisper lyric-timing fallback (only when the tier-2 fallback is enabled)",
+      "check": { "note": "F17 owner order 2026-10-08 (manual Part F F17, Critical): word timing comes from Suno's own timestamped lyrics via KIE ai-music-api/timeStamped-lyrics through core/kie_dispatch (tier 1, default, no local model). faster-whisper is the tier-2 LOCAL fallback, installed ONLY when this fallback is enabled, and it loads ONE model at a time in scripts/core/audio_c3/lyric_timing.py (one session per run, tracks transcribed one after another, small/medium int8); the Part D load guard (memory_guard, lane_size numbers) refuses a load past the machine's limit (LOCAL_MODEL_LOAD_REFUSED). NEVER openai-whisper (scripts/qc-no-local-asr.sh fails a hand-written whisper/asr script). Tier 3 is cloud speech-to-text with word timestamps on the CLIENT's own key only, never operator keys. Approved lyrics remain the source of truth; ASR output is timing/mismatch evidence only. Verified 2026-10-06 on the audited box: import faster_whisper -> ModuleNotFoundError; no pip on PATH; Python 3.14.7. Pin + hash arrive at release." },
+      "severity": "optional",
+      "satisfy": "pip install faster-whisper, then PRE-FETCH THE EXACT MODEL THE CODE LOADS, as the factory's RUN USER (not root; inside a container, its run user): python3 -c \"from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')\"  -- the code loads 'small' (audio_c3/lyric_timing.py DEFAULT_WHISPER_SIZE), the English-only .en variant is the WRONG model (a different file, never fetched by this command) and never satisfies this entry. That run user must also OWN its Hugging Face cache: chown -R <run-user> ~<run-user>/.cache/huggingface. A missing or root-owned cache leaves the pre-fetch failing under the run user, so every take comes back with EMPTY aligned_words and WHISPER_MODEL_LOAD_FAILED -- the judge measures first singing from word timing, so empty words means stop and fix, never pass. Installed ONLY when the tier-2 local fallback is enabled (tier 1 Suno timestamped lyrics stays the default). One model at a time in lyric_timing.py's WhisperSession; NEVER openai-whisper (the dispatcher and qc-no-local-asr.sh both refuse it)."
+    },
+    {
+      "id": "python-mediapipe",
+      "type": "manual",
+      "label": "mediapipe + OpenCV + numpy (lip-sync picture gate and measured clip gate)",
+      "check": { "note": "Checked by scripts/lipsync_preflight.py, not by the shell checker." },
+      "severity": "optional",
+      "satisfy": "One-command repair from the skill folder: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py --repair\" (installs mediapipe>=0.10.14, opencv-python-headless and numpy from requirements-lipsync.txt into the python3 the gates run on). Check only, changes nothing: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py\". Both the picture gate and the measured clip gate need all four pieces - mediapipe, opencv, numpy and assets/face_landmarker.task. The shell prerequisite checker cannot import Python modules, so it cannot verify this entry: it is reported on every check as an advisory line (informational, blocks nothing) and lipsync_preflight.py is the authoritative check. The gates themselves stay fail-closed."
+    },
+    {
+      "id": "face-landmarker-model",
+      "type": "manual",
+      "label": "mediapipe face_landmarker.task (lip-sync picture gate and measured clip gate model)",
+      "check": { "note": "Checked by scripts/lipsync_preflight.py, not by the shell checker. The gate needs assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) with the pinned sha256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff." },
+      "severity": "optional",
+      "satisfy": "Direct installer: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (from the skill folder). One-command repair: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py --repair\" (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task, verifies the pinned sha256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff and places it at assets/face_landmarker.task; LIPSYNC_FACE_MODEL can point both gates at another copy). Re-running with a good file is a no-op. Check only: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py\". Both the picture gate and the measured clip gate need all four pieces - mediapipe, opencv, numpy and assets/face_landmarker.task. The shell prerequisite checker cannot stat or hash the model file, so it cannot verify this entry: it is reported on every check (exit 2, informational, blocks nothing) and lipsync_preflight.py is the authoritative check. The gates themselves stay fail-closed."
+    },
+    {
+      "id": "agnes-key",
+      "type": "credential",
+      "label": "Agnes AI key (optional Agnes path)",
+      "check": { "envVar": "AGNES_AI_API_KEY" },
+      "severity": "optional",
+      "when": "agnes-path",
+      "satisfy": "Only for the optional Agnes path. The checker only tests that the NAME AGNES_AI_API_KEY (or AGNES_API_KEY) is set; it never prints the value. If it is missing, tell the operator and continue on the standard path. Do not open, print or search any secrets or .env file and do not create a new key."
+    },
+    {
+      "id": "tool-tesseract",
+      "type": "binary",
+      "label": "tesseract OCR (optional Agnes path words-in-pictures check)",
+      "check": { "binary": "tesseract" },
+      "severity": "optional",
+      "when": "agnes-path",
+      "satisfy": "Only for the optional Agnes path: tesseract is the OCR the words-in-pictures check uses to verify a word baked into an Agnes still. Verify: tesseract --version. If missing, the check reports OCR_UNAVAILABLE (never a PASS) and words are overlaid at assembly instead - nothing else degrades. Install only if the operator wants baked words: Mac brew install tesseract; VPS apt-get update && apt-get install -y tesseract-ocr. Installing it on client boxes is a Trevor decision (Needs Trevor #15), so never install it as part of a run."
+    },
+    {
+      "id": "numpy-optional",
+      "type": "manual",
+      "label": "numpy for the singing detector (measured vocal share)",
+      "check": { "note": "core/singing_detector measures sung vs spoken share from the vocal stem with the Appendix A recipe (Trevor order 1150 amend, review G2) and needs numpy; its suites skip themselves without it, so CI installs numpy so the suites really run." },
+      "severity": "optional",
+      "when": "singing-detector",
+      "satisfy": "pip install numpy (needed to run the singing detector and its tests; the rest of the control layer stays standard library only)."
+    },
+    {
+      "id": "resilia-study-requirements",
+      "type": "manual",
+      "label": "Resilia study requirements - MISSING (the delivered document is not in this repository and nothing here is integrated)",
+      "check": { "note": "MISSING: no file in this repository is the delivered Resilia study requirements document. What the tree does hold is a record of it: evidence/SKILL75/SKILL75-65-ITEM-STATUS-2026-10-31.txt lines 63-67 carry audit row C10, which says the delivered Resilia study requirements remain unintegrated and gives a truncated sha256 prefix only. The full document and its full digest are not in the tree, and no file in this skill folder integrates it. This entry cannot be marked required: scripts/qc-prereqs-json.sh Rule 16c forces type 'manual' to severity 'optional', so the requirement is stated here and never enforced by a check." },
+      "severity": "optional",
+      "satisfy": "MISSING - nothing in this repository can satisfy it. A decision clears it: the owner supplies the delivered Resilia study requirements document (with its full sha256 recorded alongside it), or the owner records that those requirements are withdrawn. Integrating them afterwards is its own unit; this entry never blocks a run."
+    }
+  ]
+}

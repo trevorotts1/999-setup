@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""E6 lip-sync coverage tests (manual 02 Part E E6, Critical).
+
+Proves exactly the manual's done-when pairs and nothing looser:
+
+  FAIL: a 2-minute (120 s) ad with 3 lip-sync clips totalling 6 s.
+  APPROVED DIRECTION (2026-10-23): coverage is 25-30% of the ad, 35% hard
+  maximum, first 12 s articulated; the E6 floor is the 25% end (15 s in a
+  60 s ad) and 3 clips, scaled with length. Supersedes the 2026-10-08 30-40 s
+  order.
+  PASS: a 60 s ad with 3 lip-sync lines totalling >= 15 s.
+  FAIL: a plan under both floors (1 line / 10 s in a 60 s ad).
+  FAIL: a 120 s ad with 3 lines totalling 20 s (below 30 s): scales.
+  FAIL: a 90 s ad with only 2 lines (floor of 3 from 90 s up, N-101).
+  PASS: no reason codes other than the documented two.
+  WIRE: the marker rides plan_timeline -> lipsync_gate; assembler
+        dry-run blocks a 2-minute 6-s ad and a 60-s 3-clip 9-s plan, and
+        passes a 60-s ad with 3 clips / 15 s;
+        load_timeline rejects a non-boolean marker.
+  GATE: the emitted record validates in qc_gate (schema + independence)
+        and FAILs the final_edit check family in the shared gate.
+
+stdlib only, zero paid calls, no ffmpeg binary required.
+
+Run: python3 core/final_assembler/test_lipsync_coverage_e6.py
+"""
+import copy
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CORE = os.path.dirname(HERE)
+if CORE not in sys.path:
+    sys.path.insert(0, CORE)
+
+import final_assembler.assembler as A          # noqa: E402
+from test_lipsync_evidence import attach_evidence
+import qc_gate as G                            # noqa: E402  (shared gate)
+
+from final_assembler.lipsync_coverage import (
+    COVERAGE_SHORT, LINES_TOO_FEW,
+    check_lipsync_coverage, to_qc_record, required_total_s, required_lines,
+)                                              # noqa: E402
+
+# The assembler gate emits the module's exact code strings.
+LIPSYNC_LINES_TOO_FEW = LINES_TOO_FEW
+LIPSYNC_COVERAGE_SHORT = COVERAGE_SHORT
+
+FAILS = []
+
+
+def check(name, cond, detail=""):
+    print("%s: %s%s" % ("ok" if cond else "FAIL", name,
+                        (" (%r)" % (detail,)) if detail and not cond else ""))
+    if not cond:
+        FAILS.append(name)
+
+
+def test_done_when_pairs():
+    """The rule: 25% floor (15 s at 60 s), 3 clips, scaled with length."""
+    bad = check_lipsync_coverage(120, 3, 6)
+    check("done-when FAIL: 120 s ad, 3 clips totalling 6 s FAILS",
+          bad["pass"] is False, bad)
+    check("bad ad names the coverage code", COVERAGE_SHORT
+          in bad["reason_code"], bad["reason_code"])
+    good = check_lipsync_coverage(60, 3, 17.5)
+    check("done-when PASS: 60 s ad, 3 lines totalling 17.5 s PASSES",
+          good["pass"] is True, good)
+    exact = check_lipsync_coverage(60, 3, 15.0)
+    check("done-when PASS: 60 s ad, 3 lines totalling exactly 15 s (25%) passes",
+          exact["pass"] is True, exact)
+    # Under both floors: one line short of the clip floor AND under the
+    # seconds floor -- built from the budget values so it holds on either
+    # constant set (old 4-6 s clips or N-101 5-30 s pieces).
+    import lipsync_clips as _LC2
+    _need = required_lines(90)
+    old = check_lipsync_coverage(90, _need - 1, 10.0)
+    check("a plan under both floors (1 line short of %d / 10 s in a 90 s "
+          "ad) FAILS on both" % _need,
+          old["pass"] is False and COVERAGE_SHORT in old["reason_code"]
+          and LINES_TOO_FEW in old["reason_code"], old)
+    # H8: lip-sync seconds use Trevor's band (percent short of the goal).
+    near = check_lipsync_coverage(60, 3, 14.5)          # 3.3% short
+    check("H8 14.5 s of a 15 s goal is within 5%: accept, no flag",
+          near["pass"] is True and near["flags"] == [], near)
+    flag = check_lipsync_coverage(60, 3, 14.0)          # 6.7% short
+    check("H8 14 s of a 15 s goal is 5-10% short: accept WITH A FLAG",
+          flag["pass"] is True and len(flag["flags"]) == 1, flag)
+    redo = check_lipsync_coverage(60, 3, 13.0)          # 13.3% short
+    check("H8 13 s of a 15 s goal is past 10% short: redo",
+          redo["pass"] is False and COVERAGE_SHORT in redo["reason_code"],
+          redo)
+    more = check_lipsync_coverage(60, 8, 48.0)
+    check("H8 more lip-sync than the goal is never a miss",
+          more["pass"] is True and more["flags"] == [], more)
+
+
+def test_scaled_rules():
+    """Everything scales with length (N-101: floor of 3 from 90 s up only;
+    under 90 s the seconds-to-pieces floor rules)."""
+    check("60 s floor is 15 s (25%)", abs(required_total_s(60) - 15.0) < 1e-9)
+    check("120 s floor is 30 s", abs(required_total_s(120) - 30.0) < 1e-9)
+    check("30 s floor is 7.5 s", abs(required_total_s(30) - 7.5) < 1e-9)
+    # N-101: the floor comes from clips.budget (3 from 90 s up only) --
+    # assert the wiring to that truth so the expected values track whichever
+    # constants the merged tree carries, instead of pinning the old 3/5/3.
+    import lipsync_clips as _LC
+    check("clip floor follows lipsync_clips.budget min_clips (N-101)",
+          [required_lines(l) for l in (60, 120, 30, 10, 90)]
+          == [_LC.budget(l)["min_clips"] for l in (60, 120, 30, 10, 90)],
+          [required_lines(l) for l in (60, 120, 30, 10, 90)])
+    need120 = required_lines(120)
+    scaled_pass = check_lipsync_coverage(120, need120, 30.0)
+    check("120 s ad with %d lines/30 s passes" % need120,
+          scaled_pass["pass"] is True, scaled_pass)
+    scaled_fail = check_lipsync_coverage(120, 3, 20.0)
+    check("120 s ad with 3 lines/20 s fails (scales with runtime)",
+          scaled_fail["pass"] is False
+          and COVERAGE_SHORT in scaled_fail["reason_code"], scaled_fail)
+    few = check_lipsync_coverage(90, 2, 22.5)
+    check("90 s ad with 2 lines fails lines-min even at 22.5 s (floor of 3)",
+          few["pass"] is False and LINES_TOO_FEW in few["reason_code"], few)
+    emitted = (scaled_fail["reason_code"], few["reason_code"])
+    allowed = {LINES_TOO_FEW, COVERAGE_SHORT}
+    for code in emitted:
+        for part in code.split("+"):
+            check("reason code %r is documented" % part, part in allowed,
+                  part)
+
+
+def test_bad_input_fails_closed():
+    for args in ((0, 3, 15), (-5, 3, 15), (60, -1, 15), (60, 3, -2.0),
+                 (None, 3, 15), (60, True, 15)):
+        try:
+            check_lipsync_coverage(*args)
+            check("bad input %r raises" % (args,), False)
+        except Exception as exc:
+            check("bad input %r raises" % (args,), True)
+            check("raise carries a code", hasattr(exc, "code"), repr(exc))
+
+
+def _tl(segs, dur, tmp):
+    # Distinct files/line IDs model distinct generated clips. Explicit cuts
+    # keep these quantity-gate fixtures independent of transition accounting.
+    segs = [copy.deepcopy(seg) for seg in segs]
+    for i, seg in enumerate(segs):
+        seg["src"] = os.path.realpath(os.path.join(tmp, "fixture-%d.mp4" % i))
+        with open(seg["src"], "wb") as f:
+            f.write(("synthetic-video-%d" % i).encode())
+        seg["transition"], seg["beat_cut"] = "none", True
+    tl = {"schema_version": A.TIMELINE_SCHEMA, "fps": 30,
+          "width": 1920, "height": 1080, "song_path": None,
+          "transition": "none", "segments": segs}
+    attach_evidence(tl, tmp)
+    # S-42: OmniHuman 2.0 is the one lip-sync model; make the synthetic
+    # receipts name it so the wave truth admits these fixtures.
+    from kie_dispatch.model_lock import LOCKED_LIPSYNC_MODEL as _LM
+    from pathlib import Path as _P
+    for _rc in _P(tmp).glob("receipts/task-shot-*.json"):
+        _d = json.loads(_rc.read_text())
+        _d["evidence"]["lipsync_model"] = _LM
+        _rc.write_text(json.dumps(_d))
+    for seg in tl["segments"]:
+        seg.setdefault("faces_on_screen", [])
+    tl["timing"] = {"sections": [{"lyrics": [
+        {"line_id": ln["line_id"], "start": ln["start_s"], "end": ln["end_s"]}
+        for ln in tl["lines"]]}]}
+    path = os.path.join(tmp, "tl-%d.json" % abs(len(segs) * 17 + int(dur)))
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(tl, fh)
+    return path
+
+
+def test_gate_wiring(tmp_root):
+    """Marker rides the plan; the dry-run gate blocks / passes pairs."""
+    import tempfile
+    tmp = tempfile.mkdtemp(dir=tmp_root)
+    clip = os.path.join(tmp, "clip.mp4")
+    open(clip, "wb").close()
+
+    # Done-when FAIL through the assembler gate: 3 clips of 2 s each in a
+    # 120 s ad (3 x 2 + 5 x 19.5 + 16.5 = 120), 6 s of lip-sync total.
+    segs = ([{"src": "clip.mp4", "dur": 2.0, "lip_sync": True}] * 3
+            + [{"src": "clip.mp4", "dur": 19.5}] * 5
+            + [{"src": "clip.mp4", "dur": 16.5}])
+    tl = _tl(segs, 120, tmp)
+    rec = A.assemble(tl, os.path.join(tmp, "out.mp4"), dry_run=True)
+    check("120 s / 3 clips / 6 s: dry_run BLOCKED by E6",
+          LIPSYNC_COVERAGE_SHORT in rec["reason_code"],
+          rec.get("reason_code"))
+    check("blocked receipt carries coverage evidence",
+          rec["outcome"] == "error"
+          and abs(rec["evidence"]["lipsync"]["evidence"]["ad_length_s"]
+                  - 120.0) < 0.2
+          and abs(rec["evidence"]["lipsync"]["evidence"]["lipsync_total_s"]
+                  - 6.0) < 0.2, rec["evidence"]["lipsync"])
+
+    # A plan under the 25% floor (3 clips, 9 s in 60 s) is blocked.
+    segs_old = ([{"src": "clip.mp4", "dur": 3.0, "lip_sync": True}] * 3
+                + [{"src": "clip.mp4", "dur": 12.75}] * 4)
+    rec_old = A.assemble(_tl(segs_old, 60, tmp), os.path.join(tmp, "o.mp4"),
+                         dry_run=True)
+    check("60 s / 3 lines / 9 s (under the 25% floor): gate BLOCKS",
+          rec_old["outcome"] == "error"
+          and LIPSYNC_COVERAGE_SHORT in rec_old["reason_code"],
+          rec_old.get("reason_code"))
+    # Done-when PASS through the assembler gate: 60 s, 3 lines, 15 s.
+    segs_pass = ([{"src": "clip.mp4", "dur": 5.0, "lip_sync": True}] * 3
+                 + [{"src": "clip.mp4", "dur": 15.0}] * 3)
+    tl2 = _tl(segs_pass, 60, tmp)
+    rec2 = A.assemble(tl2, os.path.join(tmp, "out2.mp4"), dry_run=True)
+    check("60 s / 3 lines / 15 s: gate passes",
+          rec2["outcome"] == "ok" and rec2["reason_code"] == "DRY_RUN"
+          and rec2["evidence"]["lipsync"] is None,
+          rec2.get("reason_code"))
+
+
+def test_marker_validation(tmp_root):
+    """A non-boolean marker is structurally rejected, never coerced."""
+    import tempfile
+    tmp = tempfile.mkdtemp(dir=tmp_root)
+    p = os.path.join(tmp, "bad.json")
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump({"schema_version": A.TIMELINE_SCHEMA, "fps": 30,
+                   "width": 1920, "height": 1080, "song_path": None,
+                   "transition": "none",
+                   "segments": [{"src": "x.mp4", "dur": 2.0,
+                                 "lip_sync": "yes"}]}, fh)
+    try:
+        A.load_timeline(p)
+        check("non-boolean lip_sync marker rejected", False)
+    except ValueError as exc:
+        check("non-boolean lip_sync marker rejected",
+              "TIMELINE_BAD_SEGMENT" in str(exc) and "boolean" in str(exc),
+              str(exc))
+
+
+def test_qc_record_and_gate():
+    """The FAIL record feeds the shared gate; final_edit gets the block."""
+    bad = check_lipsync_coverage(120, 3, 6)
+    rev = {"identity": "final_qc_reviewer", "session": "e6-qc",
+           "authority": "manual 02 Part E E6"}
+    rec_bad = to_qc_record(bad, "run-e6", "final", rev)
+    check("fail record validates in qc_gate",
+          G.validate_record(rec_bad) is None, G.validate_record(rec_bad))
+    check("fail record is final_edit + FAIL",
+          rec_bad["check"] == "final_edit" and rec_bad["verdict"] == "FAIL",
+          (rec_bad["check"], rec_bad["verdict"]))
+    good = check_lipsync_coverage(75, 8, 38.0)
+    rec_ok = to_qc_record(good, "run-e6", "final", rev)
+    check("pass record validates in qc_gate",
+          G.validate_record(rec_ok) is None, G.validate_record(rec_ok))
+    # Shared gate: the same final_edit check required with the others.
+    makers = {"lipsync-coverage": "final_assembler"}
+    gate = G.evaluate("run-e6", "final", [rec_bad], makers, ["final_edit"],
+                      master={"chosen_length_s": 120, "measured_s": 118})
+    check("shared gate FAILs the 2-minute 6-s ad", gate["gate"] == "FAIL",
+          gate)
+    gate_ok = G.evaluate("run-e6", "final", [rec_ok], makers,
+                         ["final_edit"],
+                         master={"chosen_length_s": 75, "measured_s": 73})
+    check("shared gate PASSes the passing ad", gate_ok["gate"] == "PASS",
+          gate_ok)
+    # 17.6: maker's own review is refused by the same gate.
+    rec_self = to_qc_record(good, "run-e6", "final", {
+        "identity": "final_assembler", "session": "s", "authority": "a"})
+    gate_self = G.evaluate("run-e6", "final", [rec_self], makers,
+                           ["final_edit"])
+    check("maker self-review refused",
+          any(f["code"] == "MAKER_SELF_REVIEW" for f in gate_self["failures"]),
+          gate_self["reason_code"])
+
+
+def main():
+    import tempfile
+    tmp_root = tempfile.mkdtemp(prefix="/tmp/w75-W-E-U6-e6tests-")
+    try:
+        test_done_when_pairs()
+        test_scaled_rules()
+        test_bad_input_fails_closed()
+        test_marker_validation(tmp_root)
+        test_gate_wiring(tmp_root)
+        test_qc_record_and_gate()
+    finally:
+        import shutil
+        shutil.rmtree(tmp_root, ignore_errors=True)
+    print("%s" % ("%d check(s) failed" % len(FAILS) if FAILS
+                  else "all E6 checks passed"))
+    return 1 if FAILS else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

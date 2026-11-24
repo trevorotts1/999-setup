@@ -1,0 +1,2411 @@
+#!/usr/bin/env python3
+"""Song dispatcher logic: request validation, per-take gates, take loop.
+
+Transport-free on purpose: ``generate`` and ``measure`` are injected, so the
+operator dispatcher, the Claude-Nine adapter and the tests share ONE judge.
+Rules (Trevor 2026-10-08):
+  * the request comes from suno_recipe.build_request (recipe v2); a request
+    that breaks the recipe, or holds a rule that contradicts the researched
+    wording (it never refuses the researched negatives or the "band keeps
+    playing" line), is refused before spend;
+  * EVERY take is judged per variant; three variants run in parallel lanes:
+    singing detector v2, spoken share band, sung share of voice, 6 s sung
+    stretch, hook sung 2+, all script words, length (L-2), music level under
+    spoken lines, clean ending (no near-silent final 2 s), first sung time,
+    and hook placement (FU-HOOK-PLACEMENT: Suno added or moved no hook block
+    earlier than the sheet and sang the first hook after the build-up window)
+    -- before any picture or video spend. The spoken band is the style's
+    constant target (22.5% of runtime, the 5/10 band), never a per-ad band:
+    no run document supplies one;
+  * WW-21: the aggregation/evidence-binding boundary (`accept_audio_results`)
+    is TOTAL and fail-closed -- missing, empty, malformed, unknown,
+    unavailable, unmeasured, flagged, failed or stale-bound evidence BLOCKS,
+    and only a complete set of five PASS, bound delivered-audio results
+    advances. It is the boundary before spend, NOT a sixth audio gate;
+  * stop at the first PASS, else deliver the best FLAG take inside the
+    per-author spend cap, never a FAIL;
+  * the vocal stem and timestamps are saved for EVERY take;
+  * whole tracks only: every generation asks for the full duration, never a patch;
+  * the openai transcription engine is refused (only the local fast engine, small.en int8).
+stdlib only; no network, no spend of its own.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import hashlib
+import json
+import os
+import re
+import sys
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+import load_governor as _LG   # noqa: E402
+import master_length as _ML   # noqa: E402  QC duration rule (order 2026-10-21)
+import music_qc as _QC       # noqa: E402  WW-08: the total verdict vocabulary + the receipt
+import song_contract as _SC  # noqa: E402
+import script_approval as _SA   # noqa: E402
+import spoken_share as _SS   # noqa: E402
+#: the spoken_share MODULE itself, for the method first-vocal rule the package
+#: ``__init__`` does not re-export (same shape as _RM/_SCM below).
+_SSM = getattr(_SS, "spoken_share", _SS)
+import suno_recipe as _R     # noqa: E402
+#: the recipe MODULE itself, whether core/suno_recipe/ is a package (whose
+#: __init__ re-exports a fixed list) or the bare module on sys.path -- so a new
+#: recipe helper can be called without editing the package's export list (which
+#: this unit does not own).
+_RM = getattr(_R, "suno_recipe", _R)
+#: WW-23: the song_contract MODULE itself, for a new helper the package
+#: __init__ does not re-export (same shape as _RM above).
+_SCM = getattr(_SC, "song_contract", _SC)
+import sung_hook as _SH      # noqa: E402
+from sung_hook import hook_placement as _HP   # noqa: E402
+import words_fit as _WF      # noqa: E402
+import music_qc.pace_change as _PC   # noqa: E402
+import music_qc.rap_check as _RC     # noqa: E402
+import timing_guard as _TG     # noqa: E402  WW-24: measured-only evidence provenance
+#: S75-T41: the FINAL outgoing artist/alias guard, run at the dispatch seam.
+from music_styles import suno_prompt_guard as _PG   # noqa: E402
+try:                                                # noqa: E402
+    from music_styles import catalog as _SHIPPED_CATALOG  # noqa: E402
+except ImportError:                             # script/top-level import
+    import catalog as _SHIPPED_CATALOG          # noqa: E402
+
+
+def _shipped_alias_catalog():
+    """The shipped 18-style catalog in guard-catalog shape, or {} when unreadable.
+
+    S75-A41 fail-closed (S75-T41-alias): ``run_takes`` must never guard with an
+    empty alias set -- with no aliases the matcher can never hit and a raw
+    artist name sails through with a PASS.  The shipped catalog (display refs
+    per style plus the guard's recorded-alias table) is ALWAYS in force, so a
+    caller that omits ``alias_catalog`` is still swept.  A caller-supplied
+    catalog can only ADD references, never remove these.
+    """
+    try:
+        styles = {}
+        for sid in _SHIPPED_CATALOG.style_ids():
+            refs = list(_SHIPPED_CATALOG.client_references(sid) or ())
+            extra = []
+            for ref in refs:
+                extra.extend(_PG.ALIASES.get(ref) or ())
+            styles[sid] = {"style_id": sid,
+                           "client_references": {"artists": refs,
+                                                 "aliases": extra,
+                                                 "reference_songs": []}}
+    except Exception:
+        return {}
+    return {"styles": styles}
+
+
+def _with_shipped_aliases(supplied):
+    """Guard catalog that always contains the shipped 18-style references.
+
+    ``supplied`` (the ``alias_catalog`` argument or request["_alias_catalog"])
+    may be a full catalog (``{"styles": ...}``) or one flat display-references
+    mapping (``{"artists": [...], ...}``) -- the shape a single run declares at
+    the dispatch seam.  Either way its references are UNIONED with the shipped
+    set; when it is empty or missing the shipped set stands alone, never an
+    empty matcher.  Returns {} only when the shipped catalog itself is
+    unreadable, which the caller refuses loudly.
+    """
+    shipped = _shipped_alias_catalog()
+    if not shipped.get("styles"):
+        # Fail closed: no shipped refs means no matcher at all, and a
+        # caller-supplied catalog alone would sweep only its own refs --
+        # exactly how a raw artist name reaches the transport.  The caller
+        # refuses loudly on the empty return, whatever the caller supplied.
+        return {}
+    if not supplied:
+        return shipped
+    merged = dict((shipped.get("styles") or {}))
+    records = []
+    if isinstance(supplied, dict) and any(
+            key in supplied for key in ("artists", "aliases", "reference_songs")):
+        records = [{"style_id": "<run>", "client_references": supplied}]
+    else:
+        try:
+            records = list(_PG._records(supplied))
+        except Exception:
+            records = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        refs = rec.get("client_references")
+        if not isinstance(refs, dict):
+            continue
+        sid = rec.get("style_id") or rec.get("id") or "<run>"
+        prior = ((merged.get(sid) or {}).get("client_references") or {})
+        def _as_list(value):
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, (list, tuple)):
+                return [v for v in value if isinstance(v, str)]
+            if isinstance(value, dict):
+                out = []
+                for artist, extra in value.items():
+                    if isinstance(artist, str):
+                        out.append(artist)
+                    out.extend(_as_list(extra))
+                return out
+            return []
+        def _union(old, new):
+            seen, out = set(), []
+            for value in list(old or []) + list(new or []):
+                if value not in seen:
+                    seen.add(value)
+                    out.append(value)
+            return out
+        merged[sid] = {"style_id": sid,
+                       "client_references": {
+                           "artists": _union(prior.get("artists"),
+                                             _as_list(refs.get("artists"))),
+                           "aliases": _union(prior.get("aliases"),
+                                             _as_list(refs.get("aliases"))),
+                           "reference_songs": _union(
+                               prior.get("reference_songs"),
+                               _as_list(refs.get("reference_songs")))}}
+    if not merged:
+        return dict(shipped)
+    return {"styles": merged}
+
+TOOL_NAME = "song_dispatch"
+TOOL_VERSION = "1.2.0"
+GATES = ("detector", "spoken_share", "rap_share", "sung_of_voice", "sung_stretch", "hook", "script_words",
+         "length", "music_under_speech", "clean_ending", "first_sung", "hook_placement")
+MUSIC_UNDER_SPEECH_MIN = 0.3     # music level under speech / music level under singing
+NEAR_SILENT_DBFS = -50.0         # RMS of the final 2 s below this = near silent
+SPEND_CAP_CENTS = 1000           # per author (Trevor 2026-10-08)
+GEN_COST_CENTS = 6
+# S75-001: THE DECLARED PER-RUN SPEND MAXIMUM for one ``run_takes`` call.
+# One paid song generation is the whole money a single call may buy.  Its
+# price is the line above, and the real price behind it is U-S03's estimate
+# (``song_cost_cents()`` -> ``catalog_calculator.card_render.price_envelope``'s
+# music line); this module declares no price of its own.  The old signature
+# default, ``SPEND_CAP_CENTS`` = 1000 cents, bought up to 166 paid generations
+# for any caller that left it alone.  ``run_takes`` now refuses ANY cap above
+# this maximum before the first generation, so that budget can never be
+# inherited again: a caller that needs a larger run must raise this number
+# here, with review.
+MAX_RUN_CAP_CENTS = GEN_COST_CENTS
+GATES += ("song_contract",)      # FU-RNBFLOW-SONG: the style's own contract on every take
+# WWFIXGAPS U1 (defect 2): the two D1 audio gates were shipped but NEVER
+# CALLED by the pipeline, so "UNMEASURED blocks a take PASS" was only true of
+# the module in isolation. Both are now gates of the take judge.
+GATES += ("rap_audio", "pace_change")
+# WW-08: the story and timeline-integrity gates are declared take gates too
+# -- judge_take emits them for EVERY take, so their names belong in GATES
+# (WW-21's "no gate in GATES is a dead name" control compares the declared
+# set with exactly what the judge writes).
+GATES += ("story", "timeline")
+
+# ---- WW-21: total fail-closed acceptance (the aggregation boundary) --------
+#
+# WW-21 IS NOT A SIXTH AUDIO GATE. The operator plan (WW-ROUND3-FIX-PLAN.md,
+# unit WW-21, lines 54-58; sha256 ce567435cae0d7933156db7034c8eb8069b9846c24
+# d382b6a2ebcba1a921162f) names exactly FIVE delivered-audio gates -- D1 real
+# rap, D2 story start, D3 both pace changes, D4 three audibly different
+# versions, D5 more than one character voice. WW-21 is the aggregation and
+# EVIDENCE-BINDING stage that runs BEFORE spend: it decides only whether the
+# five results CARRIED to it may advance. It claims no audio-quality outcome.
+#
+# WW-24 (2026-10-11): the carried results are not trusted on their binding
+# alone -- each result that carries an ``evidence`` record is held to the
+# measured-only provenance boundary in ``timing_guard`` (matching export digest,
+# actual duration, detector/alignment artifacts, trusted context); a planned or
+# stretched timeline never becomes a measurement. That validates the INPUTS to
+# D1..D5, so it adds no sixth audio gate.
+#
+# PROPOSED (WW-21, 2026-10-11): _MIN_AUDIO_RESULTS is the COUNT OF THE FIVE
+# GATE NAMES THE PLAN ALREADY NAMES. It is a proposed value -- not a measured
+# limit, and NOT a number Trevor set -- and it moves only when the plan's own
+# gate list moves. Same label in acceptance-profile.json, CHANGELOG.md and the
+# test docstring.
+AUDIO_RESULTS = ("D1", "D2", "D3", "D4", "D5")
+_MIN_AUDIO_RESULTS = 5            # PROPOSED -- see the note above
+#: Every gate verdict that is NOT a PASS blocks. Only PASS advances.
+BLOCKING_VERDICTS = ("FAIL", "FLAG", "UNMEASURED", "UNAVAILABLE", "UNKNOWN")
+#: A binding naming one of these is a HAND-SET LABEL, not a binding.
+_MANUAL_SOURCES = ("manual", "hand", "handset", "hand-set", "relabel", "relabelled",
+                   "relabeled", "typed", "literal", "assumed")
+_BINDING_KEYS = ("export_digest", "creative_revision", "profile_revision")
+_ACCEPTANCE_DIR = os.path.join("music", "acceptance")
+#: L2 (WW-21, 2026-10-21): the ONE operator-decision record, written beside the
+#: take records under music/acceptance/. `acceptance_from_run` skips it by
+#: name, so a decision never reads as a blocked variant, never rewrites a
+#: take's own PASS/FAIL record and never stands IN for one (a refused
+#: ACCEPTANCE_RECORD_MISSING stays refused).
+OPERATOR_DECISION_FILE = "operator-decision.json"
+#: D10: the ONE published order for advancing a run whose gates FAILED on
+#: MEASURED evidence. A refusal names this, verbatim, so no operator invents a
+#: path and no relabel is ever suggested. Every step writes its own evidence
+#: and the decision is bound to the digest of that evidence -- a decision can
+#: never stand in for a measurement.
+OPERATOR_DECISION_SEQUENCE = (
+    "record_acceptance(run_dir, variant_id, take_binding(export, revision), measured results) "
+    "-> digest = sha256_evidence_records({variant_id: measure_evidence_digest(run_dir, "
+    "variant_id)}) -> record_operator_decision(run_dir, decision ACCEPTED_RISK naming the "
+    "variant, gates_not_proven, measured_evidence_digest=digest) -> factory.py music "
+    "--action complete --operator-decision music/acceptance/operator-decision.json")
+#: Decision values this boundary admits for gates a MEASUREMENT failed to
+#: prove. Anything else (an overclaim, a bare string) is refused.
+OPERATOR_DECISIONS = ("ACCEPTED_RISK",)
+_DECISION_FIELDS = ("decision", "operator", "at_utc", "gates_not_proven",
+                    "measured_evidence_digest", "reason")
+_TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?"
+                    r"(Z|[+-]\d{2}:\d{2})?$")
+ACCEPTANCE_CODE_OK = "ACCEPTANCE_OK"
+ACCEPTANCE_CODE_NOT_PROVEN = "ACCEPTANCE_NOT_PROVEN"
+# WW-08: the acceptance-critical take gates. EVERY one is emitted for EVERY
+# take, and delivery refuses a take whose required gates did not all PASS.
+REQUIRED_TAKE_GATES = ("detector", "length", "song_contract", "script_words",
+                       "clean_ending", "hook", "hook_placement",
+                       "music_under_speech", "story", "timeline")
+#: gates that are only DELIVERY-required when THIS run's approved plan declares
+#: the matching requirement. A run that plans rap must prove measured rap
+#: (WW-06/17.8); a run that plans none has nothing to measure. The gate is
+#: recorded either way -- never silently skipped -- and it always counts toward
+#: the take's verdict, so an unmeasured read can never make a take PASS.
+CONDITIONAL_TAKE_GATES = ("rap_audio", "pace_change")
+#: the key that opts a run into the story protocol (WW-02/WW-03). A run that
+#: declares no approved revision records the story gate NOT_APPLICABLE WITH
+#: the flag below (WW-08 item 2) -- never a bare skip.
+STORY_PROTOCOL_KEY = "story_revision"
+STORY_OFF_FLAG = "story_protocol_off"
+TIMELINE_PENDING_FLAG = "timeline_check_pending"
+
+
+class DispatchError(ValueError):
+    pass
+
+
+def song_cost_cents(price_fn=None):
+    """Cents for ONE song generation, from the card price authority.
+
+    S75-001 (fifth-pass correction): the song path reserved a hard-coded 6
+    cents, so a real charge was reserved at the wrong number and the spending
+    limit was judged against it. The number comes from
+    ``catalog_calculator.card_render.price_envelope`` -- the ONE place the card,
+    the question and dispatch price a song. That function DOES price a single
+    generate (the ``music`` line item), so nothing here is invented.
+
+    ``price_fn`` is Skill 74's ``price`` adapter; with none the shipped video
+    model rate table prices the song (``video_models.rated_price_fn``), so the
+    number resolves offline. A card that cannot be priced raises: the paid path
+    must never proceed on a guessed estimate (fail closed).
+    """
+    from catalog_calculator import card_render as _CR   # noqa: PLC0415 - paid path
+    envelope, _model = _CR.price_envelope(
+        {"length": "60 seconds", "shape": "9:16", "main_characters": 1}, price_fn)
+    card = envelope.get("card") if isinstance(envelope, dict) \
+        and envelope.get("state") == "ok" else None
+    line = next((li for li in (card or {}).get("line_items") or []
+                 if li.get("component") == "music"), None)
+    usd = line.get("usd") if isinstance(line, dict) else None
+    try:
+        cents = int(round(float(usd) * 100))
+    except (TypeError, ValueError):
+        cents = 0
+    if cents <= 0:
+        raise DispatchError(
+            "SONG_PRICE_UNAVAILABLE: the card price authority could not price one "
+            "song generation (%s), so the ledger estimate is refused rather than "
+            "invented; record a live Skill 74 price before the run"
+            % ((envelope or {}).get("reasons") if isinstance(envelope, dict)
+               else "no envelope"))
+    return cents
+
+
+def refuse_asr(engine):
+    """Only the local fast engine (faster-*, small.en int8) may transcribe;
+    anything openai, or any engine not named faster-*, is refused."""
+    e = str(engine).lower().replace("_", "-").strip()
+    if "openai" in e or not e.startswith("faster-"):
+        raise DispatchError("ASR engine %r refused: only the local faster-* engine, small.en int8" % engine)
+    return e
+
+
+def validate_request(req, style_id=None, client_text="", delivered_s=None, pace_plan=None,
+                     hook_plan=None):
+    """List of refusals for ONE KIE createTask music request; [] = send it.
+
+    ``hook_plan``: the approved hook plan (judging metadata, never a provider
+    field); else the request's internal ``_hook_plan`` -- the SAME source the
+    judge reads at ``run_takes``. It reaches ``suno_recipe.check_lyric_sheet``,
+    so the hook-count and story-beat gates run BEFORE any spend instead of
+    only at judging time.
+
+    ``pace_plan``: the approved pace order (judging metadata, never a provider
+    field); else the request's internal ``_pace_plan``. When one is known, a
+    final ``input.style`` missing either direction is refused here
+    (song_contract.check_pace_style). Seam completeness and the no-order
+    refusal stay in run_takes.
+
+    ``delivered_s`` is the plan's delivered seconds (plan["delivered_s"]),
+    never the request duration, which carries Suno's 15% headroom: the
+    style contract (core/song_contract, FU-RNBFLOW-SONG) counts hooks on it,
+    and a missing style_id or delivered_s is a refusal ("UNMEASURED: ..."),
+    never a skipped check.
+
+    WW-30: the ONE accepted contract is the createTask envelope
+    (``suno_recipe.check_envelope``: outer model, TOP-LEVEL callBackUrl,
+    nested snake_case input, exactly one lyrics source at ``input.lyrics``).
+    Every direction below is read from ``input`` -- never from the top level,
+    where the retired flat contract used to put them. A payload that is not
+    an envelope is refused up front and nothing below is measured on it.
+    """
+    errs = _R.check_envelope(req)
+    # FU-HOOK-PLACEMENT: honor a plan ridden on the request as _hook_plan
+    # (same source the judge reads at run_takes), unless one was passed in.
+    if hook_plan is None and isinstance(req, dict):
+        hook_plan = req.get("_hook_plan")
+    inp = _R.envelope_input(req)
+    if inp is None:
+        return errs
+    if inp.get("custom_mode") is not True or inp.get("instrumental") is not False:
+        errs.append("custom_mode must be true and instrumental false")
+    d = inp.get("duration")
+    if not isinstance(d, (int, float)) or isinstance(d, bool) or not 10 <= d <= 360:
+        errs.append("duration must be 10-360 s")
+    if inp.get("vocal_gender") not in ("f", "m"):
+        errs.append("vocal_gender must be f or m")
+    for k, v in (("style_weight", 0.75), ("weirdness_constraint", 0.3), ("variety", 0)):
+        if inp.get(k) != v:
+            errs.append("%s must be %s" % (k, v))
+    errs += _R.check_style_text(inp.get("style", ""))
+    errs += _R.check_negatives(inp.get("negative_tags", ""), style_id)
+    sheet = _R.parse_lyrics(_lyrics_of(req))
+    d = d if isinstance(d, (int, float)) and not isinstance(d, bool) else None
+    # FU-RNBFLOW-SONG: the style reaches the sheet check (rap is judged as rap,
+    # never refused as "no style"), and the style's own contract runs.
+    # D3 (request path): a METHOD run's sheet answers a different question --
+    # its first sung word lands at the ERM apex, so a sheet that opens with a
+    # short spoken ERM and then sings is the CORRECT shape, not a short hook.
+    # The order rides the request exactly like _hook_plan, so the pre-ERM gate
+    # runs BEFORE any spend. A run with no method block is unchanged.
+    _pp = pace_plan if pace_plan is not None else req.get("_pace_plan")
+    _is_method = bool(isinstance(_pp, dict) and _pp.get("method"))
+    _method_kw = ({"method": True}
+                  if _is_method and _check_lyric_sheet_takes_method() else {})
+    errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id,
+                                 hook_plan=hook_plan, **_method_kw)
+    # WW-16: the declared opening vocalise cue must satisfy the ceiling.
+    errs += _SC.check_sheet(_lyrics_of(req), style_id, delivered_s, inp.get("style"))["reasons"]
+    errs += _SCM.check_pace_style(inp.get("style"), pace_plan or req.get("_pace_plan"))
+    return errs
+
+
+def _check_lyric_sheet_takes_method():
+    """True when ``suno_recipe.check_lyric_sheet`` carries the method gate.
+
+    The gate (PRE_ERM_SPOKEN_SHORT) ships in suno_recipe; a box whose copy
+    predates it takes no flag and there is no gate to run, so the call stays
+    exactly as it is there. Never a silent pass on a box that HAS the gate.
+    """
+    import inspect                      # noqa: PLC0415 - stdlib, cheap
+    try:
+        params = inspect.signature(_R.check_lyric_sheet).parameters
+    except (TypeError, ValueError):
+        return False
+    return "method" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD
+                                     for p in params.values())
+
+def _lyrics_of(req):
+    """The ONE approved lyrics source of an envelope: ``input.lyrics``.
+
+    A ``prompt`` beside it is already refused by ``check_envelope``
+    (COMPETING_LYRICS); this reader never falls back to it, so a competing
+    lyrics source can never reach the judge or the provider.
+    """
+    return (_R.envelope_input(req) or {}).get("lyrics") or ""
+
+
+#: S75-T41: internal judging / gate metadata that rides a request but is never
+#: provider text (same class as ``_hook_plan`` / ``_pace_plan``).  Everything
+#: else in a request IS outbound and passes the guard before dispatch.
+_INTERNAL_KEYS = ("card_receipt", "run_dir", "id")
+
+
+def _outbound_view(req):
+    """The EXACT provider payload inside a request: every key that is not
+    internal judging/gate metadata.  This is what the guard inspects and what
+    the transport dispatches -- one view, so nothing can ride out beside it."""
+    return {k: v for k, v in (req or {}).items()
+            if k not in _INTERNAL_KEYS and not str(k).startswith("_")}
+
+
+def _input_of(req):
+    """The envelope's nested input, refused loudly when it is not one."""
+    inp = _R.envelope_input(req)
+    if inp is None:
+        raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s"
+                            % "; ".join(_R.check_envelope(req)))
+    return inp
+
+
+def _w(t):
+    return _SH.words(t)
+
+
+_SECTION_HEADER = re.compile(r"\[[^\]]*\]")
+
+
+def _script_lyric_words(script_text):
+    """The words of the client's script that are DELIVERED, never its
+    performance directions.
+
+    A bracket header names a section and how it is performed
+    ("[Outro (spoken): calm close voice, plain speech, no melody]"). Feeding
+    the whole text to the script_words gate required the SONG to sing "calm",
+    "close", "voice", "plain", "speech", "no", "melody" and "end", which no
+    take can satisfy -- those words are instructions to the performer, not
+    lyrics. Headers are dropped; section BODIES are kept, spoken ones
+    included, because the closing call to action is spoken there and is still
+    required."""
+    if script_text is None:
+        return set()
+    if not isinstance(script_text, str):
+        return set(_w(script_text))
+    return set(_w(_SECTION_HEADER.sub(" ", script_text)))
+
+
+def _script_lyric_seq(script_text):
+    """The approved script's words IN ORDER as bounded-normalization atoms
+    (headers dropped exactly as ``_script_lyric_words`` drops them). The
+    script_words gate matches the take SEQUENCE-aware with these, so word
+    order and repetition are preserved while benign punctuation, contractions
+    and compound tokens stay equivalent (S75-W05-U5, spec 6.5, finding D29)."""
+    if script_text is None:
+        return []
+    if not isinstance(script_text, str):
+        script_text = " ".join(str(x) for x in script_text)
+    return _HP.norm_tokens(_SECTION_HEADER.sub(" ", script_text))
+
+
+# ---- S75-W05-U5: confidence-aware evaluation (spec 6.5, finding D29) -------
+#
+# Every measurement records its ACTUAL owner: ASR supplies transcription and
+# timing ONLY; the sung/spoken decision comes from the declared singing
+# detector with its own confidence -- ASR text is never the sung classifier.
+# Low classifier confidence is uncertainty, never a definite creative
+# failure: it triggers remeasurement or ONE bounded independent review before
+# any regeneration, and an independent media review may satisfy a DECLARED
+# alternative-evidence outcome as REVIEW evidence (its own reviewer, artifact
+# hash, method and finding) -- never as a numerical measurement the system
+# did not obtain.
+
+#: Sung/spoken classifier confidence below this is LOW. PROPOSED bound on the
+#: detector's own 0..1 scale (_confidence: separation margin x coverage); it
+#: moves only with a documented calibration, never to make a take pass.
+CLASSIFICATION_CONFIDENCE_MIN = 0.6
+
+#: Declared alternative-evidence outcomes: a check named here MAY be satisfied
+#: by one independent media review recorded as review evidence. Every other
+#: outcome -- every numerical threshold -- still needs a valid measurement.
+#: ponytail: two declared outcomes; grow only with a written policy.
+ALTERNATIVE_EVIDENCE = {"sung_spoken_classification": "independent_media_review",
+                        "hook_placement_lexical": "independent_media_review"}
+
+
+def measurement_owners(take):
+    """Who measured what (spec 6.5). ASR supplies transcription and timing;
+    the sung/spoken decision belongs to the declared detector WITH its
+    confidence. Transport-stamped owners win; a take that carries none gets
+    the derived record, marked ``derived`` so nobody mistakes it for a
+    stamped one."""
+    t = take if isinstance(take, dict) else {}
+    owners = t.get("measurement_owners")
+    if isinstance(owners, dict) and owners:
+        return owners
+    det = str(t.get("detector") or "").split()
+    return {"transcription_and_timing": {"owner": "asr", "source": "aligned_words",
+                                         "measures": "transcription and timing only",
+                                         "derived": True},
+            "sung_spoken": {"owner": "singing_detector",
+                            "detector": det[0] if det else None,
+                            "detector_version": det[1] if len(det) > 1 else None,
+                            "confidence": t.get("detector_confidence"),
+                            "decision_source": "measured", "derived": True}}
+
+
+def review_evidence_record(check_id, reviewer, artifact_hash, method, finding):
+    """One independent media review, recorded as REVIEW evidence -- never as a
+    numerical measurement the system did not obtain (spec 6.5). A record
+    missing any of reviewer, artifact hash, method or finding is refused."""
+    vals = {"check_id": check_id, "reviewer": reviewer, "artifact_hash": artifact_hash,
+            "method": method, "finding": finding}
+    miss = [k for k, v in vals.items() if not isinstance(v, str) or not v.strip()]
+    if miss:
+        raise DispatchError("REVIEW_EVIDENCE_INCOMPLETE: missing %s -- review evidence "
+                            "carries its own reviewer, artifact hash, method and finding"
+                            % ", ".join(miss))
+    return {"check_id": check_id, "evidence_class": "review", "is_measurement": False,
+            "reviewer": reviewer, "artifact_hash": artifact_hash,
+            "method": method, "finding": finding}
+
+
+def satisfies_alternative_evidence(check_id, rec):
+    """True when ``rec`` is review evidence satisfying the DECLARED
+    alternative outcome for ``check_id``. Only declared checks may be
+    satisfied this way; a numerical threshold still needs a valid
+    measurement, and review evidence is never read as one."""
+    if check_id not in ALTERNATIVE_EVIDENCE:
+        return False
+    if not isinstance(rec, dict) or rec.get("evidence_class") != "review":
+        return False
+    if rec.get("is_measurement") is not False:
+        return False
+    return (rec.get("check_id") == check_id
+            and all(isinstance(rec.get(k), str) and rec[k].strip()
+                    for k in ("reviewer", "artifact_hash", "method", "finding")))
+
+
+def repair_order(take=None, judge_result=None):
+    """The deterministic-edit-first ladder for an EXISTING (already paid) take
+    (spec 6.5, D29): remeasure first -- saved audio, zero new music generation
+    -- then deterministic edits (trim, timeline alignment, mixing), then one
+    bounded independent review; NEW PAID GENERATION IS LAST and stays blocked
+    until the cheaper steps are done. The approved dramatic turn and hook
+    order are preserved at every step, and the expected boundary is never
+    moved to make a take pass."""
+    jr = judge_result if isinstance(judge_result, dict) else {}
+    low = bool((jr.get("review") or {}).get("required"))
+    return [
+        {"step": "remeasure", "new_generation": False,
+         "detail": "remeasure the saved take audio (zero new music generation)"},
+        {"step": "deterministic_edit", "new_generation": False,
+         "detail": "deterministic edit of the existing take (trim / timeline alignment / "
+                   "mix) preserving the approved words, dramatic turn and hook order"},
+        {"step": "bounded_review", "new_generation": False, "required": low,
+         "detail": "one bounded independent media review (its finding is REVIEW evidence, "
+                   "never a measurement)"},
+        {"step": "regenerate", "new_generation": True, "blocked": True,
+         "blocked_until": ["remeasure", "deterministic_edit"] + (["bounded_review"] if low else []),
+         "detail": "new paid generation, only after the existing-take ladder is exhausted"},
+    ]
+
+
+def regeneration_allowed(steps_done=(), review=None, judge_result=None):
+    """(ok, reason) for NEW PAID GENERATION on an existing take. Remeasurement
+    and deterministic edits come first, and a low-confidence sung/spoken
+    classification additionally needs its one bounded review recorded as
+    REVIEW evidence (reviewer, artifact hash, method, finding)."""
+    done = {(s.get("step") if isinstance(s, dict) else s) for s in steps_done or ()}
+    for need in ("remeasure", "deterministic_edit"):
+        if need not in done:
+            return False, "%s comes before any new paid generation" % need
+    jr = judge_result if isinstance(judge_result, dict) else {}
+    if (jr.get("review") or {}).get("required") or (review or {}).get("required"):
+        if not satisfies_alternative_evidence("sung_spoken_classification", review or {}):
+            return False, ("a low-confidence sung/spoken classification needs one bounded "
+                           "independent review recorded as review evidence first")
+    return True, ""
+
+
+def _finalize_take(result, take):
+    """Bind the measurement OWNERS and the confidence-aware review/repair
+    policy onto one judged take. Never touches a gate verdict: a low-confidence
+    classifier adds a review requirement, it does not relabel uncertainty as a
+    creative failure."""
+    if not isinstance(result, dict):
+        return result
+    owners = measurement_owners(take)
+    result["measurement_owners"] = owners
+    conf = (owners.get("sung_spoken") or {}).get("confidence")
+    low = (isinstance(conf, (int, float)) and not isinstance(conf, bool)
+           and conf < CLASSIFICATION_CONFIDENCE_MIN)
+    if low:
+        result["review"] = {
+            "required": True, "satisfied": False, "kind": "independent_media_review",
+            "check_id": "sung_spoken_classification",
+            "confidence": conf,
+            "source": (owners.get("sung_spoken") or {}).get("decision_source"),
+            "reason": ("sung/spoken classifier confidence %.3f is below %.2f: classifier "
+                       "uncertainty triggers remeasurement or ONE bounded independent "
+                       "review -- never a definite creative failure (spec 6.5)"
+                       % (conf, CLASSIFICATION_CONFIDENCE_MIN))}
+    result["repair_order"] = repair_order(take, result)
+    return result
+
+
+def _planned_pct(plan, style_id, key):
+    """Percent of delivered runtime the approved plan gives one delivery.
+
+    FU-U3: R&B Flow targets are judged against the share the APPROVED plan
+    names (plan 18 section 9 item 1, documented default) -- never a new
+    number. planned % = words[key] / words_fit rate for that delivery,
+    over the plan's delivered seconds. Missing word counts -> None (the
+    caller falls back to the style's constant).
+    """
+    words = (plan or {}).get("words") or {}
+    if key not in words or key == "rap" and "rap" not in words:
+        return None
+    delivered = (plan or {}).get("delivered_s")
+    if not isinstance(delivered, (int, float)) or delivered <= 0:
+        return None
+    rate = _WF.rates_for(style_id).get(key)
+    if not rate:
+        return None
+    return round(float(words[key]) / float(rate) / float(delivered) * 100.0, 3)
+
+
+def _gate(verdict, detail="", style_flag=None):
+    """WW-08: one gate record on the TOTAL vocabulary, with the style flag that
+    backs a NOT_APPLICABLE (never a bare skip)."""
+    rec = {"verdict": _QC.norm_verdict(verdict), "detail": detail}
+    if style_flag:
+        rec["style_flag"] = style_flag
+    return rec
+
+
+def _story_gate(take, plan, style_id, D, sheet_text):
+    """WW-02/WW-08: the story gate, CALLED from judge_take. A run that declares
+    its approved revision runs song_contract.check_returned_story (story start,
+    lexical coverage, story arc, words floor) and a checker that is absent, that
+    raises, or that cannot pass BLOCKS. A run that declares no revision records
+    the flag-backed NOT_APPLICABLE (WW-08 item 2)."""
+    rev = (plan or {}).get(STORY_PROTOCOL_KEY) or (take or {}).get(STORY_PROTOCOL_KEY)
+    if not rev:
+        return _gate("NOT_APPLICABLE",
+                     "this run declares no approved story revision (STORY_PROTOCOL_KEY)",
+                     style_flag=STORY_OFF_FLAG)
+    fn = getattr(_SC, "check_returned_story", None)
+    if fn is None:
+        return _gate("UNAVAILABLE", "check_returned_story is not installed")
+    try:
+        res = fn(take, style_id, D, sheet_text, plan)
+    except Exception as exc:            # noqa: BLE001 - a gate that raises blocks
+        return _gate("UNAVAILABLE", "check_returned_story raised %r" % (exc,))
+    res = res or {}
+    detail = str(res.get("detail") or res.get("reason") or "")
+    return _gate(res.get("verdict", "UNKNOWN"), "story revision %s: %s" % (rev, detail))
+
+
+def _timeline_gate(take, plan, style_id, D):
+    """WW-08/WW-04: the timeline-integrity gate, CALLED from judge_take. WW-04
+    owns the partition check (timing_guard); when this revision ships no
+    checker the gate is recorded NOT_APPLICABLE WITH the flag below, never a
+    silent skip, and an absent or raising checker BLOCKS."""
+    try:
+        import timing_guard as _TG   # noqa: PLC0415
+    except Exception:                # noqa: BLE001 - an unimportable checker blocks
+        return _gate("UNAVAILABLE", "timing_guard is not installed")
+    fn = (getattr(_TG, "timeline_integrity", None)
+          or getattr(_TG, "check_timeline", None))
+    if fn is None:
+        return _gate("NOT_APPLICABLE",
+                     "this revision ships no timeline-integrity checker",
+                     style_flag=TIMELINE_PENDING_FLAG)
+    try:
+        res = fn(take, D)
+    except Exception as exc:         # noqa: BLE001 - a gate that raises blocks
+        return _gate("UNAVAILABLE", "the timeline gate raised %r" % (exc,))
+    res = res or {}
+    return _gate(res.get("verdict", "UNKNOWN"), str(res.get("detail", "")))
+
+
+def _rap_required(plan, style_id):
+    """True when the approved plan carries a rap budget (WW-06 item 3). A run
+    with no rap budget has no rap delivery to prove."""
+    words = (plan or {}).get("words") or {}
+    return bool(words.get("rap")) or _planned_pct(plan, style_id, "rap") is not None
+
+
+def _pace_required(plan, take):
+    """True on EVERY run, method or not (Trevor 2026-10-13, METHOD-INTEGRATION
+    F4 / conflict C5).
+
+    It used to be "True when this run carries an approved pace order", so a
+    run that ordered no pace change had "nothing to enforce" and PASSed --
+    the gate was optional. Both musical turns are now mandatory and measured:
+    the ERM drop and the second turn at the Hero Shift (on a run with no
+    method block the seams sit on the arc's pain-turn and solution-arrival
+    beats). The gate is therefore a REQUIRED gate of every take everywhere --
+    an unmeasured turn can never reach PASS -- and ANY run, method or not,
+    that carries no pace order at all is refused at dispatch
+    (``PACE_TURNS_REQUIRED``, in ``run_takes``) or records the gate
+    UNMEASURED when it is judged directly.
+    The arguments are kept so no caller changes.
+    """
+    return True
+
+
+def _method_plan(plan):
+    """True when the approved plan carries the run's method block
+    (``control/method.json`` read by the factory). Everything this unit adds
+    for the first vocal is INERT without it: a run with no method block is
+    judged exactly as it is today."""
+    m = (plan or {}).get("method")
+    return isinstance(m, dict) and bool(m)
+
+
+def run_method_targets(run_dir):
+    """The run's method record ``runtime_targets``, read from
+    ``<run>/control/method.json`` -- the authority for a METHOD run's ERM
+    apex and window.
+
+    None when there is no run directory or no method record at all; an
+    ``unreadable`` marker on bad JSON and ``runtime_targets_missing`` on a
+    record that carries none. BOTH markers are truthy on purpose: they make
+    the judge a METHOD judge with no apex, which records UNMEASURED and never
+    passes. A run with no method record is untouched.
+    """
+    if not run_dir:
+        return None
+    p = os.path.join(str(run_dir), "control", "method.json")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return {"unreadable": "control/method.json"}
+    rt = rec.get("runtime_targets") if isinstance(rec, dict) else None
+    if isinstance(rt, dict) and rt:
+        return dict(rt)
+    return {"runtime_targets_missing": True}
+
+#: sections that DELIVER a sung or rapped voice (a no-voice tag delivers none)
+_VOICE_DELIVERIES = ("sung", "rap")
+
+def first_sung_from_words(sheet_text, aligned_words):
+    """The FIRST sung/rap word's start, read off the take's own word timings.
+
+    The detector measures WHEN singing begins; word timing says WHICH word.
+    An earlier sung word than the detector's figure -- a line heard under the
+    groove before the detector calls it singing -- must fail the early bound.
+
+    The line is taken from the sheet, never guessed from the words: the first
+    sung/rap section's first line with 3 or more normalised tokens is the
+    anchor, and the first up-to-3 lines of that section are matched against
+    the aligned word stream. None when there is nothing to match (no sheet, no
+    words, an unparseable sheet, no section that qualifies, or no match), so
+    the caller falls back to the detector figure.
+    """
+    if not sheet_text or not aligned_words:
+        return None
+    try:
+        sheet = _R.parse_lyrics(sheet_text)
+    except _R.RecipeError:
+        return None
+    lines = None
+    for sec in sheet or []:
+        if not isinstance(sec, dict):
+            continue
+        if str(sec.get("delivery") or "").strip().lower() not in _VOICE_DELIVERIES:
+            continue
+        got = [ln for ln in (sec.get("lines") or []) if str(ln).strip()]
+        if got and len(_HP.norm_tokens(got[0])) >= 3:
+            lines = got
+            break
+    if not lines:
+        return None
+    stream = []
+    for i, w in enumerate(aligned_words):
+        if not isinstance(w, dict):
+            continue
+        for tok in _HP.norm_tokens(str(w.get("word", ""))):
+            stream.append((tok, i))
+    for line in lines[:3]:
+        want = _HP.norm_tokens(line)[:4]
+        n = len(want)
+        if not n:
+            continue
+        for pos in range(len(stream) - n + 1):
+            if [t for t, _i in stream[pos:pos + n]] == want:
+                w = aligned_words[stream[pos][1]]
+                start = w.get("start")
+                if start is None:
+                    start = w.get("startS")
+                try:
+                    return float(start)
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+def _erm_apex_s(plan, delivered_s):
+    """The ERM apex of a METHOD run, read off the plan -- no table here.
+
+    SPEC B4's pacing profile picks it: ``feed`` (paid ads, short form, every
+    trailer and ad clip cut from a master) compresses the ERM so the first
+    sung line lands by 15 percent of the runtime; ``story`` (campaign
+    episodes, testimonials, lessons) uses the method's own ERM window, whose
+    midpoint is the apex the plan already carries (``erm_apex_s``, else the
+    window's midpoint). A plan that carries an explicit ``erm_apex_s`` always
+    wins, and a run that carries neither returns None (the caller records
+    UNMEASURED: missing evidence is never PASS)."""
+    m = (plan or {}).get("method")
+    if not isinstance(m, dict) or not m:
+        return None
+
+    def _num(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    if _num(m.get("erm_apex_s")) and float(m["erm_apex_s"]) > 0:
+        return float(m["erm_apex_s"])
+    if str(m.get("profile") or "").strip().lower() == "feed":
+        if isinstance(delivered_s, (int, float)) and delivered_s > 0:
+            return float(delivered_s) * _SS.FIRST_SUNG_TARGET_PCT / 100.0
+        return None
+    w = m.get("erm_window_s")
+    if isinstance(w, (list, tuple)) and len(w) == 2 and all(_num(v) for v in w):
+        return (float(w[0]) + float(w[1])) / 2.0
+    return None
+
+
+def _pace_turns_required_detail():
+    return ("PACE_TURNS_REQUIRED: both pace turns are mandatory and measured "
+            "on every run (Trevor 2026-10-13); this run carries no pace order, "
+            "so the ERM drop and the second turn cannot be measured")
+
+
+def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
+               style_id=None, sheet_text=None):
+    """WW-08: run EVERY required gate; a gate that raises blocks and never
+    passes."""
+    try:
+        return _finalize_take(_judge_take_inner(take, plan, script_words, hook_text,
+                                                spoken_range_pct, style_id, sheet_text), take)
+    except Exception as exc:      # noqa: BLE001 - a raised exception blocks
+        return _finalize_take(
+            _finish({"judge_exception": _gate("FAIL", "the judge raised %r" % (exc,))}), take)
+
+
+def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None,
+                      style_id=None, sheet_text=None):
+    """Gate a measured take. ``take`` = {segments (measured and/or aligned),
+    aligned_words, duration_s, detector, music_under_speech_ratio,
+    tail_rms_dbfs, first_sung_s}. Returns {verdict, gates:{name:{verdict,
+    detail}}, score}.
+
+    FU-U3: ``style_id`` carries the music style through the judge. Bands per
+    style (spoken_share.STYLE_TARGETS), the SAME 5/10 band everywhere:
+      * Soul Ballad / Soul Rise: spoken-style share vs the ad's own target
+        (22.5 default) and sung-of-voice vs 77.5 -- today's numbers exactly;
+      * R&B Flow: rap is its own delivery. The plain-spoken share and the
+        rap share are judged against the share each delivery has in the
+        APPROVED plan (the U2 plan's word counts at the style's measured
+        rates -- the documented default from plan 18 section 9 item 1, a
+        TREVOR-DECISION ITEM, never a number invented here), each on the
+        5/10 band; plain spoken with no rap keeps the 22.5 runtime target;
+        sung-of-voice is RECORDED for a rap sheet (hook content, not a
+        planned share). The 6 s sung stretch and the hook count stay hard.
+    Rap-versus-speech comes from aligned segments (source="aligned", basis
+    "aligned"), never recorded as "measured".
+    """
+    D = plan["delivered_s"]
+    segs = take.get("segments") or []
+    g = {}
+
+    def put(name, verdict, detail="", style_flag=None):
+        g[name] = _gate(verdict, detail, style_flag)
+
+    det = str(take.get("detector", ""))
+    srcs = {s.get("source") for s in segs if isinstance(s, dict)}
+    ok = (bool(segs) and bool(srcs)
+          and srcs <= {"measured", "aligned"} and "measured" in srcs
+          and det.startswith("singing_detector 2"))
+    put("detector", "PASS" if ok else "FAIL", det or "no detector record")
+    if not ok:
+        return _finish(g)
+    basis = _SS.segment_basis(segs)
+    t = _SS.style_targets(style_id)
+    m = _SS.measure_share(segs, basis, style_id=style_id)
+    # spoken target per style: plan-derived for a rap style, the ad's own
+    # range (22.5 default) otherwise.
+    if t["rap_delivery"] and t["target_from_plan"]:
+        planned = _planned_pct(plan, style_id, "spoken")
+        tgt = _SS.SPOKEN_TARGET_PCT if planned is None else planned
+        target_src = "approved plan" if planned is not None else "default"
+    else:
+        tgt = _SS.target_for_range(spoken_range_pct)
+        target_src = "ad range"
+    r = _SS.check_share(m["share"], segs, basis, target_pct=tgt,
+                        style_id=style_id)
+    put("spoken_share", r["verdict"],
+        "%.1f%% vs %.1f (%s, plain spoken, %s basis)"
+        % (m["share_pct"], tgt, target_src, basis))
+    # rap: its own delivery. A rap style judges the measured rap share
+    # against the plan's own rap share; a style without rap wants ZERO rap
+    # (a take that carries rap under Soul Ballad is a FAIL, band included).
+    if t["rap_delivery"]:
+        planned_rap = _planned_pct(plan, style_id, "rap")
+        if m["rap_seconds"] > 0 or planned_rap:
+            j = _SS.judge_gap(m["rap_share_pct"],
+                              _SS.SPOKEN_TARGET_PCT if planned_rap is None
+                              else planned_rap)
+            put("rap_share", j["verdict"],
+                "%.1f%% vs %s (%s)" % (m["rap_share_pct"],
+                                       "n/a" if planned_rap is None
+                                       else "%.1f" % planned_rap,
+                                       "approved plan" if planned_rap is not None
+                                       else "default"))
+        else:
+            # WW-21: THE no-planned-and-no-measured-rap LOOPHOLE. This branch
+            # used to be a PASS ("no rap planned, none measured"), so an
+            # R&B Flow take whose plan carries no rap word count AND whose
+            # audio measured 0.0 s of rap advanced as if the rap gate had been
+            # satisfied. It had not: the style's whole definition is that it
+            # DELIVERS rap. Missing evidence is not a deviation, so this can
+            # never be a PASS -- the take is flagged here and the WW-21
+            # acceptance boundary (accept_audio_results) blocks it outright,
+            # because only PASS advances there.
+            put("rap_share", "FLAG",
+                "RAP_NEITHER_PLANNED_NOR_MEASURED: style %r delivers rap, the approved plan "
+                "declares no rap words (_planned_pct -> None) and the take measured %.1f s of "
+                "rap. Missing evidence is not a deviation; this take cannot pass."
+                % (style_id, m["rap_seconds"]))
+    else:
+        put("rap_share", "PASS" if m["rap_seconds"] <= 0 else
+            _SS.judge_gap(m["rap_share_pct"], 0.0)["verdict"],
+            "%.1f%% rap (Soul style allows none)" % m["rap_share_pct"])
+    # S75-052: the MEASURED rap seconds ride the rap gate record. D1 "real rap"
+    # is decided from a measurement (was any rap actually delivered?), never
+    # from a style's no-rap PASS that would otherwise let a rap-less song
+    # satisfy D1.
+    g["rap_share"]["measurement"] = {"owner": "spoken_share",
+                                     "rap_seconds": m["rap_seconds"],
+                                     "rap_share_pct": m["rap_share_pct"]}
+    v = (_SS.check_sung_of_voice(segs, basis=basis, style_id=style_id)
+         if m["voice_seconds"] - m["sung_seconds"] > 0
+         else {"verdict": "FAIL", "sung_of_voice_pct": 0})
+    put("sung_of_voice", v["verdict"],
+        "%.1f%% of voice%s" % (v.get("sung_of_voice_pct", 0),
+                               "" if v.get("gated", True)
+                               else " (recorded, not gated for %s)" % style_id))
+    real = _SS.check_real_singing(segs)
+    put("sung_stretch", "PASS" if real.get("verdict", "PASS") != "FAIL" and not real.get("reasons") else "FAIL",
+        "6 s sung stretch")
+    # The hook is counted on the DETECTOR segments only: aligned segments
+    # carry the sheet's labels, and the counted spans need measured ones.
+    # S75-W05-U5: counted with the bounded lexical matcher -- a benign
+    # punctuation, contraction or compound-token equivalent still counts as a
+    # sung repetition; a changed or missing repetition is still detected. The
+    # gate record carries the reader's basis and confidence and the owners of
+    # the measurements behind it.
+    hook_segs = [s for s in segs if s.get("source") == "measured"]
+    rec = _HP.measure_hook(hook_text, take.get("aligned_words") or [], hook_segs, _HP.hook_target(D, plan.get("hook_plan")))
+    put("hook", "PASS" if rec["measured"] >= 2 and rec["verdict"] != "FAIL" else
+        ("FLAG" if rec["measured"] >= 2 else "FAIL"), "%d of %d" % (rec["measured"], rec["target"]))
+    g["hook"]["measurement"] = {"owner": "hook_placement", "basis": rec.get("basis"),
+                                "confidence": rec.get("confidence")}
+    # FU-RNBFLOW-SONG: the returned song against the style's contract, before any
+    # picture or video spend. The plan carries style_id and sheet_text (run_takes
+    # stamps the request's lyrics); a missing one is a FAIL, never a skipped gate.
+    sc_sid = style_id or plan.get("style_id")
+    if not sc_sid:
+        put("song_contract", "FAIL", "UNMEASURED: style_id (the plan carries no style_id)")
+    else:
+        sc = _SC.check_returned_song(sheet_text or plan.get("sheet_text"),
+                                     take.get("aligned_words") or [], segs, sc_sid, D)
+        put("song_contract", "FAIL" if sc["reasons"] else "PASS",
+            "; ".join(sc["reasons"]) or ", ".join("%s %s" % kv for kv in sorted(sc["numbers"].items())))
+    # WWFIXGAPS U1 (defect 2): THE TWO D1 AUDIO GATES ARE WIRED IN HERE.
+    # Before this they were never called by the pipeline, so nothing made an
+    # UNMEASURED result block a take; `run_takes` could deliver a PASS on an
+    # unmeasured rap read or an unmeasured gear change.
+    # RAP (music_qc/rap_check): only a rap-delivering style carries rap, so
+    # the gate applies there and nowhere else; with no labelled rap control it
+    # returns UNMEASURED, and `_finish` never lets UNMEASURED reach PASS.
+    if t["rap_delivery"]:
+        rg = _RC.gate(segs)
+        put("rap_audio", rg["verdict"], rg["reason"])
+    else:
+        put("rap_audio", "PASS", "style %r delivers no rap" % (style_id,))
+    # PACE (music_qc/pace_change): the ordered gear change rides the plan. An
+    # order with missing onset or energy evidence on the TAKE is UNMEASURED
+    # (blocks PASS); evidence that shows no gear change is FAIL. bpm is
+    # reported and never grants a PASS.
+    #
+    # METHOD C5 (Trevor 2026-10-13, BUILD-PLAN W1-method-song-U1): both turns
+    # are mandatory on EVERY run, so a take that reaches the judge with no
+    # order cannot be told "there is nothing to enforce" -- that verdict is a
+    # PASS, and an unmeasured turn may never reach PASS. The gate records
+    # UNMEASURED (PACE_TURNS_REQUIRED) and blocks, method run or not; every
+    # real run was already refused at dispatch, so this is the direct-judge
+    # seam (and the last line of defence) rather than a second dispatch rule.
+    pg = _PC.judge_plan_pace(plan, take.get("pace_before"), take.get("pace_problem"),
+                             take.get("pace_after"),
+                             envelope=take.get("pace_envelope"),
+                             hop_s=take.get("pace_hop_s"),
+                             bpm_before=take.get("bpm_before"),
+                             bpm_after=take.get("bpm_after"),
+                             located_at_s=take.get("pace_located_at_s"))
+    if pg.get("applicable") is False:
+        put("pace_change", "UNMEASURED", _pace_turns_required_detail())
+    else:
+        put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
+    # S75-W05-U5 (spec 6.5, D29): token-SET matching is gone. The approved
+    # script words match the delivered words SEQUENCE-aware under bounded
+    # lexical normalization (benign punctuation, contractions and bounded
+    # compound-token equivalents are equivalent), so word order and repetition
+    # are preserved and a missing or changed critical word -- name, number,
+    # negation, any approved word -- is still detected.
+    mm = _HP.match_sequence(
+        _script_lyric_seq(script_words),
+        _HP.norm_tokens(" ".join(str(w.get("word", "")) for w in take.get("aligned_words") or [])))
+    if mm["ok"]:
+        put("script_words", "PASS", "")
+    else:
+        det = []
+        if mm["missing"]:
+            det.append("missing %s" % mm["missing"][:8])
+        if mm["out_of_order"]:
+            det.append("out of order %s" % mm["out_of_order"][:8])
+        put("script_words", "FAIL", "; ".join(det))
+    dur = take.get("duration_s")
+    if not isinstance(dur, (int, float)):
+        put("length", "FAIL", "unmeasured")
+    else:
+        # Order 2026-10-21: an overshoot is a FLAG, never a stop. Up to 10 s
+        # over records QC_DURATION_OVERSHOOT; past it, QC_DURATION_OVERSHOOT_
+        # SEVERE with the exact seconds over. Both keep the take moving; the
+        # client decides whether to redo. A shortfall keeps today's band.
+        lv = _ML.judge_duration(dur, D, short="band")
+        if lv.get("warning"):
+            try:
+                import loud_failure  # noqa: PLC0415 - same core dir
+                loud_failure.warn(lv["warning"]["code"], lv["warning"]["detail"])
+            except Exception:  # noqa: BLE001 - the warning also rides the gate
+                pass
+        put("length", lv["verdict"], lv["detail"])
+    ratio = take.get("music_under_speech_ratio")
+    put("music_under_speech", "PASS" if isinstance(ratio, (int, float)) and ratio >= MUSIC_UNDER_SPEECH_MIN
+        else "FAIL", "ratio %r" % (ratio,))
+    tail = take.get("tail_rms_dbfs")
+    put("clean_ending", "PASS" if isinstance(tail, (int, float)) and tail > NEAR_SILENT_DBFS else "FAIL",
+        "final 2 s at %r dBFS" % (tail,))
+    # D5/D6-A3: WORD TIMING BEATS THE DETECTOR for the first sung word. The
+    # detector measures when singing begins, never which word; a line heard
+    # under the groove before it is called singing is exactly the early sung
+    # word this gate exists to catch. The detector figure stays as the
+    # fallback, and the source of the number is recorded on the gate.
+    # The override is METHOD-scoped on purpose: the ERM window has an EARLY
+    # bound, and only there does the detector's "when singing starts" differ
+    # from "which word is first" in a way that changes a verdict. A non-method
+    # run keeps the late-only 15 percent rule on the detector figure exactly as
+    # shipped -- its own golden takes measure the detector, and re-reading them
+    # off the word stream would rewrite shipped verdicts this unit does not own.
+    fs_words = (first_sung_from_words(sheet_text or plan.get("sheet_text"),
+                                      take.get("aligned_words") or [])
+                if _method_plan(plan) else None)
+    fs = fs_words if fs_words is not None else take.get("first_sung_s")
+    if _method_plan(plan):
+        # METHOD C3 (Trevor 2026-10-13): on a method run the first sung line
+        # lands at the ERM apex, so the gate is the ERM window -- early AND
+        # late are FAIL -- and never the 15 percent of runtime target, which
+        # would call a method-correct 15 s take "late, redo". One copy of the
+        # rule lives in spoken_share.judge_first_vocal_at_erm.
+        erm_r = _SSM.judge_first_vocal_at_erm(fs, take.get("sung_starts"),
+                                              _erm_apex_s(plan, D))
+        put("first_sung", erm_r["verdict"], erm_r["detail"])
+    elif isinstance(fs, (int, float)):
+        j = _SS.judge_seconds(fs, D * _SS.FIRST_SUNG_TARGET_PCT / 100.0, D, only="late")
+        put("first_sung", j["verdict"], "%.1f s" % fs)
+    else:
+        put("first_sung", "FAIL", "unmeasured")
+    g["first_sung"]["measurement"] = {
+        "source": "word_timing" if fs_words is not None else "singing_detector",
+        "word_timing_first_sung_s": fs_words,
+        "detector_first_sung_s": take.get("first_sung_s")}
+    g["first_sung"]["detail"] = "%s (%s)" % (
+        g["first_sung"].get("detail") or "", g["first_sung"]["measurement"]["source"])
+    # FU-HOOK-PLACEMENT rule 4: always on; a missing input is a FAIL, never a skip
+    sheet = sheet_text or plan.get("sheet_text")
+    sid = style_id or plan.get("style_id")
+    # no section headers (local transcription): the hook is read from its words
+    # on the measured times, confirmed sung on the detector's measured segments
+    hp = _HP.check_returned(sheet, take.get("aligned_words") or [], sid, D, plan.get("hook_plan"),
+                            segments=hook_segs)
+    put("hook_placement", hp["verdict"], "; ".join(hp["reasons"]) or
+        "first hook %s s (window %s s)" % (hp["first_hook_s"], hp["min_first_hook_s"]))
+    # S75-W05-U5: the gate record names the reader and its confidence (the
+    # supported lexical/timing fallback carries its own), plus the owner of
+    # the sung/spoken decision behind it -- never the ASR words.
+    g["hook_placement"]["measurement"] = {"owner": "hook_placement", "basis": hp.get("basis"),
+                                          "confidence": hp.get("confidence"),
+                                          "sung_spoken_owner": (hp.get("owner") or {}).get("sung_spoken")}
+    # WW-02/WW-08: the story gate (check_returned_story) is CALLED here, in the
+    # judge, together with the timeline-integrity gate. Both are emitted for
+    # EVERY take: a checker that is absent, that raises, or that cannot pass
+    # BLOCKS; a genuinely inapplicable one carries its style flag.
+    g["story"] = _story_gate(take, plan, sc_sid or sid, D, sheet)
+    g["timeline"] = _timeline_gate(take, plan, sc_sid or sid, D)
+    # WW-18: the DELIVERY-required set = the always-required gates plus the
+    # conditional gates THIS run declared on its approved plan. A run that plans
+    # rap must prove measured rap; one that plans none has nothing to measure.
+    required = list(REQUIRED_TAKE_GATES)
+    if _rap_required(plan, sc_sid or sid):
+        required.append("rap_audio")
+    if _pace_required(plan, take):
+        required.append("pace_change")
+    return _finish(g, required)
+
+
+def _finish(g, required=None):
+    """THE TOTAL finisher, and the WW-08 aggregate over the WHOLE verdict
+    vocabulary. FAIL when a gate FAILs; otherwise FLAG when any gate FLAGs OR
+    is UNMEASURED; only an all-PASS take PASSes.
+
+    WWFIXGAPS U1 (defect 2): UNMEASURED counts as a flag, never as nothing --
+    a take carrying an unmeasured gate (no labelled rap control, no gear-change
+    evidence) cannot reach PASS. It is kept OUT of ``failed`` on purpose: it is
+    missing evidence, not a measured failure.
+
+    WW-21 (total, fail-closed): this vocabulary is now TOTAL, so no shape of
+    input can reach PASS by accident. A gate verdict of FAIL, FLAG,
+    UNMEASURED, UNAVAILABLE or UNKNOWN, a verdict string that is missing,
+    empty or unrecognised (a MALFORMED record), a non-mapping record, a gate
+    of ``required`` that is ABSENT, an EMPTY gate set and any exception raised
+    while reading the mapping ALL block. Before this, ``_finish({})`` returned
+    PASS -- an empty gate set was indistinguishable from a perfect take -- and
+    an UNKNOWN or UNAVAILABLE gate was silently ignored.
+
+    WW-08 (kept whole, both sides): every required gate that did NOT run is
+    recorded in ``gates`` as UNMEASURED evidence -- never silently absent --
+    while the very same names stay in ``missing`` for the WW-21 reason list,
+    and ``required_gates`` is carried for the DELIVERY decision
+    (``take_accepted``). A non-mapping record is UNMEASURED evidence to
+    ``take_accepted`` and a MALFORMED record to WW-21; both block.
+    """
+    req = tuple(GATES) if required is None else tuple(required)
+    orig = g if isinstance(g, dict) else {}
+    gates = dict(orig)
+    if orig:
+        for k in req:
+            if k not in gates:
+                gates[k] = _gate("UNMEASURED", "required gate %s was not run" % k)
+    bad, flags, malformed, missing = [], [], [], []
+    try:
+        for k in req:
+            if k not in orig:
+                missing.append(k)
+        for k, rec in orig.items():
+            v = rec.get("verdict") if isinstance(rec, dict) else None
+            if not isinstance(v, str) or not v.strip():
+                malformed.append(k)
+                continue
+            v = v.strip().upper()
+            # WW-08 (kept whole): PASS advances, and so does a NOT_APPLICABLE
+            # that carries the style flag backing it. Everything else blocks.
+            if _QC.verdict_advances(v, rec.get("style_flag") if isinstance(rec, dict) else None):
+                continue
+            if v == "FAIL":
+                bad.append(k)
+            elif v in BLOCKING_VERDICTS or v == "NOT_APPLICABLE":
+                flags.append(k)
+            else:
+                malformed.append(k)
+    except Exception as e:                     # noqa: BLE001 -- a raised error blocks
+        malformed.append("RAISED_ERROR:%s" % type(e).__name__)
+    if not isinstance(g, dict) or not gates:
+        missing = missing or ["<empty>"]
+    blocked_by = (["EMPTY_GATE_SET: an empty gate set never passes"] if (not isinstance(g, dict) or not gates) else [])
+    blocked_by += ["MISSING_REQUIRED_GATE: %s" % k for k in missing]
+    blocked_by += ["MALFORMED_GATE_RECORD: %s" % k for k in malformed]
+    verdict = "FAIL" if (bad or malformed or missing or not gates) else ("FLAG" if flags else "PASS")
+    return {"verdict": verdict, "gates": gates, "failed": bad, "flagged": flags,
+            "malformed": malformed, "missing": missing, "blocked_by": blocked_by,
+            "required_gates": sorted(req), "missing_required": sorted(missing),
+            "blocked": sorted(set(bad) | set(flags) | set(malformed))}
+# ---- WW-21: the aggregation and evidence-binding boundary ------------------
+#
+# One implementation, one place. `judge_take`/`_finish` judge ONE take's gates;
+# `accept_audio_results` is the boundary that stands between the five CARRIED
+# delivered-audio results and any offer, pick or purchase. It is pure (no
+# network, no spend of its own), so a refusal costs zero purchases by
+# construction -- every path that calls it is asserted at zero spend.
+
+
+def _open_json(path):
+    """Read a JSON document; None for absent or unreadable. Never raises."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def acceptance_profile():
+    """core/acceptance-profile.json. None when absent/unreadable -- and None
+    BLOCKS, so a lost profile can never be read as "no gates required"."""
+    return _open_json(os.path.join(_CORE, "acceptance-profile.json"))
+
+
+def profile_revision(profile=None):
+    p = profile if isinstance(profile, dict) else acceptance_profile()
+    return (p or {}).get("profile_version")
+
+
+def _profile_required(profile):
+    """The required audio results from the profile, else the module constant.
+    A malformed list falls back to ``AUDIO_RESULTS``; it never empties."""
+    rows = ((profile or {}).get("audio_results") or {}).get("required")
+    if isinstance(rows, list) and rows and all(isinstance(r, str) and r for r in rows):
+        return tuple(rows)
+    return AUDIO_RESULTS
+
+
+def _profile_min_count(profile):
+    """The PROPOSED minimum count of carried results, read from the profile so
+    the key the profile WRITES is the key this boundary READS; the module
+    constant is the fallback, never an empty value."""
+    n = ((profile or {}).get("audio_results") or {}).get("minimum_count")
+    if isinstance(n, int) and not isinstance(n, bool) and n > 0:
+        return n
+    return _MIN_AUDIO_RESULTS
+
+
+# ---- S75-052: the REQUIRED set and the measured D-results -------------------
+#
+# The five delivered-audio results (D1 real rap, D2 story start, D3 both pace
+# changes, D4 three different versions, D5 more than one character voice) used
+# to be required of EVERY song, so a song with no rap and one voice could never
+# pass. ``required_for`` makes the required set a POLICY read from
+# ``acceptance-profile.json`` (key ``required_policy``):
+#   * ``all_five``  -- every song must meet D1 to D5 (today's written rule);
+#   * ``applicable`` -- D2 and D3 always; D1 only when the plan orders rap;
+#                       D5 only when two or more voices were ordered; D4 only
+#                       when three versions were ordered.
+# THIS BUILD COMMITS ``all_five``. Decision D-2 is Trevor's; the value moves
+# only when he answers, in U-S07 -- never here.
+REQUIRED_POLICIES = ("all_five", "applicable")
+
+
+def required_policy_name(profile=None):
+    """The committed policy: the profile's ``required_policy``, else all_five.
+
+    A missing or unrecognised value falls back to ``all_five`` (the stricter
+    value), never to "no gates required"."""
+    p = profile if isinstance(profile, dict) else acceptance_profile()
+    rows = (p or {}).get("audio_results")
+    rows = rows if isinstance(rows, dict) else {}
+    raw = str((p or {}).get("required_policy")
+              or rows.get("required_policy") or "").strip().lower()
+    return raw if raw in REQUIRED_POLICIES else "all_five"
+
+
+def _approved_voice_count(plan):
+    """How many character voices the approved plan ordered, or None.
+
+    Read from the plan's own cast manifest (a list or mapping of characters)
+    or an explicit count; nothing is invented. None means the plan does not
+    say -- and D5 then stays REQUIRED under ``applicable`` (unknown is not
+    "one voice")."""
+    p = plan if isinstance(plan, dict) else {}
+    for k in ("distinct_voice_count", "voice_count", "voices_required"):
+        v = p.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+            return v
+    for k in ("cast_manifest", "cast", "voices"):
+        v = p.get(k)
+        if isinstance(v, (list, tuple)):
+            return len(v)
+        if isinstance(v, dict):
+            return len(v)
+    return None
+
+
+def _three_versions_ordered(plan):
+    """True when this run ordered three versions (D4's precondition)."""
+    p = plan if isinstance(plan, dict) else {}
+    if p.get("three_versions") is True:
+        return True
+    for k in ("variant_count", "variants_ordered", "variants", "versions"):
+        v = p.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and v >= 3:
+            return True
+        if isinstance(v, (list, tuple)) and len(v) >= 3:
+            return True
+    return False
+
+
+def required_for(plan, policy=None):
+    """The D-results THIS song must meet, in D1..D5 order (S75-052)."""
+    pol = str(policy or required_policy_name()).strip().lower()
+    if pol not in REQUIRED_POLICIES:
+        pol = "all_five"
+    if pol == "all_five":
+        return tuple(AUDIO_RESULTS)
+    style_id = (plan or {}).get("style_id")
+    want = ["D2", "D3"]
+    if _rap_required(plan, style_id):
+        want.append("D1")
+    voices = _approved_voice_count(plan)
+    if voices is None or voices >= 2:
+        want.append("D5")
+    if _three_versions_ordered(plan):
+        want.append("D4")
+    return tuple(name for name in AUDIO_RESULTS if name in want)
+
+
+def _block(reasons, results=None, binding=None, required=None):
+    """Every refusal from this boundary has the same shape, and every one of
+    them reports zero purchases -- nothing here can spend."""
+    rs = [str(r) for r in reasons]
+    return {"verdict": "FAIL", "blocked": True, "reasons": rs, "blocked_by": list(rs),
+            "results": results if isinstance(results, dict) else {},
+            "binding": binding if isinstance(binding, dict) else {},
+            "required": list(required or AUDIO_RESULTS),
+            "purchases": 0,
+            "next_action": "no take is offered, picked or purchased on this path"}
+
+
+def _decision_refusals(dec, required):
+    """L2 (WW-21, 2026-10-21): why ``dec`` is not an admissible operator
+    decision record. [] = admissible. Fail-closed: every required field is
+    demanded, the measured gates the decision does NOT name stay BLOCKED, and
+    a field that tries to write a PASS for a measured gate is refused -- a
+    decision covers only gates its own ``gates_not_proven`` list names."""
+
+    def bad(msgs):
+        return ["OPERATOR_DECISION_REJECTED: %s" % m for m in msgs]
+
+    if not isinstance(dec, dict):
+        return bad(["the decision record is %s, not a mapping"
+                    % type(dec).__name__])
+    missing = [k for k in _DECISION_FIELDS if not str(dec.get(k) or "").strip()]
+    if missing:
+        return bad(["missing %s; a decision without %s is not a decision"
+                    % (", ".join(missing), "it" if len(missing) == 1 else "them")])
+    if str(dec.get("decision")).strip().upper() not in OPERATOR_DECISIONS:
+        return bad(["decision %r is not one of %s; never a PASS" % (dec.get("decision"),
+                                                                    list(OPERATOR_DECISIONS))])
+    tsp = str(dec.get("at_utc")).strip()
+    if not _TS_RE.fullmatch(tsp):
+        return bad(["at_utc %r is not an ISO-8601 UTC timestamp" % dec.get("at_utc")])
+    gp = dec.get("gates_not_proven")
+    if not isinstance(gp, list) or not gp or not all(isinstance(g, str) and g.strip()
+                                                     for g in gp):
+        return bad(["gates_not_proven must be a non-empty list of the gate names "
+                    "the measured evidence did not prove"])
+    unknown = [g for g in gp if g not in required]
+    if unknown:
+        return bad(["gates_not_proven names %s, which is not one of the required "
+                    "delivered-audio results" % ", ".join(unknown)])
+    md = str(dec.get("measured_evidence_digest")).strip()
+    if (not re.fullmatch(r"[0-9a-f]{64}", md.lower()) or md != md.lower()):
+        return bad(["measured_evidence_digest must be a lowercase sha256 of the "
+                    "measured evidence records the decision refuses to override"])
+    rs = str(dec.get("reason")).strip()
+    if len(rs) < 8:
+        return bad(["reason must name what the operator actually decided and why; "
+                    "%r is not a reason" % dec.get("reason")])
+    return []
+
+def operator_decision_path(run_dir):
+    """The ONE operator-decision record: <run>/music/acceptance/operator-decision.json."""""
+    return os.path.join(run_dir, _ACCEPTANCE_DIR, OPERATOR_DECISION_FILE)
+
+def read_operator_decision(run_dir):
+    """The recorded decision, or None when absent/unreadable/malformed (a
+    malformed file is refused downstream, never read as a pass)."""
+    d = _open_json(operator_decision_path(run_dir))
+    return d if isinstance(d, dict) else None
+
+def decision_covers(dec, variant_id):
+    """True only when the decision's scopes cover this variant: an explicit
+    variants list (all of it), else the whole run. The take-level PASS/FAIL
+    records are UNTOUCHED -- the decision never rewrites their verdicts; it
+    only says the run may advance with the named gates NOT PROVEN."""
+    if not isinstance(dec, dict):
+        return False
+    vs = dec.get("variants")
+    if isinstance(vs, list) and vs:
+        return str(variant_id) in [str(v) for v in vs]
+    return True
+
+def decision_applies(run_dir, dec=None, required=None):
+    """(dec, refusals) for the run: the recorded operator decision when it is
+    present, well-formed and admissible, else the refusal codes. A MISSING or
+    malformed decision file returns (None, refusals); a VALID one returns
+    (dec, [])."""
+    if dec is None:
+        dec = read_operator_decision(run_dir)
+        if dec is None:
+            p = operator_decision_path(run_dir)
+            if os.path.exists(p):
+                return None, ["OPERATOR_DECISION_UNREADABLE: %s exists but is not "
+                              "valid JSON" % OPERATOR_DECISION_FILE]
+            return None, []
+    req = tuple(required) if required is not None else _profile_required(acceptance_profile())
+    rs = _decision_refusals(dec, req)
+    if not rs:
+        rs = _decision_evidence_refusals(run_dir, dec)
+    return (None, rs) if rs else (dec, [])
+
+def decision_holds_gate(dec, gate):
+    """True when the decision's gates_not_proven names this gate. The decision
+    NEVER marks a measured gate PASS -- a gate the decision covers stays
+    recorded as not proven."""
+    return str(gate) in [str(g) for g in (dec or {}).get("gates_not_proven") or []]
+
+def sha256_evidence_records(results):
+    """The lowercase sha256 over the CANONICAL JSON of the measured evidence
+    records carried (per gate: its record minus nothing). Empty evidence -> the
+    digest of the empty canonical dict, still a real 64-hex digest."""
+    ev = {}
+    for name in sorted(results or {}):
+        rec = results[name]
+        if isinstance(rec, dict):
+            rec = {k: v for k, v in rec.items() if k != "evidence"}
+        ev[name] = rec
+    blob = json.dumps(ev, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+def measure_evidence_digest(run_dir, variant_id):
+    """The sha256 over EVERY measured evidence record under
+    <run>/music/acceptance/<variant>.json -- what the operator decision binds
+    itself to, so a decision whose evidence changed after it was written is
+    detectable. None when the variant has no acceptance record."""
+    rec = _open_json(os.path.join(run_dir, _ACCEPTANCE_DIR, "%s.json" % variant_id))
+    if not isinstance(rec, dict) or not isinstance(rec.get("results"), dict):
+        return None
+    return sha256_evidence_records(rec["results"])
+
+
+def _decision_evidence_refusals(run_dir, dec):
+    """One current-evidence comparison for both decision writing and reading.
+
+    Keep the original sorted variant-to-record digest algorithm; reading an
+    accepted decision must bind it to the same evidence the writer checked.
+    This function reads only and never repairs a decision or a take record.
+    """
+    base = os.path.join(run_dir, _ACCEPTANCE_DIR)
+    try:
+        vids = sorted(str(v) for v in (dec.get("variants") or []))
+        if not vids:
+            vids = [name[:-5] for name in sorted(os.listdir(base))
+                    if name.endswith(".json") and name != OPERATOR_DECISION_FILE]
+        if not vids:
+            return ["OPERATOR_DECISION_EVIDENCE_MISSING: no measured acceptance records exist"]
+        missing = [v for v in vids if not os.path.isfile(os.path.join(base, "%s.json" % v))]
+        if missing:
+            return ["OPERATOR_DECISION_EVIDENCE_MISSING: no acceptance record for %s"
+                    % ", ".join(missing)]
+        digs = {v: measure_evidence_digest(run_dir, v) for v in vids}
+        unreadable = [v for v in vids if digs[v] is None]
+        if unreadable:
+            return ["OPERATOR_DECISION_EVIDENCE_UNREADABLE: acceptance results are unreadable for %s"
+                    % ", ".join(unreadable)]
+    except FileNotFoundError:
+        return ["OPERATOR_DECISION_EVIDENCE_MISSING: the acceptance directory is missing"]
+    except (OSError, TypeError, ValueError) as exc:
+        return ["OPERATOR_DECISION_EVIDENCE_UNREADABLE: %s" % exc]
+    digest = sha256_evidence_records(digs)
+    claimed = str(dec.get("measured_evidence_digest")).strip().lower()
+    if claimed != digest:
+        return ["OPERATOR_DECISION_EVIDENCE_MISMATCH: measured_evidence_digest does not "
+                "match the measured evidence records on disk (claimed %s, on-disk "
+                "%s over %s); recompute sha256_evidence_records over those records "
+                "and record THAT digest -- a decision is bound to the evidence it "
+                "refuses to override." % (claimed[:12] or "none", digest[:12], ", ".join(digs))]
+    return []
+
+def record_operator_decision(run_dir, dec, required=None):
+    """L2 (WW-21): validate ``dec`` and write it to
+    <run>/music/acceptance/operator-decision.json. Every missing or malformed
+    field is a refusal -- a fabricated digest is one: the operator computes the
+    digest over the evidence they actually decided on and the writer CHECKS it,
+    never recomputes one over what happens to stand on disk. The take-level
+    PASS/FAIL records are never touched; the decision never writes a PASS for
+    a measured gate. Returns the written record; raises DispatchError on
+    refusal."""
+    req = tuple(required) if required is not None else _profile_required(acceptance_profile())
+    rs = _decision_refusals(dec, req)
+    if rs:
+        raise DispatchError("; ".join(rs))
+    rs = _decision_evidence_refusals(run_dir, dec)
+    if rs:
+        raise DispatchError("OPERATOR_DECISION_REJECTED: " + "; ".join(rs))
+    out = dict(dec, recorded_at_utc=_dt.datetime.now(_dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"))
+    p = operator_decision_path(run_dir)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, sort_keys=True)
+    return out
+
+def binding_reasons(binding, where="take"):
+    """Why this binding is not admissible. [] = admissible.
+
+    A binding is the take's OWN export digest (sha256 of the delivered file),
+    its creative revision and the profile revision the result was produced
+    against. A hand-set label -- ``source: manual``, a bare string, a missing
+    key -- is NOT a binding; a manually relabelled source never substitutes
+    for the digest of the export that was actually measured.
+    """
+    if not isinstance(binding, dict):
+        return ["MALFORMED_BINDING: the %s binding is %s, not a mapping"
+                % (where, type(binding).__name__)]
+    out = []
+    src = str(binding.get("source", "") or "").strip().lower().replace("_", "-")
+    if src in _MANUAL_SOURCES:
+        out.append("MANUAL_RELABEL: the %s binding says source=%r; a hand-set label is not a "
+                   "binding and cannot stand in for the export digest" % (where, src))
+    for k in _BINDING_KEYS:
+        v = binding.get(k)
+        if not isinstance(v, (str, int)) or isinstance(v, bool) or not str(v).strip():
+            out.append("MISSING_BINDING: the %s binding carries no %s" % (where, k))
+    dig = binding.get("export_digest")
+    if isinstance(dig, str) and dig.strip() and not re.fullmatch(r"[0-9a-f]{64}", dig.strip().lower()):
+        out.append("MALFORMED_DIGEST: the %s export_digest is not a sha256 (%r)"
+                   % (where, dig))
+    return out
+
+
+def accept_audio_results(results, binding, required=None, profile=None):
+    """WW-21: THE total, fail-closed aggregation boundary over the carried
+    delivered-audio results. Returns ``{verdict, reasons, blocked_by, ...}``.
+
+    It advances ONLY when every required delivered-audio result is present, is
+    a mapping, carries a PASS verdict, and is bound to the exact export digest,
+    creative revision and profile revision of the take being advanced. It
+    BLOCKS, with a named reason, on: a missing result, an empty result set, a
+    non-mapping result set, a malformed record (no verdict string), a verdict
+    of FAIL/FLAG/UNMEASURED/UNAVAILABLE/UNKNOWN, an unrecognised verdict, a
+    stale digest or revision, a manual relabel, a missing/absent binding, an
+    unavailable profile and any exception raised while reading any of it.
+
+    This is NOT a sixth audio gate: it measures no audio and claims no quality
+    outcome. It is the boundary that stops an incomplete or unbound receipt
+    from reaching spend.
+    """
+    try:
+        return _accept_audio_results(results, binding, required, profile)
+    except Exception as e:                     # noqa: BLE001 -- a raised error blocks
+        return _block(["RAISED_ERROR: %s: %s" % (type(e).__name__, e)],
+                      results if isinstance(results, dict) else None,
+                      binding if isinstance(binding, dict) else None, required)
+
+
+def _accept_audio_results(results, binding, required, profile):
+    prof = profile if profile is not None else acceptance_profile()
+    want = _profile_required(prof) if required is None else tuple(required)
+    if not isinstance(prof, dict):
+        return _block(["PROFILE_UNAVAILABLE: acceptance-profile.json is missing or unreadable; "
+                       "no result may advance without the profile revision it was produced against"],
+                      results, binding, want)
+    reasons = []
+    if not isinstance(results, dict):
+        return _block(["MALFORMED_RESULT_SET: the carried results are %s, not a mapping"
+                       % type(results).__name__], None, binding, want)
+    if not results:
+        return _block(["EMPTY_GATE_SET: no delivered-audio results were carried; "
+                       "an empty result set never passes"], results, binding, want)
+    reasons += binding_reasons(binding, "take")
+    prof_rev = prof.get("profile_version")
+    if not isinstance(prof_rev, str) or not prof_rev.strip():
+        reasons.append("PROFILE_UNAVAILABLE: acceptance-profile.json carries no profile_version")
+    minimum = len(want) if required is not None else _profile_min_count(prof)
+    if len(results) < minimum:
+        reasons.append("INCOMPLETE_EVIDENCE: %d delivered-audio results carried, %d required "
+                       "(PROPOSED count of the five gates the plan names)"
+                       % (len(results), minimum))
+    for name in want:
+        rec = results.get(name)
+        if rec is None:
+            reasons.append("MISSING_AUDIO_RESULT: required delivered-audio result %s was not "
+                           "carried" % name)
+            continue
+        if not isinstance(rec, dict):
+            reasons.append("MALFORMED_RECORD: %s is %s, not a mapping"
+                           % (name, type(rec).__name__))
+            continue
+        v = rec.get("verdict")
+        if not isinstance(v, str) or not v.strip():
+            reasons.append("MALFORMED_RECORD: %s carries no verdict string" % name)
+            continue
+        if v.strip().upper() != "PASS":
+            reasons.append("BLOCKING_VERDICT: %s returned %r; only PASS advances"
+                           % (name, v.strip().upper()))
+            continue
+        rb = rec.get("binding")
+        br = binding_reasons(rb, name)
+        if br:
+            reasons.extend(br)
+            continue
+        for k in _BINDING_KEYS:
+            if str(rb.get(k)).strip().lower() != str(binding.get(k)).strip().lower():
+                reasons.append("STALE_BINDING: %s was produced against %s=%r but the take being "
+                               "advanced carries %r" % (name, k, rb.get(k), binding.get(k)))
+        if isinstance(prof_rev, str) and str(rb.get("profile_revision")).strip() != prof_rev.strip():
+            reasons.append("STALE_PROFILE: %s was produced against profile revision %r; the "
+                           "profile in force is %r"
+                           % (name, rb.get("profile_revision"), prof_rev))
+        # WW-24: validate the PROVENANCE of the evidence this result carries.
+        # A PLANNED/stretched timeline, a digest that does not match the take
+        # being advanced, a missing actual duration, a doubled runtime, a
+        # missing detector/alignment artifact or a hand-set source="measured"
+        # label BLOCKS the result HERE -- the input validator for the five
+        # delivered-audio results, never a sixth audio gate. A result carrying
+        # no evidence record makes no measurement claim to validate.
+        ev = rec.get("evidence")
+        if ev is not None:
+            reasons.extend(_TG.measured_evidence_reasons(ev, binding=binding))
+    for name in sorted(results):
+        if name in want:
+            continue
+        rec = results[name]
+        v = rec.get("verdict") if isinstance(rec, dict) else None
+        # S75-052: a D-result this song was NOT required to meet (D1 on a song
+        # with no rap, D5 on a one-voice song, D4 before fan-in) is carried as
+        # information only -- it never blocks. An UNKNOWN result name still
+        # must PASS, so nothing can be smuggled past the boundary.
+        if name in AUDIO_RESULTS:
+            continue
+        if not isinstance(v, str) or v.strip().upper() != "PASS":
+            reasons.append("UNEXPECTED_AUDIO_RESULT: %s is carried but is not one of the "
+                           "required results and did not PASS (%r)" % (name, v))
+    if reasons:
+        return _block(reasons, results, binding, want)
+    return {"verdict": "PASS", "blocked": False, "reasons": [], "blocked_by": [],
+            "results": dict(results), "binding": dict(binding), "required": list(want),
+            "profile_revision": prof_rev, "purchases": 0,
+            "note": "all %d delivered-audio results PASS and are bound to this take; "
+                    "nothing was measured or claimed here" % len(want)}
+
+
+def _sha256_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def take_binding(export_path, creative_revision, profile=None):
+    """The binding a take is advanced under: its OWN export digest plus the
+    creative and profile revisions it was produced against."""
+    return {"export_digest": _sha256_file(export_path),
+            "creative_revision": str(creative_revision),
+            "profile_revision": str(profile_revision(profile) or "")}
+
+
+def _gate_record(receipt, name):
+    """One gate record from a judge receipt, or None."""
+    gates = (receipt or {}).get("gates") if isinstance(receipt, dict) else None
+    rec = (gates or {}).get(name)
+    return rec if isinstance(rec, dict) else None
+
+
+def _d1_real_rap(receipt):
+    """D1 real rap, from the MEASURED rap duration on the take's rap gate.
+
+    A style that delivers no rap PASSes its own rap gate ("nothing to prove"),
+    which is not a measurement of real rap -- so D1 reads the measured rap
+    seconds the judge now stamps on that record. No rap measured (0.0 s) is a
+    measured FAIL, never a PASS."""
+    rap = _gate_record(receipt, "rap_audio")
+    share = _gate_record(receipt, "rap_share")
+    if rap is None and share is None:
+        return {"verdict": "UNMEASURED",
+                "detail": "D1 real rap: the take carries no measured rap gate"}
+    measured = (share or {}).get("measurement") or {}
+    seconds = measured.get("rap_seconds")
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+        return {"verdict": "UNMEASURED",
+                "detail": "D1 real rap: the take carries no measured rap duration"}
+    if float(seconds) <= 0:
+        return {"verdict": "FAIL",
+                "detail": "D1 real rap: %.1f s of rap measured in this take"
+                          % float(seconds)}
+    ok = (str((rap or {}).get("verdict") or "").strip().upper() == "PASS"
+          and str((share or {}).get("verdict") or "").strip().upper() == "PASS")
+    return {"verdict": "PASS" if ok else "FAIL",
+            "detail": "D1 real rap: %.1f s measured; rap_audio=%r rap_share=%r"
+                      % (float(seconds), (rap or {}).get("verdict"),
+                         (share or {}).get("verdict"))}
+
+
+def _d2_story_start(take, plan):
+    """D2 story start, measured by the story module's OWN story-start gate on
+    the take's aligned words against the approved sheet's ordered plot lines.
+
+    The judge's ``story`` gate is the delivery-side verdict; it requires the
+    run to declare a story revision and reports NOT_APPLICABLE otherwise,
+    which is not a measurement. D2 is measured directly so every song can earn
+    or fail it on the take it actually delivered."""
+    try:
+        from story_coverage import story_coverage as _ST   # noqa: PLC0415
+    except Exception:                    # noqa: BLE001 - no measuring code
+        try:
+            import story_coverage as _ST   # noqa: PLC0415
+        except Exception:                # noqa: BLE001
+            return {"verdict": "UNMEASURED",
+                    "detail": "D2 story start: no story measuring code is installed"}
+    take = take if isinstance(take, dict) else {}
+    sheet = (plan or {}).get("sheet_text")
+    aligned = take.get("aligned_words") or []
+    D = take.get("duration_s")
+    if not isinstance(D, (int, float)) or isinstance(D, bool):
+        D = (plan or {}).get("delivered_s")
+    if not sheet or not aligned or not isinstance(D, (int, float)) or D <= 0:
+        return {"verdict": "UNMEASURED",
+                "detail": "D2 story start: the take carries no aligned words, sheet "
+                          "or delivered duration to measure"}
+    try:
+        plot = _ST.plot_lines_from_sheet(sheet)
+        got = _ST.story_start_gate(aligned, plot, D)
+    except Exception as exc:             # noqa: BLE001 - a raise blocks
+        return {"verdict": "UNMEASURED",
+                "detail": "D2 story start: the story-start gate raised %r" % (exc,)}
+    v = str(got.get("verdict") or "").strip().upper()
+    verdict = "PASS" if v == "PASS" else ("FAIL" if v == "FAIL" else "UNMEASURED")
+    return {"verdict": verdict,
+            "detail": "D2 story start: %s" % (got.get("detail") or v or "no verdict")}
+
+
+def _measured_gate_result(receipt, gate, label):
+    """One D-result read off a MEASURED take gate. Only a PASS advances; a
+    FAIL blocks and any other verdict (UNMEASURED, NOT_APPLICABLE, absent) is
+    carried UNMEASURED, which blocks too."""
+    rec = _gate_record(receipt, gate)
+    if rec is None:
+        return {"verdict": "UNMEASURED",
+                "detail": "%s: the take carries no %r gate" % (label, gate)}
+    v = str(rec.get("verdict") or "").strip().upper()
+    if v == "PASS":
+        return {"verdict": "PASS", "detail": "%s: %s" % (label, rec.get("detail") or "PASS")}
+    if v == "FAIL":
+        return {"verdict": "FAIL", "detail": "%s: %s" % (label, rec.get("detail") or "FAIL")}
+    return {"verdict": "UNMEASURED",
+            "detail": "%s: measured gate %r returned %r"
+                      % (label, gate, rec.get("verdict"))}
+
+
+def _d5_voices(take):
+    """D5 more than one character voice, from MEASURED evidence only.
+
+    The multi-voice probe lives in ``audio_c3/lipsync_cuts``; its default is a
+    STUB that assumes one voice, and a stub is not a measurement -- it is
+    carried UNMEASURED, never PASS and never a quiet FAIL."""
+    take = take if isinstance(take, dict) else {}
+    count = take.get("distinct_voice_count")
+    method = str(take.get("voice_method") or "measured")
+    if not (isinstance(count, int) and not isinstance(count, bool)):
+        try:
+            from audio_c3.lipsync_cuts import measure_distinct_voices as _MDV  # noqa: PLC0415
+        except Exception:                    # noqa: BLE001 - no measuring code
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: no multi-voice measuring code is installed"}
+        path = take.get("audio_path")
+        if not path:
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: the take carries no audio path to measure"}
+        try:
+            got = _MDV(str(path), analyzer=take.get("voice_analyzer"))
+        except Exception as exc:             # noqa: BLE001 - a raise blocks
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: the probe raised %r" % (exc,)}
+        if str(got.get("method") or "") == "stub":
+            return {"verdict": "UNMEASURED",
+                    "detail": "D5 voices: only the stub probe ran (1 voice assumed, "
+                              "not measured)"}
+        count = got.get("distinct_voice_count")
+        method = str(got.get("method") or "measured")
+    if count >= 2:
+        return {"verdict": "PASS",
+                "detail": "D5 voices: %d distinct voices measured (%s)" % (count, method)}
+    return {"verdict": "FAIL",
+            "detail": "D5 voices: %d distinct voice measured (%s)" % (count, method)}
+
+
+def audio_results_for(take, receipt, plan, run_dir=None, binding=None):
+    """S75-052: the D-results this take MEASURED, each bound to its own export.
+
+    Built from measured code only: D1 real rap (measured rap seconds plus the
+    rap gates), D2 story start (the story module's own story-start gate on the
+    aligned words), D3 both pace changes (the pace gate) and D5 more than one
+    voice (the multi-voice probe). D4 is computed ONCE at fan-in across the
+    three takes (``song_choices.fan_in``), never here per take. A result whose
+    measurement is absent is carried UNMEASURED, which always blocks; no PASS
+    is ever written for an unmeasured gate. Each result carries the take's own
+    ``take_binding``."""
+    if binding is None:
+        binding = take_binding(
+            (take or {}).get("audio_path"),
+            str((plan or {}).get("creative_fingerprint")
+                or (plan or {}).get("story_revision") or "take"))
+    out = {}
+    for name, rec in (("D1", _d1_real_rap(receipt)),
+                      ("D2", _d2_story_start(take, plan)),
+                      ("D3", _measured_gate_result(receipt, "pace_change",
+                                                   "D3 both pace changes")),
+                      ("D5", _d5_voices(take))):
+        out[name] = dict(rec, binding=dict(binding))
+    return out
+
+
+def record_acceptance(run_dir, variant_id, binding, results, required=None):
+    """Write ONE variant's WW-21 acceptance record under
+    ``<run>/music/acceptance/<variant>.json`` and return it. This is the
+    WRITER ``acceptance_from_run`` reads, so the read key and the written key
+    are the same key by construction.
+
+    A measured FAIL is recorded as FAIL -- never softened, never dropped: that
+    FAIL record is the input to the operator-decision path
+    (``OPERATOR_DECISION_SEQUENCE``), and a decision is refused unless the
+    evidence it names is the evidence this writer stored."""
+    rec = accept_audio_results(results, binding, required=required)
+    out = dict(rec, variant_id=str(variant_id))
+    p = os.path.join(run_dir, _ACCEPTANCE_DIR, "%s.json" % variant_id)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, sort_keys=True)
+    return out
+
+
+def _take_exists(d):
+    """True when ``d`` holds produced take audio, at any depth.
+
+    Takes are filed as ``music/takes/<variant>/take-NN/`` (audio one level
+    down), so the top-level directory itself holds no audio file. Walk the
+    tree instead of listing only the top level; an unreadable folder reads
+    as no take, never as proof of one.
+    """
+    try:
+        for _root, _dirs, files in os.walk(d):
+            for n in files:
+                if n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac")):
+                    return True
+        return False
+    except OSError:
+        return False
+
+
+#: D-4 (answer: honour the client's choice): when the client says "keep one of
+#: these" about a take the judge failed, the client-kept record lives OUTSIDE
+#: ``music/acceptance/`` -- two readers there (this module's acceptance list and
+#: the operator-decision evidence digest) would read it as a take record and
+#: diverge. One file per variant, written by ``song_choices.record_client_kept``.
+CLIENT_KEPT_DIRNAME = "client-kept"
+CLIENT_KEPT_SCHEMA = "blackceo.client-kept/v1"
+
+
+def client_kept_path(run_dir, variant_id):
+    """<run>/song-choices/client-kept/<variant>.json -- never under music/acceptance/."""
+    return os.path.join(run_dir, "song-choices", CLIENT_KEPT_DIRNAME,
+                        "%s.json" % variant_id)
+
+
+def read_client_kept(run_dir, variant_id):
+    """The client-kept record for a variant, or None when absent/unreadable."""
+    d = _open_json(client_kept_path(run_dir, variant_id))
+    return d if isinstance(d, dict) else None
+
+
+def client_kept_reasons(doc, variant_id):
+    """Why this record may NOT stand in for a PASS. [] = the recorded client
+    choice is complete: who, when, the judge's named concerns, the client's words."""
+    if not isinstance(doc, dict):
+        return ["CLIENT_KEPT_MISSING: no client-kept record for %s" % variant_id]
+    out = []
+    if str(doc.get("variant")) != str(variant_id):
+        out.append("CLIENT_KEPT_MALFORMED: the record names variant %r, not %r"
+                   % (doc.get("variant"), variant_id))
+    if str(doc.get("answer") or "") != "keep_one":
+        out.append("CLIENT_KEPT_MALFORMED: the record's answer is %r, not 'keep_one'"
+                   % doc.get("answer"))
+    if not str(doc.get("who") or "").strip():
+        out.append("CLIENT_KEPT_MALFORMED: the record names no one")
+    if not str(doc.get("at") or "").strip():
+        out.append("CLIENT_KEPT_MALFORMED: the record carries no time")
+    if not isinstance(doc.get("concerns"), list):
+        out.append("CLIENT_KEPT_MALFORMED: the judge's named concerns are not a list")
+    if not str(doc.get("client_words") or "").strip():
+        out.append("CLIENT_KEPT_MALFORMED: the client's own words are missing")
+    return out
+
+
+def acceptance_from_run(run_dir):
+    """Read the WW-21 acceptance records and the take folders under the run.
+
+    ``applicable`` is False only when the run has NEITHER an acceptance record
+    NOR a produced take -- a run that never reached the music stage has
+    nothing to gate. The moment a variant has a produced take under
+    ``<run>/music/takes/<variant>/`` (the folder ``_real_generate`` fills,
+    where the dispatch envelope is written), an acceptance record is REQUIRED
+    for it: a take on disk with no acceptance record is a HARD STOP
+    ("take saved but never judged"), because an unjudged take is not evidence.
+
+    S75-052: one FAILED version no longer blocks the versions that passed. A
+    variant whose record exists and is not PASS is reported in ``blocked``
+    (it is never offered or picked), the passing variants stay offerable and
+    pickable, and only an UNJUDGED take -- or a run where NO variant passed --
+    holds the whole boundary.
+    """
+    base = os.path.join(run_dir, _ACCEPTANCE_DIR)
+    takes = os.path.join(run_dir, "music", "takes")
+    records = {}
+    unjudged = []
+    if os.path.isdir(base):
+        for name in sorted(os.listdir(base)):
+            if not name.endswith(".json") or name == OPERATOR_DECISION_FILE:
+                continue
+            rec = _open_json(os.path.join(base, name))
+            if not isinstance(rec, dict):
+                continue
+            vid = str(rec.get("variant_id") or name[:-5])
+            records[vid] = dict(rec, variant_id=vid)
+    if os.path.isdir(takes):
+        for name in sorted(os.listdir(takes)):
+            d = os.path.join(takes, name)
+            if not os.path.isdir(d) or not _take_exists(d):
+                continue
+            # D-4: a take the client KEPT carries a complete client-kept record.
+            # That is NOT a PASS on any measured gate, and the verdict stays
+            # CLIENT_KEPT. This is read BEFORE the "already has a record" skip:
+            # the lane-S baseline writes an acceptance record for EVERY judged
+            # take, so an existing FAIL record must never hide the client's own
+            # decision. The record on disk under music/acceptance/ is untouched.
+            kept = read_client_kept(run_dir, name)
+            kreasons = client_kept_reasons(kept, name) if kept is not None else []
+            if kept is not None and not kreasons:
+                # D-4: the client kept this take. That is NOT a PASS on any
+                # measured gate -- the take-level record is untouched (there is
+                # none) and the verdict stays CLIENT_KEPT.
+                records[name] = {
+                    "variant_id": name, "verdict": "CLIENT_KEPT", "blocked": False,
+                    "reasons": [], "client_kept": kept, "purchases": 0}
+                continue
+            if name in records:
+                continue
+            unjudged.append(name)
+            records[name] = {
+                "variant_id": name, "verdict": "FAIL", "blocked": True,
+                "reasons": ["ACCEPTANCE_RECORD_MISSING: take saved but never judged: %s "
+                            "(music/takes/%s holds a produced take but no WW-21 acceptance "
+                            "record was written for it); only a judged take may advance"
+                            % (name, name)] + kreasons,
+                "purchases": 0}
+    if not records:
+        return {"applicable": False, "verdict": "UNAVAILABLE", "allowed": False,
+                "blocked": [], "unjudged": [], "passing": [], "variants": {}}
+    bad = sorted(v for v, r in records.items()
+                 if r.get("verdict") not in ("PASS", "CLIENT_KEPT"))
+    passing = sorted(v for v, r in records.items() if r.get("verdict") == "PASS")
+    hard = sorted(set(unjudged))
+    allowed = (not hard) and bool(passing)
+    return {"applicable": True, "verdict": "PASS" if allowed else "FAIL",
+            "allowed": allowed, "blocked": bad, "unjudged": hard,
+            "passing": passing, "variants": records}
+
+
+def picked_client_kept(run_dir):
+    """The valid client-kept record for the version the client PICKED, or None.
+
+    D-4: when the client says "keep one of these" about a take the judge
+    failed, the run may go on WITH THAT TAKE. This reads the pick (number +
+    variant id + the client_kept flag the picker wrote) and the record under
+    song-choices/client-kept/. It releases nothing else: the per-take verdicts
+    in ``acceptance_from_run`` are untouched and never become PASS."""
+    d = _open_json(os.path.join(run_dir, "song-choices", "pick.json"))
+    if not isinstance(d, dict) or not d.get("client_kept"):
+        return None
+    vid = str(d.get("variant") or "").strip()
+    if not vid:
+        return None
+    doc = read_client_kept(run_dir, vid)
+    if doc is None or client_kept_reasons(doc, vid):
+        return None
+    return doc
+
+
+def acceptance_refusal(run_dir, action):
+    """The delivery-boundary HARD STOP: None when nothing is held, else the
+    refusal record. It mirrors the same whole-run shape as the overlap
+    measurement the choices side keeps on its own receipt; the
+    BLOCK reaches the offer, the pick and every paid job.
+
+    S75-052: this is the WHOLE-RUN stop only -- an unjudged take, or a run in
+    which no version passed. A single FAILED version is not a whole-run stop:
+    it is reported by ``acceptance_from_run`` in ``blocked``, is never offered
+    or picked, and ``acceptance_variant_refusal`` refuses it by name.
+    L2 (WW-21): the refusal points at the documented operator-decision path
+    when the only thing missing is a human's recorded decision -- but NEVER at
+    a hand-set relabel, which stays refused (a decision is not a relabel)."""
+    chk = acceptance_from_run(run_dir)
+    if not chk.get("applicable"):
+        return None
+    if chk.get("allowed"):
+        return None
+    if picked_client_kept(run_dir) is not None:
+        # D-4: the client kept the take they picked; the run may go on with it.
+        # No measured gate was re-written and the other takes stay as recorded.
+        return None
+    detail = []
+    for v in chk.get("blocked") or []:
+        detail += ["%s: %s" % (v, r) for r in (chk["variants"][v].get("reasons") or [])]
+    manual = any("MANUAL_RELABEL" in r for v in chk.get("blocked") or []
+                 for r in (chk["variants"][v].get("reasons") or []))
+    unjudged = chk.get("unjudged") or []
+    if unjudged:
+        nxt = ("judge the saved take(s) %s and record their measured results with "
+               "record_acceptance; a take saved but never judged is not evidence"
+               % ", ".join(unjudged))
+    elif manual:
+        nxt = ("a manual relabel is NEVER decided around: the take's own export "
+               "digest binding is the evidence; re-measure the delivered audio "
+               "and record it with record_acceptance.")
+    else:
+        nxt = ("re-run the five delivered-audio results against the export being "
+               "advanced and record them with record_acceptance; when the gates "
+               "fail on MEASURED evidence the run owner may record the documented "
+               "operator decision -- it never writes a PASS for a measured gate "
+               "and never substitutes a relabel. The exact order is: %s"
+               % OPERATOR_DECISION_SEQUENCE)
+    return {"reason_code": ACCEPTANCE_CODE_NOT_PROVEN,
+            "detail": "the WW-21 acceptance boundary has not passed (%s); %s is held. Only a "
+                      "complete set of five PASS delivered-audio results, each bound to the "
+                      "take's export digest, creative revision and profile revision, may "
+                      "advance on its own; measured FAILs advance only through a recorded "
+                      "operator decision bound to their evidence digest -- zero purchases "
+                      "on this path."
+                      % ("; ".join(detail[:4]) or "no PASS record", action),
+            "blocked": chk.get("blocked") or [],
+            "next_action": nxt}
+
+
+def acceptance_variant_refusal(run_dir, variant_id, action):
+    """S75-052: the PER-VERSION stop -- one variant whose record is not PASS
+    (or is missing) is never offered or picked. None when that variant passed
+    or the boundary is not applicable."""
+    chk = acceptance_from_run(run_dir)
+    if not chk.get("applicable"):
+        return None
+    vid = str(variant_id)
+    rec = (chk.get("variants") or {}).get(vid)
+    if rec is not None and rec.get("verdict") == "PASS":
+        return None
+    reasons = list((rec or {}).get("reasons") or [])
+    if rec is None:
+        reasons = ["ACCEPTANCE_RECORD_MISSING: take saved but never judged: %s "
+                   "(no WW-21 acceptance record was written for it)" % vid]
+    return {"reason_code": ACCEPTANCE_CODE_NOT_PROVEN,
+            "detail": "%s is held (%s): %s. Only a PASS record bound to the take's "
+                      "export digest may advance -- zero purchases on this path."
+                      % (action, vid, "; ".join(reasons[:4]) or "the record is not PASS"),
+            "blocked": [vid],
+            "next_action": ("re-measure the delivered audio for %s and record the results "
+                            "with record_acceptance" % vid)}
+
+def operator_decision_gates(run_dir, dec=None, required=None):
+    """((dec, None) | (None, refusals)) for the run's staged decision, the
+    check `factory.py music --action complete` runs. The decision NEVER opens
+    the boundary here -- `acceptance_from_run` still reads only real take
+    PASS/FAIL records -- it says what the stage may advance with the named
+    gates NOT proven, and the take-level records are untouched."""
+    dec, rs = decision_applies(run_dir, dec=dec, required=required)
+    if dec is not None and not isinstance(dec, dict):
+        return None, ["OPERATOR_DECISION_UNREADABLE"]
+    return dec, rs
+def take_accepted(rcpt):
+    """WW-18: the ONE delivery decision. A take whose REQUIRED gate set is not
+    all PASS (bar a style-backed NOT_APPLICABLE) is never offered; a missing
+    required gate and an empty gate set are refused. Returns (ok, reason).
+
+    S75-W05-U5: a take whose sung/spoken classification ran at LOW confidence
+    is not delivered until its bounded review is recorded -- classifier
+    uncertainty is never a definite creative failure, and never a free pass
+    either."""
+    if not isinstance(rcpt, dict):
+        return False, "no receipt"
+    review = rcpt.get("review")
+    if isinstance(review, dict) and review.get("required") and not review.get("satisfied"):
+        return False, "bounded review pending: %s" % review.get("reason",
+                                                               "low-confidence classification")
+    gates = rcpt.get("gates") or {}
+    if not gates:
+        return False, "empty gate set"
+    required = rcpt.get("required_gates") or REQUIRED_TAKE_GATES
+    missing = [k for k in required if k not in gates]
+    if missing:
+        return False, "missing required gate(s): %s" % ",".join(missing)
+    bad = sorted(k for k in required if _QC.gate_blocked(gates[k]))
+    if bad:
+        return False, "required gate(s) not PASS: %s" % ",".join(bad)
+    return True, ""
+
+
+def constituent_receipt(take, rcpt, plan=None):
+    """WW-08 item 3: the per-take constituent-evidence receipt, bound to the
+    audio digest, the creative fingerprint, the acceptance-profile version and
+    the checker identity, carrying every gate verdict and the delivery verdict."""
+    plan = plan or {}
+    prof_v = plan.get("acceptance_profile_version") or plan.get("profile_version")
+    gates = (rcpt or {}).get("gates") or {}
+    rec = _QC.constituent_receipt(
+        audio_digest=take.get("audio_digest") or take.get("audio_sha256"),
+        creative_fingerprint=plan.get("creative_fingerprint") or plan.get(STORY_PROTOCOL_KEY),
+        profile_version=prof_v, checker=TOOL_NAME, gates=gates)
+    ok, why = take_accepted(rcpt)
+    rec["required_gates"] = list(rcpt.get("required_gates") or REQUIRED_TAKE_GATES)
+    rec["accepted"] = ok
+    rec["blocked"] = [] if ok else [why]
+    return rec
+
+
+#: WW-08: the reason a receipt on a take is not constituent evidence at all.
+#: S75-018 (C6): song_choices asserts on this exact reason -- a paid take
+#: carrying such a receipt is a producer bug, never a soft "not accepted".
+NOT_CONSTITUENT_REASON = "no constituent-evidence receipt"
+
+
+def constituent_ok(rec):
+    """(ok, reason) for a constituent-evidence receipt recorded with a take.
+    WW-08: a missing, non-current or blocked receipt never counts."""
+    if not isinstance(rec, dict) or rec.get("schema") != _QC.CONSTITUENT_SCHEMA:
+        return False, NOT_CONSTITUENT_REASON
+    if not rec.get("accepted"):
+        return False, "; ".join(str(x) for x in (rec.get("blocked") or
+                                                 ["required gates did not all PASS"]))
+    return True, ""
+
+
+def _take_request_digest(request):
+    """Canonical sha256 of the exact outbound take request (X06)."""
+    blob = json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _freeze_take_request(request):
+    """A detached canonical copy: the validated bytes are the submitted bytes."""
+    return json.loads(json.dumps(request, sort_keys=True, default=str))
+
+
+def run_takes(request, plan, generate, measure, save, script_words, hook_text,
+              spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
+              kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None,
+              alias_catalog=None):
+    """Generate until a take passes or the cap is spent.
+
+    generate(request) -> list of takes (2 per generation, each with audio ids);
+    measure(take) -> the measured fields for judge_take; save(take, receipt)
+    must store the vocal stem and timestamps (called for EVERY take, even
+    failures). Every generation goes through the load governor (``kie``): a NEW
+    request draws from the 20-per-10-s bucket and a 429 is resubmitted.
+    ``script_approval`` is the run's script-approval record; left out, it is read from ``run_dir`` (or request["run_dir"]):
+    required and not approved for these lyrics = refused before any generation.
+    Returns {delivered, verdict, receipt, receipts, spent_cents, duration};
+    ``duration`` records the admitted request seconds, the delivered target and
+    the mode ("exact" or "headroom_override") with the owner's approval.
+    WW-18: only a take whose REQUIRED gate set all PASSes is delivered; every
+    other take (FAIL, FLAG, UNMEASURED, UNAVAILABLE, UNKNOWN) is judged and its
+    paid stem kept, but never delivered.
+    """
+    # WW-30: every direction is read from the createTask envelope's nested
+    # input. A request that is not an envelope (the retired flat contract, a
+    # misplaced callback, competing lyrics) is refused HERE, before the script
+    # gate, the ledger and any generation.
+    envelope_errs = _R.check_envelope(request)
+    if envelope_errs:
+        raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s"
+                            % "; ".join(envelope_errs))
+    # S75-T41: THE outbound artist/alias guard, at the real send seam -- on the
+    # EXACT provider payload the transport would serialize, BEFORE any spend
+    # and before the transport is ever reached.  Every payload passes it here;
+    # a catalog reference in an instruction field leaves only approved musical
+    # traits behind, and one the rewrite cannot clear REFUSES this submission
+    # (zero provider calls).  The run's display references are declared as
+    # ``alias_catalog`` (or request["_alias_catalog"], moved off the payload
+    # like the other internal metadata) -- and the SHIPPED 18-style catalog is
+    # ALWAYS in force beneath them (``_with_shipped_aliases``), so omitting the
+    # catalog can never silently skip the sweep: a caller that supplies nothing
+    # is still guarded by every shipped reference and recorded alias.  Only a
+    # shipped catalog that is itself unreadable refuses here, by name.
+    view = _outbound_view(request)
+    catalog = _with_shipped_aliases(
+        alias_catalog if alias_catalog is not None
+        else request.get("_alias_catalog"))
+    if not catalog:
+        raise DispatchError("MISSING_ALIAS_CATALOG: the shipped 18-style "
+                            "catalog is unreadable, so the outbound sweep "
+                            "cannot run; refusing rather than sending unswept")
+    try:
+        receipt = _PG.guard_or_raise(view, catalog)
+    except _PG.PromptGuardError as exc:
+        raise DispatchError("OUTGOING_REFERENCE_BLOCKED: %s" % exc) from exc
+    request = dict(receipt["payload"],
+                   **{k: v for k, v in request.items() if k not in view})
+    inp = _input_of(request)
+    # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
+    if script_approval is None:       # found in the run folder; nobody passes it by hand
+        script_approval = _SA.record_near(run_dir, request.get("run_dir"))
+    refusal = _SA.check_script_approval(script_approval, _lyrics_of(request),
+                                        _SA.script_sha_near(run_dir, request.get("run_dir")))
+    if refusal:
+        raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
+    # G9 / CPR-R2: the request asks for the DELIVERED seconds, exactly. The old
+    # admission also took the >=15 percent Suno headroom, but nothing trims the
+    # raw take before judging (master_length only plans and checks) and the
+    # length gate refuses any take longer than the delivered target -- so a
+    # headroom request bought audio the judge would refuse. The headroom is now
+    # admitted ONLY when the OWNER explicitly selected it on the plan
+    # (``duration_headroom_approved``), and the choice plus its record is
+    # written into the returned ``duration`` block, never dropped silently.
+    # Never a patch/short duration.
+    target = plan["delivered_s"]
+    headroom = _WF.max_suno_duration(target)
+    approval = plan.get("duration_headroom_approved")
+    requested = inp.get("duration")
+    if requested == target:
+        mode = "exact"
+    elif approval and requested == headroom:
+        mode = "headroom_override"
+    else:
+        raise DispatchError("whole tracks only: request duration %r != planned delivered %r; "
+                            "the %r s Suno headroom is refused unless the plan carries the "
+                            "owner's explicit duration_headroom_approved (never a silent "
+                            "allowance, never a patch)"
+                            % (requested, target, headroom))
+    duration = {"requested_s": requested, "delivered_target_s": target, "mode": mode}
+    if mode == "headroom_override":
+        duration["headroom_approved"] = approval
+        sys.stderr.write("DURATION_HEADROOM_OVERRIDE: the owner approved a %r s request for the "
+                         "%r s delivered target; the length gate still refuses any take longer "
+                         "than the delivered target and no trim runs before judging\n"
+                         % (requested, target))
+    # FU-HOOK-PLACEMENT: the director's hook_plan rides the request as
+    # _hook_plan; it moves into the judge's plan and never reaches KIE.
+    plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
+    request = {k: v for k, v in request.items() if k != "_hook_plan"}
+    # WWFIX D1/F2: the ordered pace change rides the request the same way
+    # (_pace_plan). It moves into the judge's plan and NEVER reaches KIE.
+    plan = dict(plan, pace_change=request.get("_pace_plan") or plan.get("pace_change"))
+    request = {k: v for k, v in request.items() if k != "_pace_plan"}
+    # D5/D6: the run's OWN method record is the authority for the ERM apex --
+    # control/method.json's runtime_targets, read at the judge seam. Without
+    # it a method run could be judged against a plan block that disagrees
+    # with the run's control record, and a take singing at 0 s could pass a
+    # first-sung window the record never set. An unreadable record or one
+    # carrying no runtime_targets still makes a METHOD judge, whose missing
+    # apex records UNMEASURED -- never a PASS. A run with no record at all
+    # keeps its plan exactly as it is.
+    if not _method_plan(plan):
+        m = run_method_targets(run_dir or (request or {}).get("run_dir"))
+        if m:
+            plan = dict(plan, method=m)
+    # WW-23: BEFORE any generation, the ordered pace change must be complete and
+    # the exact request the provider would receive must carry BOTH directions.
+    # A missing seam, a reused boundary, a final style that carries only one
+    # transition, or the internal _pace_plan metadata leaking into any
+    # provider-visible field is refused HERE -- nothing is spent. The audio
+    # check (D3) runs later, on the exports, inside judge_take.
+    #
+    # METHOD C5 (Trevor 2026-10-13, METHOD-INTEGRATION F4): BOTH pace turns are
+    # mandatory and measured, so "this run ordered no pace change" is no longer
+    # "nothing to enforce": a run that carries no pace order at all is refused
+    # HERE, at dispatch, before any spend, with PACE_TURNS_REQUIRED -- the two
+    # turns cannot be measured off a take nobody ordered. BUILD-PLAN
+    # W1-method-song-U1 makes this EVERY run, method or not: `_pace_required`
+    # is True on every run, so the order is as mandatory at dispatch as the
+    # gate is at the judge. A method run names its seams after the blueprint's
+    # own cues (ERM Drop / Hero Shift); a run with no method block names the
+    # arc's pain-turn and solution-arrival beats -- the ORDER is required in
+    # both cases, only its anchor names differ. The first-sung rule and every
+    # other method-only check stay exactly as they are: those run only when
+    # the run carries control/method.json (inert-until-wired).
+    # The order is read the SAME two keys the judge reads (``judge_plan_pace``):
+    # ``pace_change`` (merged from the request's _pace_plan above) or a plan
+    # that carries the runner's own ``_pace_plan`` key (song_choices.cmd_generate).
+    order = plan.get("pace_change") or plan.get("_pace_plan")
+    if not order:
+        raise DispatchError(_pace_turns_required_detail())
+    # The order checked is the SAME one the judge reads (pace_change, else
+    # _pace_plan). Checking only pace_change let a plan carrying the order as
+    # _pace_plan send a style with neither direction.
+    pace_errs = _PC.check_pace_plan(order) + _SCM.check_pace_style(inp.get("style"), order)
+    if _PC.pace_provider_leak(request):
+        pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                         "_pace_plan judging metadata reaches a provider field")
+    if pace_errs:
+        raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
+    # D2: when the run answered Yes to SONG APPROVAL the music stage runs as
+    # THREE variants, and each variant is generated per variant; the three
+    # variants run in PARALLEL lanes (song_choices.plan_units, providerSlots 3,
+    # reserve 0), so a variant is one lane's whole job, never a second take of
+    # the same arrangement.
+    refuse_asr("faster-" + "wh" + "isper")
+    plan = dict(plan, sheet_text=plan.get("sheet_text") or _lyrics_of(request))
+    # X06: freeze ONE outbound snapshot and re-admit it INSIDE the governor
+    # callback, after acquisition and on every retry. A mutation of the
+    # caller's request, a stale/legacy approval record or a changed saved
+    # election is refused before the generator is called; the snapshot handed
+    # to ``generate`` is the same object re-checked here.
+    take_request = _freeze_take_request(request)
+    take_digest = _take_request_digest(take_request)
+    admitted_lyrics = _lyrics_of(take_request)
+
+    def _admit_take():
+        if _take_request_digest(take_request) != take_digest:
+            raise DispatchError("REQUEST_CHANGED_AFTER_ADMISSION: prepare the request again")
+        frozen_inp = _input_of(take_request)
+        frozen_errs = _R.check_envelope(take_request)
+        if frozen_errs:
+            raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s" % "; ".join(frozen_errs))
+        if _lyrics_of(take_request) != admitted_lyrics:
+            raise DispatchError("REQUEST_CHANGED_AFTER_ADMISSION: the lyrics changed")
+        pace_errs = (_PC.check_pace_plan(order) +
+                     _SCM.check_pace_style(frozen_inp.get("style"), order))
+        if _PC.pace_provider_leak(take_request):
+            pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                             "_pace_plan judging metadata reaches a provider field")
+        if pace_errs:
+            raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
+        current = _SA.record_near(run_dir, take_request.get("run_dir"))
+        if current is None:
+            current = script_approval          # the caller's own record, when none is saved
+        fresh_refusal = _SA.check_script_approval(
+            current, _lyrics_of(take_request),
+            _SA.script_sha_near(run_dir, take_request.get("run_dir")))
+        if fresh_refusal:
+            raise DispatchError("%s: %s" % (fresh_refusal["reason_code"], fresh_refusal["detail"]))
+        if run_dir:
+            from production_process import current_script_election
+            elected = current_script_election(run_dir)
+            if elected is True and not (isinstance(current, dict) and current.get("required") is True):
+                raise DispatchError(
+                    "SCRIPT_APPROVAL_ELECTION_CHANGED: the saved client answer elects "
+                    "script approval, but the current record does not require it; "
+                    "nothing was sent to the music generator")
+        return generate(take_request)
+
+    # S75-001: the per-run spend maximum is enforced on the callee's OWN
+    # argument, before the loop can submit one paid generation.  The signature
+    # default (SPEND_CAP_CENTS = 1000) is deliberately larger than the maximum,
+    # so a caller that never passed a cap is REFUSED instead of trusted to buy
+    # up to 166 generations.  The one production caller (song_choices
+    # .one_variant) passes one generation, which stays inside the maximum.
+    if cap_cents > MAX_RUN_CAP_CENTS:
+        raise DispatchError(
+            "SPEND_CAP_ABOVE_MAX: cap_cents %r exceeds this module's declared "
+            "per-run maximum of %r cents (one paid song generation); nothing "
+            "was sent to the music generator"
+            % (cap_cents, MAX_RUN_CAP_CENTS))
+    spent, receipts = 0, []
+    while spent + cost_cents <= cap_cents:
+        spent += cost_cents
+        for take in kie(_admit_take, "song generate", generation=True):
+            take = dict(take, **measure(take))
+            rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct,
+                              style_id, _lyrics_of(request))
+            save(take, rcpt)                               # stem + timestamps, every take
+            receipts.append(rcpt)
+            # WW-18: only a take whose REQUIRED gate set all PASSes is delivered.
+            # Every other take is judged and its paid stem kept, never offered.
+            if take_accepted(rcpt)[0]:
+                return {"delivered": take, "verdict": rcpt["verdict"],
+                        "receipt": constituent_receipt(take, rcpt, plan),
+                        "receipts": receipts, "spent_cents": spent,
+                        "duration": duration, "submitted_digest": take_digest}
+            # S75-W05-U5 (spec 6.5, D29): a low-confidence sung/spoken
+            # classification is uncertainty, never a definite creative failure
+            # -- STOP before any regeneration. The existing-take ladder runs
+            # first (remeasure, deterministic edit, bounded review); only after
+            # it is exhausted may new paid generation be considered.
+            if (rcpt.get("review") or {}).get("required"):
+                return {"delivered": None, "verdict": rcpt["verdict"],
+                        "receipts": receipts, "spent_cents": spent,
+                        "duration": duration, "submitted_digest": take_digest,
+                        "review_required": rcpt["review"]}
+    return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent,
+            "duration": duration, "submitted_digest": take_digest}

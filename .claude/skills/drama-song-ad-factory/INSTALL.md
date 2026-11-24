@@ -1,96 +1,385 @@
-# Install / Update Contract — drama-song-ad-factory (Claude-Nine / Claude Code distribution)
+# INSTALL - Skill 75: Drama Song Ad Factory (OpenClaw distribution)
 
-## Install model
+Install/update instructions for a clean onboarding box. Follow the steps
+in order, verbatim - the QC rubric scores that (≥ 8.5/10 to pass).
 
-Repository-native skill in `999-setup`:
+## Step 0: Contracts and prerequisites (before anything else)
 
-```text
-.claude/skills/drama-song-ad-factory/
-```
+1. Read `INSTALL-CONTRACT.md` at the repo root and acknowledge it in your
+   work log (violation handling lives there).
+2. Complete Skill 01 (`01-teach-yourself-protocol`) and Skill 02
+   (`02-back-yourself-up-protocol`) - repo law and build-directive
+   section 25 step 1. Both ship with this repo's installer.
+3. Read this skill's `SKILL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md` and
+   `QC.md` BEFORE running anything.
 
-Installed by the repository's own bundled-skill mechanism. The skill is listed in
-`CONTROL/bundled-skills.txt`; installers link every listed skill from the repository
-into the Claude config root's `skills/` directory. Do not invent a second installer
-for this skill and do not copy the folder by hand into a second location.
+## Step 1: First-time onboarding install
 
-- One skill folder, shared by `claude` and `claude-nine` (directive 2.2, 5.3).
-- Never create a separately maintained `claude-nine` skills root, and never point
-  either runtime at its own config directory — the variable `CLAUDE_CONFIG_DIR`
-  stays untouched by this install (repository rule 10).
-- The runtime-specific behavior lives only in `adapters/claude-nine/README.md`
-  and `adapters/claude-code/README.md`, never in a duplicate skill tree.
-
-## Prerequisites
-
-`PREREQS.json` is the machine-readable prerequisite list (Python 3 standard
-library only, shared config root, registry entry, approved storage root,
-authorization receipt, presence-only credentials, helper skills for paid media).
-Check it before installing; every entry states how to satisfy it.
-
-Helper provider skills (46, 66, 67, 68, 74) are **not** bundled in this folder
-(directive 2.4). A clean install receives the control layer itself; if a required
-helper is absent, `preflight` fails with `module-unavailable` / `tool-unavailable`
-naming the missing helper — install the helper, never bypass the check and never
-fall back to a static provider path. Helper installation is registered separately
-(`installer-registration/helper-dependencies.json`).
-
-## Install steps
-
-1. Clone or update `999-setup`.
-2. Confirm the skill line `drama-song-ad-factory` is present in
-   `CONTROL/bundled-skills.txt` (it is committed there; do not delete other
-   entries while editing).
-3. Run the repository's normal skill link step for bundled skills, or link this
-   folder yourself into the shared config-root `skills/` directory if you manage
-   links manually. One link serves both runtimes.
-4. Lip-sync picture gate (required before any lip-sync job; without it every job is
-   refused): `python3 -m pip install mediapipe opencv-python-headless numpy`, then
-   `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (downloads Google's
-   face_landmarker.task, verifies its pinned sha256, places it in `assets/`).
-5. Run the smoke tests (below). An install is not complete until they pass
-   (directive 5.3).
-
-## Verification (required before first paid work)
+The canonical one-liner (from the `install.sh` header):
 
 ```bash
-cd .claude/skills/drama-song-ad-factory
-python3 tests/test_cli_smoke.py        # envelope + exit-code contract
-python3 tests/test_parity_layout.py    # layout, registry, adapter hygiene, core parity
-python3 scripts/core/intake_preflight/factory.py intake --brief-file assets/example-brief.json
-python3 scripts/core/intake_preflight/factory.py preflight --root <approved-storage-root>
+curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
 ```
 
-Expected: both tests `ALL PASS` (or `PARITY UNDETERMINED` when the canonical
-OpenClaw core tree is absent — that is an undetermined check, not a pass),
-`intake` on the thin example brief exits 2 / `waiting` with at most three
-questions, `preflight` without an authorization file exits 4 /
-`approval-missing`. Then confirm discovery in both runtimes: the skill appears
-under `claude` and under `claude-nine`, and loads its `references/`,
-`scripts/`, `assets/` and `tests/`.
+It detects Mac (`~/.openclaw/`) vs VPS (`/data/.openclaw/`) via
+`OPENCLAW_PLATFORM` (auto-detect: presence of `/data/.openclaw`), then
+installs the numbered skill folders additively into the box's skills dir.
 
-## Update flow
+Already on a checkout? From the repo root:
 
-1. Core changed upstream: regenerate `scripts/core/` from the canonical source
-   named in `references/parity-contract.md`. Never hand-edit the packaged copy.
-2. Re-run both tests above.
-3. Bump `VERSION`, add a `CHANGELOG.md` entry naming what changed, and keep the
-   `SKILL.md` frontmatter `version:` in sync with `VERSION`.
-4. Contract-version bumps (campaign / artifact / qc schemas, acceptance profile)
-   need migration and rollback notes in the release manifest — a contract change
-   re-qualifies consumers.
-5. Adapter files change only when runtime wiring itself changes; after any
-   adapter edit, re-verify both modes (each adapter README states its own checks).
+```bash
+bash install.sh
+```
 
-## Secrets
+The skill lands at:
 
-Credentials live outside the repository (environment / key files of the host).
-This skill stores no keys, prints no key values, and preflight checks credential
-presence by name only. Never commit a secret, and never commit `API docs.md` or
-any `.env` with real values (repository rules 4 and 5).
+```text
+$SKILLS_DIR/75-drama-song-ad-factory/      # Mac: ~/.openclaw/skills/...
+                                            # VPS: /data/.openclaw/skills/...
+```
 
-## Removal
+`SKILLS_DIR` resolves as `${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}`
+(`shared-utils/lib-shared.sh` `discover_skills_dir`).
 
-1. Remove the `drama-song-ad-factory` line from `CONTROL/bundled-skills.txt`.
-2. Unlink the skill folder from the config-root `skills/` directory.
-3. Nothing else to remove: no second copy, no router/global settings and no
-   config-directory override were ever created by this install.
+## Step 2: Update an existing box
+
+From an onboarding checkout at the repo root:
+
+```bash
+bash update-skills.sh
+```
+
+Same platform auto-detection as `install.sh`. Updates are additive
+per-item copy; verify afterwards:
+
+```bash
+cat "$SKILLS_DIR/75-drama-song-ad-factory/skill-version.txt"
+```
+
+## Step 2b: Lip-sync picture gate (mediapipe + OpenCV + numpy + face model)
+
+The lip-sync picture gate needs four things: the `mediapipe`, `cv2` (OpenCV) and
+`numpy` imports, and the pinned `face_landmarker.task` model file. One command
+installs or repairs all four, and is safe to re-run at any time:
+
+```bash
+python3 "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --repair
+```
+
+Check without changing anything, safe to run at any time:
+
+```bash
+python3 "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --check
+```
+
+It prints one line per prerequisite in one of three states, and the exact
+copy-paste repair command for every line that is not PRESENT:
+
+```text
+mediapipe   PRESENT              0.10.21
+opencv      PRESENT              4.13.0
+numpy       PRESENT              2.4.6
+face-model  MISSING              assets: no file at .../assets/face_landmarker.task
+mediapipe   repair: <python> -m pip install -r .../requirements-lipsync.txt
+face-model  repair: <python> .../lip_gate/install_face_model.py
+            repair all: <python> .../scripts/lipsync_preflight.py --repair
+```
+
+The states are `PRESENT`, `MISSING` (no such module, or no such file), and
+`PRESENT-BUT-BROKEN` (the import raises for another reason, the model file is
+present but is not the pinned 3758596 bytes and sha256, or the model is good at
+`assets/` but unreadable to the clip gate that falls back to
+`scripts/core/lip_sync/lip_gate/face_landmarker.task`).
+
+Exit codes match `shared-utils/check-skill-prereqs.sh`, so nothing downstream
+changes: `0` every prerequisite present and valid, `2` one or more missing or
+broken (informational, exactly like the checker's Rule 16 behaviour), `1` the
+check itself could not run. This never blocks a non-lip-sync run, and it never
+lets a lip-sync job through: the gate still refuses without all four.
+
+### Which interpreter the three packages go into
+
+They must be installed into the same interpreter that runs the skill, not into
+some other Python on the box. The preflight prints the exact path it checked and
+puts that same path in every repair command, so a copy-paste cannot land the
+packages in the wrong interpreter. To see the path on its own:
+
+```bash
+python3 -c 'import sys; print(sys.executable)'
+```
+
+Never install into a venv the skill is not launched from. If the box has more
+than one Python, launch the skill and this preflight with one and the same
+interpreter every time; `sys.executable` in the repair line is that one.
+
+If `pip install` stops with `No matching distribution found`, build a venv on the
+box's ONE canonical interpreter and run the skill from it, or the gate stays
+MISSING on the bare interpreter. Never `python3.13 -m venv` / `python3 -m venv`:
+Debian's python has no ensurepip, so that makes a hollow venv with no pip. The
+resolver builds it with `uv venv --python <canonical> --seed`:
+
+```bash
+bash ~/.openclaw/skills/shared-utils/oc-python.sh venv ~/.openclaw/venvs/lipsync      # VPS: /data/.openclaw/...
+~/.openclaw/venvs/lipsync/bin/python "$SKILLS_DIR/75-drama-song-ad-factory/scripts/lipsync_preflight.py" --repair
+```
+
+The venv then has to be the interpreter for every later run of the skill.
+
+### The model file
+
+`install_face_model.py` downloads Google's official float16 model from
+
+```text
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+```
+
+verifies the pinned sha256 `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff`
+and the 3758596-byte size, and places it at `assets/face_landmarker.task`. It
+ignores `$LIPSYNC_FACE_MODEL`, which the gates read but nothing writes. With a
+good file already in place a re-run is a no-op. A failed download exits non-zero
+and names the URL and the HTTP status, never a skip. `--repair` also links the
+verified file into `scripts/core/lip_sync/lip_gate/` so the clip gate finds it
+without the environment variable.
+
+The updater runs this step for you. Run it by hand only if lip-sync reports the
+face model missing. An update replaces the skill folder, and
+`assets/face_landmarker.task` goes with it.
+
+### What is unavailable until all four are present
+
+Lip-sync picture generation is unavailable until all four are present. The
+picture gate and the measured clip gate both refuse without them, and that
+refusal is deliberate: a missing prerequisite is never a pass.
+
+Everything else in the skill works with none of them: music, lyrics, vocals,
+clips, assembly, QC and delivery stage and run to delivery normally. A campaign
+that uses no lip-sync picture finishes today; only the lip-sync picture stage
+waits.
+
+## Step 2c: Drama Studio enrollment and the pickup timer
+
+A personal studio link only resolves when this box holds a machine key, and
+only `shared-bridge/studio_bridge.py enroll` creates one. Both `install.sh`
+and `update-skills.sh` run that step for you, then register the timer that
+polls the studio every 120 seconds. Both are idempotent and both run on every
+pass - never gated on a version bump - so a box can be re-installed or
+re-updated at any time without re-enrolling.
+
+What gets enrolled: this box, once. The key is written to
+`~/.drama-studio/machine.key` (`$DRAMA_STUDIO_STATE` when set), folder mode
+700 and file mode 600, and it is never written into any settings file, log or
+receipt. If that file already exists the step does nothing - enroll is once
+per box - and says so.
+
+What happens when the secret is absent: the step skips. It exits 0, prints one
+line to stderr (`skipped: DS_ENROLLMENT_SECRET not set`) and leaves the box
+untouched. A client box must still install cleanly before the operator has
+injected a studio secret; the operator adds it to
+`~/.openclaw/secrets/.env` (Mac) or `/data/.openclaw/secrets/.env` (VPS) and
+the next install or update pass picks it up. The secret is read, never
+printed, never written to a file and never passed on a command line.
+
+The timer is registered idempotently with
+`install-timer.sh --platform <mac|hostinger|contabo> --register`, which exits
+0 when the timer is already installed. It refuses (exit 2) rather than
+registering, and that refusal is a warning, not a failure - the install and
+the update both continue, and the operator registers the timer by hand
+(`timer-artifacts/README.md`). The platform is auto-detected from the box; if
+it cannot be determined the timer call is skipped with a warning rather than
+guessed.
+
+To check either leg by hand:
+
+```bash
+python3 shared-bridge/studio_bridge.py capability    # prints the enrolment state; exit 0 = ready
+```
+
+## Step 2d: X11 install gate (skill 75) - warn by default, and it cannot allow
+
+`scripts/core/x11_install_gate.sh` runs before `install.sh` or
+`update-skills.sh` touch an installed skill 75. Read this before expecting it to
+pass. The six records it reads (`target.json`, `backup-authorization.json`,
+`preservation.json`, `reviewed-manifest.json`, `applied-verification.json`,
+`operator-decision.json`) have **no production writer** in this tree: the only
+code that writes all six at once is `tests/test_x11_release_gate_wiring.py`
+`records()`, a test fixture. A real install therefore has an empty records
+directory.
+
+What that means on a real box:
+
+- Default (warn-and-preserve): exit 10. The gate logs `REFUSED MISSING_TARGET`
+  plus the fact above, keeps the manifest-targeted files, never deletes, and the
+  roll continues.
+- Refuse mode (`backup-authorization.json` present, or `S75_X11_GATE_MODE=refuse`):
+  exit 20. Skill 75 is left untouched.
+
+So on a box that has not been handed the records by hand, this gate can never
+allow. It states that in its own output in both modes. Supplying the records is
+an owner decision; nothing in this tree produces them.
+
+## Step 3: Credentials (canonical paths, canonical names)
+
+Needed for paid KIE paths (required):
+
+```bash
+# presence only - the checker prints SET or NOT-SET and never the value
+bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/75-drama-song-ad-factory"
+```
+
+If absent, ask the operator to add `KIE_API_KEY` to
+`~/.openclaw/secrets/.env` (Mac) or `/data/.openclaw/secrets/.env`
+(VPS), chmod 600, then:
+
+```bash
+openclaw config set env.vars.KIE_API_KEY "$KIE_API_KEY"
+```
+
+Do NOT create a new key, and do not open or search the secrets file. Fish
+Audio keys are not used by this skill.
+
+Command Center board sync (`scripts/core/cc_sync.py`) also needs these
+three environment variables (names only - values live in the env stores,
+never printed):
+
+- `CC_WORKSPACE` - the workspace binding the outbox enforces (required;
+  without it the sync refuses to start).
+- `MC_API_TOKEN` - the Bearer token Command Center's middleware checks.
+- `WEBHOOK_SECRET` - the HMAC secret for the `x-webhook-signature` header.
+
+A **403** from the board means Command Center credentials are missing;
+the ad still finishes locally. The board sync reports an auth error and
+stops sending - the campaign folder, receipt and delivery are unchanged.
+
+## Step 4: Helper skills are NOT installed by reference
+
+Build-directive section 2.4: references to onboarding Skills
+66/67/68/74 (and 07/24/25/27/30/46) do not install them. The unified
+installer copies every numbered folder it ships; if a helper folder is
+missing on the box, the prerequisite checker names it - fix before paid
+work (Step 5). Do not hand-copy helper code; re-run the installer/updater.
+
+## Step 5: Verify the install
+
+```bash
+# 5a. prerequisites (exit 0 = satisfied; exit 2 = missing prereqs, listed
+#     with their satisfy strings; never blocks install - Rule 16)
+bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/75-drama-song-ad-factory"
+echo "rc=$?"
+
+# 5b. control layer smoke - intake must exit 0 on a complete brief
+cd "$SKILLS_DIR/75-drama-song-ad-factory"
+python3 scripts/core/intake_preflight/factory.py intake --brief-file /path/to/complete-brief.json
+echo "rc=$?"     # expect 0 (ok)
+
+# 5c. preflight on a writable scratch root with an authorization record
+python3 scripts/core/intake_preflight/factory.py preflight \
+  --root "$PWD/scratch-storage" --storage-dir "$PWD/scratch-storage" \
+  --auth-file /path/to/auth-ok.json --summary-digest testdigest
+echo "rc=$?"     # expect 0 (preflight-pass)
+
+# 5d. lip-sync prerequisites (Step 2b): one line per prerequisite, three states
+python3 scripts/lipsync_preflight.py --check
+echo "rc=$?"     # 0 all present; 2 missing or broken (informational, per Step 2b)
+```
+
+Exact fixture shapes and captured outputs for 5b/5c: `EXAMPLES.md`
+(Examples 1 and 6). Then run `QC.md` and score ≥ 8.5/10.
+
+### Word-timing model (tier-2 local fallback only)
+
+Word timing is what the judge measures first singing from: with no word
+timings, `aligned_words` comes back EMPTY (`WHISPER_MODEL_LOAD_FAILED`) and
+the judge cannot place the first vocal line, so the whole 30-second opening
+check goes unmeasured. **Empty `aligned_words` means stop and fix — never let
+a run through without it.**
+
+Skip this step unless the tier-2 local fallback is enabled (tier 1, Suno
+timestamped lyrics, is the default and needs no model).
+
+The code loads the **`small`** model (`audio_c3/lyric_timing.py`,
+`DEFAULT_WHISPER_SIZE`), int8 on CPU. Pre-fetch that exact model **as the
+factory's run user** — not as root, and inside a container as its run user:
+
+```bash
+# 5f. pre-fetch the exact model the code loads, as the RUN USER
+sudo -u <run-user> python3 -c \
+  "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+
+# 5g. that run user must OWN its Hugging Face cache, or the pre-fetch above
+#     fails for the run user and every take returns empty word timings
+sudo chown -R <run-user> "$(sudo -u <run-user> python3 -c 'import os;print(os.path.expanduser("~/.cache/huggingface"))')"
+
+# 5h. verify: loads from the run user's own cache with no network
+sudo -u <run-user> python3 -c \
+  "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8'); print('WORD_TIMING_MODEL_OK')"
+echo "rc=$?"     # expect 0 and WORD_TIMING_MODEL_OK
+```
+
+A missing or root-owned cache leaves the model unloadable for the run user, so
+word timing fails soft: the take still measures, but `aligned_words` is empty
+and `WORD_TIMING_UNAVAILABLE` / `WHISPER_MODEL_LOAD_FAILED` is printed. Fix
+the cache ownership and re-run 5f/5h before any take is judged.
+
+## Step 5e: Emergency owner (per install)
+
+The emergency owner is a PER-INSTALL value, never a hard-coded name. It is the
+operator a gate escalates to when the run has no named approver. Resolution
+reads the install's existing config root (`$OPENCLAW_HOME`, else `~/.openclaw`):
+
+1. `onCallOperator` in `<root>/onboarding-identity.json` (the installer's own
+   identity record — the ONE named key this adds) wins on any box. This is
+   where a client install records that client's own on-call operator.
+2. An operator-box install (the durable `<root>/.operator-is-owner` marker, or
+   `CC_OPERATOR_IS_OWNER=1`) with no recorded value defaults to `Trevor`.
+3. A client install with no recorded value FAILS CLOSED: the gate refuses
+   (`EMERGENCY_OWNER_UNCONFIGURED`), records the refusal, and never defaults to
+   Trevor and never invents a name.
+
+Check it (exit 0 = resolved, 4 = refused):
+
+```bash
+PYTHONPATH=scripts/core python3 -m intake_preflight.factory owner --run-dir "$RUN"
+```
+
+A malformed `onCallOperator` (not a string, blank, over 200 characters) and an
+unreadable config are refused on every box.
+
+**Stall recovery.** `control/recovery-authorization.json` is written at run start by `factory.py` when the box setup flag `DS_AUTO_RECOVERY=1` is set (authorized by the person who provisioned the box); otherwise the keepalive is announce-only. A person may also write it later for one run. The keepalive never writes it, never raises its scope above `resume`, and never runs anything but `factory.py next --run-dir <run>` under it.
+
+## Step 6: Run storage
+
+Campaign runs live under an operator-approved persistent root (section 21
+canonical project structure; on the operator box that root is
+`~/Downloads/Drama Song Ads`). The preflight `--root` must point inside
+it; references outside the root are rejected. Never create a second
+writable run-state authority for a campaign.
+
+## Step 7: Version and contract bookkeeping
+
+- `skill-version.txt` is the skill's version of record; keep
+  `SKILL.md` frontmatter `version:` in agreement (Section 1 of QC.md
+  checks it).
+- Schema/contract versions live in
+  `scripts/core/contracts/*-schema.json` and
+  `scripts/core/acceptance-profile.json` (see DEPENDENCY-MANIFEST
+  section 6). Any contract bump re-qualifies both distributions through
+  the parity tests before release (directive 2.3/2.4).
+- Release manifests (core + adapter versions, schema versions, Command
+  Center API compatibility, source commits, dependency hashes, notices)
+  are produced at release time per DEPENDENCY-MANIFEST.
+
+## Rollback
+
+`install.sh`/`update-skills.sh` write backups before changing a box
+(Mac: `~/Downloads/openclaw-backups/`; VPS: `/data/.openclaw/backups/`
+- canonical paths from the installer header). To roll back: restore the
+skill folder from the box's backup copy, then re-run Step 5 to confirm
+the restored version. For a partial skill rollback in git, restore the
+folder from the previous release commit and re-run Step 5. Never roll
+back by deleting a client's run state or ledger.
+
+## After install
+
+Per the self-audit in `INSTALL-CONTRACT.md`: recite the checklist, run
+`QC.md`, and send the owner-facing confirmation: "Skill 75 active.
+Anything pending your attention: [list]."

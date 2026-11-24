@@ -179,24 +179,6 @@ def test_classification_zero_dispatch_zero_network(tmp_path):
         approvals=[_approved("storyboard")],
         requires=["storyboard"])
 
-    # 999 distribution note: this tripwire set differs from canonical only
-    # because 999's spend_ledger has no `allocate_attempt` (its `plan` performs
-    # allocation inline). Required seams must exist; optional ledger mutators
-    # are armed when the local ledger exposes them.
-    REQUIRED_SEAMS = (
-        (socket.socket, "connect"),
-        (socket, "create_connection"),
-        (socket, "getaddrinfo"),
-        (urllib.request, "urlopen"),
-        (http.client.HTTPConnection, "connect"),
-        (subprocess, "Popen"),
-        (subprocess, "run"),
-        (L, "_open"),
-        (JR, "ingest_event"),
-        (JR, "record_result"))
-    OPTIONAL_SEAMS = ((L, "reserve"), (L, "allocate_attempt"),
-                      (L, "mark_submitted"))
-
     class Tripwire:
         def __init__(self):
             self.calls = []
@@ -213,16 +195,21 @@ def test_classification_zero_dispatch_zero_network(tmp_path):
             setattr(owner, name, boom)
 
         def __enter__(self):
-            try:
-                for owner, name in REQUIRED_SEAMS:
-                    self._arm(owner, name)
-                for owner, name in OPTIONAL_SEAMS:
-                    if hasattr(owner, name):
-                        self._arm(owner, name)
-            except Exception:
-                # Never leave a partially armed tripwire behind for later tests.
-                self.__exit__(None, None, None)
-                raise
+            for owner, name in (
+                    (socket.socket, "connect"),
+                    (socket, "create_connection"),
+                    (socket, "getaddrinfo"),
+                    (urllib.request, "urlopen"),
+                    (http.client.HTTPConnection, "connect"),
+                    (subprocess, "Popen"),
+                    (subprocess, "run"),
+                    (L, "_open"),
+                    (L, "reserve"),
+                    (L, "allocate_attempt"),
+                    (L, "mark_submitted"),
+                    (JR, "ingest_event"),
+                    (JR, "record_result")):
+                self._arm(owner, name)
             return self
 
         def __exit__(self, *exc):

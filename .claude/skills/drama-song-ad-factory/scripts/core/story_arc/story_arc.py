@@ -715,11 +715,6 @@ _CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
                       r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
 _COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
                             re.I)
-#: A period that does NOT end the negation's sentence: a letter on both
-#: sides, as in a domain ("example.com") or an address ("info@example.com").
-#: Splitting there dropped the negator ("Do not visit example.com and take
-#: the quiz." read as "com and"), so the negated quiz line counted as a call.
-_NON_ENDING_PERIOD_RE = re.compile(r"(?<=[A-Za-z0-9])\.(?=[A-Za-z0-9])")
 _NEGATORS = ("not", "never", "no", "nor", "cannot", "dont", "didnt", "doesnt", "cant", "wont")
 #: Subjects that forbid the act for everyone: "Nobody should take the quiz."
 #: matches even with no negator word in the sentence.
@@ -731,20 +726,20 @@ def _commercial_calls(text):
     A call counts only when nothing says not to act. A sentence refuses the
     act when any word before the phrase is "not", "never", "no", "nor",
     "cannot" or an "n't" word ("Do not take the quiz."), or when its subject
-    is negative ("Nobody should take the quiz."). A comma never ends the
-    sentence, so a real call after a negation must stand in its own sentence:
-    "Do not wait. Take the quiz now." ponytail: conservative - "No more
+    is negative ("Nobody should take the quiz."). A comma, colon,
+    semicolon or em dash never ends the sentence, so a real call after a
+    negation must stand in its own sentence: "Do not wait. Take the quiz now."
+    ponytail: conservative - "No more
     guessing, take our quiz." is refused too (origin/main refused every quiz
     line); the guard applies to every action phrase, so "Do not book a call."
-    and a newline-split "Never\\ntake the quiz." are refused the same way.
+    and newline- or dash-split ("Never\ntake the quiz.", "Never \u2014 take
+    the quiz.") refusals work the same way.
     """
     text = str(text or "")
-    masked = _NON_ENDING_PERIOD_RE.sub(" ", text)
     calls = []
     for m in _COMMERCIAL_RE.finditer(text):
         act = m.group(1).lower()
-        prior = masked[:m.start()]
-        sentence = re.split(r"[.!?;\u2014]", prior)[-1].lower()
+        sentence = re.split(r"[.!?]", text[:m.start()])[-1].lower()
         words = re.findall(r"[\w'\u2019]+", sentence)
         if any(w in _NEGATORS or w.endswith(("n't", "n\u2019t")) for w in words):
             continue
@@ -1077,7 +1072,12 @@ def check_payload_closing(sheet_text, commercial_action=None, require_cta=False)
         return out
     if commercial_action is not None:
         want = _commercial_calls(commercial_action)
-        if want and want[0] not in calls:
+        if not want:
+            out.update(outcome="rejected", reason_code="closing-not-approved-call",
+                       detail="the approved commercial action asks for no real step: %r"
+                              % commercial_action)
+            return out
+        if want[0] not in calls:
             out.update(outcome="rejected", reason_code="closing-not-approved-call",
                        detail="the closing lacks the approved action %r" % want[0])
             return out

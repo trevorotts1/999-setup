@@ -236,6 +236,42 @@ def test_concurrent_authorized_retakes():
         shutil.rmtree(d, ignore_errors=True)
 
 
+# --- 5b. no recorded decision keeps the plain provider-failure retry -----
+def test_no_decision_keeps_plain_failed_job_retry():
+    """Round-2: require_round_auth is a caller flag, never a ledger default.
+    A provider-failure retry with no recorded decision passes no flag and
+    stays allowed (outcome ok, failed_job_retry); the same retry WITH the
+    flag and no reference is refused MISSING_AUTH_REF and persists
+    nothing. This is the caller contract song_choices implements: the flag
+    only when a fork decision is recorded."""
+    db, d = tmp_db(run_id="nflag", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "nflag", "k1", "digest-1",
+                                   estimated_cost=5)
+        to_failed(db, "nflag", "k1", first["attempt_id"], cost=0)
+        retry = L.plan(db, "nflag", "k1", "", "digest-2", 5)
+        check("no-flag retry allowed",
+              retry["outcome"] == "ok"
+              and retry["evidence"]["retry_category"] == "failed_job_retry",
+              str(retry))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="yflag", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "yflag", "k1", "digest-1",
+                                   estimated_cost=5)
+        to_failed(db, "yflag", "k1", first["attempt_id"], cost=0)
+        refused = L.plan(db, "yflag", "k1", "", "digest-2", 5,
+                         require_round_auth=True)
+        check("flagged retry without a reference refused",
+              refused["outcome"] == "rejected"
+              and refused["reason_code"] == "MISSING_AUTH_REF", str(refused))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='yflag'")
+        check("flagged retry persists nothing", got == [(1,)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 # --- 6. uncertain jobs: reconcile + provider lookup before resubmission ------
 def test_uncertain_reconcile_and_categories():
     db, d = tmp_db(run_id="unk", repair_cap=4)
@@ -407,31 +443,12 @@ def test_withdrawn_auth_stops_retry_and_initial_spends_ref():
         shutil.rmtree(d, ignore_errors=True)
 
 # --- 6d. keep_one stops a retry after an INITIAL failure ---------------
-def test_keep_one_stops_initial_submit_and_retry_after_initial_failure():
+def test_keep_one_stops_retry_after_initial_failure():
     """keep_one is the client's CURRENT answer (require_round_auth, no
-    reference): it stops the FIRST paid submit too -- a song with no prior
-    ledger row on its key cannot buy its initial attempt -- and it stops a
-    provider-failure retry after an INITIAL attempt failed. A run with NO
-    recorded fork decision passes no flag and keeps today's plain
-    provider-failure retry (initial submit and retry)."""
-    db, d = tmp_db(run_id="ko0", repair_cap=3)
-    try:
-        refused = L.plan(db, "ko0", "k1", "", "digest-1", 5,
-                         require_round_auth=True)
-        check("keep_one: initial submit before any attempt refused",
-              refused["outcome"] == "rejected"
-              and refused["reason_code"] == "MISSING_AUTH_REF", str(refused))
-        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='ko0'")
-        check("keep_one: nothing persisted", got == [(0,)], str(got))
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
-    db, d = tmp_db(run_id="nd0", repair_cap=3)
-    try:
-        first = L.plan(db, "nd0", "k1", "", "digest-1", 5)
-        check("no-decision: initial submit still allowed",
-              first["outcome"] == "ok", str(first))
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+    reference): it stops a provider-failure retry even after an INITIAL
+    attempt failed -- the latest recorded answer decides and keep_one never
+    buys a new paid round. A run with NO recorded fork decision passes no
+    flag and keeps today's plain provider-failure retry."""
     db, d = tmp_db(run_id="ko", repair_cap=3)
     try:
         first = L.allocate_attempt(db, "ko", "k1", "digest-1", estimated_cost=5)
@@ -454,6 +471,41 @@ def test_keep_one_stops_initial_submit_and_retry_after_initial_failure():
               retry["outcome"] == "ok"
               and retry["evidence"]["retry_category"] == "failed_job_retry",
               str(retry))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+# --- 6e. keep_one stops the FIRST take (round-3: initial with the flag) ---
+def test_keep_one_stops_initial_allocation_with_round_auth():
+    """Round-3 finding 1: a recorded keep_one passes require_round_auth=True
+    with an empty reference, but initial allocations bypassed both
+    authorization checks. A song with no prior ledger history was bought
+    despite keep_one. The flag means the caller's call carries the client's
+    current answer, so an initial allocation with the flag and no reference
+    is refused MISSING_AUTH_REF and persists nothing. Fails on the old head
+    (outcome ok, one row); passes after (rejected, zero rows)."""
+    db, d = tmp_db(run_id="ko-first", repair_cap=3)
+    try:
+        refused = L.allocate_attempt(db, "ko-first", "k1", "digest-1",
+                                     estimated_cost=5,
+                                     require_round_auth=True)
+        check("keep_one: initial allocation with the flag refused",
+              refused["outcome"] == "rejected"
+              and refused["reason_code"] == "MISSING_AUTH_REF",
+              str(refused))
+        got = rows(db, "SELECT count(*) FROM jobs WHERE run_id='ko-first'")
+        check("keep_one: initial refusal persists nothing",
+              got == [(0,)], str(got))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    db, d = tmp_db(run_id="plain-first", repair_cap=3)
+    try:
+        first = L.allocate_attempt(db, "plain-first", "k1", "digest-1",
+                                   estimated_cost=5)
+        check("no-decision: a plain initial allocation still allowed",
+              first["outcome"] == "ok"
+              and first["evidence"]["retry_category"] == "initial",
+              str(first))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -644,12 +696,14 @@ TESTS = [
     test_explicit_ordinal_two_still_repair_cap,
     test_omitted_ordinal_derived_and_one_again_refused,
     test_concurrent_authorized_retakes,
+    test_no_decision_keeps_plain_failed_job_retry,
     test_uncertain_reconcile_and_categories,
     test_qc_failure_keeps_provider_success,
     test_failed_job_retry_ignores_auth_ref,
     test_plain_retry_after_authorized_retake_still_allowed,
     test_withdrawn_auth_stops_retry_and_initial_spends_ref,
-    test_keep_one_stops_initial_submit_and_retry_after_initial_failure,
+    test_keep_one_stops_retry_after_initial_failure,
+    test_keep_one_stops_initial_allocation_with_round_auth,
     test_fractional_credits_and_missing_actuals,
     test_multi_track_counts_distinct,
     test_migration_100_preserves_rows,

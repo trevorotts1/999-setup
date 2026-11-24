@@ -1,0 +1,3149 @@
+#!/usr/bin/env python3
+"""song_choices: SONG APPROVAL, three labelled songs and the pick gate (FU-SONG-APPROVAL).
+
+Trevor 2026-10-09: add an audio approval gate like the storyboard one. When the
+client answers Yes to the SONG APPROVAL card question:
+
+  1. build_requests()    three Suno requests for the SAME lyric sheet, one per
+                         arrangement variant (data table: variants.json), each
+                         checked by song_dispatch.validate_request before spend;
+  2. generate_choices()  the three run IN PARALLEL; each take is judged by
+                         song_dispatch.judge_take (lyrics, hook, voice rules);
+                         a version that fails is regenerated once, then reported;
+  3. deliver_choices()   SONG-CHOICES/ in the delivery folder: "N - LABEL
+                         (description).mp3" with the title tag set to the same
+                         label (ffmpeg -c copy), plus README.txt;
+  4. record_pick()       the client's 1, 2 or 3; the picked file becomes the song;
+  5. refusal() /         NO picture timing, paid video, image or lip-sync job
+     dispatch_refusal()  runs until the pick is recorded. A missing or damaged
+                         pick blocks; nothing ever defaults.
+
+State lives in <run>/song-choices/ (state.json, pick.json). No state file means
+the client answered No: behaviour is exactly as before (one song, no wait).
+A state file with ``unanswered`` true means the SONG APPROVAL question was never
+answered (or the answer was corrupt or had no recorded author): NOTHING is
+bought -- not three songs, not one -- and every paid job waits while the
+question is put to the client again (D-3, 2026-11-13).
+stdlib only; generate/measure/save/runner are injected, so no network here.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+from song_dispatch import song_dispatch as _SD   # noqa: E402
+import suno_recipe as _R                          # noqa: E402  (same form as song_dispatch: works with the package or the bare module on sys.path)
+from song_choices import overlap as _OV            # noqa: E402  (WWFIX D2 item 3)
+import loud_failure                                # noqa: E402  (S75-053 warnings)
+
+TOOL_NAME = "song_choices"
+DIRNAME = "SONG-CHOICES"
+#: D-3: the SONG APPROVAL answer that is missing, corrupt or author-less. It is
+#: neither Yes nor No: the run WAITS and ASKS, and buys nothing.
+UNANSWERED = "unanswered"
+#: The SONG APPROVAL question the client must answer before any song is bought.
+SONG_APPROVAL_QUESTION = ("Do you want to hear and pick the song before any "
+                          "video is made? (three labelled songs)")
+#: Failed takes are presented for listening only, never on the offer surface.
+FOR_LISTENING = "FOR-LISTENING"
+BANNED_WORDS = ("choir", "reverb", "echo", "rap", "spoken", "speak", "acapella")
+#: WW-26: words no complete brief may carry whatever the style -- a sound the
+#: style bans outright, or a delivery the style text already names once.
+_BANNED_ALWAYS = ("choir", "reverb", "echo", "acapella")
+_BANNED_SHARED = ("spoken", "speak")
+#: WW-26: the ten directions a COMPLETE brief must carry. A brief missing any
+#: one is an identifier, not a treatment, and is refused BEFORE spend.
+#: The ORDER the brief is serialized in. ``arrangement`` is LAST so the
+#: assembled style ends with the variant's own arrangement clause, exactly as
+#: the base asserted, with the approved pace clause appended after it.
+_BRIEF_FIELDS = ("groove", "palette", "energy", "vocals", "hook",
+                 "scene_words", "problem_shift", "solution_shift", "ending",
+                 "arrangement")
+_DIRECTION_LABEL = {"groove": "groove", "palette": "palette",
+                    "arrangement": "arrangement", "energy": "energy",
+                    "vocals": "cast/vocals", "hook": "rap-vs-sung hook",
+                    "scene_words": "immediate scene words",
+                    "problem_shift": "problem shift",
+                    "solution_shift": "solution shift", "ending": "short ending"}
+#: WW-26: the shape a shared core plus a short suffix leaves in the FINAL
+#: serialized styles -- a long identical prefix and only a short remainder.
+#: A complete brief differs from its siblings from the first word.
+SHARED_CORE_PREFIX_MIN = 120
+SHARED_SUFFIX_MAX = 160
+EXTRA_GENERATIONS = 2          # the card pays for 2 more songs than the single-song run
+_TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "variants.json")
+
+
+class ChoiceError(ValueError):
+    """A loud refusal: nothing was spent or delivered on the broken path.
+
+    ``client_explanation`` (loud_failure.explain_stop) rides on the exception
+    from the three raw CLI refusals below (conflicting run roots, missing
+    transport, missing hook text): the exit stays a raw refusal but the agent
+    always has the four-part client message to send. The LYRICS_REJECTED path
+    fills it in ``cmd_generate`` via ``explain_refusal``.
+    """
+    client_explanation = None
+
+
+# ---- S75-W02-U3: the complete typed result envelope per attempt ----------
+#
+# The dispatch path used to save ONLY the provider evidence
+# (dispatch-envelope.json = {"variant_id", "evidence"}): the refusal reason and
+# its next action died at the generate() boundary, the lifecycle stages were
+# conflated into one "dispatched" number, and an empty take list walked out of
+# the CLI as exit 0 -- narrated as a successful dispatch. The typed envelope
+# below is preserved per attempt INSTEAD: the refusal triple (reason_code,
+# detail, next_action), the causal chain across every wrapper boundary, and
+# the lifecycle counts reported SEPARATELY.
+
+#: The envelope schema this module produces and consumes.
+ENVELOPE_SCHEMA_VERSION = "1.0.0"
+#: The seven lifecycle counts. SEVEN separate facts -- planned work, provider
+#: submission, provider acknowledgment, the settled bill, files materialized
+#: on disk, takes evaluated by the judge, takes delivered. No key stands in
+#: for another and no single total replaces them.
+COUNT_KEYS = ("planned", "submitted", "acknowledged", "billed",
+              "materialized", "evaluated", "delivered")
+#: The outcome vocabulary (the kie_dispatch envelope vocabulary, so a provider
+#: refusal keeps its own words as it crosses this module).
+ENVELOPE_OUTCOMES = ("ok", "rejected", "waiting", "error")
+#: Run narration: "ok" ONLY when every attempt actually dispatched. An empty
+#: take list or a refused dispatch is never "ok".
+RUN_OUTCOMES = ("ok", "partial", "error")
+#: What an attempt with no take and no refusal detail must tell the operator.
+_EMPTY_NEXT_ACTION = ("reconcile the provider job before any retry; an empty "
+                      "take list is never a successful dispatch")
+
+# ---- S75-018 (U-GEN319 C5): ONE status vocabulary for a produced version ---
+#
+# ``one_variant`` writes exactly ONE of these into ``result["status"]``. The
+# producer and all three consumers below share the constants and test
+# membership in a NAMED group, never a bare literal against a bare literal, so
+# a status can never fall between the offer list and the listening list and
+# vanish -- a paid task held for resume is not a run with no song.
+STATUS_PASS = "PASS"
+STATUS_FAILED = "FAILED"
+STATUS_HELD = "HELD"
+STATUS_SAVE_FAILED = "SAVE_FAILED"
+STATUS_MEASURE_FAILED = "MEASURE_FAILED"
+STATUS_REFUSED = "REFUSED"
+#: EVERY status the producer can write. A new one belongs HERE first.
+STATUSES = (STATUS_PASS, STATUS_FAILED, STATUS_HELD, STATUS_SAVE_FAILED,
+            STATUS_MEASURE_FAILED, STATUS_REFUSED)
+#: A take the JUDGE failed: its paid file is presented for LISTENING only, and
+#: the client answers the one fork question about it (order 2026-10-21).
+LISTENING_STATUSES = (STATUS_FAILED,)
+#: What every status actually means, in the client's words.
+STATUS_PLAIN = {
+    STATUS_PASS: ("the version passed its own checks but its take is not on "
+                  "the offer surface"),
+    STATUS_FAILED: "the version did not pass every required song check",
+    STATUS_HELD: ("the paid song was made and charged but could not be saved "
+                  "yet - it is held and is resumed by saving the same task, so "
+                  "nothing has to be bought again"),
+    STATUS_SAVE_FAILED: ("the song was made but saving it into the run folder "
+                         "failed, so there is no file to offer yet"),
+    STATUS_MEASURE_FAILED: ("the song was made but measuring it failed, so it "
+                            "could not be checked against the song gates"),
+    STATUS_REFUSED: "the song request was refused, so no song was produced",
+}
+
+
+def _status(result):
+    """One result's status in the module's vocabulary shape (stripped, upper)."""
+    return str((result or {}).get("status") or "").strip().upper()
+
+
+def _nothing_to_offer_refusal(results):
+    """S75-018: the refusal that NAMES what happened to every version, instead
+    of a bare "nothing to offer". The case that matters most is a paid task
+    held for resume: it is never reported as a run that made no song."""
+    groups = {}
+    for r in results or []:
+        groups.setdefault(_status(r), []).append(str(r.get("n")))
+    lines = ["no song version passed every required song gate; nothing to offer"]
+    for st in STATUSES:
+        if st not in groups:
+            continue
+        lines.append("version %s: %s" % (", ".join(groups[st]), STATUS_PLAIN[st]))
+    for st in sorted(set(groups) - set(STATUSES)):          # an unknown is NAMED
+        lines.append("version %s: unknown status %r"
+                     % (", ".join(groups[st]), st))
+    return "; ".join(lines)
+
+
+def make_counts(**kw):
+    """The seven lifecycle counts as ONE typed object: every key present, each
+    a non-negative integer. Counts are never conflated -- a caller fills the
+    stages it measured and leaves the rest at 0, never invented."""
+    unknown = sorted(set(kw) - set(COUNT_KEYS))
+    if unknown:
+        raise ChoiceError("unknown attempt counts %r (the counts are exactly %s)"
+                          % (unknown, list(COUNT_KEYS)))
+    out = {}
+    for k in COUNT_KEYS:
+        v = kw.get(k, 0)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ChoiceError("count %r must be a non-negative integer; got %r" % (k, v))
+        out[k] = v
+    return out
+
+
+def add_counts(*rows):
+    """Per-key sum over attempt count objects. The keys never merge: planned
+    stays planned, delivered stays delivered."""
+    out = make_counts()
+    for row in rows or ():
+        if not isinstance(row, dict):
+            raise ChoiceError("counts must be an object; got %r" % (type(row).__name__,))
+        add = make_counts(**{k: row[k] for k in COUNT_KEYS
+                             if row.get(k) is not None})
+        out = make_counts(**{k: out[k] + add[k] for k in COUNT_KEYS})
+    return out
+
+
+def causal_link(stage, reason_code="", detail=""):
+    """ONE boundary hop in a refusal's causal chain."""
+    return {"stage": str(stage), "reason_code": str(reason_code or ""),
+            "detail": str(detail or "")}
+
+
+def attempt_envelope(variant_id, attempt_id, outcome, counts,
+                     reason_code="", detail="", next_action="",
+                     evidence=None, causal_chain=()):
+    """THE typed result envelope preserved per attempt (schema
+    ENVELOPE_SCHEMA_VERSION): outcome, refusal reason, next action, the seven
+    counts reported separately and the causal chain. ``ok`` is the ONLY
+    successful-dispatch narration; every other outcome must carry its refusal
+    reason and next action forward. Counts are required and complete: an
+    envelope never carries a partial count object."""
+    if not _nonempty_str(variant_id):
+        raise ChoiceError("variant_id must be a non-empty string")
+    if not _nonempty_str(attempt_id):
+        raise ChoiceError("attempt_id must be a non-empty string")
+    if outcome not in ENVELOPE_OUTCOMES:
+        raise ChoiceError("outcome must be one of %s; got %r"
+                          % (list(ENVELOPE_OUTCOMES), outcome))
+    if outcome != "ok":
+        if not _nonempty_str(reason_code):
+            raise ChoiceError("a refused attempt envelope must carry its refusal reason_code")
+        if not _nonempty_str(next_action):
+            raise ChoiceError("a refused attempt envelope must carry its next_action")
+    chain = []
+    for link in causal_chain or ():
+        if not isinstance(link, dict) or not link.get("stage"):
+            raise ChoiceError("causal_chain entries need a stage; got %r" % (link,))
+        chain.append(causal_link(link.get("stage"), link.get("reason_code", ""),
+                                 link.get("detail", "")))
+    env = {"schema_version": ENVELOPE_SCHEMA_VERSION, "tool": TOOL_NAME,
+           "variant_id": str(variant_id), "attempt_id": str(attempt_id),
+           "outcome": outcome,
+           "reason_code": str(reason_code or ""),
+           "detail": str(detail or ""),
+           "next_action": str(next_action or ""),
+           "counts": make_counts(**(counts or {})),
+           "causal_chain": chain,
+           "evidence": dict(evidence or {}),
+           "dispatch_ok": outcome == "ok"}
+    if outcome != "ok":   # owner order 2026-11-20: never a dead stop
+        env["client_explanation"] = loud_failure.explain_stop(
+            env["reason_code"], None, env)
+    return env
+
+
+def carry(envelope, stage, detail=""):
+    """Cross a wrapper boundary WITHOUT losing the envelope: the refusal triple
+    is preserved verbatim (the first cause is never rewritten) and this
+    boundary is appended to the causal chain. Returns a NEW envelope."""
+    if not isinstance(envelope, dict) or "counts" not in envelope:
+        raise ChoiceError("carry() needs a typed attempt envelope; got %r"
+                          % (type(envelope).__name__,))
+    return attempt_envelope(
+        envelope.get("variant_id"), envelope.get("attempt_id"),
+        envelope.get("outcome"), envelope.get("counts"),
+        reason_code=envelope.get("reason_code", ""),
+        detail=envelope.get("detail", ""),
+        next_action=envelope.get("next_action", ""),
+        evidence=envelope.get("evidence"),
+        causal_chain=list(envelope.get("causal_chain") or [])
+        + [causal_link(stage, envelope.get("reason_code", ""), detail)])
+
+
+def _nonempty_str(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
+#: X05: the dispatcher's materialization holds. A provider task that succeeded
+#: and charged but whose save produced no verified file is a HOLD, not a
+#: failure: it is resumed by RE-SAVING this same task id, never by generating
+#: again.
+SAVE_HOLD_PREFIX = "KIE_SAVE_"
+
+
+def _save_hold(env):
+    """X05: the dispatcher's save hold, read from the preserved attempt
+    envelope. None unless the attempt carries a resumable save-only recovery --
+    a hold nobody can resume by saving is not accepted as one."""
+    if not isinstance(env, dict):
+        return None
+    code = env.get("reason_code")
+    if not (isinstance(code, str) and code.startswith(SAVE_HOLD_PREFIX)):
+        return None
+    ev = env.get("evidence") if isinstance(env.get("evidence"), dict) else {}
+    resume = ev.get("resume") if isinstance(ev.get("resume"), dict) else {}
+    if resume.get("command") != "save" or not _nonempty_str(resume.get("task_id")):
+        return None
+    return {"reason_code": code, "detail": env.get("detail") or "",
+            "next_action": env.get("next_action") or "",
+            "task_id": resume["task_id"],
+            "save_dir": resume.get("save_dir"),
+            "info": resume.get("info"),
+            "counts": env.get("counts") or {},
+            "credits": ev.get("credits_consumed"),
+            "actual_cost": ev.get("actual_cost")}
+
+
+def _held_result(n, variant, env, hold, submitted_digest=None, spent_cents=None):
+    """X05: ONE held attempt reported as itself -- never ``ok``, never
+    ``FAILED``. The paid task and its charge are retained, delivery is not
+    claimed, and ``recovery`` names the save-only resume: no resubmit.
+
+    S75-018 (X06): a hold reached AFTER the transport returned carries the
+    admitted-snapshot digest too, so the held submission is still provably the
+    admitted one. A hold raised before the transport returned has no digest to
+    carry and reports ``None`` -- never a fabricated value.
+
+    S75-018: ``spent_cents`` is the charge the held attempt ACTUALLY incurred,
+    passed through unchanged -- ``run_takes``' own figure where it returned,
+    the ledger-settled ``actual_cost`` of the held envelope otherwise. An
+    unknown charge stays ``None``; it is never reported as zero."""
+    return {"n": n, "variant": variant, "status": STATUS_HELD, "take": None,
+            "heard": None, "concerns": [], "receipt": None,
+            "attempt": 1, "attempts": 1, "receipts": [],
+            "submitted_digest": submitted_digest,
+            "spent_cents": spent_cents,
+            "delivery": False, "resubmit": False,
+            "recovery": {"command": "save", "task_id": hold["task_id"],
+                         "save_dir": hold["save_dir"], "info": hold["info"]},
+            "hold": hold, "envelope": env, "counts": env["counts"]}
+
+
+# X05 deletion (U-GEN304): ``save_only_plan`` and ``resume_save_only`` are
+# gone. They were a finished save-only resume with ZERO callers -- no production
+# recovery step resumes a held attempt, so the pair promised an act nothing
+# could take. The retained charge and the operator's exact resume inputs stay on
+# the HELD result's ``recovery``/``hold`` blocks, and the on-disk envelope keeps
+# the task id, so an operator can still run Skill 74 ``save --task-id`` by hand.
+# Adding an automated caller needs a new authorized recovery surface, not an
+# uncalled function pair inside this module.
+
+
+def _brief_refusals(variant):
+    """WW-26: the ten-direction completeness of ONE variant brief. [] = complete.
+
+    A brief that names its genre but carries no treatment is an identifier, not
+    a brief; this is the check ``_require_three`` runs, so completeness is
+    enforced before any generation, not only where the data is loaded."""
+    brief = variant.get("brief") if isinstance(variant, dict) else None
+    if not isinstance(brief, dict):
+        return ["MISSING_BRIEF: variant %r carries no complete brief" % (variant.get("id"),)]
+    out = []
+    for f in _BRIEF_FIELDS:
+        val = brief.get(f)
+        if not isinstance(val, str) or len(val.strip()) < 8:
+            out.append("MISSING_DIRECTION: variant %r brief lacks the %s direction"
+                       % (variant.get("id"), _DIRECTION_LABEL[f]))
+    return out
+
+def _banned_words(style_id):
+    """WW-26: the words a brief for THIS style may not carry. ``rap`` is refused
+    only for a style that delivers none -- an R&B Flow brief is REQUIRED to name
+    the rap-versus-sung hook, so the old blanket ban would forbid the direction."""
+    _sr = getattr(_R, "suno_recipe", _R)
+    try:
+        sid = _sr._style_key(style_id)
+    except Exception:   # noqa: BLE001  the catalog owns the fifteen additions
+        sid = str(style_id)
+    try:
+        raps = sid in getattr(_sr, "RAP_STYLE_IDS", ()) or bool(
+            _sr.music_block(sid).get("rap_allowed"))
+    except Exception:   # noqa: BLE001  no music template yet -> ask the catalog
+        try:
+            from music_styles import catalog as _CAT
+            raps = "rap" in _CAT.CATALOG[_CAT._style_key(sid)]["deliveries"]
+        except Exception:   # noqa: BLE001  unknown style -> the stricter set
+            raps = False
+    words = list(_BANNED_ALWAYS) + list(_BANNED_SHARED)
+    if not raps:
+        words += ["rap", "rapping"]
+    return tuple(words)
+
+def variants_for(style_id):
+    """WW-26: the three COMPLETE briefs for a music style (data table). Fails
+    closed on a missing/duplicate set, an incomplete brief, a banned word, a
+    genre substitution or a count that is not exactly ONE upbeat role."""
+    with open(_TABLE, encoding="utf-8") as f:
+        rows = json.load(f).get(str(style_id))
+    if not rows or len(rows) != 3:
+        raise ChoiceError("no three-variant set for music style %r in variants.json" % (style_id,))
+    banned = _banned_words(style_id)
+    for r in rows:
+        for why in _brief_refusals(r):
+            raise ChoiceError(why)
+        if r.get("genre") != str(style_id):
+            raise ChoiceError("variant %r substitutes genre %r for the chosen %r"
+                              % (r.get("id"), r.get("genre"), style_id))
+    for r in rows:
+        text = " ".join(str(r["brief"][f]) for f in _BRIEF_FIELDS).lower()
+        bad = [w for w in banned if re.search(r"\b%s" % w, text)]
+        if bad:
+            raise ChoiceError("variant %r brief breaks the style rules: %s" % (r["id"], bad))
+        if len(r["brief"]["arrangement"]) > 140:
+            raise ChoiceError("variant %r arrangement clause too long" % (r["id"],))
+        # back-compat: the trailing clause is the brief's own arrangement sentence
+        r["clause"] = r["brief"]["arrangement"]
+    if sum(1 for r in rows if r.get("upbeat")) != 1:
+        raise ChoiceError("exactly ONE variant must be the explicitly upbeat role for %r"
+                          % (style_id,))
+    return rows
+
+def _brief_text(variant, vocal_gender):
+    """One variant's authored brief CORE, in order, as the start of the provider
+    style. The arrangement sentence is EXCLUDED here and passed back separately
+    as the style's trailing clause, so the style ends with the variant's own
+    arrangement exactly as the base asserted."""
+    _sr = getattr(_R, "suno_recipe", _R)
+    word = _sr.vocal_gender_word(vocal_gender)
+    brief = variant["brief"]
+    return " ".join(str(brief[f]).replace("{gender}", word).strip()
+                    for f in _BRIEF_FIELDS if f != "arrangement")
+
+def _common_prefix_len(strs):
+    if not strs:
+        return 0
+    n = min(len(s) for s in strs)
+    i = 0
+    while i < n and all(s[i] == strs[0][i] for s in strs):
+        i += 1
+    return i
+
+def _check_three_briefs(rows, vocal_gender="f"):
+    """WW-26: the pre-spend gate on the EXACT serialized three variant payloads.
+
+    Reads ``request["input"]["style"]`` after every transformation and refuses a
+    missing cast/vocals/rap/shift/upbeat direction, a shared-core-plus-suffix
+    shape, a genre substitution, a wrong upbeat count and a final over-cap text.
+    The value the guard tests is printed at this real call site."""
+    _sr = getattr(_R, "suno_recipe", _R)
+    word = _sr.vocal_gender_word(vocal_gender)
+    refusals, styles, genres, upbeats = [], [], [], 0
+    for v, req in rows:
+        style = ((req.get("input") or {}).get("style")) or ""
+        styles.append(style)
+        brief = v.get("brief") or {}
+        print("  WW-26 serialized input.style [%s] len=%d chars" % (v.get("id"), len(style)),
+              file=sys.stderr)
+        for f in _BRIEF_FIELDS:
+            need = str(brief.get(f, "")).replace("{gender}", word)
+            if not need or need not in style:
+                refusals.append("MISSING_DIRECTION: variant %s style lacks the %s "
+                                "direction (%r)" % (v.get("id"), _DIRECTION_LABEL[f], need))
+        if len(style) > _sr.SUNO_STYLE_FIELD_MAX:
+            refusals.append("STYLE_TOO_LONG: variant %s style is %d chars, limit %d"
+                            % (v.get("id"), len(style), _sr.SUNO_STYLE_FIELD_MAX))
+        genres.append(brief.get("genre") or v.get("genre"))
+        if v.get("upbeat"):
+            upbeats += 1
+    if len(set(genres)) != 1 or any(g is None for g in genres):
+        refusals.append("GENRE_SUBSTITUTION: the three variants name %r" % (genres,))
+    if upbeats != 1:
+        refusals.append("UPBEAT_DIRECTION: exactly one variant must be the upbeat role; got %d"
+                        % upbeats)
+    if styles and len(styles) == 3:
+        lcp = _common_prefix_len(styles)
+        shortest = min(len(s) for s in styles)
+        print("  WW-26 three styles: common prefix %d chars, shortest %d chars"
+              % (lcp, shortest), file=sys.stderr)
+        if lcp >= SHARED_CORE_PREFIX_MIN and (shortest - lcp) <= SHARED_SUFFIX_MAX:
+            refusals.append("SHARED_CORE_PLUS_SUFFIX: the three variants share %d leading "
+                            "chars and differ only by a suffix of %d chars"
+                            % (lcp, shortest - lcp))
+    if refusals:
+        raise ChoiceError("three complete briefs refused before spend: %s" % "; ".join(refusals))
+    return rows
+
+
+def extra_cost_cents():
+    """What the Yes answer adds to the song line: two more generations."""
+    return EXTRA_GENERATIONS * _SD.GEN_COST_CENTS
+
+
+def suno_max_seconds():
+    """Suno's own duration ceiling, read from the prompt-limit catalog.
+
+    S75-105 step 3: the ceiling is DATA (``prompt_limits.suno_caps``), never a
+    typed 360 in this file. None only when the catalog carries no number at
+    all; the caller then keeps the provider-side check as the last word.
+    """
+    import prompt_limits                     # noqa: PLC0415 - core is on sys.path
+    dur = (prompt_limits.suno_caps() or {}).get("duration") or {}
+    mx = dur.get("max_seconds")
+    if isinstance(mx, int) and not isinstance(mx, bool) and mx > 0:
+        return mx
+    return None
+
+
+def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="f", **kw):
+    """[(variant, request)] x3: the style's own request plus the variant clause.
+    Every request must pass song_dispatch.validate_request or none is sent.
+
+    WW-07: the approved ``pace_plan`` is written into the FINAL provider
+    ``input.style``, AFTER the ending and arrangement clauses: the
+    lowest-point drop and the return ride the request as internal
+    ``_pace_plan`` for the judge -- never to KIE. The arrangement clause is
+    appended BEFORE the drop and return: assembling the pace clause inside
+    ``build_request`` put it ahead of the variant clause, which is the WW-07
+    defect this fixes."""
+    # S75-105 step 3: an unsupported length is refused BY NAME, before any
+    # request is built and long before any provider call. The ceiling comes
+    # from the prompt-limit catalog, so an old run or a typed brief can never
+    # reach the provider with a duration the song stage refuses (the envelope
+    # check only knew "duration must be 10-360 s").
+    _mx = suno_max_seconds()
+    try:
+        _too_long = _mx is not None and float(length_s) > float(_mx)
+    except (TypeError, ValueError):
+        _too_long = False
+    if _too_long:
+        raise ChoiceError(
+            "SONG_LENGTH_NOT_SUPPORTED: the ad asks for a %s-second song and the song "
+            "provider makes one take of at most %s seconds; choose %s seconds or less."
+            % (length_s, _mx, _mx))
+    pace_plan = kw.pop("pace_plan", None)   # WW-07: into the style, never into the payload
+    # WW-07 / WW-26: each variant's style is its OWN complete brief, assembled
+    # by suno_recipe.brief_style_text -- compliance trailer first, the variant's
+    # whole brief next, the approved pace clause LAST, cap on the FINAL text.
+    # pace_clause / SUNO_STYLE_FIELD_MAX live on the bare module, not the package
+    # (same resolution music_director uses).
+    _sr = getattr(_R, "suno_recipe", _R)
+    out = []
+    for v in variants_for(style_id):
+        req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
+        # WW-30: the style lands on the NESTED input.style -- the createTask
+        # envelope carries directions inside ``input`` and nothing at the top
+        # level except the route model and the callBackUrl.
+        style = _sr.brief_style_text(style_id, _brief_text(v, vocal_gender),
+                                     sheet, vocal_gender, pace_plan,
+                                     tail_clause=v["brief"]["arrangement"],
+                                     revoices_lead=bool(v.get("revoices_lead")))
+        req = dict(req, input=dict(req["input"], style=style))
+        # FU-HOOK-PLACEMENT: the hook plan must ride the request BEFORE the
+        # pre-spend validation so the hook-count gate judges it with the same
+        # plan the judge later sees (validate_request honors _hook_plan). It
+        # never reaches KIE: run_takes moves it into the plan as metadata.
+        if kw.get("hook_plan") is not None:
+            req = dict(req, _hook_plan=kw["hook_plan"])
+        errs = _SD.validate_request(req, style_id, client_text, length_s,   # 1758: delivered_s required
+                                    pace_plan=pace_plan)
+        if errs:
+            raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))
+        # The judge needs the style (FU-RNBFLOW-SONG song_contract) and the hook
+        # plan (FU-HOOK-PLACEMENT hook_placement): ride them on the request;
+        # run_takes moves _hook_plan into the plan, generate_choices turns
+        # _style_id into style_id, and neither reaches KIE.
+        req = dict(req, _style_id=style_id)
+        # D1 / F2: the ordered pace change rides the request like the hook
+        # plan; run_takes moves _pace_plan into the plan and it NEVER reaches KIE.
+        if pace_plan is not None:
+            req["_pace_plan"] = pace_plan
+        out.append((v, req))
+    _check_three_briefs(out, vocal_gender)
+    return out
+
+
+def _variant_of(row):
+    """The variant record a guard row exposes: a ``(variant, request)`` pair, a
+    result dict carrying ``variant``, or None when the row carries neither."""
+    if isinstance(row, (tuple, list)) and row:
+        return row[0] if isinstance(row[0], dict) else None
+    if isinstance(row, dict):
+        v = row.get("variant")
+        return v if isinstance(v, dict) else None
+    return None
+
+def _require_three(rows, key=lambda r: r):
+    """The count, distinctness AND completeness guard. Raises BEFORE any
+    generation, so a malformed call spends nothing. Three versions must be
+    THREE; three DISTINCT arrangements; and -- WW-26 -- three COMPLETE
+    treatments, not identifiers only: every brief must carry all ten
+    directions and exactly ONE role must be the explicit upbeat option."""
+    if len(rows) != 3:
+        raise ChoiceError("three versions are required; got %d" % len(rows))
+    ids = [key(r) for r in rows]
+    if len(set(ids)) != 3:
+        raise ChoiceError("the three versions must be three DISTINCT arrangements; got %r" % (ids,))
+    variants = [_variant_of(r) for r in rows]
+    if any(v is not None and "brief" in v for v in variants):
+        for v in variants:
+            if v is None or "brief" not in v:
+                raise ChoiceError("the three versions must carry a COMPLETE brief each, "
+                                  "not identifiers only")
+            for why in _brief_refusals(v):
+                raise ChoiceError(why)
+        if sum(1 for v in variants if v.get("upbeat")) != 1:
+            raise ChoiceError("exactly ONE of the three versions must be the explicit "
+                              "upbeat role")
+    return rows
+
+
+def _counts_from_dispatch(env, ev):
+    """The DISPATCH-boundary counts of one attempt, measured from the provider
+    envelope and its evidence -- planned 1 (one generation per attempt),
+    submitted when a provider submission was issued, acknowledged on the    provider's task acknowledgment, billed when the ledger settled a cost,    materialized as the saved files on disk. evaluated/delivered belong to the    judge boundary and stay 0 here: recorded, never invented."""
+    submitted = 1 if (ev.get("accepted_submit_at") or ev.get("task_id")
+                      or ev.get("generated")) else 0
+    acknowledged = 1 if ev.get("accepted_submit_at") else 0
+    billed = 1 if ev.get("actual_cost") is not None else 0
+    saved = ev.get("saved_paths") or []
+    materialized = sum(1 for p in saved
+                       if isinstance(p, str) and os.path.isfile(p))
+    return make_counts(planned=1, submitted=submitted,
+                       acknowledged=acknowledged, billed=billed,
+                       materialized=materialized)
+
+
+def _finish_envelope(generate, variant, r, got, heard):
+    """The judge boundary's measured counts (evaluated/delivered) folded into
+    the attempt envelope the transport preserved. An attempt that ended with
+    NO take at all is never narrated as a successful dispatch, whatever the
+    transport called its outcome: an empty take list is an error envelope."""
+    store = getattr(generate, "attempt_envelopes", None)
+    env = store.get(variant["id"]) if isinstance(store, dict) else None
+    evaluated = len(r.get("receipts") or [])
+    delivered = 1 if got else 0
+    materialized = len([t for t in (heard or []) if isinstance(t, dict)])
+    if env is None:
+        # No dispatch envelope (an injected transport): only what is
+        # observable is recorded. The transport call IS the submission act.
+        if delivered or materialized:
+            return attempt_envelope(
+                variant["id"], "a1", "ok",
+                make_counts(planned=1, submitted=1, materialized=materialized,
+                            evaluated=evaluated, delivered=delivered))
+        return attempt_envelope(
+            variant["id"], "a1", "error",
+            make_counts(planned=1, submitted=1),
+            reason_code="EMPTY_TAKE_LIST",
+            detail="the generation transport returned no take",
+            next_action=_EMPTY_NEXT_ACTION,
+            causal_chain=[causal_link("run_takes", "EMPTY_TAKE_LIST",
+                                      "generate() returned zero takes")])
+    counts = make_counts(**dict(env["counts"], evaluated=evaluated,
+                                delivered=delivered))
+    outcome, reason, detail, nxt = (env["outcome"], env["reason_code"],
+                                    env["detail"], env["next_action"])
+    chain = list(env["causal_chain"])
+    if outcome == "ok" and not delivered and not materialized and not evaluated:
+        outcome = "error"
+        reason = "EMPTY_TAKE_LIST"
+        detail = detail or "the attempt produced no take"
+        nxt = nxt or _EMPTY_NEXT_ACTION
+    if outcome != "ok":
+        # the refusal crossed this boundary too; the chain says so
+        chain = chain + [causal_link("run_takes", reason,
+                                     "refusal carried across the take-judge boundary")]
+    return attempt_envelope(env["variant_id"], env["attempt_id"], outcome,
+                           counts, reason_code=reason, detail=detail,
+                           next_action=nxt, evidence=env["evidence"],
+                           causal_chain=chain)
+
+
+def _refused_envelope(generate, variant, exc):
+    """A transport/run_takes exception folded into the typed refusal envelope:
+    the reason and the next action survive the wrapper boundary and the
+    failure joins the causal chain. Dispatch facts already evidenced are    preserved; nothing beyond them is claimed."""
+    store = getattr(generate, "attempt_envelopes", None)
+    env = store.get(variant["id"]) if isinstance(store, dict) else None
+    msg = str(exc) or type(exc).__name__
+    code = (msg.split(":", 1)[0].strip() or type(exc).__name__)[:80]
+    detail = (msg.split(":", 1)[1].strip() if ":" in msg else msg)[:400]
+    nxt = ("fix the named refusal and re-run; nothing here may be narrated "
+           "as a successful dispatch")
+    if env is None:
+        return attempt_envelope(
+            variant["id"], "a1", "error", make_counts(planned=1),
+            reason_code=code, detail=detail, next_action=nxt,
+            causal_chain=[causal_link("run_takes", code, detail)])
+    return attempt_envelope(
+        env["variant_id"], env["attempt_id"],
+        "error" if env["outcome"] == "ok" else env["outcome"],
+        make_counts(**dict(env["counts"], evaluated=0, delivered=0)),
+        reason_code=env["reason_code"] or code,
+        detail=env["detail"] or detail,
+        next_action=env["next_action"] or nxt,
+        evidence=env["evidence"],
+        causal_chain=list(env["causal_chain"])
+        + [causal_link("run_takes", code, detail)])
+
+
+def _persist_envelope(run_dir, variant_id, env):
+    """Persist ONE attempt envelope WITHOUT letting a filesystem fault replace
+    the structured result the caller already holds.
+
+    SAVE-FAILED RECOVERY: after the save transport fails, the recovery
+    envelope used to be written under the SAME obstructed music path and
+    raised NotADirectoryError, so the paid-task hold never reached the caller.
+    Persistence is EVIDENCE, never the response: a fault is returned to be
+    carried on the envelope as ``persistence_error`` and the hold is still
+    returned. Nothing here resubmits, resets the ledger or claims success.
+    """
+    if not run_dir:
+        return "", ""
+    try:
+        return _write_envelope(run_dir, variant_id, env), ""
+    except (OSError, TypeError, ValueError) as exc:
+        return "", ("%s: %s" % (type(exc).__name__, str(exc)[:300]))
+
+
+def _save_failed_envelope(generate, variant, failure, judged, saved_count):
+    """A SAVE-transport failure AFTER a paid take exists is NOT a refused
+    dispatch -- and it is classified from the take the SAVE boundary actually
+    raised on, never from an earlier take that merely happened to be heard.
+
+    The provider task succeeded and the take was generated and judged; only
+    its materialization into the run failed. The dispatch facts already
+    evidenced are preserved (task id, submitted/acknowledged, the settled or
+    UNKNOWN charge) and THAT paid take is held for recovery. Nothing here
+    resubmits, resets the ledger, or claims the run was free.
+    """
+    store = getattr(generate, "attempt_envelopes", None)
+    env = store.get(variant["id"]) if isinstance(store, dict) else None
+    take = (failure or {}).get("take") or {}
+    exc = (failure or {}).get("error")
+    msg = (str(exc) or type(exc).__name__) if exc is not None else "unknown save error"
+    path = str(take.get("audio_path") or "")
+    detail = ("the take was generated and judged but the save transport failed: "
+              "%s" % msg)[:400]
+    nxt = ("recover the SAME paid take%s and retry ONLY the save transport; "
+           "do not resubmit and do not generate again. Where the charge is "
+           "UNKNOWN it stays unknown and is never reported as zero."
+           % ((" at %r" % path) if path else ""))
+    evaluated = len(judged)
+    base_ev = {"generated": True, "materialized": bool(saved_count),
+               "outcome_class": "generated_download_failed",
+               "failed_operation": "save", "failing_audio_path": path or None,
+               "save_error": detail}
+    if env is None:
+        # No dispatch envelope was preserved: the produced take still proves
+        # the provider submission and its acknowledgment, but no bill was
+        # measured here -- it stays UNKNOWN, never a zero-cost claim.
+        counts = make_counts(planned=1, submitted=1, acknowledged=1, billed=0,
+                             materialized=saved_count, evaluated=evaluated,
+                             delivered=0)
+        ev = dict(base_ev, task_id=None, credits_consumed=None, actual_cost=None,
+                  warnings=["ACTUAL_COST_UNREPORTED"])
+        return attempt_envelope(
+            variant["id"], "a1", "error", counts,
+            reason_code="SONG_SAVE_FAILED", detail=detail, next_action=nxt,
+            evidence=ev,
+            causal_chain=[causal_link("save", "SONG_SAVE_FAILED", detail)])
+    counts = make_counts(**dict(env["counts"], materialized=saved_count,
+                                delivered=0, evaluated=evaluated))
+    ev = dict(env.get("evidence") or {})
+    ev.update(base_ev)
+    return attempt_envelope(
+        env["variant_id"], env["attempt_id"], "error", counts,
+        reason_code="SONG_SAVE_FAILED", detail=detail, next_action=nxt,
+        evidence=ev,
+        causal_chain=list(env["causal_chain"])
+        + [causal_link("save", "SONG_SAVE_FAILED", detail)])
+
+
+def _operation_failed_envelope(generate, variant, failure, operation, judged,
+                               saved_count):
+    """A MEASUREMENT (or other post-dispatch) failure is classified at the
+    boundary that raised it. An earlier take that was already saved does NOT
+    identify the current failing operation: calling a second track's
+    measurement error a save failure of the first is a false diagnosis.
+
+    Dispatch facts already evidenced are preserved verbatim (task id,
+    submitted/acknowledged, settled or UNKNOWN charge); the failing take and
+    operation are named explicitly, and nothing is held as the failing take.
+    """
+    store = getattr(generate, "attempt_envelopes", None)
+    env = store.get(variant["id"]) if isinstance(store, dict) else None
+    take = (failure or {}).get("take") or {}
+    exc = (failure or {}).get("error")
+    msg = (str(exc) or type(exc).__name__) if exc is not None else "unknown error"
+    path = str(take.get("audio_path") or "")
+    code = {"measure": "SONG_MEASURE_FAILED"}.get(operation,
+                                                  "SONG_OPERATION_FAILED")
+    detail = ("the %s step failed for the paid take%s: %s"
+              % (operation, (" at %r" % path) if path else "", msg))[:400]
+    nxt = ("retry ONLY the %s step for the retained paid take%s; do not "
+           "resubmit and do not generate again. A failure in this step is "
+           "not a save failure of any earlier take."
+           % (operation, (" at %r" % path) if path else ""))
+    evaluated = len(judged)
+    base_ev = {"generated": True, "materialized": saved_count,
+               "outcome_class": "generated_%s_failed" % operation,
+               "failed_operation": operation,
+               "failing_audio_path": path or None,
+               "operation_error": detail}
+    if env is None:
+        counts = make_counts(planned=1, submitted=1, acknowledged=1, billed=0,
+                             materialized=saved_count, evaluated=evaluated,
+                             delivered=0)
+        ev = dict(base_ev, task_id=None, credits_consumed=None, actual_cost=None,
+                  warnings=["ACTUAL_COST_UNREPORTED"])
+        return attempt_envelope(
+            variant["id"], "a1", "error", counts,
+            reason_code=code, detail=detail, next_action=nxt, evidence=ev,
+            causal_chain=[causal_link(operation, code, detail)])
+    counts = make_counts(**dict(env["counts"], materialized=saved_count,
+                                delivered=0, evaluated=evaluated))
+    ev = dict(env.get("evidence") or {})
+    ev.update(base_ev)
+    return attempt_envelope(
+        env["variant_id"], env["attempt_id"], "error", counts,
+        reason_code=code, detail=detail, next_action=nxt, evidence=ev,
+        causal_chain=list(env["causal_chain"])
+        + [causal_link(operation, code, detail)])
+
+def _record_take_acceptance(run_dir, variant, take, receipt, plan):
+    """S75-052: write the WW-21 acceptance record WHERE THE TAKE IS JUDGED.
+
+    Called immediately after the take is judged and saved, for EVERY verdict
+    (PASS, FAIL, UNMEASURED). The record is the SAME key ``acceptance_from_run``
+    reads, so a take on disk can never be "judged but unrecorded" by accident.
+
+    A failure to write never breaks the paid save path: no record is left, and
+    ``acceptance_from_run`` then reports the take as "take saved but never
+    judged", which BLOCKS. Failing closed, never a silent PASS.
+    """
+    if not run_dir:
+        return None
+    try:
+        binding = _SD.take_binding(
+            (take or {}).get("audio_path"),
+            str((plan or {}).get("creative_fingerprint")
+                or (plan or {}).get("story_revision") or "take"))
+        results = _SD.audio_results_for(take, receipt, plan or {}, run_dir,
+                                        binding=binding)
+        return _SD.record_acceptance(run_dir, variant["id"], binding, results,
+                                     required=_SD.required_for(plan or {}))
+    except Exception:               # noqa: BLE001 - never break the save path
+        return None
+
+
+def one_variant(n, variant, request, plan, generate, measure, save, script_words, hook_text,
+                spoken_range_pct=None, **kw):
+    """THE single-variant worker path. Every caller (the umbrella three-up
+    run and the per-unit `--variant`/`--unit-id` run) calls this ONE helper:
+    there is no second worker path to drift. ONE generation per attempt.
+
+    SONG-FAILURE VERDICT BELONGS TO THE CLIENT (order 2026-10-21): a take the
+    song judge FAILS is NEVER regenerated here. It is returned with the judge's
+    named concerns so the client can listen and answer the one fork question
+    (``failure_fork_message``); only the client's recorded answer authorizes a
+    new paid round. There is no silent retry loop.
+
+    WW-18: `run_takes` delivers only a take whose REQUIRED gate set all PASSed
+    (its constituent receipt is current), so `status` is never a take that a
+    required gate blocked; the receipt rides the result to the delivery gate.
+
+    S75-W02-U3: every result carries the COMPLETE typed attempt envelope    (``envelope``) and its seven counts (``counts``) -- refusal reason, next    action and the causal chain survive this wrapper boundary, and the counts    are never conflated. An attempt that ended with no take can never be    narrated as a successful dispatch."""
+    opts = dict(kw)
+    opts.setdefault("style_id", request.get("_style_id"))
+    # S75-W02-U3: where the FINALIZED envelope is written. run_takes never    # sees this key.
+    envelope_run_dir = _canonical_run_dir(opts.pop("envelope_run_dir", None))
+    # X05/X06: the explicit run IDENTITY is normalised here and forwarded to
+    # run_takes (which persisted it as its own parameter). A disagreement with
+    # the envelope destination is refused BEFORE any generation: one run root.
+    explicit_run_dir = _canonical_run_dir(opts.pop("run_dir", None))
+    if explicit_run_dir and envelope_run_dir and explicit_run_dir != envelope_run_dir:
+        raise ChoiceError(
+            "REFUSED: envelope destination %r differs from the run identity %r"
+            % (envelope_run_dir, explicit_run_dir))
+    run_dir = explicit_run_dir or envelope_run_dir
+    if run_dir:
+        opts["run_dir"] = run_dir
+    req = {k: x for k, x in request.items() if k != "_style_id"}
+    heard = []             # every paid take offered to the save boundary
+    judged = []            # every judge receipt, kept even if the save dies
+    saved = []             # takes the REAL save transport materialized
+    save_failures = []     # ONLY an exception raised by save() itself
+    measure_failures = []  # a measure() exception is never misread as a save
+
+    def _save(t, rc):
+        heard.append(dict(t))          # the paid take, kept for the client's listen
+        judged.append(rc)              # the judge receipt, kept even if the save dies
+        try:
+            out = save(variant, t, rc)
+        except Exception as exc:       # noqa: BLE001 - classified at THIS boundary
+            save_failures.append({"take": dict(t), "receipt": rc, "error": exc})
+            raise
+        if out:
+            saved.append(dict(t))
+            # S75-052: the acceptance record is written HERE, where the take is
+            # judged and saved -- for every verdict, one record per variant.
+            _record_take_acceptance(run_dir, variant, t, rc, plan)
+        return out
+
+    def _measure(t):
+        try:
+            return measure(t)
+        except Exception as exc:       # noqa: BLE001 - classified at THIS boundary
+            measure_failures.append({"take": dict(t), "error": exc})
+            raise
+
+    try:
+        r = _SD.run_takes(req, plan, lambda rq: generate(variant, rq), _measure,
+                          _save, script_words, hook_text,
+                          spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **opts)
+    except Exception as exc:                     # noqa: BLE001 - carried as a typed result
+        # FIX 2: classify at the boundary that ACTUALLY raised. A track heard
+        # earlier does not identify the failing operation; a measurement error
+        # on a later take is never narrated as a save failure of an earlier one.
+        if save_failures:
+            failure = save_failures[-1]
+            env = _save_failed_envelope(generate, variant, failure, judged, len(saved))
+            status, held, held_rcpt = STATUS_SAVE_FAILED, failure["take"], failure["receipt"]
+        elif measure_failures:
+            failure = measure_failures[-1]
+            env = _operation_failed_envelope(generate, variant, failure, "measure",
+                                             judged, len(saved))
+            status, held, held_rcpt = STATUS_MEASURE_FAILED, None, None
+        else:
+            env = _refused_envelope(generate, variant, exc)
+            status, held, held_rcpt = STATUS_REFUSED, None, None
+        # FIX 1: persistence is evidence, never the response. Writing the
+        # recovery envelope under the SAME obstructed music path used to raise
+        # NotADirectoryError and discard the retained-task hold above.
+        path, persist_error = _persist_envelope(envelope_run_dir, variant["id"], env)
+        if persist_error:
+            ev = dict(env.get("evidence") or {})
+            ev["persistence_error"] = persist_error
+            ev["persistence_path"] = path or _envelope_path(str(envelope_run_dir),
+                                                            variant["id"])
+            env = dict(env, evidence=ev)
+        # X05: a save hold crossed this boundary too. It is still a hold. The
+        # charge is the held envelope's own settled figure (S75-018); None
+        # means UNKNOWN, never free.
+        hold = _save_hold(env)
+        if hold:
+            return _held_result(n, variant, env, hold,
+                                spent_cents=hold.get("actual_cost"))
+        return {"n": n, "variant": variant, "status": status, "take": None,
+                "heard": held, "concerns": [], "receipt": held_rcpt,
+                "attempt": 1, "attempts": 1, "receipts": list(judged),
+                "envelope": env, "counts": env["counts"],
+                "persistence_error": persist_error or None}
+    got = None if r["verdict"] == "FAIL" else r
+    env = _finish_envelope(generate, variant, r, got, heard)
+    if envelope_run_dir:
+        _write_envelope(envelope_run_dir, variant["id"], env)
+    # X05: provider success + save failure is a named HOLD with a retained task
+    # id and charge -- never a failure that invites a resubmit.
+    hold = _save_hold(env)
+    if hold:
+        return _held_result(n, variant, env, hold,
+                            submitted_digest=r.get("submitted_digest"),
+                            spent_cents=r.get("spent_cents"))
+    return {"n": n, "variant": variant,
+            # S75-018: ``got`` is non-None only when run_takes delivered a take
+            # whose REQUIRED gates all PASS, so the status is the vocabulary's
+            # PASS -- never a judge verdict string carried through as one.
+            "status": STATUS_PASS if got else STATUS_FAILED,
+            "take": got["delivered"] if got else None,
+            # ``heard`` is LISTENING ONLY: a take the judge failed is presented
+            # to the client, never offered for a pick (WW-18 stays).
+            "heard": None if got else (heard[-1] if heard else None),
+            "concerns": [] if got else failure_concerns(r),
+            "receipt": got.get("receipt") if got else (r.get("receipt")),
+            "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            # S75-018 (X06): the digest run_takes computed over the EXACT
+            # outbound snapshot it re-admitted inside the governor callback.
+            # It used to stop at this boundary and survive only into a test
+            # assertion; it now rides the result to the reported block, which
+            # is what proves "the admitted snapshot is the submitted one".
+            "submitted_digest": r.get("submitted_digest"),
+            # S75-018: the review block is WHY a take was withheld. Carried
+            # here so the client-facing message can name it; it never changes
+            # whether the take is delivered.
+            "review_required": r.get("review_required"),
+            # S75-018: the real per-attempt charge, carried out of run_takes
+            # unchanged so the reported block can show money beside the counts.
+            "spent_cents": r.get("spent_cents"),
+            "envelope": env, "counts": env["counts"]}
+
+
+def run_unit(requests, unit_id=None, variant_id=None, **kw):
+    """Run exactly ONE variant -- the per-unit selector path. Dispatches ONE
+    generation, never three, so an orchestrated run cannot fan out nine."""
+    idx = _select_one(requests, unit_id, variant_id)
+    v, rq = requests[idx]
+    return [one_variant(idx + 1, v, rq, **kw)]
+
+
+def _select_one(requests, unit_id, variant_id):
+    rows = _require_three(requests, key=lambda r: r[0]["id"])
+    if variant_id is not None:
+        for i, (v, _) in enumerate(rows):
+            if v["id"] == variant_id or v["label"] == variant_id:
+                return i
+        raise ChoiceError("%r is not one of the three variants %s"
+                          % (variant_id, [v["id"] for v, _ in rows]))
+    if unit_id is not None:
+        want = str(unit_id).strip().upper()
+        for i in range(3):
+            if UNIT_IDS[i] == want:
+                return i
+        raise ChoiceError("%r is not one of %s" % (unit_id, list(UNIT_IDS)))
+    raise ChoiceError("one worker must name --variant <variant_id> or --unit-id WW-00N")
+
+
+def generate_choices(requests, plan, generate, measure, save, script_words, hook_text,
+                     spoken_range_pct=None, **kw):
+    """THE umbrella path: all three variants, ONE submission pass, THREE
+    provider jobs, in THREE threads inside this ONE agent unit. Use only in
+    non-workflow mode; the orchestrated mode runs three `run_unit`s instead,
+    never this and them together. Returns [{n, variant, status, take,
+    attempts, receipts}]."""
+    _require_three(requests, key=lambda r: r[0]["id"])
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futs = [ex.submit(one_variant, i, v, rq, plan, generate, measure, save,
+                          script_words, hook_text, spoken_range_pct, **kw)
+                for i, (v, rq) in enumerate(requests, 1)]
+        return [f.result() for f in futs]
+
+
+# ---- the three owned units (D2 item 4) ----------------------------------
+
+UNIT_IDS = ("WW-001", "WW-002", "WW-003")
+PROVIDER_SLOTS = 3       # a LANGUAGE-MODEL allocation, not a provider cap
+RESERVE = 0
+
+
+def unit_folder(run_dir, unit_id):
+    """One owned folder per unit."""
+    return os.path.join(run_dir, "lanes", "%s-lane" % str(unit_id).strip().upper())
+
+
+def plan_units(run_dir, requests=None):
+    """The three units WW-001..003, providerSlots 3, reserve 0, one owned
+    folder each. This is what stops the planner rebuilding the WW-001
+    monolith. ``media_concurrency`` (provider jobs that run at once) and
+    ``builder_agent_units`` (agent lanes) are reported SEPARATELY; threads
+    are never relabelled as visible agents."""
+    ids = [v["id"] for v, _ in requests] if requests else [None, None, None]
+    units = []
+    for i, uid in enumerate(UNIT_IDS):
+        units.append({"unit_id": uid, "index": i + 1, "variant_id": ids[i],
+                      "owned_folder": unit_folder(run_dir, uid),
+                      "provider_slots": PROVIDER_SLOTS, "reserve": RESERVE,
+                      "owned_requests": 1})
+    return {"units": units, "provider_slots": PROVIDER_SLOTS, "reserve": RESERVE,
+            "builder_agent_units": len(units), "media_concurrency": len(units),
+            "note": "providerSlots is the language-model allocation; the Suno "
+                    "provider cap (20 per 10 s) is not binding at three jobs."}
+
+
+# ---- the provider-overlap receipt (D2 item 3) ---------------------------
+#
+# ONE implementation: `song_choices/overlap.py`. Nothing here re-derives the
+# rule, so the receipt and the gate can never drift.
+
+OVERLAP_MIN_S = _OV.MIN_OVERLAP_S          # 1.000 s, the three INITIAL attempts
+
+#: Name compatibility: the receipt row is the module's make_receipt.
+receipt_row = _OV.make_receipt             # noqa: F401 - the receipt builder
+request_sha256 = _OV.request_sha256        # noqa: F401 - the bound request hash
+
+
+def check_overlap(receipts, min_s=OVERLAP_MIN_S):
+    """The provider-overlap gate over the THREE INITIAL attempts.
+
+    Delegates to ``song_choices.overlap.overlap_gate``: overlap_s =
+    min(terminal_at) - max(submitted_at), PASS at >= 1.000 s, FAIL at 0.999 s or
+    zero or negative, and UNAVAILABLE (never a pass) when the evidence is
+    absent, naive or duplicated. A regenerated variant is excluded: it is not
+    initial-overlap evidence. No automatic paid redo."""
+    gate = _OV.overlap_gate(receipts, min_s)
+    return {"verdict": gate["verdict"], "overlap_s": gate["overlap_s"],
+            "min_s": min_s, "reason": gate["detail"],
+            "paid_redo": gate["paid_redo"],
+            "requires_owner_authority": gate["requires_owner_authority"]}
+
+
+def receipt_for(run_dir, variant, request, attempt_id, task_id, submitted_at,
+                terminal_at, initial=True):
+    """Build and write ONE variant's overlap receipt under
+    ``<run>/music/takes/<variant>/overlap-receipt.json``. Both times are aware
+    UTC; a naive one is refused by the receipt module."""
+    row = _OV.make_receipt(variant["id"], request, "song/%s" % variant["id"],
+                           attempt_id, task_id, submitted_at, terminal_at,
+                           initial=initial)
+    p = os.path.join(run_dir, "music", "takes", variant["id"], "overlap-receipt.json")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(row, f, indent=2, sort_keys=True)
+    return row
+
+
+def overlap_from_run(run_dir):
+    """Read the per-variant OVERLAP RECEIPTS under run/music/takes/ and gate on
+    them. No receipts at all -> ``applicable: False`` (the gate governs the
+    three-version run; a No run has nothing to check)."""
+    base = os.path.join(run_dir, "music", "takes")
+    rows = []
+    if not os.path.isdir(base):
+        return {"applicable": False, "verdict": "UNAVAILABLE", "overlap_s": None,
+                "allowed": False}
+    for name in sorted(os.listdir(base)):
+        p = os.path.join(base, name, "overlap-receipt.json")
+        if not os.path.isfile(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                rows.append(json.load(f))
+        except (OSError, ValueError):
+            continue
+    if not rows:
+        return {"applicable": False, "verdict": "UNAVAILABLE", "overlap_s": None,
+                "allowed": False}
+    gate = _OV.overlap_gate(rows)
+    gate["applicable"] = True
+    return gate
+
+
+def record_overlap(run_dir, state):
+    """S75-053: the overlap MEASUREMENT is a receipt line, never a client stop.
+
+    The same three-initial-attempt figure is still computed and written onto the
+    choices receipt (``song-choices/state.json``) as ``overlap: {verdict,
+    seconds}``. When it is not PASS the named ``SONG_OVERLAP_NOT_SHOWN`` warning
+    is recorded through ``loud_failure.warn``, which prints it and puts it on
+    every receipt that attaches the buffer. Nothing here refuses the offer, the
+    pick or any later stage: a provider that finished one song before the last
+    was accepted is not a client fault, and no paid redo is bought for it.
+    Returns the recorded row."""
+    chk = overlap_from_run(run_dir)
+    row = {"verdict": chk.get("verdict"),
+           "seconds": chk.get("overlap_s") if chk.get("applicable") else None}
+    state["overlap"] = row
+    if row["verdict"] != "PASS":
+        loud_failure.warn(
+            "SONG_OVERLAP_NOT_SHOWN",
+            "the three initial song attempts did not overlap by the build target "
+            "(verdict %s, overlap %s s); the songs are still offered and pickable "
+            "and no redo is bought for it" % (row["verdict"], row["seconds"]))
+        state["warnings"] = [e for e in loud_failure.entries()
+                             if e.get("kind") == "WARNING"]
+    else:
+        state.pop("warnings", None)
+    return row
+
+
+# ---- WW-21: the acceptance boundary at the real delivery boundary ----------
+#
+# The total fail-closed aggregation/evidence-binding boundary lives ONCE, in
+# song_dispatch (`accept_audio_results` / `acceptance_from_run`). Nothing is
+# re-derived here, so the gate and the receipt can never drift. It is anchored
+# to the SAME folder the production generator fills: the moment a variant has
+# a produced take under <run>/music/takes/<variant>/, its acceptance record is
+# required, and a take whose required gate set is not all PASS is never
+# OFFERED, never PICKED and never PURCHASED.
+
+def acceptance_from_run(run_dir):
+    """The WW-21 boundary state for this run (delegates to song_dispatch)."""
+    return _SD.acceptance_from_run(run_dir)
+
+
+def _acceptance_refusal(run_dir, action):
+    """None when the boundary is not applicable or has passed; else the
+    refusal that holds the offer, the pick and every paid job."""
+    return _SD.acceptance_refusal(run_dir, action)
+
+
+def _distinct_versions_verdict(results):
+    """D4 (three audibly different versions), measured ONCE across the three
+    takes by the candidate-matrix contract: the three treatments must differ
+    pairwise in at least two of arrangement/vocals/palette (a relabelled copy
+    is refused), and the three variants must be three DISTINCT arrangements.
+
+    Returns (verdict, detail). Never a PASS on a missing or broken input."""
+    ids = []
+    style_id = None
+    for r in results or []:
+        v = (r or {}).get("variant") or {}
+        if isinstance(v, dict) and v.get("id"):
+            ids.append(str(v["id"]))
+            style_id = style_id or v.get("genre") or v.get("style_id")
+    if len(ids) != 3 or len(set(ids)) != 3:
+        return ("FAIL", "D4 three audibly different versions: three distinct "
+                        "arrangements were not produced (got %r)" % (ids,))
+    if not style_id:
+        return ("UNMEASURED", "D4 three audibly different versions: the run names no "
+                              "music style, so the three treatments cannot be measured")
+    try:
+        from song_choices import candidate_matrix as _CM   # noqa: PLC0415
+        _CM.treatments_for(style_id)
+    except Exception as exc:        # noqa: BLE001 - a refusal blocks
+        return ("FAIL", "D4 three audibly different versions: %s" % exc)
+    return ("PASS", "D4 three audibly different versions: arrangement/vocals/palette "
+                    "differ pairwise in at least two of three facets")
+
+
+def _record_distinct_versions(results, run_dir):
+    """S75-052: add D4 to every variant's acceptance record and rewrite it once.
+
+    D4 is the ONE D-result computed at fan-in, across the three takes; the
+    record keeps the required set it was written under and only gains D4."""
+    acc = _SD.acceptance_from_run(run_dir)
+    if not acc.get("applicable"):
+        return acc
+    if _SD.acceptance_refusal(run_dir, "fan-in") is not None:
+        # S75-052 QC: a held boundary (an unjudged take, or no passing
+        # version) must never be papered over by rewriting records here.
+        # D4 is computed only once the whole-run hold is clear.
+        return acc
+    verdict, detail = _distinct_versions_verdict(results)
+    for r in results or []:
+        vid = str(((r or {}).get("variant") or {}).get("id") or "")
+        rec = (acc.get("variants") or {}).get(vid)
+        if not vid or not isinstance(rec, dict):
+            continue
+        binding = rec.get("binding")
+        if not isinstance(binding, dict) or not binding:
+            continue
+        carried = rec.get("results") if isinstance(rec.get("results"), dict) else {}
+        carried = dict(carried)
+        carried["D4"] = {"verdict": verdict, "detail": detail,
+                         "binding": dict(binding)}
+        required = [str(x) for x in (rec.get("required") or [])]
+        if "D4" not in required:
+            required.append("D4")
+        try:
+            _SD.record_acceptance(run_dir, vid, binding, carried, required=required)
+        except Exception:           # noqa: BLE001 - no record rewritten, gate stays shut
+            continue
+    return acc
+
+
+def fan_in(results, run_dir, delivery_dir, **kw):
+    """CHECK and DELIVER results that already exist. Never generates: the
+    fan-in step must not dispatch anything.
+
+    S75-052: D4 (three audibly different versions) is computed ONCE here,
+    across the three takes, and written onto every variant's acceptance record
+    before delivery -- it is the only D-result that is not per take."""
+    _record_distinct_versions(results, run_dir)
+    return deliver_choices(results, delivery_dir, run_dir, **kw)
+
+
+def _safe(s):
+    return re.sub(r'[\\/:*?"<>|]', "-", s)
+
+
+def _mmss(sec):
+    sec = int(round(float(sec)))
+    return "%d:%02d" % (sec // 60, sec % 60)
+
+
+def _run_ffmpeg(argv):
+    subprocess.run(argv, check=True, capture_output=True)
+
+
+def _accepted(result):
+    """WW-18: a result is offerable only when its take's REQUIRED gate set all
+    PASSES (its constituent receipt is current). A take with a failed, flagged,
+    unmeasured, unavailable or unknown REQUIRED gate (or no receipt) is never
+    offered.
+
+    S75-018 (C6): a PAID TAKE carrying a receipt that is not constituent
+    evidence at all is a BUG in the producer, not a soft False -- the assertion
+    below fails loudly so a later relaxed guard can never read it as "no
+    receipt" and quietly withhold a paid take. It never fires at a client
+    boundary on a well-formed result.
+    """
+    result = result or {}
+    rec = result.get("receipt")
+    if rec is None:
+        return (False, "no constituent receipt") if result.get("receipts") else \
+            (False, "no take receipt recorded")
+    ok, why = _SD.constituent_ok(rec)
+    if result.get("take") and rec:
+        assert why != getattr(_SD, "NOT_CONSTITUENT_REASON",
+                              "no constituent-evidence receipt"), \
+            ("take on result %r carries a receipt that is not constituent "
+             "evidence (%r); the producer must bind the constituent receipt"
+             % (result.get("n"), why))
+    return ok, why
+
+# ---- WW-25: the copy-first archive (the shipping writer, no second module) --
+#
+# The EXISTING shipping publish step is ``deliver_choices`` below: it
+# ffmpeg-copies the approved takes into ``<delivery>/SONG-CHOICES/`` and
+# rewrites README.txt and state.json. On a re-run that folder is REPLACED, so
+# the approved take files must be preserved by COPY -- never by deleting the
+# originals and never by overwriting an earlier archive to make the re-run
+# succeed. NO pre-existing archive helper exists in skill 75 (resolved from
+# disk: zero ``archive`` symbols under 75-drama-song-ad-factory/scripts/, and
+# no such module anywhere in this repo's git history for skill 75), so the
+# copy-first archive lives HERE, on the existing shipping writer -- never in a
+# new parallel module. The historical defective
+# qualification/.../WW-011-lane/build_restart2.py ``archive_replaced()``
+# (os.remove on an existing archive then shutil.move) is EVIDENCE of the
+# defect, never the shipping destination.
+
+ARCHIVE_DIRNAME = "archive"
+
+def _sha256_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+def _noncolliding_dir(base):
+    """A directory path that does NOT exist yet. An earlier archive is NEVER
+    overwritten: a name collision bumps '-2', '-3', ... until the name is
+    free."""
+    if not os.path.exists(base):
+        return base
+    i = 2
+    while os.path.exists("%s-%d" % (base, i)):
+        i += 1
+    return "%s-%d" % (base, i)
+
+def archive_before_publish(run_dir, items, stamp="published", copier=None):
+    """WW-25 copy-first archive. COPY every source into a NEW noncolliding
+    archive folder and verify each copy's sha256 EQUALS its source BEFORE any
+    replacement output is published. Never deletes or moves a source; never
+    writes into an existing archive. Any copy fault or hash mismatch raises
+    ChoiceError with BOTH sides preserved: the sources are untouched and the
+    fresh archive folder is left exactly as written, never rolled back by a
+    delete. ``items`` is [{"name", "source"}]; returns the receipt."""
+    copier = copier or shutil.copy2
+    root = os.path.join(run_dir, "song-choices", ARCHIVE_DIRNAME)
+    os.makedirs(root, exist_ok=True)
+    dest = _noncolliding_dir(os.path.join(root, stamp))
+    os.makedirs(dest, exist_ok=False)      # noncolliding: a fresh folder only
+    receipt = {"dir": dest, "stamp": stamp, "files": [], "complete": False}
+    for it in items:
+        name, src = it["name"], it["source"]
+        if not os.path.isfile(src):
+            raise ChoiceError("WW-25 archive: source missing for %s: %s "
+                              "(nothing was published)" % (name, src))
+        target = os.path.join(dest, name)
+        try:
+            copier(src, target)
+        except Exception as exc:            # noqa: BLE001 - any copy fault refuses before publish
+            raise ChoiceError("WW-25 archive: copy failed for %s (%r); both sides "
+                              "preserved, nothing was published" % (name, exc))
+        got, want = _sha256_file(target), _sha256_file(src)
+        if got != want:
+            raise ChoiceError("WW-25 archive: copied hash mismatch for %s (copy %s != "
+                              "source %s); both sides preserved, nothing was published"
+                              % (name, got, want))
+        receipt["files"].append({"name": name, "sha256": got})
+    receipt["complete"] = True
+    with open(os.path.join(dest, "archive-receipt.json"), "w", encoding="utf-8") as f:
+        json.dump(receipt, f, indent=2, sort_keys=True)
+    return receipt
+
+
+def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=None, send=None):
+    """Write SONG-CHOICES/ and the offered list into state.json. Returns the
+    client message. With a target the message and the files go to the client
+    right away (send_choices). No target argument: the client's chat id the
+    card recorded in the run is used. No target anywhere (CLI-only run): the
+    message and file paths are printed.
+
+    WW-18: a take whose REQUIRED gate set is not all PASS is NOT offered, so a
+    failed or unmeasured required gate can never be PICKED; its paid file is
+    still presented for LISTENING because the song-failure verdict belongs to
+    the client (order 2026-10-21). Nothing regenerates and nothing loops here:
+    every take that failed is delivered with the judge's named concerns and the
+    ONE fork question. Only a production that produced no take at all raises.
+
+    WW-21: OFFER is a delivery boundary. A take whose required gate set is not
+    all PASS -- or whose five results are missing, unbound or stale -- is never
+    offered. Zero purchases on this path.
+
+    S75-053: the provider-overlap measurement no longer refuses the offer. It is
+    recorded on the choices receipt (see ``record_overlap``) and, when it is not
+    PASS, raises the named ``SONG_OVERLAP_NOT_SHOWN`` warning instead.
+    """
+    _require_three(results, key=lambda r: r["variant"]["id"])
+    # S75-052: a version whose own acceptance record is not PASS is never
+    # OFFERED -- but it no longer stops the versions that passed. Its named
+    # reasons ride with the LISTENING presentation below.
+    acc = _SD.acceptance_from_run(run_dir)
+    acc = acc if acc.get("applicable") else {"variants": {}}
+
+    def _acc_of(r):
+        vid = str(((r or {}).get("variant") or {}).get("id") or "")
+        rec = (acc.get("variants") or {}).get(vid)
+        if not isinstance(rec, dict) or rec.get("verdict") == "PASS":
+            return vid, []
+        return vid, list(rec.get("reasons") or []) or ["the acceptance record is not PASS"]
+
+    good, acc_blocked = [], []
+    for r in results:
+        if not r.get("take") or _status(r) in LISTENING_STATUSES or not _accepted(r)[0]:
+            continue
+        _vid, why = _acc_of(r)
+        if why:
+            acc_blocked.append((r, why))
+        else:
+            good.append(r)
+    # LISTENING ONLY: a take the JUDGE failed (status FAILED with its named
+    # concerns). A take blocked by WW-21's acceptance binding is NOT presented
+    # here -- that refusal path is unchanged.
+    heard = [r for r in results
+             if r not in good and _status(r) in LISTENING_STATUSES
+             and (r.get("take") or r.get("heard"))]
+    # S75-052: an acceptance-blocked version is presented for LISTENING too,
+    # with the acceptance reasons, so the client can hear it and answer the
+    # ONE fork -- never offered for a pick.
+    heard += [r for r, _why in acc_blocked
+              if (r.get("take") or r.get("heard")) and r not in heard]
+    if not good and not heard:
+        # S75-018: name what happened to EVERY version -- a held paid task is
+        # never reported as a run that produced no song.
+        raise ChoiceError(_nothing_to_offer_refusal(results))
+    if good:
+        ahold = _acceptance_refusal(run_dir, "the offer")
+        if ahold:
+            raise ChoiceError(ahold["detail"])
+    folder = os.path.join(delivery_dir, DIRNAME)
+    # WW-25: COPY-FIRST archive BEFORE any replacement output is published. Every
+    # approved take file is copied into a NEW noncolliding archive and each copy
+    # is hash-verified against its source; a copy fault or mismatch raises here,
+    # so NOTHING is published (not even the folder), the originals are untouched
+    # and a prior archive is never overwritten. This call is the guard the WW-25
+    # fixtures prove reachable from the production delivery path.
+    plan = [(_safe("%d - %s (%s)" % (r["n"], r["variant"]["label"],
+                                     r["variant"]["description"])) + ".mp3",
+             (r.get("take") or r.get("heard"))["audio_path"], r) for r in good]
+    plan += [(_safe("%d - %s (%s) - NOT PASSED"
+                    % (r["n"], r["variant"]["label"], r["variant"]["description"]))
+              + ".mp3", (r.get("take") or r.get("heard"))["audio_path"], r)
+             for r in heard]
+    archive_before_publish(run_dir, [{"name": n, "source": s} for n, s, _ in plan])
+    os.makedirs(folder, exist_ok=True)
+    listen_dir = os.path.join(folder, FOR_LISTENING)
+    offered, lines, concerns, presented = {}, [], {}, []
+    for name, _src, r in plan:
+        v, take = r["variant"], (r.get("take") or r.get("heard"))
+        label = "%d - %s (%s)" % (r["n"], v["label"], v["description"])
+        # A failed take is presented for LISTENING under its own folder, so the
+        # offer surface (WW-21/WW-18) carries accepted takes only.
+        dst = os.path.join(folder if r in good else listen_dir, name)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        runner(["ffmpeg", "-y", "-i", take["audio_path"], "-c", "copy",
+                "-metadata", "title=" + label, dst])
+        presented.append(dst)
+        dur = _mmss(take.get("duration_s", 0))
+        if r in good:
+            lines.append("%s - %s - %s" % (label.split(" (")[0], dur, v["description"]))
+            offered[str(r["n"])] = {"label": label, "file": dst, "duration": dur,
+                                    "take": take, "receipt": r.get("receipt"),
+                                    "variant_id": v.get("id")}
+        else:
+            # Presented to LISTEN to, never offered for a pick (WW-18).
+            why = list(r.get("concerns") or failure_concerns(r))
+            _vid, _accwhy = _acc_of(r)
+            why += [w for w in _accwhy if w not in why]
+            concerns[str(r["n"])] = why
+            lines.append("%s - %s - %s - NOT PASSED: %s"
+                         % (label.split(" (")[0], dur, v["description"],
+                            "; ".join(why) if why else "did not pass the song checks"))
+    with open(os.path.join(folder, "README.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    st = _state(run_dir) or {"required": True}
+    st.update(required=True, offered=offered,
+              failure_fork=bool(heard), concerns=concerns,
+              # D-4: the pick is a NUMBER (1, 2, 3); the acceptance boundary and
+              # the take folder are the variant's own id. Record the mapping the
+              # client-kept record is keyed by -- never guessed from a label.
+              variants={str(r["n"]): str((r.get("variant") or {}).get("id"))
+                        for r in (results or [])
+                        if r.get("n") is not None and (r.get("variant") or {}).get("id")})
+    record_overlap(run_dir, st)
+    _write(run_dir, "state.json", st)
+    # Method Step 14 (inert until the run carries control/method.json): the
+    # message RECOMMENDS the strongest compliant version with a concrete reason.
+    # `recommend` ranks only the versions `good` above offers, so it can never
+    # name one the client was not sent.
+    rec = recommend(results) if method_run(run_dir) and offered else None
+    st["presented"] = presented
+    _write(run_dir, "state.json", st)
+    failed_nums = sorted(int(r["n"]) for r in heard)
+    if not offered:
+        # Every take failed: the client hears them and answers the ONE fork.
+        msg = failure_fork_message(results)
+    else:
+        msg = client_message(offered, failed_nums, recommend=rec, concerns=concerns)
+    target = target or st.get("target")
+    if target:
+        send_choices(run_dir, target, send, msg)
+    else:
+        print(msg + "\n\nNO CLIENT TARGET RECORDED FOR THIS RUN - nothing was sent. Send these files to the client yourself, in order:")
+        print("\n".join(st["presented"]))
+    return msg
+
+
+def _run_send(argv):
+    subprocess.run(argv, check=True, capture_output=True)
+
+
+def send_choices(run_dir, target, send=None, message=None):
+    """Client delivery: the intake card's own send path (intake_card.openclaw_send_argv,
+    `openclaw message send`) with the files attached in order. send(argv) is the
+    sink (default: run it). Returns the argv. Raises when nothing was presented
+    or the send fails, so a lost message is never silent.
+
+    A failed production still sends: the takes the judge failed are presented
+    for LISTENING (never offered for a pick) so the client can answer the fork.
+    """
+    from choice_card.intake_card import intake_card as _IC   # noqa: PLC0415
+    st = _state(run_dir) or {}
+    offered = st.get("offered") or {}
+    media = [f for f in (st.get("presented") or []) if os.path.isfile(f)]
+    if not media:
+        media = [offered[n]["file"] for n in sorted(offered, key=int)]
+    if not media:
+        raise ChoiceError("no song versions are ready yet; nothing to send")
+    argv = _IC.openclaw_send_argv(target, message or client_message(offered), media=media)
+    (send or _run_send)(argv)
+    return argv
+
+
+# ---- Step 14: the message RECOMMENDS the strongest compliant version ------
+#
+# The method (Step 14; METHOD-INTEGRATION F9) asks for a recommendation of the
+# strongest COMPLIANT candidate with a concrete explanation, "rather than making
+# the owner evaluate an unfiltered pile of options". The client still picks --
+# nothing here auto-picks, and the pick gate is untouched.
+
+#: The gates that carry the method's music turns (ERM Drop first vocal, and the
+#: two pace seams once U2's ``erm_drop``/``hero_shift`` anchors land). Names are
+#: looked up in the take's own gate set, so a gate the judge does not emit simply
+#: costs a candidate nothing -- no gate is invented here.
+ERM_HERO_GATES = ("pace_change", "erm_drop", "hero_shift", "first_sung")
+#: The earned-hook gates (Step 12): the third tiebreak.
+HOOK_GATES = ("hook", "hook_placement")
+#: Inert-until-wired (BUILD-PLAN): this runs only on a run that carries it.
+METHOD_RECORD = os.path.join("control", "method.json")
+
+
+def _verdicts(result):
+    """``{gate name: verdict}`` from ONE result's constituent receipt, or ``{}``
+    when it carries no gate results at all."""
+    rec = (result or {}).get("receipt")
+    gates = rec.get("gates") if isinstance(rec, dict) else None
+    if not isinstance(gates, dict):
+        return {}
+    return {k: (v.get("verdict") if isinstance(v, dict) else v) for k, v in gates.items()}
+
+
+def _passes(verdicts, names=()):
+    """How many of ``names`` (default: every gate present) are PASS."""
+    keys = names or tuple(verdicts)
+    return sum(1 for k in keys if str(verdicts.get(k) or "").strip().upper() == "PASS")
+
+
+def recommend(results):
+    """The version to RECOMMEND, with the concrete reason Step 14 asks for.
+
+    Ranking: the most PASS gates; then the measured ERM/Hero-Shift gates; then
+    the earned hook; then the lowest version number, so the same run always
+    recommends the same version. Only a version DELIVERY itself would offer is
+    ever considered (the same acceptance test), so the recommendation can never
+    name a version that is not in the client's hands.
+
+    Returns ``{"n": <version number>, "reason": "<one plain line>"}``, or ``None``
+    when no result carries gate results -- a run with no gate results says
+    nothing extra."""
+    ranked = []
+    for r in results or []:
+        if not isinstance(r, dict) or _status(r) in LISTENING_STATUSES or not r.get("take"):
+            continue
+        if not _accepted(r)[0]:                     # never recommend an unoffered take
+            continue
+        v = _verdicts(r)
+        if not v:
+            continue
+        score = (_passes(v), _passes(v, ERM_HERO_GATES), _passes(v, HOOK_GATES))
+        ranked.append((score, -int(r.get("n") or 0), r, v))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    _score, _neg_n, r, v = ranked[0]
+    bits = ["it passed %d of %d song checks" % (_score[0], len(v))]
+    if _score[1]:
+        bits.append("the ERM / Hero Shift turn gates pass")
+    if _score[2]:
+        bits.append("the hook lands")
+    return {"n": int(r["n"]), "reason": ", ".join(bits)}
+
+
+def method_run(run_dir):
+    """True when the run carries ``control/method.json`` (the intake card writes
+    it at recap confirmation). Inert-until-wired: a run without that record gets
+    today's message, byte for byte."""
+    return os.path.isfile(os.path.join(run_dir or "", METHOD_RECORD))
+
+
+# ---- the client's song-failure fork (order 2026-10-21) --------------------
+#
+# SONG-FAILURE VERDICT BELONGS TO THE CLIENT. When the song judge fails a
+# take, nothing regenerates and nothing loops: the take keeps the judge's
+# NAMED concerns, every take is presented for listening, and the client
+# answers ONE question. That answer is authoritative and recorded in the run
+# state (song-choices/fork-decision.json, appended, never clobbered). Only a
+# recorded answer authorizes a new paid round; the pick/constituent gates are
+# untouched, so nothing advances on a FAIL by itself.
+
+FAILURE_FORK = ("Want me to redo all of them, keep one of these three, "
+                "or generate three new options?")
+FORK_ANSWERS = ("redo_all", "keep_one", "new_three")
+_FORK_ALIASES = (
+    ("redo all of them", "redo_all"), ("redo all", "redo_all"),
+    ("redo", "redo_all"), ("redo them", "redo_all"),
+    ("keep one of these three", "keep_one"), ("keep one", "keep_one"),
+    ("generate three new options", "new_three"), ("three new options", "new_three"),
+    ("new three", "new_three"),
+)
+FORK_FILE = "fork-decision.json"
+
+#: D-4: "keep one of these" is HONOURED -- the run may go on, and the client's
+#: choice is recorded (who, when, the judge's named concerns, the client's own
+#: words) in <run>/song-choices/client-kept/<variant>.json. NEVER under
+#: music/acceptance/: that folder is read as take records by
+#: song_dispatch.acceptance_from_run and by the operator-decision digest.
+#: The path, schema and reader live ONCE in song_dispatch; these are the thin
+#: names this module's callers use (resolved at call time, never at import).
+
+
+def client_kept_path(run_dir, variant_id):
+    return _SD.client_kept_path(run_dir, variant_id)
+
+
+def _variant_id(st, variant):
+    """The take-folder / acceptance id for a pick number (1, 2, 3), or the id
+    itself. The mapping is the one the run recorded; nothing is guessed."""
+    raw = str(variant or "").strip()
+    return str((st.get("variants") or {}).get(raw) or raw)
+
+
+def client_kept(run_dir, variant_id):
+    """The client-kept record for a pick number or variant id, or None."""
+    return _SD.read_client_kept(run_dir, _variant_id(_state(run_dir) or {}, variant_id))
+
+
+def record_client_kept(run_dir, variant, reply, who=None, channel="card",
+                       at=None, concerns=None):
+    """Record the client's "keep one of these" choice for ONE take.
+
+    The reply must be the keep-one answer; an unreadable or different answer is
+    refused, never guessed. The record carries WHO kept it, WHEN, the song
+    judge's NAMED concerns for that take, and the client's words verbatim. It
+    is the only thing that lets a take the judge failed be picked and lets the
+    run go on; it never writes a PASS for a measured gate and never touches
+    music/acceptance/."""
+    if parse_fork_answer(reply) != "keep_one":
+        raise ChoiceError("%r is not the keep-one answer; ask again: %s"
+                          % (reply, FAILURE_FORK))
+    if not str(who or "").strip():
+        # A keep-one record that names nobody releases nothing (the boundary
+        # refuses it). Refuse to write it rather than write an unusable one.
+        raise ChoiceError("a client-kept record must name WHO kept the take "
+                          "(pass --who, e.g. the client's own chat id)")
+    raw = str(variant or "").strip()
+    if not raw:
+        raise ChoiceError("record_client_kept needs the version the client kept (1, 2 or 3)")
+    st = _state(run_dir) or {}
+    vid = _variant_id(st, raw)
+    if concerns is None:
+        concerns = (st.get("concerns") or {}).get(raw)
+        if concerns is None:
+            concerns = failure_concerns(next(
+                (r for r in (st.get("results") or []) if str(r.get("n")) == raw), {}))
+    doc = {"schema": _SD.CLIENT_KEPT_SCHEMA, "answer": "keep_one", "variant": vid,
+           "n": raw if raw.isdigit() else None,
+           "who": who, "channel": channel,
+           "at": at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           "concerns": [str(c) for c in (concerns or [])],
+           "client_words": str(reply)}
+    p = client_kept_path(run_dir, vid)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, sort_keys=True)
+    return doc
+
+
+def parse_fork_answer(reply):
+    """The client's answer folded onto the three branches, or None (never
+    guessed -- a pick number goes through record_pick, not here)."""
+    t = re.sub(r"[^a-z0-9 ]+", " ", str(reply or "").lower()).strip()
+    t = re.sub(r"\s+", " ", t)
+    for phrase, answer in _FORK_ALIASES:
+        if t == phrase or t.startswith(phrase):
+            return answer
+    return None
+
+
+def _review_concern(result):
+    """S75-018: the reason a take was withheld for a pending bounded review,
+    in the module's own words. ``take_accepted`` owns that sentence and its
+    fallback -- nothing new is written here."""
+    rv = (result if isinstance(result, dict) else {}).get("review_required")
+    if not isinstance(rv, dict):
+        return None
+    if not rv.get("required") or rv.get("satisfied"):
+        return None
+    ok, why = _SD.take_accepted({"review": rv})
+    return None if ok else why
+
+
+def failure_concerns(result):
+    """The song judge's NAMED concerns for a take that did not pass, as plain
+    lines. Empty when every gate passed and no review was withheld."""
+    r = result if isinstance(result, dict) else {}
+    judged = r.get("receipt") if isinstance(r.get("receipt"), dict) else None
+    if not judged or "gates" not in judged:
+        recs = [x for x in (r.get("receipts") or []) if isinstance(x, dict)]
+        judged = recs[-1] if recs else {}
+    out = []
+    for name in sorted(judged.get("gates") or {}):
+        g = (judged.get("gates") or {})[name]
+        v = (g or {}).get("verdict") if isinstance(g, dict) else g
+        if str(v or "").strip().upper() == "PASS":
+            continue
+        detail = ((g or {}).get("detail") if isinstance(g, dict) else "") or ""
+        out.append("%s: %s%s" % (name, str(v or "").strip().upper() or "UNKNOWN",
+                                 (" - " + str(detail)) if detail else ""))
+    # S75-018: a withheld take still owes the client the reason it was held.
+    why = _review_concern(r)
+    if why:
+        out.append(why)
+    return out
+
+
+def failure_fork_message(results):
+    """The one client message when any take failed the judge: the concerns in
+    plain words, the client's freedom to say a take is fine, and the ONE
+    question. No jargon, no second question."""
+    failed = [r for r in results or [] if _status(r) in LISTENING_STATUSES]
+    msg = ["I listened through your song options and checked them carefully.", ""]
+    for r in failed:
+        concerns = r.get("concerns") or failure_concerns(r)
+        msg.append("Version %d needs work: %s."
+                   % (r.get("n"), "; ".join(concerns) if concerns else "it did not pass my check"))
+    if len(failed) < len(results or []):
+        passed = [r for r in results or [] if r not in failed]
+        msg += ["", "Version %s came through cleanly, and you can still pick one of those."
+                % ", ".join(str(r.get("n")) for r in passed)]
+    msg += ["", "These are my notes, not the final word: you may listen and decide one of "
+                "them is exactly what you want.", FAILURE_FORK]
+    return "\n".join(msg)
+
+
+def record_fork_decision(run_dir, reply, who=None, channel="card", at=None, variant=None):
+    """Record the client's answer. Authoritative: nothing overrides it and no
+    new paid round runs before it exists. An answer outside the three branches
+    is refused, never guessed.
+
+    D-4: a keep-one answer ALSO writes the client-kept record for ``variant``
+    when the take is named (explicit ``variant``, or a lone version number in
+    the reply). With no take named the fork alone is recorded -- the variant is
+    never guessed, it is named by the pick or by ``record_client_kept``."""
+    ans = parse_fork_answer(reply)
+    if ans is None:
+        raise ChoiceError("%r is not one of the three answers; ask again: %s"
+                          % (reply, FAILURE_FORK))
+    stamp = at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    rec = {"answer": ans, "reply": str(reply), "who": who, "channel": channel,
+           "at": stamp}
+    doc = {}
+    p = _path(run_dir, FORK_FILE)
+    if os.path.exists(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                doc = json.load(f) or {}
+        except (OSError, ValueError):
+            doc = {}                     # unreadable: a fresh doc, never a guess
+    log = doc.get("decisions") if isinstance(doc.get("decisions"), list) else []
+    _write(run_dir, FORK_FILE, dict(doc, decisions=log + [rec]))
+    if ans == "keep_one" and str(who or "").strip():
+        named = str(variant or "").strip() or _named_version(reply) \
+            or _sole_failed_version(run_dir)
+        if named:
+            rec["client_kept"] = record_client_kept(
+                run_dir, named, reply, who=who, channel=channel, at=stamp)["variant"]
+    return rec
+
+
+def _named_version(reply):
+    """The ONE version number the client named in their answer, or '' -- never
+    guessed from a sentence that names two."""
+    nums = set(re.findall(r"\b([123])\b", str(reply or "")))
+    return nums.pop() if len(nums) == 1 else ""
+
+
+def _sole_failed_version(run_dir):
+    """The ONE take the judge failed, when the run has exactly one: determined
+    by the recorded concerns (else the presented take that is not offered), not
+    guessed. '' when two or more failed -- the client must name one."""
+    st = _state(run_dir) or {}
+    bad = sorted(str(n) for n in (st.get("concerns") or {}))
+    if not bad:
+        offered = set(str(n) for n in (st.get("offered") or {}))
+        seen = {}
+        for p in st.get("presented") or []:
+            m = re.match(r"^([123]) - ", os.path.basename(str(p)))
+            if m and m.group(1) not in offered:
+                seen[m.group(1)] = True
+        bad = sorted(seen)
+    return bad[0] if len(bad) == 1 else ""
+
+
+def fork_decision(run_dir):
+    """The latest recorded client answer, or None when the client has not
+    answered yet."""
+    try:
+        with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
+            doc = json.load(f) or {}
+    except (OSError, ValueError):
+        return None
+    log = doc.get("decisions") or []
+    return log[-1] if log and isinstance(log[-1], dict) else None
+
+
+#: The fork answers that authorize a new PAID round (a creative retake).
+REDO_ANSWERS = ("redo_all", "new_three")
+
+def redo_authorization(run_dir, logical_key):
+    """The ledger authorization reference for ONE paid retake, or "".
+
+    A creative retake (a new take after a provider-successful one) is refused
+    by the spend ledger without its own authorization reference
+    (MISSING_AUTH_REF). The client's recorded fork answer IS that
+    authorization: only the LATEST decision counts, and only redo_all /
+    new_three authorize. The reference names the decision (a digest of the
+    record: answer, reply, who, channel and time) and the one job it funds,
+    so each song in the round has its own reference and the ledger's one-
+    authorization-one-job rule still refuses a second spend on the same
+    answer. The log position is NOT part of it: the same decision recorded
+    twice (a replay) is the same reference and is refused
+    DUPLICATE_AUTHORIZATION; a client answering again at another time is a
+    new decision and a new reference. Nothing recorded, or a keep_one answer,
+    returns "" and the ledger refuses the retake."""
+    try:
+        with open(_path(run_dir, FORK_FILE), encoding="utf-8") as f:
+            doc = json.load(f) or {}
+    except (OSError, ValueError):
+        return ""
+    log = doc.get("decisions") if isinstance(doc, dict) else None
+    if not isinstance(log, list) or not log or not isinstance(log[-1], dict):
+        return ""
+    rec = log[-1]
+    if rec.get("answer") not in REDO_ANSWERS:
+        return ""
+    digest = hashlib.sha256(json.dumps(rec, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    return "fork-decision-%s:%s" % (digest, logical_key)
+
+def client_message(offered, failed=(), recommend=None, concerns=None):
+    nums = sorted(int(n) for n in offered)
+    rows = ["%d. %s - %s" % (n, offered[str(n)]["label"].split(" - ", 1)[1], offered[str(n)]["duration"])
+            for n in nums]
+    pick = "%s or %d" % (", ".join(map(str, nums[:-1])), nums[-1]) if len(nums) > 1 else str(nums[0])
+    msg = ["Your song is ready in %d versions. They are in the %s folder:" % (len(nums), DIRNAME), ""] + rows
+    if failed:
+        msg += ["", "Version %s did not pass all of my song checks, so I have not offered it for "
+                    "your pick." % ", ".join(map(str, failed))]
+        for n in sorted(failed):
+            why = (concerns or {}).get(str(n)) or []
+            if why:
+                msg.append("Version %d: %s." % (n, "; ".join(why)))
+        msg += ["", "You can still keep one of them if it sounds right to you.", FAILURE_FORK]
+        return "\n".join(msg)
+    if isinstance(recommend, dict) and recommend.get("n") is not None:
+        msg += ["", "I recommend version %d because %s."
+                % (int(recommend["n"]), recommend.get("reason") or "it passed every song check")]
+    return "\n".join(msg + ["", "Reply %s to pick your song. Nothing else is made until you pick." % pick])
+
+
+# ---- state and the gate -------------------------------------------------
+
+def _path(run_dir, name):
+    return os.path.join(run_dir, "song-choices", name)
+
+
+def _write(run_dir, name, data):
+    os.makedirs(os.path.join(run_dir, "song-choices"), exist_ok=True)
+    with open(_path(run_dir, name), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+
+
+def _state(run_dir):
+    p = _path(run_dir, "state.json")
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def answer_provenance(answer, target=None, channel="card"):
+    """WW-09 item 3: who answered (the client, a delegated assistant under
+    recorded authority, or unknown), on which channel, and at what time. The
+    intake card IS the client's own channel, so a card answer with the client's
+    chat id is the client's; an answer that names another channel with no author
+    is UNKNOWN (unspecified), never a client decision."""
+    a = answer if isinstance(answer, dict) else {}
+    author = a.get("who") or a.get("author") or a.get("by") or (str(target) if target else None)
+    ch = a.get("channel") or channel
+    unknown = not author and a.get("channel") is not None and a.get("channel") != "card"
+    return {"who": author, "channel": ch, "at": a.get("at") or a.get("when"),
+            "unknown": bool(unknown)}
+
+
+def classify_song_answer(answers, target=None):
+    """WW-09 / D-3: (required, provenance, reason).
+
+    An EXPLICIT client answer is honoured: Yes = three labelled versions, No =
+    one song, exactly as recorded. A MISSING answer (no song row), a CORRUPT one
+    (n not 1 or 2) or an AUTHOR-LESS delegated one is ``UNANSWERED``: the run
+    WAITS and ASKS the SONG APPROVAL question again and buys NOTHING. It is
+    never turned into Yes (three paid songs on silence, the S75-001 defect) and
+    never into No (one song on silence)."""
+    rows = [a for a in (answers or []) if isinstance(a, dict)]
+    rec = next((a for a in rows if a.get("id") == "song"), None)
+    if rec is None:
+        return UNANSWERED, {"channel": "card", "unknown": True}, \
+            ("no song answer recorded: the SONG APPROVAL question is still open, "
+             "so nothing is bought; ask the client and wait for the answer")
+    prov = answer_provenance(rec, target)
+    n = rec.get("n")
+    if n not in (1, 2) or prov["unknown"]:
+        return UNANSWERED, prov, \
+            ("the song answer (n=%r, author=%r) is corrupt or has no recorded "
+             "author: the SONG APPROVAL question is still open, so nothing is "
+             "bought; ask the client again and wait for the answer"
+             % (n, prov["who"]))
+    return n == 1, prov, ""
+
+
+def record_card_answer(run_dir, answers, target=None):
+    """The intake card's SONG APPROVAL answer -> the run (Yes turns the gate on,
+    No records No). Called when the recap is confirmed. A changed answer before
+    the songs are made replaces the old one; once versions exist (resume) the
+    recorded answer is kept untouched.
+
+    WW-09 / D-3: a missing, corrupt or author-less answer is neither Yes nor No.
+    The run state records the question as OPEN (``required`` false,
+    ``unanswered`` true) with the channel, author and timestamp and the reason
+    nobody answered for the client: the music stage then waits and asks, and no
+    song is bought until a real answer arrives."""
+    st = _state(run_dir)
+    if st and st.get("offered"):
+        return bool(st.get("required"))
+    required, prov, guess_reason = classify_song_answer(answers, target)
+    if guess_reason:
+        prov = dict(prov, refused_to_guess=guess_reason)
+    init(run_dir, required, target or (st or {}).get("target"), provenance=prov)
+    return required
+
+
+def init(run_dir, required, target=None, provenance=None):
+    """Record the card answer (and the client's chat id). Call once when the card is approved.
+
+    ``required`` is True (three songs), False (one song) or ``UNANSWERED``.
+    UNANSWERED is a WAITING state: it never reads as Yes, so nothing is bought."""
+    unanswered = required == UNANSWERED
+    st = {"required": (required is True) and not unanswered, "offered": {}}
+    if unanswered:
+        st["unanswered"] = True
+    if target:
+        st["target"] = str(target)
+    if provenance is not None:
+        st["provenance"] = provenance
+    _write(run_dir, "state.json", st)
+
+
+def _sha(p):
+    with open(p, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def picked_song(run_dir):
+    return os.path.join(run_dir, "music", "picked-song.mp3")
+
+
+#: S75-055: the run's F17 measured word clock, relative to the run folder.
+WORD_TIMINGS = os.path.join("music", "word-timings.json")
+
+#: S75-055: the ONE timing receipt the delivery packager reads (the same file).
+WORD_TIMINGS_PATH = WORD_TIMINGS
+
+#: the take-level names for words the dispatch handed us: the Suno alignedWords
+#: itself, and the transports' own label for "the take carried the words".
+_SUNO_TAKE_SOURCES = ("suno-timestamped-lyrics", "aligned_words")
+
+
+def _publish_word_timings(run_dir, take):
+    """Publish the picked take's measured word clock as the run's F17 receipt.
+
+    S75-055: ``music/word-timings.json`` had NO writer -- the picture planner,
+    the caption sheet and packaging all read a file no stage ever wrote, so a
+    real run could not be planned or packaged. The pick is the moment the song
+    is final, so the music stage publishes the picked take's own aligned words
+    here, through the ONE timing step (``lyric_timing``'s tier-1 hint path:
+    no dispatch, no model load, no spend), in the envelope every consumer
+    already reads.
+
+    A take that carries no measured words, or words this stage cannot name a
+    REAL timing source for, publishes nothing: the run then has no clock and
+    packaging refuses naming the music stage -- never a guessed timing. A
+    publish that raises is the same nothing: the pick is already recorded, and
+    the client's answer must never be lost to a timing write.
+    """
+    take = take or {}
+    words = [w for w in take.get("aligned_words") or [] if isinstance(w, dict)]
+    owners = (take.get("measurement_owners") or {}).get(
+        "transcription_and_timing") or {}
+    if not words or owners.get("source") not in _SUNO_TAKE_SOURCES:
+        return None
+    for w in words:
+        # the normalized shape and Suno's own startS/endS both count as a clock
+        if not all(isinstance(w.get(k, w.get(k + "S")), (int, float))
+                   for k in ("start", "end")):
+            return None
+    try:
+        core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from audio_c3 import lyric_timing as _LT  # noqa: PLC0415 - same form as song_dispatch
+        track = {k: take[k] for k in ("task_id", "audio_id", "audio_path")
+                 if take.get(k)}
+        env = _LT.provide_word_timings(track,
+                                       timing_map_hint={"alignedWords": words})
+        if not env.get("ok"):
+            return None
+        path = os.path.join(run_dir, WORD_TIMINGS)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(env, fh, indent=2, sort_keys=True)
+        return path
+    except Exception:                             # noqa: BLE001 - never lose the pick
+        return None
+
+
+def _picked_timing(run_dir, offered):
+    """(source file, in-memory document) for the picked take, or a named refusal.
+
+    S75-055: ``music/word-timings.json`` is a required delivery input that no
+    stage wrote (the timings were saved under the ``music/word-timings/``
+    FOLDER). The take records where its own file landed
+    (``song_transports.make_save``); the pick copies THAT file. A take from a
+    run whose save never materialized the file still carries its measured
+    words, and those are written as the same document -- never invented. A
+    take with neither is refused by name: a pick is never silently clockless.
+    """
+    take = (offered or {}).get("take") if isinstance(offered, dict) else None
+    if not isinstance(take, dict):
+        take = {}
+    rel = take.get("word_timings_path")
+    if isinstance(rel, str) and rel:
+        cand = os.path.join(run_dir, rel)
+        if not os.path.isfile(cand):
+            raise ChoiceError(
+                "SONG_WORD_TIMINGS_MISSING: the take records its word timing at %s, "
+                "which is not on disk; re-measure the take before the pick (no timing "
+                "is ever invented)." % rel)
+        return cand, None
+    words = [dict(w) for w in (take.get("aligned_words") or [])
+             if isinstance(w, dict)]
+    if words:
+        owners = (take.get("measurement_owners") or {}) \
+            .get("transcription_and_timing") or {}
+        return None, {"words": words,
+                      "source": owners.get("source") or "measured"}
+    vid = (offered or {}).get("variant_id") or "the picked version"
+    raise ChoiceError(
+        "SONG_WORD_TIMINGS_MISSING: version %s has no measured word timing, so the "
+        "picked song has no clock for captions or lip-sync; re-measure the take "
+        "before the pick (no timing is ever invented)." % vid)
+
+
+def _copy_word_timings(run_dir, source=None, doc=None):
+    """Write the picked take's timing to ``music/word-timings.json``, atomically.
+
+    ``source`` is copied byte for byte; ``doc`` is serialized from the take's
+    own measured words. A reader (the delivery packager) never sees a
+    half-written file: the payload lands as ``.partial`` beside the
+    destination and is then replaced into it.
+    """
+    dest = os.path.join(run_dir, WORD_TIMINGS_PATH)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    partial = dest + ".partial"
+    try:
+        if source is not None:
+            shutil.copyfile(source, partial)
+        else:
+            with open(partial, "w", encoding="utf-8") as f:
+                json.dump(doc or {}, f, indent=2, sort_keys=True)
+        os.replace(partial, dest)
+    except OSError:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        raise ChoiceError(
+            "SONG_WORD_TIMINGS_UNWRITABLE: the picked take's timing could not be "
+            "copied to music/word-timings.json; the pick is not complete until it is.")
+    return dest
+
+
+def _decision_for(run_dir, vid):
+    """WW-21 / D9: the recorded operator decision when it is VALID (it binds
+    the measured evidence still on disk) and NAMES this variant; else None.
+    A decision that does not name the variant never releases it, and a tampered
+    or missing digest is never honoured. It never writes a PASS."""
+    try:
+        dec, rs = _SD.decision_applies(run_dir)
+    except (OSError, ValueError, TypeError):
+        return None
+    if dec is not None and not rs and str(vid) in [
+            str(v) for v in dec.get("variants") or []]:
+        return dec
+    return None
+
+def record_pick(run_dir, reply):
+    """The client's 1, 2 or 3. Anything not offered is refused; returns the label.
+
+    WW-18: a file may be picked only when its take's REQUIRED gate set all
+    PASSED (its constituent receipt is current); an offered file whose take did
+    not pass every required gate is refused here and at delivery.
+
+    D-4: a take that has a valid client-kept record (song-choices/client-kept/)
+    is pickable even though no gate was re-written PASS; a take with NEITHER a
+    PASS record NOR a client-kept record is still refused."""
+    st = _state(run_dir)
+    if not st or not st.get("required"):
+        raise ChoiceError("this run did not ask for song choices")
+    # S75-053: the overlap measurement is a receipt line, never a pick stop.
+    # WW-21: the PICK is a delivery boundary too. D-4: a version the client
+    # KEPT carries its own record, so it is not held by the acceptance boundary
+    # -- the record is the authority for that take, read below.
+    n = str(reply).strip()
+    o = (st.get("offered") or {}).get(n)
+    # D-4: the variant id is the one the run RECORDED for this pick number;
+    # an older state without the map falls back to the offered entry's own id.
+    vid = (str((st.get("variants") or {}).get(n) or "")
+           or str((o or {}).get("variant_id") or "") or n)
+    # D9: a valid recorded operator decision that NAMES this variant releases
+    # the WW-21 acceptance boundary for the pick, exactly as factory._song_hold
+    # releases it for the music stage. It never offers a FAIL take and never
+    # writes PASS; it only lets the named variant be picked as it stands.
+    dec = _decision_for(run_dir, vid) if vid else None
+    kept = client_kept(run_dir, n) if (st.get("variants") or {}) else (
+        _SD.read_client_kept(run_dir, vid))
+    kept_ok = kept is not None and not _SD.client_kept_reasons(kept, vid)
+    if not kept_ok and not dec:
+        ahold = _acceptance_refusal(run_dir, "the pick")
+        if ahold:
+            raise ChoiceError(ahold["detail"])
+    if o and os.path.isfile(o["file"]):
+        ok, why = _SD.constituent_ok(o.get("receipt"))
+        if not ok and not kept_ok and not dec:
+            raise ChoiceError("song %s is not offerable: %s" % (reply, why))
+        src, label, take = o["file"], o["label"], o.get("take")
+    elif kept_ok or dec:
+        # D-4: the client kept this take, so its pick is honoured. The file is
+        # the version presented for listening in THIS run, never a new one.
+        src = _kept_source(st, n)
+        if not src:
+            if dec:
+                raise ChoiceError("the operator decision names version %s, but no presented "
+                                  "file for it is recorded in this run" % n)
+            raise ChoiceError("version %s was kept by the client, but no presented file for it "
+                              "is recorded in this run" % n)
+        label = re.sub(r" - NOT PASSED$", "", os.path.splitext(os.path.basename(src))[0])
+        take = {"audio_path": src}
+    else:
+        raise ChoiceError("%r is not one of the offered songs %s" % (reply, sorted(st.get("offered") or {})))
+    # S75-052: the PICK is per-version. A variant whose acceptance record is
+    # not PASS is refused by name even if another version passed; the whole-run
+    # hold above is only for an unjudged take or a run with no passing version.
+    # D-4: a take the client KEPT is released by its own record, never by a
+    # rewritten gate, so the per-version refusal does not apply to it.
+    if not kept_ok and vid and not dec:
+        vref = _SD.acceptance_variant_refusal(run_dir, vid, "the pick")
+        if vref:
+            raise ChoiceError(vref["detail"])
+    ok, why = _SD.constituent_ok(o.get("receipt")) if o else (True, "")
+    if not ok and not kept_ok and not dec:
+        raise ChoiceError("song %s is not offerable: %s" % (reply, why))
+    # S75-055: the pick is where the chosen take's measured timing becomes the
+    # run's ONE timing receipt (music/word-timings.json). Resolve the source
+    # BEFORE any file is written, so a missing timing leaves no half pick.
+    if o and os.path.isfile(o.get("file") or ""):
+        _timing_src, _timing_doc = _picked_timing(run_dir, o)
+        _timing_dest = None
+    else:
+        # D-4: a client-kept take is honoured without inventing a clock. A
+        # clock is published only when the kept take carries measured words.
+        _timing_src, _timing_doc, _timing_dest = None, None, None
+    os.makedirs(os.path.join(run_dir, "music"), exist_ok=True)
+    shutil.copyfile(src, picked_song(run_dir))
+    if o and os.path.isfile(o.get("file") or ""):
+        if _timing_src is not None:
+            # the take's OWN saved timing file (song_transports.make_save) is
+            # copied byte for byte: the right take's clock, never a re-derivation.
+            _timing_dest = _copy_word_timings(run_dir, source=_timing_src)
+        else:
+            # main-lane producer first (the lyric_timing F17 envelope every
+            # consumer already reads -- published from the take's aligned
+            # words); the take's own measured words are the fallback when no
+            # named source is recorded.
+            _timing_dest = _publish_word_timings(run_dir, o.get("take")) \
+                or _copy_word_timings(run_dir, doc=_timing_doc)
+    else:
+        _timing_dest = _publish_word_timings(run_dir, take)
+    pick_doc = {"pick": int(n), "label": label, "sha256": _sha(picked_song(run_dir)),
+                "take": take, "variant": vid, "client_kept": bool(kept_ok)}
+    if dec:
+        # D9: the pick records WHICH decision released it, by the digest that
+        # binds that decision to the measured evidence on disk.
+        pick_doc["operator_decision"] = dec["measured_evidence_digest"]
+    if _timing_dest:
+        pick_doc["word_timings"] = os.path.relpath(_timing_dest, run_dir)
+    _write(run_dir, "pick.json", pick_doc)
+    return label
+
+
+def _kept_source(st, n):
+    """The presented file for a client-kept version, found in this run's own
+    presented list (the version the client actually heard). '' when absent."""
+    for p in st.get("presented") or []:
+        if os.path.basename(str(p)).startswith("%s - " % n) and os.path.isfile(str(p)):
+            return str(p)
+    return ""
+
+
+def refusal(run_dir):
+    """None when work may go on; else the refusal. No state file = answered No.
+
+    WW-21 first: a take whose required gate set is not all PASS holds EVERY
+    later stage (picture timing, paid video, image, lip-sync) before the pick
+    check is even consulted."""
+    ahold = _acceptance_refusal(run_dir, "every later stage")
+    if ahold and ahold.get("reason_code") == _SD.ACCEPTANCE_CODE_NOT_PROVEN:
+        # D9: a valid recorded operator decision opens the WW-21 hold exactly
+        # as it does in factory._song_hold; the pick check below still decides.
+        dec, rs = _SD.decision_applies(run_dir)
+        if dec is not None and not rs:
+            ahold = None
+    if ahold:
+        return ahold
+    try:
+        st = _state(run_dir)
+    except (OSError, ValueError):
+        return _refuse("the song-choices state is unreadable; fix it before anything is spent")
+    if st and st.get("unanswered"):
+        # D-3: nothing was bought, and nothing else starts, until the client
+        # answers the SONG APPROVAL question.
+        return _unanswered_hold(run_dir, st)
+    if st is None or not st.get("required"):
+        return None
+    try:
+        with open(_path(run_dir, "pick.json"), encoding="utf-8") as f:
+            pick = json.load(f)
+        ok = os.path.isfile(picked_song(run_dir)) and _sha(picked_song(run_dir)) == pick["sha256"]
+    except (OSError, ValueError, KeyError):
+        ok = False
+    if not ok:
+        return _refuse("the client has not picked a song yet (or the picked file is missing or changed)")
+    return None
+
+
+def _refuse(why, code="SONG_PICK_MISSING"):
+    return {"reason_code": code, "detail": why,
+            "next_action": "Send the client the three songs and wait for their pick (1, 2 or 3). "
+                           "No picture timing, video, image or lip-sync job starts before it.",
+            # S75-W02-U3: the refusal travels as an envelope with its causal
+            # chain, so a wrapper boundary can never flatten it to a bare "no".
+            "causal_chain": [causal_link("song_choices", code, why)],
+            "client_explanation": loud_failure.explain_stop(code)}
+
+
+def _unanswered_hold(run_dir, st):
+    """D-3: the refusal that makes the music stage WAIT with the SONG APPROVAL
+    question instead of acting as Yes. Nothing is spent while it stands."""
+    why = ("the SONG APPROVAL answer is missing, corrupt or has no recorded "
+           "author; the run waits and buys nothing")
+    return {"reason_code": "SONG_APPROVAL_UNANSWERED",
+            "detail": why,
+            "next_action": "Ask the client: %s. Then wait for their answer. No "
+                           "song, picture, video, image or lip-sync job starts "
+                           "before it." % SONG_APPROVAL_QUESTION,
+            "causal_chain": [causal_link("song_choices",
+                                         "SONG_APPROVAL_UNANSWERED", why)],
+            "client_explanation": loud_failure.explain_stop("SONG_APPROVAL_UNANSWERED")}
+
+
+def _unanswered_refusal(run_dir):
+    """D-3: the recorded SONG APPROVAL answer is missing, corrupt or has no
+    recorded author -> the hold, else None. An unreadable state file is not
+    this hold (``refusal`` refuses it, fail closed); a state file with no
+    ``unanswered`` flag is an answered run and is left alone."""
+    try:
+        st = _state(run_dir)
+    except (OSError, ValueError):
+        return None
+    if not st or not st.get("unanswered"):
+        return None
+    return _unanswered_hold(run_dir, st)
+
+
+def _refuse_constituent(why):
+    return {"reason_code": "SONG_CONSTITUENT_EVIDENCE_MISSING", "detail": why,
+            "next_action": "Re-record the take's constituent-evidence receipt (every required "
+                           "gate PASS) before any picture, image or video spend.",
+            "causal_chain": [causal_link("song_choices",
+                                         "SONG_CONSTITUENT_EVIDENCE_MISSING", why)]}
+
+
+def constituent_hold(run_dir):
+    """WW-08 item 3: every OFFERED song must carry a current constituent-evidence
+    receipt (its required gates all PASS). A missing or blocked receipt closes
+    the gate at every later purchase and at delivery. None = nothing to hold."""
+    try:
+        st = _state(run_dir)
+    except (OSError, ValueError):
+        return _refuse_constituent("the song-choices state is unreadable")
+    if not st or not st.get("required"):
+        return None
+    bad = []
+    for n, o in (st.get("offered") or {}).items():
+        ok, why = _SD.constituent_ok((o or {}).get("receipt"))
+        if not ok:
+            bad.append("%s: %s" % (n, why))
+    return _refuse_constituent("; ".join(bad)) if bad else None
+
+
+def dispatch_refusal(is_music_job, run_dir):
+    """kie_dispatch seam: the song stage itself may run; everything else waits
+    until the pick is in AND every offered song's constituent receipt is
+    current (WW-08 item 3).
+
+    D-3 first: with the SONG APPROVAL question still unanswered NOTHING runs,
+    the song stage included -- silence must never buy three songs."""
+    hold = _unanswered_refusal(run_dir)
+    if hold:
+        return hold
+    if is_music_job:
+        return None
+    return refusal(run_dir) or constituent_hold(run_dir)
+
+
+# ---- the CLI generate path ----------------------------------------------
+
+def _canonical_run_dir(path):
+    if path is None or not str(path).strip():
+        return None
+    return os.path.realpath(os.path.expanduser(str(path).strip()))
+
+
+def _run_dir_authorities(doc, cli_dir=None):
+    """Every explicit run identity this invocation carries, by NAMED source.
+
+    The W68 review failure: a matching top-level run_dir could mask a nested
+    ``input.run_dir`` that disagreed. Both declared keys are collected
+    independently here, so no value can hide another.
+    """
+    auth = {}
+    cli = _canonical_run_dir(cli_dir)
+    if cli:
+        auth["--run-dir"] = cli
+    if isinstance(doc, dict):
+        top = _canonical_run_dir(doc.get("run_dir"))
+        if top:
+            auth["request.run_dir"] = top
+        inp = doc.get("input")
+        nested = _canonical_run_dir(inp.get("run_dir")) if isinstance(inp, dict) else None
+        if nested:
+            auth["request.input.run_dir"] = nested
+    return auth
+
+
+def _run_dir_conflict(auth):
+    """A refusal when two NAMED run authorities disagree; empty otherwise."""
+    if len({v for v in auth.values() if v}) > 1:
+        return "; ".join("%s=%s" % (k, v) for k, v in sorted(auth.items()))
+    return ""
+
+
+def _mode_family(mode):
+    """The FAMILY one run may choose exactly once: ``unit`` or ``umbrella``.
+
+    The documented three-unit orchestrated flow dispatches WW-001, then
+    WW-002, then WW-003 on ONE shared run dir (factory.py emits the same
+    ``--run-dir "$RUN"`` for every unit). Those are three dispatches in the
+    SAME family, not three modes: scoping the guard per label refused units 2
+    and 3. Only mixing a unit dispatch with an umbrella dispatch is the
+    nine-generation defect.
+    """
+    return "unit" if str(mode or "").startswith("unit:") else "umbrella"
+
+
+def mode_refusal(run_dir, mode):
+    """Read-only: None when ``mode`` may run on this run dir, else the refusal.
+
+    No record yet = nothing chosen. A record that exists but cannot be read is
+    a refusal too -- a damaged record must never reopen the other family."""
+    path = os.path.join(run_dir, "music", "dispatch-mode.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        current = doc.get("family") or (_mode_family(doc["mode"])
+                                        if "mode" in doc else None)
+    except (OSError, ValueError, AttributeError, KeyError):
+        current = None
+    if current not in ("unit", "umbrella"):
+        return ("REFUSED: the run's dispatch-mode record is unreadable; "
+                "refusing to choose a mode over it")
+    family = _mode_family(mode)
+    if current != family:
+        return ("REFUSED: this run already dispatches in the %r mode family; it "
+                "cannot also dispatch %r (%r family). Pick exactly ONE of umbrella "
+                "or orchestrated-unit per run -- mixing them is how nine paid "
+                "generations are bought for a three-variant run."
+                % (current, mode, family))
+    return None
+
+
+def _record_mode(run_dir, mode):
+    """X07: persist the ONE chosen dispatch mode FAMILY before any paid call.
+
+    A run that already chose the umbrella three-up mode may not also dispatch
+    single-unit intents (or the reverse): that is how nine paid generations
+    could be bought for a three-variant run. Within the unit family,
+    sequential DISTINCT units on one run dir are the documented three-unit
+    flow and are ALLOWED. A same-family restart is left to the
+    ledger/acknowledged-task resume path, never a second family.
+
+    First selection is create-once (private temp file + fsync + ``os.link``):
+    two racing opposite-family first selections yield exactly one winner, the
+    loser is refused, and the record is never torn.
+    """
+    path = os.path.join(run_dir, "music", "dispatch-mode.json")
+    existed = os.path.exists(path)      # BEFORE the check: a record that appears
+    why = mode_refusal(run_dir, mode)   # after this is still judged by the check
+    if why:
+        raise ChoiceError(why)
+    if existed:
+        return mode
+    tmp = None
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path),
+                                   prefix="dispatch-mode.", suffix=".partial")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"mode": mode, "family": _mode_family(mode)}, f,
+                      sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:   # lost the race: the winner's record decides
+            why = mode_refusal(run_dir, mode)
+            if why:
+                raise ChoiceError(why)
+    except OSError as exc:
+        raise ChoiceError(
+            "REFUSED: the dispatch mode could not be persisted before any paid "
+            "call: %s" % exc) from exc
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    return mode
+
+def _load_request(path, cli_run_dir=None):
+    """Read the music request and pull the pieces build_requests needs.
+    A missing piece is a loud refusal BEFORE any spend."""
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    inp = doc.get("input") if isinstance(doc.get("input"), dict) else {}
+    sheet_text = doc.get("sheet_text") or inp.get("lyrics") or doc.get("lyrics")
+    style_id = doc.get("style_id") or inp.get("style_id")
+    if not sheet_text or not style_id:
+        raise ChoiceError("the request file must carry style_id and the lyric sheet; "
+                          "got style_id=%r, sheet=%s" % (style_id, bool(sheet_text)))
+    return {"style_id": style_id, "sheet": _R.parse_lyrics(sheet_text) if hasattr(_R, "parse_lyrics")
+            else [{"tag": "Sheet", "delivery": "sung", "lines": sheet_text.splitlines()}],
+            "sheet_text": sheet_text,
+            "client_text": doc.get("client_text", ""), "title": doc.get("title") or inp.get("title", ""),
+            "length_s": doc.get("length_s") or inp.get("duration"),
+            "vocal_gender": inp.get("vocal_gender", doc.get("vocal_gender", "f")),
+            "hook_plan": doc.get("hook_plan") or doc.get("_hook_plan"),
+            "pace_plan": doc.get("pace_plan") or doc.get("_pace_plan"),
+            # S75-T41: the run's DISPLAY references (artists, aliases,
+            # reference songs).  They ride to the dispatch seam, which sweeps
+            # every outbound payload for them; never a provider field.
+            "client_references": doc.get("client_references"),
+            "run_authorities": _run_dir_authorities(doc, cli_run_dir)}
+
+
+def _hook_text(spec):
+    """WW-09 item 5: the hook text the hook gate measures -- the sung lines the
+    sheet itself repeats (suno_recipe's own rule). Non-empty for a shipped sheet
+    and never a silent empty default."""
+    sung = [s for s in (spec.get("sheet") or [])
+            if s.get("delivery") == "sung" and s.get("lines")
+            and not str(s.get("tag", "")).lower().startswith("vocalise")]
+    counts = {}
+    for s in sung:
+        key = " ".join(str(x) for x in s["lines"])
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return ""
+    best = max(counts, key=counts.get)
+    return best if counts[best] >= 2 else ""
+
+
+def _envelope_path(run_dir, variant_id):
+    return os.path.join(run_dir, "music", "takes", variant_id, "dispatch-envelope.json")
+
+def _write_envelope(run_dir, variant_id, payload):
+    """Persist ONE attempt's envelope under music/takes/<variant>/.
+
+    S75-W02-U3: the COMPLETE typed envelope is preserved per attempt --    outcome, refusal reason, next action, the seven counts and the causal
+    chain -- never only the provider evidence. A legacy raw-evidence payload    (pre-contract callers) is still accepted and wrapped, never saved alone.
+    """
+    env, ev = None, {}
+    if isinstance(payload, dict) and \
+            payload.get("schema_version") == ENVELOPE_SCHEMA_VERSION and \
+            isinstance(payload.get("counts"), dict):
+        env = attempt_envelope(payload.get("variant_id") or variant_id,
+                               payload.get("attempt_id"), payload.get("outcome"),
+                               payload.get("counts"),
+                               reason_code=payload.get("reason_code", ""),
+                               detail=payload.get("detail", ""),
+                               next_action=payload.get("next_action", ""),
+                               evidence=payload.get("evidence"),
+                               causal_chain=payload.get("causal_chain") or ())
+        ev = env["evidence"]
+    elif isinstance(payload, dict):
+        ev = payload                      # legacy raw evidence write
+    p = _envelope_path(run_dir, variant_id)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    doc = {"variant_id": variant_id, "evidence": ev}
+    if env is not None:
+        doc["envelope"] = env
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, sort_keys=True)
+    return p
+
+
+def _card_receipt(run_dir):
+    """The run's recorded four-pick card receipt, read from the run folder.
+
+    ``kie_dispatch.card_gate_refusal`` refuses EVERY paid job that carries no
+    ``card_receipt`` (F15: no paid job starts on an unanswered card), and the
+    music path never attached one -- so every dispatch, the word-timing
+    sub-calls included, refused CARD_UNANSWERED although the client had
+    answered and the receipt was on disk.
+
+    Read in this order, each shape taken only when it really carries the
+    answers: ``control/card-receipt-block.json`` (the stamped block),
+    ``control/card-receipt.json`` when it holds an ``answers`` dict (the
+    per-question record), ``control/run-state.json["card_receipt"]``. Nothing
+    found returns None: the gate then refuses exactly as before. A receipt is
+    never fabricated.
+    """
+    def _ok(block):
+        return isinstance(block, dict) and isinstance(block.get("answers"), dict)
+
+    p = os.path.join(run_dir, "control", "card-receipt-block.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        doc = None
+    if _ok(doc):
+        return doc
+
+    p = os.path.join(run_dir, "control", "card-receipt.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        doc = None
+    if _ok(doc):
+        return doc
+
+    p = os.path.join(run_dir, "control", "run-state.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        doc = None
+    block = doc.get("card_receipt") if isinstance(doc, dict) else None
+    return block if _ok(block) else None
+
+
+def _sheet_lyric_words(spec):
+    """The approved sheet's LYRIC LINES only -- what the script_words gate asks.
+
+    ``script_words`` is a REQUIRED_TAKE_GATE: it checks the TAKE sang the
+    approved lyrics. It was handed ``spec["client_text"]``, the source
+    research document, so every take was asked to sing a sales page. The
+    sheet's bracket headers are directions to Suno (``[Verse 1 (sung):
+    melodic, rhymed, slow long held notes]``), never lyrics, so they are
+    excluded here too -- ``song_dispatch._script_lyric_words`` only drops
+    brackets from text it is given, and this hands it text that never had
+    them. Falling back to ``sheet_text`` keeps a sheet that failed to parse
+    no worse off than before. ``client_text`` stays the hook-vocabulary
+    source and nothing else (``build_requests``).
+    """
+    lines = []
+    for sec in spec.get("sheet") or []:
+        if not isinstance(sec, dict):
+            continue
+        for line in sec.get("lines") or []:
+            if str(line).strip():
+                lines.append(str(line))
+    if lines:
+        return " ".join(lines)
+    return spec.get("sheet_text") or ""
+
+
+def _real_generate(run_dir, ledger, run_id, dispatcher=None):
+    """The default per-variant worker: ONE KIE dispatch per call, and the
+    per-variant envelope carries the two aware-UTC stamps the overlap
+    receipt binds (``evidence.accepted_submit_at`` / ``evidence.terminal_at``).
+    Injected in tests, so no provider is ever called there.
+
+    S75-001: the ledger estimate is the song price authority's own number
+    (``song_dispatch.song_cost_cents`` -> ``card_render.price_envelope``), never
+    the bare constant 6. ``dispatcher`` lets a test read that exact number
+    without reaching a provider."""
+    def generate(variant, request):
+        _c = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        _dispatch = dispatcher
+        if _dispatch is None:
+            import kie_dispatch.kie_dispatch as _KD   # noqa: PLC0415
+            _dispatch = _KD.dispatch
+        save_dir = os.path.join(run_dir, "music", "takes", variant["id"])
+        os.makedirs(save_dir, exist_ok=True)
+        # F15: the run's recorded card receipt rides the request. Without it
+        # every paid job -- each song and each word-timing sub-call -- was
+        # refused CARD_UNANSWERED even though the client had answered. A
+        # request that already carries its own receipt is left alone.
+        payload = dict(request)
+        if not isinstance(payload.get("card_receipt"), dict):
+            receipt = _card_receipt(run_dir)
+            if receipt is not None:
+                payload["card_receipt"] = receipt
+        logical_key = "song/%s" % variant["id"]
+        # A redo the client asked for is a paid creative retake: the ledger
+        # needs the client's recorded answer as its authorization reference
+        # or it refuses MISSING_AUTH_REF and nothing is bought. This reference
+        # IS the client's current answer, so an empty one (a later keep_one)
+        # also stops a failed redo's retry (require_round_auth) -- but only
+        # when a decision is recorded at all. With no recorded answer there is
+        # nothing withdrawn, so no flag rides along and the run keeps the
+        # plain initial-round provider-failure retry it always had.
+        auth = redo_authorization(run_dir, logical_key)
+        decided = fork_decision(run_dir) is not None
+        extra = {"auth_ref": auth} if auth else {}
+        if decided:
+            extra["require_round_auth"] = True
+        env = _dispatch(model=payload.get("model") or "ai-music-api/generate",
+                        request=payload, save_dir=save_dir, ledger_db=ledger,
+                        run_id=run_id or (os.path.basename(run_dir) or "run"),
+                        logical_key=logical_key, **extra,
+                        # Empty: the ledger mints the attempt identity and
+                        # dispatch() carries the committed id back. A literal
+                        # "a1" made every retry after a failed paid take
+                        # refuse DUPLICATE_ATTEMPT, so the retry path was
+                        # structurally dead.
+                        # S75-001: the reserve estimate is the priced one song
+                        # generation, never the bare constant 6.
+                        attempt_id="", estimated_cost=_SD.song_cost_cents(),
+                        prompt=payload.get("input", {}).get("style", "")[:2000])
+        ev = env.get("evidence", {}) if isinstance(env, dict) else {}
+        # S75-W02-U3: the COMPLETE typed envelope per attempt is preserved           # here -- outcome, refusal reason, next action and the dispatch-boundary           # counts (evaluated/delivered are folded in at the judge boundary) --           # never only the evidence above. The refusal triple of a rejected or           # waiting dispatch survives this boundary verbatim.
+        _raw_outcome = env.get("outcome") if isinstance(env, dict) else "error"
+        _outcome = _raw_outcome if _raw_outcome in ENVELOPE_OUTCOMES else "error"
+        _reason = (env.get("reason_code") or "") if isinstance(env, dict) else ""
+        _next = (env.get("next_action") or "") if isinstance(env, dict) else ""
+        if _outcome != "ok":
+            _reason = _reason or "DISPATCH_NOT_OK"
+            _next = _next or _EMPTY_NEXT_ACTION
+        # The ledger's committed attempt id, never a locally-minted suffix.
+        _aid = (env.get("attempt_id") if isinstance(env, dict) else None) or ""
+        _aenv = attempt_envelope(
+            variant["id"], _aid or "a1",
+            _outcome, _counts_from_dispatch(env, ev),
+            reason_code=_reason,
+            detail=str(ev.get("detail") or ""),
+            next_action=_next, evidence=ev,
+            causal_chain=[causal_link("kie_dispatch",
+                                      _reason or "KIE_DISPATCH_OK",
+                                      str(ev.get("detail") or ""))])
+        generate.attempt_envelopes[variant["id"]] = _aenv
+        _write_envelope(run_dir, variant["id"], _aenv)
+        # D2 item 3: the overlap receipt, built from the PROVIDER lifecycle
+        # stamps only. accepted_submit_at is stamped after a valid task-id
+        # acknowledgment; terminal_at at the first terminal provider response.
+        # No receipt when the provider never acknowledged or never terminated:
+        # the gate then reports UNAVAILABLE, which is never a pass.
+        if _aid and ev.get("accepted_submit_at") and ev.get("terminal_at"):
+            receipt_for(run_dir, variant, request, _aid, ev.get("task_id"),
+                        ev["accepted_submit_at"], ev["terminal_at"])
+        # Provenance for lyric_timing (reads take["task_id"] / take["audio_id"]).
+        # The envelope carries the generation task id only; the per-track Suno
+        # audio id is not surfaced, so audio_id stays ABSENT -- never filled
+        # with the task id. A dispatcher-synthesized "sync-" id is not a
+        # provider id and is not recorded.
+        task_id = ev.get("task_id")
+        prov = ({"task_id": task_id} if isinstance(task_id, str) and task_id
+                and not task_id.startswith("sync-") else {})
+        takes = []
+        if isinstance(env, dict) and env.get("outcome") == "ok":
+            for p in ev.get("saved_paths", []) or []:
+                takes.append(dict(prov, audio_path=p))
+        return takes
+
+    # S75-W02-U3: the per-attempt envelopes this transport preserved, keyed by
+    # variant id -- one_variant reads them to fold in the judge-boundary counts.
+    generate.attempt_envelopes = {}
+    return generate
+
+
+def _latest_take(variant_dir):
+    """The LAST saved take under ``music/takes/<variant>/`` (a ``take-NN``
+    folder), as ``(take, judge receipt)``, or ``(None, None)`` when none was
+    saved. Reads only what the save transport wrote."""
+    try:
+        names = sorted(n for n in os.listdir(variant_dir)
+                       if n.startswith("take-")
+                       and os.path.isdir(os.path.join(variant_dir, n)))
+    except OSError:
+        return None, None
+    for name in reversed(names):
+        d = os.path.join(variant_dir, name)
+        try:
+            with open(os.path.join(d, "take-measurements.json"), encoding="utf-8") as f:
+                take = json.load(f)
+            with open(os.path.join(d, "receipt.json"), encoding="utf-8") as f:
+                rcpt = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(take, dict) or not isinstance(rcpt, dict):
+            continue
+        try:
+            audio = next((os.path.join(d, n) for n in sorted(os.listdir(d))
+                          if n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac"))),
+                         None)
+        except OSError:
+            audio = None
+        if not audio:
+            continue
+        return dict(take, audio_path=audio), rcpt
+    return None, None
+
+
+def results_from_run(run_dir):
+    """S75-052: rebuild the three delivery results from the run's OWN saved
+    takes, for ``song_choices.py offer --run-dir``.
+
+    Reads only what the music stage wrote (``music/req.json`` and
+    ``music/takes/<variant>/take-NN/``); it never generates and never guesses.
+    A variant with no saved, judged take is refused by name."""
+    run_dir = os.path.abspath(os.path.expanduser(str(run_dir)))
+    spec = _load_request(os.path.join(run_dir, "music", "req.json"), run_dir)
+    reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
+                          spec["title"], spec["length_s"], spec["vocal_gender"],
+                          hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
+    plan = {"delivered_s": spec["length_s"], "style_id": spec["style_id"],
+            "sheet_text": spec["sheet_text"], "hook_plan": spec["hook_plan"],
+            "_pace_plan": spec["pace_plan"]}
+    out = []
+    for n, (v, _rq) in enumerate(reqs, 1):
+        take, rcpt = _latest_take(os.path.join(run_dir, "music", "takes", v["id"]))
+        if take is None or not isinstance(rcpt, dict):
+            raise ChoiceError("variant %s has no saved, judged take under "
+                              "music/takes/%s; nothing is offered"
+                              % (v["id"], v["id"]))
+        ok = _SD.take_accepted(rcpt)[0]
+        out.append({"n": n, "variant": v,
+                    "status": rcpt.get("verdict") if ok else "FAILED",
+                    "take": take,
+                    "receipt": _SD.constituent_receipt(take, rcpt, plan),
+                    "receipts": [rcpt]})
+    return out
+
+
+def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
+    """`generate` -- the canonical three-version music runner.
+
+    Orchestrated mode (``--variant``/``--unit-id``): ONE worker, ONE owned
+    variant folder, ONE generation. Umbrella mode (neither flag, non-workflow
+    run): all three once, three provider jobs in three threads inside this one
+    agent unit. The fan-in only ever CHECKS and DELIVERS existing results.
+
+    WW-09 item 5: a production run REFUSES an empty ``measure``/``save``
+    transport or an empty hook text rather than substituting a silent no-op --
+    a take judged on no measurements, or a hook gate that never ran, is the
+    defect this unit fixes.
+    """
+    run_dir = _canonical_run_dir(a.run_dir)
+    # D-3: an unanswered SONG APPROVAL card buys NOTHING. The three-version
+    # runner is the Yes path; it refuses here rather than spending three songs
+    # on a question the client never answered.
+    _hold = _unanswered_refusal(run_dir)
+    if _hold:
+        # Same envelope as the refusals below: the hold carries its own
+        # four-part message, so the CLI exit is never explanation-free.
+        err = ChoiceError("REFUSED: %s -- %s. %s"
+                          % (_hold["reason_code"], _hold["detail"],
+                             _hold["next_action"]))
+        err.client_explanation = _hold.get("client_explanation")
+        raise err
+    spec = _load_request(a.request, run_dir)
+    conflict = _run_dir_conflict(spec.get("run_authorities") or {})
+    if conflict:
+        # Raw refusal EXCEPT it carries the four-part client message: the
+        # caller asked for two run folders at once, so nothing ran.
+        err = ChoiceError("REFUSED: conflicting run roots (%s); name ONE run "
+                          "directory" % conflict)
+        err.client_explanation = loud_failure.explain_stop(
+            "CONFLICTING_RUN_ROOTS", None,
+            {"reason_code": "CONFLICTING_RUN_ROOTS",
+             "detail": "the request names two different run folders: %s" % conflict,
+             "next_action": "name ONE run folder and run again"})
+        raise err
+    for _label, _fn in (("measure", measure), ("save", save)):
+        if _fn is None:
+            err = ChoiceError("REFUSED: the production run needs a real %s transport, "
+                              "not an empty default no-op" % _label)
+            err.client_explanation = loud_failure.explain_stop(
+                "TRANSPORT_MISSING", None,
+                {"reason_code": "TRANSPORT_MISSING",
+                 "detail": "the production run was started without its %s step" % _label,
+                 "next_action": "start the run through the normal command, "
+                                "which wires the %s step in" % _label})
+            raise err
+    hook_text = _hook_text(spec)
+    if not str(hook_text).strip():
+        err = ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
+                          "sung hook); the hook gate cannot be skipped")
+        err.client_explanation = loud_failure.explain_stop(
+            "HOOK_TEXT_MISSING", None,
+            {"reason_code": "HOOK_TEXT_MISSING",
+             "detail": "the sheet repeats no sung hook, so there is no hook "
+                       "to judge or place",
+             "next_action": "repeat the sung hook lines in the sheet and run again"})
+        raise err
+    try:
+        reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
+                              spec["title"], spec["length_s"], spec["vocal_gender"],
+                              hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
+    except _R.RecipeError as exc:
+        # Owner order 2026-11-20: the refusal is unchanged (same exception,
+        # same pass/fail); it now carries the four-part client explanation.
+        exc.client_explanation = explain_refusal(exc, spec)
+        raise
+    _require_three(reqs, key=lambda r: r[0]["id"])
+    if a.variant or a.unit_id:
+        idx = _select_one(reqs, a.unit_id or None, a.variant or None)
+        mode = "unit:%s" % reqs[idx][0]["id"]
+    else:
+        mode = "umbrella"
+    _record_mode(run_dir, mode)
+    plan = plan or {"delivered_s": spec["length_s"], "style_id": spec["style_id"],
+                    "sheet_text": spec["sheet_text"], "hook_plan": spec["hook_plan"],
+                    "_pace_plan": spec["pace_plan"]}
+    gen = generate or _real_generate(run_dir, a.ledger, a.run_id)
+    kw = dict(plan=plan, generate=gen, measure=measure, save=save,
+              script_words=_sheet_lyric_words(spec), hook_text=hook_text,
+              envelope_run_dir=run_dir, run_dir=run_dir,
+              # S75-T41: the run's display references, swept at the dispatch
+              # seam before anything reaches the provider.
+              alias_catalog=spec.get("client_references") or {})
+    # WWFIXGAPS U1 (defect 3): the reported count is MEASURED from the run that
+    # actually happened, never a literal -- and S75-W02-U3 reports the seven
+    # lifecycle counts SEPARATELY. ``dispatched`` is the submitted count (the
+    # provider submissions actually issued); a generate call that a gate
+    # refused before submission is no longer counted as dispatched, and an
+    # empty take list is never narrated as success (see ``outcome``).
+    if a.variant or a.unit_id:
+        results = run_unit(reqs, unit_id=a.unit_id or None, variant_id=a.variant or None, **kw)
+    else:
+        results = generate_choices(reqs, **kw)
+    counts = add_counts(*[r.get("counts") or {} for r in results])
+    outcomes = [(r.get("envelope") or {}).get("outcome") for r in results]
+    run_outcome = (RUN_OUTCOMES[0] if outcomes and all(o == "ok" for o in outcomes)
+                   else RUN_OUTCOMES[1] if any(o == "ok" for o in outcomes)
+                   else RUN_OUTCOMES[2])
+    # C11 port: 999-era callers report attempts only; the product tree reports
+    # submitted counts. Prefer the measured count; fall back to attempts.
+    dispatched = (counts["submitted"] if any(r.get("counts") for r in results)
+                else sum(int(r.get("attempts") or 0) for r in results))
+    # S75-018: money beside the counts. Each result carries the callee's OWN
+    # ``spent_cents`` (run_takes counts the per-attempt charge); the block
+    # reports their sum, never a price recomputed from a constant. One result
+    # with an UNKNOWN charge makes the whole figure UNKNOWN -- ``None``, never
+    # zero, and never a partial total presented as the run's spend.
+    charges = [r["spent_cents"] for r in results if "spent_cents" in r]
+    spent_cents = (None if (len(charges) != len(results)
+                            or any(c is None for c in charges))
+                   else sum(int(c) for c in charges))
+    if a.variant or a.unit_id:
+        # S75-018 (X06): the run's REPORTED block is where the digest must be
+        # readable. Orchestrated mode runs exactly ONE unit, so exactly one
+        # snapshot was admitted and one digest names it. The umbrella run
+        # admits three and keeps each variant's digest on its own row under
+        # "results" -- never one digest standing in for three.
+        out = {"mode": "orchestrated", "outcome": run_outcome,
+               "dispatched": dispatched, "spent_cents": spent_cents,
+               "counts": counts,
+               "submitted_digest": (results[0].get("submitted_digest")
+                                    if results else None),
+               "results": results}
+    else:
+        out = {"mode": "umbrella", "outcome": run_outcome,
+               "dispatched": dispatched, "spent_cents": spent_cents,
+               "counts": counts, "results": results,
+               "media_concurrency": 3, "builder_agent_units": 1,
+               "note": "3 provider jobs in 3 THREADS inside ONE agent unit; "
+                       "threads are not visible agents"}
+    out["units"] = plan_units(run_dir, reqs)
+    return out
+
+
+def explain_stop_from_message(msg):
+    """Four-part explanation for a bare ChoiceError refusal message: reuse the
+    refusal's own words through loud_failure.explain_stop (never invent
+    facts). Read-only: it never changes the refusal."""
+    return loud_failure.explain_stop("CHOICE_REFUSED", None,
+                                     {"reason_code": "CHOICE_REFUSED",
+                                      "detail": msg,
+                                      "next_action": ("fix the named run problem "
+                                                      "and run again")})
+
+
+def explain_refusal(exc, spec=None):
+    """The four-part client explanation (loud_failure.explain_stop) for a
+    refusal raised on the song path. For LYRICS_REJECTED it adds the song
+    length that WOULD fit these words, from the skill's own length plan
+    (suno_recipe.length_that_fits); a refusal of any other kind falls back to
+    the envelope's own words. Read-only: it never changes the refusal."""
+    msg = str(exc)
+    code = getattr(exc, "code", None) or msg.split(":", 1)[0].strip()
+    detail = msg.split(":", 1)[1].strip() if ":" in msg else msg
+    facts = {}
+    if code == "LYRICS_REJECTED" and isinstance(spec, dict) and spec.get("sheet"):
+        try:
+            # The named length must clear BOTH word checks (budget and spoken
+            # intro), so the client's "make it longer" choice never lands on a
+            # length the gate still refuses. None = no offered length fits:
+            # the opener (or the words) must get shorter, and no longer-song
+            # choice is offered.
+            fit = _R.length_that_fits(spec["sheet"], spec.get("style_id"))
+            if fit.get("length_s"):
+                facts["fit_length_s"] = fit["length_s"]
+            else:
+                facts["no_fit_length"] = "shorten the opener"
+        except Exception:  # noqa: BLE001 - the explanation never breaks a refusal
+            pass
+    return loud_failure.explain_stop(code, facts,
+                                     {"reason_code": code, "detail": detail})
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Song choices: init the card answer, record the pick, check the gate.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    i = sub.add_parser("init")
+    i.add_argument("--run-dir", required=True)
+    i.add_argument("--required", choices=("yes", "no"), required=True)
+    p = sub.add_parser("pick")
+    p.add_argument("--run-dir", required=True)
+    p.add_argument("--reply", required=True)
+    fk = sub.add_parser("fork", help="record the client's answer to the song-failure fork")
+    fk.add_argument("--run-dir", required=True)
+    fk.add_argument("--reply", required=True)
+    fk.add_argument("--who", default="")
+    fk.add_argument("--variant", default="",
+                    help="the version the client kept (keep-one answers only)")
+    kp = sub.add_parser("keep", help="record the client's 'keep one of these' choice for a version")
+    kp.add_argument("--run-dir", required=True)
+    kp.add_argument("--variant", required=True)
+    kp.add_argument("--reply", required=True)
+    kp.add_argument("--who", default="")
+    sd = sub.add_parser("send")
+    sd.add_argument("--run-dir", required=True)
+    sd.add_argument("--target", required=True)
+    c = sub.add_parser("check")
+    c.add_argument("--run-dir", required=True)
+    g = sub.add_parser("generate", help="the canonical three-version music runner "
+                                        "(umbrella three-up, or ONE unit in orchestrated mode)")
+    g.add_argument("--run-dir", required=True)
+    g.add_argument("--request", required=True, help="the music request JSON")
+    g.add_argument("--ledger", default="", help="spend ledger sqlite path")
+    g.add_argument("--run-id", default="")
+    g.add_argument("--variant", default="", help="orchestrated mode: run ONE variant only")
+    g.add_argument("--unit-id", default="", help="orchestrated mode: run ONE owned unit WW-00N")
+    of = sub.add_parser("offer", help="check and deliver the three songs that already exist "
+                                      "(fan-in, then delivery)")
+    of.add_argument("--run-dir", required=True)
+    of.add_argument("--delivery-dir", default="",
+                    help="the client delivery folder (default: <run>/delivery)")
+    a = ap.parse_args(argv)
+    try:
+        if a.cmd == "init":
+            init(a.run_dir, a.required == "yes")
+        elif a.cmd == "send":
+            send_choices(a.run_dir, a.target)
+        elif a.cmd == "pick":
+            try:
+                print("Picked: " + record_pick(a.run_dir, a.reply))
+            except ChoiceError:
+                # SONG-FAILURE VERDICT BELONGS TO THE CLIENT (order 2026-10-21):
+                # the client answered the fork in words, not a number. Record
+                # that answer and re-raise only when it is none of the three.
+                if parse_fork_answer(a.reply) is None:
+                    raise
+                rec = record_fork_decision(a.run_dir, a.reply)
+                print("Fork recorded: " + rec["answer"])
+        elif a.cmd == "fork":
+            rec = record_fork_decision(a.run_dir, a.reply, who=a.who or None,
+                                       variant=a.variant or None)
+            print("Fork recorded: " + rec["answer"])
+        elif a.cmd == "keep":
+            d = record_client_kept(a.run_dir, a.variant, a.reply, who=a.who or None)
+            print("Kept version %s recorded" % d["variant"])
+        elif a.cmd == "generate":
+            # The CLI is the command the stage runbook hands agents, so it
+            # supplies the REAL transports itself: measurements off the take's
+            # own audio (song_transports.make_measure, which runs the one
+            # word-timing step) and every paid take kept on disk
+            # (make_save). ``cmd_generate`` still refuses a programmatic
+            # ``measure``/``save`` of None -- that guard is untouched; it was
+            # never meant to describe the shipped runner.
+            import song_transports as _ST        # noqa: PLC0415
+            _run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
+            _spec = _load_request(a.request)
+            # The word-timing step is wired here too: hook, hook_placement and
+            # song_contract cannot be measured without it, and the step carries
+            # the SAME run receipt this file attaches, so its own paid sub-call
+            # clears the same card gate.
+            _timings = _ST.make_timings(
+                _run_dir, ledger=a.ledger or os.path.join(_run_dir, "spend.sqlite3"),
+                run_id=a.run_id)
+            try:
+                out = cmd_generate(
+                    a,
+                    measure=_ST.make_measure(pace_plan=_spec.get("pace_plan"),
+                                             timings=_timings),
+                    save=_ST.make_save(_run_dir))
+            except _R.RecipeError as e:
+                # RecipeError path (finding 5): the refusal is the same one
+                # cmd_generate raised (same code, same words, exit 5); only
+                # the four-part client explanation is printed beside it.
+                # next_action stays the exception's own -- the envelope never
+                # invents a new instruction.
+                print("REFUSED: %s" % e, file=sys.stderr)
+                exp = (getattr(e, "client_explanation", None)
+                       or explain_refusal(e, _spec))
+                try:
+                    nxt = exp.get("fix") if isinstance(exp, dict) else ""
+                except Exception:  # noqa: BLE001 - the fix line is optional
+                    nxt = ""
+                json.dump({"outcome": "rejected",
+                           "reason_code": getattr(e, "code", "") or "RECIPE_REFUSED",
+                           "detail": str(e),
+                           "next_action": nxt or str(e),
+                           "client_explanation": exp},
+                          sys.stdout, indent=2, sort_keys=True, default=str)
+                sys.stdout.write("\n")
+                return 5
+            json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
+            sys.stdout.write("\n")
+            if out.get("outcome") != "ok":
+                # S75-W02-U3: exit 0 is reserved for a run whose every attempt
+                # actually dispatched. An empty take list or a refused dispatch
+                # prints its typed envelope above and exits NONZERO -- it can
+                # never be narrated as a successful dispatch.
+                return 5
+        elif a.cmd == "offer":
+            # S75-052: the reachable delivery action. Checks and delivers the
+            # takes that already exist -- `generate` never offers anything by
+            # itself, so without this the offer surface was unreachable.
+            rd = os.path.abspath(os.path.expanduser(a.run_dir))
+            results = results_from_run(rd)
+            delivery = (os.path.abspath(os.path.expanduser(a.delivery_dir))
+                        if a.delivery_dir else os.path.join(rd, "delivery"))
+            print(fan_in(results, rd, delivery))
+        else:
+            r = refusal(a.run_dir)
+            if r:
+                print(json.dumps(r, indent=2))
+                return 5
+            print("ok")
+    except ChoiceError as e:
+        # Round 2 finding 1: the ChoiceError path is a client-facing stop
+        # (conflicting run roots, missing transport, missing hook, unanswered
+        # approval). It now prints the same structured envelope as a RecipeError
+        # -- reason code, detail, next action AND the four-part
+        # client_explanation -- so choices always reach the caller.
+        exp = getattr(e, "client_explanation", None)
+        if exp is None:
+            try:
+                exp = explain_stop_from_message(str(e))
+            except Exception:  # noqa: BLE001 - the envelope never breaks a stop
+                exp = None
+        print("REFUSED: %s" % e, file=sys.stderr)
+        try:
+            json.dump({"outcome": "rejected",
+                       "reason_code": "CHOICE_REFUSED",
+                       "detail": str(e),
+                       "next_action": ("fix the named run problem and run "
+                                       "again"),
+                       "client_explanation": exp},
+                      sys.stdout, indent=2, sort_keys=True, default=str)
+            sys.stdout.write("\n")
+        except Exception:  # noqa: BLE001 - stderr keeps the refusal either way
+            pass
+        return 5
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

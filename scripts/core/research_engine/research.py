@@ -1,0 +1,507 @@
+"""research.py: research stage runner producing research/brief outputs.
+
+Directive 21 (research/market.md, audience.md, competitors.md, evidence.json),
+17.9 (factual claims link to evidence), 11.1/11.2 (specific sub-avatar),
+24.4 (stable JSON envelope + exit codes). Stdlib only.
+
+Input brief: {"offer", "audience", "action"/"cta", "claims": [...],
+  "sources": [...]}. Every claim needs a citation URL + retrieval date or it
+lands UNAVAILABLE in evidence.json. Claims without source never pass.
+Sub-avatar brief is JSON: avatar, emotional_wound, desired_transformation.
+Outputs render to a run dir: research/{market,audience,competitors}.md +
+evidence.json, brief/sub_avatar.json, plus research/bundle.json (the authored,
+provenance-tagged bundle) and research/premise.md when fiction is present.
+
+Authoring is claims.py: every claim is tagged owner-fact, public-fact or
+fiction, and each research section is written from the claims that support it.
+A section with no supporting claim is refused before render, so a header that
+echoes the brief can never pass as research.
+
+A BARE brief carries no sources[] — the client never had search URLs. The stage
+therefore runs the keyless gatherer (gather.py) first: when evaluate() reports
+SOURCES_MISSING the gatherer searches the web without any API key, fills
+sources[] + claims[], and the merged brief is re-evaluated against the unchanged
+validator. A brief that still has no source (offline box, exhausted stage budget,
+no results) leaves as "waiting", exit 2, carrying ONE plain question to the
+client — continue with only what you gave me? — never a silent continue.
+SOURCES_MISSING stays reachable only where no gathering happened at all
+(--no-gather, or a direct evaluate() call). Exit contract unchanged: ok 0 / waiting 2 / parked 3 /
+rejected 4 / error 1.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+if __package__:
+    from . import gather as gatherer
+    from . import claims as claimmap
+else:                            # run as a script: sibling module on sys.path
+    import gather as gatherer
+    import claims as claimmap
+
+SCHEMA_VERSION = "blackceo.research/v1"
+TOOL_VERSION = "1.0.0"
+EXIT = {"ok": 0, "waiting": 2, "parked": 3, "rejected": 4, "error": 1}
+
+RESEARCH_FILES = ("market.md", "audience.md", "competitors.md", "evidence.json")
+
+# ponytail: field set fixed by contract; extend only on directive change.
+
+
+class ResearchError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def _today():
+    return datetime.date.today().isoformat()
+
+
+def _nonempty(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def validate_sources(sources):
+    """Sources: [{id?, url, retrieved}]. URL required, retrieved defaults today."""
+    errors, seen, norm = [], set(), []
+    if not isinstance(sources, list) or not sources:
+        raise ResearchError("SOURCES_MISSING", "sources must be a non-empty list")
+    for i, s in enumerate(sources):
+        if not isinstance(s, dict):
+            errors.append("source %d: not an object" % i)
+            continue
+        url = s.get("url")
+        if not _nonempty(url):
+            errors.append("source %d: url required" % i)
+            continue
+        url = url.strip()
+        if url in seen:
+            errors.append("source %d: duplicate url %r" % (i, url))
+            continue
+        seen.add(url)
+        rec = {"id": s.get("id") if _nonempty(s.get("id")) else "src-%d" % (i + 1),
+               "url": url, "retrieved": s.get("retrieved") or _today()}
+        # The fetched text a gathered claim was quoted from travels with the
+        # source, and marks it as gathered: it is what the structural verbatim
+        # check reads.
+        excerpts = s.get("excerpts")
+        if isinstance(excerpts, list):
+            rec["excerpts"] = [x for x in excerpts if _nonempty(x)]
+        if s.get("gathered"):
+            rec["gathered"] = True
+        norm.append(rec)
+    return norm, errors
+
+
+def validate_claims(claims, source_ids):
+    """Claims: [{id?, text, provenance?, source?, owner_ref?, sections?}].
+    A claim carries a source id or its raw owner-answer identity, or it is
+    explicitly fiction; anything else goes UNAVAILABLE in evidence.json."""
+    if not isinstance(claims, list) or not claims:
+        raise ResearchError("CLAIMS_MISSING", "claims must be a non-empty list")
+    ok, unavailable, seen = [], [], set()
+    for i, c in enumerate(claims):
+        cid = c.get("id") if isinstance(c, dict) and _nonempty(c.get("id")) else "claim-%d" % (i + 1)
+        if cid in seen:
+            unavailable.append({"id": cid, "text": c.get("text") if isinstance(c, dict) else None,
+                                "status": "UNAVAILABLE", "reason": "duplicate-claim-id"})
+            continue
+        seen.add(cid)
+        text = c.get("text") if isinstance(c, dict) else None
+        src = c.get("source") if isinstance(c, dict) else None
+        if not _nonempty(text):
+            unavailable.append({"id": cid, "text": text, "status": "UNAVAILABLE",
+                                "reason": "claim-text-missing"})
+        elif claimmap.is_fiction_claim(c):
+            rec = {"id": cid, "text": text.strip(), "provenance": "fiction",
+                   "status": "PASS"}
+            if isinstance(c, dict) and c.get("sections"):
+                rec["sections"] = c["sections"]
+            ok.append(rec)
+        elif (isinstance(c, dict) and c.get("provenance") == "owner-fact"
+              and _nonempty(c.get("owner_ref"))):
+            # An owner statement is supported by the raw answer it came from,
+            # not by a URL. It is filed unverified, never as public fact.
+            rec = {"id": cid, "text": text.strip(), "provenance": "owner-fact",
+                   "owner_ref": c["owner_ref"].strip(), "status": "PASS"}
+            for field in ("sections", "about"):
+                if c.get(field):
+                    rec[field] = c[field]
+            ok.append(rec)
+        elif not _nonempty(src) or src.strip() not in source_ids:
+            unavailable.append({"id": cid, "text": text.strip() if _nonempty(text) else text,
+                                "status": "UNAVAILABLE", "reason": "claim-without-source"})
+        else:
+            rec = {"id": cid, "text": text.strip(), "source": src.strip(), "status": "PASS"}
+            if _nonempty(c.get("provenance")):
+                rec["provenance"] = c["provenance"].strip()
+            for field in ("owner_ref", "sections", "locator", "capture_date",
+                          "about", "class", "support", "claim_type"):
+                if c.get(field):
+                    rec[field] = c[field]
+            ok.append(rec)
+    return ok, unavailable
+
+
+def validate_sub_avatar(sub):
+    """Sub-avatar brief: avatar + emotional_wound + desired_transformation."""
+    errors = []
+    if not isinstance(sub, dict):
+        return ["sub_avatar must be an object"]
+    for f in ("avatar", "emotional_wound", "desired_transformation"):
+        if not _nonempty(sub.get(f)):
+            errors.append("sub_avatar.%s required (non-empty)" % f)
+    allowed = {"avatar", "emotional_wound", "desired_transformation", "notes"}
+    for k in sub:
+        if k not in allowed:
+            errors.append("sub_avatar.%s unknown field" % k)
+    return errors
+
+
+def _fiction_only(brief):
+    """True when the brief's claims are all labelled fiction, or it supplies
+    only an explicitly fictional premise. A fiction-only bundle needs no
+    citation — it must never be dressed up as sourced fact either."""
+    claims = [c for c in (brief.get("claims") or []) if isinstance(c, dict)]
+    if claims:
+        return all(claimmap.is_fiction_claim(c) for c in claims)
+    return bool(brief.get("premise"))
+
+
+def evaluate(brief, today=None):
+    """Validate brief, classify claims, gate sub-avatar completeness, then
+    author and validate the provenance-tagged research bundle.
+
+    Returns outcome/reason_code/evidence bundle. No filesystem writes.
+    """
+    brief = brief or {}
+    errors = []
+    for f in ("offer", "audience"):
+        if not _nonempty(brief.get(f)):
+            errors.append("%s required (non-empty)" % f)
+    if not _nonempty(brief.get("action")) and not _nonempty(brief.get("cta")):
+        errors.append("action/cta required (non-empty)")
+    if errors:
+        return {"outcome": "waiting", "reason_code": "missing-essentials",
+                "errors": errors, "next_action": "Supply offer, audience, action/cta."}
+    try:
+        sources, src_errors = validate_sources(brief.get("sources"))
+    except ResearchError as e:
+        if e.code == "SOURCES_MISSING" and _fiction_only(brief):
+            sources, src_errors = [], []
+        else:
+            return {"outcome": "rejected", "reason_code": e.code, "errors": [str(e)],
+                    "next_action": "Supply at least one source with url."}
+    brief_claims = brief.get("claims")
+    premise = brief.get("premise")
+    if not brief_claims and _nonempty(premise if isinstance(premise, str) else
+                                      (premise or {}).get("text")):
+        # An explicitly fictional premise is research row 1's second half and
+        # needs no citation — but it is filed as fiction, never as fact.
+        brief_claims = [{"id": "premise-1",
+                         "text": premise if isinstance(premise, str) else premise["text"],
+                         "provenance": "fiction"}]
+    try:
+        passed, unavailable = validate_claims(brief_claims, {s["id"] for s in sources})
+    except ResearchError as e:
+        return {"outcome": "rejected", "reason_code": e.code, "errors": [str(e)],
+                "next_action": "Supply at least one claim."}
+    sub_errors = validate_sub_avatar(brief.get("sub_avatar"))
+    evidence = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION,
+                "claims": passed + unavailable,
+                "unavailable": [c["id"] for c in unavailable],
+                "sources": sources, "generated": today or _today()}
+    if src_errors:
+        return {"outcome": "rejected", "reason_code": "source-invalid",
+                "errors": src_errors, "evidence": evidence,
+                "next_action": "Fix the listed source errors and re-run."}
+    if sub_errors:
+        return {"outcome": "rejected", "reason_code": "sub-avatar-incomplete",
+                "errors": sub_errors, "evidence": evidence,
+                "next_action": "Complete the sub-avatar brief (avatar, emotional_wound, desired_transformation)."}
+    if unavailable:
+        return {"outcome": "parked", "reason_code": "claims-without-source",
+                "errors": ["%s: %s" % (c["id"], c["reason"]) for c in unavailable],
+                "evidence": evidence,
+                "next_action": "Cite a source for each listed claim or drop it."}
+    scoped = dict(brief, claims=brief_claims)
+    bundle = claimmap.author_bundle(scoped, evidence)
+    bundle_errors = claimmap.validate_bundle(bundle)
+    if bundle_errors:
+        return {"outcome": "rejected", "reason_code": "research-bundle-invalid",
+                "errors": bundle_errors, "evidence": evidence, "bundle": bundle,
+                "next_action": "Tag every claim owner-fact, public-fact or fiction, "
+                               "and give each research section at least one supporting "
+                               "claim. Do not pad the file."}
+    return {"outcome": "ok", "reason_code": "research-complete", "errors": [],
+            "evidence": evidence, "bundle": bundle,
+            "next_action": "Render outputs, then proceed to creative."}
+
+
+def _claim_line(claim, by_src):
+    """One authored research line: the claim, its provenance, its support."""
+    prov = claim.get("provenance") or "UNTAGGED"
+    text = claim.get("text", "")
+    if prov == "public-fact":
+        src = by_src.get(claim.get("source"), {})
+        support = "[%s](%s) (captured %s)" % (
+            claim.get("source", "?"), src.get("url", "?"),
+            claim.get("capture_date") or src.get("retrieved", "?"))
+        if claim.get("locator"):
+            support += " — %s" % claim["locator"]
+    elif prov == "owner-fact":
+        support = "owner answer %s" % claim.get("owner_ref", "?")
+    elif prov == "fiction":
+        support = "proposed fiction — not a verified fact"
+    else:
+        support = "NO PROVENANCE"
+    return "**[%s]** %s (%s)" % (prov, text, support)
+
+
+def _section_md(title, offer, context, bundle, section):
+    """A research section built from claims that support it. No TBD body:
+    an unsupported section is refused before render, never padded."""
+    body = ["# %s" % title, "", "Offer: %s" % offer.strip(), ""]
+    body += ["- **[owner-fact]** %s (owner brief)" % c for c in context]
+    by_src = {s["id"]: s for s in bundle.get("sources") or []}
+    for claim in claimmap.section_claims(bundle, section):
+        body.append("- %s" % _claim_line(claim, by_src))
+    return "\n".join(body) + "\n"
+
+
+def render(brief, evidence, outdir, bundle=None):
+    """Write research/{market,audience,competitors}.md + evidence.json,
+    research/premise.md when fiction is present, and brief/sub_avatar.json.
+    Returns written paths."""
+    out = Path(outdir)
+    bundle = bundle or claimmap.author_bundle(brief, evidence)
+    (out / "research").mkdir(parents=True, exist_ok=True)
+    (out / "brief").mkdir(parents=True, exist_ok=True)
+    offer = brief.get("offer", "").strip()
+    act = (brief.get("action") or brief.get("cta") or "").strip()
+    files = {
+        "research/market.md": _section_md("Market", offer,
+                                          [offer] + ([act] if act else []),
+                                          bundle, "market"),
+        "research/audience.md": _section_md("Audience", offer,
+                                            [brief.get("audience", "").strip()],
+                                            bundle, "audience"),
+        "research/competitors.md": _section_md("Competitors", offer, [],
+                                               bundle, "competitors"),
+        "research/evidence.json": json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+        "brief/sub_avatar.json": json.dumps(
+            {"schema_version": SCHEMA_VERSION, **brief.get("sub_avatar", {})},
+            indent=2, sort_keys=True) + "\n",
+    }
+    fiction = claimmap.section_claims(bundle, claimmap.PREMISE)
+    if fiction:
+        lines = ["# Proposed story premise", "",
+                 "Label: fiction. This is proposed story content, not a verified",
+                 "business fact and not an owner assertion.", ""]
+        by_src = {s["id"]: s for s in bundle.get("sources") or []}
+        lines += ["- %s" % _claim_line(c, by_src) for c in fiction]
+        files["research/premise.md"] = "\n".join(lines) + "\n"
+    written = []
+    for rel, text in files.items():
+        (out / rel).write_text(text, encoding="utf-8")
+        written.append(rel)
+    manifest = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION,
+                "files": written,
+                "bundle_schema_version": bundle.get("schema_version"),
+                "provenance": {p: sum(1 for c in bundle.get("claims") or []
+                                      if c.get("provenance") == p)
+                               for p in claimmap.PROVENANCE},
+                "digest": _sha("".join(files[r] for r in sorted(files)))}
+    (out / "research" / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "research" / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return written
+
+
+def envelope(command, run_id, outcome, reason_code, next_action,
+             data=None, evidence_refs=None, state_version=None):
+    env = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION,
+           "command": command, "run_id": run_id, "outcome": outcome,
+           "reason_code": reason_code, "next_action": next_action,
+           "evidence": evidence_refs or [], "data": data or {},
+           "state_version": state_version or {"expected": None, "current": run_id}}
+    if outcome != "ok":
+        # Owner order 2026-11-20: the research stop is client-facing (a bare
+        # brief waits, a bad source is rejected), so it carries the four-part
+        # message beside the code. Read-only; the outcome and exit code stay.
+        try:
+            _core = str(Path(__file__).resolve().parents[1])
+            if _core not in sys.path:
+                sys.path.insert(0, _core)
+            import loud_failure  # noqa: PLC0415 - core/ resolved at call time
+            detail = "; ".join(str(e) for e in (env["data"].get("errors") or []))
+            env["client_explanation"] = loud_failure.explain_stop(reason_code, None, {
+                "reason_code": reason_code, "detail": detail,
+                "next_action": next_action})
+        except Exception:  # noqa: BLE001 - an explanation never breaks a stop
+            pass
+    return env
+
+
+# Keyless gatherer outcomes that mean "not yet, ask again" rather than "the
+# brief is invalid": a bare brief with no usable source leaves as waiting
+# (exit 2) with one plain question to the client, never as rejected (exit 4)
+# and never as a silent continue with only half a research file.
+NO_OUTSIDE_SOURCES_QUESTION = (
+    "I could not find outside sources for this. Do you want me to continue "
+    "with only what you gave me?")
+GATHER_WAITING = {
+    "empty": "search-no-results",
+    "offline": "search-offline",
+    "budget": "search-budget-exhausted",
+}
+
+
+def _gather_or_reason(brief, transport, gather_opts, run_id):
+    """Run the keyless gatherer over a brief whose sources[] is empty.
+
+    Returns (merged brief, None) when sources came back, else (None, envelope)
+    for a waiting result. Never raises: every network path is guarded inside
+    gather.gather().
+    """
+    opts = dict(gather_opts or {})
+    try:
+        g = gatherer.gather(brief if isinstance(brief, dict) else {},
+                            transport=transport, **opts)
+    except Exception as e:                    # noqa: BLE001 - stage must not crash
+        return None, envelope("research", run_id, "waiting", "search-unavailable",
+                              "Keyless search could not run: %s" % str(e)[:200],
+                              data={"errors": [str(e)[:200]]})
+    if g["status"] == gatherer.STATUS_CLIENT:   # defensive: client sources win
+        merged = dict(brief)
+        merged["sources"] = g["sources"]
+        return merged, None
+    if not g["sources"]:
+        reason = GATHER_WAITING.get(g["status"], "search-unavailable")
+        return None, envelope("research", run_id, "waiting", reason,
+                              NO_OUTSIDE_SOURCES_QUESTION,
+                              data={"errors": g["errors"], "queries": g["queries"],
+                                    "gather_status": g["status"],
+                                    "urls_seen": len(g["urls"])})
+    merged = dict(brief)
+    merged["sources"] = g["sources"]
+    merged["claims"] = g["claims"]
+    # marker: these claims were matched verbatim against fetched page bodies
+    # (claim_validation records the match as each claim's citation quote).
+    merged["_gathered"] = {"urls": len(g["urls"]), "fetched": g["fetched"]}
+    return merged, None
+
+
+def run_stage(brief, outdir, run_id="research-1", transport=None, gather=True,
+              gather_opts=None, relevance=None):
+    """Evaluate + gather when the brief is bare + render. Returns (envelope,
+    exit_code). `gather=False` restores the validator-only behaviour (empty
+    sources -> SOURCES_MISSING -> rejected, exit 4); `transport` injects the
+    network for tests.
+
+    `relevance` is the run's judged relevance record list (claims.py, check id
+    "research_relevance", from a checker model that is not the maker). It rides
+    with the stage evidence; this module never decides the verdict.
+    """
+    r = evaluate(brief)
+    if r["reason_code"] == "SOURCES_MISSING" and gather:
+        merged, waiting = _gather_or_reason(brief, transport, gather_opts, run_id)
+        if waiting is not None:
+            return waiting, EXIT["waiting"]
+        brief = merged
+        r = evaluate(brief)
+    if r["outcome"] != "ok":
+        return (envelope("research", run_id, r["outcome"], r["reason_code"],
+                         r["next_action"], data={"errors": r["errors"]}), EXIT[r["outcome"]])
+    if relevance:
+        r["evidence"]["checks"] = [dict(x) for x in relevance
+                                   if isinstance(x, dict)]
+    try:
+        written = render(brief, r["evidence"], outdir, bundle=r.get("bundle"))
+    except (OSError, ValueError) as e:
+        return (envelope("research", run_id, "error", "render-failed", str(e)[:200]),
+                EXIT["error"])
+    return (envelope("research", run_id, "ok", "research-complete", r["next_action"],
+                     data={"files": written,
+                           "provenance": {p: sum(
+                               1 for c in (r.get("bundle") or {}).get("claims") or []
+                               if c.get("provenance") == p)
+                               for p in claimmap.PROVENANCE}},
+                     evidence_refs=written), EXIT["ok"])
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="research.py",
+                                 description="Research stage runner (directive 21).")
+    ap.add_argument("--brief", default=None, help="Brief JSON file.")
+    ap.add_argument("--outdir", default=None, help="Run dir for research/ + brief/.")
+    ap.add_argument("--run-id", default="research-1")
+    ap.add_argument("--no-gather", action="store_true",
+                    help="Skip the keyless web-search gatherer: an empty "
+                         "sources[] stays SOURCES_MISSING (exit 4).")
+    ap.add_argument("--budget", type=float, default=gatherer.DEFAULT_BUDGET,
+                    help="Total stage network budget in seconds "
+                         "(default: %(default)s).")
+    ap.add_argument("--timeout", type=float, default=gatherer.DEFAULT_TIMEOUT,
+                    help="Per-URL timeout in seconds (default: %(default)s).")
+    ap.add_argument("--max-sources", type=int, default=gatherer.DEFAULT_MAX_SOURCES,
+                    help="Cap on gathered sources (default: %(default)s).")
+    ap.add_argument("--max-urls", type=int, default=gatherer.DEFAULT_MAX_FETCHES,
+                    help="Cap on candidate pages fetched (default: %(default)s).")
+    ap.add_argument("--validate-bundle", default=None, metavar="PATH",
+                    help="Validate an authored research bundle instead of "
+                         "running the stage: refuses untagged claims (exit 4).")
+    a = ap.parse_args(argv)
+    if a.validate_bundle:
+        try:
+            with open(a.validate_bundle, encoding="utf-8") as f:
+                bundle = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            env = envelope("research-validate", "bundle", "error",
+                           "bundle-unreadable", str(e)[:200])
+            json.dump(env, sys.stdout, indent=2, sort_keys=True)
+            sys.stdout.write("\n")
+            return EXIT["error"]
+        errors = claimmap.validate_bundle(bundle)
+        outcome = "rejected" if errors else "ok"
+        env = envelope("research-validate", "bundle", outcome,
+                       "research-bundle-invalid" if errors else "research-bundle-valid",
+                       "Fix the listed provenance/content errors." if errors
+                       else "Bundle accepted.",
+                       data={"errors": errors,
+                             "claims": len(bundle.get("claims") or [])})
+        json.dump(env, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return EXIT[outcome]
+    if not a.brief or not a.outdir:
+        ap.error("--brief and --outdir are required")
+    try:
+        with open(a.brief, encoding="utf-8") as f:
+            brief = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        env = envelope("research", a.run_id, "error", "brief-unreadable", str(e)[:200])
+        json.dump(env, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return EXIT["error"]
+    opts = {"budget": a.budget, "timeout": a.timeout,
+            "max_sources": a.max_sources, "max_fetches": a.max_urls}
+    env, code = run_stage(brief, a.outdir, a.run_id, gather=not a.no_gather,
+                          gather_opts=opts)
+    json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
+    sys.stdout.write("\n")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

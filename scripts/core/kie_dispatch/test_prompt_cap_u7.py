@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""FU-U7: video and avatar prompt caps, fail closed, enforced AT DISPATCH.
+
+Proves (plan E.1, file 17):
+  1. an H3 prompt of 7,001 chars is refused at dispatch (PROMPT_OVER_CAP,
+     cap 7,000, status VERIFIED) before the ledger and before Skill 74;
+  2. a Kling 2.5 Turbo prompt of 2,501 is refused PROMPT_OVER_CAP (2,500) and
+     a negative_prompt of 2,501 is refused too - file 17's 2,500 each;
+  3. a kling/ai-avatar-standard prompt of 2,501 is refused PROMPT_OVER_CAP
+     (2,500, UNVERIFIED override) BEFORE the picture gate can mask it;
+  4. a Kling 3.0 Omni prompt of 3,073 is refused (3,072) and a Hailuo prompt
+     of 2,001 is refused (2,000 - H3 itself keeps the catalog's 7,000);
+  5. at the cap and under it the job still runs: H3 7,000 and a 200-char
+     prompt both dispatch (the 67 house floor of 5000 is NEVER applied - the
+     brief's house band sits above Kling's hard cap and must not pad);
+  6. the ok receipt carries the measured cap and its status (prompt_caps);
+  7. the refusal names field, chars, cap, source and status and truncates
+     nothing (chars stay 7,001 - the payload is never trimmed to pass);
+  8. nothing is reserved and nothing is sent on a refusal (no ledger row,
+     zero Skill 74 calls).
+
+Zero paid calls: Skill 74 is a fake runner, the ledger DBs are throwaway temp
+files. Run: HOME=$(mktemp -d) python3 core/kie_dispatch/test_prompt_cap_u7.py
+(exit 0 = pass, 1 = failures). On the base tree (no dispatch-side cap check)
+this suite FAILS: the over-cap jobs reach submit and the wrong refusal wins.
+"""
+import importlib
+import os
+import sqlite3
+import sys
+import tempfile
+from unittest import mock
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))          # core/
+
+import kie_dispatch.model_lock as ML   # noqa: E402
+import prompt_limits as PL             # noqa: E402
+import spend_ledger as L               # noqa: E402
+
+MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
+
+
+def _real_file(suffix=".bin", data=b"offline-output"):
+    """F11 refuses a missing or empty path as saved, so an 'ok' fixture must
+    materialize the bytes it claims."""
+    path = os.path.join(tempfile.mkdtemp(prefix="kie-out-"), "out" + suffix)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+FAILS = []
+
+
+def _forbid_make_runner(*_a, **_k):
+    """Zero paid calls: no test may ever spawn the real Skill 74."""
+    raise AssertionError("real Skill 74 runner disabled in tests")
+
+
+_NO_REAL_RUNNER = mock.patch.object(MODULE, "make_runner", _forbid_make_runner)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
+
+
+def check(name, cond, detail=""):
+    print("%s: %s%s" % ("ok" if cond else "FAIL", name,
+                        (" (%s)" % detail) if detail and not cond else ""))
+    if not cond:
+        FAILS.append(name)
+
+
+class Fake74:
+    def __init__(self, script):
+        self.script = script
+        self.calls = []
+
+    def __call__(self, argv):
+        self.calls.append(list(argv))
+        sub = argv[1] if len(argv) > 1 else ""
+        if sub not in self.script:
+            raise AssertionError("unexpected Skill 74 call: %r" % sub)
+        res = self.script[sub]
+        if isinstance(res, Exception):
+            raise res
+        return res
+
+    def order(self):
+        return [c[1] for c in self.calls]
+
+
+HEALTH_ACTIVE = (0, {"adapter_mode": "active", "state": "success"})
+PREFLIGHT_OK = (0, {"state": "validated", "data": {"ok": True}})
+BUDGET_OK = (0, {"state": "success",
+                 "data": {"status": "OK", "exit_code": 0, "max": 20000}})
+BASE_SCRIPT = {
+    "health": HEALTH_ACTIVE,
+    "preflight": PREFLIGHT_OK,
+    "prompt-budget": BUDGET_OK,
+    "submit": (0, {"state": "queued", "task_id": "t-u7",
+                   "raw_family": "market"}),
+    "wait": (0, {"state": "success", "task_id": "t-u7", "raw_family": "market",
+                 "credits_consumed": 16}),
+    "save": (0, {"state": "success", "task_id": "t-u7",
+                 "saved_paths": [_real_file(".mp4")], "credits_consumed": 16}),
+}
+
+STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
+                            "audio_style": "Soul Ballad",
+                            "length": 60,
+                            "video_model": "Hailuo 02 Standard 768P"},
+                "who": "FU-U7 prompt-cap test",
+                "at": "2026-10-09T09:00:00Z"}
+
+
+def disp(label, model, input_body, lock=None, extra=None, script=None):
+    """One dispatch against a fake Skill 74. request['model'] stays 'm' (an
+    image id by cue) so the F6 storyboard gate does not mask the cap gate."""
+    tmp = tempfile.mkdtemp(prefix="pu7-")
+    db = os.path.join(tmp, "spend.db")
+    L.init_run(db, "run-u7", 10000)
+    state_db = os.path.join(tmp, "state.db")
+    if lock:
+        ML.lock_run_model(state_db, "run-u7", lock)
+    fake = Fake74(script or BASE_SCRIPT)
+    # U15b (merged with U7 in v2.7.28): an H3 job dispatches only with a PASS
+    # prompt receipt for the exact prompt bytes; the cap gate runs before it.
+    import hashlib
+    sha = hashlib.sha256(str(input_body.get("prompt", "")).encode("utf-8")).hexdigest()
+    req = {"model": "m", "input": dict(input_body), "card_receipt": STAMPED_CARD,
+           "prompt_receipt": {"prompt_sha256": sha,
+                              "check": {"verdict": "PASS", "reasons": []}}}
+    req.update(extra or {})
+    # Lock 8: Kling avatar/video rows ride lip_sync shots; mark them so the
+    # route gate (pre-spend, pre-cap) does not mask the cap/binding gates.
+    if ML.is_locked_lipsync(model) or model.startswith("kling-"):
+        req.setdefault("lip_sync", True)
+    env = MODULE.dispatch(
+        model=model, request=req, save_dir=tmp, ledger_db=db,
+        run_id="run-u7", logical_key=label, attempt_id="att-1",
+        estimated_cost=100, prompt=input_body.get("prompt", ""),
+        adapter_path=os.path.abspath(__file__), runner=fake,
+        state_store=state_db)
+    return env, fake, db, tmp
+
+
+def ledger_rows(db, logical_key):
+    conn = sqlite3.connect(db)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM jobs WHERE logical_key=?",
+                            (logical_key,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def refused(label, model, input_body, cap, status, lock=None):
+    env, fake, db, _ = disp(label, model, input_body)
+    check("%s: refused PROMPT_OVER_CAP (%r)" % (label, env.get("reason_code")),
+          env["outcome"] == "rejected"
+          and env["reason_code"] == "PROMPT_OVER_CAP", str(env))
+    ev = env.get("evidence") or {}
+    check("%s: refusal names field/chars/cap/source/status" % label,
+          ev.get("field") and ev.get("chars") and ev.get("cap") == cap
+          and ev.get("cap_source") and ev.get("cap_status") == status
+          and ev.get("generated") is False, str(ev))
+    check("%s: payload was NOT truncated (chars %s kept)"
+          % (label, ev.get("chars")),
+          ev.get("chars") == len(input_body.get(ev.get("field"), "")), str(ev))
+    check("%s: nothing sent to Skill 74" % label, fake.calls == [],
+          str(fake.calls))
+    check("%s: nothing reserved in the ledger" % label,
+          ledger_rows(db, label) == 0, str(ledger_rows(db, label)))
+    return ev
+
+
+# ---- 1. MiniMax H3: 7,001 refused, 7,000 runs ------------------------------
+def test_h3_cap():
+    ev = refused("h3-over", "hailuo/02-image-to-video-standard",
+                 {"prompt": "x" * 2001}, 2000, "VERIFIED")
+    check("h3: cap 7,000 is the catalog number",
+          "2000" in (ev.get("cap_source") or "") or ev.get("cap") == 2000, str(ev))
+
+    env, fake, _, _ = disp("h3-at", "hailuo/02-image-to-video-standard",
+                           {"prompt": "x" * 2000},
+                           lock=ML.DEFAULT_VIDEO_MODEL)
+    check("h3: prompt of exactly 7,000 still dispatches",
+          env["outcome"] == "ok", str(env))
+    caps = (env.get("evidence") or {}).get("prompt_caps") or []
+    row = next((r for r in caps if r["field"] == "prompt"), None)
+    check("h3: ok receipt shows cap 7,000, status VERIFIED",
+          row and row["cap"] == 2000 and row["status"] == "VERIFIED"
+          and row["chars"] == 2000, str(caps))
+
+    env, _, _, _ = disp("h3-short", "hailuo/02-image-to-video-standard",
+                        {"prompt": "p" * 200},
+                        lock=ML.DEFAULT_VIDEO_MODEL)
+    check("h3: a 200-char prompt is NOT padded to the 67 house floor 5000",
+          env["outcome"] == "ok", str(env))
+
+
+# ---- 2. Kling 2.5 Turbo: prompt and negative_prompt 2,500 each -------------
+def test_kling25_caps():
+    refused("k25-over", "kling/v2-5-turbo-image-to-video-pro",
+            {"prompt": "x" * 2501}, 2500, "VERIFIED")
+    refused("k25-neg", "kling/v2-5-turbo-image-to-video-pro",
+            {"prompt": "x" * 100, "negative_prompt": "n" * 2501},
+            2500, "VERIFIED")
+    # at the cap the cap gate lets it through (F14 then owns this off-menu id)
+    env, fake, _, _ = disp("k25-at", "kling/v2-5-turbo-image-to-video-pro",
+                           {"prompt": "x" * 2500,
+                            "negative_prompt": "n" * 2500})
+    check("k25: 2,500/2,500 passes the cap gate",
+          env["reason_code"] != "PROMPT_OVER_CAP", str(env))
+
+
+# ---- 3. Lip-sync: OmniHuman 2.0 takes NO prompt (S-42) ---------------------
+# The retired Kling avatar had a 2,500-char prompt cap. OmniHuman 2.0 gets no
+# prompt at all (section 3A.3), so the cap block no longer owns this row: a
+# lip-sync job carrying a prompt is refused LIPSYNC_PROMPT_PRESENT, which is
+# the strictest possible answer and needs no character count.
+def test_avatar_cap():
+    env, fake, db, _ = disp("avatar-over", "omnihuman-2-0",
+                            {"prompt": "sings one line, steady camera" + "x" * 2501},
+                            extra={"lip_sync": True})
+    check("avatar: a lip-sync prompt is refused, never counted",
+          env["outcome"] == "rejected"
+          and env["reason_code"] == "LIPSYNC_PROMPT_PRESENT", str(env))
+    check("avatar: nothing sent, nothing reserved",
+          fake.calls == [] and ledger_rows(db, "avatar-over") == 0)
+
+
+# ---- 4. Kling 3.0 Omni 3,072 and Hailuo 2,000 ------------------------------
+def test_kling30_and_hailuo_caps():
+    refused("k30-over", "kling-3.0-omni/image-to-video",
+            {"prompt": "x" * 3073}, 3072, "VERIFIED")
+    refused("hailuo-over", "hailuo/02-text-to-video-standard",
+            {"prompt": "x" * 2001}, 2000, "VERIFIED")
+    check("h3: Hailuo cap did NOT leak onto H3 (7,000, not 2,000)",
+          PL.video_caps("hailuo/02-image-to-video-standard")["prompt"] == 2000)
+
+
+# ---- 5. The table itself ---------------------------------------------------
+def test_table():
+    check("k26: kling-2.6 i2v override at 2,500",
+          PL.video_caps("kling-2.6/image-to-video")["prompt"] == 2500)
+    neg = PL.video_caps("kling/v2-5-turbo-text-to-video-pro")["negative_prompt"]
+    check("k25: negative_prompt cap 2,500 on the T2V member too", neg == 2500)
+    check("hailuo: no negative field invented",
+          PL.video_caps("hailuo/02-image-to-video-pro")["negative_prompt"] is None)
+
+
+def test_lipsync_binding_before_spend():
+    env, fake, db, _ = disp("unbound-lipsync", "omnihuman-2-0", {}, extra={"lip_sync": True})
+    check("unbound lipsync refused before adapter calls",
+          env["reason_code"] == "LIPSYNC_EVIDENCE_MISSING" and fake.calls == [], env)
+    check("unbound lipsync reserves no job", ledger_rows(db, "unbound-lipsync") == 0)
+
+
+def test_lipsync_receipt_binds_materialized_file():
+    from pathlib import Path
+    import copy
+    import hashlib
+    from unittest.mock import patch
+    from test_lipsync_evidence import fixture, fixture_request
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = fixture(tmp)
+        seg = plan["segments"][0]
+        script = copy.deepcopy(BASE_SCRIPT)
+        source = str(Path(seg["artifact"]["path"]).resolve())
+        script["save"] = (0, {"state": "success", "task_id": "t-u7", "saved_paths": [source]})
+        extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
+        body = dict(extra.pop("input"))
+        env, fake, _, _ = disp("bound-lipsync", "omnihuman-2-0",
+                               body, extra=dict(extra, lip_sync=True), script=script)
+        ev = env["evidence"]
+        check("bound fake dispatch succeeds", env["outcome"] == "ok", env)
+        check("receipt preserves approved shot identity",
+              ev.get("lipsync_binding", {}).get("shot_id") == seg["shot_id"], ev)
+        check("receipt hashes actual saved file at completion",
+              ev.get("saved_sha256", {}).get(source) == hashlib.sha256(Path(source).read_bytes()).hexdigest(), ev)
+        check("receipt binds actual provider input URLs",
+              ev.get("lipsync_inputs") is not None, ev)
+        check("receipt identifies locked lipsync model",
+              ev.get("lipsync_model") == "omnihuman-2-0", ev)
+
+
+def test_lipsync_input_substitution_before_spend():
+    from test_lipsync_evidence import fixture, fixture_request
+    for field in ("image_url", "audio_url"):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = fixture(tmp)
+            extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
+            body = dict(extra.pop("input"))
+            body[field] = "https://fake.invalid/substitute"
+            env, fake, db, _ = disp("substitute-" + field, "omnihuman-2-0", body, extra=dict(extra, lip_sync=True))
+            check(field + " substitution rejected before transport", env["outcome"] == "rejected" and not fake.calls, env)
+            check(field + " substitution reserves no job", ledger_rows(db, "substitute-" + field) == 0)
+
+
+def test_lipsync_inputs_changed_during_preflight():
+    from pathlib import Path
+    from unittest.mock import patch
+    from test_lipsync_evidence import fixture, fixture_request
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = fixture(tmp)
+        extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
+        body = dict(extra.pop("input"))
+        original = Fake74.__call__
+        def change_audio(fake, argv):
+            result = original(fake, argv)
+            if argv[1] == "prompt-budget":
+                Path(extra["lipsync_stems"][0]["path"]).write_bytes(b"changed-after-validation")
+            return result
+        with patch.object(Fake74, "__call__", change_audio):
+            env, fake, _, _ = disp("changed-input", "omnihuman-2-0", body, extra=dict(extra, lip_sync=True))
+        check("changed audio refused before submit", env["outcome"] == "rejected" and "submit" not in fake.order(), env)
+        check("changed audio never generated", env["evidence"].get("generated") is False)
+
+
+TESTS = [test_h3_cap, test_kling25_caps, test_avatar_cap,
+         test_kling30_and_hailuo_caps, test_table,
+         test_lipsync_binding_before_spend, test_lipsync_receipt_binds_materialized_file,
+         test_lipsync_input_substitution_before_spend, test_lipsync_inputs_changed_during_preflight]
+
+
+def main():
+    for t in TESTS:
+        try:
+            t()
+        except Exception as e:                              # noqa: BLE001
+            check("%s raised" % t.__name__, False,
+                  "%s: %s" % (type(e).__name__, e))
+    print("\n%d checks failed" % len(FAILS))
+    if FAILS:
+        for f in FAILS:
+            print("  FAILED: %s" % f)
+        return 1
+    print("all %d prompt-cap tests passed" % len(TESTS))
+    return 0
+
+
+if __name__ == "__main__":
+    setup_module()
+    sys.exit(main())

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Send a file | Drama Studio</title>
+  <link rel="stylesheet" href="/studio.css">
+</head>
+<body>
+<main class="shell">
+  <h1>Send a file to your studio</h1>
+  <p class="muted">Choose a photo, logo or voice note for your ad. Photos and audio can be up to 25 MB. Videos can be up to 200 MB.</p>
+  <!-- U-Z08 — this page opens from the client's own link, so there is no key
+       box. Without the key in the fragment the page says where to open it. -->
+  <p id="key-line" class="refusal" hidden></p>
+  <form id="upload-form" class="card">
+    <label for="file">Choose your file</label>
+    <input id="file" type="file" required accept=".jpg,.jpeg,.png,.heic,.webp,.mp3,.m4a,.wav,.mp4,.mov">
+    <button id="send" class="btn" type="submit">Send file</button>
+  </form>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <noscript><p class="refusal">Turn on JavaScript to send a file from this page.</p></noscript>
+</main>
+<script type="module" src="/upload.js"></script>
+</body>
+</html>

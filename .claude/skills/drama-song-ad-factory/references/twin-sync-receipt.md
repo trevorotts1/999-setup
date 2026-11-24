@@ -1598,3 +1598,27 @@ bytes), `VERSION`, the `SKILL.md` frontmatter `version:` line, `CHANGELOG.md` (o
 Nothing here merges itself. This section, the regenerated `scripts/core/`, the five copied
 references, the version couplet, the CHANGELOG entry and the refreshed fingerprints are the whole
 change; the batch PR carries it and the squash merge is a separate, explicit act.
+
+## F-N99-7 — harness convergence, 2026-11-23 (U-TWIN)
+
+Recorded under plan 02's T01 rule: shared core is byte-for-byte, documents converge by hand.
+The onboarding tree carries no copy of this file, so this section exists only here.
+
+**Ported into 999 (onboarding-only files now on both sides):**
+- `conftest.py` (root) — copied byte for byte. Governs the whole skill tree so a suite under
+  `shared-bridge/` no longer inherits a sibling's `socket.socket` rebind.
+- `tests/test_openclaw_adapter.py` — copied byte for byte. 999 ships an identical
+  `scripts/openclaw_adapter.py` and the same `scripts/core/intake_preflight/factory.py`, so the
+  adapter proof holds here too.
+
+**Not ported, by decision (recorded here):** `tests/test_clean_install_discovery.py`. It resolves
+a clean ONBOARDING root (>=5 numbered `NN-*` skill dirs) and the nine onboarding helper skills
+named by `DEPENDENCY-MANIFEST.md`; the 999 distribution ships none of those, so the test would
+exit 2 (resolve failure) on this tree. It stays onboarding-only.
+
+**Formally retired into 999-only (T01 decision, recorded here):** `tests/test_parity_layout.py`,
+`tests/test_single_config_root.py`, `tests/test_studio_bridge_twin.py`,
+`tests/test_twin_sync_fingerprints.py`, `tests/twin_sync_prove.py`, `tests/test_cli_smoke.py`,
+`tests/test_launcher_plain_claude.py`. Each asserts a Claude-Nine / Claude Code property (one
+config root, launcher form, twin fingerprints against a local onboarding checkout, studio-bridge
+twin home) that has no meaning on the onboarding side. They stay in 999 and are not ported back.

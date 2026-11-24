@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+"""frame_text.py: no garbled text in lip-sync clips (manual 02 Part F F9).
+
+Kling invents text; the old pipeline had no check and the failed ad shipped
+readable invented captions inside lip-sync clips. This unit samples frames
+of EVERY lip-sync clip and fails any sampled frame that carries readable
+(invented) text. The done-when is "a frame check runs on every lip-sync
+clip and the receipt shows it" -- the assembler wiring records one row per
+lip-sync clip under the receipt's "frame_text" evidence.
+
+The extractor is PLUGGABLE; OCR integration is optional forever:
+
+  * default stub -> never reads pixels, returns no text for every frame.
+    The CHECK still runs per clip and is recorded with its extractor name,
+    so the receipt always shows which extractor actually looked. Ships
+    today at $0 with no OCR dependency.
+  * OCR / other -> register_extractor(name, fn); fn(frame_paths) must
+    return one entry per frame (a non-empty string = readable invented
+    text). Pass the string name or the callable itself. When an OCR
+    provider lands, register it and the assembler needs no change.
+
+Modes:
+  extract mode (ffmpeg given) -> ffprobe the clip duration, dump
+    frame_count evenly spaced frames with ffmpeg, run the extractor on
+    the real PNGs. Any probe/extraction/extractor-shape failure raises
+    FrameTextError -- fail closed, never a silent pass.
+  stub mode (ffmpeg None)     -> no process is spawned (tests, dry runs,
+    $0): the stub runs over frame_count virtual samples. ONLY the stub
+    may run here: a pixel-needing extractor without ffmpeg raises
+    FrameTextError instead of silently finding no text.
+
+Wiring: final_assembler.assemble() runs the check on the plan's lip-sync
+segments (stub mode on dry runs, the render's ffmpeg on real renders),
+attaches "frame_text" rows to the receipt, and fails with
+GARBLED_TEXT_FRAME -- before any ffmpeg spend -- when a row flags text.
+
+S75-045: the same wiring also checks every segment that plans to show
+words (text_check_rows): three sampled frames per segment, compared to the
+planned words. No real reader (no tesseract) -> the row is UNAVAILABLE with
+reason OCR_UNAVAILABLE and the receipt carries a warning, never a PASS.
+
+stdlib only, no network, no spend. Runs without ffmpeg in stub mode.
+"""
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
+TOOL_NAME = "frame_text"
+TOOL_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.0.0"
+
+# The reason codes.
+GARBLED_TEXT_FRAME = "GARBLED_TEXT_FRAME"       # readable invented text
+FRAME_EXTRACT_UNAVAILABLE = "FRAME_EXTRACT_UNAVAILABLE"  # no probe/frames
+BAD_INPUT = "BAD_INPUT"                          # bad shape, fail closed
+BAD_EXTRACTOR = "BAD_EXTRACTOR"                  # bad extractor contract
+OCR_UNAVAILABLE = "OCR_UNAVAILABLE"              # no real reader: never PASS
+
+EXIT = {"ok": 0, "error": 1}
+
+
+class FrameTextError(Exception):
+    """Structural/operational failure. Fail closed, never pass silently."""
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+# ----------------------------------------------------------------- stub ----
+
+def _call_extractor(fn, paths, name):
+    """Run the extractor; any crash is a fail-closed FrameTextError."""
+    try:
+        return fn(paths)
+    except FrameTextError:
+        raise
+    except Exception as exc:            # noqa: BLE001  fail closed
+        raise FrameTextError(
+            BAD_EXTRACTOR, "extractor %r crashed: %s" % (name, exc)) from exc
+
+
+# The shipped extractor. It never opens a pixel, so it can never invent a
+# finding (neither text nor falsely-clean claims beyond its own contract:
+# every row names its extractor, and the receipt shows the mode).
+STUB_NAME = "stub"
+
+
+def stub_extractor(frame_paths):
+    """Default extractor: no readable text in any frame (never reads files)."""
+    return [None] * len(frame_paths)
+
+
+EXTRACTORS = {STUB_NAME: stub_extractor}
+
+
+def register_extractor(name, fn):
+    """Install a pluggable extractor (OCR integration hook).
+
+    fn(frame_paths) -> one entry per frame: None/empty string = no
+    readable text, otherwise the readable (invented) text found.
+    """
+    if not isinstance(name, str) or not name or not callable(fn):
+        raise FrameTextError(BAD_EXTRACTOR, "extractor needs name+callable")
+    EXTRACTORS[name] = fn
+
+
+def _resolve_extractor(extractor):
+    """Name+fn for the argument; None means the stub."""
+    if extractor is None:
+        return STUB_NAME, EXTRACTORS[STUB_NAME]
+    if isinstance(extractor, str):
+        fn = EXTRACTORS.get(extractor)
+        if fn is None:
+            raise FrameTextError(BAD_EXTRACTOR,
+                                 "unknown extractor: %s" % extractor)
+        return extractor, fn
+    if callable(extractor):
+        return getattr(extractor, "__name__", "custom"), extractor
+    raise FrameTextError(BAD_EXTRACTOR,
+                         "extractor must be a registered name or a callable")
+
+
+# ---------------------------------------------------------- frame sampling --
+
+def _run_ff(cmd, timeout=60):
+    try:
+        if os.path.basename(str(cmd[0])).lower() == "ffprobe":   # light: skips the gate
+            return subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=timeout, check=False)
+        return _LG.run_ffmpeg(cmd, "frame-extract", capture_output=True,
+                              text=True, timeout=timeout, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise FrameTextError(
+            FRAME_EXTRACT_UNAVAILABLE, "ffmpeg/ffprobe unavailable: %s"
+            % exc) from exc
+
+
+def _extract_frames(clip_path, ffmpeg, frame_count, frame_dir,
+                    ffprobe="ffprobe"):
+    """Extract mode: frame_count evenly spaced PNGs. Probe failure of any
+    kind raises (fail closed) -- never a partial or defaulted sample."""
+    try:                            # sibling reuse, no second probe copy
+        from .assembler import probe_duration
+    except ImportError:             # direct script run
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from assembler import probe_duration  # type: ignore
+    dur = probe_duration(clip_path, ffprobe=ffprobe)
+    paths = []
+    for i in range(frame_count):
+        t = dur * (i + 0.5) / float(frame_count)   # midpoints, never t>=dur
+        out = os.path.join(frame_dir, "frame-%03d.png" % i)
+        proc = _run_ff([ffmpeg, "-y", "-ss", "%.6f" % t, "-i", str(clip_path),
+                        "-frames:v", "1", out])
+        if proc.returncode != 0 or not os.path.isfile(out):
+            raise FrameTextError(
+                FRAME_EXTRACT_UNAVAILABLE,
+                "frame sample %d of %s failed: %s"
+                % (i, os.path.basename(clip_path),
+                   (proc.stderr or "").strip()[-200:]))
+        paths.append(out)
+    return paths
+
+
+def sample_frames_for_text(clip_path, ffmpeg=None, frame_count=3,
+                           extractor=None, ffprobe="ffprobe"):
+    """F9 frame check for ONE clip.
+
+    Returns {'sampled': n, 'text_frames': [i, ...]} plus 'clip',
+    'extractor' and 'mode' for the receipt row (the receipt shows WHO ran;
+    text_frames are 0-based indices of frames with readable text).
+    """
+    if isinstance(frame_count, bool) or not isinstance(frame_count, int) \
+            or frame_count < 1:
+        raise FrameTextError(BAD_INPUT,
+                             "frame_count must be a positive integer")
+    if not isinstance(clip_path, (str, os.PathLike)) \
+            or not str(clip_path).strip():
+        raise FrameTextError(BAD_INPUT, "clip_path is required")
+    clip_path = os.fspath(clip_path)
+    name, fn = _resolve_extractor(extractor)
+
+    if ffmpeg is None:              # stub mode: no process spawned
+        if name != STUB_NAME:
+            # Stub mode hands the extractor VIRTUAL frame paths; an
+            # extractor that really reads pixels fails on them (fail
+            # closed). Findings-only detectors (mocked OCR, tests) are
+            # legal here -- no spend either way.
+            pass
+        sampled = frame_count      # virtual samples; stub needs no pixel
+        texts = _call_extractor(fn, [
+            os.path.join(str(clip_path), "frame-%03d" % i)
+            for i in range(frame_count)], name)
+    else:                           # extract mode: real frames
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="frame-text-") as td:
+            try:
+                paths = _extract_frames(clip_path, str(ffmpeg), frame_count,
+                                        td, ffprobe=ffprobe)
+            except FrameTextError:
+                raise
+            except RuntimeError as exc:      # sibling probe failure codes
+                raise FrameTextError(FRAME_EXTRACT_UNAVAILABLE,
+                                     str(exc)) from exc
+            sampled = len(paths)
+            texts = _call_extractor(fn, paths, name)
+
+    if not isinstance(texts, list) or len(texts) != sampled:
+        raise FrameTextError(
+            BAD_EXTRACTOR,
+            "extractor %r returned %s for %d frame(s); must be exactly one "
+            "entry per frame" % (name, type(texts).__name__, sampled))
+    return {"clip": clip_path, "sampled": sampled,
+            "text_frames": [i for i, t in enumerate(texts) if t],
+            "texts": list(texts),
+            "extractor": name,
+            "mode": STUB_NAME if ffmpeg is None else "extract"}
+
+
+def clip_rows(segments, ffmpeg=None, frame_count=3, extractor=None,
+              ffprobe="ffprobe"):
+    """F9 receipt rows: ONE row per lip-sync clip, in receipt order."""
+    rows = []
+    for s in segments or []:
+        rows.append(sample_frames_for_text(s.get("src"), ffmpeg=ffmpeg,
+                                           frame_count=frame_count,
+                                           extractor=extractor,
+                                           ffprobe=ffprobe))
+    return rows
+
+
+# ---------------------------------------------- Agnes read-back (SPEC A6) --
+#
+# Agnes clips are read back with the same 3-frame sample, but a stub can
+# never clear an Agnes segment: the default extractor opens no pixel, so
+# "found nothing" proves nothing. The row therefore carries one of these
+# named verdicts instead of a bare clean/flagged pair:
+#
+#   UNAVAILABLE          no pixel reader ran (the stub) or the sample
+#                        failed -- never a PASS.
+#   GARBLED_TEXT_FRAME   a no-text segment showing a readable word of 3+
+#                        letters (SPEC A6's exact fail -> regenerate <= 2).
+#   TEXT_CHANGED         the segment expected words and the frames no
+#                        longer show exactly those words.
+#   PASS                 a real extractor read every sampled frame and the
+#                        words match what the plan expects.
+UNAVAILABLE = "UNAVAILABLE"
+TEXT_CHANGED = "TEXT_CHANGED"
+PASS = "PASS"
+FAIL = "FAIL"
+
+# SPEC A6's bar for "a readable word": 3 or more letters.
+_WORD_3_RE = re.compile(r"[A-Za-z]{3,}")
+
+
+def _has_word(text):
+    """True when text carries a readable word of 3+ letters (SPEC A6)."""
+    return bool(text) and bool(_WORD_3_RE.search(str(text)))
+
+
+def _word_set(entries):
+    """Distinct readable words (3+ letters), casefolded, across entries.
+
+    A set, not a string: the same sign may read across all 3 sampled
+    frames, and the check is WHICH words are there, not how many times.
+    """
+    if not isinstance(entries, (list, tuple)):
+        entries = [entries]
+    words = set()
+    for entry in entries:
+        for word in str(entry or "").split():
+            if _has_word(word):
+                words.add(word.casefold())
+    return words
+
+
+def _agnes_verdict(row, expected):
+    """One Agnes row's named verdict (never PASS on the stub)."""
+    if row["extractor"] == STUB_NAME:
+        return UNAVAILABLE
+    found = _word_set(row.get("texts") or [])
+    want = _word_set(expected)          # absent/None/"" -> the no-text default
+    if not want:
+        return GARBLED_TEXT_FRAME if found else PASS
+    return PASS if found == want else TEXT_CHANGED
+
+
+def agnes_clip_rows(segments, expected_by_segment=None, extractor=None,
+                    ffmpeg=None, frame_count=3, ffprobe="ffprobe"):
+    """Agnes read-back: one named row per Agnes clip (SPEC A6, A8).
+
+    ``expected_by_segment`` maps a segment index (position in ``segments``)
+    to the words that segment is meant to show; an absent key, ``None`` or
+    ``""`` means a no-text segment, which is the default everywhere in this
+    skill (SPEC A6).
+
+    One row per segment, in order: the ``clip_rows`` shape plus
+    ``segment``, ``expected`` and the named ``status`` above. Sampling and
+    extraction failures become an UNAVAILABLE row instead of raising, so a
+    caller never reads "no rows" as "no problems" and never reads a stub
+    run as a clean one.
+    """
+    exp = expected_by_segment or {}
+    name, _fn = _resolve_extractor(extractor)   # same fail-closed contract
+    rows = []
+    for i, s in enumerate(segments or []):
+        src = s.get("src") if isinstance(s, dict) else s
+        expected = exp.get(i)
+        try:
+            row = dict(sample_frames_for_text(src, ffmpeg=ffmpeg,
+                                              frame_count=frame_count,
+                                              extractor=extractor,
+                                              ffprobe=ffprobe))
+            status = _agnes_verdict(row, expected)
+        except FrameTextError:
+            row = {"clip": src, "sampled": 0, "text_frames": [],
+                   "texts": [], "extractor": name,
+                   "mode": STUB_NAME if ffmpeg is None else "extract"}
+            status = UNAVAILABLE
+        row.update({"segment": i, "expected": expected, "status": status})
+        rows.append(row)
+    return rows
+
+
+# --------------------------------------- planned on-screen text (S75-045) --
+#
+# The on-screen text check answers ONE question per segment that plans to show
+# words: do the words the picture really carries match the planned words? It
+# has three verdicts and no fourth:
+#
+#   PASS         a REAL reader (tesseract, registered by onscreen_text) read
+#                every sampled frame and the words are the planned words.
+#   FAIL         a real reader ran and the words are NOT the planned words.
+#   UNAVAILABLE  nobody read a pixel (the stub) or the read failed. The row's
+#                reason code says why (OCR_UNAVAILABLE when there was no
+#                reader at all) and the receipt carries a warning: a check that
+#                never ran is never a pass.
+
+
+def planned_text(segment):
+    """The words a segment plans to show, or None.
+
+    Reads the shot plan's own keys -- ``on_screen_text`` (a string, a list of
+    strings, or ``[{"text": ...}]``) and ``text`` -- the same shapes the shot
+    plan and kie_dispatch's spelling gate already use.
+    """
+    if not isinstance(segment, dict):
+        return None
+    for key in ("on_screen_text", "text"):
+        value = segment.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, list):
+            words = []
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    words.append(item.strip())
+                elif isinstance(item, dict):
+                    inner = item.get("text") or item.get("on_screen_text")
+                    if isinstance(inner, str) and inner.strip():
+                        words.append(inner.strip())
+            if words:
+                return " ".join(words)
+    return None
+
+
+def _text_verdict(row, expected):
+    """(status, reason_code) for one planned-text row; the stub is never PASS."""
+    if row["extractor"] == STUB_NAME:
+        return UNAVAILABLE, OCR_UNAVAILABLE
+    if _word_set(row.get("texts") or []) == _word_set(expected):
+        return PASS, None
+    return FAIL, TEXT_CHANGED
+
+
+def text_check_rows(segments, ffmpeg=None, extractor=None, frame_count=3,
+                    ffprobe="ffprobe"):
+    """One named verdict row per segment that plans to show words (S75-045).
+
+    Segments with no planned words are skipped (there is nothing to compare).
+    A row is the ``sample_frames_for_text`` shape plus ``segment``,
+    ``expected``, ``status`` (PASS / FAIL / UNAVAILABLE) and ``reason_code``.
+    Sampling and extraction failures become an UNAVAILABLE row instead of
+    raising, so one unreadable clip cannot hide the other rows.
+    """
+    name, _fn = _resolve_extractor(extractor)   # same fail-closed contract
+    rows = []
+    for i, seg in enumerate(segments or []):
+        expected = planned_text(seg)
+        if not expected:
+            continue
+        src = seg.get("src") if isinstance(seg, dict) else seg
+        try:
+            row = dict(sample_frames_for_text(src, ffmpeg=ffmpeg,
+                                              frame_count=frame_count,
+                                              extractor=extractor,
+                                              ffprobe=ffprobe))
+            status, reason = _text_verdict(row, expected)
+        except FrameTextError as exc:
+            row = {"clip": src, "sampled": 0, "text_frames": [],
+                   "texts": [], "extractor": name,
+                   "mode": STUB_NAME if ffmpeg is None else "extract"}
+            status, reason = UNAVAILABLE, getattr(
+                exc, "code", FRAME_EXTRACT_UNAVAILABLE) or OCR_UNAVAILABLE
+        row.update({"segment": i, "expected": expected, "status": status,
+                    "reason_code": reason})
+        rows.append(row)
+    return rows
+
+
+def main(argv=None):
+    """CLI: run the check on --clip paths (stub mode unless --ffmpeg)."""
+    import argparse
+    import json
+    ap = argparse.ArgumentParser(
+        prog="frame_text",
+        description="F9: sample frames per lip-sync clip, flag readable "
+                    "invented text (GARBLED_TEXT_FRAME)")
+    ap.add_argument("--clip", action="append", required=True)
+    ap.add_argument("--frame-count", type=int, default=3)
+    ap.add_argument("--ffmpeg", default=None)
+    ap.add_argument("--ffprobe", default="ffprobe")
+    args = ap.parse_args(argv)
+    try:
+        rows = clip_rows([{"src": c} for c in args.clip],
+                         ffmpeg=args.ffmpeg, frame_count=args.frame_count,
+                         ffprobe=args.ffprobe)
+    except FrameTextError as exc:
+        print(json.dumps({"schema_version": SCHEMA_VERSION,
+                          "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                          "command": "check", "outcome": "error",
+                          "reason_code": exc.code, "state_version": 0}))
+        return EXIT["error"]
+    flagged = [r for r in rows if r["text_frames"]]
+    print(json.dumps({"schema_version": SCHEMA_VERSION,
+                      "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                      "command": "check",
+                      "outcome": "rejected" if flagged else "ok",
+                      "reason_code": GARBLED_TEXT_FRAME if flagged
+                                     else "FRAME_TEXT_OK",
+                      "rows": rows, "state_version": 0}))
+    return EXIT["error"] if flagged else EXIT["ok"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())

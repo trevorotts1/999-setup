@@ -104,7 +104,7 @@
     ],
     "drama-song-ad-factory": [
       {
-        "version": "v2.9.208",
+        "version": "v2.9.209",
         "platform": "any",
         "installFrom": "repo-tree",
         "repoPath": ".claude/skills/drama-song-ad-factory",

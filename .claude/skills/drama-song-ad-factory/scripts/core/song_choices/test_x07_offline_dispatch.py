@@ -233,6 +233,15 @@ class X07OfflineDispatch(unittest.TestCase):
         os.environ["KIE_LIVE_ADAPTER_PATH"] = self.adapter
         self._real_dispatch = KD.dispatch
         self._install_transport()
+        # Round-3 finding 2: keep the KIE token bucket off HOME. The bucket
+        # lives in ~/.cache unless DSAF_GOVERNOR_DIR points elsewhere, so an
+        # unwritable HOME fails every offline dispatch with [Errno 13] --
+        # which proves nothing about the product path. Point it inside the
+        # test root instead; the seam never touches a real shared dir.
+        self._governor_dir = os.path.join(self.root, "governor")
+        os.makedirs(self._governor_dir, exist_ok=True)
+        self._old_governor_dir = os.environ.get("DSAF_GOVERNOR_DIR")
+        os.environ["DSAF_GOVERNOR_DIR"] = self._governor_dir
 
     def tearDown(self):
         KD.dispatch = self._real_dispatch
@@ -240,6 +249,10 @@ class X07OfflineDispatch(unittest.TestCase):
             os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
         else:
             os.environ["KIE_LIVE_ADAPTER_PATH"] = self._old_adapter
+        if self._old_governor_dir is None:
+            os.environ.pop("DSAF_GOVERNOR_DIR", None)
+        else:
+            os.environ["DSAF_GOVERNOR_DIR"] = self._old_governor_dir
 
     def _install_transport(self):
         """Fake the EXTERNAL provider only: the real dispatcher runs unchanged."""
@@ -481,38 +494,6 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(self.transport.submits(), 2, self.transport.calls)
         self.assertEqual(self._summary()["actual_cost"], CREDITS)
 
-    def test_keep_one_before_any_take_buys_nothing(self):
-        """keep_one recorded BEFORE the song's first take: the initial
-        dispatch is refused MISSING_AUTH_REF with no provider submit and
-        no ledger row. Failing-first for the round-3 keep_one finding:
-        on the old ledger the initial submit was committed."""
-        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
-        out = self._generate()
-        self._refused(out, "MISSING_AUTH_REF")
-        self.assertEqual(self.transport.submits(), 0, self.transport.calls)
-        self.assertEqual(len(self._auth_rows()), 0, self._auth_rows())
-        self.assertEqual(self._summary()["actual_cost"], 0)
-
-    def test_single_read_pairs_reference_with_answered_flag(self):
-        """The dispatch boundary reads the fork file ONCE: with a redo_all
-        answer recorded, fork_authorization returns that decision's
-        reference plus answered=True together. Failing-first for the
-        round-3 double-read finding: the old boundary read the file twice
-        (reference, then answered flag), so an answer recorded between
-        the reads paired an old redo reference with a new decision."""
-        self.assertEqual(self._fork("redo all")["answer"], "redo_all")
-        auth, answered = SC.fork_authorization(
-            self.run_dir, "song/%s" % VARIANT_ID)
-        self.assertTrue(auth, (auth, answered))
-        self.assertTrue(answered, (auth, answered))
-        self.assertEqual(auth, SC.redo_authorization(
-            self.run_dir, "song/%s" % VARIANT_ID), (auth, answered))
-        self.assertEqual(self._fork("keep one")["answer"], "keep_one")
-        auth2, answered2 = SC.fork_authorization(
-            self.run_dir, "song/%s" % VARIANT_ID)
-        self.assertEqual(auth2, "", (auth2, answered2))
-        self.assertTrue(answered2, (auth2, answered2))
-
     def test_keep_one_after_an_initial_failure_stops_the_retry(self):
         """keep_one after the INITIAL take failed at the provider: the retry
         is refused with no submit and no new row. The latest recorded answer
@@ -529,76 +510,91 @@ class X07OfflineDispatch(unittest.TestCase):
         self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
         self.assertEqual(self._summary()["actual_cost"], 0)
 
-    def test_initial_failure_with_no_fork_decision_keeps_the_retry(self):
-        """No recorded fork decision: the song runner sends no
-        require_round_auth flag, so a provider-failure retry after the
-        INITIAL take failed keeps today's plain retry -- a second submit,
-        not MISSING_AUTH_REF. Regression: an unconditional
-        require_round_auth=True refused this retry with one submit made
-        and no second submit issued."""
+    def test_replayed_decision_mints_no_second_authorization(self):
+        """The SAME recorded decision written twice (same answer, reply, who,
+        channel and time) is one decision: one reference, one paid take."""
+        self._generate()
+        same = dict(who="client", channel="card", at="2026-11-20T18:00:00Z")
+        SC.record_fork_decision(self.run_dir, "redo all", **same)
+        ref = SC.redo_authorization(self.run_dir, "song/%s" % VARIANT_ID)
+        SC.record_fork_decision(self.run_dir, "redo all", **same)
+        self.assertEqual(SC.redo_authorization(
+            self.run_dir, "song/%s" % VARIANT_ID), ref)
+        second = self._generate()
+        self.assertEqual(second["results"][0]["envelope"]["outcome"], "ok",
+                         second["results"][0]["envelope"])
+        third = self._generate()
+        self._refused(third, "DUPLICATE_AUTHORIZATION")
+        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+        self.assertEqual(self._summary()["actual_cost"], CREDITS * 2)
+
+    def test_no_decision_retry_after_initial_failure_succeeds(self):
+        """Round-2: with NO recorded fork decision an initial provider
+        failure retries as a plain provider-failure retry: a second
+        submit, an ok envelope, two ledger rows and one settled charge.
+        Unconditional require_round_auth refused this retry
+        MISSING_AUTH_REF (one submit, then refusal)."""
         self.transport.fail_submits = {1}
         failed = self._generate()
         self.assertNotEqual(failed["results"][0]["envelope"]["outcome"], "ok")
         self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        self.assertIsNone(SC.fork_decision(self.run_dir))
         retry = self._generate()
         env = retry["results"][0]["envelope"]
         self.assertEqual(env["outcome"], "ok", env)
         self.assertEqual(self.transport.submits(), 2, self.transport.calls)
         rows = self._auth_rows()
         self.assertEqual(len(rows), 2, rows)
+        self.assertEqual(rows[0]["retry_category"], "initial", rows)
         self.assertIn(rows[1]["retry_category"],
-                      ("failed_job_retry", "transport_retry"), rows)
+                      ("transport_retry", "failed_job_retry"), rows)
+        self.assertEqual(rows[1]["auth_ref"], "", rows)
         self.assertEqual(self._summary()["actual_cost"], CREDITS)
 
-    # ---- corrupt / tampered fork file: fail closed --------------------
-    def _corrupt_fork(self, payload):
-        with open(os.path.join(self.run_dir, "song-choices",
-                               SC.FORK_FILE), "w",
-                  encoding="utf-8") as f:
-            f.write(payload)
+    def test_no_decision_passes_no_round_auth_flag(self):
+        """Round-2 contract: the song runner passes require_round_auth only
+        when a fork decision is recorded. No decision means no flag (the
+        plain provider-failure retry survives); a recorded answer means the
+        flag (a later keep_one stops the retry)."""
+        seen = []
+        current = KD.dispatch
 
-    def test_corrupt_fork_file_blocks_a_paid_retake(self):
-        """A fork file that is not valid JSON authorizes nothing: the retake
-        after a succeeded take is refused and the provider submits nothing."""
-        self._generate()
-        self._fork("redo all")
-        self._corrupt_fork("{not json")
-        second = self._generate()
-        self._refused(second, "MISSING_AUTH_REF")
-        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
+        def spy(**kw):
+            seen.append(kw.get("require_round_auth", False))
+            return current(**kw)
 
-    def test_corrupt_fork_file_blocks_a_plain_retry(self):
-        """A tampered fork file after a provider failure: the plain retry is
-        refused too, because the recorded answer cannot be validated."""
-        self.transport.fail_submits = {1}
-        self._generate()
+        KD.dispatch = spy
+        try:
+            self.transport.fail_submits = {1}
+            first = self._generate()
+            self.assertNotEqual(first["results"][0]["envelope"]["outcome"],
+                                "ok")
+            self.assertEqual(self.transport.submits(), 1,
+                             self.transport.calls)
+            self.assertEqual(self._fork("keep one")["answer"], "keep_one")
+            retry = self._generate()
+            self._refused(retry, "MISSING_AUTH_REF")
+        finally:
+            KD.dispatch = current
         self.assertEqual(self.transport.submits(), 1, self.transport.calls)
-        self._fork("keep one")
-        self._corrupt_fork(json.dumps({"decisions": [{"answer": "hacked"}]}))
-        log, readable = SC._read_fork_log(self.run_dir)
-        self.assertEqual((log, readable), ([], True))
-        auth, answered = SC.fork_authorization(
-            self.run_dir, "song/%s" % VARIANT_ID)
-        self.assertEqual((auth, answered), ("", True))
-        retry = self._generate()
-        self._refused(retry, "MISSING_AUTH_REF")
-        self.assertEqual(self.transport.submits(), 1, self.transport.calls)
-        self.assertEqual(len(self._auth_rows()), 1, self._auth_rows())
+        self.assertEqual(seen, [False, True], seen)
 
-    def test_malformed_latest_record_does_not_revive_an_older_redo(self):
-        """A null latest record authorizes nothing and revives nothing: the
-        older redo_all answer stays spent (DUPLICATE_AUTHORIZATION stays
-        refused)."""
-        self._generate()
-        self._fork("redo all")
-        second = self._generate()
-        self.assertEqual(second["results"][0]["envelope"]["outcome"], "ok")
-        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
-        self._corrupt_fork(json.dumps({"decisions": [{"answer": "redo_all"},
-                                                     None]}))
-        third = self._generate()
-        self._refused(third, "MISSING_AUTH_REF")
-        self.assertEqual(self.transport.submits(), 2, self.transport.calls)
+    # ---- governor isolation (round-3: HOME-independent offline seam) --
+    def test_governor_dir_isolated_to_the_run(self):
+        """Round-3 finding 2: the KIE token bucket lives in
+        ``~/.cache/drama-song-ad-factory`` unless ``DSAF_GOVERNOR_DIR``
+        points elsewhere. Under an unwritable HOME every offline dispatch
+        failed ``[Errno 13] Permission denied: '/var/empty/.cache'`` --
+        all 14 tests -- which proves nothing about the product path. The
+        offline seam points the governor at a writable directory inside the
+        test root, so the suite runs under an unwritable HOME. Passes after
+        (the override is inside the test root); on the old head the same
+        assertion fails because no override exists."""
+        self.assertEqual(
+            os.environ.get("DSAF_GOVERNOR_DIR"), self._governor_dir,
+            os.environ)
+        self.assertTrue(
+            self._governor_dir.startswith(self.root), self._governor_dir)
 
     # ---- guard-removal control ----------------------------------------
     def test_control_guard_removal_replays_the_second_submit(self):

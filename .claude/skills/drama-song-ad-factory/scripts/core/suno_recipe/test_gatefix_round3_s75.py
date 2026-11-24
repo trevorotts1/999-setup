@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Round-3 gate findings on PR #465 (head d0892b6): cue words never decide.
+"""Round-3 findings on PR #3892 head f09cda23: em-dash never ends a negation,
+cue words never discard lyrics during rendering.
 
-Failing-first: on head d0892b6 the underscore case, the non-parenthesized
-cue scan (both parse_tag cases), the non-parenthesized no-voice cue case and
-the cue-masked closing case FAIL; after the fix all pass. Pins hold: the
-declared (spoken) intro keeps spoken delivery everywhere, real no-voice
-sections still refuse a lyric, and the quiz closing accepts/refuses as before.
+Failing-first: on head f09cda23 the em-dash negation rows and the
+render_lyrics cue row FAIL; after the fix all pass. Pins hold: the shared
+tag parser keeps spoken delivery for an intro whose cue names an
+instrumental bed (intro-only sheet never raises EMPTY_SHEET_DELIVERIES),
+real [Instrumental] / [Instrumental Break: band only] / [Break] sections
+with a lyric under them are still refused, and the closing accept/refuse
+rows (colon, negative subjects, line breaks, own-sentence calls) hold.
 
 Run: python3 scripts/core/suno_recipe/test_gatefix_round3_s75.py
 stdlib only, no network, no spend.
@@ -21,52 +24,71 @@ import suno_recipe as R               # noqa: E402
 import story_arc.story_arc as SA       # noqa: E402
 
 
-def test_underscore_is_a_word_character():
-    assert not R.is_no_voice_tag("Break_more"), "Break_more"
-    assert not R.is_no_voice_tag("break_more"), "break_more"
+def test_em_dash_never_ends_the_negation_sentence():
+    for line in ("Never — take the quiz.", "Nobody — take the quiz.",
+                 "Never — book a call.", "Nobody — book a call."):
+        assert SA._commercial_calls(line) == [], (line, SA._commercial_calls(line))
+        out = SA.check_payload_closing("[CTA (spoken)]\n" + line)
+        assert out["outcome"] == "rejected", (line, out)
 
 
-def test_cue_never_decides_delivery_outside_parens():
-    assert R.parse_tag("[Intro spoken: instrumental bed]") == "spoken"
-    assert R.parse_tag("[Verse: rap beat]") is None
+def test_cue_words_never_discard_lyrics_during_rendering():
+    sheet = R.parse_lyrics("[Intro spoken: instrumental bed]\nHello world")
+    assert sheet and sheet[0]["delivery"] == "spoken", sheet
+    assert sheet[0]["lines"] == ["Hello world"], sheet
+    text = R.render_lyrics(sheet)
+    assert "Hello world" in text, repr(text)
+    assert R.check_no_voice_lines(text) == [], repr(text)
 
 
-def test_no_voice_judges_name_not_cue():
-    assert R.check_no_voice_lines("[Verse: instrumental bed]\nlyric") == []
-    for tag in ("[Instrumental]", "[Instrumental Break: band only]", "[Break]"):
-        assert len(R.check_no_voice_lines(tag + "\nlyric")) == 1, tag
-
-
-def test_closing_with_instrumental_cue_is_still_the_closing():
-    sheet = ("[Verse]\nBook a call.\n\n"
-             "[CTA (spoken): over a light instrumental bed]\n"
-             "The quiz is beautiful.")
-    assert SA.closing_block(sheet)["tag"].startswith("CTA"), SA.closing_block(sheet)
-    out = SA.check_payload_closing(sheet, commercial_action="take the quiz",
-                                   require_cta=True)
-    assert out["outcome"] == "rejected", out
-    assert out["reason_code"] == "summary-only-promise", out
-
-
-def test_pins_hold():
-    tag = ("[Intro (spoken): her own voice, plain speech, no melody, "
-           "over a light instrumental bed, close and dry]")
+def test_shared_parser_keeps_spoken_delivery_with_instrumental_cue():
+    tag = ("[Intro (spoken): her own voice over a light instrumental bed, "
+           "close and dry]")
     assert R.parse_tag(tag) == "spoken", R.parse_tag(tag)
     import music_styles.music_styles as MS       # noqa: E402
     sheet = tag + "\nI kept the lights on alone."
     assert "spoken" in MS.sheet_deliveries(sheet), MS.sheet_deliveries(sheet)
     assert MS.delivery_map(sheet + "\n\n[End]"), "EMPTY on spoken intro"
-    assert R.check_no_voice_lines(
-        "[Verse (sung): a short break in the drums]\nHold on.") == []
-    assert len(R.check_no_voice_lines("[Instrumental Break (sung): band]\nla la")) == 1
-    def closing(line):
-        return SA.check_payload_closing("[CTA (spoken)]\n" + line)["outcome"]
+
+
+def test_real_no_voice_sections_still_refuse_a_lyric_line():
+    for tag in ("[Instrumental]", "[Instrumental Break: band only]", "[Break]"):
+        assert len(R.check_no_voice_lines(tag + "\nsix seconds, band only")) == 1, tag
+        try:
+            sheet = R.parse_lyrics(tag + "\nsix seconds, band only")
+        except Exception as e:
+            assert "UNTAGGED_LYRIC_LINES" in type(e).__name__ or "UNTAGGED" in str(e), (tag, e)
+        else:
+            assert sheet == [], (tag, sheet)
+        assert "six seconds" not in R.render_lyrics(
+            [{"tag": tag.strip("[]"), "delivery": None,
+              "lines": ["six seconds, band only"]}]), tag
+
+
+def test_closing_accept_refuse_rows_hold():
+    def closing(line, **kw):
+        kw.setdefault("require_cta", True)
+        return SA.check_payload_closing("[CTA (spoken)]\n" + line, **kw)["outcome"]
     assert closing("Take the quiz: https://example.com") == "ok"
-    assert closing("The quiz is beautiful.") == "rejected"
-    assert closing("Do not: take the quiz.") == "rejected"
-    assert closing("Nobody should take the quiz.") == "rejected"
-    assert closing("Never\ntake the quiz.") == "rejected"
-    assert closing("Do not\nbook a call.") == "rejected"
+    assert closing("Take the quiz: https://example.com",
+                   commercial_action="take the quiz") == "ok"
+    for line in ("The quiz is beautiful.", "Do not: take the quiz.",
+                 "Nobody should take the quiz.", "No one should take the quiz.",
+                 "Never\ntake the quiz.", "Do not\nbook a call.",
+                 "Do not; take the quiz.", "Do not book a call."):
+        assert closing(line) == "rejected", line
+    for line in ("Do not wait. Take the quiz now.",
+                 "No more guessing. Take our quiz.",
+                 "Don't wait! Start the quiz."):
+        assert closing(line) == "ok", line
+
+
+def test_whole_word_no_voice_pins_hold():
+    for tag in ("Breakthrough", "Heartbreak", "Breakdown", "Breaké",
+                "breakα", "Break_more", "Break_down"):
+        assert not R.is_no_voice_tag(tag), tag
+    for tag in ("Instrumental", "Instrumental Break", "Break", "break 2"):
+        assert R.is_no_voice_tag(tag), tag
 
 
 if __name__ == "__main__":

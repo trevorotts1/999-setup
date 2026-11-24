@@ -1,0 +1,3120 @@
+#!/usr/bin/env python3
+"""KIE dispatch: plan section 5.4 stage driver. stdlib only.
+
+Stage order (never reordered, never partially skipped):
+
+  0. placeholder check   request JSON may carry no unfilled placeholder (F10);
+                         refused before the ledger or Skill 74 is touched
+  1. ledger reserve      ``spend_ledger.plan`` + ``reserve`` (directive 18/24.4)
+  2. Skill 74 health     read ``adapter_mode``; only ``active`` continues
+  3. Skill 74 preflight  balance must cover price x 1.30
+  4. prompt-budget check exit 4 = over max, exit 3 = under floor,
+                         exit 5 = Skill 74's pass-with-a-note band (accepted
+                         only when its JSON says the prompt passed)
+  5. submit/wait/save    Skill 74 ``submit`` (task id persisted immediately),
+                         ``wait`` with a modality budget (video 1200 / music
+                         600 / image 300, or request["timeout"]), outer
+                         subprocess W+120 so the inner wait always returns
+                         first, then ``save`` files on success
+  6. ledger reconcile    succeeded/failed settle; unknown retains reservation
+
+Shadow / off: stop **before the approval card**. The client is told generation
+is not switched on. There is no fallback to a private KIE client and no second
+transport - Skill 74 is the one KIE path - and a skip is recorded as
+*not generated*: the reservation is released at zero cost, never settled as a
+generation.
+
+Unknown: a wait timeout (``state`` running plus ``error.code`` timeout), an
+unparsable submit/wait answer, or an exception raised while either was in
+flight, marks the reservation ``unknown`` and STOPS - with the remote task id
+already stored when submit produced one. No retry, no resubmit; reconcile from
+provider records or operator evidence first.
+
+F10 (manual 02): a request whose JSON still carries an unfilled placeholder
+(``{{``, ``}}``, ``<TODO``, ``<PLACEHOLDER`` - any case - or the bare tokens
+``TODO``, ``PLACEHOLDER``, ``KEYFRAME:`` from the Kiesett incident) is refused
+at submission with reason ``REQUEST_PLACEHOLDER`` before anything is reserved
+or sent. Any failed task is reported within one poll: the wait path fails on
+the FIRST poll answer reading ``fail`` (stage evidence row + ``failure_poll``
+in the envelope), never after retries or silent skips.
+
+This module carries no HTTP client of its own: the adapter path comes from
+``KIE_LIVE_ADAPTER_PATH`` or a search relative to this file, and every call is
+one ``subprocess`` of ``kie_live_adapter.py`` (injectable as ``runner`` so the
+tests never touch the network or the ledger of a real run).
+
+Exit codes (EXIT): ok 0, error 1, waiting 3, parked 4, rejected 5.
+Output: a single JSON object (the envelope) on stdout.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import load_governor as _LG  # noqa: E402  (core/ is on sys.path just above)
+
+import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
+import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
+# WW-30: the ONE music contract (createTask envelope + retired legacy route)
+# lives in suno_recipe; imported, never copied.
+try:  # pragma: no cover - the guard below is what matters
+    import suno_recipe as _R  # noqa: E402
+except Exception:  # noqa: BLE001 - without it the music guard fails closed
+    _R = None
+
+#: FU-U7 final-payload prompt caps (plan E.1). Soft import like the F15 seam
+#: below: when the module is missing, a video or avatar job is refused
+#: fail-closed (there is no prompt cap without the table); image, music and
+#: other jobs keep their own gates either way.
+try:
+    import prompt_limits as _PL  # noqa: E402 (sibling module in the same core/ tree)
+except Exception:  # noqa: BLE001 - the gate below stays fail-closed without it
+    _PL = None
+
+#: F15 card gate (Critical, owner order 2026-10-08): dispatch refuses ANY
+#: paid job for a run whose state lacks all four choice-card answers. The
+#: import is soft -- the module must keep working when style_defaults is not
+#: importable -- and the local fail-closed copy below keeps the gate shut.
+try:
+    from style_defaults import card_gate as _CG  # noqa: E402
+except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
+    _CG = None
+
+#: The exposed gate for W-F-U16: whoever holds the run state calls
+#: ``card_gate_refusal(run_state)`` and refuses any paid job when it returns
+#: non-None. Run state is read from ``request["card_receipt"]`` (the
+#: recorded receipt block from style_defaults.card_gate.answered_stamped)
+#: or from ``request["run_state"]["card_receipt"]``.
+def _onscreen_strings(request):
+    """U8: every on-screen string a paid job would print, from the request.
+
+    The shot plan carries them as ``on_screen_text`` (a string, a list of
+    strings, or ``[{"text": ...}]``) on the request itself or under the
+    request's ``shot`` block. Other fields the plan already gates for
+    spelling (lyrics, end card) are read the same way so one receipt covers
+    the whole job.
+    """
+    req = request if isinstance(request, dict) else {}
+    out = []
+
+    def collect(value):
+        if isinstance(value, str):
+            if value.strip():
+                out.append(value)
+        elif isinstance(value, dict):
+            collect(value.get("text"))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect(item)
+
+    for source in (req, req.get("shot"), req.get("shot_plan"),
+                   req.get("generation")):
+        if isinstance(source, dict):
+            collect(source.get("on_screen_text"))
+    return out
+
+
+def onscreen_text_refusal(model, request):
+    """U8 ONSCREEN_TEXT_NOT_CHECKED: a paid job may not print a string
+    nobody checked. Fail-closed -- an unchecked keyframe/video whose request
+    carries on-screen text is refused before the ledger, and a request with
+    no on-screen text at all passes untouched.
+
+    The receipt is the exact strings that were checked, in
+    ``onscreen_text_checked`` (string or list, request-level or beside the
+    shot). A string on the job that is not in the receipt refuses -- a
+    receipt for a different string is not a receipt for this one.
+    """
+    texts = _onscreen_strings(request)
+    if not texts:
+        return None
+    req = request if isinstance(request, dict) else {}
+    checked = []
+    for source in (req, req.get("shot"), req.get("shot_plan")):
+        if isinstance(source, dict):
+            value = source.get("onscreen_text_checked")
+            if isinstance(value, str):
+                checked.append(value)
+            elif isinstance(value, (list, tuple)):
+                checked.extend(x.get("text", "") if isinstance(x, dict) else str(x)
+                               for x in value)
+    checked = {c.strip() for c in checked if isinstance(c, str) and c.strip()}
+    missing = [t for t in texts if t.strip() not in checked]
+    if not missing:
+        return None
+    return ("on-screen text %r is not in the checked receipt for this job "
+            "(%s); spell-check it and record it in "
+            "`onscreen_text_checked` before any paid job -- exact copy is "
+            "never left to the model"
+            % (missing[0], "no strings checked" if not checked
+               else "%d checked" % len(checked)))
+
+
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
+def card_gate_refusal(request):
+    """-> None when the card is answered and stamped, else the refusal dict
+    with reason CARD_UNANSWERED. Fail-closed: no receipt is unanswered."""
+    req = request if isinstance(request, dict) else {}
+    record = req.get("card_receipt")
+    if not isinstance(record, dict):
+        rs = req.get("run_state")
+        record = rs.get("card_receipt") if isinstance(rs, dict) else None
+        if not isinstance(record, dict) and isinstance(rs, dict):
+            inner = rs.get("card") or rs.get("choice_card")
+            record = inner if isinstance(inner, dict) else None
+    if _CG is not None:
+        ok, refusal = _CG.gate_run_state(record)
+        return refusal if not ok else None
+    if not isinstance(record, dict):
+        return {"reason_code": "CARD_UNANSWERED",
+                "missing": ["video_style", "audio_style", "length",
+                            "video_model"],
+                "next_action": "Show the choice card and record all four "
+                               "answers (video style, audio style, length, "
+                               "video model), with who and when, before any "
+                               "paid job."}
+    missing = [f for f in ("video_style", "audio_style", "length", "video_model")
+               if record.get(f) is None
+               or (isinstance(record.get(f), str) and not record.get(f).strip())]
+    if missing:
+        return {"reason_code": "CARD_UNANSWERED", "missing": missing,
+                "next_action": "Show the choice card and record all four "
+                               "answers before any paid job."}
+    return None
+
+try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
+    import audio_c3.sfx_off as _sfx_off  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
+
+try:  # F2: whole-track retakes only in F1 mode (audio_c3/soundtrack)
+    import audio_c3.soundtrack as _SND  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import soundtrack as _SND  # type: ignore # noqa: E402
+
+PARTIAL_SUNO_JOB = "PARTIAL_SUNO_JOB"
+LEGACY_MUSIC_ROUTE = "LEGACY_MUSIC_ROUTE"
+MUSIC_ENVELOPE_REJECTED = "MUSIC_ENVELOPE_REJECTED"
+
+def music_contract_refusal(model, request):
+    """WW-30: [] when a music job may go, else the refusal text.
+
+    Two rules, both fail-closed and both BEFORE the ledger:
+
+    1. the legacy flat ``/api/v1/generate`` music-GENERATION route is RETIRED
+       -- it is refused by name and there is no fallback to it (a classic
+       ``/api/v1/generate/<op>`` route such as ``/generate/sounds`` or
+       ``/generate/extend`` is a DIFFERENT route and is untouched);
+    2. a job on the createTask music route must carry the ONE approved
+       envelope: outer model ``ai-music-api/generate``, a TOP-LEVEL camelCase
+       ``callBackUrl``, a nested snake_case ``input``, exactly one lyrics
+       source at ``input.lyrics`` and every required direction present.
+       ``suno_recipe.check_envelope`` is that gate; the reasons come back
+       verbatim so the refusal names its cause.
+    """
+    req = request if isinstance(request, dict) else {}
+    endpoint = str(req.get("endpoint") or "").strip().rstrip("/")
+    m = str(model or "").strip()
+    if _R is not None and (endpoint == _R.KIE_LEGACY_GENERATE_ENDPOINT
+                           or m == _R.KIE_LEGACY_GENERATE_ENDPOINT):
+        return (LEGACY_MUSIC_ROUTE,
+                "the legacy %s music-generation route is RETIRED: send the "
+                "createTask envelope (endpoint %s on the KIE host, outer "
+                "model %r, top-level callBackUrl, nested snake_case input). "
+                "There is no legacy fallback and no silent switch-back."
+                % (_R.KIE_LEGACY_GENERATE_ENDPOINT,
+                   _R.KIE_MUSIC_TASK_ENDPOINT, _R.KIE_MUSIC_TASK_MODEL))
+    if _R is None:
+        if m == "ai-music-api/generate":
+            return (MUSIC_ENVELOPE_REJECTED,
+                    "the music contract module (suno_recipe) is not importable, "
+                    "so the createTask envelope cannot be checked; nothing was "
+                    "sent")
+        return None
+    if m == _R.KIE_MUSIC_TASK_MODEL:
+        errs = _R.check_envelope(req)
+        if errs:
+            return (MUSIC_ENVELOPE_REJECTED, "; ".join(errs))
+    return None
+
+#: The KIE result shape the revised research DOES document:
+#:   GET <KIE host>/api/v1/jobs/recordInfo?taskId=<taskId>
+#:   -> data.response.data[] with audio_url per returned track.
+#: The result READ path and the submit path as PATHS. Deliberately no host
+#: here: this module names no URL at all (its own static test proves it, and
+#: Skill 74 is the only transport). The absolute URL is composed at the
+#: transport boundary, never inside the dispatcher.
+RECORD_INFO_ENDPOINT = "/api/v1/jobs/recordInfo"
+#: Plausible places a task id can sit in a submit acknowledgement. The INITIAL
+#: task-ID ACKNOWLEDGEMENT NESTING IS **UNVERIFIED** -- no live call was made,
+#: so nothing here is guessed as THE shape: the reader below TOLERATES all of
+#: these and reports which one it found. What IS established: the recordInfo
+#: READ path above and audio_url on each returned track. What is NOT
+#: established: whether the submit ack nests the id at data.taskId,
+#: data.task_id, data.data.taskId or data.data.task_id.
+ACK_TASK_ID_PATHS = (
+    ("data", "taskId"), ("data", "task_id"), ("data", "data", "taskId"),
+    ("data", "data", "task_id"), ("taskId",), ("task_id",),
+    ("data", "taskInfo", "taskId"), ("data", "taskInfo", "task_id"),
+)
+
+def task_id_from_acknowledgement(ack):
+    """(task_id, path) from a submit acknowledgement, tolerating more than one
+    plausible nesting. (\"\", \"\") when none of the tolerated paths carries one.
+
+    The ack nesting is UNVERIFIED (see ``ACK_TASK_ID_PATHS``): this reader
+    never asserts a single shape, it searches the tolerated set and returns
+    the path it actually used, so the receipt says what was found rather than
+    what was assumed.
+    """
+    if not isinstance(ack, dict):
+        return "", ""
+    for path in ACK_TASK_ID_PATHS:
+        node = ack
+        for key in path:
+            if not isinstance(node, dict) or key not in node:
+                break
+            node = node[key]
+        else:
+            if isinstance(node, str) and node.strip():
+                return node.strip(), ".".join(path)
+    return "", ""
+
+def audio_urls_from_result(result):
+    """[(audio_url, title)] from a recordInfo-shaped result, defensively.
+
+    The documented shape is ``data.response.data[]`` with ``audio_url`` per
+    returned track; the variants below are tolerated so a multiple-track
+    answer is never silently truncated to one. An unrecognised shape returns
+    [] -- an empty read is "not established", never "no tracks".
+    """
+    if not isinstance(result, dict):
+        return []
+    data = result.get("data") if isinstance(result.get("data"), dict) else result
+    node = data
+    for key in ("response", "data"):
+        if isinstance(node.get(key), dict):
+            node = node[key]
+    rows = node.get("data") if isinstance(node, dict) else None
+    if not isinstance(rows, list):
+        rows = node if isinstance(node, list) else []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in ("audio_url", "audioUrl", "url"):
+            v = row.get(key)
+            if isinstance(v, str) and v.strip():
+                out.append((v.strip(), str(row.get("title") or "")))
+                break
+    return out
+
+def suno_job_refusal(request):
+    """F2 intake seam: [] when a Suno job may go, else the refusal reasons.
+
+    Fires only for a run in F1 mode -- the request itself carries the F1
+    soundtrack stamp (``generate_soundtrack_request`` output) or carries
+    ``request["run_receipt"]``, the run's receipt with the recorded stamp
+    (``record_soundtrack`` output). A run with no stamp is untouched (F2
+    constrains F1-mode runs only).
+
+    The job row is ``request["suno_job"]`` when given; without it, the
+    F1-stamped request IS the one full-track generation. A partial shape
+    (a per-line slice, a spoken-take patch, a second bed) refuses
+    ``PARTIAL_SUNO_JOB`` here, before any ledger row or Skill 74 call.
+    """
+    req = request if isinstance(request, dict) else {}
+    receipt = req.get("run_receipt")
+    if not isinstance(receipt, dict):
+        rs = req.get("run_state")
+        receipt = rs.get("run_receipt") if isinstance(rs, dict) else None
+    if not isinstance(receipt, dict):
+        receipt = req
+    block = receipt.get("soundtrack") \
+        if isinstance(receipt, dict) else None
+    if not isinstance(block, dict) or block.get("mode") != _SND.TRACK_MODE:
+        return []
+    job = req.get("suno_job")
+    if not isinstance(job, dict):
+        job = {"kind": _SND.FULL_TRACK_KIND}
+    return _SND.refuse_partial_suno_job(receipt, job)
+
+
+def lipsync_picture_refusal(model, request):
+    """LPG001/LPG002 hard block: a lip-sync job (kling ai-avatar, infinitalk)
+    needs a PASS or ACCEPT_WITH_FLAG picture-gate receipt for the exact bytes
+    (sha256) of request["lipsync_image_path"], AND request["input"]["image_url"] must be the
+    upload of those exact bytes (picture_gate.upload_measured).
+    -> None (not lip-sync, or all bound) else the refusal text. Fail-closed:
+    a missing path, receipt, binding, or an unimportable gate is a refusal."""
+    if not any(c in str(model or "").lower()
+               for c in ("ai-avatar", "infinitalk", "omnihuman")):
+        return None
+    req = request if isinstance(request, dict) else {}
+    try:
+        lg = str(Path(__file__).resolve().parents[1] / "lip_sync" / "lip_gate")
+        if lg not in sys.path:
+            sys.path.insert(0, lg)
+        import picture_gate as _PG
+        rec = _PG.require_receipt(req.get("lipsync_image_path"),
+                                  req.get("lipsync_receipt_dir"))
+        # R-5 / G-FACE-01: a FAIL still never dispatches. require_receipt
+        # already refuses any verdict but PASS / ACCEPT_WITH_FLAG; there is
+        # no measure-and-proceed path here, and the numbers are re-read so a
+        # receipt that changed after the gate cannot slip through. A lead
+        # take needs exactly 1 face (a choir-row take may show 2, S-8/N-07)
+        # and the lead face at least 25 percent of the frame height.
+        nums = (rec or {}).get("numbers") or {}
+        _shot = req.get("shot") if isinstance(req.get("shot"), dict) else {}
+        _choir = bool(_shot.get("choir_row") or req.get("choir_row")
+                      or req.get("take_kind") == "choir")
+        _allowed = (1, 2) if _choir else (1,)
+        _fc = nums.get("face_count")
+        if _fc not in _allowed:
+            return ("LIPSYNC_PICTURE_NOT_GATED: the source picture's face "
+                    "count is %r; %s" % (
+                        _fc, "a choir-row take may show 1 or 2 large faces"
+                        if _choir else "a lead take needs exactly 1 face"))
+        _fh = nums.get("face_h_pct")
+        if isinstance(_fh, (int, float)) and not isinstance(_fh, bool) \
+                and float(_fh) < 25.0:
+            return ("LIPSYNC_PICTURE_NOT_GATED: the lead face is %.1f%% of the "
+                    "frame height; under 25%% never feeds an avatar source "
+                    "picture." % float(_fh))
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        _PG.require_upload_bound(req["lipsync_image_path"], inp.get("image_url"),
+                                 req.get("lipsync_receipt_dir"))
+    except Exception as exc:                                # noqa: BLE001
+        return str(exc) or type(exc).__name__
+    return None
+
+def book_shot_refusal(model, request):
+    """FU-U10: a BOOK video job needs the contract, or it does not dispatch.
+
+    A request whose shot kind is "book" on a video model must carry
+    (a) the approved book PLAN hash -- a book job that carries NO
+    ``book_plan_sha256`` is REFUSED with BOOK_PLAN_NOT_APPROVED (U11's
+    producer writes the field, so the requirement is ACTIVE: the dormant
+    period U10 shipped for ended when the producer landed); and
+    (b) a start frame MADE FROM the cover file -- request["book_start_frame"]
+    (or request["start_frame"]) naming a path whose sha256 equals the cover
+    sha256 carried by the same request (request["book_cover_sha256"]) or
+    computed from request["book_cover_path"].
+
+    -> None when not a book job or the contract holds, else the refusal dict
+    with reason BOOK_PLAN_NOT_APPROVED (plan side) or
+    BOOK_SHOT_NOT_CONTRACTED (start frame side). Fail-closed: an unreadable
+    start frame, a missing cover reference, a missing or mismatched plan
+    hash, or a start frame made from other bytes refuses. Never touches the
+    LIPSYNC_* seams: a lip-sync model is not a book shot entry point.
+    """
+    req = request if isinstance(request, dict) else {}
+    kind = req.get("shot_kind") or req.get("kind")
+    if not isinstance(kind, str) or kind.strip().lower() != "book":
+        return None
+    if not (req.get("request_kind") == "video" or _is_menu_video(model)
+            or _modality(model) == "video"):
+        return None
+    # (a) plan hash: U11's producer writes book_plan_sha256, so the
+    # requirement is ACTIVE. Missing, empty, or mismatched -> refused.
+    approved = req.get("approved_book_plan_sha256")
+    carried = req.get("book_plan_sha256")
+    if not carried:
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "no book_plan_sha256: the book plan has not been "
+                          "approved for this job",
+                "next_action": "Hash the approved book plan "
+                               "(book_shot.plan_sha256) and carry it as "
+                               "book_plan_sha256 alongside "
+                               "approved_book_plan_sha256, then resubmit."}
+    if not approved or str(carried) != str(approved):
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "book_plan_sha256 does not match the approved "
+                          "plan (carried %s, approved %s)"
+                          % (_short(carried), _short(approved)),
+                "next_action": "The plan changed after approval. Re-approve "
+                               "the current plan and carry its hash, then "
+                               "resubmit."}
+    missing = []
+    # (b) the start frame must be made from the cover file, byte for byte.
+    frame = req.get("book_start_frame") or req.get("start_frame")
+    cover_sha = req.get("book_cover_sha256")
+    if not cover_sha and req.get("book_cover_path"):
+        cover_sha = _sha256_path(req.get("book_cover_path"))
+    if not frame:
+        missing.append("no start frame made from the cover file "
+                       "(book_start_frame)")
+    elif not cover_sha:
+        missing.append("no cover sha256 to bind the start frame to "
+                       "(book_cover_sha256 or book_cover_path)")
+    else:
+        fsha = _sha256_path(frame)
+        if fsha is None:
+            missing.append("start frame unreadable: %s" % frame)
+        elif fsha != cover_sha:
+            # A frame made from the cover may be composited (the cover sitting
+            # in a scene), so an exact byte match is not required -- but a
+            # frame that shares nothing with the cover is an invented cover.
+            if not _frame_shows_cover(frame, req.get("book_cover_path")):
+                missing.append("start frame is not made from the cover file")
+    if missing:
+        return {"reason_code": "BOOK_SHOT_NOT_CONTRACTED",
+                "detail": "; ".join(missing),
+                "next_action": "Build the book shot from the contract: a "
+                               "start frame made from the client's cover file "
+                               "(book_shot.prompt_blocks + image_model_blocks), "
+                               "then resubmit."}
+    return None
+
+def utc_now():
+    """An aware-UTC ISO-8601 stamp (the only clock a provider-overlap receipt
+    may use; ``_wall_clock_s`` is a local dispatch clock and proves nothing)."""
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+
+
+def _short(value, n=12):
+    """A hash prefix for a refusal message. Never the secret, never a file."""
+    s = str(value or "")
+    return (s[:n] + "...") if len(s) > n else (s or "none")
+
+def _sha256_path(path):
+    if not path or not os.path.isfile(str(path)):
+        return None
+    h = hashlib.sha256()
+    try:
+        with open(str(path), "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
+
+def _frame_shows_cover(frame_path, cover_path):
+    """True when the frame contains the cover file (ORB inliers).
+
+    Composites are expected, so this is the measured test -- never a naming
+    convention. A missing cv2 or an unreadable file is False (fail closed)."""
+    if not cover_path:
+        return False
+    try:
+        import book_shot as _BS
+        import cv2 as _cv2
+        img = _cv2.imread(str(frame_path))
+        if img is None:
+            return False
+        m = _BS.detect_cover(img, str(cover_path))
+        return bool(m["cover_hits"])
+    except Exception:                                       # noqa: BLE001
+        return False
+
+TOOL_NAME = "kie_dispatch"
+TOOL_VERSION = "1.0.0"
+SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
+EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
+
+
+#: U15b: the models whose prompts come from the template assembler
+#: (prompt_templates.assemble_h3). An H3 video job must carry the prompt
+#: receipt for the exact prompt bytes; the keyframe image path is unchanged.
+TEMPLATED_VIDEO_PREFIXES = ("minimax-h3/",)
+
+
+def prompt_templated_refusal(model, request, prompt):
+    """U15b: -> None when the H3 prompt carries a matching PASS receipt.
+
+    Refuses ``PROMPT_NOT_TEMPLATED`` when the prompt's sha256 has no receipt
+    (a hand-written or stale prompt may never be paid for) or when the
+    matching receipt's check says REFUSE or TRIM (the assembler's own band
+    verdict: REFUSE is over the hard max, TRIM is over the target max).
+    The receipt is the dict ``prompt_templates.receipt()`` wrote, carried as
+    ``request["prompt_receipt"]`` (or ``prompt_receipts`` list, or inside
+    ``request["run_state"]``). Non-H3 models return None: kling/ai-avatar
+    jobs are unchanged by this unit.
+    """
+    if not str(model or "").startswith(TEMPLATED_VIDEO_PREFIXES):
+        return None
+    req = request if isinstance(request, dict) else {}
+    rec = req.get("prompt_receipt")
+    if rec is None:
+        rec = req.get("prompt_receipts")
+    if rec is None:
+        rs = req.get("run_state")
+        if isinstance(rs, dict):
+            rec = rs.get("prompt_receipt") or rs.get("prompt_receipts")
+    if rec is None:
+        return {"reason_code": "PROMPT_NOT_TEMPLATED",
+                "detail": "the %s prompt carries no prompt receipt; assemble "
+                          "it through prompt_templates.assemble_h3 and pass "
+                          "receipt() as request['prompt_receipt']" % model}
+    recs = rec if isinstance(rec, list) else [rec]
+    text = prompt if isinstance(prompt, str) else ""
+    import hashlib as _hashlib
+    sha = _hashlib.sha256(text.encode("utf-8")).hexdigest()
+    match = None
+    for r in recs:
+        if isinstance(r, dict) and r.get("prompt_sha256") == sha:
+            match = r
+            break
+    if match is None:
+        return {"reason_code": "PROMPT_NOT_TEMPLATED",
+                "detail": "no receipt matches the sha256 of the prompt being "
+                          "paid for (%s...); the prompt changed after it was "
+                          "assembled - re-assemble and re-receipt" % sha[:12]}
+    verdict = (match.get("check") or {}).get("verdict") \
+        if isinstance(match.get("check"), dict) else match.get("verdict")
+    if isinstance(verdict, str) and verdict.upper() in ("REFUSE", "TRIM"):
+        return {"reason_code": "PROMPT_NOT_TEMPLATED",
+                "detail": "the matching receipt's verdict is %s: %s"
+                          % (verdict.upper(),
+                             "; ".join((match.get("check") or {}).get(
+                                 "reasons", []) or []))}
+    return None
+
+
+def native_audio_refusal(model, request, prompt=""):
+    """-> None unless the H3 request's native-audio decision is unusable.
+
+    minimax-h3 always returns a stereo track and cannot be asked for silence,
+    so the mixing decision travels on the request/receipt as
+    ``native_audio`` (prompt_templates.native_audio_block). This gate refuses
+    a decision that is present but not one of retain/reduce_music/strip, and
+    refuses DOUBLE_MUSIC when the request declares that an approved soundtrack
+    is layered over the take (``request["soundtrack_layering"]``) and the
+    decision/observed audio makes that double music.
+
+    A request with no decision at all is not refused here: the receipt gate
+    (prompt_templated_refusal) already demands a receipt, and receipts written
+    before this policy stay dispatchable. The layering boundary fails closed.
+    """
+    if not str(model or "").startswith(TEMPLATED_VIDEO_PREFIXES):
+        return None
+    try:
+        import prompt_templates as _PT
+    except ImportError:                                 # pragma: no cover
+        return {"reason_code": "NATIVE_AUDIO_UNAVAILABLE",
+                "detail": "prompt_templates is not importable; the native-audio "
+                          "decision cannot be validated"}
+    req = request if isinstance(request, dict) else {}
+    block = req.get("native_audio")
+    if isinstance(block, str):
+        block = {"decision": block}
+    if not isinstance(block, dict):
+        rec = req.get("prompt_receipt")
+        if rec is None:
+            rec = req.get("prompt_receipts")
+        if rec is None:
+            rs = req.get("run_state")
+            if isinstance(rs, dict):
+                rec = rs.get("prompt_receipt") or rs.get("prompt_receipts")
+        recs = [r for r in (rec if isinstance(rec, list) else [rec])
+                if isinstance(r, dict)]
+        block = None
+        # the decision must belong to the prompt being paid for, so a matching
+        # prompt_sha256 receipt is read first and the rest only as a fallback.
+        if isinstance(prompt, str) and prompt:
+            import hashlib as _hashlib
+            sha = _hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            recs = ([r for r in recs if r.get("prompt_sha256") == sha]
+                    + [r for r in recs if r.get("prompt_sha256") != sha])
+        for r in recs:
+            if isinstance(r.get("native_audio"), dict):
+                block = r["native_audio"]
+                break
+    if isinstance(block, dict) and block.get("decision") is not None \
+            and block["decision"] not in _PT.H3_NATIVE_AUDIO_DECISIONS:
+        return {"reason_code": "H3_NATIVE_AUDIO_UNKNOWN",
+                "detail": "%r is not one of %s; nothing was sent"
+                          % (block.get("decision"),
+                             ", ".join(_PT.H3_NATIVE_AUDIO_DECISIONS))}
+    if req.get("soundtrack_layering"):
+        snd = _PT.layering_refusal(block, soundtrack=True)
+        if snd:
+            return snd
+    return None
+
+
+def final_payload_cap_refusal(model, request, is_video):
+    """U15b/U6: measure the FINAL payload just before spend. -> None or dict.
+
+    Runs U6's ``prompt_limits.check_request`` (the 67 catalog caps for video,
+    the 68 catalog for Suno) over the payload as it stands at submit time,
+    after every mutation. An over-cap field refuses with the field, chars,
+    cap, source and status; nothing is ever truncated.
+    """
+    if not is_video:
+        return None
+    try:
+        import prompt_limits as _PL
+    except ImportError as exc:                          # pragma: no cover
+        return {"reason_code": "PROMPT_LIMIT_UNAVAILABLE",
+                "detail": "prompt_limits.py is not importable (%s); a paid "
+                          "job never runs without the final-payload cap "
+                          "check" % exc}
+    # U15a's catalog resolver knows the 999 tree keeps the 67/68 catalogs
+    # under installer-registration/helpers/ (U6's own ancestor walk cannot
+    # see them from there). Hand prompt_limits the path; the reading itself
+    # still happens in prompt_limits.
+    catalog = None
+    try:
+        if str(model).startswith(("suno", "ai-music-api")):
+            catalog = _templates_catalog("audio")
+        else:
+            catalog = _templates_catalog("video")
+    except Exception:                                   # noqa: BLE001
+        catalog = None
+    try:
+        _PL.check_request(model, request, models_path=catalog)
+    except _PL.PromptLimitError as exc:
+        return {"reason_code": exc.code if exc.code else "PROMPT_OVER_CAP",
+                "detail": str(exc)}
+    except Exception as exc:                            # noqa: BLE001
+        return {"reason_code": "PROMPT_LIMIT_UNAVAILABLE",
+                "detail": "the final-payload cap check could not run "
+                          "(%s: %s); a paid job never runs unchecked"
+                          % (type(exc).__name__, exc)}
+    return None
+
+
+def _templates_catalog(kind):
+    """The 67/68 catalog path via U15a's resolver, or None to let U6 walk."""
+    try:
+        core = str(Path(__file__).resolve().parents[1])
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        import prompt_templates as _PT
+        return _PT.catalog_path(kind)
+    except Exception:                                   # noqa: BLE001
+        return None
+
+ADAPTER_SKILL = "74-kie-live-adapter"
+ADAPTER_SCRIPT = "kie_live_adapter.py"
+ADAPTER_RELS = (
+    ("74-kie-live-adapter", "scripts", "kie_live_adapter.py"),
+    ("onboarding", "74-kie-live-adapter", "scripts", "kie_live_adapter.py"),
+    ("skills", "74-kie-live-adapter", "scripts", "kie_live_adapter.py"),
+    (".claude", "skills", "74-kie-live-adapter", "scripts", "kie_live_adapter.py"),
+    ("installer-registration", "helpers", "74-kie-live-adapter",
+     "scripts", "kie_live_adapter.py"),
+    ("999-setup", "installer-registration", "helpers", "74-kie-live-adapter",
+     "scripts", "kie_live_adapter.py"),
+)
+
+# Adapter states that mean "generation produced output".
+RUN_OK = "success"
+RUN_SKIPPED = "skipped"
+RUN_FAILED = "fail"
+RUN_PENDING = ("queued", "running")
+
+# Outer wait budget per modality (manual C2). request["timeout"] wins.
+_WAIT_S = {"video": 1200, "music": 600, "image": 300}
+_VIDEO_CUES = ("video", "veo", "kling", "seedance", "hailuo", "pixverse",
+               "runway", "wan2", "i2v", "t2v")
+_MUSIC_CUES = ("music", "suno", "audio", "tts", "speech", "elevenlabs",
+               "voice")
+
+# F10 placeholder tokens. Case-insensitive: {{ }} and the bracketed TODO /
+# PLACEHOLDER markers a template leaves behind. Case-sensitive: the bare
+# Kiesett-incident tokens, so ordinary prose ("todo list", "Keyframe: 12")
+# never trips them. The bare "<" is deliberately excluded - real prompts
+# contain "<" as prose every day.
+_PLACEHOLDER_CI = ("{{", "}}", "<todo", "<placeholder")
+_PLACEHOLDER_CS = ("TODO", "PLACEHOLDER", "KEYFRAME:")
+
+
+def _walk_str_leaves(obj, path=""):
+    """Every string leaf of request JSON with its JSON path."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _walk_str_leaves(v, "%s/%s" % (path, k))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _walk_str_leaves(v, "%s[%d]" % (path, i))
+    elif isinstance(obj, str):
+        yield path, obj
+
+
+def _find_placeholder(request):
+    """First unfilled placeholder in a request payload -> (path, token), or
+    None. Scans the whole request (model/timeout included), not just input -
+    a template can hide in any field."""
+    for path, value in _walk_str_leaves(request):
+        low = value.lower()
+        for tok in _PLACEHOLDER_CI:
+            if tok in low:
+                return path, tok
+        for tok in _PLACEHOLDER_CS:
+            if tok in value:
+                return path, tok
+    return None
+
+
+def _registry_entry(model, adapter=None):
+    """Skill 74 registry row for model, or None. Path is relative to adapter."""
+    path = adapter or resolve_adapter()
+    if not path:
+        return None
+    reg = (Path(path).resolve().parent.parent / "references"
+           / "kie-model-registry.json")
+    try:
+        data = json.loads(Path(reg).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        _loud("warn", "KIE_REGISTRY_UNREADABLE", "%s: %r" % (reg, exc))
+        return None
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    for m in models:
+        if isinstance(m, dict) and m.get("id") == model:
+            return m
+    return None
+
+
+def _zero_cost_route(model):
+    """True only when Skill 74's registry documents this model as free.
+
+    S75-001: the ONE exception to the zero-estimate refusal. The price comes
+    from the registry row Skill 74 itself prices from (``pricing.
+    credits_estimate``); nothing is listed here by hand. A missing row, an
+    unreadable registry or a price that is not exactly 0 is NOT free - the
+    refusal stays fail-closed. Agnes jobs never come through this file.
+    """
+    pricing = (_registry_entry(model) or {}).get("pricing") or {}
+    est = pricing.get("credits_estimate")
+    if isinstance(est, bool) or not isinstance(est, (int, float)):
+        return False
+    return est == 0
+
+
+def _modality(model, adapter=None):
+    entry = _registry_entry(model, adapter)
+    if entry:
+        ttypes = " ".join(entry.get("taskType") or []).lower()
+        if "video" in ttypes:
+            return "video"
+        if "music" in ttypes or "audio" in ttypes or "speech" in ttypes:
+            return "music"
+        if "image" in ttypes:
+            return "image"
+    mid = (model or "").lower()
+    if any(c in mid for c in _VIDEO_CUES):
+        return "video"
+    if any(c in mid for c in _MUSIC_CUES):
+        return "music"
+    return "image"
+
+
+def _wait_budget_s(request, model, adapter=None):
+    """W for Skill 74 wait; the outer subprocess runs with W+120."""
+    t = request.get("timeout") if isinstance(request, dict) else None
+    if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
+        return int(t)
+    return _WAIT_S[_modality(model, adapter)]
+
+
+def _poll_interval_s(elapsed_s):
+    """F-SPD-2 tiered poll cadence: 2 s early, 5 s, then 10 s.
+
+    Numbers live in scripts/core/speed (references/speed-limits.json). An
+    import failure falls back to the plan's own tiers - never a busy loop.
+    """
+    try:
+        import sys as _sys
+        _core = str(Path(__file__).resolve().parents[1])
+        if _core not in _sys.path:
+            _sys.path.insert(0, _core)
+        from speed import poll as _poll
+        return float(_poll.tier_for(elapsed_s))
+    except Exception:                                       # noqa: BLE001
+        e = float(elapsed_s or 0)
+        return 2.0 if e < 30 else (5.0 if e < 300 else 10.0)
+
+
+def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
+                           status="fail", task_id="", error=None,
+                           adapter_state="", extra=None):
+    """Dispatch evidence for the resolver (events kind='dispatch'). Best-effort."""
+    payload = {"stage": stage, "adapter_state": adapter_state,
+               "error": error or {}, "task_id": task_id or None,
+               "remote_task_id": task_id or None}
+    if isinstance(extra, dict):
+        payload.update(extra)
+    try:
+        conn = sqlite3.connect(db, timeout=10)
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO events("
+                "run_id,logical_key,attempt_id,kind,provider_event_id,"
+                "provider_seq,status,payload_json,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (run_id, logical_key, attempt_id, "dispatch", stage, 0, status,
+                 json.dumps(payload, sort_keys=True), L._now_iso()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:                               # noqa: BLE001
+        _loud("fail", "DISPATCH_EVENT_NOT_RECORDED",
+              "ledger dispatch row for %s not written: %r" % (logical_key, exc))
+
+
+def submit_all_ready(jobs, max_concurrency=None, *, ledger=None,
+                     runner=None, timeout=300):
+    """Part F F5: submit EVERY ready job in ONE pass. Returns a receipt dict.
+
+    A job is 'ready' when its model, request, estimated_cost and every input
+    path are present. All ready jobs go out together - the owner rule: 17
+    clips at once; no 'test batch first' unless the owner orders one. The
+    stage order callers follow stays reference images -> keyframes -> clips;
+    this is the single clips pass at the end of that order.
+
+    jobs: each a dict with a unique logical_key, the exact model id (this
+          module never picks one), a request dict, an estimated_cost and
+          input paths under 'inputs' (a path or a list; every one must
+          exist on disk). submit_all_ready never invents a missing field -
+          an incomplete job is excluded and NAMED in the receipt.
+    ledger: optional spend_ledger DB passed through to each dispatch() so
+          every submit lands reserve/reconcile rows; run/logical/attempt
+          ids come from the job itself (job['request_ids'] or defaults).
+    max_concurrency: None means submit all ready jobs at once. A positive
+          int NAMES the provider cap: at most that many run in flight, and
+          the receipt says the cap bound the pass (max_at_once and
+          capped_by). 0, negative or a non-int is refused in the receipt,
+          never treated as unlimited.
+
+    Receipt (always a plain dict, never an exception):
+      {submitted, excluded: [{logical_key, reason}], max_at_once,
+       capped_by, envelopes, errors, submission_errors}
+    All keys always present, on every path, so callers can read one shape.
+    """
+    if max_concurrency is not None and (
+            not isinstance(max_concurrency, int)
+            or isinstance(max_concurrency, bool) or max_concurrency <= 0):
+        return _receipt(outcome="rejected",
+                        reason="max_concurrency must be a positive int or "
+                               "None (got %r)" % (max_concurrency,))
+    ready, excluded = [], []
+    jobs = jobs if isinstance(jobs, list) else ([] if jobs is None
+                                                else list(jobs))
+    for j in jobs:
+        key = (j or {}).get("logical_key") if isinstance(j, dict) else None
+        key = key or "unnamed-job"
+        try:
+            reason = _not_ready_reason(j)
+        except Exception as e:                              # noqa: BLE001
+            reason = "bad-input-spec: %s" % str(e)[:160]
+        if reason:
+            excluded.append({"logical_key": key, "reason": reason})
+        else:
+            ready.append(j)
+
+    cap = None
+    if max_concurrency is not None and len(ready) > max_concurrency:
+        cap = max_concurrency
+
+    envelopes, errors, sub_errs = [], [], []
+    ok_count = 0
+    if ready:
+        pool = ThreadPoolExecutor(max_workers=(cap or len(ready)))
+        try:
+            futs = {pool.submit(_one_submit, j, ledger, timeout): j
+                    for j in ready}
+            for fu in as_completed(futs):
+                env, j = fu.result()
+                envelopes.append(env)
+                if env["outcome"] == "ok":
+                    ok_count += 1
+                else:
+                    sub_errs.append(
+                        {"logical_key": j["logical_key"],
+                         "outcome": env["outcome"],
+                         "reason_code": env["reason_code"]})
+        finally:
+            pool.shutdown(wait=True)
+
+    # The pass takes every ready job in one go; when a cap binds, the receipt
+    # names it and max_at_once records the cap, not the ready count.
+    # Lock 5 (NEVER-AGAIN blast rule): a capped pass is the ONE blast; a
+    # caller splitting ready jobs across passes gets RETAKE_DRIP.
+    return _receipt(excluded=excluded, submitted=ok_count,
+                    max_at_once=(cap if cap is not None else len(ready)),
+                    capped_by=cap,
+                    envelopes=envelopes, errors=errors,
+                    submission_errors=sub_errs)
+
+def submit_burst(jobs, *, spend=None, estimate=None, balance=None,
+                 ready_count=None, submitted_batches=1, ledger=None,
+                 runner=None, timeout=300, picture_gate_passed=None):
+    """F-SPD-1: the production run path for a burst. Never a drip.
+
+    One call sends every ready job at once, slowest route first (N-97),
+    paced at 20 per 15 s by the governor (N-79). The spend guard runs
+    BEFORE the pass (N-87): a stop sends nothing and returns the one line.
+    A caller that already sent part of these ready jobs (submitted_batches
+    > 1) is refused STAGGERED_SEND (N-79). No H3 or lip-sync job is sent
+    until the picture gate has passed (N-83): picture_gate_passed=False
+    refuses SPEED_GATE_SKIPPED before any job leaves; None is a caller that
+    has no picture stage at all (a picture-only burst). Returns the
+    submit_all_ready receipt, plus 'refusal' when the burst never left and
+    'resubmit' with the failed jobs to send again at once (N-88).
+    """
+    import never_again as _na
+    import sys as _sys
+    _core = str(Path(__file__).resolve().parents[1])
+    if _core not in _sys.path:
+        _sys.path.insert(0, _core)
+    try:
+        from speed import pacer as _pacer
+        from speed import spend as _spend
+        from speed import chain as _chain
+        from speed import burst as _burst
+    except Exception:                                       # noqa: BLE001
+        _pacer = _spend = _chain = _burst = None
+    ready = list(jobs or [])
+    rc = len(ready) if ready_count is None else int(ready_count)
+    # N-83: the video burst waits for the picture gate. A clip row sent
+    # before the gate passed would be bought against pictures nobody checked.
+    if picture_gate_passed is False:
+        return {"submitted": 0,
+                "refusal": {"ok": False, "code": _na.SPEED_GATE_SKIPPED,
+                            "detail": "no H3 or lip-sync job is sent until the "
+                                      "picture gate has passed; a shot whose "
+                                      "picture failed its remake round joins "
+                                      "the clip remake burst"},
+                "envelopes": [],
+                "excluded": [{"logical_key": j.get("logical_key")
+                              if isinstance(j, dict) else None,
+                              "reason": _na.SPEED_GATE_SKIPPED}
+                             for j in ready]}
+    # F-SPD-3 (S01 rules 1 and 5): a chain child submits within 60 s of its
+    # parent landing. A late one refuses CHAIN_CHILD_LATE at the burst, never
+    # silently waits for the next stage.
+    if _chain is not None:
+        for j in ready:
+            if not isinstance(j, dict) or "parent_landed_at" not in j:
+                continue
+            hit = _chain.child_late_refusal(
+                j.get("logical_key"), j.get("parent_landed_at"),
+                j.get("submitted_at"))
+            if hit is not None:
+                return {"submitted": 0, "refusal": hit, "envelopes": [],
+                        "excluded": [{"logical_key": j.get("logical_key"),
+                                      "reason": _na.CHAIN_CHILD_LATE}]}
+    if _pacer is not None:
+        refusal = _pacer.stagger_refusal(rc, submitted_batches)
+        if refusal is not None:
+            return {"submitted": 0, "refusal": refusal, "envelopes": [],
+                    "excluded": [{"logical_key": j.get("logical_key"),
+                                  "reason": _na.STAGGERED_SEND}
+                                 for j in ready if isinstance(j, dict)]}
+        ordered = _pacer.order_slowest_first(ready)
+    else:
+        ordered = ready
+    if _spend is not None and spend is not None and estimate is not None:
+        ok, code, line = _spend.check_burst(spend, estimate, balance)
+        if not ok:
+            return {"submitted": 0,
+                    "refusal": {"ok": False, "code": code, "detail": line},
+                    "envelopes": [],
+                    "excluded": [{"logical_key": j.get("logical_key"),
+                                  "reason": code}
+                                 for j in ordered if isinstance(j, dict)]}
+    # N-92: every uploaded link is checked the moment before a burst. A link
+    # not on KIE's own upload service refuses UPLOAD_NOT_KIE; one past the
+    # 23-hour window refuses UPLOAD_LINK_STALE and must be uploaded again.
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        _read = None
+    if _read is not None:
+        _times = {}
+        for _j in ordered:
+            if isinstance(_j, dict) and isinstance(_j.get("upload_times"), dict):
+                _times.update(_j["upload_times"])
+        _link_hit = _read.preburst_link_refusal(ordered, now_epoch=time.time(),
+                                                upload_times=_times)
+        if _link_hit is not None:
+            return {"submitted": 0, "refusal": _link_hit, "envelopes": [],
+                    "excluded": [{"logical_key": _link_hit.get("logical_key"),
+                                  "reason": _link_hit.get("code")}]}
+    receipt = submit_all_ready(ordered, ledger=ledger, runner=runner,
+                               timeout=timeout)
+    receipt["paced_per_window"] = _pacer.max_at_once() if _pacer else 20
+    # N-88: a failed/refused job costs 0 and comes back fast. Put the jobs to
+    # send again at once in the receipt (same stage, up to twice); the run
+    # loop resubmits them the moment this burst returns, never one by one.
+    if _burst is not None and isinstance(receipt, dict):
+        _errs = receipt.get("submission_errors") or []
+        _failed_keys = {e.get("logical_key") for e in _errs
+                        if isinstance(e, dict)}
+        _failed = [j for j in ordered if isinstance(j, dict)
+                   and j.get("logical_key") in _failed_keys]
+        if _failed:
+            _again, _tries = _burst.resubmit_failed(_failed)
+            if _again:
+                receipt["resubmit"] = _again
+                receipt["resubmit_tries"] = _tries
+    return receipt
+
+
+def outlier_resend_due(job, now_epoch):
+    """N-80: True when a job passed twice its model's 9-in-10 time.
+
+    The job carries the epoch it was submitted (stamped by F-SPD-7) and its
+    kind; twice the model's nine-in-ten time is the re-send point. A caller
+    re-sends ONCE under a new ledger key and the first to land wins. Unreadable
+    times are not due - the run loop keeps its last plan, never re-sends blind.
+    """
+    try:
+        from speed import burst as _burst
+    except Exception:                                       # noqa: BLE001
+        return False
+    if not isinstance(job, dict):
+        return False
+    submitted = (job.get("submitted_epoch")
+                 if job.get("submitted_epoch") is not None
+                 else job.get("submitted_at_epoch"))
+    try:
+        elapsed = float(now_epoch) - float(submitted)
+    except (TypeError, ValueError):
+        return False
+    if elapsed < 0:
+        return False
+    kind = job.get("job_kind") or job.get("kind") or "picture"
+    return bool(_burst.outlier_resend_due(
+        elapsed, kind, stamped_limit_s=job.get("stamped_limit_s")))
+
+
+def due_status_reads(jobs, now_epoch):
+    """N-92: the jobs whose status is due now, soonest expected finish first.
+
+    Read a job by its expected finish, never before its floor (a picture not
+    before 40 s, a nine-picture job not before 240 s). Returns the ordered due
+    subset; a job with no expected finish is left for the floor rule, never
+    read blindly.
+    """
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        return []
+    return _read.read_order(jobs, now_epoch)
+
+
+def clip_seconds_for_shot(shot_seconds, camera_move=False):
+    """N-92 / rule H8: ask for the shot plus 1 s; a camera move needs more."""
+    try:
+        from speed import read as _read
+    except Exception:                                       # noqa: BLE001
+        return None
+    return _read.clip_seconds_for(shot_seconds, camera_move=camera_move)
+
+
+def head_start_jobs(jobs, owner_choice):
+    """N-97: the slow-route jobs to send early, or [] when not pre-authorized.
+
+    Only a run whose owner chose "go ahead if every check passes" may send its
+    nine-picture / long-take jobs with the keyframe burst; every other job
+    waits for the one video burst after the picture gate (N-83).
+    """
+    try:
+        from speed import speed as _S
+    except Exception:                                       # noqa: BLE001
+        return []
+    return _S.head_start_jobs(jobs, owner_choice)
+
+
+def check_blast_single_pass(ready_count, submitted_batches):
+    """Lock 5 entry point: refuse drip submits across passes."""
+    import never_again as _na
+    return _na.check_blast(ready_count, submitted_batches)
+
+def refuse_drip(ready_count, submitted_batches):
+    """Lock 5 receipt-shaped refusal for drip submits."""
+    import never_again as _na
+    lock = _na.check_blast(ready_count, submitted_batches)
+    if lock is None:
+        return None
+    return _receipt(outcome="rejected", reason=lock["detail"])
+
+def check_blast_single_pass(ready_count, submitted_batches):
+    """Lock 5 entry point: refuse drip submits across passes."""
+    import never_again as _na
+    return _na.check_blast(ready_count, submitted_batches)
+
+
+def refuse_drip(ready_count, submitted_batches):
+    """Lock 5 receipt-shaped refusal for drip submits."""
+    import never_again as _na
+    lock = _na.check_blast(ready_count, submitted_batches)
+    if lock is None:
+        return None
+    return _receipt(outcome="rejected", reason=lock["detail"])
+
+
+def _receipt(excluded=None, submitted=0, max_at_once=0, capped_by=None,
+             envelopes=None, errors=None, submission_errors=None,
+             outcome=None, reason=None):
+    """One receipt shape everywhere; optional rejected marker."""
+    rec = {"submitted": submitted, "excluded": list(excluded or []),
+           "max_at_once": max_at_once, "capped_by": capped_by,
+           "envelopes": list(envelopes or []), "errors": list(errors or []),
+           "submission_errors": list(submission_errors or [])}
+    if outcome:
+        rec["outcome"] = outcome
+        rec["reason"] = reason
+    return rec
+
+
+def _not_ready_reason(job):
+    """'' when ready to submit; the exclusion reason otherwise."""
+    if not isinstance(job, dict):
+        return "not-a-dict"
+    if not job.get("model"):
+        return "no-model"
+    if not job.get("request"):
+        return "no-request"
+    cost = job.get("estimated_cost")
+    if not isinstance(cost, int) or isinstance(cost, bool) or cost < 0:
+        return "no-estimated-cost"
+    spec = job.get("inputs")
+    paths = ([spec] if isinstance(spec, (str, os.PathLike))
+             else list(spec if spec is not None else []))
+    for p in paths:
+        if not isinstance(p, (str, os.PathLike)) or not str(p).strip():
+            return "bad-input-spec"
+        if not os.path.exists(p):
+            return "inputs-missing: %s" % str(p)
+    return ""
+
+
+def _one_submit(job, ledger, timeout):
+    """One ready job through dispatch(); returns (envelope, job).
+
+    Wraps job['request_ids'] (run_id/logical_key/attempt_id - defaults
+    'run-all-ready'/'batch-n'/'att-n') so a caller controls its ledger rows.
+    No exception ever escapes; an exception becomes an 'error' envelope.
+    """
+    rid = (job.get("request_ids") or {}) if isinstance(job, dict) else {}
+    ids = {
+        "run_id": rid.get("run_id") or "run-all-ready",
+        "logical_key": rid.get("logical_key") or job.get("logical_key")
+        or "batch-job",
+        "attempt_id": rid.get("attempt_id") or ""
+    }
+    if not ids["attempt_id"]:
+        # One attempt per job inside the pass; logical key keeps rows apart.
+        ids["attempt_id"] = "att-" + ids["logical_key"]
+    try:
+        env = dispatch(
+            model=job["model"], request=job["request"],
+            save_dir=job.get("save_dir")
+            or job.get("request", {}).get("save_dir") or tempfile.gettempdir(),
+            ledger_db=ledger or ":memory:",
+            run_id=ids["run_id"], logical_key=ids["logical_key"],
+            attempt_id=ids["attempt_id"],
+            estimated_cost=job["estimated_cost"],
+            prompt=job.get("prompt", ""),
+            units=job.get("units", 1), stage=job.get("stage", "kie"),
+            owner=job.get("owner", "kie-dispatch"),
+            adapter_path=job.get("adapter_path"), runner=job.get("runner"),
+            timeout=timeout,
+            state_store=job.get("state_store"))   # F14: run-state lock store
+        return env, job
+    except Exception as e:                                  # noqa: BLE001
+        return envelope("dispatch", "error", "SUBMIT_ALL_READY-EXCEPTION",
+                        str(e)[:300]), job
+
+
+class DispatchError(Exception):
+    """Carries a machine reason code; never escapes dispatch()."""
+
+
+def envelope(command, outcome, reason_code, next_action="", run_id="",
+             logical_key="", attempt_id="", evidence=None, state_version=0):
+    env = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+           "tool_version": TOOL_VERSION, "command": command,
+           "run_id": run_id, "logical_key": logical_key,
+           "attempt_id": attempt_id, "outcome": outcome,
+           "reason_code": reason_code, "next_action": next_action,
+           "evidence": evidence or {}, "state_version": state_version}
+    if outcome != "ok":
+        # Owner order 2026-11-20: every stop the client may see carries four
+        # plain parts beside the code (loud_failure.explain_stop). Read-only.
+        import loud_failure  # noqa: PLC0415 - core/ is on sys.path (top of file)
+        env["client_explanation"] = loud_failure.explain_stop(reason_code, None, env)
+    return env
+
+
+def resolve_adapter(explicit=None):
+    """Path to Skill 74's entrypoint, or None. Never a hard-coded user path."""
+    if explicit:
+        return explicit if os.path.isfile(explicit) else None
+    env = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    if env:
+        return env if os.path.isfile(env) else None
+    start = Path(__file__).resolve()
+    for parent in (start,) + tuple(start.parents):
+        for rel in ADAPTER_RELS:
+            cand = parent.joinpath(*rel)
+            if cand.is_file():
+                return str(cand)
+    return None
+
+
+# Skill 74 commands that create a NEW KIE generation task (image, video, lip-sync,
+# music, extend all go through submit). Everything else is a read.
+GENERATION_CMDS = frozenset({"submit", "create", "generate", "extend"})
+
+
+def _bind_verified_request(args, request, request_digest, save_dir):
+    """X06: bind the VERIFIED request bytes to the subprocess invocation.
+
+    The digest check proves the caller's file has not changed since admission,
+    but the subprocess used to re-read that same mutable caller path, leaving a
+    window where the submitted content differed from the validated content.
+    Write the exact validated snapshot once (atomic replace) and point the
+    subprocess at THAT file: the submitted bytes are the admitted bytes.
+    """
+    try:
+        index = args.index("--request") + 1
+        args[index]
+    except (ValueError, IndexError) as exc:
+        raise DispatchError("PRODUCTION_REQUEST_UNREADABLE: no --request path") from exc
+    blob = json.dumps(request, sort_keys=True, default=str).encode("utf-8")
+    snap = os.path.join(save_dir, ".kie-verified-%s.json" % str(request_digest)[:16])
+    partial = snap + ".partial"
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(partial, "wb") as f:
+            f.write(blob)
+        os.replace(partial, snap)
+    except OSError as exc:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        raise DispatchError("PRODUCTION_REQUEST_NOT_BINDABLE: %s" % exc) from exc
+    args[index] = snap
+    return args
+
+
+def make_runner(timeout=300, *, process_context=None):
+    """Real Skill 74 subprocess; paid commands require current run authority.
+
+    Injected test runners are an offline seam, not production evidence. The
+    real runner independently checks authority, including when passed back to
+    dispatch as an injected callable or wrapped by another Python function.
+    """
+    def _run(argv):
+        cmd = str(argv[1]) if len(argv) > 1 else ""
+        args = list(argv)
+        if cmd in GENERATION_CMDS:
+            if not isinstance(process_context, dict):
+                raise DispatchError("PRODUCTION_CONTEXT_REQUIRED: use governed dispatch")
+            try:
+                req_path = args[args.index("--request") + 1]
+                with open(req_path, encoding="utf-8") as f:
+                    current_request = json.load(f)
+            except (ValueError, IndexError, OSError) as exc:
+                raise DispatchError("PRODUCTION_REQUEST_UNREADABLE: %s" % exc) from exc
+            if L.digest_request(current_request) != process_context["request_digest"]:
+                raise DispatchError("PRODUCTION_REQUEST_CHANGED: prepare the request again")
+            receipt = production_process_admission(
+                request=current_request, **process_context["arguments"])
+            if not receipt.get("ok"):
+                raise DispatchError("%s: %s" % (
+                    receipt.get("reason_code"), receipt.get("detail")))
+            # X06: the admitted snapshot is the submitted snapshot. Bind the
+            # validated bytes to this invocation instead of re-reading a path
+            # a concurrent writer can still change.
+            args = _bind_verified_request(
+                args, current_request, process_context["request_digest"],
+                process_context["arguments"].get("save_dir") or ".")
+        def once():
+            # F-SPD-2: the tiered first read goes through the Skill 74 hint
+            # the adapter already reads (poll0 = KIE_LIVE_POLL_INITIAL); the
+            # `wait` command has no --initial flag. A hint that cannot be
+            # read leaves the adapter's own default and never stops a call.
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+            try:
+                env.setdefault("KIE_LIVE_POLL_INITIAL", str(_poll_interval_s(0.0)))
+            except Exception:                              # noqa: BLE001
+                pass
+            r = subprocess.run([sys.executable] + list(args),
+                               capture_output=True, text=True, timeout=timeout,
+                               env=env)
+            return r.returncode, r.stdout
+        # Load governor: only NEW generation requests (submit) draw from the
+        # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
+        # limiter. A 429 means the job did not run: back off and resubmit.
+        return _LG.kie_request(once, label=" ".join(str(a) for a in args[1:4]),
+                               generation=cmd in GENERATION_CMDS)
+    _run._s75_live_runner = True
+    _run._s75_bind = lambda context: make_runner(timeout, process_context=context)
+    return _run
+
+
+def _call(runner, adapter, args):
+    """One Skill 74 command -> (rc, parsed_or_None, raw). No exception escapes."""
+    try:
+        rc, out = runner([adapter] + list(args))
+    except _LG.KieRateLimitError as e:
+        # 429 retries exhausted: the job did NOT run. Say so, never "unknown".
+        return -1, {"state": "rate_limited",
+                    "error": {"code": "KIE_RATE_LIMITED", "message": str(e)}}, str(e)
+    except Exception as e:                                  # noqa: BLE001
+        return -1, None, "runner-error: %s" % e
+    rc = rc if isinstance(rc, int) else -1
+    if isinstance(out, (dict, list)):                       # already parsed
+        try:
+            return rc, out, json.dumps(out, sort_keys=True, default=str)
+        except Exception:                                   # noqa: BLE001
+            return rc, None, ""
+    try:
+        return rc, json.loads(out), out
+    except Exception:                                       # noqa: BLE001
+        return rc, None, out if isinstance(out, str) else str(out)
+
+
+def _prompt_budget_passed(b):
+    """True when the prompt-budget JSON itself reports a PASS (S75-039).
+
+    Skill 74 answers exit 5 both for its 80-to-below-95 percent band, which
+    passes with a warn-and-expand note, and for a prompt it refuses (unknown
+    maximum, policy unavailable, above the target ceiling or maximum). Only
+    the JSON can tell them apart. An explicit `ok` boolean, on the envelope
+    or inside `data`, is read first when present. Otherwise only the
+    `BELOW_TARGET` status passes; every other status (including a `validated`
+    envelope carrying `ABOVE_TARGET` or any unknown status) fails closed.
+    Nothing else counts as a pass.
+    """
+    if not isinstance(b, dict):
+        return False
+    data = b.get("data") if isinstance(b.get("data"), dict) else {}
+    for holder in (b, data):
+        if isinstance(holder.get("ok"), bool):
+            return holder["ok"] is True
+    return data.get("status") == "BELOW_TARGET"
+
+
+def _settle(db, run_id, logical_key, attempt_id, owner, job_state, final,
+            actual_cost, task_id="", provider_ref="", evidence_ref=""):
+    """reserved/submitted -> succeeded|failed -> reconciled. Zero on not-generated."""
+    st = job_state
+    if st == "reserved":
+        if task_id:
+            sub = L.mark_submitted(db, run_id, logical_key, attempt_id,
+                                   task_id, owner=owner)
+            if sub["outcome"] == "ok":
+                st = "submitted"
+        if st == "reserved":
+            can = L.cancel(db, run_id, logical_key, attempt_id, owner=owner)
+            if can["outcome"] == "ok":
+                st = "unknown"
+    if st in ("submitted", "unknown"):
+        term = L.mark_terminal(db, run_id, logical_key, attempt_id, final,
+                               owner=owner)
+        if term["outcome"] != "ok":
+            return term
+    return L.reconcile(db, run_id, logical_key, attempt_id, final, actual_cost,
+                       provider_ref=provider_ref, evidence_ref=evidence_ref,
+                       owner=owner)
+
+
+def _hold_unknown(db, run_id, logical_key, attempt_id, owner, extra):
+    """Retain the reservation and stop. Never retry from here."""
+    unk = L.mark_unknown(db, run_id, logical_key, attempt_id, owner=owner)
+    ev = dict(extra)
+    ev.update({"retries": 0, "resubmitted": False, "disposition": "unknown"})
+    return envelope(
+        "dispatch", "waiting", "unknown-outcome-no-retry",
+        "reconcile via provider records or operator evidence before any retry; "
+        "do not auto-resubmit",
+        run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+        evidence=ev, state_version=unk.get("state_version", 0))
+
+
+def _is_menu_video(model, _registry_probe=None):
+    """True when model is a price-menu video family member (F14 lock scope)."""
+    for pat in ML.ALLOWED_VIDEO_MODELS:
+        if ML.matches_family(model, pat):
+            return True
+    return False
+
+def _video_scope(model):
+    """True for the locked lip-sync avatar and the price-menu video families.
+    Those are the jobs whose prompt caps this skill owns; every other model
+    (off-menu ids, image/music jobs) keeps its own gate and defers to F14 and
+    the Skill 74 adapter budget."""
+    return ML.is_locked_lipsync(model) or _is_menu_video(model)
+
+def prompt_cap_rows(model, request):
+    """FU-U7: (refusal-or-None, measured rows) for the FINAL video/avatar payload.
+
+    The plan E.1 caps: MiniMax H3 7,000; Hailuo 2,000; Kling 2.5 Turbo /
+    2.6 i2v 2,500; Kling 3.0 / 3.0 Omni 3,072; the locked avatar 2,500
+    (UNVERIFIED, from the skill-75 override table). check_request measures
+    EVERY text field of the payload the dispatcher is about to send, so the
+    check lands after every upstream mutation (kling_prompt, the ending
+    append, a retake rewrite) and before any spend.
+
+    Fail closed on a known cap: a field over it refuses (PROMPT_OVER_CAP)
+    naming field, characters, cap, source and status - nothing reserved,
+    nothing sent, and the text is NEVER truncated. With no prompt-cap table
+    at all a paid video/avatar job refuses (PROMPT_LIMIT_UNAVAILABLE). A
+    model neither the catalogs nor the overrides hold is left to F14 (every
+    off-menu model refuses MODEL_NOT_ON_MENU there) and to the Skill 74
+    adapter's own prompt-budget step - no cap is invented for it here.
+    """
+    if _PL is None:
+        if not _video_scope(model):
+            return None, []
+        return ({"reason_code": "PROMPT_LIMIT_UNAVAILABLE",
+                 "next_action": ("the skill-75 prompt-cap table (prompt_limits) "
+                                 "is not importable, so no paid video/avatar "
+                                 "job can be measured; reinstall Skill 75 and "
+                                 "dispatch again. Nothing was reserved and "
+                                 "nothing was sent."),
+                 "evidence": {"generated": False, "field": "prompt",
+                              "chars": None, "cap": None,
+                              "cap_source": "skill-75 prompt_limits.py "
+                                            "(not importable)",
+                              "cap_status": "UNAVAILABLE"}}, [])
+    try:
+        return None, _PL.check_request(model, request)["measured"]
+    except _PL.PromptLimitError as e:
+        if e.code == "PROMPT_LIMIT_NO_CATALOG":
+            return None, []       # no cap to enforce; F14 + adapter budget stand
+        return ({"reason_code": e.code,
+                 "next_action": ("%s. Rewrite the final payload to fit cap %s "
+                                 "(%s) and dispatch again; nothing was reserved "
+                                 "and nothing was sent, and the prompt was NOT "
+                                 "truncated." % (e, e.cap, e.status)),
+                 "evidence": {"generated": False, "field": e.field,
+                              "chars": e.chars, "cap": e.cap,
+                              "cap_source": e.source,
+                              "cap_status": e.status}}, [])
+
+try:
+    import script_approval as _SA                         # sibling core/ pkg
+except ImportError as _e:
+    if "script_approval" not in str(_e):
+        raise
+    _SA = None
+
+# ---- F6: no animation before storyboard approval -------------------------
+try:
+    import storyboard_director as _SD                     # sibling core/ pkg
+except ImportError as _e:
+    if "storyboard_director" not in str(_e):
+        raise
+    _SD = None
+
+
+def check_storyboard_approval(shots, review, request=None):
+    """Part F F6 shot-generation entry check. Returns the refusal dict or
+    None.
+
+    A video job (the animation stage) for a shot plan must come through
+    directive 14.1's gate: every shot storyboard_approved AND the
+    adversarial review passed. Callers pass the run's bound shot list and
+    the recorded review result via request["storyboard"] =
+    {"shots": [...], "review": {...}}; anything missing or malformed
+    refuses (fail-closed: a run with no approval record cannot animate).
+    Non-video jobs (music/image) are untouched.
+    """
+    if _SD is None:
+        return {"reason_code": "storyboard-gate-unavailable",
+                "detail": "storyboard_director not importable; refusing "
+                          "fail-closed"}
+    req = request if isinstance(request, dict) else {}
+    if req.get("request_kind") != "video" and _modality(req.get("model")) != "video":
+        return None
+    sb = (request or {}).get("storyboard")
+    if not isinstance(sb, dict) or not isinstance(sb.get("shots"), list) \
+            or not sb["shots"]:
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": "no storyboard record in the request; a run cannot "
+                          "animate before storyboard approval is recorded"}
+    gate = _SD.video_spend_allowed(sb["shots"], sb.get("review"))
+    if not gate.get("allowed"):
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": gate.get("reason_code", "storyboard-gate-closed"),
+                "gate": gate}
+    return None
+
+
+def _song_pick_refusal(model, run_dir):
+    """SONG APPROVAL seam (song_choices.refusal); a broken gate refuses."""
+    try:
+        from song_choices import song_choices as _sc
+        return _sc.dispatch_refusal(_modality(model) == "music", run_dir)
+    except Exception as exc:  # noqa: BLE001 - a gate that cannot run never opens
+        return {"reason_code": "SONG_GATE_BROKEN", "detail": "song gate failed: %r." % (exc,),
+                "next_action": "Fix the song-choices gate before any paid job."}
+
+
+def check_script_approval_gate(model, request, save_dir=None):
+    """SCRIPT APPROVAL: a music job for a run whose client asked to approve the
+    script first refuses until the script is approved. Others untouched."""
+    req = request if isinstance(request, dict) else {}
+    if _modality(model) != "music" or _SA is None or model == "ai-music-api/separate-vocals":
+        # Separating the already selected song is not new lyric generation.
+        # Its actual production stage still requires the authoritative script,
+        # song and storyboard gates in production_process_admission below.
+        return None
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    # The record rides the request, else it is found in the run folder (request
+    # run_dir, or the save dir and its parent): nobody has to pass it by hand.
+    rec = req.get("script_approval")
+    if rec is None:
+        rec = _SA.record_near(req.get("run_dir"), save_dir)
+    return _SA.check_script_approval(rec,
+                                     req.get("lyrics") or inp.get("lyrics") or "",
+                                     _SA.script_sha_near(req.get("run_dir"), save_dir))
+
+
+def _retain_sync_info(save_dir, task_id, payload):
+    """Keep a synchronous submit answer where a later save can still read it.
+
+    A sync createTask answer IS the result and KIE has no such task to query,
+    so this envelope is the only copy. It is written under the save dir - which
+    outlives this call and its temp dir - in the supported Skill 74
+    ``save --info`` shape: the adapter's own submit answer, never a credential.
+    Returns the path, or None when nothing could be retained.
+    """
+    safe = "".join(c for c in str(task_id) if c.isalnum() or c in "-_")[:60]
+    path = os.path.join(save_dir, ".kie-sync-info-%s.json" % (safe or "task"))
+    partial = path + ".partial"
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(partial, "w", encoding="utf-8") as f:
+            json.dump(payload, f, sort_keys=True)
+        os.replace(partial, path)
+    except (OSError, TypeError, ValueError):
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        return None
+    return path
+
+
+def _materialization_hold(saved, save_error="", adapter_state="", error=None):
+    """F11/P09: -> None when every listed output really landed, else a hold.
+
+    A provider task that succeeded and charged must still settle (dispatch
+    does that). What it may NOT do is report files saved when the save step
+    raised, reported no path, reported a container that is not a list, or
+    listed bytes that are not on disk. ``saved_paths`` is the one supported
+    output schema (Skill 74 ``save --json``; a sync payload lands as a .json
+    document), so it must be a LIST and every entry must be a readable regular
+    file with at least one byte. A scalar or mapping is a malformed payload:
+    iterating it used to raise into the outer handler, which settled a charged
+    success as a failed zero-cost job. The hold names the damage; the caller
+    resumes ONLY the save for this existing task id.
+    """
+    if error or adapter_state == RUN_FAILED:
+        bits = [str(error.get(k)) for k in ("code", "msg")
+                if isinstance(error, dict) and error.get(k)]
+        return {"reason_code": "KIE_SAVE_FAILED",
+                "detail": "the save command failed: %s"
+                          % ("; ".join(bits + ([save_error] if save_error else [])
+                                      ) or adapter_state),
+                "error": error, "outputs": []}
+    if save_error:
+        return {"reason_code": "KIE_SAVE_FAILED",
+                "detail": "the save command raised: %s" % save_error,
+                "error": None, "outputs": []}
+    if saved is None:
+        paths = []
+    elif isinstance(saved, list):
+        paths = list(saved)
+    else:
+        return {"reason_code": "KIE_SAVE_PATHS_UNSUPPORTED",
+                "detail": "saved_paths answered %s, not a list of output "
+                          "paths; the save payload is malformed and no file is "
+                          "claimed saved" % type(saved).__name__,
+                "error": None, "outputs": []}
+    if not paths:
+        return {"reason_code": "KIE_SAVE_EMPTY",
+                "detail": "the save command listed no output file",
+                "error": None, "outputs": []}
+    outputs, missing, empty, unverified = [], [], [], []
+    for p in paths:
+        if not isinstance(p, (str, os.PathLike)) or not str(p).strip():
+            unverified.append(repr(p)[:80])
+            outputs.append({"path": None, "bytes": None,
+                            "status": "UNVERIFIED", "listed": repr(p)[:80]})
+            continue
+        path = str(p)
+        try:
+            if not os.path.isfile(path):
+                raise OSError("not a regular file")
+            size = os.path.getsize(path)
+        except OSError:
+            missing.append(path)
+            outputs.append({"path": path, "bytes": None, "status": "MISSING"})
+            continue
+        if size <= 0:
+            empty.append(path)
+            outputs.append({"path": path, "bytes": size, "status": "EMPTY"})
+        else:
+            outputs.append({"path": path, "bytes": size, "status": "OK"})
+    if not (missing or empty or unverified):
+        return None
+    detail = []
+    if missing:
+        detail.append("missing on disk: %s" % ", ".join(missing[:5]))
+    if empty:
+        detail.append("zero-byte: %s" % ", ".join(empty[:5]))
+    if unverified:
+        detail.append("not a file path: %s" % ", ".join(unverified[:5]))
+    return {"reason_code": ("KIE_SAVE_OUTPUT_MISSING" if missing else
+                            "KIE_SAVE_OUTPUT_EMPTY" if empty else
+                            "KIE_SAVE_OUTPUT_UNVERIFIED"),
+            "detail": "; ".join(detail), "error": None, "outputs": outputs}
+
+def _saved_hashes(paths):
+    """Receipt-time file identity; missing/unreadable saves never gain evidence."""
+    import hashlib
+    result = {}
+    for path in paths:
+        try:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+            result[os.path.realpath(path)] = h.hexdigest()
+        except (OSError, TypeError):
+            continue
+    return result
+
+
+def _process_refusal(code, detail):
+    return {"ok": False, "reason_code": code, "detail": detail,
+            "next_action": "Resume the governed factory entrypoint; preserve existing run evidence."}
+
+
+class ProviderFrameBindingError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def _frame_still(root, approved, shot_id):
+    """Only the authoritative current still map decides which bytes a shot uses."""
+    with open(approved["stills_path"], encoding="utf-8") as f:
+        value = json.load(f).get(shot_id)
+    if not isinstance(value, str) or not value:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved shot has no local still.")
+    path = Path(value)
+    path = (path if path.is_absolute() else root / path).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved still must be a readable file in this run.")
+    return path
+
+# F-QM-7: a paid job's picture links come from KIE's own upload service, and a
+# link older than 23 hours is uploaded again before it is used. The host list
+# and the URL splitter live in kie_dispatch/upload_hosts.py: this module must
+# not carry a KIE host literal (F14 static check) nor a URL-parser import of its
+# own (test_kie_dispatch.py's "no private KIE client" check).
+from kie_dispatch.upload_hosts import is_kie_upload as _is_kie_upload
+from kie_dispatch.upload_hosts import host_of as _upload_host_of
+
+UPLOAD_FRESHNESS_S = 23 * 3600
+
+def _upload_host_is_kie(url):
+    """True only for a link on KIE's own upload service (F-QM-7)."""
+    return _is_kie_upload(url)
+
+def _fresh_frame_upload(root, sha, now=None):
+    """A frame-upload receipt of these exact bytes younger than 23 hours, or
+    None. Only the production path reuses one; an injected offline upload never
+    counts as a live link (F-QM-7, section 3C.2)."""
+    now = time.time() if now is None else now
+    try:
+        candidates = sorted((root / "control" / "frame-uploads").glob(
+            "*/%s.upload.json" % sha))
+    except OSError:
+        return None
+    for p in candidates:
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        at = rec.get("uploaded_at")
+        if (isinstance(at, (int, float)) and not isinstance(at, bool)
+                and 0 <= now - at < UPLOAD_FRESHNESS_S
+                and isinstance(rec.get("url"), str)):
+            return rec
+    return None
+
+
+
+def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_id=None,
+                            uploader=None, adapter_path=None):
+    """Upload one current approved still; never generate a picture or video.
+
+    The returned producer receipt goes under request.frame_bindings using the
+    actual provider field (e.g. first_frame_url). The ordinary request builder
+    receives its URL. The uploader receives an immutable copy, not the source;
+    no hash is inferred from a URL. Tests may inject an offline uploader without
+    claiming that the remote provider fetched the image. Explicitly injected
+    uploaders are offline receipts and cannot authorize paid frame dispatch.
+    """
+    from production_process import admit_production, validate_upload_url
+    from lip_sync.lip_gate import picture_gate as PG
+    import shutil
+    root = Path(run_dir).expanduser().resolve()
+    if stage not in ("video-generation", "qc-retakes"):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STAGE_MISMATCH", "Name the governed video stage for the frame upload.")
+    authority = admit_production(root, stage, run_id=run_id)
+    if not authority.get("ok"):
+        raise ProviderFrameBindingError(authority.get("reason_code", "PROVIDER_FRAME_AUTHORITY_MISSING"), authority.get("detail", "Frame upload not admitted."))
+    approved = authority.get("approved_storyboard") or {}
+    revision = (approved.get("revisions") or {}).get(shot_id)
+    if not revision:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The upload shot is not in the current approved storyboard.")
+    source = _frame_still(root, approved, shot_id)
+    sha = PG.sha256_file(str(source))
+    # F-QM-7: a production link of these exact bytes younger than 23 hours is
+    # reused, not uploaded twice; anything older (or an offline receipt) is
+    # uploaded again now and stamped with the epoch it was made.
+    reused = None if uploader is not None else _fresh_frame_upload(root, sha)
+    if reused is not None:
+        url, uploaded_at = reused["url"], float(reused["uploaded_at"])
+    else:
+        with tempfile.TemporaryDirectory(prefix="frame-upload-", dir=root) as temp:
+            copied = Path(temp) / source.name
+            shutil.copyfile(source, copied)
+            if PG.sha256_file(str(copied)) != sha:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The still changed before upload.")
+            url = (uploader or PG.adapter_uploader(adapter_path=adapter_path))(str(copied))
+            uploaded_at = time.time()
+            if PG.sha256_file(str(copied)) != sha or PG.sha256_file(str(source)) != sha:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The uploader or source changed the approved frame bytes.")
+    if not validate_upload_url(url):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload returned no HTTPS image URL.")
+    if uploader is None and not _upload_host_is_kie(url):
+        # A production picture link that is not KIE's own upload service is
+        # refused: a foreign host can change or drop the bytes between upload
+        # and the paid job (F-QM-7). An injected offline uploader is exempt
+        # because it never authorizes a paid dispatch.
+        raise ProviderFrameBindingError(
+            "UPLOAD_NOT_KIE",
+            "The frame link is not on KIE's own upload service (%s); upload "
+            "the approved still through skill 74 and resubmit."
+            % (_upload_host_of(url) or url))
+    current = admit_production(root, stage, run_id=authority["run_id"])
+    if not current.get("ok") or (current.get("approved_storyboard", {}).get("revisions") or {}).get(shot_id) != revision:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The storyboard approval changed during upload.")
+    record = {"produced_by": "kie_dispatch.upload_storyboard_frame", "run_id": authority["run_id"],
+              "execution_mode": "offline" if uploader is not None else "production",
+              "production_upload": uploader is None,
+              "shot_id": shot_id, "storyboard_revision": revision, "source_path": str(source),
+              "sha256": sha, "url": url, "uploaded_at": uploaded_at,
+              "reused": reused is not None}
+    key = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    directory = (root / "control" / "frame-uploads" / key).resolve()
+    if not directory.is_relative_to(root):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload receipt directory leaves this run.")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / (sha + ".upload.json")
+    if path.exists():
+        with path.open(encoding="utf-8") as f:
+            if json.load(f) != record:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The existing upload receipt differs.")
+    else:
+        with path.open("x", encoding="utf-8") as f:
+            json.dump(record, f, sort_keys=True)
+    PG.require_upload_bound(str(source), url, str(directory))
+    return dict(record, receipt_dir=str(directory), upload_receipt_path=str(path))
+
+
+def provider_frame_refusal(model, request, root, approved, selected):
+    """Join actual I2V provider URLs to the current approved shot's uploaded bytes."""
+    if ML.is_locked_lipsync(model):
+        return None  # its existing picture/stem gates remain authoritative
+    from video_router.video_router import FIRST_FRAME_FIELDS, LAST_FRAME_FIELDS
+    from production_process import validate_upload_url
+    from lip_sync.lip_gate import picture_gate as PG
+    req = request if isinstance(request, dict) else {}
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    frames = [(key, inp[key]) for key in sorted(FIRST_FRAME_FIELDS | LAST_FRAME_FIELDS)
+              if inp.get(key) is not None and inp.get(key) != ""]
+    # The card's existing Veo adapter uses the primary-schema image_urls list.
+    if model == "veo-3-1" and inp.get("image_urls"):
+        if not isinstance(inp["image_urls"], list):
+            return _process_refusal("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The provider image_urls field is not a list.")
+        frames.extend(("image_urls[%d]" % i, url) for i, url in enumerate(inp["image_urls"]))
+    if model == "minimax-h3/image-to-video" and not inp.get("first_frame_url"):
+        return _process_refusal("PROVIDER_FRAME_REQUIRED", "MiniMax H3 image-to-video needs its approved uploaded first frame.")
+    if any(key in LAST_FRAME_FIELDS or (key.startswith("image_urls[") and key != "image_urls[0]")
+           for key, _ in frames):
+        return _process_refusal("PROVIDER_LAST_FRAME_APPROVAL_MISSING",
+                                "This storyboard records one approved still per shot and no independent approved end frame.")
+    if not frames:
+        return None  # genuine text-to-video has no input frame to substitute
+    ids = {row["shot_id"] for row in selected}
+    sid = req.get("shot_id") or (next(iter(ids)) if len(ids) == 1 else None)
+    if sid not in ids:
+        return _process_refusal("PROVIDER_FRAME_SHOT_MISMATCH", "Bind this one provider job to its selected approved shot_id.")
+    try:
+        root = Path(root).resolve()
+        source = _frame_still(root, approved, sid)
+        sha = PG.sha256_file(str(source))
+        revision = approved["revisions"][sid]
+        bindings = req.get("frame_bindings") or {}
+        if not isinstance(bindings, dict):
+            raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Frame bindings must be producer receipts keyed by provider field.")
+        for field, url in frames:
+            if not validate_upload_url(url):
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The actual provider frame must be an uploaded HTTPS URL.")
+            binding = bindings.get(field)
+            if binding is None:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED",
+                    "No production upload receipt binds this approved frame; use upload_storyboard_frame().")
+            else:
+                if not isinstance(binding, dict) or binding.get("shot_id") != sid:
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The frame upload belongs to a different storyboard shot.")
+                directory = Path(binding.get("receipt_dir") or "").resolve()
+                expected_root = (root / "control" / "frame-uploads").resolve()
+                if not directory.is_relative_to(expected_root):
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "No producer upload receipt belongs to this run.")
+                with (directory / (sha + ".upload.json")).open(encoding="utf-8") as f:
+                    produced = json.load(f)
+                if produced.get("execution_mode") != "production" or produced.get("production_upload") is not True:
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Offline or unknown uploads cannot authorize a paid provider frame.")
+                if (produced.get("produced_by") != "kie_dispatch.upload_storyboard_frame" or
+                        produced.get("run_id") != req.get("run_id") or
+                        produced.get("shot_id") != sid or produced.get("storyboard_revision") != revision or
+                        produced.get("source_path") != str(source) or produced.get("sha256") != sha):
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The upload is not bound to this current approved shot and still.")
+            PG.require_upload_bound(str(source), url, str(directory))
+        return None
+    except (ProviderFrameBindingError, OSError, ValueError, TypeError, KeyError, AttributeError, PG.LipsyncPictureNotGated) as exc:
+        return _process_refusal(getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED"), str(exc))
+
+
+def production_process_admission(*, model, request, save_dir, ledger_db,
+                                 run_id, stage="kie", state_store=None,
+                                 adapter_path=None):
+    """Read-only admission; caller-authored receipt JSON is never authority."""
+    req = request if isinstance(request, dict) else {}
+    if req.get("model") and req["model"] != model:
+        return _process_refusal("PRODUCTION_MODEL_MISMATCH",
+                                "The provider payload model differs from the dispatched model.")
+    def enclosing_root(path):
+        p = Path(path).expanduser().resolve()
+        for root in (p, *p.parents):
+            if (root / "control" / "state.sqlite3").is_file():
+                return root
+        return None
+    try:
+        if str(ledger_db) == ":memory:":
+            return _process_refusal("PRODUCTION_LEDGER_REQUIRED",
+                                    "Production requires this run's persistent spend ledger.")
+        ledger = Path(ledger_db).expanduser().resolve()
+        state_path = getattr(state_store, "path", state_store)
+        state_path = Path(state_path).expanduser().resolve() if state_path else None
+        root = (Path(req["run_dir"]).expanduser().resolve() if req.get("run_dir")
+                else enclosing_root(state_path) if state_path else None)
+        root = root or enclosing_root(ledger.parent)
+        if root is None:
+            return _process_refusal("PRODUCTION_RUN_AUTHORITY_MISSING",
+                                    "No canonical run state binds this production request.")
+        if not ledger.is_relative_to(root) or not Path(save_dir).expanduser().resolve().is_relative_to(root):
+            return _process_refusal("PRODUCTION_RUN_SCOPE_MISMATCH",
+                                    "The spend ledger and saved outputs must belong to the admitted run.")
+        if state_path and state_path != root / "control" / "state.sqlite3":
+            return _process_refusal("PRODUCTION_RUN_SCOPE_MISMATCH",
+                                    "The model-lock store is not this run's canonical stage store.")
+        kind = "video" if ML.is_locked_lipsync(model) else _modality(model, adapter_path)
+        allowed_stages = {"music": ("music", "qc-retakes"),
+                          "image": ("continuity-bible", "image-keyframes", "qc-retakes"),
+                          "video": ("video-generation", "qc-retakes")}[kind]
+        separation = model == "ai-music-api/separate-vocals"
+        picture_repair = kind == "image" and req.get("request_kind") == "lipsync-picture-regeneration"
+        if separation:
+            allowed_stages = ("music", "video-generation", "qc-retakes")
+        elif picture_repair:
+            allowed_stages = ("video-generation", "qc-retakes")
+        requested_stage = req.get("production_stage")
+        if requested_stage and stage != "kie" and requested_stage != stage:
+            return _process_refusal("PRODUCTION_STAGE_MISMATCH",
+                                    "The request and dispatch name different production stages.")
+        paid_stage = requested_stage if stage == "kie" else stage
+        if not paid_stage:
+            if kind == "image" or separation:
+                return _process_refusal("PRODUCTION_STAGE_REQUIRED",
+                                        "Name the actual governed stage for this image or vocal-separation job.")
+            paid_stage = allowed_stages[0]
+        if paid_stage not in allowed_stages:
+            return _process_refusal("PRODUCTION_STAGE_MISMATCH",
+                                    "%s generation cannot run as %s." % (kind, paid_stage))
+        from production_process import admit_production
+        receipt = admit_production(root, paid_stage, run_id=run_id)
+        if not isinstance(receipt, dict) or not receipt.get("ok"):
+            return receipt if isinstance(receipt, dict) else _process_refusal(
+                "PRODUCTION_AUTHORITY_UNREADABLE", "The production authority returned no admission.")
+        approved_script = receipt.get("approved_script") or {}
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        lyrics = inp.get("lyrics", req.get("lyrics"))
+        if kind == "music" and lyrics is not None:
+            if not approved_script.get("lyrics_sha256"):
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISSING",
+                                        "The admitted run has no current lyric artifact identity.")
+            if _SA is None or _SA.lyrics_sha(lyrics) != approved_script["lyrics_sha256"]:
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
+                                        "The provider lyrics differ from the approved lyric artifact.")
+        approved_board = receipt.get("approved_storyboard") or {}
+        if kind == "video":
+            if not approved_board:
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISSING",
+                                        "The admitted run has no current storyboard artifact identity.")
+            with open(approved_board["gate_path"], encoding="utf-8") as f:
+                authoritative = json.load(f)
+            with open(approved_board["shot_list_path"], encoding="utf-8") as f:
+                source = json.load(f)
+            shots = source.get("shots") if isinstance(source, dict) else source
+            approved_shots = {s["shot_id"]: dict(s, status="storyboard_approved") for s in shots}
+            requested = req.get("storyboard") or {}
+            selected = requested.get("shots")
+            if (not isinstance(selected, list) or not selected or
+                    any(s != approved_shots.get(s.get("shot_id")) for s in selected) or
+                    requested.get("review") != authoritative.get("review")):
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
+                                        "The requested storyboard differs from this run's approved artifact.")
+            frame_refusal = provider_frame_refusal(model, dict(req, run_id=run_id), root,
+                                                    approved_board, selected)
+            if frame_refusal:
+                return frame_refusal
+        return receipt
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        return _process_refusal("PRODUCTION_AUTHORITY_UNREADABLE", str(exc))
+
+
+def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
+             attempt_id, estimated_cost, prompt="", units=1, stage="kie",
+             owner="kie-dispatch", adapter_path=None, runner=None,
+             timeout=300, state_store=None, video_job=None, auth_ref="",
+             require_round_auth=False):
+    """Governed production, or explicitly identified offline runner simulation.
+
+    A fake injected runner exercises the existing protocol without conferring
+    production authority. An arbitrary Python callable is trusted test code;
+    this API does not sandbox code or defend against filesystem/code rewrites.
+    """
+    execution = {"mode": "production" if runner is None or
+                 getattr(runner, "_s75_live_runner", False) else "offline"}
+    result = _dispatch_pipeline(
+        model=model, request=request, save_dir=save_dir, ledger_db=ledger_db,
+        run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+        estimated_cost=estimated_cost, prompt=prompt, units=units, stage=stage,
+        owner=owner, adapter_path=adapter_path, runner=runner, timeout=timeout,
+        state_store=state_store, video_job=video_job, auth_ref=auth_ref,
+        require_round_auth=require_round_auth, _execution=execution)
+    evidence = result.setdefault("evidence", {})
+    evidence["execution_mode"] = execution["mode"]
+    evidence["production_admitted"] = bool((execution.get("admission") or {}).get("ok"))
+    evidence["accepted_production"] = bool(evidence["production_admitted"] and
+                                           result.get("outcome") == "ok")
+    if execution.get("admission"):
+        evidence["process_admission"] = execution["admission"]
+    return result
+
+
+def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_key,
+             attempt_id, estimated_cost, prompt="", units=1, stage="kie",
+             owner="kie-dispatch", adapter_path=None, runner=None,
+             timeout=300, state_store=None, video_job=None, auth_ref="",
+             require_round_auth=False, _execution=None):
+    """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
+
+    F14 video-model lock: video jobs (video_job=True, or a video model on
+    price-menu.md) must match the model locked at the choice card
+    (state_store + run_id). No lock recorded -> refused fail-closed
+    (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
+    Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
+
+    FU-U7 prompt caps (plan E.1): before ANY other gate, the FINAL payload is
+    measured against the per-model caps (H3 7,000; Hailuo 2,000; Kling 2.5
+    Turbo 2,500; Kling 3.0 / 3.0 Omni 3,072; the locked avatar 2,500). An
+    over-cap field refuses PROMPT_OVER_CAP with field, chars, cap, source and
+    status; nothing is reserved, nothing is sent, nothing is truncated.
+
+    F-KLING-TEXT-BAIT: a Kling prompt carrying text/signage/decor-bait
+    refuses TEXT_BAIT through never_again.check_kling_prompt_text, before
+    any ledger row or spend.
+
+    F-MODEL-AUTH (Lock 10), read through N-12 (section 2 row S-3): a video row
+    whose model is neither the run's locked model nor its recorded card
+    choice refuses MODEL_UNAUTHORIZED at block 0, before any ledger row or
+    spend. The lip-sync model is fixed separately (S-42). No override except
+    a written order binding model + shot.
+    """
+    # ---- 0. FU-U7 prompt caps (final payload, before ANY other gate) ------
+    # This block runs first on purpose: its refusal must never be masked by a
+    # model gate (a 2,501-char avatar prompt is PROMPT_OVER_CAP, never the
+    # picture gate or MODEL_UNAUTHORIZED). The request IS the final payload
+    # here: every upstream mutation (kling_prompt, the clean-ending append, a
+    # retake rewrite) has already happened before dispatch is called. Nothing
+    # below may spend until the caps pass; the refusal and the ok receipt both
+    # carry the cap and status.
+    cap_refusal, prompt_caps = prompt_cap_rows(model, request)
+    if cap_refusal is not None:
+        return envelope("dispatch", "rejected", cap_refusal["reason_code"],
+                        cap_refusal["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence=cap_refusal["evidence"])
+    # ---- 0. F-MODEL-AUTH + N-12 (no unauthorized video model spends) ------
+    # Trevor order 2026-11-21 (lock 10), amended by N-12 / S-42 (November 23):
+    # the run owner's recorded choice IS the authorization for the story-clip
+    # model and the picture provider; the lip-sync model is not a choice at
+    # all - it is omnihuman-2-0 on every run, no alternative, no backup.
+    # VIDEO rows only (video_job=True, the locked lip-sync id, or _modality ==
+    # "video"); music/image/TTS keep their own gates. A run that recorded a
+    # choice refuses any other model (N-12); a run that recorded none is
+    # authorized by its F14 locked model. ONLY override for an off-list model:
+    # request["model_auth_order"] = written order binding model + shot
+    # ({"signed_by": "Trevor", "signature", "model", "shot_id"}).
+    import never_again as _NA_AUTH
+    _rq = request if isinstance(request, dict) else {}
+    _rq_shot = _rq.get("shot") if isinstance(_rq.get("shot"), dict) else {}
+    _is_lip_row = bool(
+        _rq.get("lip_sync") is True or _rq.get("lipsync") is True
+        or _rq_shot.get("lip_sync") is True or ML.is_locked_lipsync(model))
+    if bool(video_job) or ML.is_locked_lipsync(model) \
+            or _modality(model) == "video":
+        _rshot = _rq.get("shot") if isinstance(_rq.get("shot"), dict) else {}
+        _shot_id = _rshot.get("shot_id") or _rq.get("shot_id")
+        _run_choice = _rq.get("run_choice") or _rq.get("video_model_choice")
+        # N-12: when the request carries the run's card choice, this gate
+        # enforces it. When it does not but the run has an F14 locked model,
+        # that lock IS the run's recorded choice, so the F14 gate below owns
+        # membership + the match and emits its own codes
+        # (VIDEO_MODEL_LOCK_MISSING / VIDEO_MODEL_MISMATCH); this gate must not
+        # pre-empt them with a coarser refusal. With no choice and no lock the
+        # retired fixed list still fails closed (MODEL_UNAUTHORIZED).
+        _locked = None
+        if not _run_choice and state_store:
+            _locked = ML.read_locked_model(state_store, run_id)
+        _auth_hit = None
+        if _is_lip_row or ML.is_locked_lipsync(model):
+            _auth_hit = _NA_AUTH.check_lipsync_model(model)
+        elif _run_choice:
+            _auth_hit = _NA_AUTH.check_model_choice(model, _run_choice)
+        elif not state_store:
+            # No card choice on the request and no run-state store to hold a
+            # lock: nothing recorded this run's model, so fail closed on the
+            # retired fixed list. With a store present the F14 gate owns both
+            # verdicts (VIDEO_MODEL_LOCK_MISSING / VIDEO_MODEL_MISMATCH).
+            _auth_hit = _NA_AUTH.check_model_authorized(model)
+        if _auth_hit is not None and not _NA_AUTH.check_model_order(
+                _rq.get("model_auth_order"), model, _shot_id):
+            return envelope(
+                "dispatch", "rejected", _auth_hit["code"],
+                _auth_hit["detail"] + ". Nothing was reserved and nothing "
+                                      "was sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False, "gate": "F-MODEL-AUTH",
+                          "requested_model": model})
+    # ---- 0b. Wave-1 pre-spend gates (dispatch_gates.py) --------------------
+    # Route lock (N-32), the clip call (N-42), keyframes from references
+    # (N-41), the style block from the lock (N-34), the expression (N-71),
+    # the two bibles (N-119, N-122) and the picture gate (G-FACE-01, R-5,
+    # N-83). Every gate is inert until its producer writes the record it
+    # reads, so one wave can land the enforcement point safely.
+    try:
+        from kie_dispatch import dispatch_gates as _DG
+    except ImportError:                     # imported as a top-level module
+        import dispatch_gates as _DG        # type: ignore
+    for _gate in (_DG.route_lock_refusal(model, _rq),                  _DG.keyframe_refusal(model, _rq),
+                  _DG.wrong_call_refusal(model, _rq),
+                  _DG.style_lock_refusal(model, _rq),
+                  _DG.expression_refusal(model, _rq),
+                  _DG.bible_guard_refusal(model, _rq),
+                  _DG.lipsync_refusal(model, _rq),
+                  _DG.picture_gate_refusal(model, _rq)):
+        if _gate is not None:
+            return envelope(
+                "dispatch", "rejected", _gate["code"],
+                _gate["detail"] + " Nothing was reserved and nothing was "
+                                  "sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False, "gate": "wave-1-pre-spend"})
+    # ---- 0a. F-KLING-TEXT-BAIT (before caps, before any spend) ------------
+    # The FINAL prompt string is measured here: every upstream mutation
+    # (kling_prompt, the ending append, a retake rewrite) already happened.
+    # A letter-bait prompt refuses TEXT_BAIT: never spend on a prompt that
+    # invites provider-burned letters. Runs on every Kling VIDEO row; the
+    # lip-sync row is exempt because OmniHuman 2.0 takes NO prompt at all
+    # (S-42, section 3A.3) and its "no prompt" refusal is LIPSYNC_PROMPT_PRESENT
+    # at the wave-1 gate above. H3 skips this scan (its own template owns
+    # print strands).
+    try:
+        import never_again as _NA
+    except ImportError:
+        _NA = None
+    _is_kling_row = bool(
+        isinstance(model, str)
+        and (model.startswith("kling-") or "kling/" in model)
+        and not ML.is_locked_lipsync(model))
+    if _NA is not None and _is_kling_row:
+        _bait_prompt = prompt if isinstance(prompt, str) and prompt else None
+        if _bait_prompt is None:
+            _inp = (request or {}).get("input") \
+                if isinstance(request, dict) else None
+            _bait_prompt = (_inp or {}).get("prompt") \
+                if isinstance(_inp, dict) else None
+        if _bait_prompt is None and isinstance(prompt, str):
+            _bait_prompt = prompt
+        _bait = _NA.check_kling_prompt_text(_bait_prompt)
+        if _bait is not None:
+            return envelope(
+                "dispatch", "rejected", _bait["code"],
+                _bait["detail"] + " Nothing was reserved and nothing was "
+                                  "sent.",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"generated": False,
+                          "gate": "F-KLING-TEXT-BAIT"})
+    # Lock 8 (F-KLING-ROUTE, Trevor order 2026-11-21): Kling dispatch
+    # rides ONLY lip_sync:true shots (talking or singing). Refused here,
+    # before any ledger row or spend, next to NO_DIRECT_SUBMIT.
+    try:
+        from kie_dispatch.model_lock import is_locked_lipsync as _is_kling
+    except ImportError:
+        try:
+            from model_lock import is_locked_lipsync as _is_kling  # type: ignore
+        except ImportError:
+            _is_kling = None
+    if _is_kling is not None and _is_kling(model):
+        _shot = (request or {}).get("shot") if isinstance(request, dict) else None
+        _lip = None
+        if isinstance(_shot, dict):
+            _lip = _shot.get("lip_sync")
+            if _lip is None:
+                _lip = _shot.get("lip_sync_line_ids")
+        if isinstance(request, dict) and _lip is None:
+            _lip = request.get("lip_sync")
+            if _lip is None:
+                _lip = request.get("lip_sync_line_ids")
+        if _lip is None and isinstance(request, dict) \
+                and isinstance(request.get("lipsync_binding"), dict):
+            _lip = request["lipsync_binding"].get("lip_sync_line_ids")
+        if not _lip:
+            import never_again as _na
+            return envelope(
+                "dispatch", "rejected", _na.ROUTE_CHANGED,
+                "Kling allowed ONLY on lip_sync:true shots (talking or "
+                "singing); this shot is not lip-sync -- re-plan as an H3 "
+                "remake. Nothing was reserved and nothing was sent.",
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"generated": False})
+    # FU-U7 prompt caps already ran at block 0 (first gate, before any spend).
+
+    # Bind lip-sync generation to the CURRENT approved shot before any spend.
+    # This uses the storyboard's existing approval; it creates no new approval.
+    lipsync_binding = None
+    lipsync_inputs = None
+    if ML.is_locked_lipsync(model):
+        from lipsync_evidence import binding_for_request, inputs_for_request, LipsyncEvidenceError
+        try:
+            lipsync_binding = binding_for_request(
+                request.get("run_dir"),
+                {**(request.get("lipsync_binding") or {}), "run_id": run_id})
+            lipsync_inputs = inputs_for_request(request.get("run_dir"), {**request, "run_id": run_id})
+        except (LipsyncEvidenceError, TypeError, ValueError) as exc:
+            return envelope("dispatch", "rejected",
+                            getattr(exc, "code", "LIPSYNC_EVIDENCE_MISSING"),
+                            str(exc), run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id, evidence={"generated": False})
+
+    # ---- 0. WW-30 music contract (retired legacy route / envelope) --------
+    # Before ANY other gate, ledger row or paid call: a music job rides the
+    # createTask envelope only. The legacy /api/v1/generate generation route
+    # is refused by name, and a malformed envelope is refused with the named
+    # reason from suno_recipe.check_envelope. Nothing reserved, nothing sent.
+    music_refusal = music_contract_refusal(model, request)
+    if music_refusal is not None:
+        code, detail = music_refusal
+        return envelope(
+            "dispatch", "rejected", code,
+            detail + " Nothing was reserved and nothing was sent.",
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"generated": False, "gate": "WW-30-music-contract",
+                      "retired_endpoint": (_R.KIE_LEGACY_GENERATE_ENDPOINT
+                                           if _R is not None else None),
+                      "required_endpoint": (_R.KIE_MUSIC_TASK_ENDPOINT
+                                            if _R is not None else None)})
+
+    # ---- 0. F14 model lock (before any ledger row) ------------------------
+    # Scope: VIDEO jobs only. A video model must be on price-menu.md
+    # (seedance-1.5-pro included) and must equal the card-locked choice.
+    # The locked lip-sync model (kling/ai-avatar-standard) is not a menu video
+    # model: it skips the video lock and is held to the picture gate below.
+    is_video = (not ML.is_locked_lipsync(model)
+                and (bool(video_job) or _is_menu_video(model)
+                     or _modality(model) == "video"))
+    locked = None
+    if is_video:
+        try:
+            ML.assert_allowed(model)
+        except ML.ModelLockError as e:
+            return envelope("dispatch", "rejected", e.reason,
+                            "the allowed video models are exactly the models "
+                            "on price-menu.md (seedance-1.5-pro included). "
+                            "Take the refusal to the owner.",
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id)
+        locked = ML.read_locked_model(state_store, run_id)
+        if not locked:
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_LOCK_MISSING",
+                "no video model is locked for this run; show and answer the "
+                "choice card first (default MiniMax H3 768P) - never "
+                "dispatch an un-locked video job",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id)
+        from choice_card.video_models import video_models as _VM  # client's pick -> resolution/tier
+        request = _VM.apply_locked_choice(request, locked)
+        if not ML.matches_family(model, locked):
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_MISMATCH",
+                "the card locked %s for this run; %s differs. Ask the owner "
+                "to re-lock at the choice card, never substitute here."
+                % (locked, model),
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"locked_model": locked, "requested_model": model})
+    pic = lipsync_picture_refusal(model, request)
+    if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
+        return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
+                        pic + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    onscreen = onscreen_text_refusal(model, request)
+    if onscreen is not None:                # U8: no paid job prints an unchecked string
+        return envelope("dispatch", "rejected", "ONSCREEN_TEXT_NOT_CHECKED",
+                        onscreen + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    book = book_shot_refusal(model, request)      # FU-U10: book job contract
+    if book is not None:
+        return envelope("dispatch", "rejected", book["reason_code"],
+                        book["detail"] + " " + book["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    if not model:
+        return envelope("dispatch", "rejected", "MODEL_REQUIRED",
+                        "name the model id; this module never picks one",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
+    refusal = card_gate_refusal(request)
+    if refusal is not None:                 # F15: no paid job on an unanswered card
+        return envelope("dispatch", "waiting", refusal["reason_code"],
+                        refusal.get("next_action", ""),
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"missing_card_fields": refusal["missing"],
+                                  "generated": False})
+
+    # F4 gate: a Suno sound-effects job is refused unless the request itself
+    # carries the run's explicit manual order (``sound_effects: [...]``).
+    # The catalog's suno-sounds surface is NEVER auto-queued: default runs
+    # make zero sound-effect jobs (manual Part F F4).
+    request_orders_sfx = _sfx_off.sfx_ordered(request)
+    if _sfx_off._is_sfx_job({"model": model, "route": model,
+                             "endpoint": (request or {}).get("endpoint", "")}) \
+            and not request_orders_sfx:
+        return envelope("dispatch", "rejected", "SFX_JOB_NOT_ORDERED",
+                        "no automatic Suno sound effects: a default run "
+                        "makes zero sound-effect jobs; carry "
+                        "`sound_effects: [...]` in the run config for an "
+                        "explicit manual order (manual Part F F4)",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
+    if not isinstance(estimated_cost, int) or estimated_cost < 0:
+        return envelope("dispatch", "rejected", "UNKNOWN_PRICE",
+                        "record an estimated cost before dispatch",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
+    # S75-001: a paid job must never ride a zero estimate - a limit check
+    # against 0 can never fail. Production only: an offline runner
+    # simulation reserves nothing real. The one exception is a model Skill 74's
+    # own registry documents as free (price 0 credits).
+    if (_execution["mode"] == "production" and estimated_cost == 0
+            and not _zero_cost_route(model)):
+        return envelope("dispatch", "rejected", "ZERO_ESTIMATE_FOR_PAID_JOB",
+                        "Pass the real estimated cost; a zero estimate cannot "
+                        "be checked against the client's limit. Nothing was "
+                        "reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"model": model, "estimated_cost": 0,
+                                  "generated": False})
+    # F2 intake seam: a run in F1 mode takes whole tracks only. A partial
+    # slice/patch job refuses PARTIAL_SUNO_JOB here, before the ledger row
+    # and before any Skill 74 call. Runs with no F1 soundtrack stamp are
+    # untouched.
+    f2_reasons = suno_job_refusal(request)
+    if f2_reasons:
+        return envelope("dispatch", "rejected", PARTIAL_SUNO_JOB,
+                        "whole-track retakes only in F1 mode: one full-track "
+                        "generation or ONE whole-track retake of a failed "
+                        "take; a slice/patch job is refused (manual Part F "
+                        "F2). Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"intake_errors": f2_reasons,
+                                  "generated": False})
+    # F6: a run cannot animate before storyboard approval is recorded.
+    sb_refusal = check_storyboard_approval(None, None, request)
+    if sb_refusal:
+        return envelope("dispatch", "rejected", sb_refusal["reason_code"],
+                        sb_refusal.get("detail", "")
+                        + " (directive 14.1: approve the storyboard and pass "
+                          "adversarial review first)",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"gate": sb_refusal.get("gate"),
+                                  "generated": False})
+    # SONG APPROVAL: no picture, video or lip-sync job before the client's song
+    # pick is recorded (only the song stage itself may run). Fail closed.
+    song_hold = _song_pick_refusal(model, os.path.dirname(os.path.abspath(str(ledger_db))))
+    if song_hold:
+        return envelope("dispatch", "rejected", song_hold["reason_code"],
+                        song_hold["detail"] + " " + song_hold["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    # SCRIPT APPROVAL: no song generation before the client approves the script.
+    sa_refusal = check_script_approval_gate(model, request, save_dir)
+    if sa_refusal:
+        return envelope("dispatch", "rejected", sa_refusal["reason_code"],
+                        sa_refusal["detail"], run_id=run_id,
+                        logical_key=logical_key, attempt_id=attempt_id,
+                        evidence={"generated": False})
+    # U15b: an H3 prompt must be assembled and receipted (PROMPT_NOT_TEMPLATED)
+    # and the FINAL payload must be re-measured against its cap, both BEFORE
+    # any ledger row or paid call. Nothing reserved, nothing sent.
+    tpl_refusal = prompt_templated_refusal(model, request, prompt)
+    if tpl_refusal:
+        return envelope("dispatch", "rejected", tpl_refusal["reason_code"],
+                        tpl_refusal["detail"]
+                        + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False, "gate": "U15b"})
+    # H3 native audio: H3 cannot be asked for silence, so the mixing decision
+    # must be a recorded one (and never a double-music layer) before spend.
+    na_refusal = native_audio_refusal(model, request, prompt)
+    if na_refusal:
+        return envelope("dispatch", "rejected", na_refusal["reason_code"],
+                        na_refusal["detail"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False,
+                                  "gate": "native-audio"})
+    cap_refusal = final_payload_cap_refusal(model, request, is_video)
+    if cap_refusal:
+        return envelope("dispatch", "rejected", cap_refusal["reason_code"],
+                        cap_refusal["detail"]
+                        + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False,
+                                  "gate": "final-payload-cap"})
+    # ---- 0. placeholder check (F10) ---------------------------------------
+    # Before the ledger: a refused request reserves nothing and calls nothing.
+    ph = _find_placeholder(request)
+    if ph:
+        return envelope(
+            "dispatch", "rejected", "REQUEST_PLACEHOLDER",
+            "fill the placeholder at %s (%r) in the request file and dispatch "
+            "again; nothing was reserved and nothing was sent" % (ph[0], ph[1]),
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"placeholder_path": ph[0], "placeholder_token": ph[1],
+                      "generated": False})
+    # Authoritative intake, artifact scope and predecessor state are checked
+    # before even planning/reserving spend. A caller's card/approval JSON is
+    # only a projection and cannot replace the governed run's authority.
+    process_context = None
+    if _execution["mode"] == "production":
+        arguments = dict(model=model, save_dir=save_dir, ledger_db=ledger_db,
+                         run_id=run_id, stage=stage, state_store=state_store,
+                         adapter_path=adapter_path)
+        admission = production_process_admission(request=request, **arguments)
+        _execution["admission"] = admission
+        if not admission.get("ok"):
+            return envelope("dispatch", "rejected", admission["reason_code"],
+                            admission.get("detail", "") + " " + admission.get("next_action", ""),
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id, evidence={"generated": False})
+        stage = admission["stage"]  # the ledger names the admitted canonical stage
+        process_context = {"arguments": arguments,
+                           "request_digest": L.digest_request(request)}
+        if runner is not None:
+            runner = runner._s75_bind(process_context)
+    run = runner or make_runner(timeout, process_context=process_context)
+
+    # ---- 1. ledger reserve -------------------------------------------------
+    digest = L.digest_request(request)
+    # auth_ref: the client's authorization for a creative retake (a new paid
+    # take after a successful one). The ledger refuses a retake without it
+    # (MISSING_AUTH_REF) and refuses one authorization funding two retakes.
+    # require_round_auth: the caller's auth_ref is the client's CURRENT
+    # answer, so an empty one also stops a retry inside a paid creative round.
+    pl = L.plan(ledger_db, run_id, logical_key, attempt_id, digest,
+                estimated_cost, stage=stage, owner=owner,
+                auth_ref=auth_ref or "",
+                require_round_auth=bool(require_round_auth))
+    if pl["outcome"] != "ok":
+        return envelope("dispatch", pl["outcome"], pl["reason_code"],
+                        pl.get("next_action", ""), run_id=run_id,
+                        logical_key=logical_key,
+                        attempt_id=pl.get("attempt_id") or attempt_id,
+                        state_version=pl.get("state_version", 0))
+    # An empty attempt_id asked the ledger to mint one; the id it committed is
+    # the only identity this job may use from here on. Minting is never a
+    # string suffix of a prior attempt and never a default "a1".
+    attempt_id = pl.get("attempt_id") or attempt_id
+    rs = L.reserve(ledger_db, run_id, logical_key, attempt_id, owner=owner)
+    if rs["outcome"] != "ok":
+        return envelope("dispatch", rs["outcome"], rs["reason_code"],
+                        rs.get("next_action", ""), run_id=run_id,
+                        logical_key=logical_key, attempt_id=attempt_id,
+                        state_version=rs.get("state_version", 0))
+    job_state = "reserved"
+
+    # D2 item 3: the two aware-UTC stamps a provider-overlap receipt binds.
+    # Envelope-level only: no ledger schema change.
+    stamps = {"accepted_submit_at": None}
+
+    def stop(outcome, reason, next_action, evidence, final="failed", cost=0,
+             settle=True):
+        """Leave the ledger clean and return the envelope."""
+        if settle:
+            rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
+                          job_state, final, cost)
+            if rec["outcome"] not in ("ok", "parked"):
+                outcome, reason = "error", "ledger-settle-failed"
+                next_action = rec.get("next_action", "") or next_action
+                evidence = dict(evidence or {}, ledger=rec)
+        ev = dict(evidence or {})
+        ev.setdefault("accepted_submit_at", stamps["accepted_submit_at"])
+        ev["terminal_at"] = utc_now()
+        return envelope("dispatch", outcome, reason, next_action,
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence=ev,
+                        state_version=rec.get("state_version", 0)
+                        if settle else rs.get("state_version", 0))
+
+    # ---- 2. Skill 74 health (mode) ----------------------------------------
+    adapter = resolve_adapter(adapter_path)
+    if not adapter:
+        return stop("error", "adapter-not-found",
+                    "install Skill 74 (%s); there is no private KIE client"
+                    % ADAPTER_SKILL,
+                    {"skill": ADAPTER_SKILL, "generated": False})
+    h_rc, h, h_raw = _call(run, adapter, ["health", "--json"])
+    if h is None:
+        return stop("error", "adapter-health-unreadable",
+                    "Skill 74 health did not answer JSON; do not dispatch",
+                    {"rc": h_rc, "raw": (h_raw or "")[-400:],
+                     "generated": False})
+    mode = h.get("adapter_mode")
+    if mode not in ("off", "shadow", "active"):
+        return stop("error", "adapter-mode-unknown",
+                    "Skill 74 reported no usable mode; do not dispatch",
+                    {"adapter_mode": mode, "generated": False})
+    if mode != "active":
+        return stop(
+            "waiting", "generation-not-switched-on",
+            "tell the client generation is not switched on; nothing was "
+            "generated and no approval card exists. Activate Skill 74 "
+            "(mode=active) before dispatching again.",
+            {"adapter_mode": mode, "generated": False,
+             "approval_card": None, "fallback_used": False,
+             "disposition": "not-generated",
+             "client_message": "Generation is not switched on for this "
+                               "client yet - nothing has been generated."})
+
+    # ---- 3. Skill 74 preflight --------------------------------------------
+    p_rc, p, p_raw = _call(run, adapter,
+                           ["preflight", "--model", model,
+                            "--units", str(units), "--json"])
+    if p is None:
+        return stop("error", "preflight-unreadable",
+                    "Skill 74 preflight did not answer JSON; do not dispatch",
+                    {"rc": p_rc, "raw": (p_raw or "")[-400:],
+                     "generated": False})
+    p_data = p.get("data") or {}
+    p_err = p.get("error") or {}
+    shortfall = p_data.get("shortfall")
+    if p.get("state") == "fail" or p_data.get("ok") is False:
+        reason = ("preflight-shortfall"
+                  if p_err.get("code") == "insufficient_credits"
+                  or shortfall is not None else "preflight-failed")
+        return stop(
+            "rejected", reason,
+            "top up the balance so it covers price x 1.30, then retry with a "
+            "new attempt id; nothing was generated",
+            {"adapter_state": p.get("state"), "code": p_err.get("code"),
+             "shortfall": shortfall, "data": p_data, "generated": False})
+
+    # ---- 4. prompt-budget --check -----------------------------------------
+    prompt_band = None
+    tmp = tempfile.mkdtemp(prefix="kie-dispatch-")
+    try:
+        prompt_file = os.path.join(tmp, "prompt.txt")
+        with open(prompt_file, "w", encoding="utf-8") as f:
+            f.write(prompt or "")
+        b_rc, b, b_raw = _call(run, adapter,
+                               ["prompt-budget", "--model", model, "--check",
+                                "--prompt-file", prompt_file, "--json"])
+        if b is None:
+            return stop("rejected", "prompt-budget-unreadable",
+                        "Skill 74 prompt-budget did not answer JSON; do not "
+                        "dispatch",
+                        {"exit_code": b_rc, "raw": (b_raw or "")[-400:],
+                         "generated": False})
+        if b_rc == 4 or (b.get("data") or {}).get("status") == "ABOVE_MAX":
+            d = b.get("data") or {}
+            return stop("rejected", "prompt-over-max",
+                        "cut %s characters from the prompt (max %s) and recheck"
+                        % (d.get("cut", "?"), d.get("max", "?")),
+                        {"exit_code": b_rc, "data": d, "generated": False})
+        if b_rc == 3 or (b.get("data") or {}).get("status") == "BELOW_FLOOR":
+            d = b.get("data") or {}
+            return stop("rejected", "prompt-below-floor",
+                        "add %s characters to the prompt (floor %s) and recheck"
+                        % (d.get("add_to_floor", "?"), d.get("floor", "?")),
+                        {"exit_code": b_rc, "data": d, "generated": False})
+        # Exit 5 is BOTH Skill 74's 80-to-below-95 percent band (a PASS with a
+        # warn-and-expand note) and its refusal band (unknown maximum, policy
+        # missing, above the target ceiling). The exit code alone cannot
+        # separate them, so exit 5 proceeds ONLY when the JSON reports a pass;
+        # the band is written to the job's ledger note so QC can see it.
+        if b_rc == 5:
+            if not _prompt_budget_passed(b):
+                return stop("rejected", "prompt-budget-failed",
+                            "Skill 74 prompt-budget refused the prompt; fix it "
+                            "before dispatch",
+                            {"exit_code": b_rc, "data": b.get("data") or {},
+                             "adapter_state": b.get("state"),
+                             "raw": (b_raw or "")[-400:],
+                             "generated": False})
+            d = b.get("data") or {}
+            prompt_band = {"prompt_band": "below-target",
+                           "chars": d.get("chars"),
+                           "target_min": d.get("target_min")}
+            _record_stage_evidence(
+                ledger_db, run_id, logical_key, attempt_id, "prompt-budget",
+                status="ok", adapter_state=str(b.get("state") or ""),
+                extra=prompt_band)
+        if b_rc not in (0, 5):
+            return stop("rejected", "prompt-budget-failed",
+                        "Skill 74 prompt-budget refused the prompt; fix it "
+                        "before dispatch",
+                        {"exit_code": b_rc, "raw": (b_raw or "")[-400:],
+                         "generated": False})
+
+        # ---- 5. submit / wait / save ---------------------------------------
+        # Split of the old single `run` call (manual C2): the outer subprocess
+        # timer used to fire before Skill 74's own wait, so a long video left
+        # an unknown row with no task id and the resolver zero-settled spend.
+        if lipsync_inputs is not None:
+            try:
+                current_inputs = inputs_for_request(request.get("run_dir"), {**request, "run_id": run_id})
+                if current_inputs != lipsync_inputs:
+                    raise LipsyncEvidenceError("LIPSYNC_INPUT_CHANGED", "inputs changed before submit")
+            except (LipsyncEvidenceError, TypeError, ValueError) as exc:
+                return stop("rejected", getattr(exc, "code", "LIPSYNC_EVIDENCE_MISSING"),
+                            str(exc), {"generated": False})
+        req_file = os.path.join(tmp, "request.json")
+        with open(req_file, "w", encoding="utf-8") as f:
+            json.dump(request, f, sort_keys=True)
+        os.makedirs(save_dir, exist_ok=True)
+
+        wait_s = _wait_budget_s(request, model, adapter)
+        # Injected runners (tests) already stand in for Skill 74; the real
+        # wait subprocess gets W+120 so the inner wait always returns first.
+        wait_run = run if runner is not None else make_runner(wait_s + 120, process_context=process_context)
+
+        def _unknown_at(stage, extra, task=""):
+            ev = {"stage": stage, "wait_timeout_s": wait_s}
+            ev.update(extra)
+            if task:
+                ev["task_id"] = task
+                ev["remote_task_id"] = task
+            return _hold_unknown(ledger_db, run_id, logical_key, attempt_id,
+                                 owner, ev)
+
+        # (1) submit --------------------------------------------------------
+        # A createTask-routed model may answer SYNCHRONOUSLY: the payload IS
+        # the result and no job exists to poll. When that happens the submit
+        # envelope is written beside the request and handed to the save step,
+        # so save never re-queries an id KIE never had.
+        sync_info_path = None
+        try:
+            s_rc, s, s_raw = _call(run, adapter,
+                                   ["submit", "--request", req_file, "--json"])
+        except Exception as e:                              # pragma: no cover
+            return _unknown_at("submit", {"error": str(e)})
+        if s is None:
+            return _unknown_at("submit",
+                               {"rc": s_rc, "raw": (s_raw or "")[-400:]})
+
+        s_state = s.get("state")
+        if s_state == "rate_limited":
+            return stop(
+                "waiting", "kie-rate-limited-not-submitted",
+                "KIE answered HTTP 429 to every retry for job %s: it did NOT run "
+                "and is not queued. Not submitted, not dropped; resubmit it."
+                % logical_key,
+                {"stage": "submit", "error": s.get("error"), "generated": False,
+                 "disposition": "not-submitted", "job": logical_key},
+                final="failed", cost=0)
+        task_id = s.get("task_id") or ""
+        # WW-30: the submit acknowledgement nesting is UNVERIFIED, so when the
+        # adapter reports no top-level task_id, look through the tolerated
+        # nestings rather than declaring the job id-less. The path used is
+        # recorded in the receipt so the shape is evidence, not assumption.
+        if not task_id:
+            task_id = task_id_from_acknowledgement(s)[0]
+        s_err = s.get("error") if isinstance(s.get("error"), dict) else {}
+
+        if s_state == RUN_SKIPPED:
+            return stop(
+                "waiting", "generation-skipped-not-generated",
+                "Skill 74 skipped the submit; skipped is not generated. Do not "
+                "fall back to a private KIE client - activate mode=active.",
+                {"stage": "submit", "adapter_state": s_state,
+                 "generated": False, "approval_card": None,
+                 "fallback_used": False, "disposition": "not-generated"})
+        if s_state == RUN_FAILED:
+            # Definite submit error: settle now. Never leave an unknown row
+            # that the resolver could zero-settle without asking KIE.
+            credits = s.get("credits_consumed")
+            cost = (int(credits) if isinstance(credits, (int, float))
+                    and not isinstance(credits, bool) else 0)
+            _record_stage_evidence(
+                ledger_db, run_id, logical_key, attempt_id, "submit",
+                status="fail", task_id=task_id, error=s_err,
+                adapter_state=s_state)
+            if is_video:
+                # F14: no automatic fallback for video. Settle, then stop and
+                # ask the owner with the next approved option and its price.
+                return stop(
+                    "waiting", "VIDEO_MODEL_DOWN",
+                    "the locked video model did not submit (definite submit "
+                    "error: %s); nothing was generated. No automatic "
+                    "fallback - ask the owner with the next approved option "
+                    "from price-menu.md and its price."
+                    % (s_err.get("code") or "unknown"),
+                    {"stage": "submit", "adapter_state": s_state,
+                     "error": s_err, "task_id": task_id or None,
+                     "actual_cost": cost, "generated": False,
+                     "locked_model": locked,
+                     "next_approved_options": ML.ALLOWED_VIDEO_MODELS},
+                    final="failed", cost=cost)
+            return stop(
+                "rejected", "kie-submit-failed",
+                "Skill 74 submit refused the job (%s); nothing was generated"
+                % (s_err.get("code") or "unknown"),
+                {"stage": "submit", "adapter_state": s_state, "error": s_err,
+                 "task_id": task_id or None, "actual_cost": cost,
+                 "generated": False},
+                final="failed", cost=cost)
+
+        if s_state == RUN_OK and not task_id:
+            # Sync family already finished inside submit; no pollable id.
+            # NOTE: this id is LOCAL. KIE has no such task, so the save step
+            # must not re-query it -- it would find nothing and save zero
+            # files (which the word-timing stage then read as "no words").
+            task_id = "sync-" + L.digest_request(request)[:12]
+        if s_state == RUN_OK and task_id.startswith("sync-"):
+            # F11: the submit envelope is the ONLY copy of a synchronous
+            # result (KIE has no such task to re-query), so it is kept
+            # under the save dir, which outlives this call and its temp
+            # dir. A save hold can then resume through the supported
+            # --info path with no resubmit and no provider lookup.
+            sync_info_path = _retain_sync_info(save_dir, task_id, s)
+
+        if task_id:
+            sub = L.mark_submitted(ledger_db, run_id, logical_key, attempt_id,
+                                   task_id, owner=owner)
+            if sub.get("outcome") == "ok":
+                job_state = "submitted"
+            stamps["accepted_submit_at"] = utc_now()
+        elif s_state in RUN_PENDING:
+            return _unknown_at("submit",
+                               {"adapter_state": s_state,
+                                "remote_task_id": None})
+        elif s_state != RUN_OK:
+            return _unknown_at(
+                "submit",
+                {"adapter_state": s_state, "task_id": task_id or None,
+                 "remote_task_id": task_id or None,
+                 "known_states": [RUN_OK, RUN_FAILED, RUN_SKIPPED]
+                 + list(RUN_PENDING)})
+
+        # (2) wait (async only; sync submit already answered) ---------------
+        # F-SPD-2: the first read is tiered (2 s early), set once on the
+        # runner's env as KIE_LIVE_POLL_INITIAL (make_runner); `wait` takes
+        # --task-id/--timeout only. Every job's wait runs in its own thread,
+        # so a burst's checks overlap instead of queueing behind one another.
+        src = s
+        if s_state in RUN_PENDING:
+            # F-SPD-7: the first status read is stamped once, so the run
+            # loop can compare a job's first poll with its submit time. A
+            # stamp is observability only - it can never fail a paid job.
+            try:
+                L.stamp_speed(ledger_db, run_id, logical_key, attempt_id,
+                              "first_poll_at", owner=owner)
+            except Exception:                           # noqa: BLE001
+                pass
+            try:
+                w_rc, wj, w_raw = _call(
+                    wait_run, adapter,
+                    ["wait", "--task-id", task_id,
+                     "--timeout", str(wait_s), "--json"])
+            except Exception as e:                          # pragma: no cover
+                return _unknown_at("wait", {"error": str(e)}, task_id)
+            if wj is None:
+                return _unknown_at("wait",
+                                   {"rc": w_rc, "raw": (w_raw or "")[-400:]},
+                                   task_id)
+            w_state = wj.get("state")
+            w_err = wj.get("error") if isinstance(wj.get("error"), dict) else {}
+            task_id = wj.get("task_id") or task_id
+            if w_state == RUN_FAILED:
+                credits = wj.get("credits_consumed")
+                cost = (int(credits) if isinstance(credits, (int, float))
+                        and not isinstance(credits, bool) else 0)
+                # F10: a failed task is reported within ONE poll - this poll.
+                # The evidence row and the rejected envelope carry the task id,
+                # the outcome and the receipt, and the ledger settles failed
+                # immediately; no further polling, no silent skip.
+                _record_stage_evidence(
+                    ledger_db, run_id, logical_key, attempt_id, "wait",
+                    status="fail", task_id=task_id, error=w_err,
+                    adapter_state=w_state)
+                return stop(
+                    "rejected", "kie-run-failed",
+                    "Skill 74 reported a failed run (%s); reconcile the "
+                    "charge, then retry with a new attempt id"
+                    % (w_err.get("code") or "unknown"),
+                    {"stage": "wait", "adapter_state": w_state, "error": w_err,
+                     "task_id": task_id, "actual_cost": cost,
+                     "failure_poll": 1, "generated": False},
+                    final="failed", cost=cost)
+            if w_state != RUN_OK:
+                # wait timeout (running + error.code == timeout) and any other
+                # non-terminal answer: hold unknown WITH the task id so the
+                # resolver queries KIE instead of settling at zero.
+                return _unknown_at(
+                    "wait",
+                    {"adapter_state": w_state, "error": w_err,
+                     "wait_timeout_s": wait_s,
+                     "timed_out": (w_state == "running"
+                                   and w_err.get("code") == "timeout")},
+                    task_id)
+            src = wj
+
+        # (3) save ----------------------------------------------------------
+        try:
+            save_argv = ["save", "--task-id", task_id,
+                         "--save-dir", save_dir, "--json"]
+            if sync_info_path:
+                save_argv += ["--info", sync_info_path]
+            v_rc, v, v_raw = _call(run, adapter, save_argv)
+        except Exception as e:                              # pragma: no cover
+            v, v_raw, v_rc = None, str(e), -1
+        saved_raw = v.get("saved_paths") if isinstance(v, dict) else None
+        credits = src.get("credits_consumed")
+        if isinstance(credits, (int, float)) and not isinstance(credits, bool):
+            actual = int(credits)
+            warn = []
+        else:
+            actual = int(estimated_cost)
+            warn = ["ACTUAL_COST_UNREPORTED"]
+            # S75-001: the missing actual must also reach the receipt, not
+            # only a list entry in this envelope (loud_failure attaches it).
+            _loud("warn", "ACTUAL_COST_UNREPORTED",
+                  "the provider reported no credits for task %s; the estimate "
+                  "%s is recorded as the actual cost" % (task_id, actual))
+        if not saved_raw:
+            warn.append("SAVE_FAILED")
+        # F11: a save that raised, answered no path, answered a container that
+        # is not a list, or listed bytes that are missing or zero-byte did NOT
+        # materialize a deliverable. The provider task still succeeded and
+        # charged, so the ledger settles exactly as before -- but the envelope
+        # is a HOLD, never "files saved".
+        if isinstance(v, dict):
+            save_error = ""
+            save_state = v.get("state") if isinstance(v.get("state"), str) else ""
+            save_err_block = (v.get("error")
+                              if isinstance(v.get("error"), dict) else None)
+        else:
+            save_error = str(v_raw or "")[-240:] or "save did not answer JSON"
+            save_state, save_err_block = "", None
+        hold = _materialization_hold(saved_raw, save_error, save_state,
+                                     save_err_block)
+        verified = ([o["path"] for o in hold["outputs"]
+                     if o["status"] == "OK"] if hold else list(saved_raw))
+        # F-SPD-7: a file that landed is stamped once. A hold with no file
+        # writes nothing, so every saved result carries its downloaded_at.
+        if verified:
+            try:
+                L.stamp_speed(ledger_db, run_id, logical_key, attempt_id,
+                              "downloaded_at", owner=owner)
+            except Exception:                           # noqa: BLE001
+                pass
+        if hold:
+            warn.append(hold["reason_code"])
+
+        rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
+                      job_state, "succeeded", actual, task_id=task_id,
+                      provider_ref="kie", evidence_ref=task_id)
+        if rec["outcome"] not in ("ok", "parked"):
+            return envelope("dispatch", rec["outcome"],
+                            rec.get("reason_code", "ledger-settle-failed"),
+                            rec.get("next_action", ""),
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id,
+                            evidence={"task_id": task_id,
+                                      "saved_paths": verified,
+                                      "materialized": hold is None},
+                            state_version=rec.get("state_version", 0))
+        if hold:
+            resume = {"command": "save", "task_id": task_id,
+                      "save_dir": save_dir}
+            if sync_info_path:
+                resume["info"] = sync_info_path
+            return envelope(
+                "dispatch", "waiting", hold["reason_code"],
+                "the provider task %s succeeded and its charge is settled, but "
+                "no output file was materialized (%s). Resume ONLY the save "
+                "step for this existing task id - never resubmit and never "
+                "generate again." % (task_id, hold["detail"]),
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"adapter_mode": mode, "stage": "save",
+                          "generated": True, "materialized": False,
+                          "task_id": task_id, "save_exit_code": v_rc,
+                          "save_adapter_state": save_state,
+                          "save_error": save_err_block,
+                          "saved_paths": verified,
+                          "save_outputs": hold["outputs"],
+                          "lipsync_binding": lipsync_binding,
+                          "lipsync_inputs": lipsync_inputs,
+                          "lipsync_model": model if lipsync_binding else None,
+                          "credits_consumed": credits,
+                          "actual_cost": actual, "warnings": warn,
+                          "wait_timeout_s": wait_s, "retries": 0,
+                          "resume": resume,
+                          "accepted_submit_at": stamps["accepted_submit_at"],
+                          "terminal_at": utc_now(),
+                          "prompt_caps": prompt_caps,
+                          "prompt_band": prompt_band},
+                state_version=rec.get("state_version", 0))
+        return envelope(
+            "dispatch", "ok", "KIE_DISPATCH_OK",
+            "files saved before the links expire; record the receipt",
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"adapter_mode": mode, "generated": True,
+                      "task_id": task_id,
+                      "saved_paths": verified,
+                      "materialized": True,
+                      "lipsync_binding": lipsync_binding,
+                      "lipsync_inputs": lipsync_inputs,
+                      "lipsync_model": model if lipsync_binding else None,
+                      "saved_sha256": _saved_hashes(verified) if lipsync_binding else {},
+                      "credits_consumed": credits,
+                      "actual_cost": actual, "warnings": warn,
+                      "wait_timeout_s": wait_s, "retries": 0,
+                      "accepted_submit_at": stamps["accepted_submit_at"],
+                      "terminal_at": utc_now(),
+                      "prompt_caps": prompt_caps,
+                      "prompt_band": prompt_band},
+            state_version=rec.get("state_version", 0))
+    except Exception as e:                                  # noqa: BLE001
+        return stop("error", "dispatch-internal-error",
+                    str(e)[:300], {"error": str(e)[:300], "generated": False})
+    finally:
+        try:
+            for name in os.listdir(tmp):
+                os.unlink(os.path.join(tmp, name))
+            os.rmdir(tmp)
+        except OSError as exc:
+            _loud("warn", "TMP_CLEANUP_FAILED", "%s: %r" % (tmp, exc))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        prog="kie_dispatch.py",
+        description="Plan 5.4 KIE dispatch: reserve -> Skill 74 health -> "
+                    "preflight -> prompt-budget -> submit/wait/save -> reconcile.")
+    d = ap.add_subparsers(dest="cmd", required=True)
+    x = d.add_parser("dispatch", help="Run one reserved KIE generation.")
+    x.add_argument("--model", required=True, help="Exact model id (never picked here).")
+    x.add_argument("--request", required=True, help="Skill 74 req.json path.")
+    x.add_argument("--save-dir", required=True)
+    x.add_argument("--ledger", required=True, help="spend_ledger SQLite path.")
+    x.add_argument("--run-id", required=True)
+    x.add_argument("--logical-key", required=True)
+    x.add_argument("--attempt-id", required=True)
+    x.add_argument("--cost", type=int, required=True,
+                   help="Estimated cost in ledger units, recorded before dispatch.")
+    x.add_argument("--units", type=int, default=1)
+    x.add_argument("--prompt", default=None)
+    x.add_argument("--prompt-file", default=None)
+    x.add_argument("--stage", default="kie",
+                   help="Canonical production stage; required for ambiguous image jobs.")
+    x.add_argument("--owner", default="kie-dispatch")
+    x.add_argument("--adapter", default=None,
+                   help="Path to kie_live_adapter.py (default: search).")
+    x.add_argument("--timeout", type=int, default=300)
+    x.add_argument("--auth-ref", default="",
+                   help="the client's authorization reference for a paid "
+                        "creative retake (required by the ledger for one)")
+    x.add_argument("--state-store", default=None,
+                   help="run state DB (control/state.sqlite3) for the F14 "
+                        "video-model lock; without it a video job can never "
+                        "pass F14 from the CLI")
+    up = d.add_parser("upload-storyboard-frame", help="Upload one current approved still and return its frame binding; no generation.")
+    up.add_argument("--run-dir", required=True)
+    up.add_argument("--shot-id", required=True)
+    up.add_argument("--stage", default="video-generation", choices=("video-generation", "qc-retakes"))
+    up.add_argument("--run-id", default=None)
+    up.add_argument("--adapter", default=None)
+    bu = d.add_parser(
+        "burst",
+        help="F-SPD-1: submit every ready job in ONE governed burst (a run "
+             "path for submit_burst; never a single send).")
+    bu.add_argument("--jobs", required=True,
+                    help="JSON list (or {'jobs': [...]}) of ready jobs: "
+                         "logical_key, model, request, estimated_cost, inputs.")
+    bu.add_argument("--ledger", default=None,
+                    help="spend_ledger SQLite path; omit for a memory ledger.")
+    bu.add_argument("--estimate", type=int, default=None,
+                    help="This burst's credit estimate; the ceiling is 1.5x.")
+    bu.add_argument("--spend", type=int, default=None,
+                    help="Already spent in this run, same unit as --estimate.")
+    bu.add_argument("--balance", type=int, default=None,
+                    help="Provider balance read at the start of this burst.")
+    bu.add_argument("--state-store", default=None,
+                    help="run state DB so each job's F14 lock can be read.")
+    bu.add_argument("--adapter", default=None)
+    bu.add_argument("--timeout", type=int, default=300)
+    a = ap.parse_args(argv)
+
+    if a.cmd == "burst":
+        # F-SPD-1: the run path for a burst. Every ready job goes in one
+        # governed pass through submit_burst (spend guard, drip refusal, the
+        # chain-child check, slowest route first); there is no single-send
+        # path here, so an orchestrator cannot drip through this tool.
+        with open(a.jobs, encoding="utf-8") as f:
+            blob = json.load(f)
+        jobs = blob.get("jobs") if isinstance(blob, dict) else blob
+        if not isinstance(jobs, list):
+            json.dump({"outcome": "rejected", "reason_code": "JOBS_UNREADABLE",
+                       "detail": "the jobs file holds no JSON list"}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT["rejected"]
+        for j in jobs:
+            if isinstance(j, dict) and a.state_store and "state_store" not in j:
+                j["state_store"] = a.state_store
+            if isinstance(j, dict) and a.adapter and "adapter_path" not in j:
+                j["adapter_path"] = a.adapter
+        out = submit_burst(jobs, spend=a.spend, estimate=a.estimate,
+                           balance=a.balance,
+                           ready_count=len(jobs), ledger=a.ledger or ":memory:",
+                           timeout=a.timeout)
+        json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
+        sys.stdout.write("\n")
+        return EXIT["ok"] if out.get("submitted") else EXIT["rejected"]
+
+    if a.cmd == "upload-storyboard-frame":
+        try:
+            result = upload_storyboard_frame(a.run_dir, a.shot_id, stage=a.stage,
+                                             run_id=a.run_id, adapter_path=a.adapter)
+            json.dump({"outcome": "ok", "frame_binding": result}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return 0
+        except (ProviderFrameBindingError, OSError, ValueError) as exc:
+            code = getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED")
+            out = {"outcome": "rejected", "reason_code": code,
+                   "detail": str(exc)}
+            # Owner order 2026-11-20: the client meets this stop (the still
+            # did not bind), so it carries the four-part message beside the
+            # code. The outcome and exit code are unchanged.
+            try:
+                import loud_failure  # noqa: PLC0415 - core/ on sys.path above
+                out["client_explanation"] = loud_failure.explain_stop(
+                    code, None, {"reason_code": code, "detail": str(exc),
+                                 "next_action": "Name a shot from the current "
+                                 "approved storyboard and upload its still again."})
+            except Exception:  # noqa: BLE001 - never breaks the refusal
+                pass
+            json.dump(out, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT["rejected"]
+
+    if a.cmd == "dispatch":
+        with open(a.request, encoding="utf-8") as f:
+            request = json.load(f)
+        if a.prompt_file:
+            if a.prompt_file == "-":
+                prompt = sys.stdin.read()
+            else:
+                with open(a.prompt_file, encoding="utf-8") as f:
+                    prompt = f.read()
+                # A file written with a trailing newline must not change the
+                # bytes an H3 prompt receipt was issued over: the receipt
+                # hashes the prompt itself, so one 0x0A makes every templated
+                # H3 job refuse PROMPT_NOT_TEMPLATED. Reading a prompt file
+                # drops exactly one trailing newline.
+                if prompt.endswith("\n"):
+                    prompt = prompt[:-1]
+        else:
+            prompt = a.prompt or ""
+        env = dispatch(model=a.model, request=request, save_dir=a.save_dir,
+                       ledger_db=a.ledger, run_id=a.run_id,
+                       logical_key=a.logical_key, attempt_id=a.attempt_id,
+                       estimated_cost=a.cost, prompt=prompt, units=a.units,
+                       stage=a.stage, owner=a.owner, adapter_path=a.adapter,
+                       timeout=a.timeout, state_store=a.state_store,
+                       auth_ref=a.auth_ref)
+        json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
+        sys.stdout.write("\n")
+        return EXIT[env["outcome"]]
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
